@@ -41,7 +41,7 @@ defmodule Casein.Agents.AgentEventsTest do
                "terminal_mcp",
                %{
                  tool: "terminal_send_command",
-                 session: "devide_ws_u-dev",
+                 session: "casein_ws_u-dev",
                  pane: "%3",
                  command: "cat private_key",
                  keys: "secret"
@@ -75,7 +75,7 @@ defmodule Casein.Agents.AgentEventsTest do
     assert {:ok, transition, :inserted} =
              AgentEvents.append_state_transition(%{
                workspace_id: "ws-private",
-               tmux_session_id: "devide_ws_u-dev",
+               tmux_session_id: "casein_ws_u-dev",
                pane_id: "%3",
                state: :blocked,
                message: "credential copied into prompt"

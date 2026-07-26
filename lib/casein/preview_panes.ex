@@ -1486,7 +1486,7 @@ defmodule Casein.PreviewPanes do
     current_origin = Url.origin_of(current_url)
 
     cond do
-      devide_loopback_url?(URI.parse(current_url)) ->
+      casein_loopback_url?(URI.parse(current_url)) ->
         browser_display_url(current_url)
 
       Url.localhost_url?(current_url) ->
@@ -1794,7 +1794,7 @@ defmodule Casein.PreviewPanes do
 
   def browser_display_url(url) when is_binary(url) do
     with %URI{path: path, query: query, fragment: fragment} = uri <- URI.parse(url),
-         true <- devide_loopback_url?(uri) do
+         true <- casein_loopback_url?(uri) do
       %URI{path: path || "/", query: query, fragment: fragment}
       |> URI.to_string()
     else
@@ -1805,7 +1805,7 @@ defmodule Casein.PreviewPanes do
   def browser_display_url(url), do: url
 
   def browser_display_url(workspace, url) when is_map(workspace) and is_binary(url) do
-    if devide_loopback_url?(URI.parse(url)) do
+    if casein_loopback_url?(URI.parse(url)) do
       browser_display_url(url)
     else
       case proxy_display_url(%{workspace_id: workspace_id(workspace)}, url) do
@@ -2236,7 +2236,7 @@ defmodule Casein.PreviewPanes do
 
   defp control_url_for(url) when is_binary(url) do
     with %URI{} = uri <- URI.parse(url),
-         true <- devide_app_url?(uri),
+         true <- casein_app_url?(uri),
          port <- Application.get_env(:casein, :preview_loopback_port, 4000) do
       %URI{uri | scheme: "http", host: "127.0.0.1", port: port}
       |> URI.to_string()
@@ -2247,7 +2247,7 @@ defmodule Casein.PreviewPanes do
 
   defp control_url_for(url), do: url
 
-  defp devide_loopback_url?(%URI{} = uri) do
+  defp casein_loopback_url?(%URI{} = uri) do
     port = Application.get_env(:casein, :preview_loopback_port, 4000)
 
     uri.scheme in ["http", "https"] and uri.host in ["localhost", "127.0.0.1", "0.0.0.0"] and
@@ -2258,13 +2258,13 @@ defmodule Casein.PreviewPanes do
       end
   end
 
-  defp devide_app_url?(%URI{host: host}) when is_binary(host) do
-    host in configured_devide_hosts()
+  defp casein_app_url?(%URI{host: host}) when is_binary(host) do
+    host in configured_casein_hosts()
   end
 
-  defp devide_app_url?(_), do: false
+  defp casein_app_url?(_), do: false
 
-  defp configured_devide_hosts do
+  defp configured_casein_hosts do
     [
       host_from_url(Application.get_env(:casein, :preview_app_url)),
       get_in(Application.get_env(:casein, :deployment, []), [:default_host])

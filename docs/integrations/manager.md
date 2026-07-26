@@ -58,10 +58,10 @@ All tests for this integration live under `test/casein/integrations/manager/`. P
 Add a Dashboard-sibling block in `generateCaddyfile()`:
 
 ```
-{scheme}://devide.{domain} {
+{scheme}://casein.{domain} {
     [import aws_tls]            # AWS mode only
     import forward_auth
-    reverse_proxy 127.0.0.1:{DEVIDE_PORT}
+    reverse_proxy 127.0.0.1:{CASEIN_PORT}
 }
 ```
 
@@ -156,14 +156,14 @@ exist and the remote-mode work is preserved for genuine off-box use.
 ### 5. Deployment — Casein + ops
 
 Canonical host artifacts live in the private
-`MILCGroup/milc-devbox` repository under `devide/`. Its installer writes the
-operator profile to `/etc/devide/operator.json` and stable infrastructure to
-`/opt/devide/deploy/`. Core releases contain only portable application
+`MILCGroup/milc-devbox` repository under `casein/`. Its installer writes the
+operator profile to `/etc/casein/operator.json` and stable infrastructure to
+`/opt/casein/deploy/`. Core releases contain only portable application
 artifacts and consume that overlay through the versioned operator-config
 contract. Decisions (from the open questions, now resolved):
 
 - **`mix release`** — already configured in `mix.exs`. Runtime config via
-  `runtime.exs`: `SECRET_KEY_BASE`, `PHX_HOST=devide.{domain}`, `DATABASE_URL`,
+  `runtime.exs`: `SECRET_KEY_BASE`, `PHX_HOST=casein.{domain}`, `DATABASE_URL`,
   `PORT`, and `PHX_IP=127.0.0.1` (new — `runtime.exs` parses `PHX_IP`; the
   trust-boundary bind, defaults to all-interfaces for non-devbox deploys).
 - **Supervision: systemd unit** from the private operator overlay. Host process
@@ -184,7 +184,7 @@ contract. Decisions (from the open questions, now resolved):
 - Casein becomes a shared dependency on a prod host: BEAM memory footprint,
   and an outage affects every dev. Size the release; set a memory limit.
 - The trusted-header model is only safe if Casein is **not** directly
-  reachable. Bind localhost; never expose `DEVIDE_PORT` publicly.
+  reachable. Bind localhost; never expose `CASEIN_PORT` publicly.
 - The picker remains user-scoped, but direct workspace URLs are a collaboration
   affordance. Treat a shared Casein URL as granting cockpit access to that
   workspace; manager lifecycle mutations remain owner/admin-gated by the
@@ -205,7 +205,7 @@ contract. Decisions (from the open questions, now resolved):
 3. **§5** — release + systemd unit + DB, behind a localhost port. ✅ Done.
    Portable runtime support remains in core; the MILC systemd unit,
    dedicated-Postgres compose file, environment template, and runbook are
-   maintained by the private `MILCGroup/milc-devbox/devide` overlay.
+   maintained by the private `MILCGroup/milc-devbox/casein` overlay.
 4. **§1** — manager PR for the Caddy route. ⏳ Pending — last, so nothing is
    exposed until auth + scoping are proven.
 

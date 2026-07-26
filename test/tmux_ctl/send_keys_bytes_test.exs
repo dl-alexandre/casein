@@ -11,7 +11,7 @@ defmodule TmuxCtl.SendKeysBytesTest do
   setup do
     if tmux_available?() do
       cwd = System.tmp_dir!()
-      session = "devide_send_keys_bytes_#{System.unique_integer([:positive])}"
+      session = "casein_send_keys_bytes_#{System.unique_integer([:positive])}"
 
       on_exit(fn -> _ = Client.kill(session) end)
 

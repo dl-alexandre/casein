@@ -14,13 +14,13 @@ defmodule Casein.Agents.AuthProfile do
   (`.credentials.json` for Claude, `auth.json` for Codex). A missing directory
   — or one left behind by an aborted sign-in — keeps that runtime on the host
   global provider login, so agents default to the global login until the owner
-  completes `devide agent auth signin <runtime>`.
+  completes `casein agent auth signin <runtime>`.
 
   Registered owners are the opt-in exception: `<auth-root>/owners` lists owner
   slugs (one per line, `#` comments) that must never fall back to the host
   global login. For a registered owner the profile dir applies even before
   sign-in, so the provider CLI prompts for its own login inside the profile.
-  Setting `DEVIDE_AGENT_AUTH_FALLBACK=none` treats every owner as registered.
+  Setting `CASEIN_AGENT_AUTH_FALLBACK=none` treats every owner as registered.
   """
 
   @type runtime :: :claude | :codex
@@ -95,7 +95,7 @@ defmodule Casein.Agents.AuthProfile do
   def registered_owner?(workspace) do
     case owner_key(workspace) do
       nil -> false
-      owner -> System.get_env("DEVIDE_AGENT_AUTH_FALLBACK") == "none" or listed_owner?(owner)
+      owner -> System.get_env("CASEIN_AGENT_AUTH_FALLBACK") == "none" or listed_owner?(owner)
     end
   end
 
@@ -200,7 +200,7 @@ defmodule Casein.Agents.AuthProfile do
 
   defp auth_root do
     Application.get_env(:casein, :agent_auth_profile_root) ||
-      System.get_env("DEVIDE_AGENT_AUTH_ROOT") ||
+      System.get_env("CASEIN_AGENT_AUTH_ROOT") ||
       Path.join([home_dir(), ".casein", "agent-auth"])
   end
 
@@ -211,7 +211,7 @@ defmodule Casein.Agents.AuthProfile do
   # Profile dirs are rooted under the configured Casein auth-profile root after slugging owner keys.
   # sobelow_skip ["Traversal.FileModule"]
   defp seed_readme(dir, runtime) do
-    path = Path.join(dir, "README.devide-profile")
+    path = Path.join(dir, "README.casein-profile")
 
     if File.exists?(path) do
       :ok

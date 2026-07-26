@@ -9,7 +9,7 @@ log() { :; }
 sudo() { "$@"; }
 
 upstream_path="/apps/http/servers/srv0/routes/0/handle/0/upstreams/0/dial"
-current_dial="unix//run/devide/current.sock"
+current_dial="unix//run/casein/current.sock"
 patch_count=0
 
 curl() {
@@ -30,7 +30,7 @@ curl() {
 
   if [ "$url" = "http://localhost:2019/config/" ]; then
     printf '%s\n' \
-      '{"apps":{"http":{"servers":{"srv0":{"routes":[{"match":[{"host":["devide.devbox.milcgroup.com"]}],"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"unix//run/devide/current.sock"}]}]}]}}}}}'
+      '{"apps":{"http":{"servers":{"srv0":{"routes":[{"match":[{"host":["casein.devbox.milcgroup.com"]}],"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"unix//run/casein/current.sock"}]}]}]}}}}}'
   elif [ "$method" = "PATCH" ]; then
     current_dial="${data%\"}"
     current_dial="${current_dial#\"}"
@@ -42,19 +42,19 @@ curl() {
   fi
 }
 
-casein_reconcile_caddy_upstream "devide.devbox.milcgroup.com" repair
+casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
 [ "$current_dial" = "unix//run/casein/current.sock" ]
-[ "$patch_count" -eq 1 ]
+[ "$patch_count" -eq 0 ]
 
-casein_reconcile_caddy_upstream "devide.devbox.milcgroup.com" repair
-[ "$patch_count" -eq 1 ]
+casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
+[ "$patch_count" -eq 0 ]
 
 current_dial="unix//unexpected/current.sock"
-if casein_reconcile_caddy_upstream "devide.devbox.milcgroup.com" repair; then
+if casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair; then
   echo "repair unexpectedly rewrote an unknown upstream" >&2
   exit 1
 fi
 [ "$current_dial" = "unix//unexpected/current.sock" ]
-[ "$patch_count" -eq 1 ]
+[ "$patch_count" -eq 0 ]
 
 echo "caddy upstream repair tests passed"

@@ -81,7 +81,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
       assert {:error, %{error: :invalid_argument, message: message}} =
                TerminalTools.invoke("terminal_send_keys", %{
                  "workspace_id" => "ws-1",
-                 "session" => "devide_ws-1_default",
+                 "session" => "casein_ws-1_default",
                  "keys" => 42
                })
 

@@ -307,13 +307,13 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
       ws = Map.put(ws, :host_id, "remote-host")
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-        "devide_summary_u-alice" => [
+        "casein_summary_u-alice" => [
           %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 0}
         ]
       })
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-        "devide_summary_u-alice" => [
+        "casein_summary_u-alice" => [
           %{
             id: "%1",
             window_id: "@1",
@@ -338,8 +338,8 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
   end
 
   describe "orphan_tmux_sessions/1" do
-    test "ignores non-devide tmux sessions and string sessions list" do
-      # "other_tmux" is not a devide session, so it produces no orphan even
+    test "ignores non-casein tmux sessions and string sessions list" do
+      # "other_tmux" is not a casein session, so it produces no orphan even
       # though it is unknown to every summary.
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
         "other_tmux" => [
@@ -350,10 +350,10 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
       assert SessionSummary.orphan_tmux_sessions([]) == []
     end
 
-    test "ignores devide sessions whose suffix cannot be parsed" do
-      # "devide_lonely" splits into a single part, failing the >= 2 guard.
+    test "ignores casein sessions whose suffix cannot be parsed" do
+      # "casein_lonely" splits into a single part, failing the >= 2 guard.
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-        "devide_lonely" => [
+        "casein_lonely" => [
           %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 5}
         ]
       })
@@ -363,10 +363,10 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
 
     test "sorts multiple orphans by descending activity" do
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-        "devide_alpha_sid-1" => [
+        "casein_alpha_sid-1" => [
           %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 3}
         ],
-        "devide_beta_sid-2" => [
+        "casein_beta_sid-2" => [
           %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 99}
         ]
       })

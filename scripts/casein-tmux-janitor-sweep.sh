@@ -25,14 +25,14 @@
 #   scripts/casein-tmux-janitor-sweep.sh --apply    # actually reap
 #   scripts/casein-tmux-janitor-sweep.sh --release-sweep
 #   scripts/casein-tmux-janitor-sweep.sh --dry-run  # release policy dry-run
-#   DEVIDE_TMUX_REAP_AGE_MIN=60 scripts/...         # override 30-min threshold
+#   CASEIN_TMUX_REAP_AGE_MIN=60 scripts/...         # override 30-min threshold
 set -euo pipefail
 
 MODE="test-leaks"
 APPLY=0
-AGE_MIN="${DEVIDE_TMUX_REAP_AGE_MIN:-30}"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
-RELEASE_BIN="${DEVIDE_RELEASE_BIN:-/opt/casein/release/bin/casein}"
+AGE_MIN="${CASEIN_TMUX_REAP_AGE_MIN:-30}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
+RELEASE_BIN="${CASEIN_RELEASE_BIN:-/opt/casein/release/bin/casein}"
 
 usage() {
   sed -n '2,27p' "$0"
@@ -72,7 +72,7 @@ run_test_leak_sweep() {
   command -v tmux >/dev/null 2>&1 || { echo "[tmux-janitor] tmux not found — nothing to do"; exit 0; }
 
   # Strict test-workspace patterns: alpha-<digits>, <slug>-ws-<digits>, pw-test.
-  local test_re='^devide_([a-z]+-)?(alpha-[0-9]+|[a-z0-9]+-ws-[0-9]+|pw-test)'
+  local test_re='^casein_([a-z]+-)?(alpha-[0-9]+|[a-z0-9]+-ws-[0-9]+|pw-test)'
   # Belt-and-suspenders: never touch a session naming a real owner/workspace.
   local keep_re='dalexandre|mbaldin|msoares|jgiles|integration|devbox|documentation|preview-sandbox|v3-first'
   local now ts n
@@ -101,7 +101,7 @@ run_test_leak_sweep() {
     echo "[tmux-janitor] reaped ${reaped}/${n} leaked test sessions"
   else
     echo "[tmux-janitor] would reap (by prefix):"
-    printf '%s\n' "${cands[@]}" | sed -E 's/_u-.*//; s/devide_//; s/[0-9]+/N/g' | sort | uniq -c | sort -rn
+    printf '%s\n' "${cands[@]}" | sed -E 's/_u-.*//; s/casein_//; s/[0-9]+/N/g' | sort | uniq -c | sort -rn
     echo "[tmux-janitor] DRY RUN — re-run with --apply to reap ${n} sessions"
   fi
 }
@@ -110,12 +110,12 @@ run_release_sweep() {
   local rpc_mode="$1" unit node cookie expr
 
   unit="$(
-    { systemctl list-units 'devide-*.service' --state=active --no-legend --plain 2>/dev/null || true; } |
-      awk '$1 ~ /^devide-[0-9a-f]+\.service$/ {print $1; exit}'
+    { systemctl list-units 'casein-*.service' --state=active --no-legend --plain 2>/dev/null || true; } |
+      awk '$1 ~ /^casein-[0-9a-f]+\.service$/ {print $1; exit}'
   )"
 
   if [[ -z "$unit" ]]; then
-    echo "devide tmux janitor: no active devide canary unit found" >&2
+    echo "casein tmux janitor: no active casein canary unit found" >&2
     exit 1
   fi
 
@@ -126,14 +126,14 @@ run_release_sweep() {
   )"
 
   if [[ -z "$node" ]]; then
-    echo "devide tmux janitor: RELEASE_NODE missing from $unit" >&2
+    echo "casein tmux janitor: RELEASE_NODE missing from $unit" >&2
     exit 1
   fi
 
   cookie="$(awk -F= '/^RELEASE_COOKIE=/{print $2}' "$ENV_FILE" | tail -1)"
 
   if [[ -z "$cookie" ]]; then
-    echo "devide tmux janitor: RELEASE_COOKIE missing from $ENV_FILE" >&2
+    echo "casein tmux janitor: RELEASE_COOKIE missing from $ENV_FILE" >&2
     exit 1
   fi
 

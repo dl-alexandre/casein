@@ -13,7 +13,7 @@ defmodule Casein.Workspaces.HostPathIdentityTest do
     previous = Map.new(@config_keys, &{&1, Application.get_env(:casein, &1)})
 
     root =
-      Path.join(System.tmp_dir!(), "devide-host-path-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-host-path-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(root)
 

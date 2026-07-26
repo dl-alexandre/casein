@@ -8,7 +8,7 @@
 # deleted while the leader lingers (`--no-exit-on-disconnect`) — the leader
 # node processes themselves can never be reused and accumulate without bound
 # (observed: 270+ orphaned leader processes, ~14k leader dirs, ~4G of
-# content-addressed bundles across the casein and legacy devide roots).
+# content-addressed bundles across the casein and legacy casein roots).
 #
 # SAFETY:
 #   - Leader processes are matched by exact cmdline signature
@@ -43,18 +43,18 @@ done
 UID_NUM="$(id -u)"
 LEADER_ROOTS=(
   "${HOME}/.casein/grok-leaders"
-  "${HOME}/.devide/grok-leaders"
-  "/dev/shm/devide-grok-leaders-${UID_NUM}"
-  "/tmp/devide-grok-leaders-${UID_NUM}"
+  "${HOME}/.casein/grok-leaders"
+  "/dev/shm/casein-grok-leaders-${UID_NUM}"
+  "/tmp/casein-grok-leaders-${UID_NUM}"
 )
 BUNDLE_ROOTS=(
   "${HOME}/.casein/grok-bundles"
-  "${HOME}/.devide/grok-bundles"
+  "${HOME}/.casein/grok-bundles"
 )
 SANDBOX_TOMLS=()
 for toml in "${HOME}/.grok/sandbox.toml" \
   "${HOME}"/.casein/grok-homes/*/sandbox.toml \
-  "${HOME}"/.devide/grok-homes/*/sandbox.toml; do
+  "${HOME}"/.casein/grok-homes/*/sandbox.toml; do
   [[ -f "$toml" ]] && SANDBOX_TOMLS+=("$toml")
 done
 

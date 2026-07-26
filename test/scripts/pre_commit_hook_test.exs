@@ -45,11 +45,11 @@ defmodule Scripts.PreCommitHookTest do
     refute output =~ "refusing commit on master"
   end
 
-  test "pre-commit honors DEVIDE_ALLOW_MASTER_COMMIT bypass" do
+  test "pre-commit honors CASEIN_ALLOW_MASTER_COMMIT bypass" do
     %{repo: repo} = git_fixture!()
 
     {output, status} =
-      run_hook(repo, env: [{"DEVIDE_ALLOW_MASTER_COMMIT", "1"}])
+      run_hook(repo, env: [{"CASEIN_ALLOW_MASTER_COMMIT", "1"}])
 
     assert status == 0
     refute output =~ "refusing commit on master"
@@ -69,7 +69,7 @@ defmodule Scripts.PreCommitHookTest do
 
   defp git_fixture! do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    repo = Path.join(root, "devide-pre-commit-#{System.unique_integer([:positive])}")
+    repo = Path.join(root, "casein-pre-commit-#{System.unique_integer([:positive])}")
     File.rm_rf!(repo)
     File.mkdir_p!(repo)
 

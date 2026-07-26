@@ -22,15 +22,15 @@ done
 
 [[ -n "$port" ]] || { echo "error: --port is required" >&2; exit 2; }
 
-runtime_id="${DEVIDE_RUNTIME_ID:-runtime-$$}"
-workspace_id="${DEVIDE_WORKSPACE_ID:-}"
-tmux_session="${DEVIDE_TMUX_SESSION:-}"
+runtime_id="${CASEIN_RUNTIME_ID:-runtime-$$}"
+workspace_id="${CASEIN_WORKSPACE_ID:-}"
+tmux_session="${CASEIN_TMUX_SESSION:-}"
 cwd="$(pwd -P)"
-state="${DEVIDE_PREVIEW_HOME:-${cwd}/.casein-preview}"
+state="${CASEIN_PREVIEW_HOME:-${cwd}/.casein-preview}"
 inst_dir="${state}/instances"
 sock_dir="${state}/sockets"
 log_dir="${state}/logs"
-socket="${DEVIDE_RUNTIME_PREVIEW_SOCKET:-${sock_dir}/${runtime_id}.sock}"
+socket="${CASEIN_RUNTIME_PREVIEW_SOCKET:-${sock_dir}/${runtime_id}.sock}"
 logf="${log_dir}/${runtime_id}.log"
 registry="${inst_dir}/${runtime_id}.json"
 
@@ -73,8 +73,8 @@ wait_for_port() {
 }
 
 build_command() {
-  if [[ -n "${DEVIDE_RUNTIME_PREVIEW_COMMAND:-}" ]]; then
-    printf '%s\n' "bash" "-lc" "$DEVIDE_RUNTIME_PREVIEW_COMMAND"
+  if [[ -n "${CASEIN_RUNTIME_PREVIEW_COMMAND:-}" ]]; then
+    printf '%s\n' "bash" "-lc" "$CASEIN_RUNTIME_PREVIEW_COMMAND"
   elif [[ -x ./bin/mix ]]; then
     printf '%s\n' "./bin/mix" "dev"
   elif [[ -f mix.exs ]] && command -v mise >/dev/null 2>&1; then

@@ -101,13 +101,13 @@ defmodule Casein.Deployment.DriftTest do
 
     :persistent_term.put(key, {{:ok, sha}, System.monotonic_time(:millisecond)})
 
-    prev_rev = System.get_env("DEVIDE_GIT_REVISION")
+    prev_rev = System.get_env("CASEIN_GIT_REVISION")
     prev_branch = System.get_env("CASEIN_GIT_BRANCH")
-    System.put_env("DEVIDE_GIT_REVISION", sha)
+    System.put_env("CASEIN_GIT_REVISION", sha)
     System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
-      restore_env("DEVIDE_GIT_REVISION", prev_rev)
+      restore_env("CASEIN_GIT_REVISION", prev_rev)
       restore_env("CASEIN_GIT_BRANCH", prev_branch)
       :persistent_term.erase(key)
     end)
@@ -122,13 +122,13 @@ defmodule Casein.Deployment.DriftTest do
 
     :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
 
-    prev_rev = System.get_env("DEVIDE_GIT_REVISION")
+    prev_rev = System.get_env("CASEIN_GIT_REVISION")
     prev_branch = System.get_env("CASEIN_GIT_BRANCH")
-    System.put_env("DEVIDE_GIT_REVISION", "manual-hotfix-label")
+    System.put_env("CASEIN_GIT_REVISION", "manual-hotfix-label")
     System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
-      restore_env("DEVIDE_GIT_REVISION", prev_rev)
+      restore_env("CASEIN_GIT_REVISION", prev_rev)
       restore_env("CASEIN_GIT_BRANCH", prev_branch)
       :persistent_term.erase(key)
     end)
@@ -143,13 +143,13 @@ defmodule Casein.Deployment.DriftTest do
 
     :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
 
-    prev_rev = System.get_env("DEVIDE_GIT_REVISION")
+    prev_rev = System.get_env("CASEIN_GIT_REVISION")
     prev_branch = System.get_env("CASEIN_GIT_BRANCH")
-    System.put_env("DEVIDE_GIT_REVISION", "manual-hotfix-label")
+    System.put_env("CASEIN_GIT_REVISION", "manual-hotfix-label")
     System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
-      restore_env("DEVIDE_GIT_REVISION", prev_rev)
+      restore_env("CASEIN_GIT_REVISION", prev_rev)
       restore_env("CASEIN_GIT_BRANCH", prev_branch)
       :persistent_term.erase(key)
     end)

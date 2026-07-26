@@ -194,9 +194,9 @@ defmodule Casein.Agents.PreviewToolsTest do
       "command" => ["bash", "scripts/preview-env.sh", "dirty", "--port", Integer.to_string(port)],
       "env" => %{
         "PORT" => Integer.to_string(port),
-        "DEVIDE_RUNTIME_ID" => runtime_id,
-        "DEVIDE_WORKSPACE_ID" => workspace_id,
-        "DEVIDE_TMUX_SESSION" => tmux_session
+        "CASEIN_RUNTIME_ID" => runtime_id,
+        "CASEIN_WORKSPACE_ID" => workspace_id,
+        "CASEIN_TMUX_SESSION" => tmux_session
       },
       "surface_key" => "runtime:#{runtime_id}:app",
       "surface_name" => "app",
@@ -270,10 +270,10 @@ defmodule Casein.Agents.PreviewToolsTest do
   end
 
   test "playback tool opens a saved recording in fresh panes" do
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.test/workspaces")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.test/workspaces")
 
     artifact_path = "/preview-artifacts/#{@v3_workspace.id}/demo.webm"
-    playback_url = "https://devide.example.test:443#{artifact_path}?fit=playback&loop=1"
+    playback_url = "https://casein.example.test:443#{artifact_path}?fit=playback&loop=1"
 
     assert {:ok, first} =
              PreviewTools.invoke("preview_playback_open", @v3_workspace, %{
@@ -299,7 +299,7 @@ defmodule Casein.Agents.PreviewToolsTest do
   end
 
   test "playback tool rejects artifacts outside the workspace and non-video artifacts" do
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.test")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.test")
 
     assert {:error, %{error: :invalid_playback_artifact}} =
              PreviewTools.invoke("preview_playback_open", @v3_workspace, %{
@@ -489,7 +489,7 @@ defmodule Casein.Agents.PreviewToolsTest do
 
     assert command =~ script
     assert command =~ "CASEIN_API_TOKEN="
-    assert command =~ "DEVIDE_WORKSPACE_ID=#{@v3_workspace.id}"
+    assert command =~ "CASEIN_WORKSPACE_ID=#{@v3_workspace.id}"
     assert command =~ "http://localhost:5173/"
 
     assert {:ok, %{status: :closed}} =
@@ -1453,7 +1453,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     Application.put_env(:casein, :workspaces_root, Path.dirname(workspace_dir))
     Application.put_env(:casein, :on_devbox, true)
     Application.put_env(:casein, :preview_loopback_port, 4000)
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
 
     on_exit(fn ->
       File.rm_rf(workspace_dir)
@@ -1498,7 +1498,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     File.mkdir_p!(workspace_dir)
     Application.put_env(:casein, :workspaces_root, Path.dirname(workspace_dir))
     Application.put_env(:casein, :on_devbox, true)
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
     Application.put_env(:casein, :preview_loopback_port, port)
     Application.put_env(:casein, :preview_control_adapter, :playwright)
 
@@ -1545,7 +1545,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     previous = Application.get_env(:casein, :preview_loopback_port)
     Application.put_env(:casein, :preview_loopback_port, 4000)
     on_exit(fn -> restore_preview_loopback_port(previous) end)
-    workspace = put_in(@v3_workspace, [:metadata, :ports, "devide"], 4000)
+    workspace = put_in(@v3_workspace, [:metadata, :ports, "casein"], 4000)
 
     assert {:ok, %{current_url: url, pane_id: pane_id}} =
              PreviewTools.invoke("preview_open_localhost", workspace, %{

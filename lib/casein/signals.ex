@@ -19,18 +19,18 @@ defmodule Casein.Signals do
 
   alias Casein.Signals.Context
 
-  @type_prefix "devide.audit."
-  @domain_prefix "devide."
+  @type_prefix "casein.audit."
+  @domain_prefix "casein."
 
   @doc "Signal-type prefix for audit-derived signals."
   @spec type_prefix() :: String.t()
   def type_prefix, do: @type_prefix
 
-  @doc "CloudEvents type for an audit action, e.g. \"devide.audit.agent.blocked\"."
+  @doc "CloudEvents type for an audit action, e.g. \"casein.audit.agent.blocked\"."
   @spec type_for(String.t()) :: String.t()
   def type_for(action) when is_binary(action), do: @type_prefix <> action
 
-  @doc "CloudEvents type for a domain event, e.g. \"devide.deploy.failed\"."
+  @doc "CloudEvents type for a domain event, e.g. \"casein.deploy.failed\"."
   @spec domain_type(String.t()) :: String.t()
   def domain_type(event) when is_binary(event), do: @domain_prefix <> event
 
@@ -45,7 +45,7 @@ defmodule Casein.Signals do
   def from_audit_event(%Event{} = event) do
     Signal.new!(type_for(event.action), event_data(event), %{
       id: event.id,
-      source: "/devide/audit/#{event.workspace_id || "global"}",
+      source: "/casein/audit/#{event.workspace_id || "global"}",
       subject: event.target_ref,
       time: event.inserted_at && DateTime.to_iso8601(event.inserted_at)
     })
@@ -57,7 +57,7 @@ defmodule Casein.Signals do
   def from_agent_event(%AgentEvent{} = event) do
     Signal.new!(domain_type("agent_event." <> event.event_type), agent_event_data(event), %{
       id: event.id,
-      source: "/devide/agent/#{event.workspace_id}",
+      source: "/casein/agent/#{event.workspace_id}",
       subject: event.agent_session_id || event.tmux_session_id || event.runtime_id,
       time: event.occurred_at && DateTime.to_iso8601(event.occurred_at)
     })
@@ -120,8 +120,8 @@ defmodule Casein.Signals do
   @doc """
   Build a CloudEvents signal for a non-audit domain event.
 
-  Domain events use the `devide.<event>` type namespace (distinct from
-  `devide.audit.*`) so bus consumers can subscribe broadly while audit
+  Domain events use the `casein.<event>` type namespace (distinct from
+  `casein.audit.*`) so bus consumers can subscribe broadly while audit
   routing keeps its existing prefix.
   """
   @spec from_domain_event(String.t(), map(), keyword()) :: Signal.t()
@@ -154,8 +154,8 @@ defmodule Casein.Signals do
     |> put_trace(stamped.metadata)
   end
 
-  defp domain_source(nil, event), do: "/devide/domain/#{event}"
-  defp domain_source(workspace_id, _event), do: "/devide/domain/#{workspace_id}"
+  defp domain_source(nil, event), do: "/casein/domain/#{event}"
+  defp domain_source(workspace_id, _event), do: "/casein/domain/#{workspace_id}"
 
   defp new_span_id do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)

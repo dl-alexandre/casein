@@ -101,10 +101,10 @@ Other code (primarily the `Casein.Terminals.*` facade) calls:
   deliberately **not** copied between them by `configure_tmux_ctl!` — see the authoritative
   doc's "Adapter configuration (two keys)" table. The watcher resolves its adapter lazily
   via `:tmux_resolver` (or the `:tmux_ctl, :adapter` fallback).
-- **Mutations refuse non-`devide_*` sessions.** `Client.managed_session?/1` gates
+- **Mutations refuse non-`casein_*` sessions.** `Client.managed_session?/1` gates
   `kill_pane`, `kill_window`, `split_pane`, `resize_pane`, `zoom_pane`, `kill_other_panes`
-  with `{:error, :refused_non_devide_session}` — the session prefix (`:tmux_ctl, :session_prefix`,
-  default `"devide"`) is the safety namespace. Reads are not gated.
+  with `{:error, :refused_non_casein_session}` — the session prefix (`:tmux_ctl, :session_prefix`,
+  default `"casein"`) is the safety namespace. Reads are not gated.
 - **Pane ids are server-global.** `pane_target/2` passes `%N` ids through unprefixed;
   `session:%N` would be parsed by tmux as a window name.
 - **`session_topology` empty-both means dead.** `{[], []}` from a topology read is the

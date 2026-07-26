@@ -1,4 +1,4 @@
-# DevIdeCore
+# CaseinCore
 
 Generic BEAM primitives extracted from [Casein](../) — the dependency-free
 floor that the full IDE product builds on. No Phoenix, no Ecto, no LiveView.
@@ -14,7 +14,7 @@ This package houses three already-boundary-isolated leaf libraries:
 ## Status: v0.1 skeleton (path-dep, not published)
 
 This is a **standalone, additive extraction**. It is *not* yet wired into the
-parent `dev_ide` app, because doing so requires removing the in-tree copies of
+parent `casein` app, because doing so requires removing the in-tree copies of
 these libraries first (otherwise the modules `ExecCtl`/`GitCtl`/`McpCtl` are
 defined twice and compilation fails).
 
@@ -22,7 +22,7 @@ defined twice and compilation fails).
 
 1. Delete the in-tree originals from the parent:
    `lib/exec_ctl{,.ex} lib/git_ctl{,.ex} lib/mcp_ctl{,.ex}`
-2. Add to the parent `mix.exs` deps: `{:dev_ide_core, path: "dev_ide_core"}`
+2. Add to the parent `mix.exs` deps: `{:casein_core, path: "casein_core"}`
 3. The parent's `Casein` boundary already lists `ExecCtl, GitCtl, McpCtl` as
    deps — those edges stay valid; only the compile source moves.
 

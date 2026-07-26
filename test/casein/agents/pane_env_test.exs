@@ -7,7 +7,7 @@ defmodule Casein.Agents.PaneEnvTest do
 
   @workspace %{
     id: "ws-123",
-    name: "dalexandre-devide",
+    name: "dalexandre-casein",
     path: "/tmp/casein-checkout"
   }
 
@@ -63,19 +63,19 @@ defmodule Casein.Agents.PaneEnvTest do
              PaneEnv.vars_for_workspace(@workspace,
                staging_home: staging,
                checkout: @workspace.path,
-               tmux_session: "devide_dalexandre-devide_wt-agent"
+               tmux_session: "casein_dalexandre-casein_wt-agent"
              )
 
     assert vars["CASEIN_API_TOKEN"] == "scoped-ws-123-token"
-    assert vars["DEVIDE_WORKSPACE_ID"] == "ws-123"
-    assert vars["DEVIDE_API_BASE_URL"] == "http://127.0.0.1:4000"
-    assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "workspace_id=ws-123"
-    assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "tmux_session=devide_dalexandre-devide_wt-agent"
-    assert vars["DEVIDE_PREVIEW_MCP_URL"] =~ "workspace_id=ws-123"
-    assert vars["DEVIDE_PREVIEW_MCP_URL"] =~ "tmux_session=devide_dalexandre-devide_wt-agent"
-    assert vars["DEVIDE_ARTIFACT_MCP_URL"] =~ "workspace_id=ws-123"
-    refute vars["DEVIDE_ARTIFACT_MCP_URL"] =~ "tmux_session="
-    assert vars["DEVIDE_TMUX_SESSION"] == "devide_dalexandre-devide_wt-agent"
+    assert vars["CASEIN_WORKSPACE_ID"] == "ws-123"
+    assert vars["CASEIN_API_BASE_URL"] == "http://127.0.0.1:4000"
+    assert vars["CASEIN_TERMINAL_MCP_URL"] =~ "workspace_id=ws-123"
+    assert vars["CASEIN_TERMINAL_MCP_URL"] =~ "tmux_session=casein_dalexandre-casein_wt-agent"
+    assert vars["CASEIN_PREVIEW_MCP_URL"] =~ "workspace_id=ws-123"
+    assert vars["CASEIN_PREVIEW_MCP_URL"] =~ "tmux_session=casein_dalexandre-casein_wt-agent"
+    assert vars["CASEIN_ARTIFACT_MCP_URL"] =~ "workspace_id=ws-123"
+    refute vars["CASEIN_ARTIFACT_MCP_URL"] =~ "tmux_session="
+    assert vars["CASEIN_TMUX_SESSION"] == "casein_dalexandre-casein_wt-agent"
     refute Map.has_key?(vars, "GROK_HOME")
     # No signed-in owner profile: stay on the host global provider login.
     refute Map.has_key?(vars, "CLAUDE_CONFIG_DIR")
@@ -113,7 +113,7 @@ defmodule Casein.Agents.PaneEnvTest do
   test "vars_for_workspace can expose a plain API base distinct from MCP URLs", %{
     staging: staging
   } do
-    Application.put_env(:casein, :api_base_url, "https://devide.example.test")
+    Application.put_env(:casein, :api_base_url, "https://casein.example.test")
 
     assert {:ok, vars} =
              PaneEnv.vars_for_workspace(@workspace,
@@ -121,8 +121,8 @@ defmodule Casein.Agents.PaneEnvTest do
                checkout: @workspace.path
              )
 
-    assert vars["DEVIDE_API_BASE_URL"] == "https://devide.example.test"
-    assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "http://127.0.0.1:4000/api/terminals/mcp"
+    assert vars["CASEIN_API_BASE_URL"] == "https://casein.example.test"
+    assert vars["CASEIN_TERMINAL_MCP_URL"] =~ "http://127.0.0.1:4000/api/terminals/mcp"
   end
 
   test "vars_for_workspace includes env.sh path", %{staging: staging} do
@@ -132,8 +132,8 @@ defmodule Casein.Agents.PaneEnvTest do
                checkout: @workspace.path
              )
 
-    assert vars["DEVIDE_AGENT_ENV_FILE"] == Path.join(staging, "env.sh")
-    assert File.exists?(vars["DEVIDE_AGENT_ENV_FILE"])
+    assert vars["CASEIN_AGENT_ENV_FILE"] == Path.join(staging, "env.sh")
+    assert File.exists?(vars["CASEIN_AGENT_ENV_FILE"])
     # Assert the agent bin dir PaneEnv deterministically prepends, not a literal
     # ".local/bin": that string only appeared via the ambient $PATH, so the test
     # passed in an interactive/runner shell but failed under the deploy poller's

@@ -45,7 +45,7 @@ defmodule Casein.ArtifactProjectsTest do
 
     MemoryAdapter.clear()
     Runtimes.clear()
-    Mix.Task.reenable("dev_ide.artifact.smoke")
+    Mix.Task.reenable("casein.artifact.smoke")
     init_repo!(repo)
     seed_workspace!("ws-artifacts", repo)
 
@@ -100,8 +100,8 @@ defmodule Casein.ArtifactProjectsTest do
     assert cwd == project.worktree_path
     assert url == project.preview_url
     assert String.starts_with?(url, "http://localhost:")
-    assert env["DEVIDE_RUNTIME_PREVIEW_COMMAND"] =~ "python3 -m http.server"
-    assert env["DEVIDE_RUNTIME_PREVIEW_COMMAND"] =~ "--directory .casein/public"
+    assert env["CASEIN_RUNTIME_PREVIEW_COMMAND"] =~ "python3 -m http.server"
+    assert env["CASEIN_RUNTIME_PREVIEW_COMMAND"] =~ "--directory .casein/public"
 
     assert [listed] = ArtifactProjects.list("ws-artifacts")
     assert listed.id == project.id
@@ -186,7 +186,7 @@ defmodule Casein.ArtifactProjectsTest do
     assert File.read!(Path.join(project.worktree_path, "index.html")) == "<h1>Updated</h1>\n"
     assert File.read!(Path.join(project.worktree_path, "assets/app.js")) =~ "artifact"
     assert updated.prompt_history == ["Draft a first pass", "Make the hero compact"]
-    assert updated.preview_server["env"]["DEVIDE_RUNTIME_PREVIEW_COMMAND"] =~ "http.server"
+    assert updated.preview_server["env"]["CASEIN_RUNTIME_PREVIEW_COMMAND"] =~ "http.server"
 
     log = git!(project.worktree_path, ["log", "--oneline", "--format=%s"])
     assert log =~ "Update artifact project Landing Page"
@@ -450,7 +450,7 @@ defmodule Casein.ArtifactProjectsTest do
 
     on_exit(fn -> :gen_tcp.close(listener) end)
 
-    preview_home = server["env"]["DEVIDE_PREVIEW_HOME"]
+    preview_home = server["env"]["CASEIN_PREVIEW_HOME"]
     registry_dir = Path.join(preview_home, "instances")
     File.mkdir_p!(registry_dir)
 
@@ -565,7 +565,7 @@ defmodule Casein.ArtifactProjectsTest do
   test "public_url prefers the dedicated artifacts origin over the cockpit origin" do
     {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Shareable"})
 
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
 
     on_exit(fn ->
       Application.delete_env(:casein, :preview_app_url)
@@ -574,7 +574,7 @@ defmodule Casein.ArtifactProjectsTest do
 
     # Falls back to the cockpit origin when no dedicated origin is configured.
     cockpit_url = ArtifactProjects.payload(project).public_url
-    assert cockpit_url =~ "devide.example.com"
+    assert cockpit_url =~ "casein.example.com"
     assert String.ends_with?(cockpit_url, "/artifact-projects/ws-artifacts/#{project.id}/")
 
     # The dedicated artifacts origin wins when set.
@@ -582,7 +582,7 @@ defmodule Casein.ArtifactProjectsTest do
 
     dedicated_url = ArtifactProjects.payload(project).public_url
     assert dedicated_url =~ "artifacts.example.com"
-    refute dedicated_url =~ "devide.example.com"
+    refute dedicated_url =~ "casein.example.com"
     assert String.ends_with?(dedicated_url, "/artifact-projects/ws-artifacts/#{project.id}/")
   end
 
@@ -612,7 +612,7 @@ defmodule Casein.ArtifactProjectsTest do
 
   defp tmp_dir!(name) do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    path = Path.join(root, "devide-#{name}-#{System.unique_integer([:positive])}")
+    path = Path.join(root, "casein-#{name}-#{System.unique_integer([:positive])}")
     File.rm_rf!(path)
     File.mkdir_p!(path)
     path

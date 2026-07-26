@@ -31,7 +31,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "dpapi:"
     assert script =~ "'CASEIN_PROFILE' = 'desktop'"
     assert script =~ "'CASEIN_REPO_ADAPTER' = 'sqlite'"
-    assert script =~ "'DEVIDE_RELEASE_ROOT' = $script:Paths.ReleaseRoot"
+    assert script =~ "'CASEIN_RELEASE_ROOT' = $script:Paths.ReleaseRoot"
     assert script =~ "'CASEIN_API_TOKEN' = $apiToken"
     assert script =~ "'CASEIN_DESKTOP_LAUNCH_TOKEN' = $launchToken"
     assert script =~ "'RELEASE_DISTRIBUTION' = 'none'"
@@ -119,7 +119,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "system.json"
     refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'api-token.txt')"
     refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'secret-key-base.txt')"
-    refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'devide.sqlite3')"
+    refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'casein.sqlite3')"
   end
 
   test "packager builds the Windows SQLite release and copies the host" do
@@ -132,7 +132,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "'_build\\prod\\rel\\casein'"
     assert script =~ "@('release', 'casein', '--overwrite')"
     assert script =~ "app = 'casein'"
-    assert script =~ "DEVIDE_GIT_REVISION = $sourceRevision"
+    assert script =~ "CASEIN_GIT_REVISION = $sourceRevision"
     assert script =~ "Read-DesktopReleaseMetadata"
     assert script =~ "Refusing to package a dirty source tree"
     assert script =~ "New-DesktopArchive"
@@ -161,7 +161,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
 
     assert script =~ "Test-ReleaseTrust $packageRoot"
     assert script =~ "Get-AuthenticodeSignature"
-    assert script =~ "DEVIDE_REQUIRE_SIGNED_RELEASES"
+    assert script =~ "CASEIN_REQUIRE_SIGNED_RELEASES"
     assert script =~ "Get-FileHash -Algorithm SHA256"
     assert script =~ "Release integrity check failed"
     assert script =~ "SignedFiles"
@@ -199,7 +199,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert installer =~ "Programs\\Casein"
     assert installer =~ "before-update-"
     assert installer =~ "previous_data_backup"
-    refute installer =~ "@('devide.sqlite3', 'desktop-host.json', 'secret-key-base.txt'"
+    refute installer =~ "@('casein.sqlite3', 'desktop-host.json', 'secret-key-base.txt'"
 
     assert installer =~
              "Move-Item -LiteralPath $temporaryCurrent -Destination $currentPath -Force"

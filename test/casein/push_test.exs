@@ -130,7 +130,7 @@ defmodule Casein.PushTest do
     assert notification.locator.origin_id == Casein.Origin.id()
     assert notification.locator.workspace_id == "pw-1"
     assert notification.locator.session_id == "run-1"
-    assert notification.deep_link =~ "devide://review/needs_review%3Apw-1%3Arun-1?"
+    assert notification.deep_link =~ "casein://review/needs_review%3Apw-1%3Arun-1?"
     assert notification.deep_link =~ "origin_id=#{URI.encode_www_form(Casein.Origin.id())}"
     refute_receive {:pushed, "tok-other", "ios", _notification}, 300
 

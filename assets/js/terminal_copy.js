@@ -4,7 +4,7 @@ function copyFallbackInput() {
   if (__fallbackInput && __fallbackInput.isConnected) return __fallbackInput
 
   const target = document.createElement("textarea")
-  target.id = "devide-copy-fallback"
+  target.id = "casein-copy-fallback"
   target.setAttribute("aria-hidden", "true")
   target.setAttribute("tabindex", "-1")
   target.setAttribute("autocomplete", "off")
@@ -67,10 +67,10 @@ export function copyTextWithFallback(text, input) {
 export function showClipboardToast(message, { kind = "info", duration = 4000 } = {}) {
   if (!message) return
 
-  let el = document.getElementById("devide-clipboard-toast")
+  let el = document.getElementById("casein-clipboard-toast")
   if (!el) {
     el = document.createElement("div")
-    el.id = "devide-clipboard-toast"
+    el.id = "casein-clipboard-toast"
     el.setAttribute("role", "status")
     el.setAttribute("aria-live", "polite")
     document.body.appendChild(el)
@@ -78,9 +78,9 @@ export function showClipboardToast(message, { kind = "info", duration = 4000 } =
 
   el.dataset.kind = kind
   el.textContent = message
-  el.classList.add("devide-clipboard-toast--visible")
+  el.classList.add("casein-clipboard-toast--visible")
   clearTimeout(el.__hideTimer)
   el.__hideTimer = window.setTimeout(() => {
-    el.classList.remove("devide-clipboard-toast--visible")
+    el.classList.remove("casein-clipboard-toast--visible")
   }, duration)
 }

@@ -57,10 +57,10 @@ In Odysseus Settings → MCP / Tools / Servers (the exact label may vary by vers
 
 - Add a new stdio server
 - Command: `python`
-- Args: absolute path to `.../dev_ide/mcp_servers/casein_server.py` (or make a small wrapper script)
+- Args: absolute path to `.../casein/mcp_servers/casein_server.py` (or make a small wrapper script)
 - Environment: pass the two CASEIN_* vars above
 
-After registration the agent should be able to discover and call the `devide_*` tools.
+After registration the agent should be able to discover and call the `casein_*` tools.
 
 You can also run it under the same Python env as Odysseus if you want the agent to have it always available.
 

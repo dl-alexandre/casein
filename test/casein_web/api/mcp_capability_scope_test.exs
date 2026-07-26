@@ -5,7 +5,7 @@ defmodule CaseinWeb.API.MCPCapabilityScopeTest do
 
   @claims %{
     workspace_id: "ws",
-    tmux_session_id: "devide_ws_agent",
+    tmux_session_id: "casein_ws_agent",
     pane_id: "%7",
     bundle_digest: String.duplicate("a", 64),
     leader_id: String.duplicate("b", 24)
@@ -152,7 +152,7 @@ defmodule CaseinWeb.API.MCPCapabilityScopeTest do
              MCPCapabilityScope.authorize_call(
                %{
                  "name" => "terminal_list_sessions",
-                 "arguments" => %{"session" => "devide_other_agent"}
+                 "arguments" => %{"session" => "casein_other_agent"}
                },
                opts()
              )
@@ -166,7 +166,7 @@ defmodule CaseinWeb.API.MCPCapabilityScopeTest do
              MCPCapabilityScope.authorize_call(
                %{
                  "name" => "terminal_report_worktree",
-                 "arguments" => %{"tmux_session_id" => "devide_other_agent"}
+                 "arguments" => %{"tmux_session_id" => "casein_other_agent"}
                },
                worktree_opts
              )

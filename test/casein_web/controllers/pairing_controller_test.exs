@@ -41,7 +41,7 @@ defmodule CaseinWeb.PairingControllerTest do
     assert payload["origin"]["id"] == Casein.Origin.id()
     assert payload["origin"]["base_url"] == "http://www.example.com"
     assert payload["resources"] == [%{"kind" => "workspace", "id" => "ws-1", "label" => "ws-1"}]
-    assert "dev_ide.session" in payload["capabilities"]
+    assert "casein.session" in payload["capabilities"]
 
     assert {:ok, %{workspace_id: "ws-1", id: "owner"}} =
              ChannelAuth.verify_pairing_token(payload["token"])

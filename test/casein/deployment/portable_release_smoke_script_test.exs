@@ -26,7 +26,7 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     text = File.read!(@compose)
 
     assert text =~ "CASEIN_PROFILE: ${CASEIN_PROFILE:-portable}"
-    assert text =~ "DEVIDE_RELEASE_PROFILE: ${DEVIDE_RELEASE_PROFILE:-portable}"
+    assert text =~ "CASEIN_RELEASE_PROFILE: ${CASEIN_RELEASE_PROFILE:-portable}"
   end
 
   test "production container uses the writable runtime user's home" do
@@ -46,19 +46,12 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ "*/priv/scripts/casein-preview"
     assert text =~ "*/priv/scripts/casein-curl.sh"
     assert text =~ "casein-agent-state.sh casein-codex-notify.sh"
-    assert text =~ ~s(RUN_ROOT="${DEVIDE_RUN_ROOT:-/run/casein}")
-    assert text =~ ~s(CURRENT_SYMLINK="${DEVIDE_CURRENT_SOCK:-${RUN_ROOT}/current.sock}")
+    assert text =~ ~s(RUN_ROOT="${CASEIN_RUN_ROOT:-/run/casein}")
+    assert text =~ ~s(CURRENT_SYMLINK="${CASEIN_CURRENT_SOCK:-${RUN_ROOT}/current.sock}")
     assert text =~ ~s(source "${DEPLOY_SCRIPT_SELF_DIR}/lib/caddy-upstream.sh")
     assert caddy_helper =~ "unix//run/casein/current.sock"
-    assert caddy_helper =~ "unix//run/devide/current.sock"
-    refute text =~ ~s("${STAGING}/bin/dev_ide")
-    refute text =~ ~s(ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket)
-    refute text =~ ~s("${ACTIVE_RELEASE}/bin/dev_ide" start)
-    refute text =~ "*/priv/scripts/devide-preview"
-    refute text =~ "*/priv/scripts/devide-curl.sh"
-    refute text =~ "devide-agent-state.sh devide-codex-notify.sh"
-    refute text =~ ~s(INST_DIR="/run/devide/instances")
-    refute text =~ ~s(CURRENT_SYMLINK="/run/devide/current.sock")
-    refute text =~ "unix//run/devide/current.sock"
+    assert caddy_helper =~ "unix//run/casein/current.sock"
+    refute text =~ ~s(INST_DIR="/run/casein/instances")
+    refute text =~ ~s(CURRENT_SYMLINK="/run/casein/current.sock")
   end
 end

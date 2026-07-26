@@ -12,7 +12,7 @@
 [Unit]
 Description=Casein host tmux server (-L casein) keepalive
 After=network.target
-# Prefer running under the same user that owns /tmp/tmux-$UID/devide.
+# Prefer running under the same user that owns /tmp/tmux-$UID/casein.
 
 [Service]
 Type=forking

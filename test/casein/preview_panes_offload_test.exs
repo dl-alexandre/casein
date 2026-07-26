@@ -108,7 +108,7 @@ defmodule Casein.PreviewPanesOffloadTest do
 
   test "mailbox stays responsive while a slow register is in flight" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_offload_responsive"
+    session = "casein_ws_offload_responsive"
     warm_pane = "%warm"
     slow_pane = "%slow"
     seed_session!(session, warm_pane)
@@ -155,7 +155,7 @@ defmodule Casein.PreviewPanesOffloadTest do
 
   test "concurrent registers for one pane_id serialize via the per-pane queue" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_offload_collapse"
+    session = "casein_ws_offload_collapse"
     pane_id = "%collapse"
     seed_session!(session, pane_id)
 
@@ -212,7 +212,7 @@ defmodule Casein.PreviewPanesOffloadTest do
 
   test "re-register after deregister queues behind deregister and ends open" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_offload_order"
+    session = "casein_ws_offload_order"
     pane_id = "%order"
     seed_session!(session, pane_id)
     _registration = register_pane!(session, pane_id, path)
@@ -260,7 +260,7 @@ defmodule Casein.PreviewPanesOffloadTest do
 
   test "workspace_index stays consistent with ETS after interleaved lifecycle ops" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_offload_invariant"
+    session = "casein_ws_offload_invariant"
     panes = ["%i1", "%i2", "%i3"]
 
     for pane_id <- panes do
@@ -320,7 +320,7 @@ defmodule Casein.PreviewPanesOffloadTest do
 
   test "killed offload task replies preview_op_crashed and drains the pane queue" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_offload_crash"
+    session = "casein_ws_offload_crash"
     pane_id = "%crash"
     seed_session!(session, pane_id)
 
@@ -413,7 +413,7 @@ defmodule Casein.PreviewPanesOffloadTest do
 
   test "clear replies preview_cleared to queued (not yet started) op waiters" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_clear_queue"
+    session = "casein_ws_clear_queue"
     pane_id = "%clearq"
     seed_session!(session, pane_id)
 
@@ -476,7 +476,7 @@ defmodule Casein.PreviewPanesOffloadTest do
 
   test "get_by_session is ETS-first when a registration is warm" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_offload_session_ets"
+    session = "casein_ws_offload_session_ets"
     pane_id = "%sess"
     seed_session!(session, pane_id)
     registration = register_pane!(session, pane_id, path)
@@ -516,7 +516,7 @@ defmodule Casein.PreviewPanesOwnershipTest do
     uid = System.unique_integer([:positive])
     workspace_id = "ws-owner-#{uid}"
     pane_id = "%own-#{uid}"
-    session = "devide_ws_owner_#{uid}"
+    session = "casein_ws_owner_#{uid}"
     workspace_path = Path.join(System.tmp_dir!(), "owner-ws-#{uid}")
     File.mkdir_p!(workspace_path)
 

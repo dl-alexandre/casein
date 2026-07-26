@@ -29,7 +29,7 @@ defmodule Casein.Terminals.SessionTemplate.Export do
           "root" => root_expr(workspace_root),
           "metadata" =>
             compact(%{
-              "source" => "devide_topology_export",
+              "source" => "casein_topology_export",
               "session" => session,
               "topology_version" => Map.get(topology, :version, Map.get(topology, "version"))
             }),

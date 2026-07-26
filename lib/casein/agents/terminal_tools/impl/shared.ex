@@ -7,7 +7,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   alias Casein.Workspaces
   alias Casein.Workspaces.Scratch
 
-  @session_prefix "devide_"
+  @session_prefix "casein_"
   @default_capture_lines 120
 
   def tmux, do: Application.get_env(:casein, :tmux_adapter, Tmux)
@@ -135,7 +135,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
     case workspace_prefixes(params) do
       [] ->
         # Unscoped MCP listing must not leak synthetic scratch shells
-        # (`devide___scratch___*`). Scoped workspace_id calls already exclude
+        # (`casein___scratch___*`). Scoped workspace_id calls already exclude
         # them via prefix matching.
         Enum.reject(sessions, &scratch_session?/1)
 

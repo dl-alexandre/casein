@@ -141,7 +141,7 @@ defmodule Casein.Mobile.CardTest do
           @now
         )
 
-      assert card.source == "devide"
+      assert card.source == "casein"
       assert card.kind == "approval_required"
       assert card.status == "open"
       assert card.resource == %{type: "workspace", id: "ws-1", label: "alpha"}

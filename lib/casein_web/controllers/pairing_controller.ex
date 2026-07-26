@@ -2,7 +2,7 @@ defmodule CaseinWeb.PairingController do
   @moduledoc """
   Mobile companion pairing page. Renders, for an authenticated cockpit user, a
   QR + copyable credentials the Casein mobile app uses to connect its
-  `DevideMob.SessionClient` to `session:<workspace_id>`.
+  `CaseinMob.SessionClient` to `session:<workspace_id>`.
 
   The token is minted with `CaseinWeb.ChannelAuth.sign_pairing_token/2`: a
   short-lived, workspace-scoped token accepted only by `session:<workspace_id>`.
@@ -49,8 +49,8 @@ defmodule CaseinWeb.PairingController do
           ],
           capabilities: [
             "phoenix_socket",
-            "dev_ide.session",
-            "dev_ide.mobile_cards"
+            "casein.session",
+            "casein.mobile_cards"
           ]
         }
         |> Jason.encode!()

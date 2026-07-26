@@ -61,7 +61,7 @@ defmodule Casein.FilePanesRemoteTest do
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
-  @session "devide_rw_u-dev"
+  @session "casein_rw_u-dev"
   @anchor "%r1"
 
   setup do

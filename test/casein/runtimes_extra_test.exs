@@ -76,7 +76,7 @@ defmodule Casein.RuntimesExtraTest do
         status: "provisioned",
         worktree_path: "/tmp/ws-runtime/agent-active",
         branch: "feature/x",
-        tmux_session_id: "devide_active",
+        tmux_session_id: "casein_active",
         metadata: %{
           "kind" => "agent_worktree",
           "agent" => "codex",
@@ -103,7 +103,7 @@ defmodule Casein.RuntimesExtraTest do
     assert payload.path == "/tmp/ws-runtime/agent-active"
     assert payload.path_label == "agent-active"
     assert payload.branch == "feature/x"
-    assert payload.tmux_session_id == "devide_active"
+    assert payload.tmux_session_id == "casein_active"
     assert payload.git_common_dir == "/tmp/ws-runtime/.git"
     assert payload.git_head_sha == "abc123"
     assert payload.agent == "codex"
@@ -477,7 +477,7 @@ defmodule Casein.RuntimesExtraTest do
         worktree_path: "/tmp/ws-runtime/payload",
         runner_id: "runner-7",
         session_id: "sess-7",
-        tmux_session_id: "devide_payload",
+        tmux_session_id: "casein_payload",
         status: "provisioned",
         capabilities: ["git"],
         tools: ["mix"],
@@ -498,7 +498,7 @@ defmodule Casein.RuntimesExtraTest do
     assert payload.worktree_path == "/tmp/ws-runtime/payload"
     assert payload.runner_id == "runner-7"
     assert payload.session_id == "sess-7"
-    assert payload.tmux_session_id == "devide_payload"
+    assert payload.tmux_session_id == "casein_payload"
     assert payload.isolation_mode == "worktree"
     assert payload.status == "provisioned"
     assert payload.capabilities == ["git"]

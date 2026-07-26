@@ -62,7 +62,7 @@ defmodule Casein.Terminals.TemplatePreference do
 
   defp store_dir do
     Application.get_env(:casein, :tmux_template_preference_dir) ||
-      Path.join(System.tmp_dir!(), "devide-template-prefs")
+      Path.join(System.tmp_dir!(), "casein-template-prefs")
   end
 
   defp disk_path(workspace_id) do

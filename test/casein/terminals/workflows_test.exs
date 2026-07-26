@@ -12,13 +12,13 @@ defmodule Casein.Terminals.WorkflowsTest do
     MemoryAdapter.clear()
 
     root =
-      Path.join(System.tmp_dir!(), "devide-workflows-test-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-workflows-test-#{System.unique_integer([:positive])}")
 
     File.rm_rf!(root)
-    File.mkdir_p!(Path.join(root, ".dev_ide/workflows"))
+    File.mkdir_p!(Path.join(root, ".casein/workflows"))
     File.mkdir_p!(Path.join(root, ".warp/workflows"))
 
-    File.write!(Path.join(root, ".dev_ide/workflows/deploy.yaml"), """
+    File.write!(Path.join(root, ".casein/workflows/deploy.yaml"), """
     name: Deploy
     command: ./scripts/deploy.sh {{env}}
     description: Deploy the app
@@ -26,7 +26,7 @@ defmodule Casein.Terminals.WorkflowsTest do
       - name: env
     """)
 
-    File.write!(Path.join(root, ".dev_ide/workflows/status.yml"), """
+    File.write!(Path.join(root, ".casein/workflows/status.yml"), """
     # a comment line
     ---
     name: Status
@@ -44,13 +44,13 @@ defmodule Casein.Terminals.WorkflowsTest do
     """)
 
     # A file with no command field is skipped entirely.
-    File.write!(Path.join(root, ".dev_ide/workflows/broken.yaml"), """
+    File.write!(Path.join(root, ".casein/workflows/broken.yaml"), """
     name: Broken
     description: no command here
     """)
 
     # A non-yaml file is ignored by the directory scan.
-    File.write!(Path.join(root, ".dev_ide/workflows/readme.txt"), "ignore me\n")
+    File.write!(Path.join(root, ".casein/workflows/readme.txt"), "ignore me\n")
 
     {:ok, _} =
       State.sync(%Workspace{

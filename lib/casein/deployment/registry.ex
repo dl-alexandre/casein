@@ -1,7 +1,7 @@
 defmodule Casein.Deployment.Registry do
   @moduledoc """
   Tracks this running process instance by writing a JSON heartbeat file into a
-  well-known directory (`/run/casein/instances` or `/tmp/devide/instances`).
+  well-known directory (`/run/casein/instances` or `/tmp/casein/instances`).
   Other processes (drain controller, health checks) can call `list_instances/0`
   to discover every live instance on the same host.  The file is removed
   best-effort on `terminate/2`.
@@ -63,9 +63,9 @@ defmodule Casein.Deployment.Registry do
 
   @impl true
   def init(_opts) do
-    id = System.get_env("DEVIDE_INSTANCE_UUID") || generate_id()
+    id = System.get_env("CASEIN_INSTANCE_UUID") || generate_id()
     dir = instance_dir()
-    socket_path = System.get_env("DEVIDE_HTTP_SOCKET")
+    socket_path = System.get_env("CASEIN_HTTP_SOCKET")
 
     data = %{
       "id" => id,
@@ -79,7 +79,7 @@ defmodule Casein.Deployment.Registry do
 
     file_path = Path.join(dir, "#{id}.json")
 
-    # DEVIDE_INSTANCE_UUID comes from the shared env file, so a secondary boot
+    # CASEIN_INSTANCE_UUID comes from the shared env file, so a secondary boot
     # of the app under the same identity (release eval, seeds, a dev/test app
     # started with the deploy env) would overwrite the serving instance's
     # heartbeat with its own short-lived pid. The deploy's stale-record cleanup
@@ -149,8 +149,8 @@ defmodule Casein.Deployment.Registry do
   # The cmdline check is not paranoia: a bare `/proc/<pid>` existence test would
   # false-positive if the recorded pid died and the OS recycled that number for
   # an unrelated process — we would then refuse to write our heartbeat and run
-  # invisibly to list_instances/0 (health, drift). Requiring a beam/dev_ide
-  # cmdline matches the deploy script's dev_ide_release_pid_alive and confines a
+  # invisibly to list_instances/0 (health, drift). Requiring a beam/casein
+  # cmdline matches the deploy script's casein_release_pid_alive and confines a
   # conflict to a genuine sibling Casein boot under the shared instance UUID.
   #
   # The pid is digit-validated before any path use.
@@ -174,19 +174,19 @@ defmodule Casein.Deployment.Registry do
   defp owner_alive?(pid) do
     case Application.get_env(:casein, :deployment_owner_liveness) do
       fun when is_function(fun, 1) -> fun.(pid)
-      _ -> dev_ide_process?(pid)
+      _ -> casein_process?(pid)
     end
   end
 
   # True when /proc/<pid>/cmdline belongs to a Casein beam. cmdline is
   # NUL-separated; match the same markers the deploy script keys on (a release
-  # under /opt/casein/release, or a dev_ide_*@host node name).
+  # under /opt/casein/release, or a casein_*@host node name).
   # sobelow_skip ["Traversal.FileModule"]
-  defp dev_ide_process?(pid) do
+  defp casein_process?(pid) do
     case File.read("/proc/#{pid}/cmdline") do
       {:ok, raw} ->
         cmdline = String.replace(raw, <<0>>, " ")
-        String.contains?(cmdline, "/opt/casein/release/") or cmdline =~ ~r/dev_ide_\w+@/
+        String.contains?(cmdline, "/opt/casein/release/") or cmdline =~ ~r/casein_\w+@/
 
       _ ->
         false
@@ -210,7 +210,7 @@ defmodule Casein.Deployment.Registry do
   defp managed_socket_path?("/run/casein/instances/" <> rest),
     do: String.ends_with?(rest, ".sock")
 
-  defp managed_socket_path?("/tmp/devide/instances/" <> rest),
+  defp managed_socket_path?("/tmp/casein/instances/" <> rest),
     do: String.ends_with?(rest, ".sock")
 
   defp managed_socket_path?(_), do: false
@@ -236,7 +236,7 @@ defmodule Casein.Deployment.Registry do
 
   # sobelow_skip ["Traversal.FileModule"]
   defp instance_dir_default do
-    candidates = ["/run/casein/instances", "/tmp/devide/instances"]
+    candidates = ["/run/casein/instances", "/tmp/casein/instances"]
 
     Enum.find_value(candidates, fn dir ->
       case File.mkdir_p(dir) do

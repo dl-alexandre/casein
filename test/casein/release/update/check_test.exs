@@ -12,13 +12,13 @@ defmodule Casein.Release.Update.CheckTest do
     "signature": null,
     "artifacts": [
       {
-        "app": "devide",
+        "app": "casein",
         "version": "0.1.0",
         "revision": "67f393adeadbeef",
         "profile": "lan",
         "repo_adapter": "sqlite",
         "target": "linux-x86_64",
-        "url": "https://example.com/devide.tar.gz",
+        "url": "https://example.com/casein.tar.gz",
         "sha256": "abc",
         "size": 123,
         "min_installer_metadata_version": 1
@@ -28,7 +28,7 @@ defmodule Casein.Release.Update.CheckTest do
   """
 
   setup do
-    tmp = System.tmp_dir!() |> Path.join("devide-check-#{System.unique_integer([:positive])}")
+    tmp = System.tmp_dir!() |> Path.join("casein-check-#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)
     on_exit(fn -> File.rm_rf!(tmp) end)
 
@@ -38,17 +38,17 @@ defmodule Casein.Release.Update.CheckTest do
         profile: "lan",
         repo_adapter: "sqlite",
         target: "linux-x86_64",
-        update_manifest_url: "https://example.com/devide-canary.json"
+        update_manifest_url: "https://example.com/casein-canary.json"
       )
 
     :ok = Metadata.write!(tmp, metadata)
-    prev_root = System.get_env("DEVIDE_RELEASE_ROOT")
-    System.put_env("DEVIDE_RELEASE_ROOT", tmp)
+    prev_root = System.get_env("CASEIN_RELEASE_ROOT")
+    System.put_env("CASEIN_RELEASE_ROOT", tmp)
 
     on_exit(fn ->
       if prev_root,
-        do: System.put_env("DEVIDE_RELEASE_ROOT", prev_root),
-        else: System.delete_env("DEVIDE_RELEASE_ROOT")
+        do: System.put_env("CASEIN_RELEASE_ROOT", prev_root),
+        else: System.delete_env("CASEIN_RELEASE_ROOT")
     end)
 
     fetcher = fn _url -> {:ok, decode_manifest()} end

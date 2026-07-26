@@ -37,7 +37,7 @@ The status block always prints an IP fallback such as `http://192.168.1.240/`.
 For a built release, LAN mode is exposed by the release helper, not Mix:
 
 ```bash
-sudo ./bin/devide lan up
+sudo ./bin/casein lan up
 ```
 
 Build LAN-local releases with the SQLite repo profile:
@@ -73,15 +73,15 @@ seed folder.
 
 If the source release lives under `/tmp`, the installed systemd units still point
 at `/opt/casein/lan-release`, so a reboot or tmp cleanup does not break the
-managed backend. Set `DEVIDE_LAN_RELEASE_DIR=/some/durable/path` to choose a
+managed backend. Set `CASEIN_LAN_RELEASE_DIR=/some/durable/path` to choose a
 different install location.
 
 Useful release commands:
 
 ```bash
-sudo ./bin/devide lan install
-/opt/casein/lan-release/bin/devide lan status
-sudo /opt/casein/lan-release/bin/devide lan down
+sudo ./bin/casein lan install
+/opt/casein/lan-release/bin/casein lan status
+sudo /opt/casein/lan-release/bin/casein lan down
 ```
 
 `lan down` stops only the managed systemd units. It does not scan for or kill
@@ -98,8 +98,8 @@ not the local SQLite default, set `DATABASE_PATH` before `lan up` or edit the
 env file and run `lan up` again:
 
 ```bash
-sudo DATABASE_PATH=/var/lib/casein/lan/devide.sqlite3 \
-  ./bin/devide lan up
+sudo DATABASE_PATH=/var/lib/casein/lan/casein.sqlite3 \
+  ./bin/casein lan up
 ```
 
 Postgres is still supported for server-style releases by compiling with the
@@ -146,7 +146,7 @@ Casein LAN expects:
 - `mise` available only for the checkout/Mix workflow. A built release does
   not need Mix or mise at runtime.
 - A writable SQLite database path for LAN-local releases. The default is
-  `/var/lib/casein/lan/devide.sqlite3`, and `lan up` creates its parent
+  `/var/lib/casein/lan/casein.sqlite3`, and `lan up` creates its parent
   directory.
 - Postgres reachable by `DATABASE_URL` only for Postgres-compiled releases or
   the default checkout/Mix workflow.
@@ -191,16 +191,16 @@ artifacts under the checkout.
 
 ```bash
 # Use another direct workspace
-mise exec -- mix casein.lan.up --workspace dev_ide
+mise exec -- mix casein.lan.up --workspace casein
 
 # Use another workspace root
-mise exec -- mix casein.lan.up --workspaces-root /data/devide-workspaces
+mise exec -- mix casein.lan.up --workspaces-root /data/casein-workspaces
 
 # Point the built-in "home" workspace somewhere else
 mise exec -- mix casein.lan.up --home-workspace-path "$HOME"
 
 # Use another LAN hostname for status probes and generated URLs
-mise exec -- mix casein.lan.up --host devide.home.arpa
+mise exec -- mix casein.lan.up --host casein.home.arpa
 
 # Avoid firewall changes
 mise exec -- mix casein.lan.up --no-firewall
@@ -279,11 +279,11 @@ The default LAN URL uses the host's mDNS name:
 Casein also supports a same-host hosts-file domain:
 
 ```text
-devide.test
+casein.test
 ```
 
 `.test` is used because `.local` is owned by mDNS on many Linux desktops and a
-`/etc/hosts` entry for `devide.local` may be ignored. To prepare the hosts-file
+`/etc/hosts` entry for `casein.local` may be ignored. To prepare the hosts-file
 mapping:
 
 ```bash
@@ -293,7 +293,7 @@ mise exec -- mix casein.doctor --fix
 To choose a different same-host name:
 
 ```bash
-CASEIN_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix casein.doctor --fix
+CASEIN_LOCAL_DOMAIN=casein.home.arpa mise exec -- mix casein.doctor --fix
 ```
 
 ## Internals
@@ -309,11 +309,11 @@ CASEIN_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix casein.doctor --fix
 | `CASEIN_LAN_PATH_ROOT` | `CASEIN_HOME_WORKSPACE_PATH` | Root for LAN-friendly URL paths. `/aws` resolves to `$CASEIN_LAN_PATH_ROOT/aws`. |
 | `CASEIN_DEFAULT_WORKSPACE` | `home` | Workspace id or local workspace name for direct drop-in. |
 | `CASEIN_WORKSPACES_ROOT` | `/tmp/casein_workspaces` in dev | Parent directory for local filesystem workspaces. |
-| `DATABASE_PATH` | `/var/lib/casein/lan/devide.sqlite3` in release | SQLite database file for LAN-local releases. |
+| `DATABASE_PATH` | `/var/lib/casein/lan/casein.sqlite3` in release | SQLite database file for LAN-local releases. |
 | `DATABASE_URL` | Postgres fallback | Used by Postgres-compiled releases, ignored by SQLite-compiled releases. |
-| `DEVIDE_LAN_ENV_FILE` | `/etc/casein/lan.env` in release | Private env file owned by the release `devide lan` helper. |
-| `DEVIDE_LAN_PUBLIC_ENV_FILE` | `/etc/casein/lan.public.env` in release | Non-secret status env readable by non-root `lan status`. |
-| `DEVIDE_LAN_RELEASE_DIR` | `/opt/casein/lan-release` in release | Durable release copy used by managed systemd units. |
+| `CASEIN_LAN_ENV_FILE` | `/etc/casein/lan.env` in release | Private env file owned by the release `casein lan` helper. |
+| `CASEIN_LAN_PUBLIC_ENV_FILE` | `/etc/casein/lan.public.env` in release | Non-secret status env readable by non-root `lan status`. |
+| `CASEIN_LAN_RELEASE_DIR` | `/opt/casein/lan-release` in release | Durable release copy used by managed systemd units. |
 | `CASEIN_LAN` | unset | Enables manual HTTPS LAN mode. |
 | `CASEIN_LAN_HTTPS_PORT` | `4443` | Manual HTTPS backend port. |
 | `CASEIN_LAN_CERTFILE` | `priv/cert/casein-lan.pem` | Manual HTTPS certificate path. |

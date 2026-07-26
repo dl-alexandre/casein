@@ -275,11 +275,11 @@ export async function mountTerminal({
 // the transition. Tests that need to prove one of those signals is sufficient on
 // its own drive the pieces directly instead.
 function toggleKeyboard(hook, el, open, { width, height }) {
-  document.documentElement.classList.toggle("devide-keyboard-open", open)
+  document.documentElement.classList.toggle("casein-keyboard-open", open)
   setViewport(el, { width, height })
   hook.onWindowResize()
   window.dispatchEvent(
-    new window.CustomEvent("devide:keyboard-open-changed", { detail: { open } })
+    new window.CustomEvent("casein:keyboard-open-changed", { detail: { open } })
   )
 }
 

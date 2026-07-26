@@ -54,7 +54,7 @@ defmodule Casein.Previews.ControlTest do
   end
 
   test "open_localhost_session broadcasts preview_opened to folder viewer ids" do
-    path = Path.join(System.tmp_dir!(), "dev_ide_preview_fanout")
+    path = Path.join(System.tmp_dir!(), "casein_preview_fanout")
     File.mkdir_p!(path)
     on_exit(fn -> File.rm_rf(path) end)
 
@@ -63,7 +63,7 @@ defmodule Casein.Previews.ControlTest do
 
     workspace = %{
       id: folder_id,
-      name: "dev_ide",
+      name: "casein",
       path: path,
       metadata: %{attached_folder: true}
     }

@@ -23,7 +23,7 @@ required — always pass an explicit `pane` id from topology or the spawn helper
 terminal_context(workspace_id)
 ```
 
-If `ambiguous_workspace_sessions`, pass the attached `devide_*` session explicitly
+If `ambiguous_workspace_sessions`, pass the attached `casein_*` session explicitly
 on every subsequent call.
 
 Record orchestrator cwd: `terminal_topology` → active pane `current_path`, or
@@ -45,7 +45,7 @@ ends with ` - grok`) that is:
 From the primary checkout on the devbox:
 
 ```bash
-bash /data/workspaces/dalexandre/dev_ide/scripts/spawn-agent-worker.sh grok <task-slug> <session>
+bash /data/workspaces/dalexandre/casein/scripts/spawn-agent-worker.sh grok <task-slug> <session>
 ```
 
 Or from any checkout with env resolved:
@@ -55,7 +55,7 @@ bash scripts/spawn-agent-worker.sh grok <task-slug> <session>
 ```
 
 Stdout is the new `pane_id` (e.g. `%255`). The helper unsets
-`DEVIDE_AGENT_WORKTREE_PATH` from tmux session env so each spawn creates a fresh
+`CASEIN_AGENT_WORKTREE_PATH` from tmux session env so each spawn creates a fresh
 worktree — without that, workers reuse the orchestrator's checkout.
 
 Wait until the worker is at prompt:
@@ -211,11 +211,11 @@ the materialized MCP, and the agent-state hook:
 
 ```bash
 tmux respawn-pane -k -t <worker_pane> -c <worker-worktree-path> \
-  "bash -lc 'cd \"<worker-worktree-path>\" && DEVIDE_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" DEVIDE_AGENT_TASK=<task-slug> exec bash scripts/launch-casein-agent.sh grok'"
+  "bash -lc 'cd \"<worker-worktree-path>\" && CASEIN_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" CASEIN_AGENT_TASK=<task-slug> exec bash scripts/launch-casein-agent.sh grok'"
 ```
 
 Use **`launch-casein-agent.sh`**, not `spawn-agent-worker.sh` (§2): the launcher
-*reuses* the worktree when `DEVIDE_AGENT_WORKTREE_PATH` points at it, whereas the
+*reuses* the worktree when `CASEIN_AGENT_WORKTREE_PATH` points at it, whereas the
 spawn helper unsets that var to force a fresh worktree — which would strand the
 already-committed slices. Wait for the prompt as in §2 (`pane_state: "unknown"` +
 `❯` in capture; 30–90s).

@@ -4,7 +4,7 @@ defmodule TmuxCtl.ClientExtraTest do
   alias TmuxCtl.Client
   alias TmuxCtl.Test.FakeState
 
-  @session "devide_alpha_main"
+  @session "casein_alpha_main"
 
   # Scripted runner that reuses the documented runner seam
   # (`config :tmux_ctl, :runner`) exactly like `TmuxCtl.Test.FakeRunner`,
@@ -411,11 +411,11 @@ defmodule TmuxCtl.ClientExtraTest do
     out =
       Enum.join(
         [
-          "W|devide_a_main|@1|0|1|11|bash|1|shell",
-          "W|devide_b_main|@2|0|0|0|nvim|0|editor",
-          "P|devide_a_main|@1|%1|1|node|150|11|/work/a|operator|Agent title",
+          "W|casein_a_main|@1|0|1|11|bash|1|shell",
+          "W|casein_b_main|@2|0|0|0|nvim|0|editor",
+          "P|casein_a_main|@1|%1|1|node|150|11|/work/a|operator|Agent title",
           # 5-field fallback for older fixtures without a role field.
-          "P|devide_b_main|@2|%2|0|/work/b",
+          "P|casein_b_main|@2|%2|0|/work/b",
           # malformed window/pane lines are dropped
           "W|too|few",
           "P|too|few"
@@ -430,10 +430,10 @@ defmodule TmuxCtl.ClientExtraTest do
     assert [
              %{id: "@1", name: "shell", manual_name: false, active: true, current_command: "bash"}
            ] =
-             windows["devide_a_main"]
+             windows["casein_a_main"]
 
     assert [%{id: "@2", name: "editor", manual_name: true, active: false}] =
-             windows["devide_b_main"]
+             windows["casein_b_main"]
 
     assert [
              %{
@@ -447,10 +447,10 @@ defmodule TmuxCtl.ClientExtraTest do
                pane_title: "Agent title"
              }
            ] =
-             panes["devide_a_main"]
+             panes["casein_a_main"]
 
     assert [%{id: "%2", active: false, current_path: "/work/b", role: nil}] =
-             panes["devide_b_main"]
+             panes["casein_b_main"]
 
     assert_receive {:tmux_runner, argv}
     assert Enum.member?(argv, "-a")
@@ -468,8 +468,8 @@ defmodule TmuxCtl.ClientExtraTest do
     out =
       Enum.join(
         [
-          "devide_a_main|@1|1|2|1|99|bash",
-          "devide_b_main|@2|0|1|0|0|nvim",
+          "casein_a_main|@1|1|2|1|99|bash",
+          "casein_b_main|@2|0|1|0|0|nvim",
           "bad-line"
         ],
         "\n"
@@ -479,7 +479,7 @@ defmodule TmuxCtl.ClientExtraTest do
 
     assert [
              %{
-               session: "devide_a_main",
+               session: "casein_a_main",
                window_id: "@1",
                active: true,
                panes: 2,
@@ -487,7 +487,7 @@ defmodule TmuxCtl.ClientExtraTest do
                activity: 99,
                current_command: "bash"
              },
-             %{session: "devide_b_main", active: false, automatic_rename: false}
+             %{session: "casein_b_main", active: false, automatic_rename: false}
            ] = Client.list_windows()
   end
 
@@ -503,11 +503,11 @@ defmodule TmuxCtl.ClientExtraTest do
     out =
       Enum.join(
         [
-          "devide_a_main|1|123|billing",
+          "casein_a_main|1|123|billing",
           # blank alias → session_alias nil
-          "devide_b_main|0|45|   ",
+          "casein_b_main|0|45|   ",
           # 3-field fallback (no alias field)
-          "devide_c_main|0|7",
+          "casein_c_main|0|7",
           "junk"
         ],
         "\n"
@@ -516,9 +516,9 @@ defmodule TmuxCtl.ClientExtraTest do
     script(out, 0)
 
     assert [
-             %{session: "devide_a_main", attached: true, activity: 123, session_alias: "billing"},
-             %{session: "devide_b_main", attached: false, activity: 45, session_alias: nil},
-             %{session: "devide_c_main", attached: false, activity: 7}
+             %{session: "casein_a_main", attached: true, activity: 123, session_alias: "billing"},
+             %{session: "casein_b_main", attached: false, activity: 45, session_alias: nil},
+             %{session: "casein_c_main", attached: false, activity: 7}
            ] = Client.list_sessions()
   end
 
@@ -533,8 +533,8 @@ defmodule TmuxCtl.ClientExtraTest do
     out =
       Enum.join(
         [
-          "devide_a_main|bash",
-          "devide_b_main|nvim",
+          "casein_a_main|bash",
+          "casein_b_main|nvim",
           "no-pipe-line"
         ],
         "\n"
@@ -542,7 +542,7 @@ defmodule TmuxCtl.ClientExtraTest do
 
     script(out, 0)
 
-    assert [{"devide_a_main", "bash"}, {"devide_b_main", "nvim"}] = Client.list_panes()
+    assert [{"casein_a_main", "bash"}, {"casein_b_main", "nvim"}] = Client.list_panes()
   end
 
   test "list_panes returns [] on failure" do
@@ -578,13 +578,13 @@ defmodule TmuxCtl.ClientExtraTest do
   end
 
   test "new_window uses configured default command for blank shell windows" do
-    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+    Application.put_env(:tmux_ctl, :default_command, "casein-shell")
     script("@7\n", 0)
 
     assert {:ok, "@7"} = Client.new_window(@session)
 
     assert_receive {:tmux_runner,
-                    ["new-window", "-P", "-F", _fmt, "-t", @session, "devide-shell"]}
+                    ["new-window", "-P", "-F", _fmt, "-t", @session, "casein-shell"]}
   end
 
   # --- select_window/2 --------------------------------------------------------
@@ -669,7 +669,7 @@ defmodule TmuxCtl.ClientExtraTest do
     assert :ok = Client.paste_text(@session, "echo ok", target: "%2", submit: true)
 
     assert_receive {:tmux_runner, ["paste-buffer", "-d", "-b", buffer, "-t", "%2"]}
-    assert String.starts_with?(buffer, "devide-paste-")
+    assert String.starts_with?(buffer, "casein-paste-")
     assert_receive {:tmux_runner, ["send-keys", "-t", "%2", "Enter"]}
   end
 
@@ -724,8 +724,8 @@ defmodule TmuxCtl.ClientExtraTest do
     assert target == "#{@session}:0"
   end
 
-  test "zoom_pane refuses non-devide sessions" do
-    assert {:error, :refused_non_devide_session} = Client.zoom_pane("other", "%1")
+  test "zoom_pane refuses non-casein sessions" do
+    assert {:error, :refused_non_casein_session} = Client.zoom_pane("other", "%1")
   end
 
   test "zoom_pane propagates failure" do
@@ -748,8 +748,8 @@ defmodule TmuxCtl.ClientExtraTest do
     assert target == "#{@session}:0"
   end
 
-  test "swap_pane refuses non-devide sessions and invalid directions" do
-    assert {:error, :refused_non_devide_session} = Client.swap_pane("other", "%1", "D")
+  test "swap_pane refuses non-casein sessions and invalid directions" do
+    assert {:error, :refused_non_casein_session} = Client.swap_pane("other", "%1", "D")
     assert {:error, :invalid_direction} = Client.swap_pane(@session, "%1", "left")
   end
 
@@ -764,8 +764,8 @@ defmodule TmuxCtl.ClientExtraTest do
     assert_receive {:tmux_runner, ["kill-pane", "-a", "-t", "%1"]}
   end
 
-  test "kill_other_panes refuses non-devide session" do
-    assert {:error, :refused_non_devide_session} = Client.kill_other_panes("other", "%1")
+  test "kill_other_panes refuses non-casein session" do
+    assert {:error, :refused_non_casein_session} = Client.kill_other_panes("other", "%1")
   end
 
   # --- select_layout/2 & next_layout/1 ----------------------------------------
@@ -796,12 +796,12 @@ defmodule TmuxCtl.ClientExtraTest do
 
   # --- kill_pane/2 ------------------------------------------------------------
 
-  test "kill_pane kills a managed pane and refuses non-devide" do
+  test "kill_pane kills a managed pane and refuses non-casein" do
     script("", 0)
     assert :ok = Client.kill_pane(@session, "%3")
     assert_receive {:tmux_runner, ["kill-pane", "-t", "%3"]}
 
-    assert {:error, :refused_non_devide_session} = Client.kill_pane("other", "%3")
+    assert {:error, :refused_non_casein_session} = Client.kill_pane("other", "%3")
 
     script("boom", 1)
     assert {:error, {1, "boom"}} = Client.kill_pane(@session, "%3")
@@ -827,8 +827,8 @@ defmodule TmuxCtl.ClientExtraTest do
     assert_receive {:tmux_runner, ["split-window", "-P", "-F", _fmt, "-v", "-t", "%1"]}
   end
 
-  test "split_pane refuses non-devide session" do
-    assert {:error, :refused_non_devide_session} = Client.split_pane("other", "%1", "h")
+  test "split_pane refuses non-casein session" do
+    assert {:error, :refused_non_casein_session} = Client.split_pane("other", "%1", "h")
   end
 
   test "split_pane rejects invalid direction" do
@@ -841,13 +841,13 @@ defmodule TmuxCtl.ClientExtraTest do
   end
 
   test "split_pane uses configured default command for blank shell panes" do
-    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+    Application.put_env(:tmux_ctl, :default_command, "casein-shell")
     script("%11\n", 0)
 
     assert {:ok, "%11"} = Client.split_pane(@session, "%1", "v")
 
     assert_receive {:tmux_runner,
-                    ["split-window", "-P", "-F", _fmt, "-v", "-t", "%1", "devide-shell"]}
+                    ["split-window", "-P", "-F", _fmt, "-v", "-t", "%1", "casein-shell"]}
   end
 
   # --- resize_pane/4 (success + error + flags) --------------------------------
@@ -870,11 +870,11 @@ defmodule TmuxCtl.ClientExtraTest do
     assert {:error, {1, "boom"}} = Client.resize_pane(@session, "%1", "left", 3)
   end
 
-  test "resize_pane rejects oversized amount and non-devide session" do
+  test "resize_pane rejects oversized amount and non-casein session" do
     assert {:error, :invalid_amount} =
              Client.resize_pane(@session, "%1", "left", Client.resize_amount_max() + 1)
 
-    assert {:error, :refused_non_devide_session} =
+    assert {:error, :refused_non_casein_session} =
              Client.resize_pane("other", "%1", "left", 5)
   end
 
@@ -898,7 +898,7 @@ defmodule TmuxCtl.ClientExtraTest do
     assert_receive {:tmux_runner, ["kill-window", "-t", target]}
     assert target == "#{@session}:@1"
 
-    assert {:error, :refused_non_devide_session} = Client.kill_window("other", "@1")
+    assert {:error, :refused_non_casein_session} = Client.kill_window("other", "@1")
 
     script("boom", 1)
     assert {:error, {1, "boom"}} = Client.kill_window(@session, "@1")

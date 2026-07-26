@@ -478,12 +478,12 @@ defmodule Casein.Previews.SurfaceResolver do
     port = preview_loopback_port()
     base_url = host_app_url()
 
-    devide_surface =
+    casein_surface =
       case workspace_id(workspace) do
         id when is_binary(id) and id != "" ->
           [
             %Surface{
-              name: "devide",
+              name: "casein",
               url: "#{base_url}/workspaces/#{id}",
               title: "Casein workspace",
               source: :host
@@ -508,7 +508,7 @@ defmodule Casein.Previews.SurfaceResolver do
         port: port,
         source: :host
       }
-    ] ++ devide_surface ++ dev_tidewave_surfaces(port) ++ detected_metadata_surfaces(workspace)
+    ] ++ casein_surface ++ dev_tidewave_surfaces(port) ++ detected_metadata_surfaces(workspace)
   end
 
   defp dev_tidewave_surfaces(port) do

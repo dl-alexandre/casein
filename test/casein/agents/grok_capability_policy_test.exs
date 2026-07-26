@@ -8,6 +8,7 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
 
   setup do
     insert(:workspace_record, external_id: @workspace_id, name: @workspace_id, mode: "manual")
+    assert {:ok, _record} = Workspaces.revoke_agent_write_unlock(@workspace_id)
     :ok
   end
 

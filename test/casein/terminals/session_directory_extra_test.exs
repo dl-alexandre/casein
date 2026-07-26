@@ -83,7 +83,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
   describe "read/2 with explicit :tmux_sessions and :directory_inventory" do
     test "uses injected raw tmux sessions and inventory, no adapter calls" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      tmux = "devide_#{ws}_u-alice"
+      tmux = "casein_#{ws}_u-alice"
 
       raw = [%{session: tmux, activity: 7, attached: true}]
 
@@ -127,7 +127,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
 
     test "groups multiple panes under one window in order and skips blank ids" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      tmux = "devide_#{ws}_u-alice"
+      tmux = "casein_#{ws}_u-alice"
 
       inventory =
         {:ok,
@@ -162,7 +162,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
 
     test "string-keyed window/pane maps are read via the string fallbacks" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      tmux = "devide_#{ws}_u-alice"
+      tmux = "casein_#{ws}_u-alice"
 
       inventory =
         {:ok,
@@ -193,7 +193,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
 
     test "stores title-derived agent state in window and pane summaries" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      tmux = "devide_#{ws}_u-alice"
+      tmux = "casein_#{ws}_u-alice"
       title = <<0x2733::utf8>> <> " Review agent state"
       now = DateTime.utc_now() |> DateTime.to_unix()
 
@@ -251,7 +251,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
 
     test "falls back to per-session adapter reads when inventory is :error" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      tmux = "devide_#{ws}_u-alice"
+      tmux = "casein_#{ws}_u-alice"
       put_fake_session(tmux, "/fallback/cwd")
 
       [tab] =
@@ -269,7 +269,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
 
     test "blank current_path leaves cwd unset and windows empty when none reported" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      tmux = "devide_#{ws}_u-alice"
+      tmux = "casein_#{ws}_u-alice"
 
       inventory =
         {:ok,
@@ -309,7 +309,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
 
     test "picks first pane with a path when no pane is marked active" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      tmux = "devide_#{ws}_u-alice"
+      tmux = "casein_#{ws}_u-alice"
 
       inventory =
         {:ok,
@@ -341,7 +341,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
       ws = "wsx-#{System.unique_integer([:positive])}"
       name = "alpha-#{System.unique_integer([:positive])}"
       tmux_session = Casein.Terminals.Tmux.session_name(name, "wt-min")
-      path = Path.join(System.tmp_dir!(), "devide-wt-#{System.unique_integer([:positive])}")
+      path = Path.join(System.tmp_dir!(), "casein-wt-#{System.unique_integer([:positive])}")
 
       _ =
         State.sync(%Workspace{
@@ -393,7 +393,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
   describe "fetch/3" do
     test "returns :error when the attach id is absent" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      put_fake_session("devide_#{ws}_u-alice")
+      put_fake_session("casein_#{ws}_u-alice")
 
       assert :error = SessionDirectory.fetch(ws, "ghost", workspace_name: ws)
     end
@@ -410,7 +410,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
 
     test "pokes a running directory" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      put_fake_session("devide_#{ws}_u-alice")
+      put_fake_session("casein_#{ws}_u-alice")
 
       assert {:ok, pid} = SessionDirectory.ensure_started(ws, workspace_name: ws)
       :sys.get_state(pid)
@@ -440,7 +440,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
   describe "ensure_started/2" do
     test "returns the same pid on a second call (already_started path)" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      put_fake_session("devide_#{ws}_u-alice")
+      put_fake_session("casein_#{ws}_u-alice")
 
       assert {:ok, pid} = SessionDirectory.ensure_started(ws, workspace_name: ws)
       assert {:ok, ^pid} = SessionDirectory.ensure_started(ws, workspace_name: ws)
@@ -452,7 +452,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
   describe "subscribe/2" do
     test "double subscribe keeps a single watcher and broadcasts once on change" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      put_fake_session("devide_#{ws}_u-alice")
+      put_fake_session("casein_#{ws}_u-alice")
 
       assert :ok = SessionDirectory.subscribe(ws, workspace_name: ws)
       assert :ok = SessionDirectory.subscribe(ws, workspace_name: ws)
@@ -461,7 +461,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
       state = :sys.get_state(pid)
       assert map_size(state.watchers) == 1
 
-      put_fake_session("devide_#{ws}_u-bob")
+      put_fake_session("casein_#{ws}_u-bob")
 
       assert_receive {SessionDirectory, {:sessions_updated, ^ws, tabs}}, 1_000
       assert tabs |> Enum.map(& &1.sid) |> Enum.sort() == ["u-alice", "u-bob"]
@@ -487,7 +487,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
   describe "list_tmux_sessions/0" do
     test "delegates to the configured adapter" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      tmux = "devide_#{ws}_u-alice"
+      tmux = "casein_#{ws}_u-alice"
       put_fake_session(tmux)
 
       sessions = SessionDirectory.list_tmux_sessions()
@@ -549,7 +549,7 @@ defmodule Casein.Terminals.SessionDirectoryExtraTest do
   describe "read/2 compose with registry attachables" do
     test "scanned tmux entry carries the live tmux session and metadata" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      tmux = "devide_#{ws}_u-alice"
+      tmux = "casein_#{ws}_u-alice"
 
       [tab] =
         SessionDirectory.read(ws,

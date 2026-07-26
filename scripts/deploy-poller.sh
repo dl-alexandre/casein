@@ -5,7 +5,7 @@
 # .github/workflows/deploy-devbox.yml, push trigger commented out).
 #
 # Driven by casein-deploy.timer (every ~2 min). Each tick:
-#   1. Reads the deployed revision (DEVIDE_GIT_REVISION in /etc/casein/devide.env).
+#   1. Reads the deployed revision (CASEIN_GIT_REVISION in /etc/casein/casein.env).
 #   2. Fetches origin/master.
 #   3. If origin/master advanced past the deployed revision, builds a release
 #      from a CLEAN DETACHED WORKTREE pinned to that exact SHA — never the
@@ -23,19 +23,19 @@
 #
 set -euo pipefail
 
-# DEVIDE_POLLER_ROOT is set by self_update() before it re-execs the canonical
+# CASEIN_POLLER_ROOT is set by self_update() before it re-execs the canonical
 # copy from a /tmp path — without it, ROOT would be derived from the temp $0 and
 # point outside the repo, breaking every git call.
-ROOT="${DEVIDE_POLLER_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
+ROOT="${CASEIN_POLLER_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
 DEPLOY_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/casein}"
-WORKTREE="${DEVIDE_DEPLOY_WORKTREE:-${DEPLOY_ROOT}/deploy-build}"
-BRANCH="${DEVIDE_DEPLOY_BRANCH:-master}"
-LOCK="${DEVIDE_DEPLOY_LOCK:-/tmp/casein-deploy-poller.lock}"
+WORKTREE="${CASEIN_DEPLOY_WORKTREE:-${DEPLOY_ROOT}/deploy-build}"
+BRANCH="${CASEIN_DEPLOY_BRANCH:-master}"
+LOCK="${CASEIN_DEPLOY_LOCK:-/tmp/casein-deploy-poller.lock}"
 ACTIVE_RELEASE="${DEPLOY_ROOT}/release"
-CURRENT_SOCK="${DEVIDE_CURRENT_SOCK:-/run/casein/current.sock}"
-CACHE_ROOT="${DEVIDE_DEPLOY_CACHE_ROOT:-${DEPLOY_ROOT}/cache}"
-LAST_DEPLOY_FILE="${DEVIDE_LAST_DEPLOY_FILE:-/run/casein/last-deploy.json}"
+CURRENT_SOCK="${CASEIN_CURRENT_SOCK:-/run/casein/current.sock}"
+CACHE_ROOT="${CASEIN_DEPLOY_CACHE_ROOT:-${DEPLOY_ROOT}/cache}"
+LAST_DEPLOY_FILE="${CASEIN_LAST_DEPLOY_FILE:-/run/casein/last-deploy.json}"
 
 log() { printf '>>> [deploy-poller] %s\n' "$*"; }
 
@@ -143,8 +143,8 @@ self_update() {
   # Older installed pollers only staged this script before re-execing it. When
   # that copy first picks up companion-file support, hydrate the missing helper
   # once more instead of treating the legacy self-update flag as sufficient.
-  if [ -n "${DEVIDE_POLLER_SELFUPDATED:-}" ] &&
-    [ -r "${DEVIDE_POLLER_CADDY_LIB:-}" ]; then
+  if [ -n "${CASEIN_POLLER_SELFUPDATED:-}" ] &&
+    [ -r "${CASEIN_POLLER_CADDY_LIB:-}" ]; then
     return 0
   fi
   command -v git >/dev/null 2>&1 || return 0
@@ -157,14 +157,14 @@ self_update() {
   if git -C "$ROOT" show "origin/${BRANCH}:scripts/deploy-poller.sh" >"$canon" 2>/dev/null &&
     git -C "$ROOT" show "origin/${BRANCH}:scripts/lib/caddy-upstream.sh" >"$canon_caddy_lib" 2>/dev/null &&
     [ -s "$canon" ] && [ -s "$canon_caddy_lib" ] &&
-    { ! cmp -s "$canon" "$0" || [ ! -r "${DEVIDE_POLLER_CADDY_LIB:-}" ]; }; then
+    { ! cmp -s "$canon" "$0" || [ ! -r "${CASEIN_POLLER_CADDY_LIB:-}" ]; }; then
     log "self-update: re-exec origin/${BRANCH} copy of deploy-poller.sh"
     exec env \
-      DEVIDE_POLLER_SELFUPDATED=1 \
-      DEVIDE_POLLER_CANON="$canon" \
-      DEVIDE_POLLER_CANON_DIR="$canon_dir" \
-      DEVIDE_POLLER_CADDY_LIB="$canon_caddy_lib" \
-      DEVIDE_POLLER_ROOT="$ROOT" \
+      CASEIN_POLLER_SELFUPDATED=1 \
+      CASEIN_POLLER_CANON="$canon" \
+      CASEIN_POLLER_CANON_DIR="$canon_dir" \
+      CASEIN_POLLER_CADDY_LIB="$canon_caddy_lib" \
+      CASEIN_POLLER_ROOT="$ROOT" \
       bash "$canon" "$@"
   fi
   rm -rf "$canon_dir"
@@ -172,9 +172,9 @@ self_update() {
 self_update "$@"
 # The re-exec'd run executes from a temp copy; unlink it on exit (the open inode
 # keeps it valid for the lifetime of the run).
-[ -n "${DEVIDE_POLLER_CANON_DIR:-}" ] && trap 'rm -rf "${DEVIDE_POLLER_CANON_DIR}"' EXIT
+[ -n "${CASEIN_POLLER_CANON_DIR:-}" ] && trap 'rm -rf "${CASEIN_POLLER_CANON_DIR}"' EXIT
 
-CADDY_UPSTREAM_LIB="${DEVIDE_POLLER_CADDY_LIB:-${ROOT}/scripts/lib/caddy-upstream.sh}"
+CADDY_UPSTREAM_LIB="${CASEIN_POLLER_CADDY_LIB:-${ROOT}/scripts/lib/caddy-upstream.sh}"
 if [ ! -r "$CADDY_UPSTREAM_LIB" ]; then
   log "error: canonical Caddy helper is missing: ${CADDY_UPSTREAM_LIB}"
   exit 1
@@ -185,7 +185,7 @@ source "$CADDY_UPSTREAM_LIB"
 # --- liveness self-heal ------------------------------------------------------
 # This box is multi-tenant: many concurrent agent sessions share one host and
 # one systemd. The Casein release node gets terminated as collateral — by a
-# neighbour's broad `pkill beam.smp`, a stray `systemctl stop devide-<uuid>`,
+# neighbour's broad `pkill beam.smp`, a stray `systemctl stop casein-<uuid>`,
 # or any signal that hits the BEAM. When that happens, the on-disk release at
 # ${ACTIVE_RELEASE} is still valid and the deployed revision still matches
 # origin/master, so the revision-only deploy check below says "nothing to do"
@@ -218,7 +218,7 @@ ensure_live_instance() {
   local heal_tarball
   # Create the tarball as root outside /tmp. Linux sticky-dir protections can
   # reject sudo tar opening a devbox-owned mktemp file under /tmp.
-  heal_tarball="$(sudo mktemp "${DEPLOY_ROOT}/dev_ide-selfheal-XXXXXX.tgz")"
+  heal_tarball="$(sudo mktemp "${DEPLOY_ROOT}/casein-selfheal-XXXXXX.tgz")"
   if ! sudo tar -C "${ACTIVE_RELEASE}" -czf "${heal_tarball}" .; then
     log "self-heal: failed to package ${ACTIVE_RELEASE} — aborting heal"
     sudo rm -f "${heal_tarball}"
@@ -260,7 +260,7 @@ ensure_agent_shims() {
   # clobber removed a single runtime (historically: claude missing, siblings ok).
   if ! (cd "$WORKTREE" && bash scripts/install-agent-shims.sh --check >/dev/null 2>&1); then
     missing=""
-    for name in grok claude codex opencode agent devide; do
+    for name in grok claude codex opencode agent casein; do
       if [ ! -x "${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}/${name}" ]; then
         missing="${missing} ${name}"
       fi
@@ -270,7 +270,7 @@ ensure_agent_shims() {
     return 1
   fi
 
-  log "agent shims: complete (grok claude codex opencode agent devide)"
+  log "agent shims: complete (grok claude codex opencode agent casein)"
   return 0
 }
 
@@ -283,7 +283,7 @@ ensure_caddy_upstream() {
       sudo awk -F= '/^PHX_HOST=/{print $2}' "$ENV_FILE" | tail -n 1
     fi
   )"
-  host="${host:-devide.devbox.milcgroup.com}"
+  host="${host:-casein.devbox.milcgroup.com}"
 
   casein_reconcile_caddy_upstream "$host" repair
 }
@@ -297,14 +297,14 @@ if ! flock -n 9; then
 fi
 
 # --- read the deployed revision ----------------------------------------------
-# devide.env is sourced (set -a) by deploy-local.sh, so it's a normal env file.
+# casein.env is sourced (set -a) by deploy-local.sh, so it's a normal env file.
 # Read it tolerantly: plain source first, fall back to sudo if unreadable.
 read_deployed() {
   local val=""
   if [ -r "$ENV_FILE" ]; then
-    val="$(set -a; . "$ENV_FILE" >/dev/null 2>&1; printf '%s' "${DEVIDE_GIT_REVISION:-}")"
+    val="$(set -a; . "$ENV_FILE" >/dev/null 2>&1; printf '%s' "${CASEIN_GIT_REVISION:-}")"
   elif sudo test -r "$ENV_FILE" 2>/dev/null; then
-    val="$(sudo sed -n 's/^DEVIDE_GIT_REVISION=//p' "$ENV_FILE" | tail -1)"
+    val="$(sudo sed -n 's/^CASEIN_GIT_REVISION=//p' "$ENV_FILE" | tail -1)"
   fi
   printf '%s' "$val"
 }
@@ -346,15 +346,15 @@ fi
 # Guard against deploying an older commit (e.g. a force-push / rollback on the
 # box) unless explicitly allowed: only roll forward.
 if [ -n "$deployed_full" ] && git merge-base --is-ancestor "$target" "$deployed_full" 2>/dev/null; then
-  if [ "${DEVIDE_DEPLOY_ALLOW_ROLLBACK:-0}" != "1" ]; then
+  if [ "${CASEIN_DEPLOY_ALLOW_ROLLBACK:-0}" != "1" ]; then
     log "origin/${BRANCH} (${target_short}) is BEHIND deployed ${deployed:0:12} — refusing to roll back"
-    log "set DEVIDE_DEPLOY_ALLOW_ROLLBACK=1 to deploy it anyway"
+    log "set CASEIN_DEPLOY_ALLOW_ROLLBACK=1 to deploy it anyway"
     write_deploy_status failed "$target" rollback_refused \
       "origin/${BRANCH} (${target_short}) is behind deployed ${deployed:0:12}" \
       "$deployed_full"
     exit 0
   fi
-  log "rolling BACK to ${target_short} (DEVIDE_DEPLOY_ALLOW_ROLLBACK=1)"
+  log "rolling BACK to ${target_short} (CASEIN_DEPLOY_ALLOW_ROLLBACK=1)"
 fi
 
 if [ -n "$deployed" ]; then from_label="${deployed:0:12}"; else from_label="none"; fi
@@ -408,7 +408,7 @@ if [ ! -d "$WORKTREE/release-out" ] || [ -z "$(ls -A "$WORKTREE/release-out" 2>/
   exit 1
 fi
 
-tarball="$(mktemp /tmp/dev_ide-autodeploy-XXXXXX.tgz)"
+tarball="$(mktemp /tmp/casein-autodeploy-XXXXXX.tgz)"
 trap 'rm -f "$tarball"' EXIT
 tar -C "$WORKTREE/release-out" -czf "$tarball" .
 

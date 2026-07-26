@@ -61,7 +61,7 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
 
   # ---- session validation branches ----
 
-  test "topology rejects a session without the devide_ prefix" do
+  test "topology rejects a session without the casein_ prefix" do
     assert {:error, :unscoped_session} =
              TerminalTools.invoke("terminal_topology", %{"session" => "plain-session"})
   end
@@ -71,12 +71,12 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
              TerminalTools.invoke("terminal_topology", %{})
   end
 
-  test "topology rejects a devide_ session that does not exist" do
+  test "topology rejects a casein_ session that does not exist" do
     fake_adapter()
-    # A devide_-prefixed session that is not present in fake windows is not alive.
+    # A casein_-prefixed session that is not present in fake windows is not alive.
     assert {:error, :no_such_session} =
              TerminalTools.invoke("terminal_topology", %{
-               "session" => "devide_ghost_main"
+               "session" => "casein_ghost_main"
              })
   end
 

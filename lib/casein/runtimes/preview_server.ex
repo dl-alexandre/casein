@@ -51,12 +51,12 @@ defmodule Casein.Runtimes.PreviewServer do
         |> Map.merge(env_from_attrs(attrs))
         |> Map.merge(%{
           "PORT" => Integer.to_string(port),
-          "DEVIDE_RUNTIME_ID" => runtime_id,
-          "DEVIDE_WORKSPACE_ID" => record.external_id,
-          "DEVIDE_TMUX_SESSION" => tmux_session_id,
-          "DEVIDE_PREVIEW_HOME" =>
+          "CASEIN_RUNTIME_ID" => runtime_id,
+          "CASEIN_WORKSPACE_ID" => record.external_id,
+          "CASEIN_TMUX_SESSION" => tmux_session_id,
+          "CASEIN_PREVIEW_HOME" =>
             Path.join(record.host_path || worktree_path, ".casein-preview"),
-          "DEVIDE_RUNTIME_PREVIEW_SOCKET" =>
+          "CASEIN_RUNTIME_PREVIEW_SOCKET" =>
             Path.join([
               record.host_path || worktree_path,
               ".casein-preview",
@@ -187,7 +187,7 @@ defmodule Casein.Runtimes.PreviewServer do
     env = env_map(value(server, "env"))
 
     preview_home =
-      non_empty_string(value(env, "DEVIDE_PREVIEW_HOME")) ||
+      non_empty_string(value(env, "CASEIN_PREVIEW_HOME")) ||
         (cwd && Path.join(cwd, ".casein-preview"))
 
     with true <- is_binary(runtime_id) and Regex.match?(@safe_runtime_id, runtime_id),

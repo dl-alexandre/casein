@@ -30,7 +30,7 @@ the palette's file rows open them:
 | `Casein.CommandPalette.Fuzzy` | `lib/casein/command_palette/fuzzy.ex` | Tiered scorer: exact → prefix → substring → scattered/acronym → `nil`. Shorter targets get `length_bonus/1`; empty query returns base score `1`. |
 | `Casein.CommandPalette.Item` | `lib/casein/command_palette/item.ex` | Result-row struct (`id`/`kind`/`label`/`detail`/`score`/`category`/`payload`). `category/1` honours an explicit `:category` else derives from `kind`. |
 | `Casein.CommandPalette.Actions` | `lib/casein/command_palette/actions.ex` | The fixed action/command/tab/tmux/theme/agents/preview allowlist (`all/0`) and the dispatch guard `allowed_events/0`. |
-| `Casein.Commands.Allowlist` | `lib/casein/commands/allowlist.ex` | Thin delegate to `ExecCtl.Allowlist` (id → argv, in `dev_ide_core`). Lets read-only callers enumerate command ids without the execution graph. |
+| `Casein.Commands.Allowlist` | `lib/casein/commands/allowlist.ex` | Thin delegate to `ExecCtl.Allowlist` (id → argv, in `casein_core`). Lets read-only callers enumerate command ids without the execution graph. |
 | `Casein.Labels` | `lib/casein/labels.ex` *(GenServer, outside assigned dir)* | Keyed `{tmux_session, pane_id}` label store; debounced, size-capped, PubSub-broadcast on `pane_labels:<workspace_id>`. |
 | `Casein.Labels.Derivation` | `lib/casein/labels/derivation.ex` | Pure label derivation from MCP tool args / agent input; truncates to `@max_label_length` 48. |
 | `Casein.Annotations` | `lib/casein/annotations.ex` *(context, outside assigned dir)* | CRUD + approval lifecycle for annotations; audits each write and broadcasts on `workspace:<id>`. |

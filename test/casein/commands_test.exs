@@ -83,7 +83,7 @@ defmodule Casein.CommandsTest do
     end
 
     test "unresolvable bare command yields executable_not_found", %{root: root} do
-      bogus = "devide-no-such-binary-#{System.unique_integer([:positive])}"
+      bogus = "casein-no-such-binary-#{System.unique_integer([:positive])}"
       assert {:error, {:executable_not_found, ^bogus}} = Commands.spawn(root, [bogus], self())
     end
 

@@ -45,7 +45,7 @@ defmodule Casein.FilesWriteTest do
   test "write is atomic — failed rename leaves no temp behind", %{root: root} do
     {:ok, %{version: v}} = Files.read_text(root, "hello.txt")
     {:ok, _} = Files.write_text(root, "hello.txt", "gamma\n", v)
-    leftover = File.ls!(root) |> Enum.filter(&String.starts_with?(&1, ".devide.tmp."))
+    leftover = File.ls!(root) |> Enum.filter(&String.starts_with?(&1, ".casein.tmp."))
     assert leftover == []
   end
 end

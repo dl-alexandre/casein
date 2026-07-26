@@ -4,10 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
+CASEIN_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
 TOKEN="${CASEIN_API_TOKEN:-}"
-WORKSPACE_ID="${WORKSPACE_ID:-${DEVIDE_WORKSPACE_ID:-dev_ide}}"
-WORKSPACE_NAME="${DEVIDE_WORKSPACE_NAME:-}"
+WORKSPACE_ID="${WORKSPACE_ID:-${CASEIN_WORKSPACE_ID:-casein}}"
+WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-}"
 CI_MODE=0
 WARNINGS=0
 
@@ -18,9 +18,9 @@ Usage: verify_agent_pairing.sh [--ci]
 Verifies Terminal + Preview MCP endpoints for agent pairing.
 
 Environment:
-  DEVIDE_URL          Base URL (default http://localhost:4000)
+  CASEIN_URL          Base URL (default http://localhost:4000)
   CASEIN_API_TOKEN   Bearer token (required)
-  WORKSPACE_ID        Workspace UUID or name (default dev_ide)
+  WORKSPACE_ID        Workspace UUID or name (default casein)
   VERIFY_ROUNDTRIP=1  Also send a harmless echo in the first session (optional)
 
   --ci                Strict mode: warnings fail the script (for deploy gates)
@@ -53,7 +53,7 @@ note() {
 }
 
 echo "==> Casein agent pairing verification"
-echo "    URL:         $DEVIDE_URL"
+echo "    URL:         $CASEIN_URL"
 echo "    workspace:   $WORKSPACE_ID"
 
 if [[ -z "$TOKEN" ]]; then
@@ -61,9 +61,9 @@ if [[ -z "$TOKEN" ]]; then
   exit 1
 fi
 
-if ! bash -c 'code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "'"${DEVIDE_URL}"'/" 2>/dev/null || echo 000)"; [[ "${code}" != "000" && -n "${code}" ]]'; then
+if ! bash -c 'code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "'"${CASEIN_URL}"'/" 2>/dev/null || echo 000)"; [[ "${code}" != "000" && -n "${code}" ]]'; then
   if [[ -x "${ROOT}/scripts/ensure-casein-loopback-proxy.sh" ]]; then
-    echo "==> loopback ${DEVIDE_URL} down — starting casein-loopback proxy"
+    echo "==> loopback ${CASEIN_URL} down — starting casein-loopback proxy"
     bash "${ROOT}/scripts/ensure-casein-loopback-proxy.sh"
   fi
 fi
@@ -80,7 +80,7 @@ rpc() {
   if [[ -z "$params" ]]; then
     params="{}"
   fi
-  devide_curl -fsS -X POST "$DEVIDE_URL/api/terminals/mcp" \
+  casein_curl -fsS -X POST "$CASEIN_URL/api/terminals/mcp" \
     "${auth_header[@]}" \
     -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\",\"params\":${params}}"
 }
@@ -92,7 +92,7 @@ preview_rpc() {
   if [[ -z "$params" ]]; then
     params="{}"
   fi
-  devide_curl -fsS -X POST "$DEVIDE_URL/api/preview/mcp" \
+  casein_curl -fsS -X POST "$CASEIN_URL/api/preview/mcp" \
     "${auth_header[@]}" \
     -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\",\"params\":${params}}"
 }
@@ -131,7 +131,7 @@ data = json.load(sys.stdin)
 sessions = data.get("sessions") or []
 key = os.environ.get("PICK_WORKSPACE_KEY", "")
 if key:
-    prefix = f"devide_{key}_"
+    prefix = f"casein_{key}_"
     for row in sessions:
         name = row.get("session") or row.get("name") or ""
         if name.startswith(prefix):
@@ -201,7 +201,7 @@ raise SystemExit("no pane id in topology")
     | parse_tool_result >/dev/null
 
   if [[ "${VERIFY_ROUNDTRIP:-}" == "1" ]]; then
-    marker="devide-verify-$(date +%s)"
+    marker="casein-verify-$(date +%s)"
     echo "==> terminal MCP roundtrip echo ($marker)"
     rpc 6 tools/call "{\"name\":\"terminal_send_command\",\"arguments\":{\"workspace_id\":\"$active_workspace_id\",\"session\":\"$session_name\",\"pane\":\"$pane_id\",\"command\":\"printf '%s\\\\n' $marker\"}}" \
       | parse_tool_result >/dev/null

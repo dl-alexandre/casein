@@ -3,7 +3,7 @@ defmodule Casein.Ops.PgProbe do
   Periodic Postgres connection-saturation probe for the box's servers.
 
   Known incident shapes this exists to catch: leaked `wf_*` BEAM nodes
-  exhausting the host Postgres on 5432, and leaked `devide-<uuid>` canary
+  exhausting the host Postgres on 5432, and leaked `casein-<uuid>` canary
   connections exhausting the release Postgres on 15432 until deploys
   crash-loop. Both manifest as `pg_stat_activity` filling with leak-shaped
   `application_name`s long before anyone notices.
@@ -21,7 +21,7 @@ defmodule Casein.Ops.PgProbe do
 
   Per target the probe computes total connections, `max_connections`,
   utilization, and leak_suspects (application_name matching `^wf_` or
-  `^devide-<uuid>`). An unreachable or auth-failed target yields a
+  `^casein-<uuid>`). An unreachable or auth-failed target yields a
   `%{status: :unreachable}` sample — that is itself signal, not a crash; a
   "too many clients" refusal is the saturation incident in its terminal
   form and escalates straight to `:critical`.
@@ -55,9 +55,9 @@ defmodule Casein.Ops.PgProbe do
     %{host: "127.0.0.1", port: 15_432}
   ]
 
-  # Leak-shaped application_names: wf_* workflow BEAMs and devide-<uuid>
+  # Leak-shaped application_names: wf_* workflow BEAMs and casein-<uuid>
   # canary connections (the two known saturation incidents).
-  @leak_patterns [~r/^wf_/, ~r/^devide-[0-9a-f]{8}-[0-9a-f-]+$/]
+  @leak_patterns [~r/^wf_/, ~r/^casein-[0-9a-f]{8}-[0-9a-f-]+$/]
 
   @activity_query "SELECT application_name, count(*) FROM pg_stat_activity GROUP BY 1"
 
@@ -284,7 +284,7 @@ defmodule Casein.Ops.PgProbe do
         }),
       suggestion:
         "Postgres #{subject(sample)} is saturating. Find and kill leaked wf_* / " <>
-          "devide-<uuid> connections (systemd MainPIDs holding them get kill -TERM) " <>
+          "casein-<uuid> connections (systemd MainPIDs holding them get kill -TERM) " <>
           "before the server refuses connections and deploys crash-loop."
     }
   end

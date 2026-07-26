@@ -11,7 +11,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewObservationTest do
     unique = System.unique_integer([:positive])
     workspace_id = "prevobs-#{unique}"
     workspace_name = "prevobs-ws-#{unique}"
-    workspace_root = Path.join(System.tmp_dir!(), "devide-prevobs-live-#{unique}")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-prevobs-live-#{unique}")
     workspace_path = Path.join(workspace_root, workspace_id)
     File.mkdir_p!(workspace_path)
 
@@ -251,7 +251,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewObservationTest do
     prev_app_url = Application.fetch_env(:casein, :preview_app_url)
 
     Application.put_env(:casein, :preview_proxy_enabled, true)
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
 
     on_exit(fn ->
       restore = fn

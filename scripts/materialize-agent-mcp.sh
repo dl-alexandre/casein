@@ -9,7 +9,7 @@
 #   source .devbox-agent.env
 #   bash scripts/materialize-agent-mcp.sh
 #
-# Exports DEVIDE_AGENT_MCP_HOME on stdout-friendly assignment when sourced:
+# Exports CASEIN_AGENT_MCP_HOME on stdout-friendly assignment when sourced:
 #   eval "$(bash scripts/materialize-agent-mcp.sh --export)"
 #
 set -euo pipefail
@@ -43,8 +43,8 @@ if len(t) >= 2 and t[0] == t[-1] and t[0] in \"'\\\"\":
 print(t)
 "
 )"
-: "${DEVIDE_WORKSPACE_NAME:?DEVIDE_WORKSPACE_NAME is required}"
-: "${DEVIDE_WORKSPACE_ID:?DEVIDE_WORKSPACE_ID is required}"
+: "${CASEIN_WORKSPACE_NAME:?CASEIN_WORKSPACE_NAME is required}"
+: "${CASEIN_WORKSPACE_ID:?CASEIN_WORKSPACE_ID is required}"
 
 # Only ever bake a token that is positively registered for THIS workspace into
 # agent configs. The MCP endpoints reject tools/call from any token not scoped
@@ -56,11 +56,11 @@ print(t)
 # workspace's scoped token, and fail closed when none exists.
 # shellcheck source=scripts/lib/workspace-scoped-token.sh
 source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
-CASEIN_ENV_FILE_REF="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
+CASEIN_ENV_FILE_REF="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
 if ! workspace_scoped_token_is_registered_for \
-    "$CASEIN_ENV_FILE_REF" "$DEVIDE_WORKSPACE_ID" "$CASEIN_API_TOKEN"; then
+    "$CASEIN_ENV_FILE_REF" "$CASEIN_WORKSPACE_ID" "$CASEIN_API_TOKEN"; then
   SCOPED_TOKEN="$(
-    workspace_scoped_token_lookup "$CASEIN_ENV_FILE_REF" "${DEVIDE_WORKSPACE_ID}"
+    workspace_scoped_token_lookup "$CASEIN_ENV_FILE_REF" "${CASEIN_WORKSPACE_ID}"
   )"
   if [[ -n "$SCOPED_TOKEN" ]]; then
     CASEIN_API_TOKEN="$SCOPED_TOKEN"
@@ -74,47 +74,47 @@ ERR
     exit 1
   fi
 fi
-: "${DEVIDE_TERMINAL_MCP_URL:?DEVIDE_TERMINAL_MCP_URL is required}"
-: "${DEVIDE_PREVIEW_MCP_URL:?DEVIDE_PREVIEW_MCP_URL is required}"
-: "${DEVIDE_API_BASE_URL:=${DEVIDE_URL:-}}"
-: "${DEVIDE_WORKSPACE_MODE:=manual}"
-if [[ -z "${DEVIDE_ARTIFACT_MCP_URL:-}" ]]; then
-  DEVIDE_ARTIFACT_MCP_URL="${DEVIDE_PREVIEW_MCP_URL/\/api\/preview\/mcp/\/api\/artifacts\/mcp}"
+: "${CASEIN_TERMINAL_MCP_URL:?CASEIN_TERMINAL_MCP_URL is required}"
+: "${CASEIN_PREVIEW_MCP_URL:?CASEIN_PREVIEW_MCP_URL is required}"
+: "${CASEIN_API_BASE_URL:=${CASEIN_URL:-}}"
+: "${CASEIN_WORKSPACE_MODE:=manual}"
+if [[ -z "${CASEIN_ARTIFACT_MCP_URL:-}" ]]; then
+  CASEIN_ARTIFACT_MCP_URL="${CASEIN_PREVIEW_MCP_URL/\/api\/preview\/mcp/\/api\/artifacts\/mcp}"
 fi
-: "${DEVIDE_TMUX_SESSION:=}"
+: "${CASEIN_TMUX_SESSION:=}"
 
-if [[ -z "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
+if [[ -z "${CASEIN_TIDEWAVE_MCP_URL:-}" ]]; then
   if [[ -x "${ROOT}/scripts/preview-env.sh" ]]; then
-    DEVIDE_TIDEWAVE_MCP_URL="$(
+    CASEIN_TIDEWAVE_MCP_URL="$(
       bash "${ROOT}/scripts/preview-env.sh" tidewave-latest 2>/dev/null || true
     )"
   fi
-  if [[ -z "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]] && [[ -x "${ROOT}/scripts/tidewave-resolve-url.sh" ]]; then
-    DEVIDE_TIDEWAVE_MCP_URL="$(
+  if [[ -z "${CASEIN_TIDEWAVE_MCP_URL:-}" ]] && [[ -x "${ROOT}/scripts/tidewave-resolve-url.sh" ]]; then
+    CASEIN_TIDEWAVE_MCP_URL="$(
       bash "${ROOT}/scripts/tidewave-resolve-url.sh" 2>/dev/null || true
     )"
   fi
 fi
 
-if [[ -z "${DEVIDE_CHECKOUT:-}" ]]; then
-  case "${DEVIDE_WORKSPACE_NAME}" in
-    dalexandre-devide) DEVIDE_CHECKOUT="${ROOT}" ;;
+if [[ -z "${CASEIN_CHECKOUT:-}" ]]; then
+  case "${CASEIN_WORKSPACE_NAME}" in
+    dalexandre-casein) CASEIN_CHECKOUT="${ROOT}" ;;
     *)
-      if [[ -d "/data/workspaces/${DEVIDE_WORKSPACE_NAME}" ]]; then
-        DEVIDE_CHECKOUT="/data/workspaces/${DEVIDE_WORKSPACE_NAME}"
+      if [[ -d "/data/workspaces/${CASEIN_WORKSPACE_NAME}" ]]; then
+        CASEIN_CHECKOUT="/data/workspaces/${CASEIN_WORKSPACE_NAME}"
       else
-        DEVIDE_CHECKOUT="${ROOT}"
+        CASEIN_CHECKOUT="${ROOT}"
       fi
       ;;
   esac
 fi
 HOME_DIR="${HOME:?HOME is required}"
-DEFAULT_STAGING="${HOME_DIR}/.casein/agent-mcp/${DEVIDE_WORKSPACE_NAME}"
-if [[ -n "${DEVIDE_AGENT_MCP_HOME:-}" ]] && [[ "${DEVIDE_AGENT_MCP_HOME}" != "${DEFAULT_STAGING}" ]]; then
-  unset DEVIDE_AGENT_MCP_HOME
+DEFAULT_STAGING="${HOME_DIR}/.casein/agent-mcp/${CASEIN_WORKSPACE_NAME}"
+if [[ -n "${CASEIN_AGENT_MCP_HOME:-}" ]] && [[ "${CASEIN_AGENT_MCP_HOME}" != "${DEFAULT_STAGING}" ]]; then
+  unset CASEIN_AGENT_MCP_HOME
 fi
-STAGING="${DEVIDE_AGENT_MCP_HOME:-${DEFAULT_STAGING}}"
-export DEVIDE_AGENT_MCP_HOME="${STAGING}"
+STAGING="${CASEIN_AGENT_MCP_HOME:-${DEFAULT_STAGING}}"
+export CASEIN_AGENT_MCP_HOME="${STAGING}"
 
 # Serialize concurrent materializations of the same workspace. Every agent
 # launch runs this script and they share one staging tree, so without a lock two
@@ -127,12 +127,12 @@ if command -v flock >/dev/null 2>&1; then
   flock 9
 fi
 
-if [[ -f "${DEVIDE_CHECKOUT}/scripts/devide" ]]; then
-  DEVIDE_SCRIPTS="${DEVIDE_CHECKOUT}/scripts"
+if [[ -f "${CASEIN_CHECKOUT}/scripts/casein" ]]; then
+  CASEIN_SCRIPTS="${CASEIN_CHECKOUT}/scripts"
 else
-  DEVIDE_SCRIPTS="${DEVIDE_SCRIPTS:-${ROOT}/scripts}"
+  CASEIN_SCRIPTS="${CASEIN_SCRIPTS:-${ROOT}/scripts}"
 fi
-export DEVIDE_SCRIPTS
+export CASEIN_SCRIPTS
 
 mkdir -p "${STAGING}/grok" "${STAGING}/codex" "${STAGING}/cursor"
 
@@ -142,8 +142,8 @@ mkdir -p "${STAGING}/grok" "${STAGING}/codex" "${STAGING}/cursor"
 for _hook in casein-agent-state.sh casein-codex-notify.sh; do
   if [[ -f "${ROOT}/priv/scripts/${_hook}" ]]; then
     _hook_src="${ROOT}/priv/scripts/${_hook}"
-  elif [[ -f "${DEVIDE_SCRIPTS}/${_hook}" ]]; then
-    _hook_src="${DEVIDE_SCRIPTS}/${_hook}"
+  elif [[ -f "${CASEIN_SCRIPTS}/${_hook}" ]]; then
+    _hook_src="${CASEIN_SCRIPTS}/${_hook}"
   else
     continue
   fi
@@ -152,9 +152,9 @@ for _hook in casein-agent-state.sh casein-codex-notify.sh; do
 done
 
 WORKSPACE_SLUG="$(
-  DEVIDE_WORKSPACE_NAME="${DEVIDE_WORKSPACE_NAME}" python3 -c "
+  CASEIN_WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME}" python3 -c "
 import os, re
-slug = re.sub(r'[^a-zA-Z0-9]+', '-', os.environ['DEVIDE_WORKSPACE_NAME']).strip('-').lower()
+slug = re.sub(r'[^a-zA-Z0-9]+', '-', os.environ['CASEIN_WORKSPACE_NAME']).strip('-').lower()
 print(slug or 'workspace')
 "
 )"
@@ -166,27 +166,27 @@ TIDEWAVE_KEY="casein-tidewave-${WORKSPACE_SLUG}"
 TIDEWAVE_GROK_BLOCK=""
 TIDEWAVE_OPENCODE_BLOCK=""
 TIDEWAVE_ENV_EXPORT=""
-if [[ -n "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
+if [[ -n "${CASEIN_TIDEWAVE_MCP_URL:-}" ]]; then
   TIDEWAVE_GROK_BLOCK="
 [mcp_servers.${TIDEWAVE_KEY}]
-url = \"${DEVIDE_TIDEWAVE_MCP_URL}\"
+url = \"${CASEIN_TIDEWAVE_MCP_URL}\"
 enabled = true
 "
   TIDEWAVE_OPENCODE_BLOCK=",
     \"${TIDEWAVE_KEY}\": {
       \"type\": \"remote\",
-      \"url\": \"${DEVIDE_TIDEWAVE_MCP_URL}\",
+      \"url\": \"${CASEIN_TIDEWAVE_MCP_URL}\",
       \"enabled\": true,
       \"oauth\": false
     }"
-  printf -v TIDEWAVE_ENV_EXPORT 'export DEVIDE_TIDEWAVE_MCP_URL=%q' "${DEVIDE_TIDEWAVE_MCP_URL}"
+  printf -v TIDEWAVE_ENV_EXPORT 'export CASEIN_TIDEWAVE_MCP_URL=%q' "${CASEIN_TIDEWAVE_MCP_URL}"
 fi
 
 AUTH_PROFILE_EXPORTS=""
 if [[ -f "${ROOT}/scripts/lib/agent-auth-profile.sh" ]]; then
   AUTH_PROFILE_EXPORTS="$(
-    bash "${ROOT}/scripts/lib/agent-auth-profile.sh" "${DEVIDE_WORKSPACE_NAME}" claude
-    bash "${ROOT}/scripts/lib/agent-auth-profile.sh" "${DEVIDE_WORKSPACE_NAME}" codex
+    bash "${ROOT}/scripts/lib/agent-auth-profile.sh" "${CASEIN_WORKSPACE_NAME}" claude
+    bash "${ROOT}/scripts/lib/agent-auth-profile.sh" "${CASEIN_WORKSPACE_NAME}" codex
   )"
 fi
 
@@ -194,22 +194,22 @@ fi
 cat >"${STAGING}/grok/config.toml" <<EOF
 # Generated by scripts/materialize-agent-mcp.sh — do not edit by hand.
 [mcp_servers.${TERMINAL_KEY}]
-url = "${DEVIDE_TERMINAL_MCP_URL}"
+url = "${CASEIN_TERMINAL_MCP_URL}"
 enabled = true
 
 [mcp_servers.${TERMINAL_KEY}.headers]
 Authorization = "Bearer \${CASEIN_API_TOKEN}"
-X-Casein-Caller-Pane = "\${DEVIDE_CALLER_PANE}"
+X-Casein-Caller-Pane = "\${CASEIN_CALLER_PANE}"
 
 [mcp_servers.${PREVIEW_KEY}]
-url = "${DEVIDE_PREVIEW_MCP_URL}"
+url = "${CASEIN_PREVIEW_MCP_URL}"
 enabled = true
 
 [mcp_servers.${PREVIEW_KEY}.headers]
 Authorization = "Bearer \${CASEIN_API_TOKEN}"
 
 [mcp_servers.${ARTIFACT_KEY}]
-url = "${DEVIDE_ARTIFACT_MCP_URL}"
+url = "${CASEIN_ARTIFACT_MCP_URL}"
 enabled = true
 
 [mcp_servers.${ARTIFACT_KEY}.headers]
@@ -232,17 +232,17 @@ cat >"${STAGING}/opencode.json" <<EOF
   "mcp": {
     "${TERMINAL_KEY}": {
       "type": "remote",
-      "url": "${DEVIDE_TERMINAL_MCP_URL}",
+      "url": "${CASEIN_TERMINAL_MCP_URL}",
       "enabled": true,
       "oauth": false,
       "headers": {
         "Authorization": "Bearer {env:CASEIN_API_TOKEN}",
-        "X-Casein-Caller-Pane": "{env:DEVIDE_CALLER_PANE}"
+        "X-Casein-Caller-Pane": "{env:CASEIN_CALLER_PANE}"
       }
     },
     "${PREVIEW_KEY}": {
       "type": "remote",
-      "url": "${DEVIDE_PREVIEW_MCP_URL}",
+      "url": "${CASEIN_PREVIEW_MCP_URL}",
       "enabled": true,
       "oauth": false,
       "headers": {
@@ -251,7 +251,7 @@ cat >"${STAGING}/opencode.json" <<EOF
     },
     "${ARTIFACT_KEY}": {
       "type": "remote",
-      "url": "${DEVIDE_ARTIFACT_MCP_URL}",
+      "url": "${CASEIN_ARTIFACT_MCP_URL}",
       "enabled": true,
       "oauth": false,
       "headers": {
@@ -264,14 +264,14 @@ EOF
 
 # --- Universal .mcp.json (Claude project, Grok, Cursor compat) ---
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" write-claude-mcp \
-  "${STAGING}/.mcp.json" "${DEVIDE_TERMINAL_MCP_URL}" "${DEVIDE_PREVIEW_MCP_URL}" "${DEVIDE_ARTIFACT_MCP_URL}"
+  "${STAGING}/.mcp.json" "${CASEIN_TERMINAL_MCP_URL}" "${CASEIN_PREVIEW_MCP_URL}" "${CASEIN_ARTIFACT_MCP_URL}"
 cp "${STAGING}/.mcp.json" "${STAGING}/cursor/mcp.json"
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" write-grok-mcp \
-  "${STAGING}/grok/.mcp.json" "${DEVIDE_TERMINAL_MCP_URL}" "${DEVIDE_PREVIEW_MCP_URL}" "${DEVIDE_ARTIFACT_MCP_URL}"
+  "${STAGING}/grok/.mcp.json" "${CASEIN_TERMINAL_MCP_URL}" "${CASEIN_PREVIEW_MCP_URL}" "${CASEIN_ARTIFACT_MCP_URL}"
 
 # --- Claude Code hooks settings (semantic agent-state reporting) ---
 # Injected by the launcher via `claude --settings`. The hook command runs
-# through a shell, so $DEVIDE_SCRIPTS resolves from the agent's env at hook time.
+# through a shell, so $CASEIN_SCRIPTS resolves from the agent's env at hook time.
 AGENT_STATE_HOOK="${STAGING}/casein-agent-state.sh"
 HOOKS_SETTINGS="${STAGING}/claude-hooks-settings.json"
 AGENT_STATE_HOOK="${AGENT_STATE_HOOK}" python3 - "${HOOKS_SETTINGS}" <<'PY'
@@ -330,7 +330,7 @@ chmod 600 "${SIDECHAT_SETTINGS}"
 # bundle contains no bearer token: .mcp.json references CASEIN_API_TOKEN from
 # this launch environment. A digest directory is never overwritten, so the
 # path supplied through ACP `_meta.pluginDirs` is reproducible and immutable.
-GROK_BUNDLE_ROOT="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME_DIR}/.casein/grok-bundles}"
+GROK_BUNDLE_ROOT="${CASEIN_GROK_BUNDLE_ROOT:-${HOME_DIR}/.casein/grok-bundles}"
 GROK_BUNDLE_ARGS=(
   build
   --bundle-root "${GROK_BUNDLE_ROOT}"
@@ -338,7 +338,7 @@ GROK_BUNDLE_ARGS=(
   --skills-root "${ROOT}/.claude/skills"
 )
 
-case "${DEVIDE_AGENT_STATE_HOOKS:-1}" in
+case "${CASEIN_AGENT_STATE_HOOKS:-1}" in
   0 | false | FALSE | no | NO | off | OFF)
     GROK_BUNDLE_ARGS+=(--hooks-disabled)
     ;;
@@ -350,7 +350,7 @@ case "${DEVIDE_AGENT_STATE_HOOKS:-1}" in
     ;;
 esac
 
-for _skill in ${DEVIDE_GROK_BUNDLE_SKILLS:-preview-ui-walk verify workspace-agent-pair}; do
+for _skill in ${CASEIN_GROK_BUNDLE_SKILLS:-preview-ui-walk verify workspace-agent-pair}; do
   if [[ -d "${ROOT}/.claude/skills/${_skill}" ]]; then
     GROK_BUNDLE_ARGS+=(--skill "${_skill}")
   fi
@@ -359,30 +359,30 @@ done
 mapfile -t GROK_BUNDLE_RESULT < <(
   python3 "${ROOT}/scripts/lib/grok-capability-bundle.py" "${GROK_BUNDLE_ARGS[@]}"
 )
-DEVIDE_GROK_BUNDLE_DIR="${GROK_BUNDLE_RESULT[0]:-}"
-DEVIDE_GROK_BUNDLE_DIGEST="${GROK_BUNDLE_RESULT[1]:-}"
-if [[ ! "${DEVIDE_GROK_BUNDLE_DIGEST}" =~ ^[0-9a-f]{64}$ ]] ||
-   [[ ! -d "${DEVIDE_GROK_BUNDLE_DIR}" ]]; then
+CASEIN_GROK_BUNDLE_DIR="${GROK_BUNDLE_RESULT[0]:-}"
+CASEIN_GROK_BUNDLE_DIGEST="${GROK_BUNDLE_RESULT[1]:-}"
+if [[ ! "${CASEIN_GROK_BUNDLE_DIGEST}" =~ ^[0-9a-f]{64}$ ]] ||
+   [[ ! -d "${CASEIN_GROK_BUNDLE_DIR}" ]]; then
   echo "error: Grok capability bundle compiler returned an invalid result" >&2
   exit 1
 fi
-export DEVIDE_GROK_BUNDLE_DIR DEVIDE_GROK_BUNDLE_DIGEST
+export CASEIN_GROK_BUNDLE_DIR CASEIN_GROK_BUNDLE_DIGEST
 
 # One private leader per workspace/worktree lets the human TUI and Casein ACP
 # attachment converge on the same Grok session without touching the global
 # ~/.grok/leader.sock. Keep the path short enough for Unix sockaddr_un.
-GROK_LEADER_BASE="${DEVIDE_GROK_LEADER_BASE:-${HOME_DIR}/.casein/grok-leaders}"
-GROK_LEADER_KEY="$(printf '%s\0%s' "${DEVIDE_WORKSPACE_ID}" "$(realpath -m "${DEVIDE_CHECKOUT}")" | sha256sum | cut -c1-24)"
-DEVIDE_GROK_LEADER_ROOT="${GROK_LEADER_BASE}/${GROK_LEADER_KEY}"
-DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/leader.sock"
-if [[ "${#DEVIDE_GROK_LEADER_SOCKET}" -gt 100 ]]; then
-  GROK_LEADER_BASE="/dev/shm/devide-grok-leaders-$(id -u)"
-  DEVIDE_GROK_LEADER_ROOT="${GROK_LEADER_BASE}/${GROK_LEADER_KEY}"
-  DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/leader.sock"
+GROK_LEADER_BASE="${CASEIN_GROK_LEADER_BASE:-${HOME_DIR}/.casein/grok-leaders}"
+GROK_LEADER_KEY="$(printf '%s\0%s' "${CASEIN_WORKSPACE_ID}" "$(realpath -m "${CASEIN_CHECKOUT}")" | sha256sum | cut -c1-24)"
+CASEIN_GROK_LEADER_ROOT="${GROK_LEADER_BASE}/${GROK_LEADER_KEY}"
+CASEIN_GROK_LEADER_SOCKET="${CASEIN_GROK_LEADER_ROOT}/leader.sock"
+if [[ "${#CASEIN_GROK_LEADER_SOCKET}" -gt 100 ]]; then
+  GROK_LEADER_BASE="/dev/shm/casein-grok-leaders-$(id -u)"
+  CASEIN_GROK_LEADER_ROOT="${GROK_LEADER_BASE}/${GROK_LEADER_KEY}"
+  CASEIN_GROK_LEADER_SOCKET="${CASEIN_GROK_LEADER_ROOT}/leader.sock"
 fi
-mkdir -p "${GROK_LEADER_BASE}" "${DEVIDE_GROK_LEADER_ROOT}"
-chmod 700 "${GROK_LEADER_BASE}" "${DEVIDE_GROK_LEADER_ROOT}"
-export DEVIDE_GROK_LEADER_ROOT DEVIDE_GROK_LEADER_SOCKET
+mkdir -p "${GROK_LEADER_BASE}" "${CASEIN_GROK_LEADER_ROOT}"
+chmod 700 "${GROK_LEADER_BASE}" "${CASEIN_GROK_LEADER_ROOT}"
+export CASEIN_GROK_LEADER_ROOT CASEIN_GROK_LEADER_SOCKET
 
 ENV_SH="${STAGING}/env.sh"
 # Write atomically: a fresh temp inode (0600 under umask) that replaces the old
@@ -390,27 +390,27 @@ ENV_SH="${STAGING}/env.sh"
 # stale, laxer-permissioned env.sh from an older run is swapped out wholesale.
 ENV_SH_TMP="$(mktemp "${STAGING}/.env.sh.XXXXXX")"
 cat >"${ENV_SH_TMP}" <<EOF
-# Generated by scripts/materialize-agent-mcp.sh — source or load via devide agent env.
+# Generated by scripts/materialize-agent-mcp.sh — source or load via casein agent env.
 export CASEIN_API_TOKEN='${CASEIN_API_TOKEN}'
-export DEVIDE_WORKSPACE_ID='${DEVIDE_WORKSPACE_ID}'
-export DEVIDE_WORKSPACE_NAME='${DEVIDE_WORKSPACE_NAME}'
-export DEVIDE_WORKSPACE_MODE='${DEVIDE_WORKSPACE_MODE}'
-export DEVIDE_API_BASE_URL='${DEVIDE_API_BASE_URL}'
-export DEVIDE_CODEX_HOOK_URL='${DEVIDE_API_BASE_URL%/}/api/workspaces/${DEVIDE_WORKSPACE_ID}/codex/hooks'
-export DEVIDE_TERMINAL_MCP_URL='${DEVIDE_TERMINAL_MCP_URL}'
-export DEVIDE_PREVIEW_MCP_URL='${DEVIDE_PREVIEW_MCP_URL}'
-export DEVIDE_ARTIFACT_MCP_URL='${DEVIDE_ARTIFACT_MCP_URL}'
-export DEVIDE_TMUX_SESSION='${DEVIDE_TMUX_SESSION}'
+export CASEIN_WORKSPACE_ID='${CASEIN_WORKSPACE_ID}'
+export CASEIN_WORKSPACE_NAME='${CASEIN_WORKSPACE_NAME}'
+export CASEIN_WORKSPACE_MODE='${CASEIN_WORKSPACE_MODE}'
+export CASEIN_API_BASE_URL='${CASEIN_API_BASE_URL}'
+export CASEIN_CODEX_HOOK_URL='${CASEIN_API_BASE_URL%/}/api/workspaces/${CASEIN_WORKSPACE_ID}/codex/hooks'
+export CASEIN_TERMINAL_MCP_URL='${CASEIN_TERMINAL_MCP_URL}'
+export CASEIN_PREVIEW_MCP_URL='${CASEIN_PREVIEW_MCP_URL}'
+export CASEIN_ARTIFACT_MCP_URL='${CASEIN_ARTIFACT_MCP_URL}'
+export CASEIN_TMUX_SESSION='${CASEIN_TMUX_SESSION}'
 ${TIDEWAVE_ENV_EXPORT}
 ${AUTH_PROFILE_EXPORTS}
-export DEVIDE_CHECKOUT='${DEVIDE_CHECKOUT}'
-export DEVIDE_AGENT_MCP_HOME='${STAGING}'
-export DEVIDE_GROK_BUNDLE_DIR='${DEVIDE_GROK_BUNDLE_DIR}'
-export DEVIDE_GROK_BUNDLE_DIGEST='${DEVIDE_GROK_BUNDLE_DIGEST}'
-export DEVIDE_GROK_LEADER_ROOT='${DEVIDE_GROK_LEADER_ROOT}'
-export DEVIDE_GROK_LEADER_SOCKET='${DEVIDE_GROK_LEADER_SOCKET}'
-export DEVIDE_SCRIPTS='${DEVIDE_SCRIPTS}'
-export DEVIDE_AGENT_ENV_FILE='${ENV_SH}'
+export CASEIN_CHECKOUT='${CASEIN_CHECKOUT}'
+export CASEIN_AGENT_MCP_HOME='${STAGING}'
+export CASEIN_GROK_BUNDLE_DIR='${CASEIN_GROK_BUNDLE_DIR}'
+export CASEIN_GROK_BUNDLE_DIGEST='${CASEIN_GROK_BUNDLE_DIGEST}'
+export CASEIN_GROK_LEADER_ROOT='${CASEIN_GROK_LEADER_ROOT}'
+export CASEIN_GROK_LEADER_SOCKET='${CASEIN_GROK_LEADER_SOCKET}'
+export CASEIN_SCRIPTS='${CASEIN_SCRIPTS}'
+export CASEIN_AGENT_ENV_FILE='${ENV_SH}'
 export CASEIN_NPM_PREFIX="\${CASEIN_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
 export PATH="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}:\${CASEIN_NPM_PREFIX}/bin:\${PATH}"
 EOF
@@ -421,10 +421,10 @@ mv -f "${ENV_SH_TMP}" "${ENV_SH}"
 # Claude no longer uses a checkout .mcp.json — the launcher injects this
 # workspace's isolated staging file via `claude --mcp-config`, so writing a
 # shared-checkout project file (which collided across workspaces) is omitted.
-if [[ -n "${DEVIDE_CHECKOUT}" ]] && [[ -d "${DEVIDE_CHECKOUT}" ]] && [[ -w "${DEVIDE_CHECKOUT}" ]]; then
-  mkdir -p "${DEVIDE_CHECKOUT}/.cursor"
-  cp "${STAGING}/cursor/mcp.json" "${DEVIDE_CHECKOUT}/.cursor/mcp.json"
-  chmod 600 "${DEVIDE_CHECKOUT}/.cursor/mcp.json"
+if [[ -n "${CASEIN_CHECKOUT}" ]] && [[ -d "${CASEIN_CHECKOUT}" ]] && [[ -w "${CASEIN_CHECKOUT}" ]]; then
+  mkdir -p "${CASEIN_CHECKOUT}/.cursor"
+  cp "${STAGING}/cursor/mcp.json" "${CASEIN_CHECKOUT}/.cursor/mcp.json"
+  chmod 600 "${CASEIN_CHECKOUT}/.cursor/mcp.json"
 fi
 
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" 2>/dev/null || true
@@ -435,14 +435,14 @@ if [[ "$EXPORT_ONLY" -eq 1 ]]; then
   # from its process env. The launch wrapper eval's this output before exec'ing
   # the agent, so the token MUST be exported here or every server 401s.
   printf 'export CASEIN_API_TOKEN=%q\n' "$CASEIN_API_TOKEN"
-  printf 'export DEVIDE_ARTIFACT_MCP_URL=%q\n' "$DEVIDE_ARTIFACT_MCP_URL"
-  printf 'export DEVIDE_AGENT_MCP_HOME=%q\n' "$STAGING"
-  printf 'export DEVIDE_GROK_BUNDLE_DIR=%q\n' "$DEVIDE_GROK_BUNDLE_DIR"
-  printf 'export DEVIDE_GROK_BUNDLE_DIGEST=%q\n' "$DEVIDE_GROK_BUNDLE_DIGEST"
-  printf 'export DEVIDE_GROK_LEADER_ROOT=%q\n' "$DEVIDE_GROK_LEADER_ROOT"
-  printf 'export DEVIDE_GROK_LEADER_SOCKET=%q\n' "$DEVIDE_GROK_LEADER_SOCKET"
-  printf 'export DEVIDE_CHECKOUT=%q\n' "$DEVIDE_CHECKOUT"
-  printf 'export DEVIDE_AGENT_ENV_FILE=%q\n' "$ENV_SH"
+  printf 'export CASEIN_ARTIFACT_MCP_URL=%q\n' "$CASEIN_ARTIFACT_MCP_URL"
+  printf 'export CASEIN_AGENT_MCP_HOME=%q\n' "$STAGING"
+  printf 'export CASEIN_GROK_BUNDLE_DIR=%q\n' "$CASEIN_GROK_BUNDLE_DIR"
+  printf 'export CASEIN_GROK_BUNDLE_DIGEST=%q\n' "$CASEIN_GROK_BUNDLE_DIGEST"
+  printf 'export CASEIN_GROK_LEADER_ROOT=%q\n' "$CASEIN_GROK_LEADER_ROOT"
+  printf 'export CASEIN_GROK_LEADER_SOCKET=%q\n' "$CASEIN_GROK_LEADER_SOCKET"
+  printf 'export CASEIN_CHECKOUT=%q\n' "$CASEIN_CHECKOUT"
+  printf 'export CASEIN_AGENT_ENV_FILE=%q\n' "$ENV_SH"
   if [[ -n "$AUTH_PROFILE_EXPORTS" ]]; then
     printf '%s\n' "$AUTH_PROFILE_EXPORTS"
   fi
@@ -450,9 +450,9 @@ if [[ "$EXPORT_ONLY" -eq 1 ]]; then
 fi
 
 cat <<EOF
-Materialized Casein MCP client configs for workspace: ${DEVIDE_WORKSPACE_NAME}
+Materialized Casein MCP client configs for workspace: ${CASEIN_WORKSPACE_NAME}
   staging:  ${STAGING}
-  checkout: ${DEVIDE_CHECKOUT}
+  checkout: ${CASEIN_CHECKOUT}
 
 Agents (from any directory — shims on PATH after install-agent-shims.sh):
   grok
@@ -462,6 +462,6 @@ Agents (from any directory — shims on PATH after install-agent-shims.sh):
 
 MCP is injected into agents without replacing auth state.
 Casein MCP is not persisted in global Grok/Codex/OpenCode config files.
-Grok bundle: ${DEVIDE_GROK_BUNDLE_DIR}
-Grok bundle digest: ${DEVIDE_GROK_BUNDLE_DIGEST}
+Grok bundle: ${CASEIN_GROK_BUNDLE_DIR}
+Grok bundle digest: ${CASEIN_GROK_BUNDLE_DIGEST}
 EOF

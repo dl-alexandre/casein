@@ -96,7 +96,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
 
     # The hook must resolve from the workspace staging home (checkout-independent),
     # and the script must actually be staged there — not left in <checkout>/scripts.
-    assert stop_command =~ "DEVIDE_AGENT_MCP_HOME"
+    assert stop_command =~ "CASEIN_AGENT_MCP_HOME"
     assert File.regular?(Path.join(staging, "casein-agent-state.sh"))
     assert File.regular?(Path.join(staging, "casein-codex-notify.sh"))
 
@@ -106,14 +106,14 @@ defmodule Casein.Agents.MCPMaterializerTest do
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
     assert env_sh =~ "export CASEIN_API_TOKEN='scoped-ws-abc-token'"
-    assert env_sh =~ "export DEVIDE_WORKSPACE_MODE='manual'"
-    assert env_sh =~ "export DEVIDE_API_BASE_URL='http://127.0.0.1:4000'"
+    assert env_sh =~ "export CASEIN_WORKSPACE_MODE='manual'"
+    assert env_sh =~ "export CASEIN_API_BASE_URL='http://127.0.0.1:4000'"
 
     assert env_sh =~
-             "export DEVIDE_CODEX_HOOK_URL='http://127.0.0.1:4000/api/workspaces/ws-abc/codex/hooks'"
+             "export CASEIN_CODEX_HOOK_URL='http://127.0.0.1:4000/api/workspaces/ws-abc/codex/hooks'"
 
     assert env_sh =~
-             "export DEVIDE_ARTIFACT_MCP_URL='http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=ws-abc'"
+             "export CASEIN_ARTIFACT_MCP_URL='http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=ws-abc'"
 
     refute env_sh =~ "secret-token"
 
@@ -171,8 +171,8 @@ defmodule Casein.Agents.MCPMaterializerTest do
     )
 
     prev_home = Application.get_env(:casein, :preview_env_home)
-    prev_preview_home_env = System.get_env("DEVIDE_PREVIEW_HOME")
-    System.delete_env("DEVIDE_PREVIEW_HOME")
+    prev_preview_home_env = System.get_env("CASEIN_PREVIEW_HOME")
+    System.delete_env("CASEIN_PREVIEW_HOME")
     Application.put_env(:casein, :preview_env_home, home)
 
     on_exit(fn ->
@@ -180,8 +180,8 @@ defmodule Casein.Agents.MCPMaterializerTest do
       restore_preview_home(prev_home)
 
       if prev_preview_home_env,
-        do: System.put_env("DEVIDE_PREVIEW_HOME", prev_preview_home_env),
-        else: System.delete_env("DEVIDE_PREVIEW_HOME")
+        do: System.put_env("CASEIN_PREVIEW_HOME", prev_preview_home_env),
+        else: System.delete_env("CASEIN_PREVIEW_HOME")
     end)
 
     assert {:ok, ^staging} =
@@ -202,7 +202,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     refute Map.has_key?(grok_mcp_json["mcpServers"], "casein-tidewave-test-ws")
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
-    assert env_sh =~ "DEVIDE_TIDEWAVE_MCP_URL='http://127.0.0.1:41042/tidewave/mcp'"
+    assert env_sh =~ "CASEIN_TIDEWAVE_MCP_URL='http://127.0.0.1:41042/tidewave/mcp'"
   end
 
   test "materialize strips accidental shell quotes from bearer token", %{staging: staging} do
@@ -217,9 +217,9 @@ defmodule Casein.Agents.MCPMaterializerTest do
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
     assert env_sh =~ "export CASEIN_API_TOKEN='quoted-token'"
-    assert env_sh =~ "DEVIDE_WORKSPACE_ID"
-    assert env_sh =~ "DEVIDE_PREVIEW_MCP_URL"
-    assert env_sh =~ "DEVIDE_ARTIFACT_MCP_URL"
+    assert env_sh =~ "CASEIN_WORKSPACE_ID"
+    assert env_sh =~ "CASEIN_PREVIEW_MCP_URL"
+    assert env_sh =~ "CASEIN_ARTIFACT_MCP_URL"
   end
 
   test "materialize mints a scoped token for an unregistered workspace", %{staging: staging} do
@@ -235,17 +235,17 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert Application.get_env(:casein, :workspace_api_tokens)[token] == "ws-abc"
   end
 
-  test "ignores an inherited DEVIDE_AGENT_MCP_HOME that belongs to a different workspace" do
+  test "ignores an inherited CASEIN_AGENT_MCP_HOME that belongs to a different workspace" do
     home =
       System.tmp_dir!()
       |> Path.join("mcp-materializer-home-#{System.unique_integer([:positive])}")
 
     prev_home = System.get_env("HOME")
-    prev_agent_home = System.get_env("DEVIDE_AGENT_MCP_HOME")
+    prev_agent_home = System.get_env("CASEIN_AGENT_MCP_HOME")
     System.put_env("HOME", home)
 
     other_workspace_staging = Path.join([home, ".casein", "agent-mcp", "some-other-workspace"])
-    System.put_env("DEVIDE_AGENT_MCP_HOME", other_workspace_staging)
+    System.put_env("CASEIN_AGENT_MCP_HOME", other_workspace_staging)
 
     on_exit(fn ->
       File.rm_rf(home)
@@ -253,8 +253,8 @@ defmodule Casein.Agents.MCPMaterializerTest do
       if prev_home, do: System.put_env("HOME", prev_home), else: System.delete_env("HOME")
 
       if prev_agent_home,
-        do: System.put_env("DEVIDE_AGENT_MCP_HOME", prev_agent_home),
-        else: System.delete_env("DEVIDE_AGENT_MCP_HOME")
+        do: System.put_env("CASEIN_AGENT_MCP_HOME", prev_agent_home),
+        else: System.delete_env("CASEIN_AGENT_MCP_HOME")
     end)
 
     expected_staging = Path.join([home, ".casein", "agent-mcp", "test-ws"])
@@ -299,11 +299,11 @@ defmodule Casein.Agents.MCPMaterializerTest do
     refute contents =~ "scoped-ws-abc-token"
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
-    assert env_sh =~ "DEVIDE_GROK_BUNDLE_DIR="
-    assert env_sh =~ "DEVIDE_GROK_BUNDLE_DIGEST="
-    assert env_sh =~ "DEVIDE_GROK_LEADER_SOCKET="
+    assert env_sh =~ "CASEIN_GROK_BUNDLE_DIR="
+    assert env_sh =~ "CASEIN_GROK_BUNDLE_DIGEST="
+    assert env_sh =~ "CASEIN_GROK_LEADER_SOCKET="
 
-    [_, bundle_dir] = Regex.run(~r/export DEVIDE_GROK_BUNDLE_DIR='([^']+)'/, env_sh)
+    [_, bundle_dir] = Regex.run(~r/export CASEIN_GROK_BUNDLE_DIR='([^']+)'/, env_sh)
     bundle_mcp = Jason.decode!(File.read!(Path.join(bundle_dir, ".mcp.json")))
     refute Enum.any?(Map.keys(bundle_mcp["mcpServers"]), &String.contains?(&1, "tidewave"))
   end

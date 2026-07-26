@@ -35,7 +35,7 @@ defmodule CaseinWeb.Plugs.DeployWebhookAuthTest do
       Application.get_env(:casein, :deployment, []) |> Keyword.delete(:github_webhook_secret)
 
     Application.put_env(:casein, :deployment, config)
-    System.delete_env("DEVIDE_DEPLOY_WEBHOOK_SECRET")
+    System.delete_env("CASEIN_DEPLOY_WEBHOOK_SECRET")
   end
 
   defp sign(body, secret) do
@@ -46,7 +46,7 @@ defmodule CaseinWeb.Plugs.DeployWebhookAuthTest do
     conn =
       :post
       |> conn("/hooks/deploy", body)
-      |> put_private(:devide_deploy_webhook_raw_body, body)
+      |> put_private(:casein_deploy_webhook_raw_body, body)
 
     Enum.reduce(headers, conn, fn {k, v}, c -> put_req_header(c, k, v) end)
   end

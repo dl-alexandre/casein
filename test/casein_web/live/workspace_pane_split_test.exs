@@ -29,7 +29,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
   @tmux_available System.find_executable("tmux") != nil
 
   setup do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-pane-split-live")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-pane-split-live")
     workspace_path = Path.join(workspace_root, "ws-1")
     workspace_name = "alpha-#{System.unique_integer([:positive, :monotonic])}"
     workspace_tmux_prefix = Casein.Terminals.Tmux.workspace_session_prefix(workspace_name)
@@ -928,7 +928,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
         pane_id = "pane-worker-test-1"
 
         session =
-          "devide-pw-test-" <>
+          "casein-pw-test-" <>
             Integer.to_string(System.unique_integer([:positive, :monotonic]))
 
         # Cold start — kill any stray session from a prior run.

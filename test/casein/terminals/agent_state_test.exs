@@ -16,17 +16,6 @@ defmodule Casein.Terminals.AgentStateTest do
     :ok
   end
 
-  # Poll for an async-projected value (agent_events rows land eventually, not
-  # in lockstep with the synchronous audit PubSub). Returns the first non-nil
-  # result; flunks after ~2s.
-  defp await_until(fun, attempts \\ 100) do
-    Casein.Test.Eventually.await(fun,
-      timeout_ms: attempts * 20,
-      interval_ms: 20,
-      message: "async projection did not converge before timeout"
-    )
-  end
-
   defp entry(state, seconds_ago, message \\ nil) do
     %{
       state: state,
@@ -46,28 +35,28 @@ defmodule Casein.Terminals.AgentStateTest do
       :ok = AgentState.subscribe(ws)
 
       :ok =
-        AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, "needs permission")
+        AgentState.report(ws, "casein_alpha_u-dev", "%3", :blocked, "needs permission")
 
-      assert_receive {:agent_state_updated, "devide_alpha_u-dev", "%3", entry}
+      assert_receive {:agent_state_updated, "casein_alpha_u-dev", "%3", entry}
       assert entry.state == :blocked
       assert entry.message == "needs permission"
-      assert AgentState.get("devide_alpha_u-dev", "%3").state == :blocked
-      assert %{"%3" => %{state: :blocked}} = AgentState.for_session("devide_alpha_u-dev")
+      assert AgentState.get("casein_alpha_u-dev", "%3").state == :blocked
+      assert %{"%3" => %{state: :blocked}} = AgentState.for_session("casein_alpha_u-dev")
     end
 
     test "accepts string states and truncates the message" do
       ws = "ws-state-#{System.unique_integer([:positive])}"
       long = String.duplicate("x", 500)
-      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", "working", long)
+      :ok = AgentState.report(ws, "casein_alpha_u-dev", "%3", "working", long)
 
-      assert %{state: :working, message: message} = AgentState.get("devide_alpha_u-dev", "%3")
+      assert %{state: :working, message: message} = AgentState.get("casein_alpha_u-dev", "%3")
       assert String.length(message) == 200
     end
 
     test "ignores unrecognized states" do
       ws = "ws-state-#{System.unique_integer([:positive])}"
-      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", "bogus", nil)
-      assert AgentState.get("devide_alpha_u-dev", "%3") == nil
+      :ok = AgentState.report(ws, "casein_alpha_u-dev", "%3", "bogus", nil)
+      assert AgentState.get("casein_alpha_u-dev", "%3") == nil
     end
 
     test "stores transcript_path from hook reports" do
@@ -75,50 +64,50 @@ defmodule Casein.Terminals.AgentStateTest do
       path = "/home/devbox/.claude/projects/test/session.jsonl"
 
       :ok =
-        AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, nil,
+        AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, nil,
           source: :hook,
           transcript_path: path
         )
 
-      assert AgentState.get("devide_alpha_u-dev", "%3").transcript_path == path
+      assert AgentState.get("casein_alpha_u-dev", "%3").transcript_path == path
     end
 
     test "stores an agent runtime session id from hook reports" do
       ws = "ws-state-#{System.unique_integer([:positive])}"
 
       :ok =
-        AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, nil,
+        AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, nil,
           source: :hook,
           agent_session_id: "grok-session-123"
         )
 
-      assert AgentState.get("devide_alpha_u-dev", "%3").agent_session_id ==
+      assert AgentState.get("casein_alpha_u-dev", "%3").agent_session_id ==
                "grok-session-123"
     end
 
     test "identical re-report refreshes freshness without broadcasting" do
       ws = "ws-state-#{System.unique_integer([:positive])}"
       :ok = AgentState.subscribe(ws)
-      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, "compiling")
+      :ok = AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, "compiling")
       assert_receive {:agent_state_updated, _, _, _}
 
-      before = AgentState.get("devide_alpha_u-dev", "%3").reported_at
-      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, "compiling")
+      before = AgentState.get("casein_alpha_u-dev", "%3").reported_at
+      :ok = AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, "compiling")
       refute_receive {:agent_state_updated, _, _, _}, 100
 
-      after_ts = AgentState.get("devide_alpha_u-dev", "%3").reported_at
+      after_ts = AgentState.get("casein_alpha_u-dev", "%3").reported_at
       assert DateTime.compare(after_ts, before) in [:gt, :eq]
     end
 
     test "prune_session drops entries for panes that no longer exist" do
       ws = "ws-state-#{System.unique_integer([:positive])}"
-      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, nil)
-      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%4", :done, nil)
+      :ok = AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, nil)
+      :ok = AgentState.report(ws, "casein_alpha_u-dev", "%4", :done, nil)
 
-      :ok = AgentState.prune_session("devide_alpha_u-dev", ["%3"])
+      :ok = AgentState.prune_session("casein_alpha_u-dev", ["%3"])
 
-      assert AgentState.get("devide_alpha_u-dev", "%3").state == :working
-      assert AgentState.get("devide_alpha_u-dev", "%4") == nil
+      assert AgentState.get("casein_alpha_u-dev", "%3").state == :working
+      assert AgentState.get("casein_alpha_u-dev", "%4") == nil
     end
   end
 
@@ -127,11 +116,11 @@ defmodule Casein.Terminals.AgentStateTest do
       ws = "ws-audit-#{System.unique_integer([:positive])}"
       :ok = Casein.Audit.subscribe(ws)
 
-      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, nil)
+      :ok = AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, nil)
       refute_receive {:audit_event, %{action: "agent.blocked"}}, 100
 
       :ok =
-        AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, "needs perm",
+        AgentState.report(ws, "casein_alpha_u-dev", "%3", :blocked, "needs perm",
           agent_session_id: "grok-session-blocked"
         )
 
@@ -140,31 +129,22 @@ defmodule Casein.Terminals.AgentStateTest do
       assert metadata.message == "needs perm"
       assert metadata.agent_session_id == "grok-session-blocked"
 
-      # The audit event above is synchronous PubSub, but the agent_events row
-      # is projected asynchronously — under load the blocked row can land
-      # after this point (or interleave with the :working row within the same
-      # occurred_at second). Await projection convergence before asserting on
-      # ordering, or recent_for/1 returns the :working transition first.
+      # Both transitions can share the adapter's timestamp precision, so their
+      # relative order in recent_for/1 is intentionally unspecified. Assert on
+      # the transition identity instead of assuming the blocked row sorts first.
       transition =
-        await_until(fn ->
-          case AgentEvents.recent_for(ws) do
-            [
-              %{event_type: "agent.state_changed", agent_session_id: "grok-session-blocked"} = t
-              | _
-            ] ->
-              t
-
-            _ ->
-              nil
-          end
+        Enum.find(AgentEvents.recent_for(ws), fn event ->
+          event.event_type == "agent.state_changed" and
+            event.agent_session_id == "grok-session-blocked"
         end)
 
+      assert transition
       assert transition.agent_session_id == "grok-session-blocked"
       assert transition.payload["message_present"] == true
       refute inspect(transition) =~ "needs perm"
 
       # A second blocked report (different message) must not re-alert.
-      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, "still blocked")
+      :ok = AgentState.report(ws, "casein_alpha_u-dev", "%3", :blocked, "still blocked")
       refute_receive {:audit_event, %{action: "agent.blocked"}}, 100
     end
 
@@ -174,7 +154,7 @@ defmodule Casein.Terminals.AgentStateTest do
 
       cid =
         Casein.Signals.Context.with_new(fn ->
-          :ok = AgentState.report(ws, "devide_alpha_u-dev", "%9", :blocked, "stuck")
+          :ok = AgentState.report(ws, "casein_alpha_u-dev", "%9", :blocked, "stuck")
           Casein.Signals.Context.current().trace_id
         end)
 
@@ -187,15 +167,15 @@ defmodule Casein.Terminals.AgentStateTest do
     test "emits a durable row for every real state transition, with from/to" do
       :ok = Casein.Audit.subscribe("ws-timeline")
 
-      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%5", :working, "compiling")
+      :ok = AgentState.report("ws-timeline", "casein_alpha_u-dev", "%5", :working, "compiling")
       assert_receive {:audit_event, %{action: "agent.state_changed", metadata: metadata}}
       assert metadata.from == nil
       assert metadata.to == :working
       assert metadata.pane == "%5"
-      assert metadata.tmux_session == "devide_alpha_u-dev"
+      assert metadata.tmux_session == "casein_alpha_u-dev"
       assert metadata.message == "compiling"
 
-      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%5", :done, nil)
+      :ok = AgentState.report("ws-timeline", "casein_alpha_u-dev", "%5", :done, nil)
       assert_receive {:audit_event, %{action: "agent.state_changed", metadata: metadata}}
       assert metadata.from == :working
       assert metadata.to == :done
@@ -204,34 +184,34 @@ defmodule Casein.Terminals.AgentStateTest do
     test "identical or message-only re-reports do not add timeline rows" do
       :ok = Casein.Audit.subscribe("ws-timeline")
 
-      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 1")
+      :ok = AgentState.report("ws-timeline", "casein_alpha_u-dev", "%6", :working, "step 1")
       assert_receive {:audit_event, %{action: "agent.state_changed"}}
 
       # Identical report: deduped upstream, no row.
-      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 1")
+      :ok = AgentState.report("ws-timeline", "casein_alpha_u-dev", "%6", :working, "step 1")
       refute_receive {:audit_event, %{action: "agent.state_changed"}}, 100
 
       # Message changed but the state did not: broadcast fires, no timeline row.
-      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 2")
+      :ok = AgentState.report("ws-timeline", "casein_alpha_u-dev", "%6", :working, "step 2")
       refute_receive {:audit_event, %{action: "agent.state_changed"}}, 100
     end
 
     test "an evicted pane re-reporting an unchanged state adds no timeline row" do
       # Distinct workspaces separate the probe pane's rows from filler noise.
-      :ok = AgentState.report("ws-evict-probe", "devide_evict", "%0", :working, "step")
+      :ok = AgentState.report("ws-evict-probe", "casein_evict", "%0", :working, "step")
 
       # Push the tracked-pane count past the cap so %0 (oldest) gets evicted.
       for i <- 1..501 do
-        :ok = AgentState.report("ws-evict-fill", "devide_evict_fill", "%#{i}", :working, "fill")
+        :ok = AgentState.report("ws-evict-fill", "casein_evict_fill", "%#{i}", :working, "fill")
       end
 
       # Casts are async — a call serializes before asserting eviction.
-      assert AgentState.get("devide_evict", "%0") == nil
+      assert AgentState.get("casein_evict", "%0") == nil
 
       # The eviction tombstone remembers the last state: this re-report is not
       # a transition, so no new agent.state_changed row for the probe pane.
-      :ok = AgentState.report("ws-evict-probe", "devide_evict", "%0", :working, "step")
-      assert %{state: :working} = AgentState.get("devide_evict", "%0")
+      :ok = AgentState.report("ws-evict-probe", "casein_evict", "%0", :working, "step")
+      assert %{state: :working} = AgentState.get("casein_evict", "%0")
 
       actions =
         "ws-evict-probe" |> Casein.Audit.recent_for(10) |> Enum.map(& &1.action)
@@ -240,12 +220,12 @@ defmodule Casein.Terminals.AgentStateTest do
     end
 
     test "a pruned pane re-reporting an unchanged state adds no timeline row" do
-      :ok = AgentState.report("ws-prune-probe", "devide_prune", "%1", :working, "step")
-      :ok = AgentState.prune_session("devide_prune", [])
-      assert AgentState.get("devide_prune", "%1") == nil
+      :ok = AgentState.report("ws-prune-probe", "casein_prune", "%1", :working, "step")
+      :ok = AgentState.prune_session("casein_prune", [])
+      assert AgentState.get("casein_prune", "%1") == nil
 
-      :ok = AgentState.report("ws-prune-probe", "devide_prune", "%1", :working, "step")
-      assert %{state: :working} = AgentState.get("devide_prune", "%1")
+      :ok = AgentState.report("ws-prune-probe", "casein_prune", "%1", :working, "step")
+      assert %{state: :working} = AgentState.get("casein_prune", "%1")
 
       actions =
         "ws-prune-probe" |> Casein.Audit.recent_for(10) |> Enum.map(& &1.action)
@@ -254,16 +234,16 @@ defmodule Casein.Terminals.AgentStateTest do
     end
 
     test "a real transition across an eviction still records from/to" do
-      :ok = AgentState.report("ws-evict-flip", "devide_evict2", "%0", :working, "step")
+      :ok = AgentState.report("ws-evict-flip", "casein_evict2", "%0", :working, "step")
 
       for i <- 1..501 do
-        :ok = AgentState.report("ws-evict-fill2", "devide_evict_fill2", "%#{i}", :working, "f")
+        :ok = AgentState.report("ws-evict-fill2", "casein_evict_fill2", "%#{i}", :working, "f")
       end
 
-      assert AgentState.get("devide_evict2", "%0") == nil
+      assert AgentState.get("casein_evict2", "%0") == nil
 
-      :ok = AgentState.report("ws-evict-flip", "devide_evict2", "%0", :blocked, "stuck")
-      assert %{state: :blocked} = AgentState.get("devide_evict2", "%0")
+      :ok = AgentState.report("ws-evict-flip", "casein_evict2", "%0", :blocked, "stuck")
+      assert %{state: :blocked} = AgentState.get("casein_evict2", "%0")
 
       [row | _] =
         "ws-evict-flip"
@@ -277,7 +257,7 @@ defmodule Casein.Terminals.AgentStateTest do
     test "a blocked transition also keeps the dedicated agent.blocked row" do
       :ok = Casein.Audit.subscribe("ws-timeline")
 
-      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%7", :blocked, "needs perm")
+      :ok = AgentState.report("ws-timeline", "casein_alpha_u-dev", "%7", :blocked, "needs perm")
 
       assert_receive {:audit_event, %{action: "agent.state_changed", metadata: %{to: :blocked}}}
       assert_receive {:audit_event, %{action: "agent.blocked"}}
@@ -289,7 +269,7 @@ defmodule Casein.Terminals.AgentStateTest do
       :ok =
         AgentState.report(
           "ws-timeline",
-          "devide_alpha_u-dev",
+          "casein_alpha_u-dev",
           "%8",
           :blocked,
           "export token=super-secret"
@@ -304,13 +284,13 @@ defmodule Casein.Terminals.AgentStateTest do
   describe "session_status/2" do
     test "maps freshest reported state to picker vocabulary" do
       ws = "ws-state-#{System.unique_integer([:positive])}"
-      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, nil)
-      assert AgentState.session_status("devide_alpha_u-dev") == "attention"
+      :ok = AgentState.report(ws, "casein_alpha_u-dev", "%3", :blocked, nil)
+      assert AgentState.session_status("casein_alpha_u-dev") == "attention"
     end
 
     test "ignores reports older than the max TTL" do
       # No live report → nil, even though a stale one would exist in a real run.
-      assert AgentState.session_status("devide_empty_u-dev") == nil
+      assert AgentState.session_status("casein_empty_u-dev") == nil
     end
   end
 
@@ -374,7 +354,7 @@ defmodule Casein.Terminals.AgentStateTest do
       ws = "ws-state-#{System.unique_integer([:positive])}"
 
       :ok =
-        AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, "needs input",
+        AgentState.report(ws, "casein_alpha_u-dev", "%3", :blocked, "needs input",
           agent_session_id: "grok-session-123"
         )
 
@@ -392,7 +372,7 @@ defmodule Casein.Terminals.AgentStateTest do
         ]
       }
 
-      enriched = AgentState.enrich_topology(topology, "devide_alpha_u-dev")
+      enriched = AgentState.enrich_topology(topology, "casein_alpha_u-dev")
 
       agent_pane = Enum.find(enriched.panes, &(&1.id == "%3"))
       other_pane = Enum.find(enriched.panes, &(&1.id == "%4"))

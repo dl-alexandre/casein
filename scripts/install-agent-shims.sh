@@ -26,7 +26,7 @@ LEGACY_BIN_DIR="${HOME}/.local/bin"
 REAL_DIR="${HOME}/.casein/real-bins"
 export CASEIN_NPM_PREFIX="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
 NPM_PREFIX="${CASEIN_NPM_PREFIX}"
-DEVIDE_CLI="${ROOT}/scripts/devide"
+CASEIN_CLI="${ROOT}/scripts/casein"
 # clauded is a bash alias → claude --dangerously-skip-permissions; do not shim it.
 RUNTIMES=(grok claude codex opencode agent)
 MODE="install"
@@ -60,7 +60,7 @@ done
 
 shims_complete() {
   local name
-  for name in "${RUNTIMES[@]}" devide; do
+  for name in "${RUNTIMES[@]}" casein; do
     if [[ ! -x "${BIN_DIR}/${name}" ]]; then
       return 1
     fi
@@ -70,7 +70,7 @@ shims_complete() {
 
 missing_shims() {
   local name
-  for name in "${RUNTIMES[@]}" devide; do
+  for name in "${RUNTIMES[@]}" casein; do
     if [[ ! -x "${BIN_DIR}/${name}" ]]; then
       printf '%s\n' "$name"
     fi
@@ -79,7 +79,7 @@ missing_shims() {
 
 if [[ "$MODE" == "check" ]]; then
   if shims_complete; then
-    echo "OK: agent shims complete in ${BIN_DIR}: ${RUNTIMES[*]} devide"
+    echo "OK: agent shims complete in ${BIN_DIR}: ${RUNTIMES[*]} casein"
     exit 0
   fi
   echo "error: incomplete agent shims in ${BIN_DIR}:" >&2
@@ -95,29 +95,29 @@ fi
 
 mkdir -p "$BIN_DIR" "$REAL_DIR" "${NPM_PREFIX}/bin"
 
-if [[ ! -x "$DEVIDE_CLI" ]]; then
-  echo "error: missing executable ${DEVIDE_CLI}" >&2
+if [[ ! -x "$CASEIN_CLI" ]]; then
+  echo "error: missing executable ${CASEIN_CLI}" >&2
   exit 1
 fi
 
-ln -sf "$DEVIDE_CLI" "${BIN_DIR}/devide"
-# The devide CLI itself is a plain command, not an interceptor — keep a
-# convenience symlink in ~/.local/bin so `devide agent doctor` etc. work from
+ln -sf "$CASEIN_CLI" "${BIN_DIR}/casein"
+# The casein CLI itself is a plain command, not an interceptor — keep a
+# convenience symlink in ~/.local/bin so `casein agent doctor` etc. work from
 # any terminal. This is the only thing Casein still places there.
 if [[ -d "$LEGACY_BIN_DIR" ]]; then
-  ln -sf "$DEVIDE_CLI" "${LEGACY_BIN_DIR}/devide"
+  ln -sf "$CASEIN_CLI" "${LEGACY_BIN_DIR}/casein"
 fi
 
 # Repointing the npm global prefix redirects ALL of the user's `npm -g`
 # installs — a boundary violation on personal machines. Auto-on only for
-# Casein-managed hosts (marked by /etc/casein/devide.env);
+# Casein-managed hosts (marked by /etc/casein/casein.env);
 # CASEIN_MANAGE_NPM_PREFIX=1/0 overrides in either direction.
 manage_npm_prefix() {
   case "${CASEIN_MANAGE_NPM_PREFIX:-}" in
     1) return 0 ;;
     0) return 1 ;;
   esac
-  [[ -f /etc/casein/devide.env ]]
+  [[ -f /etc/casein/casein.env ]]
 }
 
 ensure_npm_prefix() {
@@ -156,7 +156,7 @@ record_real_bin() {
 
   real="$(PATH="$(real_agent_bin_path_without_shims)" command -v "$name" 2>/dev/null || true)"
 
-  if [[ -n "$real" ]] && ! is_devide_shim "$real"; then
+  if [[ -n "$real" ]] && ! is_casein_shim "$real"; then
     resolved="$(readlink -f "$real" 2>/dev/null || printf '%s' "$real")"
     bin_dir_resolved="$(readlink -f "$BIN_DIR" 2>/dev/null || printf '%s' "$BIN_DIR")"
     # Never point real-bins at BIN_DIR — shims overwrite those paths next.
@@ -211,7 +211,7 @@ verify_shim_precedence() {
 cleanup_legacy_shims() {
   local name removed=""
   for name in "${RUNTIMES[@]}" clauded; do
-    if is_devide_shim "${LEGACY_BIN_DIR}/${name}"; then
+    if is_casein_shim "${LEGACY_BIN_DIR}/${name}"; then
       rm -f "${LEGACY_BIN_DIR}/${name}"
       removed="${removed} ${name}"
     fi
@@ -228,7 +228,7 @@ install_shim() {
   cat >"$tmp" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-exec "${DEVIDE_CLI}" agent launch ${name} "\$@"
+exec "${CASEIN_CLI}" agent launch ${name} "\$@"
 EOF
   chmod +x "$tmp"
   mv -f "$tmp" "${BIN_DIR}/${name}"

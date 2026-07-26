@@ -68,7 +68,7 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
         conn,
         %{jsonrpc: "2.0", id: 1, method: "tools/list"},
         @token,
-        "/api/preview/mcp?workspace_id=ws-query&tmux_session=devide_ws-query_wt-agent"
+        "/api/preview/mcp?workspace_id=ws-query&tmux_session=casein_ws-query_wt-agent"
       )
 
     assert %{"result" => %{"tools" => tools}} = json_response(conn, 200)
@@ -83,17 +83,17 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
         conn,
         %{jsonrpc: "2.0", id: 1, method: "tools/list"},
         @token,
-        "/api/preview/mcp?workspace_id=ws-query&tmux_session=devide_other-workspace_default"
+        "/api/preview/mcp?workspace_id=ws-query&tmux_session=casein_other-workspace_default"
       )
 
     assert %{
              "error" => "invalid_tmux_session_scope",
              "workspace_id" => "ws-query",
-             "tmux_session" => "devide_other-workspace_default",
+             "tmux_session" => "casein_other-workspace_default",
              "allowed_prefixes" => prefixes
            } = json_response(conn, 400)
 
-    assert "devide_ws-query_" in prefixes
+    assert "casein_ws-query_" in prefixes
   end
 
   test "workspace-scoped token injects its workspace when query is omitted", %{conn: conn} do
@@ -115,13 +115,13 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
         conn,
         %{jsonrpc: "2.0", id: 1, method: "tools/list"},
         "ws-token",
-        "/api/preview/mcp?tmux_session=devide_other-workspace_default"
+        "/api/preview/mcp?tmux_session=casein_other-workspace_default"
       )
 
     assert %{
              "error" => "invalid_tmux_session_scope",
              "workspace_id" => "ws-scoped",
-             "tmux_session" => "devide_other-workspace_default"
+             "tmux_session" => "casein_other-workspace_default"
            } = json_response(conn, 400)
   end
 

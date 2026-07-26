@@ -811,7 +811,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   When `preview?: true`, the visual theme updates (client LUT + workers) but
   `terminal_preset_id` is left alone so a later restore can re-commit the
   previous choice. The client bundle includes `preview: true` so the browser
-  skips writing `localStorage["devide:terminal-preset"]`.
+  skips writing `localStorage["casein:terminal-preset"]`.
   """
   @spec apply_terminal_preset(Phoenix.LiveView.Socket.t(), String.t(), keyword()) ::
           {:ok, Phoenix.LiveView.Socket.t()} | :error
@@ -985,8 +985,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   defp kill_session_ok?({_, 0}), do: true
   defp kill_session_ok?(_), do: false
 
-  defp kill_session_error(:refused_non_devide_session),
-    do: "Could not close tmux session: refused non-devide session."
+  defp kill_session_error(:refused_non_casein_session),
+    do: "Could not close tmux session: refused non-casein session."
 
   defp kill_session_error({code, message}) when is_binary(message) do
     "Could not close tmux session: #{inspect({code, message})}"

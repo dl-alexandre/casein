@@ -51,25 +51,25 @@ column names the pre-existing doc the subsystem doc threads back into.
 | `lib/preview_ctl/` | [`subsystems/preview_ctl.md`](subsystems/preview_ctl.md) | `preview_mcp.md` |
 | `lib/mix/tasks/` | [`reference/cli_and_keys.md`](reference/cli_and_keys.md) | `leader_keys.md` |
 
-### `dev_ide_core/lib/*` (path-dependency package)
+### `casein_core/lib/*` (path-dependency package)
 
 These generic, dependency-free BEAM primitives back Casein-app facades and are
-now owned by [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md).
+now owned by [`subsystems/casein_core.md`](subsystems/casein_core.md).
 
 | Directory | Owning doc | Cross-link |
 |-----------|------------|------------|
-| `dev_ide_core/lib/exec_ctl/` | [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md) | `subsystems/palette_commands.md` / `reference/cli_and_keys.md` (allowlist source-of-truth) |
-| `dev_ide_core/lib/git_ctl/` | [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md) | `subsystems/code_intelligence.md` (inspector/cache backing) |
-| `dev_ide_core/lib/mcp_ctl/` | [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md) | `reference/mcp_tools.md` (JSON-RPC primitives) |
+| `casein_core/lib/exec_ctl/` | [`subsystems/casein_core.md`](subsystems/casein_core.md) | `subsystems/palette_commands.md` / `reference/cli_and_keys.md` (allowlist source-of-truth) |
+| `casein_core/lib/git_ctl/` | [`subsystems/casein_core.md`](subsystems/casein_core.md) | `subsystems/code_intelligence.md` (inspector/cache backing) |
+| `casein_core/lib/mcp_ctl/` | [`subsystems/casein_core.md`](subsystems/casein_core.md) | `reference/mcp_tools.md` (JSON-RPC primitives) |
 
 ## Subsystems with NO owning doc
 
 > ✅ None. Every `lib/`, `lib/casein_web/`, in-repo `lib/*` library, and
-> `dev_ide_core/lib/` subsystem now maps to an owning doc in the tables above.
+> `casein_core/lib/` subsystem now maps to an owning doc in the tables above.
 > The last gaps closed in the follow-up pass:
 >
-> - **`dev_ide_core/lib/{exec_ctl,git_ctl,mcp_ctl}/`** — now owned by
->   [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md). `ExecCtl.Allowlist`
+> - **`casein_core/lib/{exec_ctl,git_ctl,mcp_ctl}/`** — now owned by
+>   [`subsystems/casein_core.md`](subsystems/casein_core.md). `ExecCtl.Allowlist`
 >   is the authoritative command id→argv map that `Casein.Commands.Allowlist`
 >   (and thus `Casein.Policy`) delegates into.
 > - **`lib/casein/integrations/manager/`** — owned by
@@ -141,13 +141,13 @@ against the **code** (docs win).
    `nil` and `run_artifacts/1` always returns `[]` (retired with the
    delegated-execution/batch-command stack). The export payload still emits an
    empty `artifacts: []` and a `nil` active_run — permanently inert fields.
-3. **dev_ide_core** — `ExecCtl.Port` (`dev_ide_core/lib/exec_ctl/port.ex`) has
+3. **casein_core** — `ExecCtl.Port` (`casein_core/lib/exec_ctl/port.ex`) has
    **no production caller**: the only callers are `test/exec_ctl/port_test.exs`
-   and the unused `DevIdeCore.exec_run/3` facade. The app's real subprocess
+   and the unused `CaseinCore.exec_run/3` facade. The app's real subprocess
    executor, `Casein.Commands.spawn/3` (`lib/casein/commands.ex`), reimplements
    the same erlexec-proxy-and-monitor plumbing inline rather than delegating to
    `ExecCtl.Port`. Parallel/duplicated logic; candidate for consolidation.
-4. **dev_ide_core** — the `DevIdeCore` convenience facade
+4. **casein_core** — the `CaseinCore` convenience facade
    (`git_inspect/1`, `exec_run/3`, `mcp_tool/3`) is unused in `lib/`; callers
    reach `GitCtl.Inspector` / `McpCtl.Tool` directly. Self-described "thin
    documentation/convenience facade", not on any app call path.
@@ -177,7 +177,7 @@ against the **code** (docs win).
    until now.
 5. **code-intel** — `Casein.Git.Inspector` delegates worktree/checkout detection
    and ETS caching to `GitCtl.Inspector` / `GitCtl.Cache` in the
-   `dev_ide_core` umbrella sibling — the git-inspection behavior is split across
+   `casein_core` umbrella sibling — the git-inspection behavior is split across
    two apps; the GitCtl side is unowned.
 6. **palette-commands** — the palette's true runtime entry point is
    `CaseinWeb.WorkspaceLive.Show.PaletteItems`
@@ -188,7 +188,7 @@ against the **code** (docs win).
    (static facade + live orchestrator) structure and the dynamic-id guard path
    were undocumented.
 7. **palette-commands** — `Casein.Commands.Allowlist` is a thin `defdelegate` to
-   `ExecCtl.Allowlist` (`dev_ide_core`); the real id→argv map lives there.
+   `ExecCtl.Allowlist` (`casein_core`); the real id→argv map lives there.
    (`commands/allowlist.ex:10-13`.)
 8. **palette-commands** — `Annotation.preview_id` is intentionally a nullable
    `:binary_id` and **not** a foreign key because the preview persistence model
@@ -217,7 +217,7 @@ against the **code** (docs win).
     undocumented at the architecture level; the per-pane worker draining model
     and the backend-swap escape hatch have no architecture-doc home.
 13. **web** — `TerminalChannel` keeps an ETS fast-path cache
-    (`:dev_ide_terminal_fast_path_cache`, 60s TTL) to skip workspace-manager
+    (`:casein_terminal_fast_path_cache`, 60s TTL) to skip workspace-manager
     access checks on reconnect storms. This per-socket capability-token bypass of
     manager re-checks is not described in `architecture.md` Boundary 2.
 14. **tmux-ctl** — `adapter.ex:25` `@callback directory_inventory/0` is typed
@@ -270,7 +270,7 @@ palette-commands, policy-deploy-export, tmux-ctl, ref-mcp, ref-cli.
 
 After generation, every module/file identifier cited in `docs/subsystems/*` and
 `docs/reference/*` was checked against real `defmodule`s (in `lib/`,
-`dev_ide_core/`, and `test/support/`) plus registered process/Registry names.
+`casein_core/`, and `test/support/`) plus registered process/Registry names.
 **Result: all cited modules resolve.** No fabricated module citations were found.
 
 > ✅ **Preview-control / tmux-adapter dead-code removal — landed.** The refactor
@@ -278,7 +278,7 @@ After generation, every module/file identifier cited in `docs/subsystems/*` and
 > `0737aa0 "Remove dead preview/tmux adapters; wire TmuxServer test sandbox"`
 > (on the `chore/self-hosted-deploy-poller` deploy branch; not yet on `master`).
 > It deleted `lib/casein/preview_control/{adapter,memory_adapter,playwright_adapter,playwright_bridge}.ex`,
-> `lib/casein/terminals/tmux_adapter.ex`, and `lib/mix/tasks/dev_ide.preview.demo.ex`.
+> `lib/casein/terminals/tmux_adapter.ex`, and `lib/mix/tasks/casein.preview.demo.ex`.
 > These docs have been updated to match: the `Casein.PreviewControl.*Adapter` /
 > `PlaywrightBridge` rows and the `Casein.Terminals.TmuxAdapter` row are dropped;
 > `Casein.PreviewControl` now drives `PreviewCtl.*` directly via
@@ -296,7 +296,7 @@ and have been corrected**, including:
 - `audit_activity.md` — `EctoAdapter` is the default for **every** env (`config.exs`); only `config/test.exs` overrides to `MemoryAdapter` (was wrongly "dev/test default MemoryAdapter"). Also: `Export.WorkspaceStatus` does **not** call `Runs.Status.*`.
 - `tmux_terminal_ctl.md` — the "user field placed last" format-string invariant holds only for the directory/janitor formats; `@topology_window_fmt` puts `window_name` mid-string and relies on `parts:`-capped splitting.
 - `proposals.md` — the public consumer is `Export.WorkspaceStatus.proposals/1` (delegating to the private `recent_proposals/2`).
-- `workspaces.md`, `dev_ide_core.md`, `cli_and_keys.md` — assorted exact-set / type / error-string corrections.
+- `workspaces.md`, `casein_core.md`, `cli_and_keys.md` — assorted exact-set / type / error-string corrections.
 
 The doc-citation guard (`scripts/check-doc-citations.sh`, wired into the
 pre-push gate) now blocks any push that orphans a module reference in these docs.

@@ -16,4 +16,4 @@ if [ "${DATABASE_PATH:-}" != "" ]; then
   touch "${DATABASE_PATH}"
 fi
 
-exec ./bin/casein eval "Casein.Release.migrate()"
+exec ./bin/casein-runtime eval "Casein.Release.migrate()"

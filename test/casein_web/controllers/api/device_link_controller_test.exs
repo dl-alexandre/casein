@@ -48,7 +48,7 @@ defmodule CaseinWeb.API.DeviceLinkControllerTest do
     refute device_token == pairing_token
     assert payload["resources"] == [%{"kind" => "workspace", "id" => "ws-1", "label" => "Alpha"}]
     assert payload["workspace_id"] == "ws-1"
-    assert "dev_ide.mobile_cards" in payload["capabilities"]
+    assert "casein.mobile_cards" in payload["capabilities"]
 
     assert {:ok, %{workspace_id: "ws-1", id: "owner"}} = DeviceLinks.verify_token(device_token)
   end

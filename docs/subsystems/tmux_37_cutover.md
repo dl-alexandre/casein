@@ -7,7 +7,7 @@ explicit CSI `?997` dark/light theme reports (mode 2031). Casein gates those
 features on `TmuxCtl.Client.server_version/0` and is a no-op on 3.4. This
 runbook installs **3.7** on the devbox and restarts so the gates open.
 
-**This is disruptive.** `tmux -L devide kill-server` drops the tmux sessions of
+**This is disruptive.** `tmux -L casein kill-server` drops the tmux sessions of
 **every user on the devbox**, not just yours. Do it only in an announced,
 bounded window.
 
@@ -29,30 +29,30 @@ not automated, so the disruptive step is never triggered by a deploy.
 picking up upstream paste/escape-timing fixes, name sanitization, and stability
 fixes on paths Casein already uses (`load-buffer` / `paste-buffer`, forwarded
 OSC/CSI queries on the attach PTY). Floating panes and other 3.7 UI features are
-not enabled in `priv/tmux/devide.conf`.
+not enabled in `priv/tmux/casein.conf`.
 
 ## Cutover steps (on the devbox, in the window)
 
 1. **Announce** the window to devbox users; confirm no critical session is live.
 2. **Install 3.7** to `/usr/local/bin` (precedes `/usr/bin`):
    ```sh
-   sudo TMUX_PREFIX=/usr/local bash /data/workspaces/dalexandre/dev_ide/scripts/install-tmux.sh
+   sudo TMUX_PREFIX=/usr/local bash /data/workspaces/dalexandre/casein/scripts/install-tmux.sh
    tmux -V   # expect: tmux 3.7   (resolves via PATH to /usr/local/bin)
    ```
 3. **Cut over the Casein tmux servers** (mixed client/server on one socket is
    unsupported, so the servers must be killed and recreated):
    ```sh
-   tmux -L devide kill-server 2>/dev/null || true
-   tmux -L devide_dev kill-server 2>/dev/null || true
+   tmux -L casein kill-server 2>/dev/null || true
+   tmux -L casein_dev kill-server 2>/dev/null || true
    ```
 4. **Restart Casein** so it re-execs against the new binary and clears the
    cached server version (`persistent_term`):
    ```sh
-   sudo systemctl restart devide      # or the deploy poller's restart path
+   sudo systemctl restart casein      # or the deploy poller's restart path
    ```
 5. **Verify the server version** Casein will see:
    ```sh
-   tmux -L devide display-message -p '#{version}'   # expect: 3.7
+   tmux -L casein display-message -p '#{version}'   # expect: 3.7
    ```
 6. **Smoke-check in-pane detection** — open a Casein terminal with **two**
    browser viewers on the same session, then in the pane:
@@ -61,7 +61,7 @@ not enabled in `priv/tmux/devide.conf`.
    ```
    Expect **exactly one** `\e]11;rgb:…` reply matching the session background.
    Flip the browser scheme (dark↔light), wait ~1 s, re-run: the reply must show
-   the new background and `tmux -L devide show-environment CASEIN_TERMINAL_SCHEME`
+   the new background and `tmux -L casein show-environment CASEIN_TERMINAL_SCHEME`
    must agree.
 7. **Smoke-check explicit theme reports** (3.6+ only):
    ```sh
@@ -76,9 +76,9 @@ If 3.7 shows a terminal regression, revert to the apt tmux and restart:
 ```sh
 sudo rm -f /usr/local/bin/tmux            # unpin; PATH falls back to /usr/bin (apt 3.4)
 tmux -V                                    # expect: tmux 3.4
-tmux -L devide kill-server 2>/dev/null || true
-tmux -L devide_dev kill-server 2>/dev/null || true
-sudo systemctl restart devide
+tmux -L casein kill-server 2>/dev/null || true
+tmux -L casein_dev kill-server 2>/dev/null || true
+sudo systemctl restart casein
 ```
 
 The theme report code re-gates itself off automatically once the server

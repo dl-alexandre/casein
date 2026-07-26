@@ -70,7 +70,7 @@ defmodule Casein.Runtimes.PreviewKillerTest do
       server = %{
         "runtime_id" => runtime_id,
         "port" => free_closed_port(),
-        "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+        "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
       }
 
       assert File.exists?(registry)
@@ -84,20 +84,20 @@ defmodule Casein.Runtimes.PreviewKillerTest do
       server = %{
         "runtime_id" => runtime_id,
         "port" => free_closed_port(),
-        "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+        "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
       }
 
       assert PreviewKiller.kill(server) == :ok
       refute File.exists?(registry)
     end
 
-    test "accepts atom DEVIDE_PREVIEW_HOME env key and still drops the registry" do
+    test "accepts atom CASEIN_PREVIEW_HOME env key and still drops the registry" do
       {preview_home, runtime_id, registry} = tmp_registry!(%{"pid" => ""})
 
       server = %{
         "runtime_id" => runtime_id,
         "port" => free_closed_port(),
-        "env" => %{DEVIDE_PREVIEW_HOME: preview_home}
+        "env" => %{CASEIN_PREVIEW_HOME: preview_home}
       }
 
       assert PreviewKiller.kill(server) == :ok
@@ -134,7 +134,7 @@ defmodule Casein.Runtimes.PreviewKillerTest do
       server = %{
         "runtime_id" => "rt-missing-#{System.unique_integer([:positive])}",
         "port" => free_closed_port(),
-        "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+        "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
       }
 
       assert PreviewKiller.kill(server) == :ok
@@ -147,7 +147,7 @@ defmodule Casein.Runtimes.PreviewKillerTest do
       server = %{
         "runtime_id" => "../evil",
         "port" => free_closed_port(),
-        "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+        "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
       }
 
       assert PreviewKiller.kill(server) == :ok
@@ -156,7 +156,7 @@ defmodule Casein.Runtimes.PreviewKillerTest do
       assert PreviewKiller.kill(%{
                "runtime_id" => "has space",
                "port" => free_closed_port(),
-               "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+               "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
              }) == :ok
 
       assert File.exists?(registry)
@@ -168,7 +168,7 @@ defmodule Casein.Runtimes.PreviewKillerTest do
       server = %{
         "runtime_id" => nil,
         "port" => free_closed_port(),
-        "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+        "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
       }
 
       assert PreviewKiller.kill(server) == :ok
@@ -181,7 +181,7 @@ defmodule Casein.Runtimes.PreviewKillerTest do
       server = %{
         "runtime_id" => runtime_id,
         "port" => nil,
-        "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+        "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
       }
 
       assert PreviewKiller.kill(server) == :ok
@@ -193,7 +193,7 @@ defmodule Casein.Runtimes.PreviewKillerTest do
 
       server = %{
         "runtime_id" => runtime_id,
-        "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+        "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
       }
 
       assert PreviewKiller.kill(server) == :ok
@@ -211,7 +211,7 @@ defmodule Casein.Runtimes.PreviewKillerTest do
         server = %{
           "runtime_id" => runtime_id,
           "port" => port,
-          "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+          "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
         }
 
         assert PreviewKiller.kill(server) == :ok

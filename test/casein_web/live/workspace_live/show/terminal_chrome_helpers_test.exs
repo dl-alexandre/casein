@@ -688,8 +688,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
     end
 
     test "tmux_session reads either key style" do
-      assert TC.preview_tmux_session(%{tmux_session: "devide_a_b"}) == "devide_a_b"
-      assert TC.preview_tmux_session(%{"tmux_session" => "devide_c_d"}) == "devide_c_d"
+      assert TC.preview_tmux_session(%{tmux_session: "casein_a_b"}) == "casein_a_b"
+      assert TC.preview_tmux_session(%{"tmux_session" => "casein_c_d"}) == "casein_c_d"
       assert TC.preview_tmux_session(%{}) == nil
       assert TC.preview_tmux_session(nil) == nil
     end
@@ -708,18 +708,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
 
   describe "preview_session_label/2" do
     test "mismatch produces an 'Other session' label" do
-      label = TC.preview_session_label(%{tmux_session: "devide_a_b_alpha"}, "devide_x_y_beta")
+      label = TC.preview_session_label(%{tmux_session: "casein_a_b_alpha"}, "casein_x_y_beta")
       assert label =~ "Other session: "
     end
 
     test "matching/present session produces a 'Session' label" do
-      label = TC.preview_session_label(%{tmux_session: "devide_a_b_alpha"}, "devide_a_b_alpha")
+      label = TC.preview_session_label(%{tmux_session: "casein_a_b_alpha"}, "casein_a_b_alpha")
       assert label =~ "Session "
       refute label =~ "Other session"
     end
 
     test "unknown when no preview session" do
-      assert TC.preview_session_label(%{}, "devide_a_b") == "Session unknown"
+      assert TC.preview_session_label(%{}, "casein_a_b") == "Session unknown"
     end
   end
 
@@ -1038,16 +1038,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
 
   describe "terminal_session_label/2" do
     test "prefers the terminal sid detail when present" do
-      assert TC.terminal_session_label("devide_w_x_alpha", "u-alice-abc1234") == "abc1234"
+      assert TC.terminal_session_label("casein_w_x_alpha", "u-alice-abc1234") == "abc1234"
     end
 
     test "uses the tmux session id segment when no terminal sid" do
-      # tmux_sid("devide_" <> rest): rest split on "_" must have >= 2 parts;
+      # tmux_sid("casein_" <> rest): rest split on "_" must have >= 2 parts;
       # last segment is the sid, run through shell_sid_detail/shorten.
-      assert TC.terminal_session_label("devide_work_alpha") == "alpha"
+      assert TC.terminal_session_label("casein_work_alpha") == "alpha"
     end
 
-    test "shortens the raw tmux session when it is not a devide_ session" do
+    test "shortens the raw tmux session when it is not a casein_ session" do
       assert TC.terminal_session_label("plain-session") == "plain-session"
     end
   end
@@ -1062,7 +1062,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
       width: width,
       height: height,
       window_id: "@0",
-      current_path: "/work/dev_ide",
+      current_path: "/work/casein",
       current_command: "bash"
     }
   end

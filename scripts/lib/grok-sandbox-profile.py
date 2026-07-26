@@ -60,11 +60,11 @@ def main() -> int:
         print("error: managed Grok sandbox requires a deny set", file=sys.stderr)
         return 2
 
-    begin = f"# BEGIN DEVIDE MANAGED GROK SANDBOX {name}"
-    end = f"# END DEVIDE MANAGED GROK SANDBOX {name}"
+    begin = f"# BEGIN CASEIN MANAGED GROK SANDBOX {name}"
+    end = f"# END CASEIN MANAGED GROK SANDBOX {name}"
     existing = path.read_text() if path.exists() else ""
     block_re = re.compile(
-        rf"(?ms)^\# BEGIN DEVIDE MANAGED GROK SANDBOX {re.escape(name)}\n.*?^\# END DEVIDE MANAGED GROK SANDBOX {re.escape(name)}\n?"
+        rf"(?ms)^\# BEGIN CASEIN MANAGED GROK SANDBOX {re.escape(name)}\n.*?^\# END CASEIN MANAGED GROK SANDBOX {re.escape(name)}\n?"
     )
     existing = block_re.sub("", existing).rstrip()
     encoded = ", ".join(json.dumps(value) for value in deny)

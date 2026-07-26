@@ -20,7 +20,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
 
     expected = Casein.Terminals.Tmux.session_name(workspace_key, sid)
     assert Casein.Terminals.SessionOwner.durable_shell_session?(expected)
-    refute Casein.Terminals.SessionOwner.durable_shell_session?("devide_other_ws_other_sid")
+    refute Casein.Terminals.SessionOwner.durable_shell_session?("casein_other_ws_other_sid")
   end
 
   test "shell owners remain alive after explicit detach (no auto-stop)" do
@@ -867,10 +867,10 @@ defmodule Casein.Terminals.SessionOwnerTest do
   end
 
   test "Tmux.kill deletes scrollback archive for the session" do
-    session = "devide_kill_archive_#{System.unique_integer([:positive])}"
+    session = "casein_kill_archive_#{System.unique_integer([:positive])}"
 
     dir =
-      Path.join(System.tmp_dir!(), "devide-kill-archive-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-kill-archive-#{System.unique_integer([:positive])}")
 
     Application.put_env(:casein, :tmux_scrollback_archive_dir, dir)
     Casein.Terminals.ScrollbackArchive.ensure_table!()
@@ -1035,7 +1035,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
     end)
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{
-      "devide_ws-drift-guard_sid-#{unique}" => {80, 24}
+      "casein_ws-drift-guard_sid-#{unique}" => {80, 24}
     })
 
     send(owner_pid, :tmux_drift_check)
@@ -1052,7 +1052,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
     # over tmux window sizes just because it is still running.
     swap_in_fake_tmux_adapter()
 
-    tmp = Path.join(System.tmp_dir!(), "devide-superseded-#{System.unique_integer([:positive])}")
+    tmp = Path.join(System.tmp_dir!(), "casein-superseded-#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)
     current = Path.join(tmp, "current.sock")
     live_socket = Path.join(tmp, "live.sock")
@@ -1060,9 +1060,9 @@ defmodule Casein.Terminals.SessionOwnerTest do
     File.ln_s!(live_socket, current)
 
     prev_current = Application.get_env(:casein, :deployment_current_socket)
-    prev_env = System.get_env("DEVIDE_HTTP_SOCKET")
+    prev_env = System.get_env("CASEIN_HTTP_SOCKET")
     Application.put_env(:casein, :deployment_current_socket, current)
-    System.put_env("DEVIDE_HTTP_SOCKET", our_socket)
+    System.put_env("CASEIN_HTTP_SOCKET", our_socket)
 
     on_exit(fn ->
       File.rm_rf!(tmp)
@@ -1073,8 +1073,8 @@ defmodule Casein.Terminals.SessionOwnerTest do
       end
 
       case prev_env do
-        nil -> System.delete_env("DEVIDE_HTTP_SOCKET")
-        _ -> System.put_env("DEVIDE_HTTP_SOCKET", prev_env)
+        nil -> System.delete_env("CASEIN_HTTP_SOCKET")
+        _ -> System.put_env("CASEIN_HTTP_SOCKET", prev_env)
       end
     end)
 
@@ -1087,7 +1087,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
       %{state | workspace_key: "ws-superseded", applied_size: {120, 40}}
     end)
 
-    session = "devide_ws-superseded_sid-#{unique}"
+    session = "casein_ws-superseded_sid-#{unique}"
     TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {80, 24}})
 
     # current.sock resolves to live_socket, not ours → superseded → no re-assert.
@@ -1154,7 +1154,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
       %{state | workspace_key: "ws-drift-fight", applied_size: {120, 40}}
     end)
 
-    session = "devide_ws-drift-fight_sid-#{unique}"
+    session = "casein_ws-drift-fight_sid-#{unique}"
     TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {80, 24}})
 
     :telemetry_test.attach_event_handlers(self(), [
@@ -1298,7 +1298,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
     end)
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{
-      "devide_ws-drain-guard_sid-#{unique}" => {80, 24}
+      "casein_ws-drain-guard_sid-#{unique}" => {80, 24}
     })
 
     :ok = Casein.Deployment.Drain.start_drain(1)
@@ -2050,7 +2050,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
       info = Terminals.new_shell("ws-cmd-log", "sid-cmd-log")
       owner_pid = start_shell_owner("ws-cmd-log", info)
 
-      send(owner_pid, {:term_data, "\e]7;file://host/tmp/devide\a"})
+      send(owner_pid, {:term_data, "\e]7;file://host/tmp/casein\a"})
       send(owner_pid, {:term_data, "\e]133;B;mix test\a"})
       send(owner_pid, {:term_data, "running\n"})
       send(owner_pid, {:term_data, "FAILED token=super-secret\n\e]133;D;1\a"})
@@ -2058,7 +2058,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
 
       assert [command] = CommandLog.list("ws-cmd-log", "sid-cmd-log")
       assert command.command == "mix test"
-      assert command.cwd == "/tmp/devide"
+      assert command.cwd == "/tmp/casein"
       assert command.exit_status == 1
       assert command.output == "running\nFAILED token=[REDACTED]\n"
       assert command.gen_range == {2, 4}

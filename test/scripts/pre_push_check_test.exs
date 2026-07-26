@@ -20,7 +20,7 @@ defmodule Scripts.PrePushCheckTest do
     # report, and the trap itself can never flip the gate's exit code.
     assert content =~ "trap 'report_gate_result \"$?\" || true' EXIT"
     assert content =~ "\\\"name\\\":\\\"gate_report\\\""
-    assert content =~ "\"workspace_id\": os.environ[\"DEVIDE_WORKSPACE_ID\"]"
+    assert content =~ "\"workspace_id\": os.environ[\"CASEIN_WORKSPACE_ID\"]"
   end
 
   test "gate reporting is fail-open on every path" do
@@ -28,7 +28,7 @@ defmodule Scripts.PrePushCheckTest do
 
     # Skipped silently without the workspace env vars.
     assert content =~
-             "[[ -n \"${CASEIN_API_TOKEN:-}\" && -n \"${DEVIDE_WORKSPACE_ID:-}\" ]] || return 0"
+             "[[ -n \"${CASEIN_API_TOKEN:-}\" && -n \"${CASEIN_WORKSPACE_ID:-}\" ]] || return 0"
 
     # Skipped when the helper binaries are missing.
     assert content =~ "command -v python3 >/dev/null 2>&1 || return 0"

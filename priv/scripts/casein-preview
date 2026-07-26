@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/casein-curl.sh
 source "${SCRIPT_DIR}/casein-curl.sh"
 
-API_BASE="${DEVIDE_URL:-http://127.0.0.1:4000}"
+API_BASE="${CASEIN_URL:-http://127.0.0.1:4000}"
 TOKEN="${CASEIN_API_TOKEN:-}"
 
 URL=""
@@ -24,12 +24,12 @@ PANE_ID="${TMUX_PANE:-}"
 TMUX_SESSION=""
 PANE_WINDOW_ID=""
 CWD="$(pwd)"
-WORKSPACE_ID="${DEVIDE_WORKSPACE_ID:-}"
-STORAGE_PROFILE="${DEVIDE_PREVIEW_STORAGE_PROFILE:-}"
-STORAGE_PROFILE_NAME="${DEVIDE_PREVIEW_STORAGE_PROFILE_NAME:-}"
-PLACEMENT="${DEVIDE_PREVIEW_PLACEMENT:-}"
-ANCHOR_PANE_ID="${DEVIDE_PREVIEW_ANCHOR_PANE_ID:-}"
-ANCHOR_WINDOW_ID="${DEVIDE_PREVIEW_ANCHOR_WINDOW_ID:-}"
+WORKSPACE_ID="${CASEIN_WORKSPACE_ID:-}"
+STORAGE_PROFILE="${CASEIN_PREVIEW_STORAGE_PROFILE:-}"
+STORAGE_PROFILE_NAME="${CASEIN_PREVIEW_STORAGE_PROFILE_NAME:-}"
+PLACEMENT="${CASEIN_PREVIEW_PLACEMENT:-}"
+ANCHOR_PANE_ID="${CASEIN_PREVIEW_ANCHOR_PANE_ID:-}"
+ANCHOR_WINDOW_ID="${CASEIN_PREVIEW_ANCHOR_WINDOW_ID:-}"
 
 usage() {
   cat <<'EOF'
@@ -43,14 +43,14 @@ Usage: casein-preview <url> [--viewport WxH] [--share] [--attach-to-pane PANE]
 
 Environment:
   TMUX_PANE           tmux pane id (set automatically inside tmux)
-  DEVIDE_WORKSPACE_ID workspace id to register this preview against
-  DEVIDE_PREVIEW_STORAGE_PROFILE persistent storage mode: ephemeral, workspace, profile
-  DEVIDE_PREVIEW_STORAGE_PROFILE_NAME named profile when mode is profile
-  DEVIDE_PREVIEW_PLACEMENT preview placement label, e.g. beside_agent
-  DEVIDE_PREVIEW_ANCHOR_PANE_ID tmux pane id this preview was split from
-  DEVIDE_PREVIEW_ANCHOR_WINDOW_ID tmux window id this preview should stay beside
+  CASEIN_WORKSPACE_ID workspace id to register this preview against
+  CASEIN_PREVIEW_STORAGE_PROFILE persistent storage mode: ephemeral, workspace, profile
+  CASEIN_PREVIEW_STORAGE_PROFILE_NAME named profile when mode is profile
+  CASEIN_PREVIEW_PLACEMENT preview placement label, e.g. beside_agent
+  CASEIN_PREVIEW_ANCHOR_PANE_ID tmux pane id this preview was split from
+  CASEIN_PREVIEW_ANCHOR_WINDOW_ID tmux window id this preview should stay beside
   CASEIN_API_TOKEN   bearer token for /api/preview/panes
-  DEVIDE_URL          Casein base URL (default http://127.0.0.1:4000)
+  CASEIN_URL          Casein base URL (default http://127.0.0.1:4000)
 EOF
 }
 
@@ -123,7 +123,7 @@ display_url=""
 
 deregister() {
   if [[ -n "${registration_id}" ]]; then
-    devide_curl -fsS -X DELETE \
+    casein_curl -fsS -X DELETE \
       -H "authorization: Bearer ${TOKEN}" \
       -H "content-type: application/json" \
       "${API_BASE}/api/preview/panes/${registration_id}" >/dev/null 2>&1 || true
@@ -172,7 +172,7 @@ register_preview() {
     + (if $heartbeat == "true" then {heartbeat: true} else {} end)')"
 
   response="$(
-    devide_curl -fsS -X POST \
+    casein_curl -fsS -X POST \
       -H "authorization: Bearer ${TOKEN}" \
       -H "content-type: application/json" \
       -d "${register_payload}" \
@@ -186,7 +186,7 @@ register_preview() {
 }
 
 deploy_marker() {
-  devide_curl -fsS \
+  casein_curl -fsS \
     -H "authorization: Bearer ${TOKEN}" \
     "${API_BASE}/api/deploy_status" 2>/dev/null |
     jq -r '.socket_path // .version // empty' 2>/dev/null || true

@@ -7,11 +7,11 @@ defmodule Casein.Terminals.SessionRecoveryTest do
     archive_dir =
       Path.join(
         System.tmp_dir!(),
-        "devide-recovery-archive-#{System.unique_integer([:positive])}"
+        "casein-recovery-archive-#{System.unique_integer([:positive])}"
       )
 
     pref_dir =
-      Path.join(System.tmp_dir!(), "devide-recovery-prefs-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-recovery-prefs-#{System.unique_integer([:positive])}")
 
     Application.put_env(:casein, :tmux_scrollback_archive_dir, archive_dir)
     Application.put_env(:casein, :tmux_template_preference_dir, pref_dir)
@@ -27,11 +27,11 @@ defmodule Casein.Terminals.SessionRecoveryTest do
   end
 
   test "seed_from_archive returns empty when no archive" do
-    assert {<<>>, false} = SessionRecovery.seed_from_archive("devide_missing_session")
+    assert {<<>>, false} = SessionRecovery.seed_from_archive("casein_missing_session")
   end
 
   test "seed_from_archive prepends banner when archive present" do
-    session = "devide_seed_#{System.unique_integer([:positive])}"
+    session = "casein_seed_#{System.unique_integer([:positive])}"
     ScrollbackArchive.put(session, "prior output\n")
     {buf, true} = SessionRecovery.seed_from_archive(session)
     assert String.contains?(buf, "prior output")
@@ -46,7 +46,7 @@ defmodule Casein.Terminals.SessionRecoveryTest do
 
     notice =
       SessionRecovery.notify_session_recreated(
-        tmux_session: "devide_#{ws}_#{sid}",
+        tmux_session: "casein_#{ws}_#{sid}",
         workspace_id: ws,
         sid: sid,
         reason: :test,
@@ -61,7 +61,7 @@ defmodule Casein.Terminals.SessionRecoveryTest do
     # Same workspace+sid within the dedupe window is suppressed.
     assert :deduped =
              SessionRecovery.notify_session_recreated(
-               tmux_session: "devide_#{ws}_#{sid}",
+               tmux_session: "casein_#{ws}_#{sid}",
                workspace_id: ws,
                sid: sid,
                reason: :test_again,

@@ -29,7 +29,7 @@ defmodule Casein.Terminals.FileLinkScannerTest do
     end
 
     test "Elixir stacktrace line" do
-      row = "    (dev_ide 0.1.0) lib/casein/file_panes.ex:91: Casein.FilePanes.open/3"
+      row = "    (casein 0.1.0) lib/casein/file_panes.ex:91: Casein.FilePanes.open/3"
 
       assert [%{path: "lib/casein/file_panes.ex", line: 91}] = FileLinkScanner.scan_row(row)
     end

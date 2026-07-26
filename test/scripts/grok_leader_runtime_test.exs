@@ -13,7 +13,7 @@ defmodule Scripts.GrokLeaderRuntimeTest do
   end
 
   test "spawns and authenticates one private process group from trusted metadata", %{root: root} do
-    metadata = Path.join(root, ".devide-launcher")
+    metadata = Path.join(root, ".casein-launcher")
     log = Path.join(root, "leader.log")
 
     assert {output, 0} =
@@ -79,7 +79,7 @@ defmodule Scripts.GrokLeaderRuntimeTest do
   end
 
   test "rejects group identity metadata that is writable by other users", %{root: root} do
-    metadata = Path.join(root, ".devide-launcher")
+    metadata = Path.join(root, ".casein-launcher")
     File.write!(metadata, "1 1\n")
     File.chmod!(metadata, 0o644)
 
@@ -89,9 +89,9 @@ defmodule Scripts.GrokLeaderRuntimeTest do
 
   test "kills the spawned process group when trusted metadata cannot be published", %{root: root} do
     leader_dir = Path.join(root, "leader")
-    metadata = Path.join(leader_dir, ".devide-launcher")
+    metadata = Path.join(leader_dir, ".casein-launcher")
     log = Path.join(System.tmp_dir!(), "grok-runtime-failed-#{System.unique_integer()}.log")
-    marker = "devide-orphan-check-#{System.unique_integer([:positive])}"
+    marker = "casein-orphan-check-#{System.unique_integer([:positive])}"
     File.mkdir_p!(leader_dir)
     File.chmod!(root, 0o500)
 
@@ -116,7 +116,7 @@ defmodule Scripts.GrokLeaderRuntimeTest do
   end
 
   test "resumes a quiesced leader only after the attaching process enters bwrap", %{root: root} do
-    metadata = Path.join(root, ".devide-launcher")
+    metadata = Path.join(root, ".casein-launcher")
     log = Path.join(root, "leader.log")
     assert {output, 0} = command(["spawn", metadata, log, "/bin/sh", "-c", "exec sleep 60"])
     leader_pid = output |> String.trim() |> String.to_integer()

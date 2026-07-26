@@ -146,7 +146,7 @@ export const MobileKeyBar = {
     }
     if (this.__viewportFrame) cancelAnimationFrame(this.__viewportFrame)
     document.documentElement.classList.remove("casein-keyboard-open")
-    this.el.classList.remove("devide-keybar-app-mode")
+    this.el.classList.remove("casein-keybar-app-mode")
     document.documentElement.style.removeProperty("--casein-mobile-keybar-bottom")
     document.documentElement.style.removeProperty("--casein-mobile-terminal-inset")
   },
@@ -239,7 +239,7 @@ export const MobileKeyBar = {
       const keyboardWasOpen = this.__keyboardOpen
       this.__keyboardOpen = keyboardOpen
       document.documentElement.classList.toggle("casein-keyboard-open", keyboardOpen)
-      this.el.classList.toggle("devide-keybar-app-mode", keyboardOpen)
+      this.el.classList.toggle("casein-keybar-app-mode", keyboardOpen)
       document.documentElement.style.setProperty("--casein-mobile-keybar-bottom", `${gap}px`)
 
       // Measure the bar AFTER toggling app-mode, not before. The class collapses

@@ -13,13 +13,13 @@ defmodule Casein.Release.Update.InstallPlanTest do
     "signature": null,
     "artifacts": [
       {
-        "app": "devide",
+        "app": "casein",
         "version": "0.1.0",
         "revision": "67f393adeadbeef",
         "profile": "lan",
         "repo_adapter": "sqlite",
         "target": "linux-x86_64",
-        "url": "https://example.com/devide.tar.gz",
+        "url": "https://example.com/casein.tar.gz",
         "sha256": "abc",
         "size": 123,
         "min_installer_metadata_version": 1
@@ -31,7 +31,7 @@ defmodule Casein.Release.Update.InstallPlanTest do
   setup do
     tmp =
       System.tmp_dir!()
-      |> Path.join("devide-install-plan-#{System.unique_integer([:positive])}")
+      |> Path.join("casein-install-plan-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(tmp)
     on_exit(fn -> File.rm_rf!(tmp) end)
@@ -42,7 +42,7 @@ defmodule Casein.Release.Update.InstallPlanTest do
         profile: "lan",
         repo_adapter: "sqlite",
         target: "linux-x86_64",
-        update_manifest_url: "https://example.com/devide-canary.json"
+        update_manifest_url: "https://example.com/casein-canary.json"
       )
 
     :ok = Metadata.write!(tmp, metadata)
@@ -52,14 +52,14 @@ defmodule Casein.Release.Update.InstallPlanTest do
   end
 
   test "build returns update_available with selected artifact", %{tmp: tmp, manifest: manifest} do
-    fetcher = fn "https://example.com/devide-canary.json" -> {:ok, manifest} end
+    fetcher = fn "https://example.com/casein-canary.json" -> {:ok, manifest} end
 
     assert {:ok, :update_available, current, artifact, ^manifest, manifest_url} =
              InstallPlan.build(tmp, fetch: fetcher)
 
     assert current.revision == "504670cdeadbeef"
     assert artifact.revision == "67f393adeadbeef"
-    assert manifest_url == "https://example.com/devide-canary.json"
+    assert manifest_url == "https://example.com/casein-canary.json"
   end
 
   test "build accepts requested revision prefixes", %{tmp: tmp, manifest: manifest} do

@@ -56,7 +56,7 @@ defmodule Casein.Terminals.SessionTemplate.ExportTest do
       assert template["version"] == 2
       # default_name/1 sanitizes non [A-Za-z0-9_-] runs to "_"
       assert template["name"] == "exported_my_session_"
-      assert template["metadata"]["source"] == "devide_topology_export"
+      assert template["metadata"]["source"] == "casein_topology_export"
       assert template["metadata"]["session"] == "my session!"
       assert template["metadata"]["topology_version"] == 7
       # no workspace_root opt -> root is nil and compacted out
@@ -68,7 +68,7 @@ defmodule Casein.Terminals.SessionTemplate.ExportTest do
       {:ok, template} = Export.from_topology(topology)
       assert template["name"] == "exported_session"
       # metadata had only the source key after compaction
-      assert template["metadata"] == %{"source" => "devide_topology_export"}
+      assert template["metadata"] == %{"source" => "casein_topology_export"}
     end
 
     test "explicit :name option overrides the derived name" do

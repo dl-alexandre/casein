@@ -5,7 +5,7 @@ defmodule Casein.Terminals.ScrollbackArchiveTest do
 
   setup do
     dir =
-      Path.join(System.tmp_dir!(), "devide-scrollback-test-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-scrollback-test-#{System.unique_integer([:positive])}")
 
     Application.put_env(:casein, :tmux_scrollback_archive_dir, dir)
     ScrollbackArchive.ensure_table!()
@@ -14,7 +14,7 @@ defmodule Casein.Terminals.ScrollbackArchiveTest do
   end
 
   test "put/get round-trip and delete", %{dir: dir} do
-    session = "devide_ws_sid_#{System.unique_integer([:positive])}"
+    session = "casein_ws_sid_#{System.unique_integer([:positive])}"
     data = "hello scrollback\nline 2\n"
 
     assert :ok = ScrollbackArchive.put(session, data)
@@ -30,7 +30,7 @@ defmodule Casein.Terminals.ScrollbackArchiveTest do
 
   test "trims oversized payloads to max_bytes" do
     Application.put_env(:casein, :tmux_scrollback_archive_bytes, 32)
-    session = "devide_trim_#{System.unique_integer([:positive])}"
+    session = "casein_trim_#{System.unique_integer([:positive])}"
     data = String.duplicate("abcdefghij", 10)
 
     assert :ok = ScrollbackArchive.put(session, data)

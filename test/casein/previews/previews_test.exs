@@ -121,7 +121,7 @@ defmodule Casein.PreviewsTest do
   end
 
   test "update_url self-includes only control and app origins, not every navigated target" do
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
     Application.put_env(:casein, :preview_loopback_port, 4100)
 
     workspace = %{id: "ws-1", metadata: %{detected_ports: [5999]}}
@@ -135,11 +135,11 @@ defmodule Casein.PreviewsTest do
     new_origins = origins -- origins_before
     assert Enum.count_until(new_origins, 3) == length(new_origins)
     assert "http://127.0.0.1:4100" in origins
-    assert "https://devide.example.com:443" in origins
+    assert "https://casein.example.com:443" in origins
   end
 
   test "repeated update_url calls do not grow allowed_origins unboundedly" do
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
 
     {:ok, preview} = Previews.open(@workspace, %{url: "http://localhost:4000"})
     initial_origins = preview.metadata["allowed_origins"]

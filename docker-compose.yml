@@ -3,7 +3,7 @@
 #
 #   cp .env.example .env  # fill in SECRET_KEY_BASE + CASEIN_API_TOKEN
 #   docker compose build
-#   docker compose run --rm dev_ide /app/bin/migrate
+#   docker compose run --rm casein /app/bin/migrate
 #   docker compose up
 #
 # Then open http://localhost:4000/workspaces.
@@ -31,13 +31,13 @@ services:
     # ports:
     #   - "5432:5432"
 
-  dev_ide:
+  casein:
     build:
       context: .
       args:
         # The generic Compose stack is the portable product profile. The
         # devbox release builder keeps its separate Dockerfile default.
-        DEVIDE_RELEASE_PROFILE: ${DEVIDE_RELEASE_PROFILE:-portable}
+        CASEIN_RELEASE_PROFILE: ${CASEIN_RELEASE_PROFILE:-portable}
     image: ${CASEIN_IMAGE:-casein:latest}
     depends_on:
       postgres:

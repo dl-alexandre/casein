@@ -60,7 +60,7 @@ defmodule Casein.Terminals.Tmux do
   defdelegate kill_window(session, window_id), to: TmuxCtl.Client
 
   @doc """
-  Kill a managed `devide_*` session and drop its scrollback archive.
+  Kill a managed `casein_*` session and drop its scrollback archive.
 
   Archive delete is intentional: idle GC / operator kill must not leave a
   stale spill that reseeds (and false-positive recovers) on next open.

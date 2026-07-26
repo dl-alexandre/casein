@@ -21,7 +21,7 @@ function Get-CaseinPaths {
         ReleaseRoot = [IO.Path]::GetFullPath($Root)
         ReleaseBat  = Join-Path $Root 'bin\casein.bat'
         DataRoot    = $dataRoot
-        Database    = Join-Path $dataRoot 'devide.sqlite3'
+        Database    = Join-Path $dataRoot 'casein.sqlite3'
         Settings    = Join-Path $dataRoot 'desktop-host.json'
         Log         = Join-Path $dataRoot 'desktop-host.log'
         RuntimePid  = Join-Path $dataRoot 'runtime.pid'
@@ -253,7 +253,7 @@ function Get-CaseinEnvironment {
     $environment = @{
         'CASEIN_PROFILE' = 'desktop'
         'CASEIN_DESKTOP_DATA_DIR' = $script:Paths.DataRoot
-        'DEVIDE_RELEASE_ROOT' = $script:Paths.ReleaseRoot
+        'CASEIN_RELEASE_ROOT' = $script:Paths.ReleaseRoot
         'CASEIN_REPO_ADAPTER' = 'sqlite'
         'DATABASE_PATH' = $script:Paths.Database
         'PHX_SERVER' = 'true'

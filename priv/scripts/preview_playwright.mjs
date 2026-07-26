@@ -15,19 +15,19 @@ const browsers = new Map();
 const instrumentedPages = new WeakSet();
 const DAEMON_STARTED_AT = Date.now();
 const BROWSER_IDLE_MS = envMs(
-  ["DEVIDE_PLAYWRIGHT_BROWSER_IDLE_MS", "CASEIN_PREVIEW_BROWSER_IDLE_MS"],
+  ["CASEIN_PLAYWRIGHT_BROWSER_IDLE_MS", "CASEIN_PREVIEW_BROWSER_IDLE_MS"],
   5 * 60 * 1000
 );
 const BROWSER_MAX_AGE_MS = envMs(
-  ["DEVIDE_PLAYWRIGHT_BROWSER_MAX_AGE_MS", "CASEIN_PREVIEW_BROWSER_MAX_AGE_MS"],
+  ["CASEIN_PLAYWRIGHT_BROWSER_MAX_AGE_MS", "CASEIN_PREVIEW_BROWSER_MAX_AGE_MS"],
   30 * 60 * 1000
 );
 const DAEMON_MAX_AGE_MS = envMs(
-  ["DEVIDE_PLAYWRIGHT_DAEMON_MAX_AGE_MS", "CASEIN_PREVIEW_DAEMON_MAX_AGE_MS"],
+  ["CASEIN_PLAYWRIGHT_DAEMON_MAX_AGE_MS", "CASEIN_PREVIEW_DAEMON_MAX_AGE_MS"],
   60 * 60 * 1000
 );
 const SWEEP_MS = envMs(
-  ["DEVIDE_PLAYWRIGHT_SWEEP_MS", "CASEIN_PREVIEW_SWEEP_INTERVAL_MS"],
+  ["CASEIN_PLAYWRIGHT_SWEEP_MS", "CASEIN_PREVIEW_SWEEP_INTERVAL_MS"],
   60 * 1000
 );
 let maintenanceRunning = false;
@@ -579,7 +579,7 @@ function scopedHeaderOrigin(url) {
     // Direct app previews on arbitrary localhost ports must not receive Casein
     // auth headers; those headers leak into third-party sub-resource requests
     // and trigger CORS preflights. Casein/proxy pages still need the headers.
-    if (isLoopbackHost(parsed.hostname) && !isDevideLoopbackPort(parsed.port)) {
+    if (isLoopbackHost(parsed.hostname) && !isCaseinLoopbackPort(parsed.port)) {
       return null;
     }
 
@@ -593,7 +593,7 @@ function isLoopbackHost(hostname) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
-function isDevideLoopbackPort(port) {
+function isCaseinLoopbackPort(port) {
   return port === "" || port === "4000";
 }
 

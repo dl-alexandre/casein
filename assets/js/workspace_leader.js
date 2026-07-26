@@ -215,7 +215,7 @@ export const WorkspaceLeader = {
     }
 
     window.addEventListener("keydown", this._onKeydown, true)
-    window.addEventListener("devide:leader-second-key", this._onLeaderSecondKey)
+    window.addEventListener("casein:leader-second-key", this._onLeaderSecondKey)
     this.el.addEventListener("click", this._onClick)
     document.addEventListener("click", this._onDocClick)
     document.addEventListener("touchstart", this._onTouchStart, { passive: true })
@@ -235,9 +235,9 @@ export const WorkspaceLeader = {
     try {
       if (
         window.matchMedia("(pointer: coarse)").matches &&
-        !window.sessionStorage.getItem("devide-touch-chrome-init")
+        !window.sessionStorage.getItem("casein-touch-chrome-init")
       ) {
-        window.sessionStorage.setItem("devide-touch-chrome-init", "1")
+        window.sessionStorage.setItem("casein-touch-chrome-init", "1")
         this.pushEvent("terminal:auto_hide_chrome", {})
       }
     } catch (_) {
@@ -256,7 +256,7 @@ export const WorkspaceLeader = {
     setTerminalPresetReporter(null)
 
     window.removeEventListener("keydown", this._onKeydown, true)
-    window.removeEventListener("devide:leader-second-key", this._onLeaderSecondKey)
+    window.removeEventListener("casein:leader-second-key", this._onLeaderSecondKey)
     this.el.removeEventListener("click", this._onClick)
     document.removeEventListener("click", this._onDocClick)
     document.removeEventListener("touchstart", this._onTouchStart)
@@ -458,7 +458,7 @@ export const WorkspaceLeader = {
         const sidebarEl = document.querySelector("[data-window-picker-sidebar]")
         if (!sidebarEl) return
         sidebarEl.dispatchEvent(
-          new CustomEvent("devide:window-sidebar:focus", {bubbles: true})
+          new CustomEvent("casein:window-sidebar:focus", {bubbles: true})
         )
         this._startSidebarHoldWatch(decision.holdKey, sidebarEl)
         return
@@ -472,7 +472,7 @@ export const WorkspaceLeader = {
           requestAnimationFrame(() => {
             const el = document.querySelector("[data-window-picker-sidebar]")
             if (!el) return
-            el.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
+            el.dispatchEvent(new CustomEvent("casein:window-sidebar:focus", {bubbles: true}))
             this._startSidebarHoldWatch(holdKey, el)
           })
         })
@@ -484,7 +484,7 @@ export const WorkspaceLeader = {
         const sessionsEl = document.querySelector("[data-sessions-picker-sidebar]")
         if (!sessionsEl) return
         sessionsEl.dispatchEvent(
-          new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true})
+          new CustomEvent("casein:sessions-sidebar:focus", {bubbles: true})
         )
         this._startSessionsSidebarHoldWatch(decision.holdKey, sessionsEl)
         return
@@ -498,7 +498,7 @@ export const WorkspaceLeader = {
           requestAnimationFrame(() => {
             const el = document.querySelector("[data-sessions-picker-sidebar]")
             if (!el) return
-            el.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
+            el.dispatchEvent(new CustomEvent("casein:sessions-sidebar:focus", {bubbles: true}))
             this._startSessionsSidebarHoldWatch(holdKey, el)
           })
         })
@@ -700,7 +700,7 @@ export const WorkspaceLeader = {
       window.removeEventListener("keydown", onKeydown, true)
 
       if (!inHoldMode) {
-        sidebarEl.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
+        sidebarEl.dispatchEvent(new CustomEvent("casein:window-sidebar:focus", {bubbles: true}))
         return
       }
 
@@ -763,7 +763,7 @@ export const WorkspaceLeader = {
       window.removeEventListener("keydown", onKeydown, true)
 
       if (!inHoldMode) {
-        sidebarEl.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
+        sidebarEl.dispatchEvent(new CustomEvent("casein:sessions-sidebar:focus", {bubbles: true}))
         return
       }
 

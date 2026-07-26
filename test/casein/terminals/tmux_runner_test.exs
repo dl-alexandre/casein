@@ -84,8 +84,8 @@ defmodule Casein.Terminals.TmuxRunnerTest do
 
       assert [TmuxExecutable.resolve()] ++
                TmuxServer.args() ++
-               ["-f", config, "new-session", "-A", "-s", "devide_alpha_u-dev"] ==
-               TmuxRunner.host_argv(["new-session", "-A", "-s", "devide_alpha_u-dev"])
+               ["-f", config, "new-session", "-A", "-s", "casein_alpha_u-dev"] ==
+               TmuxRunner.host_argv(["new-session", "-A", "-s", "casein_alpha_u-dev"])
     end
 
     test "inserts -f <config> when a tmux config file is configured" do
@@ -162,8 +162,8 @@ defmodule Casein.Terminals.TmuxRunnerTest do
 
       assert [TmuxExecutable.resolve()] ++
                TmuxServer.args() ++
-               ["-f", config, "new-session", "-d", "-s", "devide_home_u-dev"] ==
-               TmuxRunner.argv(["new-session", "-d", "-s", "devide_home_u-dev"],
+               ["-f", config, "new-session", "-d", "-s", "casein_home_u-dev"] ==
+               TmuxRunner.argv(["new-session", "-d", "-s", "casein_home_u-dev"],
                  cwd: "/home/alexandre"
                )
     end
@@ -185,7 +185,7 @@ defmodule Casein.Terminals.TmuxRunnerTest do
 
       # -t names an existing host session, so host_session_alive? returns true
       # and we get host tmux argv (not the wrapper's ["sh", ...]).
-      argv = TmuxRunner.argv(["send-keys", "-t", "devide_alpha_u-dev:0", "echo hi"])
+      argv = TmuxRunner.argv(["send-keys", "-t", "casein_alpha_u-dev:0", "echo hi"])
       tmux = TmuxExecutable.resolve()
       assert [^tmux | _] = argv
       assert "send-keys" in argv
@@ -202,7 +202,7 @@ defmodule Casein.Terminals.TmuxRunnerTest do
       Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       assert ["sh", "-c", _] =
-               TmuxRunner.argv(["send-keys", "-t", "devide_alpha_u-dev", "echo hi"])
+               TmuxRunner.argv(["send-keys", "-t", "casein_alpha_u-dev", "echo hi"])
     end
 
     test "argv without a -t target never probes for a session and wraps" do

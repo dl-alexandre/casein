@@ -6,7 +6,7 @@ defmodule Casein.SignalsTest do
   alias Jido.Signal.Trace
 
   test "type_for prefixes audit actions" do
-    assert Signals.type_for("agent.blocked") == "devide.audit.agent.blocked"
+    assert Signals.type_for("agent.blocked") == "casein.audit.agent.blocked"
     assert String.starts_with?(Signals.type_for("x"), Signals.type_prefix())
   end
 
@@ -26,9 +26,9 @@ defmodule Casein.SignalsTest do
 
     signal = Signals.from_audit_event(event)
 
-    assert signal.type == "devide.audit.agent.blocked"
+    assert signal.type == "casein.audit.agent.blocked"
     assert signal.id == event.id
-    assert signal.source == "/devide/audit/ws-1"
+    assert signal.source == "/casein/audit/ws-1"
     assert signal.subject == "%3"
     assert signal.time == DateTime.to_iso8601(event.inserted_at)
     assert signal.data.action == "agent.blocked"
@@ -54,7 +54,7 @@ defmodule Casein.SignalsTest do
 
   test "events without a workspace map to the global source" do
     event = Event.new(%{action: "system.check"})
-    assert Signals.from_audit_event(event).source == "/devide/audit/global"
+    assert Signals.from_audit_event(event).source == "/casein/audit/global"
   end
 
   test "from_signal round-trips audit event fields" do

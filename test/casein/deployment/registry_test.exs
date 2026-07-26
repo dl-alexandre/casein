@@ -9,10 +9,10 @@ defmodule Casein.Deployment.RegistryTest do
     :ok
   end
 
-  test "version prefers DEVIDE_GIT_REVISION when set" do
-    prev = System.get_env("DEVIDE_GIT_REVISION")
-    System.put_env("DEVIDE_GIT_REVISION", "abc123deadbeef")
-    on_exit(fn -> restore_env("DEVIDE_GIT_REVISION", prev) end)
+  test "version prefers CASEIN_GIT_REVISION when set" do
+    prev = System.get_env("CASEIN_GIT_REVISION")
+    System.put_env("CASEIN_GIT_REVISION", "abc123deadbeef")
+    on_exit(fn -> restore_env("CASEIN_GIT_REVISION", prev) end)
 
     assert Registry.version() == "abc123deadbeef"
   end
@@ -50,7 +50,7 @@ defmodule Casein.Deployment.RegistryTest do
     assert Registry.socket_path() == nil or is_binary(Registry.socket_path())
   end
 
-  # Devbox terminals inherit DEVIDE_INSTANCE_UUID from the canary that spawned
+  # Devbox terminals inherit CASEIN_INSTANCE_UUID from the canary that spawned
   # them, so a secondary boot (mix test, release eval) shares the serving
   # instance's identity. Overwriting its heartbeat with our short-lived pid made
   # the deploy's stale-record cleanup delete it, and the instance then never
@@ -97,7 +97,7 @@ defmodule Casein.Deployment.RegistryTest do
   end
 
   defp isolated_instance_dir! do
-    dir = Path.join(System.tmp_dir!(), "devide-instances-#{System.unique_integer([:positive])}")
+    dir = Path.join(System.tmp_dir!(), "casein-instances-#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
     Application.put_env(:casein, :deployment_instance_dir, dir)
     on_exit(fn -> File.rm_rf!(dir) end)
@@ -111,9 +111,9 @@ defmodule Casein.Deployment.RegistryTest do
   defp restore_env(key, value), do: System.put_env(key, value)
 
   defp put_instance_uuid!(id) do
-    prev = System.get_env("DEVIDE_INSTANCE_UUID")
-    System.put_env("DEVIDE_INSTANCE_UUID", id)
-    on_exit(fn -> restore_env("DEVIDE_INSTANCE_UUID", prev) end)
+    prev = System.get_env("CASEIN_INSTANCE_UUID")
+    System.put_env("CASEIN_INSTANCE_UUID", id)
+    on_exit(fn -> restore_env("CASEIN_INSTANCE_UUID", prev) end)
   end
 
   defp stub_owner_liveness!(fun) do

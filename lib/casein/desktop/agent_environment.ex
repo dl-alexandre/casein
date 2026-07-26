@@ -24,14 +24,14 @@ defmodule Casein.Desktop.AgentEnvironment do
       {:ok,
        %{
          "CASEIN_API_TOKEN" => token,
-         "DEVIDE_API_BASE_URL" => MCPUrls.api_base_url(),
-         "DEVIDE_WORKSPACE_ID" => id,
-         "DEVIDE_WORKSPACE_NAME" => name,
-         "DEVIDE_TERMINAL_MCP_URL" => MCPUrls.terminal_url(id),
-         "DEVIDE_PREVIEW_MCP_URL" => MCPUrls.preview_url(id),
-         "DEVIDE_ARTIFACT_MCP_URL" => MCPUrls.artifact_url(id),
-         "DEVIDE_CHECKOUT" => checkout,
-         "DEVIDE_AGENT_MCP_HOME" => staging
+         "CASEIN_API_BASE_URL" => MCPUrls.api_base_url(),
+         "CASEIN_WORKSPACE_ID" => id,
+         "CASEIN_WORKSPACE_NAME" => name,
+         "CASEIN_TERMINAL_MCP_URL" => MCPUrls.terminal_url(id),
+         "CASEIN_PREVIEW_MCP_URL" => MCPUrls.preview_url(id),
+         "CASEIN_ARTIFACT_MCP_URL" => MCPUrls.artifact_url(id),
+         "CASEIN_CHECKOUT" => checkout,
+         "CASEIN_AGENT_MCP_HOME" => staging
        }}
     end
   end

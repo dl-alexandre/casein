@@ -121,7 +121,7 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
       hostname,
       local_domain,
       local_hostname,
-      "devide.local"
+      "casein.local"
       | extra_hosts
     ]
     |> Enum.reject(&(&1 == ""))

@@ -11,11 +11,11 @@ This is a web application written using the Phoenix web framework.
   - When bumping any of these, grep this file, `Dockerfile` (`ELIXIR_VERSION`/`OTP_VERSION` args), `.github/workflows/*.yml`, and `.tool-versions` so they don't drift silently.
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 - For tmux topology, LiveView controls, and agent mutation endpoints, read `docs/tmux_control_plane.md` before changing terminal control-plane behavior
-- For GitHub operations in this `/data/workspaces/dalexandre/dev_ide` checkout, use the repo-local credential helper already stored in `.git/config`. Normal `git fetch` / `git push origin master` should authenticate with the dalexandre GitHub CLI config at `/home/devbox/.config/gh-dalexandre`. Do not move this helper to global Git config; it is intentionally scoped to this checkout so other workspaces/users are not affected. If the helper is missing, restore it with: `git config --local credential.https://github.com.helper '!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential'`.
+- For GitHub operations in this `/data/workspaces/dalexandre/casein` checkout, use the repo-local credential helper already stored in `.git/config`. Normal `git fetch` / `git push origin master` should authenticate with the dalexandre GitHub CLI config at `/home/devbox/.config/gh-dalexandre`. Do not move this helper to global Git config; it is intentionally scoped to this checkout so other workspaces/users are not affected. If the helper is missing, restore it with: `git config --local credential.https://github.com.helper '!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential'`.
 
 ## Devbox agent pairing (human + external agent)
 
-On the milc devbox, Casein runs as a **systemd release** (`devide` service → `/opt/casein/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`. Canary deploys listen on `/run/casein/current.sock`; on-box agents still use `http://127.0.0.1:4000` via the `casein-loopback` socat proxy (`scripts/ensure-casein-loopback-proxy.sh`).
+On the milc devbox, Casein runs as a **systemd release** (`casein` service → `/opt/casein/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://casein.devbox.milcgroup.com`. Canary deploys listen on `/run/casein/current.sock`; on-box agents still use `http://127.0.0.1:4000` via the `casein-loopback` socat proxy (`scripts/ensure-casein-loopback-proxy.sh`).
 
 ### Required pre-push gate
 
@@ -33,7 +33,7 @@ This mirrors the deploy workflow's blocking checks: JS hook lint (`assets/` with
 git config core.hooksPath .githooks
 ```
 
-- **`.githooks/pre-commit`** — refuses commits on `master` in the **primary checkout** (read-only mirror of `origin/master`). Agent linked worktrees are not gated. Bypass: `git commit --no-verify` or `DEVIDE_ALLOW_MASTER_COMMIT=1`.
+- **`.githooks/pre-commit`** — refuses commits on `master` in the **primary checkout** (read-only mirror of `origin/master`). Agent linked worktrees are not gated. Bypass: `git commit --no-verify` or `CASEIN_ALLOW_MASTER_COMMIT=1`.
 - **`.githooks/pre-push`** — blocks any push to `master` unless `scripts/pre-push-check.sh` passes (branch/WIP pushes are not gated). Bypass: `git push --no-verify`.
 
 The pre-push hook is the local stand-in for CI's check job while GitHub Actions is billing-blocked (the `push` trigger in `.github/workflows/deploy-devbox.yml` is commented out — see that file).
@@ -82,7 +82,7 @@ before packaging the release, so a `--no-verify` push that lands on `master` sti
 cannot activate until that worktree gate passes. `bash scripts/deploy-local.sh`
 remains the manual override for an immediate deploy of the current checkout.
 
-The running release also performs a deploy-drift check at boot. If `/etc/casein/devide.env` has a manual revision label or a SHA that differs from `origin/master`, Casein logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
+The running release also performs a deploy-drift check at boot. If `/etc/casein/casein.env` has a manual revision label or a SHA that differs from `origin/master`, Casein logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
 
 ### Source control before deploy (required)
 
@@ -98,7 +98,7 @@ uncommitted or undeployed work.
 |----|-------|
 | Commit + push to `master`, wait for CI deploy | Hand-edit files under `/opt/casein/release` |
 | Use `bash scripts/setup-devbox-agent-pairing.sh` only to **validate** an uncommitted build locally | Treat a manual local deploy as durable without pushing |
-| Keep product scripts and behavior in this checkout; keep MILC host configuration in the private `MILCGroup/milc-devbox/devide` overlay | Add one-off binaries or config only on the running release tree |
+| Keep product scripts and behavior in this checkout; keep MILC host configuration in the private `MILCGroup/milc-devbox/casein` overlay | Add one-off binaries or config only on the running release tree |
 
 **Workflow that survives auto-release CI:**
 
@@ -107,7 +107,7 @@ uncommitted or undeployed work.
 3. The on-box poller (`casein-deploy.timer`) auto-deploys `origin/master` within ~2 min — no GitHub Actions. Force it now with `sudo systemctl start casein-deploy.service`, or `bash scripts/deploy-local.sh` for an immediate manual deploy.
 4. Optionally smoke-check on the box: `source .devbox-agent.env && bash scripts/verify_agent_pairing.sh`.
 
-A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/dev_ide` is for editing; `/opt/casein/release` is the ephemeral runtime artifact.
+A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/casein` is for editing; `/opt/casein/release` is the ephemeral runtime artifact.
 
 ### Coordinating concurrent agents on master (required)
 
@@ -171,13 +171,13 @@ bash scripts/refresh-devbox-agent-pairing.sh
 
 # Smoke-check MCP (source env first)
 source .devbox-agent.env
-WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh
+WORKSPACE_ID=$CASEIN_WORKSPACE_ID bash scripts/verify_agent_pairing.sh
 ```
 
 `deploy-local.sh` builds from the checkout, packages `release-out`, and runs the same activation script used by CI without redoing workspace SQL, `.devbox-agent.env`, MCP materialization, or pairing verification. It is the preferred fast path after a successful push; CI will still perform the later canonical deploy from `master` unless that workflow is changed.
 
 Do **not** commit `.devbox-agent.env` (contains workspace-scoped `CASEIN_API_TOKEN`;
-global admin is `CASEIN_ADMIN_API_TOKEN`). Host tokens live in `/etc/casein/devide.env`.
+global admin is `CASEIN_ADMIN_API_TOKEN`). Host tokens live in `/etc/casein/casein.env`.
 `setup-devbox-agent-pairing.sh` registers scoped tokens under
 `CASEIN_WORKSPACE_API_TOKENS` and writes the scoped bearer as the default agent
 `CASEIN_API_TOKEN`.
@@ -196,14 +196,14 @@ global admin is `CASEIN_ADMIN_API_TOKEN`). Host tokens live in `/etc/casein/devi
 
 | Surface | URL | Auth |
 |---------|-----|------|
-| Terminal MCP | `https://devide.devbox.milcgroup.com/api/terminals/mcp` | Bearer `CASEIN_API_TOKEN` |
-| Preview MCP | `https://devide.devbox.milcgroup.com/api/preview/mcp` | Bearer `CASEIN_API_TOKEN` |
+| Terminal MCP | `https://casein.devbox.milcgroup.com/api/terminals/mcp` | Bearer `CASEIN_API_TOKEN` |
+| Preview MCP | `https://casein.devbox.milcgroup.com/api/preview/mcp` | Bearer `CASEIN_API_TOKEN` |
 
 Same-host agents may use `http://127.0.0.1:4000/api/...` instead. Read `docs/terminal_mcp.md` and `docs/preview_mcp.md` before changing MCP behavior.
 
-For wiring an **off-box** agent end-to-end (both transports, ready-to-paste `.mcp.json` + agent prompts, pinned vs durable/workspace-agnostic config), see **`docs/external-agent-connect.md`** and the host-side `devide-remote` skill.
+For wiring an **off-box** agent end-to-end (both transports, ready-to-paste `.mcp.json` + agent prompts, pinned vs durable/workspace-agnostic config), see **`docs/external-agent-connect.md`** and the host-side `casein-remote` skill.
 
-**Always pass `workspace_id`** on terminal MCP calls. For `dalexandre-devide` the manager UUID is in `.devbox-agent.env` as `DEVIDE_WORKSPACE_ID`. Scoping resolves both UUID and workspace **name** to tmux prefixes — sessions are named `devide_<workspace_name>_<sid>`, not `devide_<uuid>_`.
+**Always pass `workspace_id`** on terminal MCP calls. For `dalexandre-casein` the manager UUID is in `.devbox-agent.env` as `CASEIN_WORKSPACE_ID`. Scoping resolves both UUID and workspace **name** to tmux prefixes — sessions are named `casein_<workspace_name>_<sid>`, not `casein_<uuid>_`.
 
 Agent workflow:
 
@@ -231,7 +231,7 @@ bash scripts/launch-casein-agent.sh grok # or codex | claude | opencode
 
 | Runtime | Injection | Cwd-independent? |
 |---------|-----------|----------------|
-| **Claude** | `claude --mcp-config $STAGING/.mcp.json` (additive — keeps global servers like fff); launcher `cd`s to `DEVIDE_CHECKOUT` | Yes |
+| **Claude** | `claude --mcp-config $STAGING/.mcp.json` (additive — keeps global servers like fff); launcher `cd`s to `CASEIN_CHECKOUT` | Yes |
 | **Grok** | injected by `scripts/launch-casein-agent.sh grok` into project-local `.mcp.json` (`${CASEIN_API_TOKEN}` in headers); Casein entries are not persisted in `~/.grok/config.toml` | Yes |
 | **Codex** | injected by `scripts/launch-casein-agent.sh codex` with per-launch `-c mcp_servers...` overrides (`CASEIN_API_TOKEN` exported by the launcher); Casein entries are not persisted in `~/.codex/config.toml` | Yes |
 | **OpenCode** | injected by `scripts/launch-casein-agent.sh opencode` into project-local `.opencode/opencode.json` (`{env:CASEIN_API_TOKEN}`); Casein entries are not persisted in global OpenCode config | Yes |
@@ -250,7 +250,7 @@ credentials — `agent-doctor.sh`/`repair-tmux-env.sh` deliberately keep
 at launch, after the workspace token has been resolved: Claude gets
 `--mcp-config`, Codex gets `-c mcp_servers...` overrides, Grok gets project
 `.mcp.json`, and OpenCode gets project `.opencode/opencode.json`. The helper
-`merge-agent-mcp.py` now strips stale global `devide-*` blocks rather than
+`merge-agent-mcp.py` now strips stale global `casein-*` blocks rather than
 writing new ones, so plain agent starts do not inherit workspace-specific MCP
 servers without `CASEIN_API_TOKEN`.
 
@@ -259,9 +259,9 @@ servers without `CASEIN_API_TOKEN`.
 Raw multi-pane terminal requires workspace mode **`:manual`**. Manager workspaces now default to `:manual` (`Casein.Policy.WorkspaceMode`'s fallback) so split-screen works out of the box; switch a workspace to `:review` (or another mode) explicitly via UI (**Agents → Safety → mode**) or DB if you need agent-proposal-only access instead:
 
 ```bash
-# DATABASE_URL from /etc/casein/devide.env — port 15432, not 5432
-PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
-  -c "UPDATE workspace_records SET mode='review' WHERE name='dalexandre-devide';"
+# DATABASE_URL from /etc/casein/casein.env — port 15432, not 5432
+PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U casein -d casein_prod \
+  -c "UPDATE workspace_records SET mode='review' WHERE name='dalexandre-casein';"
 ```
 
 `bin/casein rpc` for mode changes often fails with **Invalid challenge reply** (RELEASE_COOKIE drift) — prefer UI or direct SQL above.
@@ -275,8 +275,8 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | Poller not deploying after a push | `systemctl status casein-deploy.timer`; `journalctl -u casein-deploy.service`; ensure the timer is installed (`bash scripts/ensure-casein-deploy-poller.sh`) |
 | `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
-| `claude: command not found` after template / `clauded` fails | Usually a missing `~/.casein/agent-shims/claude` launcher shim (siblings can still be present) or a pane that started before agent PATH was pushed. Boot + `PaneEnv` + shell-integration now self-heal shims and force `~/.casein/agent-shims` to the front of pane PATH; if it still happens, run `bash scripts/install-agent-shims.sh` or `devide agent doctor`, then open a new window. Prefer bare `claude` — palette `clauded` maps to it; Casein shim already defaults to skip-permissions. Note: the shim dir is only on PATH inside Casein contexts — in a plain terminal, agent names run the real binaries (unpaired). |
-| Tab closed, tmux session vanished | Check `CASEIN_TMUX_IDLE_SECONDS` in `/etc/casein/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
+| `claude: command not found` after template / `clauded` fails | Usually a missing `~/.casein/agent-shims/claude` launcher shim (siblings can still be present) or a pane that started before agent PATH was pushed. Boot + `PaneEnv` + shell-integration now self-heal shims and force `~/.casein/agent-shims` to the front of pane PATH; if it still happens, run `bash scripts/install-agent-shims.sh` or `casein agent doctor`, then open a new window. Prefer bare `claude` — palette `clauded` maps to it; Casein shim already defaults to skip-permissions. Note: the shim dir is only on PATH inside Casein contexts — in a plain terminal, agent names run the real binaries (unpaired). |
+| Tab closed, tmux session vanished | Check `CASEIN_TMUX_IDLE_SECONDS` in `/etc/casein/casein.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
 | All terminal sessions empty at once (tmux server died) | See `docs/subsystems/tmux_crash_recovery.md`. ScrollbackArchive reseeds tails; SessionOwner recovers attachments; install keepalive with `bash scripts/ensure-casein-tmux.sh`. Pin binary: `bash scripts/ensure-casein-tmux.sh --reinstall-binary` (3.6b) |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
 | MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |
@@ -303,7 +303,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/launch-casein-agent.sh` — start an agent runtime with MCP injected
 - `scripts/casein-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
 - `scripts/ensure-casein-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
-- `scripts/casein-grok-janitor-sweep.sh` — daily reap of orphaned Grok leader processes (cwd deleted) + stale leader dirs/bundles across the casein and legacy devide roots; dry-run by default, `--apply` to act (systemd units alongside, installed pointing at `/opt/devide/deploy-build`)
+- `scripts/casein-grok-janitor-sweep.sh` — daily reap of orphaned Grok leader processes (cwd deleted) + stale leader dirs/bundles across the casein and legacy casein roots; dry-run by default, `--apply` to act (systemd units alongside, installed pointing at `/opt/casein/deploy-build`)
 - `lib/casein/runtimes/worktree_alarm.ex` — alarm logic (`workspace.agent_worktree_stale` audit events)
 - `scripts/verify_agent_pairing.sh` — MCP smoke test
 - `.devbox-agent.env` — generated token/URL/workspace ids (gitignored)

@@ -42,17 +42,17 @@ add_build_arg() {
   fi
 }
 
-if [ -z "${DEVIDE_GIT_REVISION:-}" ] && command -v git >/dev/null 2>&1; then
-  DEVIDE_GIT_REVISION="$(git -C "${REPO_DIR}" rev-parse HEAD 2>/dev/null || true)"
+if [ -z "${CASEIN_GIT_REVISION:-}" ] && command -v git >/dev/null 2>&1; then
+  CASEIN_GIT_REVISION="$(git -C "${REPO_DIR}" rev-parse HEAD 2>/dev/null || true)"
 fi
 
 add_build_arg CASEIN_REPO_ADAPTER "${CASEIN_REPO_ADAPTER:-}"
-add_build_arg DEVIDE_GIT_REVISION "${DEVIDE_GIT_REVISION:-}"
-add_build_arg DEVIDE_RELEASE_PROFILE "${DEVIDE_RELEASE_PROFILE:-}"
-add_build_arg DEVIDE_RELEASE_REPO_ADAPTER "${DEVIDE_RELEASE_REPO_ADAPTER:-}"
-add_build_arg DEVIDE_RELEASE_TARGET "${DEVIDE_RELEASE_TARGET:-}"
-add_build_arg DEVIDE_RELEASE_CHANNEL "${DEVIDE_RELEASE_CHANNEL:-}"
-add_build_arg DEVIDE_UPDATE_MANIFEST_URL "${DEVIDE_UPDATE_MANIFEST_URL:-}"
+add_build_arg CASEIN_GIT_REVISION "${CASEIN_GIT_REVISION:-}"
+add_build_arg CASEIN_RELEASE_PROFILE "${CASEIN_RELEASE_PROFILE:-}"
+add_build_arg CASEIN_RELEASE_REPO_ADAPTER "${CASEIN_RELEASE_REPO_ADAPTER:-}"
+add_build_arg CASEIN_RELEASE_TARGET "${CASEIN_RELEASE_TARGET:-}"
+add_build_arg CASEIN_RELEASE_CHANNEL "${CASEIN_RELEASE_CHANNEL:-}"
+add_build_arg CASEIN_UPDATE_MANIFEST_URL "${CASEIN_UPDATE_MANIFEST_URL:-}"
 
 if docker image inspect "${BUILDER_CACHE_TAG}" >/dev/null 2>&1; then
   build_args+=(--cache-from "${BUILDER_CACHE_TAG}")
@@ -84,8 +84,8 @@ if [ ! -x "${OUTPUT_DIR}/bin/casein" ]; then
   echo "error: extracted tree missing bin/casein — build did not produce a usable release" >&2
   exit 1
 fi
-if [ ! -x "${OUTPUT_DIR}/bin/devide" ]; then
-  echo "error: extracted tree missing bin/devide (rel/overlays/bin/devide) — required by release LAN commands" >&2
+if [ ! -x "${OUTPUT_DIR}/bin/casein-runtime" ]; then
+  echo "error: extracted tree missing bin/casein-runtime — generated release entrypoint was not preserved" >&2
   exit 1
 fi
 if [ ! -f "${OUTPUT_DIR}/releases/casein.relmeta.json" ]; then
@@ -122,10 +122,10 @@ fi
 echo
 echo "release ready at: ${OUTPUT_DIR}"
 echo "  bin/casein   $(file -b "${OUTPUT_DIR}/bin/casein" 2>/dev/null || echo 'script')"
-echo "  bin/devide    present (release operator helper)"
+echo "  bin/casein-runtime present (OTP release entrypoint)"
 echo "  bin/migrate   present"
 echo "  bin/clean_casein_socket  present"
 echo "size: $(du -sh "${OUTPUT_DIR}" | cut -f1)"
 echo
 echo "LAN activation from this release:"
-echo "  sudo ${OUTPUT_DIR}/bin/devide lan up"
+echo "  sudo ${OUTPUT_DIR}/bin/casein lan up"

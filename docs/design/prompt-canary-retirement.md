@@ -123,7 +123,7 @@ Ship **D**, in two independently-landable steps:
 ## Verification plan
 
 The `.claude/skills/verify/SKILL.md` recipe (dev server + scratch tmux on the
-`devide_dev` label + headless viewer) plus a scripted two-instance handoff:
+`casein_dev` label + headless viewer) plus a scripted two-instance handoff:
 start instance A, attach a headless viewer, activate instance B, and assert
 (1) the viewer's tmux window size never oscillates and (2) instance A's process
 is gone within the bounded grace. This is the same observation loop that caught

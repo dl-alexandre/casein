@@ -1,7 +1,7 @@
 defmodule GitCtl.Cache do
   @moduledoc false
 
-  @default_table :devide_git_inspector_cache
+  @default_table :casein_git_inspector_cache
 
   @spec table() :: atom()
   def table do

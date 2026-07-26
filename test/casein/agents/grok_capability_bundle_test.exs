@@ -26,7 +26,7 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
 
     File.write!(
       mcp,
-      ~s({"mcpServers":{"devide":{"headers":{"Authorization":"Bearer ${CASEIN_API_TOKEN}"}}}}\n)
+      ~s({"mcpServers":{"casein":{"headers":{"Authorization":"Bearer ${CASEIN_API_TOKEN}"}}}}\n)
     )
 
     File.write!(hook_config, ~s({"hooks":{"SessionStart":[]}}\n))

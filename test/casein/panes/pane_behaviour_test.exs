@@ -195,7 +195,7 @@ defmodule Casein.Panes.PaneBehaviourTest do
 
   defp single_pane_topology do
     %{
-      session: "devide_alpha_main",
+      session: "casein_alpha_main",
       version: 1,
       windows: [
         %{

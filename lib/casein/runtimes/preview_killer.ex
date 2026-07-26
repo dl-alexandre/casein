@@ -36,7 +36,7 @@ defmodule Casein.Runtimes.PreviewKiller do
       env = Map.get(server, "env") || %{}
 
       preview_home =
-        Map.get(env, "DEVIDE_PREVIEW_HOME") || Map.get(env, :DEVIDE_PREVIEW_HOME) ||
+        Map.get(env, "CASEIN_PREVIEW_HOME") || Map.get(env, :CASEIN_PREVIEW_HOME) ||
           (is_binary(cwd) && Path.join(cwd, ".casein-preview"))
 
       if is_binary(runtime_id) and

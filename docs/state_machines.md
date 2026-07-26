@@ -29,7 +29,7 @@ Rules:
    else create) and rebuilds the grid from tmux history.
 3. `Casein.Terminals.TmuxJanitor` schedules `tmux kill-session` after
    `:tmux_idle_seconds` once a session has no subscribers; a new subscriber
-   cancels the pending kill. Only `devide_`-prefixed sessions are killed.
+   cancels the pending kill. Only `casein_`-prefixed sessions are killed.
 4. Raw input is admitted only when `Policy.can_use_raw_terminal?/1` allows; the
    verdict is recorded as `run.session_attached` / `run.session_denied`.
 

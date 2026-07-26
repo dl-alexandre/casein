@@ -305,7 +305,7 @@ defmodule Casein.Agents.ArtifactToolsTest do
     File.mkdir_p!(repo)
     git!(repo, ["init"])
     git!(repo, ["config", "user.name", "Casein Test"])
-    git!(repo, ["config", "user.email", "devide-test@localhost"])
+    git!(repo, ["config", "user.email", "casein-test@localhost"])
     File.write!(Path.join(repo, "README.md"), "# Artifact Tools Test\n")
     git!(repo, ["add", "README.md"])
     git!(repo, ["commit", "-m", "Initial commit"])

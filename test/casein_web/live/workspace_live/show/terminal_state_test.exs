@@ -70,7 +70,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateTest do
         pane_id: "%preview",
         title: "Docs",
         display_url: "https://example.com/docs",
-        tmux_session: "devide_alpha_u-alice"
+        tmux_session: "casein_alpha_u-alice"
       }
     }
 
@@ -81,7 +81,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateTest do
                "%preview",
                @windows,
                "@2",
-               "devide_alpha_u-alice"
+               "casein_alpha_u-alice"
              ) == nil
     end
 
@@ -91,7 +91,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateTest do
           pane_id: "%preview",
           title: "Stale",
           display_url: "https://example.com/stale",
-          tmux_session: "devide_alpha_u-bob"
+          tmux_session: "casein_alpha_u-bob"
         }
       }
 
@@ -101,7 +101,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateTest do
                nil,
                @windows,
                "@1",
-               "devide_alpha_u-alice"
+               "casein_alpha_u-alice"
              ) == nil
     end
 
@@ -116,7 +116,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateTest do
                  nil,
                  @windows,
                  "@1",
-                 "devide_alpha_u-alice"
+                 "casein_alpha_u-alice"
                )
     end
   end

@@ -124,7 +124,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
   defp killable_window(overrides) do
     Map.merge(
       %{
-        session: "devide_ws_u-abc-tab1",
+        session: "casein_ws_u-abc-tab1",
         window_id: "@7",
         active: false,
         panes: 1,
@@ -138,7 +138,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
 
   defp orphan_session(overrides) do
     Map.merge(
-      %{session: "devide_ws_u-orphan", attached: false, activity: now() - @idle - 100},
+      %{session: "casein_ws_u-orphan", attached: false, activity: now() - @idle - 100},
       overrides
     )
   end
@@ -168,56 +168,56 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
       assert Janitor.sweep_now() == 1
 
       # Exactly the killable window was reaped.
-      assert_received {:killed_window, "devide_ws_u-abc-tab1:@7"}
+      assert_received {:killed_window, "casein_ws_u-abc-tab1:@7"}
 
       # None of the spared windows were touched.
-      refute_received {:killed_window, "devide_ws_u-abc-tab1:@active"}
-      refute_received {:killed_window, "devide_ws_u-abc-tab1:@named"}
-      refute_received {:killed_window, "devide_ws_u-abc-tab1:@multipane"}
-      refute_received {:killed_window, "devide_ws_u-abc-tab1:@busy"}
-      refute_received {:killed_window, "devide_ws_u-abc-tab1:@recent"}
+      refute_received {:killed_window, "casein_ws_u-abc-tab1:@active"}
+      refute_received {:killed_window, "casein_ws_u-abc-tab1:@named"}
+      refute_received {:killed_window, "casein_ws_u-abc-tab1:@multipane"}
+      refute_received {:killed_window, "casein_ws_u-abc-tab1:@busy"}
+      refute_received {:killed_window, "casein_ws_u-abc-tab1:@recent"}
       refute_received {:killed_window, "other_session:@foreign"}
     end
 
     test "reaps multiple killable windows across sessions" do
       seed(
         windows: [
-          killable_window(%{session: "devide_ws_a", window_id: "@1"}),
-          killable_window(%{session: "devide_ws_b", window_id: "@2"})
+          killable_window(%{session: "casein_ws_a", window_id: "@1"}),
+          killable_window(%{session: "casein_ws_b", window_id: "@2"})
         ]
       )
 
       assert Janitor.sweep_now() == 2
-      assert_received {:killed_window, "devide_ws_a:@1"}
-      assert_received {:killed_window, "devide_ws_b:@2"}
+      assert_received {:killed_window, "casein_ws_a:@1"}
+      assert_received {:killed_window, "casein_ws_b:@2"}
     end
   end
 
   describe "sweep_now/0 — session reaping (sweep_sessions/1 + busy_sessions/0)" do
-    test "kills an unattached idle blank devide_ session" do
+    test "kills an unattached idle blank casein_ session" do
       seed(
-        sessions: [orphan_session(%{session: "devide_ws_u-orphan"})],
+        sessions: [orphan_session(%{session: "casein_ws_u-orphan"})],
         # Its sole pane is a shell -> not busy -> eligible.
-        panes: [{"devide_ws_u-orphan", "bash"}]
+        panes: [{"casein_ws_u-orphan", "bash"}]
       )
 
       assert Janitor.sweep_now() == 1
-      assert_received {:killed_session, "devide_ws_u-orphan"}
+      assert_received {:killed_session, "casein_ws_u-orphan"}
     end
 
     test "spares attached, foreign, recent, and busy (non-shell pane) sessions" do
       seed(
         sessions: [
-          orphan_session(%{session: "devide_ws_attached", attached: true}),
+          orphan_session(%{session: "casein_ws_attached", attached: true}),
           orphan_session(%{session: "plain_foreign"}),
-          orphan_session(%{session: "devide_ws_recent", activity: now()}),
-          orphan_session(%{session: "devide_ws_busy"})
+          orphan_session(%{session: "casein_ws_recent", activity: now()}),
+          orphan_session(%{session: "casein_ws_busy"})
         ],
-        # devide_ws_busy has a non-shell pane -> busy_sessions/0 includes it.
+        # casein_ws_busy has a non-shell pane -> busy_sessions/0 includes it.
         panes: [
-          {"devide_ws_attached", "bash"},
-          {"devide_ws_recent", "bash"},
-          {"devide_ws_busy", "vim"}
+          {"casein_ws_attached", "bash"},
+          {"casein_ws_recent", "bash"},
+          {"casein_ws_busy", "vim"}
         ]
       )
 
@@ -227,28 +227,28 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
 
     test "busy_sessions/0 spares a session if ANY pane runs a non-shell command" do
       seed(
-        sessions: [orphan_session(%{session: "devide_ws_mixed"})],
+        sessions: [orphan_session(%{session: "casein_ws_mixed"})],
         # One shell pane + one real-command pane: the real command wins.
-        panes: [{"devide_ws_mixed", "bash"}, {"devide_ws_mixed", "node"}]
+        panes: [{"casein_ws_mixed", "bash"}, {"casein_ws_mixed", "node"}]
       )
 
       assert Janitor.sweep_now() == 0
-      refute_received {:killed_session, "devide_ws_mixed"}
+      refute_received {:killed_session, "casein_ws_mixed"}
     end
   end
 
   describe "sweep_now/0 — combined and empty paths" do
     test "run_sweep/0 sums window kills and session kills" do
       seed(
-        windows: [killable_window(%{session: "devide_ws_x", window_id: "@9"})],
-        sessions: [orphan_session(%{session: "devide_ws_y"})],
-        panes: [{"devide_ws_y", "bash"}]
+        windows: [killable_window(%{session: "casein_ws_x", window_id: "@9"})],
+        sessions: [orphan_session(%{session: "casein_ws_y"})],
+        panes: [{"casein_ws_y", "bash"}]
       )
 
       # one window + one session
       assert Janitor.sweep_now() == 2
-      assert_received {:killed_window, "devide_ws_x:@9"}
-      assert_received {:killed_session, "devide_ws_y"}
+      assert_received {:killed_window, "casein_ws_x:@9"}
+      assert_received {:killed_session, "casein_ws_y"}
     end
 
     test "returns 0 and kills nothing when there is nothing reapable" do
@@ -262,7 +262,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
 
   describe "handle_info(:sweep, state) self-reschedule" do
     test "an init'd janitor with a positive interval sweeps on :sweep and reschedules" do
-      seed(windows: [killable_window(%{session: "devide_ws_sched", window_id: "@3"})])
+      seed(windows: [killable_window(%{session: "casein_ws_sched", window_id: "@3"})])
 
       # Drive init/1 down the ms > 0 branch so state.interval_ms is set and the
       # reschedule arm of handle_info/2 runs. Supervise an unnamed instance via
@@ -275,7 +275,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
       send(pid, :sweep)
 
       # The reaped window proves handle_info(:sweep,...) ran run_sweep/0.
-      assert_receive {:killed_window, "devide_ws_sched:@3"}
+      assert_receive {:killed_window, "casein_ws_sched:@3"}
 
       # It rescheduled itself: a fresh :sweep timer is queued. Prove the server
       # is still alive and responsive after handling the message.
@@ -285,14 +285,14 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
 
     test "init/1 stays idle (interval_ms nil) when sweep_ms is unset/zero" do
       Application.delete_env(:casein, :tmux_window_sweep_ms)
-      seed(windows: [killable_window(%{session: "devide_ws_idle", window_id: "@4"})])
+      seed(windows: [killable_window(%{session: "casein_ws_idle", window_id: "@4"})])
 
       pid = start_supervised!(unnamed_janitor_spec(:idle))
 
       # No interval scheduled, so no automatic :sweep; but a manual :sweep still
       # runs run_sweep/0 and, with interval_ms nil, does NOT reschedule.
       send(pid, :sweep)
-      assert_receive {:killed_window, "devide_ws_idle:@4"}
+      assert_receive {:killed_window, "casein_ws_idle:@4"}
       assert Process.alive?(pid)
     end
   end

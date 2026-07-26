@@ -52,7 +52,7 @@ defmodule CaseinWeb.Plugs.DeployWebhookAuth do
   end
 
   defp raw_body(conn) do
-    case conn.private[:devide_deploy_webhook_raw_body] do
+    case conn.private[:casein_deploy_webhook_raw_body] do
       body when is_binary(body) -> {:ok, body}
       _ -> {:error, :missing_body}
     end

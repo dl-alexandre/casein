@@ -41,23 +41,23 @@ else
 end
 
 # Run the dev server's tmux sessions on their own server (`tmux -L casein_dev`),
-# distinct from prod's `devide` (config/prod.exs) and test's `devide_test`
+# distinct from prod's `casein` (config/prod.exs) and test's `casein_test`
 # (config/test.exs). On the devbox the :4000 mix dev server and the release run
 # as the same user, so a shared label would collide on one socket. Resolved by
 # Casein.Terminals.TmuxServer.
-config :casein, :tmux_server_label, "devide_dev"
+config :casein, :tmux_server_label, "casein_dev"
 
 # Slice 3 rollout ladder step 1: event-driven tmux topology ON in dev.
 # Canary soak + prod default stay operational (watch TmuxEventsFlapWatch
-# telemetry / flap alarm; flip via DEVIDE_TMUX_EVENTS). runtime.exs env
+# telemetry / flap alarm; flip via CASEIN_TMUX_EVENTS). runtime.exs env
 # overrides both ways when set. Test env stays OFF for flag-off no-op proofs.
 config :casein, :tmux_events, true
 
-devide_lan_requested? = truthy?.(System.get_env("CASEIN_LAN"))
-devide_lan_insecure_http? = truthy?.(System.get_env("CASEIN_LAN_INSECURE_HTTP"))
-devide_lan? = devide_lan_requested? or devide_lan_insecure_http?
+casein_lan_requested? = truthy?.(System.get_env("CASEIN_LAN"))
+casein_lan_insecure_http? = truthy?.(System.get_env("CASEIN_LAN_INSECURE_HTTP"))
+casein_lan? = casein_lan_requested? or casein_lan_insecure_http?
 
-devide_lan_hostname =
+casein_lan_hostname =
   case :inet.gethostname() do
     {:ok, hostname} ->
       hostname
@@ -69,36 +69,36 @@ devide_lan_hostname =
       "localhost"
   end
 
-devide_lan_mdns_host =
-  if String.ends_with?(devide_lan_hostname, ".local") do
-    devide_lan_hostname
+casein_lan_mdns_host =
+  if String.ends_with?(casein_lan_hostname, ".local") do
+    casein_lan_hostname
   else
-    "#{devide_lan_hostname}.local"
+    "#{casein_lan_hostname}.local"
   end
 
-devide_lan_host =
+casein_lan_host =
   System.get_env("CASEIN_LAN_HOST") ||
-    devide_lan_mdns_host
+    casein_lan_mdns_host
 
-devide_http_port = String.to_integer(System.get_env("PORT") || "4000")
-devide_lan_https_port = String.to_integer(System.get_env("CASEIN_LAN_HTTPS_PORT") || "4443")
+casein_http_port = String.to_integer(System.get_env("PORT") || "4000")
+casein_lan_https_port = String.to_integer(System.get_env("CASEIN_LAN_HTTPS_PORT") || "4443")
 
-devide_lan_insecure_http_port =
+casein_lan_insecure_http_port =
   String.to_integer(System.get_env("CASEIN_LAN_INSECURE_HTTP_PORT") || "80")
 
-devide_lan_certfile =
+casein_lan_certfile =
   System.get_env("CASEIN_LAN_CERTFILE") ||
     Path.expand("../priv/cert/casein-lan.pem", __DIR__)
 
-devide_lan_keyfile =
+casein_lan_keyfile =
   System.get_env("CASEIN_LAN_KEYFILE") ||
     Path.expand("../priv/cert/casein-lan-key.pem", __DIR__)
 
-devide_lan_https? = devide_lan_requested? and not falsey?.(System.get_env("CASEIN_LAN_HTTPS"))
+casein_lan_https? = casein_lan_requested? and not falsey?.(System.get_env("CASEIN_LAN_HTTPS"))
 
-devide_endpoint_config = [
+casein_endpoint_config = [
   # HTTP stays loopback-only; LAN mode adds a trusted HTTPS listener below.
-  http: [ip: {127, 0, 0, 1}, port: devide_http_port],
+  http: [ip: {127, 0, 0, 1}, port: casein_http_port],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
@@ -113,38 +113,38 @@ config :casein,
        :origin_identity_secret,
        "IG4EOlcBEwImKOlB6OwEc8r/O1dn4NjtGBJU7VV0w0iQv8v839fWk7PZLzP39/86"
 
-devide_endpoint_config =
-  if devide_lan? do
-    Keyword.put(devide_endpoint_config, :url,
-      host: devide_lan_host,
+casein_endpoint_config =
+  if casein_lan? do
+    Keyword.put(casein_endpoint_config, :url,
+      host: casein_lan_host,
       port:
-        if(devide_lan_insecure_http?,
-          do: devide_lan_insecure_http_port,
-          else: devide_lan_https_port
+        if(casein_lan_insecure_http?,
+          do: casein_lan_insecure_http_port,
+          else: casein_lan_https_port
         ),
-      scheme: if(devide_lan_insecure_http?, do: "http", else: "https")
+      scheme: if(casein_lan_insecure_http?, do: "http", else: "https")
     )
   else
-    devide_endpoint_config
+    casein_endpoint_config
   end
 
-devide_endpoint_config =
-  if devide_lan_https? do
-    Keyword.put(devide_endpoint_config, :https,
+casein_endpoint_config =
+  if casein_lan_https? do
+    Keyword.put(casein_endpoint_config, :https,
       ip: {0, 0, 0, 0},
-      port: devide_lan_https_port,
+      port: casein_lan_https_port,
       cipher_suite: :strong,
-      keyfile: devide_lan_keyfile,
-      certfile: devide_lan_certfile
+      keyfile: casein_lan_keyfile,
+      certfile: casein_lan_certfile
     )
   else
-    devide_endpoint_config
+    casein_endpoint_config
   end
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
-config :casein, CaseinWeb.Endpoint, devide_endpoint_config
+config :casein, CaseinWeb.Endpoint, casein_endpoint_config
 
 # ## SSL Support
 #
@@ -169,10 +169,10 @@ config :casein, CaseinWeb.Endpoint, devide_endpoint_config
 # configured to run both http and https servers on
 # different ports.
 
-if devide_lan? do
+if casein_lan? do
   config :casein, :lan_mode, true
 
-  if devide_lan_insecure_http? do
+  if casein_lan_insecure_http? do
     config :casein, :lan_insecure_http, true
     config :casein, :session_same_site, nil
   end

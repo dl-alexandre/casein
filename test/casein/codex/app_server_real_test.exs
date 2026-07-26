@@ -10,7 +10,7 @@ defmodule Casein.Codex.AppServerRealTest do
       codex_home =
         Path.join(
           if(File.dir?("/var/tmp"), do: "/var/tmp", else: System.tmp_dir!()),
-          "devide-codex-real-#{System.unique_integer([:positive])}"
+          "casein-codex-real-#{System.unique_integer([:positive])}"
         )
 
       File.mkdir_p!(codex_home)

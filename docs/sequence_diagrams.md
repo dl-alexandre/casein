@@ -17,7 +17,7 @@ Browser     TerminalChannel/LiveView   Ghostty.PTY        tmux
 │─────────────────>│                       │                │
 │                  │ start_ghostty_terminal│                │
 │                  │──────────────────────>│                │
-│                  │                       │ exec("tmux new-session -A -s devide_...")
+│                  │                       │ exec("tmux new-session -A -s casein_...")
 │                  │                       │───────────────>│
 │                  │                       │  [exists → attach, else create]
 │                  │ ghostty:render (grid) │                │
@@ -60,7 +60,7 @@ Operator    Casein LiveView/Channel   Policy            Runs.Ledger
 Agent       Terminal MCP            TerminalTools       MCPAudit / Activity   tmux
 │                  │                     │                  │                  │
 │ terminal_list_sessions               │                  │                  │
-│─────────────────>│ list (devide_ only) │                  │                  │
+│─────────────────>│ list (casein_ only) │                  │                  │
 │                  │────────────────────>│─────────────────────────────────────>│
 │                  │ terminal_topology   │                  │                  │
 │ terminal_send_command (agent pane)    │                  │                  │

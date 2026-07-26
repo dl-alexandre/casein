@@ -37,7 +37,7 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
   end
 
   test "approves and denies structured Grok requests from every cockpit tab", %{conn: conn} do
-    mount_env!("devide-workspace-grok-permission")
+    mount_env!("casein-workspace-grok-permission")
 
     attachment_key = "grok-ui-#{System.unique_integer([:positive])}"
     session_id = "session-with-a-long-stable-identifier-1234567890"
@@ -195,7 +195,7 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
       workspace_id: @workspace_id,
       attachment_key: attachment_key,
       session_id: snapshot.session_id,
-      tmux_session_id: "devide_alpha_ui",
+      tmux_session_id: "casein_alpha_ui",
       pane_id: "%9",
       cwd: File.cwd!(),
       transcript_path: "/not-rendered/updates.jsonl",

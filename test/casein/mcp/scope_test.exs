@@ -167,24 +167,24 @@ defmodule Casein.MCP.ScopeTest do
     assert {:ok, scope} =
              Scope.resolve_tool_call("preview_open_app", %{"workspace_id" => "ws-scope"},
                surface: :preview,
-               default_tmux_session: "devide_ws-scope_agent"
+               default_tmux_session: "casein_ws-scope_agent"
              )
 
-    assert scope.args["tmux_session"] == "devide_ws-scope_agent"
-    assert scope.tmux_session == "devide_ws-scope_agent"
+    assert scope.args["tmux_session"] == "casein_ws-scope_agent"
+    assert scope.tmux_session == "casein_ws-scope_agent"
     assert scope.resolved_from.tmux_session == :pre_scoped
 
     assert {:error, error} =
              Scope.resolve_tool_call(
                "preview_open_app",
-               %{"workspace_id" => "ws-scope", "tmux_session" => "devide_ws-scope_other"},
+               %{"workspace_id" => "ws-scope", "tmux_session" => "casein_ws-scope_other"},
                surface: :preview,
-               default_tmux_session: "devide_ws-scope_agent"
+               default_tmux_session: "casein_ws-scope_agent"
              )
 
     assert error.error == :tmux_session_scope_mismatch
-    assert error.scoped_tmux_session == "devide_ws-scope_agent"
-    assert error.requested_tmux_session == "devide_ws-scope_other"
+    assert error.scoped_tmux_session == "casein_ws-scope_agent"
+    assert error.requested_tmux_session == "casein_ws-scope_other"
   end
 
   test "resolves playback opens as workspace-scoped preview tools" do
@@ -194,13 +194,13 @@ defmodule Casein.MCP.ScopeTest do
                %{"artifact_path" => "/preview-artifacts/ws-scope/demo.webm"},
                surface: :preview,
                default_workspace_id: "ws-scope",
-               default_tmux_session: "devide_ws-scope_agent"
+               default_tmux_session: "casein_ws-scope_agent"
              )
 
     assert scope.workspace_id == "ws-scope"
     assert scope.workspace.id == "ws-scope"
     assert scope.args["workspace_id"] == "ws-scope"
-    assert scope.args["tmux_session"] == "devide_ws-scope_agent"
+    assert scope.args["tmux_session"] == "casein_ws-scope_agent"
     assert scope.resolved_from.workspace == :pre_scoped
     assert scope.resolved_from.tmux_session == :pre_scoped
   end

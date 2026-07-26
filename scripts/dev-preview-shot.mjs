@@ -12,7 +12,7 @@
 //   WxH        viewport, default 390x844 (iPhone-ish). Ignored shape for --desktop.
 //   --desktop  fine pointer, 1280x900 — use to confirm mobile chrome is HIDDEN.
 //
-import { chromium } from "/data/workspaces/dalexandre/dev_ide/priv/scripts/node_modules/playwright/index.mjs";
+import { chromium } from "/data/workspaces/dalexandre/casein/priv/scripts/node_modules/playwright/index.mjs";
 
 const [, , url, out, sizeArg] = process.argv;
 const desktop = process.argv.includes("--desktop");

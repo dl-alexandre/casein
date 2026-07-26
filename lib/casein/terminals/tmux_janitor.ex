@@ -1,6 +1,6 @@
 defmodule Casein.Terminals.TmuxJanitor do
   @moduledoc """
-  Idle GC for `devide_*` tmux sessions backing the Ghostty raw shell.
+  Idle GC for `casein_*` tmux sessions backing the Ghostty raw shell.
 
   Each LiveView that opens raw mode calls `subscribe/1` with its tmux
   session name; the janitor monitors the calling pid. When the last
@@ -9,7 +9,7 @@ defmodule Casein.Terminals.TmuxJanitor do
   `:tmux_idle_seconds`. A new subscriber arriving before the timer fires
   cancels the pending kill.
 
-  Safety: only sessions whose name starts with `devide_` are killed.
+  Safety: only sessions whose name starts with `casein_` are killed.
 
   Configuration: `:tmux_idle_seconds` — integer seconds, or `nil` to
   disable (no kill ever scheduled). Default `nil`.
@@ -20,7 +20,7 @@ defmodule Casein.Terminals.TmuxJanitor do
 
   alias Casein.Terminals.{SessionOwner, Tmux}
 
-  @prefix "devide_"
+  @prefix "casein_"
 
   ## Client API
 
@@ -31,7 +31,7 @@ defmodule Casein.Terminals.TmuxJanitor do
   @doc """
   Register the calling pid as a subscriber to `session`. Monitors the
   caller; on `:DOWN` it is treated as `unsubscribe/1`. Sessions whose name
-  does not start with `devide_` are silently ignored — the janitor only
+  does not start with `casein_` are silently ignored — the janitor only
   manages tmux sessions it owns.
   """
   @spec subscribe(String.t()) :: :ok

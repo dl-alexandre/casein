@@ -59,11 +59,11 @@ site into it.
 | Module | File | Role |
 |---|---|---|
 | `Casein.Terminals.Tmux` | `tmux.ex` | Facade over `TmuxCtl.Client`; the `@behaviour TmuxCtl.Adapter` used as the product `:tmux_adapter`. |
-| `Casein.Terminals.TmuxPolicy` | `tmux_policy.ex` | Session naming/sanitization: `session_name/2` → `devide_<ws>_<sid>`, `workspace_session_prefix/1`. |
+| `Casein.Terminals.TmuxPolicy` | `tmux_policy.ex` | Session naming/sanitization: `session_name/2` → `casein_<ws>_<sid>`, `workspace_session_prefix/1`. |
 | `Casein.Terminals.TmuxRunner` | `tmux_runner.ex` | `@behaviour TmuxCtl.Runner`; host-vs-container argv wrapping via `WorkspaceSource.prepare_local_argv/2`, container-tmux probe cached in `:persistent_term`. |
 | `Casein.Terminals.TmuxTopology` | `tmux_topology.ex` | Facade over `TmuxCtl.Topology`/`.Watcher`; preserves the `{TmuxTopology, msg}` PubSub tuple; emits `tmux.session_terminated` audit on terminate. |
-| `Casein.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the per-env tmux server label (`-L`): `devide` (prod), `devide_dev` (dev), `devide_test` (test). Each is an isolated server so Casein never shares a socket with another env or with plain SSH tmux. |
-| `Casein.Terminals.TmuxJanitor` | `tmux_janitor.ex` | Subscriber-driven idle GC at the **session** level; kills `devide_*` sessions after `:tmux_idle_seconds` with no subscribers. |
+| `Casein.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the per-env tmux server label (`-L`): `casein` (prod), `casein_dev` (dev), `casein_test` (test). Each is an isolated server so Casein never shares a socket with another env or with plain SSH tmux. |
+| `Casein.Terminals.TmuxJanitor` | `tmux_janitor.ex` | Subscriber-driven idle GC at the **session** level; kills `casein_*` sessions after `:tmux_idle_seconds` with no subscribers. |
 | `Casein.Terminals.TmuxWindowJanitor` | `tmux_window_janitor.ex` | Periodic sweep reaping blank auto-named idle **windows** and whole orphaned sessions (survives restarts; the safety net `TmuxJanitor` cannot reach). |
 
 ### Templates
@@ -106,7 +106,7 @@ caller pid (LiveView PaneWorker / channel)
        ├─ Process.monitor(subscriber); record in subscribers/refs maps
        └─ ensure_attachment → Attachment.open(:shell)
             └─ GhosttyRawAdapter.ensure_raw_shell → Session.ensure_started({ws, sid, loc})
-                 └─ :exec.run("tmux new-session -A -s devide_<ws>_<sid> ...")  ← persistence boundary
+                 └─ :exec.run("tmux new-session -A -s casein_<ws>_<sid> ...")  ← persistence boundary
             └─ Session.subscribe(pid) → {:ok, ref, cols, rows}; replays 64 KiB buffer
 
 PTY output:  Session ingest → {:term_data, ref, bin} → SessionOwner.handle_term_data
@@ -127,7 +127,7 @@ Lifecycle / durability:
 - `SessionOwner` for a `:shell` is **immortal** (`should_stop?/1`) — tied to the
   tmux session's `-A` reuse, reused across clients; `:agent` owners stop on last
   detach.
-- Idle GC: `TmuxJanitor` kills a `devide_*` session after its last LiveView
+- Idle GC: `TmuxJanitor` kills a `casein_*` session after its last LiveView
   subscriber leaves and `:tmux_idle_seconds` elapses; `TmuxWindowJanitor`
   periodically reaps abandoned blank windows and orphaned sessions that the
   in-memory subscriber map cannot (e.g. after a restart).
@@ -189,8 +189,8 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
 - **Never wrap tmux argv in `CleanExec`.** Any fd close/redirect before
   `exec tmux ...` breaks the foreground `new-session` attach (surfaces as
   "Terminal exited 0"); tmux self-daemonizes and is exempt.
-- **`devide_`-prefix guard.** Both janitors refuse to kill any session whose
-  name does not start with `devide_`; `TmuxWindowJanitor` additionally spares
+- **`casein_`-prefix guard.** Both janitors refuse to kill any session whose
+  name does not start with `casein_`; `TmuxWindowJanitor` additionally spares
   named, active, or busy (non-shell) windows/sessions. (See MEMORY "Devbox
   process safety".)
 - **Calendar cleanup is outside the app timer.** The in-app
@@ -200,15 +200,15 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
   one kill-policy implementation.
 - **Server isolation & config (`-L` / `-f`).** Each env runs its tmux sessions
   on a dedicated server via `:tmux_server_label` (`TmuxServer.args/0` →
-  `["-L", label]`): `devide` (prod, `config/prod.exs`), `devide_dev` (dev,
-  `config/dev.exs`), `devide_test` (test, `config/test.exs`). Distinct labels
+  `["-L", label]`): `casein` (prod, `config/prod.exs`), `casein_dev` (dev,
+  `config/dev.exs`), `casein_test` (test, `config/test.exs`). Distinct labels
   are required — on the devbox the `:4000` dev server and the prod release run
   as the same user, so a shared label would collide on one socket; the test
   label also keeps the live integration tests off prod sessions. An unset label
   falls back to the host's *default* server, sharing it with plain SSH tmux.
   - **Per-server config.** On the host path, `TmuxRunner` appends `-f <file>`,
     resolved by precedence: `:tmux_ctl, :config_file` → `:casein,
-    :tmux_config_file` → `$CASEIN_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`
+    :tmux_config_file` → `$CASEIN_TMUX_CONFIG` → bundled `priv/tmux/casein.conf`
     (`tmux_runner.ex:82-104`). Container sessions skip `-f` (the priv dir isn't
     mounted in arbitrary workspace images) and instead get the same options
     programmatically via `TmuxCtl.Client.apply_defaults/1`. tmux reads `-f` only
@@ -216,8 +216,8 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
     server = one config. A different config means a different `-L` label.
   - **SSH coexistence.** Because Casein owns a labeled server, an operator's
     plain `tmux` (default server, their `~/.tmux.conf`) is untouched. To attach
-    to Casein's sessions from a shell: `tmux -L devide attach` (or `devide_dev`
-    / `devide_test`). The `-f` on such an attach is ignored — the server is
+    to Casein's sessions from a shell: `tmux -L casein attach` (or `casein_dev`
+    / `casein_test`). The `-f` on such an attach is ignored — the server is
     already running with its own conf.
   - **Operator cutover ⚠️.** Introducing or changing a label points Casein at a
     *fresh, empty* server. Sessions on the previously-used server (e.g. the
@@ -255,7 +255,7 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
   cell under the pointer (multi-pane hit-test); plain click reaches the PTY;
   Shift-drag selects; Alt+wheel opens the pane history drawer (tmux capture —
   dual-layer history). Shell mode keeps Ghostty scrollback + plain drag-select.
-  Debug with `?termscroll=1` or `localStorage["devide:termscroll"]="1"`.
+  Debug with `?termscroll=1` or `localStorage["casein:termscroll"]="1"`.
 - **Clipboard image paste into agents uses `@path`.** The paste reply includes
   `path_format` from the same pane interaction detector so Grok/Claude attach
   files instead of printing a shell-quoted absolute path line.
@@ -267,7 +267,7 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
   `~/.casein/tools/bin/`. Casein prepends the shim dir and tool bin dir only for
   terminal panes. A shim removes only its own directory from `PATH`, resolves the
   real command, and `exec`s it with app-specific compatibility env. If a
-  registry-backed command is missing, the shim calls `devide ensure-installed
+  registry-backed command is missing, the shim calls `casein ensure-installed
   <tool>` when available, falls back to its materialized installer, re-resolves,
   then launches. Installers are non-interactive, print a short Casein-prefixed
   provisioning message before streaming Cargo output, use a per-tool lock

@@ -13,9 +13,9 @@ defmodule Casein.Terminals.TmuxServer do
 
   | Env  | Label (`-L`)  | Set in            |
   |------|---------------|-------------------|
-  | prod | `devide`      | `config/prod.exs` |
-  | dev  | `devide_dev`  | `config/dev.exs`  |
-  | test | `devide_test` | `config/test.exs` |
+  | prod | `casein`      | `config/prod.exs` |
+  | dev  | `casein_dev`  | `config/dev.exs`  |
+  | test | `casein_test` | `config/test.exs` |
 
   The labels must differ per env because the `:4000` dev server and the prod
   release run as the same user on the devbox — a shared label would put both on

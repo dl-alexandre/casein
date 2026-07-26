@@ -10,7 +10,7 @@ defmodule CaseinWeb.WorkspaceHeaderChromeTest do
     unique = System.unique_integer([:positive])
     workspace_id = "hdr-#{unique}"
     workspace_name = "hdr-ws-#{unique}"
-    workspace_root = Path.join(System.tmp_dir!(), "devide-header-live-#{unique}")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-header-live-#{unique}")
     workspace_path = Path.join(workspace_root, workspace_id)
     File.mkdir_p!(workspace_path)
 

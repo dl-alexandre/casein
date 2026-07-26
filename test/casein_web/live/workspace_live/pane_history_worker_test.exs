@@ -27,7 +27,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneHistoryWorkerTest do
       PaneHistoryWorker.start_link(
         parent: self(),
         pane_id: "%7",
-        tmux_session: "devide_ws_s1",
+        tmux_session: "casein_ws_s1",
         cols: 40,
         rows: 10,
         tmux_adapter: StubTmux
@@ -37,7 +37,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneHistoryWorkerTest do
 
     # The capture targets the specific pane (not the session's active pane),
     # keeps ANSI colors, and is tailed to what the emulator can retain.
-    assert_receive {:captured, "devide_ws_s1", opts}
+    assert_receive {:captured, "casein_ws_s1", opts}
     assert opts[:target] == "%7"
     assert opts[:ansi] == true
     assert is_integer(opts[:lines]) and opts[:lines] > 0
@@ -72,7 +72,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneHistoryWorkerTest do
       PaneHistoryWorker.start_link(
         parent: self(),
         pane_id: "%1",
-        tmux_session: "devide_ws_s1",
+        tmux_session: "casein_ws_s1",
         cols: 20,
         rows: 5,
         tmux_adapter: EmptyTmux
@@ -91,7 +91,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneHistoryWorkerTest do
       PaneHistoryWorker.start_link(
         parent: self(),
         pane_id: "%3",
-        tmux_session: "devide_ws_s1",
+        tmux_session: "casein_ws_s1",
         cols: 20,
         rows: 5,
         tmux_adapter: EmptyTmux
@@ -109,7 +109,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneHistoryWorkerTest do
       PaneHistoryWorker.start_link(
         parent: self(),
         pane_id: "%2",
-        tmux_session: "devide_ws_s1",
+        tmux_session: "casein_ws_s1",
         cols: 20,
         rows: 5,
         tmux_adapter: EmptyTmux

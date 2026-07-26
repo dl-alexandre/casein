@@ -55,7 +55,7 @@ defmodule Casein.Signals.DegradationWatchTest do
     send(pid, {:signal, Signals.from_audit_event(event)})
   end
 
-  # Feed a non-audit domain signal (devide.<event> namespace, per #184).
+  # Feed a non-audit domain signal (casein.<event> namespace, per #184).
   defp feed_domain(pid, event, ws, data) do
     send(pid, {:signal, Signals.from_domain_event(event, data, workspace_id: ws)})
   end
@@ -112,27 +112,27 @@ defmodule Casein.Signals.DegradationWatchTest do
     assert storms_for(pid, "w5") == []
   end
 
-  test "a domain-event (devide.*) failure storm fires, keyed on the full type" do
-    rule = %{action: "devide.deploy.failed", fingerprint: [], threshold: 3, window_ms: 60_000}
+  test "a domain-event (casein.*) failure storm fires, keyed on the full type" do
+    rule = %{action: "casein.deploy.failed", fingerprint: [], threshold: 3, window_ms: 60_000}
     pid = start_watch([rule])
 
     for _ <- 1..3, do: feed_domain(pid, "deploy.failed", "wdeploy", %{"reason" => "boom"})
 
     assert [storm] = storms_for(pid, "wdeploy")
-    assert storm.metadata["watched_action"] == "devide.deploy.failed"
+    assert storm.metadata["watched_action"] == "casein.deploy.failed"
   end
 
   test "domain subscription patterns cover audit wildcard plus each domain rule type" do
     rules = %{
       "workspace.db_isolation_detected" => %{},
-      "devide.deploy.failed" => %{},
-      "devide.runtime.preview_failed" => %{}
+      "casein.deploy.failed" => %{},
+      "casein.runtime.preview_failed" => %{}
     }
 
     patterns = DegradationWatch.subscription_patterns(rules)
-    assert "devide.audit.**" in patterns
-    assert "devide.deploy.failed" in patterns
-    assert "devide.runtime.preview_failed" in patterns
+    assert "casein.audit.**" in patterns
+    assert "casein.deploy.failed" in patterns
+    assert "casein.runtime.preview_failed" in patterns
     # audit rule keys are NOT subscribed individually (covered by the wildcard)
     refute "workspace.db_isolation_detected" in patterns
   end

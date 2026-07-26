@@ -35,7 +35,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "allows cockpit mount for another user's folder workspace (flat peer model)", %{
     conn: conn
   } do
-    root = Path.join(System.tmp_dir!(), "devide-folder-peer-#{System.unique_integer()}")
+    root = Path.join(System.tmp_dir!(), "casein-folder-peer-#{System.unique_integer()}")
     alice_project = Path.join([root, "alice", "proj"])
     File.mkdir_p!(alice_project)
 
@@ -53,7 +53,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   end
 
   test "terminal tab renders tmux windows as actionable tabs", %{conn: conn} do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-tmux-tabs")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-tmux-tabs")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -457,10 +457,10 @@ defmodule CaseinWeb.WorkspaceLiveTest do
 
     assert has_element?(view, "#leader-cheatsheet")
     help_html = render(view)
-    assert help_html =~ "devide agent auth signin codex"
-    assert help_html =~ "devide agent auth signin claude"
+    assert help_html =~ "casein agent auth signin codex"
+    assert help_html =~ "casein agent auth signin claude"
     assert help_html =~ "Casein detects the owner"
-    assert help_html =~ "devide agent auth status"
+    assert help_html =~ "casein agent auth status"
     # Inline next/prev window chips lived on the removed dropdown; cycling uses
     # hidden leader targets and the always-visible tab bar.
     refute has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then N']")
@@ -606,7 +606,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "leader-key dispatch targets are unique and survive focus mode", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-leader-targets")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-leader-targets")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -750,7 +750,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "session bar folds owned workspace sessions and hides teammate sessions", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-owned-session-bar")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-owned-session-bar")
     workspace_path = Path.join(workspace_root, "current")
     owned_path = Path.join(workspace_root, "owned")
     teammate_path = Path.join(workspace_root, "teammate")
@@ -870,7 +870,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "session tabs keep sibling browser tab shells and explicit shells", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-stale-browser-tabs")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-stale-browser-tabs")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1029,7 +1029,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "stale terminal session tab shows friendly error without switching", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-stale-session")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-stale-session")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1121,7 +1121,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "shared session URL silently drops into a live session when the session is gone", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-dead-link")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-dead-link")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1209,7 +1209,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   end
 
   test "pane and zoom deep link restores view state", %{conn: conn} do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-pane-deep-link")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-pane-deep-link")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1280,7 +1280,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "stale terminal session marks raw pane ended instead of leaving spinner", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-raw-stale-session")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-raw-stale-session")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1371,7 +1371,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "stopped workspace does not block host-backed raw terminal", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-stopped-workspace-terminal")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-stopped-workspace-terminal")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1410,7 +1410,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "workspace start failure shows manager message without raw http tuple", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-bespoke-workspace-start")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-bespoke-workspace-start")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1462,7 +1462,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "terminal image paste event saves the image under the workspace clipboard", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-image-paste")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-image-paste")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1510,7 +1510,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "authz gate denies an unregistered event and audits the denial", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-authz-gate")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-authz-gate")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1575,7 +1575,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "split OSC52 terminal output pushes clipboard write event", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-osc52-copy")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-osc52-copy")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1607,7 +1607,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "terminal palette previews and applies a built-in tmux session template", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-template-palette")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-template-palette")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -1752,7 +1752,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "template library saves previews applies and deletes exported layouts", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-template-library")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-template-library")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2021,7 +2021,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "show LiveView opens known workspace links for non-owner forward-auth users", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-shared-link")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-shared-link")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2057,7 +2057,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "terminal output does not render detected preview controls", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-detect")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-preview-detect")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2098,7 +2098,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "terminal output with repeated preview URLs stays out of terminal chrome", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-dedupe")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-preview-dedupe")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2137,7 +2137,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "agent-created preview panes keep pane and session association", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-open")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-preview-open")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2200,7 +2200,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "registered workspace preview panes rehydrate when viewing the same workspace", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-rehydrate")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-preview-rehydrate")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2209,7 +2209,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     Application.put_env(:casein, :workspaces_root, workspace_root)
     Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
 
-    tmux_session = "devide_alpha_u-dev"
+    tmux_session = "casein_alpha_u-dev"
     window = tmux_window(System.system_time(:second))
     pane = tmux_pane_with_id("%1", path: workspace_path)
     sync_fake_tmux_topology_state(tmux_session, window, [pane])
@@ -2243,7 +2243,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
         metadata: %{raw: %{"user" => "dev"}}
       })
 
-    url = "https://devide.example.test/assets/whitehouse-preview.html"
+    url = "https://casein.example.test/assets/whitehouse-preview.html"
 
     assert {:ok, registration} =
              Casein.PreviewPanes.register(%{
@@ -2265,7 +2265,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     push_tmux_topology!(view, ["%1"])
     assert_preview_pane_overlay(view, "%1", url)
 
-    live_url = "https://devide.example.test/assets/live-folder-preview.html"
+    live_url = "https://casein.example.test/assets/live-folder-preview.html"
     live_pane = tmux_pane_with_id("%2", path: workspace_path, active: false, index: 1)
     sync_fake_tmux_topology_state(tmux_session, window, [pane, live_pane])
 
@@ -2299,7 +2299,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "opening a preview opens a control session and control events record audited actions", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-control")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-preview-control")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2328,7 +2328,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   end
 
   test "preview pane overlay appears on registration broadcast", %{conn: conn} do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-overlay")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-preview-overlay")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2392,7 +2392,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "selecting a preview pane does not move the terminal surface into its tile", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-terminal-anchor")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-preview-terminal-anchor")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2515,7 +2515,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "a generic :pane_event preview registration assigns preview pane overlay state", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-opened-msg")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-preview-opened-msg")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
     _ = Casein.PreviewControl.Registry.clear()
@@ -2558,7 +2558,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "browser control broadcasts push reload events to workspace viewers", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-browser-control")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-browser-control")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2611,7 +2611,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   test "browser control focus request switches the workspace view to the preview pane", %{
     conn: conn
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-browser-focus-preview")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-browser-focus-preview")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2688,7 +2688,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   end
 
   test "file tree new-item form does not use native autofocus", %{conn: conn} do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-tree-autofocus")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-tree-autofocus")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2720,7 +2720,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   end
 
   test "artifacts tab lists workspace artifact projects", %{conn: conn} do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-artifacts")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-artifacts")
     workspace_path = Path.join(workspace_root, "ws-1")
     artifact_root = Path.join(workspace_root, "artifacts")
     File.mkdir_p!(workspace_path)
@@ -2773,7 +2773,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   end
 
   test "allowed preview URLs open in an iframe pane", %{conn: conn} do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-untrusted")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-preview-untrusted")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -2804,7 +2804,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   end
 
   test "agent write unlock grant and revoke round-trip through the run tab", %{conn: conn} do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-agent-write-unlock")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-agent-write-unlock")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 

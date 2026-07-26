@@ -46,7 +46,7 @@ Operational result:
 - Failure/recovery path remained gated.
 - Failure dossier contained assignment, events, execution, runner, workspace,
   artifact, recovery action, and timeline evidence.
-- No project-owned `devide_`, `test-...`, or renamed `ws-1` tmux sessions
+- No project-owned `casein_`, `test-...`, or renamed `ws-1` tmux sessions
   remained after execution.
 
 Friction observed:
@@ -95,7 +95,7 @@ Operational result:
 - Failure/recovery path remained gated.
 - Failure dossier contained assignment, events, execution, runner, workspace,
   artifact, recovery action, and timeline evidence.
-- No project-owned `devide_`, `test-...`, or renamed `ws-1` tmux sessions
+- No project-owned `casein_`, `test-...`, or renamed `ws-1` tmux sessions
   remained after execution.
 
 Friction observed:
@@ -153,7 +153,7 @@ Operational result:
 - Attach replay caught up from the persisted output stream and exposed the live
   execution topic.
 - Recovery approval gates still held after the success leg.
-- No project-owned `devide_`, `test-...`, or renamed workspace tmux sessions
+- No project-owned `casein_`, `test-...`, or renamed workspace tmux sessions
   remained after execution.
 
 Friction observed:
@@ -294,7 +294,7 @@ Operational result:
 - The runner process starts and receives work, but it also starts the full
   application supervision tree on the runner host.
 - Because the full app starts `Casein.Repo`, the remote runner tried to connect
-  to a local `dev_ide_dev` database on `milcmini`. That database did not exist,
+  to a local `casein_dev` database on `milcmini`. That database did not exist,
   causing repeated Postgrex connection failures and preventing a clean remote
   execution.
 - The attempted delegated assignment did not produce an observed execution
@@ -351,7 +351,7 @@ Evidence:
 
 Operational result:
 
-- The remote runner starts without a local `dev_ide_dev` database.
+- The remote runner starts without a local `casein_dev` database.
 - The remote runner receives work through the controller tunnel.
 - The remote runner executes from the runner-host checkout path.
 - The temporary remote checkout was removed after validation.
@@ -443,7 +443,7 @@ share tmux adapters, so `mix precommit` protects both.
 | Step | Check |
 |------|-------|
 | Deploy | Pairing changes are on `master` and CI deployed `/opt/casein/release` |
-| Smoke | `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci` |
+| Smoke | `source .devbox-agent.env && WORKSPACE_ID=$CASEIN_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci` |
 | Layout | **Agents → Apply Agent Pair layout** |
 | Mode | Workspace is `:manual` (raw terminal) |
 | Agent env | External agent sourced `.devbox-agent.env`; passes `workspace_id` on every MCP call |
@@ -496,7 +496,7 @@ Fixes filed:
 
 Participants: human (LiveView) + Grok CLI (external agent via Casein Terminal MCP)
 
-Workspace: dalexandre-devide (e7c18b93-688b-4bb0-904d-ac93d61e9372)
+Workspace: dalexandre-casein (e7c18b93-688b-4bb0-904d-ac93d61e9372)
 
 Deploy rev: `15ce1bf` (`GOAL_HEAD` from `goal-five-evidence.sh`; six commits on
 `9b75d9c`; 18 files in `goal-deliverable-files.txt`)
@@ -507,7 +507,7 @@ Task:
   durability docs, workspace-scoped agent tokens).
 
 Commands / MCP flow:
-- Pre-flight: `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci`
+- Pre-flight: `source .devbox-agent.env && WORKSPACE_ID=$CASEIN_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci`
 - Apply layout: `POST /api/workspaces/:id/templates/agent_pair/apply?session=…` (REST)
 - MCP (`scripts/mcp-dogfood-agent-pair.sh`, transcript `mcp-raw-transcript.jsonl`):
   `terminal_list_sessions` → `terminal_topology` → `terminal_agent_pane` →
@@ -518,7 +518,7 @@ Evidence:
 
 | Item | Value |
 |------|-------|
-| Session | `devide_dalexandre-devide_u-dalexandre-5kdigyma` |
+| Session | `casein_dalexandre-casein_u-dalexandre-5kdigyma` |
 | Agent pane id | `%14342` (`agent_pair_marker`; `terminal_agent_pane` / send / capture agree) |
 | Marker in capture | `agent-pair-dogfood-1782184397` via `terminal_capture_agent` (no `lines` tail) |
 | Raw MCP transcript | `mcp-raw-transcript.jsonl` (list/topology/agent_pane/send_agent/capture_agent) |

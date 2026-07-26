@@ -20,7 +20,7 @@ defmodule Casein.Release.Package do
         ]
 
   @doc """
-  Upsert a packaged artifact into `dist/devide-<channel>.json` and return paths.
+  Upsert a packaged artifact into `dist/casein-<channel>.json` and return paths.
   """
   @spec write_dist_manifest!(write_opts()) :: %{manifest_path: Path.t(), artifact: map()}
   # Paths are supplied by the local package script/operator, not web input.
@@ -52,7 +52,7 @@ defmodule Casein.Release.Package do
       "changelog_url" => changelog_url(previous_revision, metadata.revision)
     }
 
-    manifest_path = Path.join(dist_dir, "devide-#{channel}.json")
+    manifest_path = Path.join(dist_dir, "casein-#{channel}.json")
     manifest = load_manifest(manifest_path, channel)
     updated = upsert_artifact(manifest, artifact)
 

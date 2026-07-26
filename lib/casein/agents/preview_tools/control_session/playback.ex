@@ -94,7 +94,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Playback do
          %{
            error: :missing_preview_app_url,
            message:
-             "preview_playback_open needs DEVIDE_URL, PHX_HOST, or :preview_app_url to build the artifact playback URL."
+             "preview_playback_open needs CASEIN_URL, PHX_HOST, or :preview_app_url to build the artifact playback URL."
          }}
     end
   end

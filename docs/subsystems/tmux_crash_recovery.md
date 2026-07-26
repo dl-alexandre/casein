@@ -1,6 +1,6 @@
 # tmux crash / session-wipe recovery
 
-Casein treats the host tmux server (`-L devide`) as the durable boundary for
+Casein treats the host tmux server (`-L casein`) as the durable boundary for
 live sessions. When that server dies (segfault, OOM, `kill-server`, host
 reboot), every pane, layout, and in-tmux scrollback is gone. This doc
 describes the mitigations that keep the cockpit usable.
@@ -36,10 +36,10 @@ describes the mitigations that keep the cockpit usable.
 6. **Softer create geometry** — `new-session -A` no longer passes `-x/-y`;
    size is applied via winsz + `resize-window` after create. Resize-window
    is rate-limited (150 ms) in SessionOwner.
-7. **`exit-empty off`** — `priv/tmux/devide.conf` keeps the server process
+7. **`exit-empty off`** — `priv/tmux/casein.conf` keeps the server process
    alive after the last session is destroyed.
 8. **Keepalive unit** — `scripts/ensure-casein-tmux.sh` installs
-   `casein-tmux.service` so the `-L devide` server is forked at boot.
+   `casein-tmux.service` so the `-L casein` server is forked at boot.
 9. **Version pin** — cutover target remains **tmux 3.6b**
    (`scripts/install-tmux.sh`); reinstall with
    `bash scripts/ensure-casein-tmux.sh --reinstall-binary`.

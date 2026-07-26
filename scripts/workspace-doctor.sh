@@ -4,10 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
+CASEIN_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
 TOKEN="${CASEIN_API_TOKEN:-}"
-WORKSPACE_ID="${1:-${WORKSPACE_ID:-${DEVIDE_WORKSPACE_ID:-}}}"
-WORKSPACE_TERMINAL_ID="${WORKSPACE_TERMINAL_ID:-${DEVIDE_WORKSPACE_NAME:-$WORKSPACE_ID}}"
+WORKSPACE_ID="${1:-${WORKSPACE_ID:-${CASEIN_WORKSPACE_ID:-}}}"
+WORKSPACE_TERMINAL_ID="${WORKSPACE_TERMINAL_ID:-${CASEIN_WORKSPACE_NAME:-$WORKSPACE_ID}}"
 OUT_ROOT="${WORKSPACE_DOCTOR_OUT:-tmp/workspace-doctor}"
 
 usage() {
@@ -21,7 +21,7 @@ Collects a read-only diagnostic bundle for a workspace:
   - matching local tmux sessions/panes when tmux is available
 
 Environment:
-  DEVIDE_URL           Base URL (default http://127.0.0.1:4000)
+  CASEIN_URL           Base URL (default http://127.0.0.1:4000)
   CASEIN_API_TOKEN    Bearer token
   WORKSPACE_ID         Default workspace id when argv is omitted
   WORKSPACE_DOCTOR_OUT Output root (default tmp/workspace-doctor)
@@ -67,7 +67,7 @@ except Exception:
 
 api_get() {
   local path="$1"
-  devide_curl -fsS "${auth_header[@]}" "${DEVIDE_URL}${path}"
+  casein_curl -fsS "${auth_header[@]}" "${CASEIN_URL}${path}"
 }
 
 terminal_rpc() {
@@ -80,7 +80,7 @@ terminal_rpc() {
   local body
   printf -v body '{"jsonrpc":"2.0","id":%s,"method":"%s","params":%s}' "$id" "$method" "$params"
 
-  devide_curl -fsS -X POST "${DEVIDE_URL}/api/terminals/mcp" \
+  casein_curl -fsS -X POST "${CASEIN_URL}/api/terminals/mcp" \
     "${auth_header[@]}" \
     -d "${body}"
 }
@@ -91,7 +91,7 @@ echo "    output: ${out_dir}"
 {
   printf 'workspace_id=%s\n' "${WORKSPACE_ID}"
   printf 'workspace_terminal_id=%s\n' "${WORKSPACE_TERMINAL_ID}"
-  printf 'devide_url=%s\n' "${DEVIDE_URL}"
+  printf 'casein_url=%s\n' "${CASEIN_URL}"
   printf 'collected_at=%s\n' "${ts}"
   git rev-parse HEAD 2>/dev/null | sed 's/^/checkout_revision=/'
 } >"${out_dir}/summary.env"
@@ -110,8 +110,8 @@ if command -v tmux >/dev/null 2>&1; then
     | WORKSPACE_ID="${WORKSPACE_ID}" WORKSPACE_TERMINAL_ID="${WORKSPACE_TERMINAL_ID}" python3 -c '
 import os, sys
 prefixes = [
-    f"devide_{os.environ['WORKSPACE_ID']}_",
-    f"devide_{os.environ['WORKSPACE_TERMINAL_ID']}_",
+    f"casein_{os.environ['WORKSPACE_ID']}_",
+    f"casein_{os.environ['WORKSPACE_TERMINAL_ID']}_",
 ]
 for line in sys.stdin:
     if any(line.startswith(prefix) for prefix in prefixes):

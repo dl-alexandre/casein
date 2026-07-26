@@ -18,7 +18,7 @@ defmodule Casein.WorkspacesFolderTest do
   end
 
   test "attach_folder/1 rejects paths outside allowed roots" do
-    outside = Path.join(System.tmp_dir!(), "devide-outside-#{System.unique_integer()}")
+    outside = Path.join(System.tmp_dir!(), "casein-outside-#{System.unique_integer()}")
     File.mkdir_p!(outside)
 
     on_exit(fn -> File.rm_rf(outside) end)
@@ -27,7 +27,7 @@ defmodule Casein.WorkspacesFolderTest do
   end
 
   test "get/2 rejects folder ids outside allowed roots" do
-    outside = Path.join(System.tmp_dir!(), "devide-folder-get-#{System.unique_integer()}")
+    outside = Path.join(System.tmp_dir!(), "casein-folder-get-#{System.unique_integer()}")
     File.mkdir_p!(outside)
 
     on_exit(fn -> File.rm_rf(outside) end)
@@ -43,7 +43,7 @@ defmodule Casein.WorkspacesFolderTest do
   end
 
   test "path_under_allowed_roots?/1 accepts the configured home workspace path" do
-    home = Path.join(System.tmp_dir!(), "devide-folder-home-#{System.unique_integer()}")
+    home = Path.join(System.tmp_dir!(), "casein-folder-home-#{System.unique_integer()}")
     File.mkdir_p!(home)
     Application.put_env(:casein, :home_workspace_path, home)
 
@@ -55,7 +55,7 @@ defmodule Casein.WorkspacesFolderTest do
   end
 
   test "list_attachable_folders/1 lists child directories under allowed roots" do
-    root = Path.join(System.tmp_dir!(), "devide-folder-list-#{System.unique_integer()}")
+    root = Path.join(System.tmp_dir!(), "casein-folder-list-#{System.unique_integer()}")
     child = Path.join(root, "child")
     nested = Path.join(child, "nested")
     file = Path.join(root, "not-a-folder.txt")
@@ -80,8 +80,8 @@ defmodule Casein.WorkspacesFolderTest do
   end
 
   test "list_attachable_folders/1 rejects paths outside allowed roots" do
-    root = Path.join(System.tmp_dir!(), "devide-folder-root-#{System.unique_integer()}")
-    outside = Path.join(System.tmp_dir!(), "devide-folder-outside-#{System.unique_integer()}")
+    root = Path.join(System.tmp_dir!(), "casein-folder-root-#{System.unique_integer()}")
+    outside = Path.join(System.tmp_dir!(), "casein-folder-outside-#{System.unique_integer()}")
     File.mkdir_p!(root)
     File.mkdir_p!(outside)
 

@@ -188,7 +188,7 @@ defmodule Casein.Alerts do
   end
 
   defp deep_link(%Event{workspace_id: workspace_id}) when is_binary(workspace_id) do
-    "devide://session/#{URI.encode_www_form(workspace_id)}"
+    "casein://session/#{URI.encode_www_form(workspace_id)}"
   end
 
   defp deep_link(_event), do: nil

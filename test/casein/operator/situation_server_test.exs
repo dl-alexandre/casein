@@ -26,7 +26,7 @@ defmodule Casein.Operator.SituationServerTest do
     # Point the WorktreeAlarm sweep (spawned by the detector engine) at an
     # empty root so tests never scan the box's real agent worktrees.
     Application.put_env(:casein, :agent_worktree_roots, [
-      Path.join(System.tmp_dir!(), "devide-situation-test-empty")
+      Path.join(System.tmp_dir!(), "casein-situation-test-empty")
     ])
 
     on_exit(fn ->
@@ -135,7 +135,7 @@ defmodule Casein.Operator.SituationServerTest do
         workspace_id: "ws-sit-act",
         source: :terminal_mcp,
         tool: "terminal_capture",
-        summary: "session=devide_sit",
+        summary: "session=casein_sit",
         status: :ok
       })
 
@@ -183,31 +183,31 @@ defmodule Casein.Operator.SituationServerTest do
     pid = start_server(ws)
     :ok = SituationServer.subscribe(ws)
 
-    send(pid, {:agent_state_updated, "devide_sit_agent", "%1", blocked_entry(700)})
+    send(pid, {:agent_state_updated, "casein_sit_agent", "%1", blocked_entry(700)})
 
     assert_receive {:situation_risk, :raised, %{id: :blocked_too_long} = risk}, 2_000
     assert risk.severity == :critical
-    assert risk.subject == "devide_sit_agent %1"
+    assert risk.subject == "casein_sit_agent %1"
 
     assert Enum.any?(
              Audit.recent_for(ws, 20),
-             &(&1.action == "operator.risk_raised" and &1.target_ref == "devide_sit_agent %1")
+             &(&1.action == "operator.risk_raised" and &1.target_ref == "casein_sit_agent %1")
            )
 
     # Re-reporting the same blocked pane is not a transition: no second raise.
-    send(pid, {:agent_state_updated, "devide_sit_agent", "%1", blocked_entry(800, "still stuck")})
+    send(pid, {:agent_state_updated, "casein_sit_agent", "%1", blocked_entry(800, "still stuck")})
     refute_receive {:situation_risk, :raised, %{id: :blocked_too_long}}, 600
 
     send(
       pid,
-      {:agent_state_updated, "devide_sit_agent", "%1", %{blocked_entry(0) | state: :done}}
+      {:agent_state_updated, "casein_sit_agent", "%1", %{blocked_entry(0) | state: :done}}
     )
 
     assert_receive {:situation_risk, :cleared, %{id: :blocked_too_long}}, 2_000
 
     assert Enum.any?(
              Audit.recent_for(ws, 20),
-             &(&1.action == "operator.risk_cleared" and &1.target_ref == "devide_sit_agent %1")
+             &(&1.action == "operator.risk_cleared" and &1.target_ref == "casein_sit_agent %1")
            )
   end
 
@@ -249,7 +249,7 @@ defmodule Casein.Operator.SituationServerTest do
     pid = start_server(ws)
     :ok = SituationServer.subscribe(ws)
 
-    send(pid, {:agent_state_updated, "devide_sit_agent", "%9", blocked_entry(700)})
+    send(pid, {:agent_state_updated, "casein_sit_agent", "%9", blocked_entry(700)})
     assert_receive {:situation_risk, :raised, %{id: :blocked_too_long}}, 2_000
 
     assert {:ok, digest} = GenServer.call(pid, :get_digest)
@@ -280,11 +280,11 @@ defmodule Casein.Operator.SituationServerTest do
       action: "operator.risk_raised",
       source: "operator",
       target_type: "risk",
-      target_ref: "devide_seed %1",
+      target_ref: "casein_seed %1",
       metadata: %{
         id: :blocked_too_long,
         severity: :critical,
-        subject: "devide_seed %1",
+        subject: "casein_seed %1",
         evidence: %{},
         suggestion: "unblock it"
       }
@@ -303,13 +303,13 @@ defmodule Casein.Operator.SituationServerTest do
 
     assert Enum.any?(
              events,
-             &(&1.action == "operator.risk_cleared" and &1.target_ref == "devide_seed %1")
+             &(&1.action == "operator.risk_cleared" and &1.target_ref == "casein_seed %1")
            )
 
     # Exactly the pre-existing raise row — the restart added none.
     assert Enum.count(
              events,
-             &(&1.action == "operator.risk_raised" and &1.target_ref == "devide_seed %1")
+             &(&1.action == "operator.risk_raised" and &1.target_ref == "casein_seed %1")
            ) == 1
   end
 
@@ -379,7 +379,7 @@ defmodule Casein.Operator.SituationServerTest do
       subject: "127.0.0.1:15432",
       detected_at: DateTime.utc_now(),
       evidence: %{reasons: [:utilization_critical], utilization: 0.95},
-      suggestion: "Kill leaked wf_*/devide-<uuid> connections."
+      suggestion: "Kill leaked wf_*/casein-<uuid> connections."
     }
 
     Phoenix.PubSub.broadcast(

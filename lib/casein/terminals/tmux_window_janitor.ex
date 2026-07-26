@@ -1,7 +1,7 @@
 defmodule Casein.Terminals.TmuxWindowJanitor do
   @moduledoc """
   Periodic sweep that reaps blank, auto-named, never-used tmux windows that
-  accumulate inside `devide_*` sessions.
+  accumulate inside `casein_*` sessions.
 
   This complements `Casein.Terminals.TmuxJanitor` (which is subscriber-driven
   and works at the *session* level): the subscriber bookkeeping is in-memory and
@@ -9,7 +9,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
   extra windows a user spins up (tmux `Ctrl-b c`) and abandons. This sweep is the
   safety net for those.
 
-  It also reaps whole **orphaned sessions** — blank `devide_*` sessions with no
+  It also reaps whole **orphaned sessions** — blank `casein_*` sessions with no
   attached client, idle past `:tmux_session_idle_seconds`, where every pane is
   just a shell. These are the per-tab sessions abandoned by closed tabs and the
   ones left dangling after a restart wiped the reactive janitor's subscriber
@@ -18,7 +18,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
 
   ## Kill policy — a window is reaped only when ALL hold
 
-    * its session name starts with `devide_` (never touch foreign sessions);
+    * its session name starts with `casein_` (never touch foreign sessions);
     * `automatic_rename` is on — i.e. the user never named it. The moment a
       user renames a window (`Ctrl-b ,`) tmux turns automatic-rename off, so a
       named window is permanently safe;
@@ -151,7 +151,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
     end)
   end
 
-  # Reap whole orphaned sessions: devide_*, unattached, idle, and blank (every
+  # Reap whole orphaned sessions: casein_*, unattached, idle, and blank (every
   # pane is a shell). `busy` is the set of sessions with at least one non-shell
   # pane — those are spared regardless of attach/idle state.
   defp sweep_sessions(sessions) do
@@ -194,7 +194,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
   @doc false
   @spec killable?(map(), integer(), non_neg_integer()) :: boolean()
   def killable?(win, now, idle_seconds) do
-    String.starts_with?(win.session, "devide_") and
+    String.starts_with?(win.session, "casein_") and
       win.automatic_rename and
       not win.active and
       win.panes == 1 and
@@ -205,7 +205,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
   @doc false
   @spec session_killable?(map(), integer(), non_neg_integer(), MapSet.t()) :: boolean()
   def session_killable?(sess, now, idle_seconds, busy) do
-    String.starts_with?(sess.session, "devide_") and
+    String.starts_with?(sess.session, "casein_") and
       not sess.attached and
       not MapSet.member?(busy, sess.session) and
       now - sess.activity >= idle_seconds

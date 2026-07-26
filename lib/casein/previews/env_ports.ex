@@ -2,8 +2,8 @@ defmodule Casein.Previews.EnvPorts do
   @moduledoc """
   Preview infrastructure port helpers.
 
-  Mirrors `scripts/preview-env.sh` defaults (`DEVIDE_PREVIEW_PORT_BASE` /
-  `DEVIDE_PREVIEW_PORT_MAX`). Preview envs boot `MIX_ENV=dev mix phx.server` on
+  Mirrors `scripts/preview-env.sh` defaults (`CASEIN_PREVIEW_PORT_BASE` /
+  `CASEIN_PREVIEW_PORT_MAX`). Preview envs boot `MIX_ENV=dev mix phx.server` on
   an allocated port in this range, which is where the `:tidewave` dependency is
   available.
 

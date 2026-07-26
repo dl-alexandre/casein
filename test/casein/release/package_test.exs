@@ -5,7 +5,7 @@ defmodule Casein.Release.PackageTest do
   alias Casein.Release.Package
 
   setup do
-    tmp = System.tmp_dir!() |> Path.join("devide-package-#{System.unique_integer([:positive])}")
+    tmp = System.tmp_dir!() |> Path.join("casein-package-#{System.unique_integer([:positive])}")
     release_root = Path.join(tmp, "release-out")
     dist_dir = Path.join(tmp, "dist")
     File.mkdir_p!(release_root)
@@ -45,7 +45,7 @@ defmodule Casein.Release.PackageTest do
         previous_revision: "504670cdeadbeef"
       )
 
-    assert path == Path.join(dist_dir, "devide-canary.json")
+    assert path == Path.join(dist_dir, "casein-canary.json")
     assert art["revision"] == metadata.revision
     assert art["profile"] == "lan"
     assert art["target"] == "linux-x86_64"

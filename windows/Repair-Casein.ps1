@@ -31,7 +31,7 @@ Remove-Item -LiteralPath $pidPath, (Join-Path $dataRoot 'runtime.json') -Force -
 $env:CASEIN_PROFILE = 'desktop'
 $env:CASEIN_REPO_ADAPTER = 'sqlite'
 $env:CASEIN_DESKTOP_DATA_DIR = $dataRoot
-$env:DEVIDE_RELEASE_ROOT = $releaseRoot
+$env:CASEIN_RELEASE_ROOT = $releaseRoot
 & $release migrate
 if ($LASTEXITCODE -ne 0) { throw "Casein database repair failed with exit code $LASTEXITCODE" }
 

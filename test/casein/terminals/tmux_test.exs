@@ -22,13 +22,13 @@ defmodule Casein.Terminals.TmuxTest do
     :ok
   end
 
-  test "session_name uses the devide_ prefix" do
-    assert "devide_" <> _ = Tmux.session_name("alice", "u-1")
+  test "session_name uses the casein_ prefix" do
+    assert "casein_" <> _ = Tmux.session_name("alice", "u-1")
   end
 
   test "sanitizes unsafe characters in workspace name and sid" do
     name = Tmux.session_name("alice; rm -rf /", "u 1$")
-    assert name =~ ~r/^devide_[A-Za-z0-9_\-]+_[A-Za-z0-9_\-]+$/
+    assert name =~ ~r/^casein_[A-Za-z0-9_\-]+_[A-Za-z0-9_\-]+$/
   end
 
   test "is deterministic for the same inputs" do
@@ -39,9 +39,9 @@ defmodule Casein.Terminals.TmuxTest do
     assert Tmux.resize_amount_default() == 5
     assert Tmux.resize_amount_max() == 50
 
-    assert {:error, :invalid_resize} = Tmux.resize_pane("devide_alpha_ws-1", "%1", "side", 5)
-    assert {:error, :invalid_amount} = Tmux.resize_pane("devide_alpha_ws-1", "%1", "left", 0)
-    assert {:error, :invalid_amount} = Tmux.resize_pane("devide_alpha_ws-1", "%1", "left", 51)
+    assert {:error, :invalid_resize} = Tmux.resize_pane("casein_alpha_ws-1", "%1", "side", 5)
+    assert {:error, :invalid_amount} = Tmux.resize_pane("casein_alpha_ws-1", "%1", "left", 0)
+    assert {:error, :invalid_amount} = Tmux.resize_pane("casein_alpha_ws-1", "%1", "left", 51)
   end
 
   test "host shell mode runs topology commands against host tmux" do
@@ -72,7 +72,7 @@ defmodule Casein.Terminals.TmuxTest do
                activity: 123,
                current_command: "bash"
              }
-           ] = Tmux.list_session_windows("devide_alpha_u-dev")
+           ] = Tmux.list_session_windows("casein_alpha_u-dev")
   end
 
   test "targeted commands stay on host and use config when the tmux session already lives there" do
@@ -105,11 +105,11 @@ defmodule Casein.Terminals.TmuxTest do
     expected =
       [tmux_bin] ++
         Casein.Terminals.TmuxServer.args() ++
-        ["-f", config_file, "new-window", "-t", "devide_alpha_u-dev", "-c", "/workspace"]
+        ["-f", config_file, "new-window", "-t", "casein_alpha_u-dev", "-c", "/workspace"]
 
     assert expected ==
              TmuxRunner.argv(
-               ["new-window", "-t", "devide_alpha_u-dev", "-c", "/workspace"],
+               ["new-window", "-t", "casein_alpha_u-dev", "-c", "/workspace"],
                cwd: "/host/workspace"
              )
   end
@@ -125,11 +125,11 @@ defmodule Casein.Terminals.TmuxTest do
     # field so embedded pipes survive.
     File.write!(tmux_bin, """
     #!/bin/sh
-    printf 'W|devide_a_u-1|@1|0|1|111|bash|1|shell\\n'
-    printf 'W|devide_a_u-1|@2|1|0|222|mix|0|tests | ci\\n'
-    printf 'W|devide_b_u-2|@1|0|1|333|claude|1|agent\\n'
-    printf 'P|devide_a_u-1|@2|%%3|1|/workspace/apps/web\\n'
-    printf 'P|devide_b_u-2|@1|%%0|0|/workspace\\n'
+    printf 'W|casein_a_u-1|@1|0|1|111|bash|1|shell\\n'
+    printf 'W|casein_a_u-1|@2|1|0|222|mix|0|tests | ci\\n'
+    printf 'W|casein_b_u-2|@1|0|1|333|claude|1|agent\\n'
+    printf 'P|casein_a_u-1|@2|%%3|1|/workspace/apps/web\\n'
+    printf 'P|casein_b_u-2|@1|%%0|0|/workspace\\n'
     """)
 
     File.chmod!(tmux_bin, 0o755)
@@ -143,9 +143,9 @@ defmodule Casein.Terminals.TmuxTest do
     assert [
              %{id: "@1", index: 0, name: "shell", active: true, activity: 111},
              %{id: "@2", index: 1, name: "tests | ci", active: false, current_command: "mix"}
-           ] = windows["devide_a_u-1"]
+           ] = windows["casein_a_u-1"]
 
-    assert [%{id: "@1", name: "agent", current_command: "claude"}] = windows["devide_b_u-2"]
+    assert [%{id: "@1", name: "agent", current_command: "claude"}] = windows["casein_b_u-2"]
 
     assert [
              %{
@@ -154,16 +154,16 @@ defmodule Casein.Terminals.TmuxTest do
                active: true,
                current_path: "/workspace/apps/web"
              }
-           ] = panes["devide_a_u-1"]
+           ] = panes["casein_a_u-1"]
 
     assert [%{window_id: "@1", id: "%0", active: false, current_path: "/workspace"}] =
-             panes["devide_b_u-2"]
+             panes["casein_b_u-2"]
   end
 
   describe "facade delegates through TmuxCtl.Client" do
     alias TmuxCtl.Test.FakeState
 
-    @session "devide_alpha_u-dev"
+    @session "casein_alpha_u-dev"
 
     setup do
       previous = %{
@@ -212,7 +212,7 @@ defmodule Casein.Terminals.TmuxTest do
     end
 
     test "workspace_session_prefix builds a managed prefix" do
-      assert Tmux.workspace_session_prefix("alpha") =~ "devide_alpha_"
+      assert Tmux.workspace_session_prefix("alpha") =~ "casein_alpha_"
     end
 
     test "session lifecycle and listing helpers delegate to the client" do
@@ -263,7 +263,7 @@ defmodule Casein.Terminals.TmuxTest do
     end
 
     test "consolidate_sessions delegates source window moves" do
-      source = "devide_alpha_agent"
+      source = "casein_alpha_agent"
 
       FakeState.update(:fake_tmux_windows, %{}, fn windows ->
         Map.put(windows, source, [

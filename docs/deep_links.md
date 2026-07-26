@@ -18,7 +18,7 @@ Query parameters (stable order when Casein writes them):
 | `window` | `@1` | tmux window id — included whenever a session is active |
 | `pane` | `%2` | tmux pane id — included when the window has multiple panes, or when zoomed |
 | `zoom` | `1` | Active pane is zoomed (`resize-pane -Z`); requires `pane` |
-| `tmux_session` | `devide_…` | Attach hint when switching sessions (internal) |
+| `tmux_session` | `casein_…` | Attach hint when switching sessions (internal) |
 | `tab` | `history` | Cockpit tab to open (`terminal`, `files`, `search`, `diff`, `artifacts`, `run`, `proposals`, `logs`, `history`); unknown values are ignored |
 | `drawer` | `notifications` | Overlay drawer to open (`notifications` is the only value); unknown values are ignored |
 

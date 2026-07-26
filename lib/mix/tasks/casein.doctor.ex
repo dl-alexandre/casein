@@ -150,7 +150,7 @@ defmodule Mix.Tasks.Casein.Doctor do
         force? = File.exists?(certfile) or File.exists?(keyfile)
         args = setup_args(opts, local_domain, lan_host, lan_ip, force?)
         Mix.shell().info(["  ", "$ mix casein.lan.setup ", Enum.join(args, " ")])
-        Mix.Task.rerun("dev_ide.lan.setup", args)
+        Mix.Task.rerun("casein.lan.setup", args)
 
       true ->
         warn("LAN certificate", "missing or does not cover #{local_domain}; run doctor --fix")
@@ -234,7 +234,7 @@ defmodule Mix.Tasks.Casein.Doctor do
         ok("local domain", "updated #{hosts_file} with #{domain} -> #{ip}")
 
       true ->
-        tmp = Path.join(System.tmp_dir!(), "devide-hosts-#{System.unique_integer([:positive])}")
+        tmp = Path.join(System.tmp_dir!(), "casein-hosts-#{System.unique_integer([:positive])}")
         File.write!(tmp, updated)
 
         case System.cmd("sudo", ["-n", "install", "-m", "0644", tmp, hosts_file],
@@ -376,7 +376,7 @@ defmodule Mix.Tasks.Casein.Doctor do
           Integer.to_string(https_port)
         ])
 
-        Mix.Task.rerun("dev_ide.edge.setup", [
+        Mix.Task.rerun("casein.edge.setup", [
           "--fix",
           "--listen-port",
           Integer.to_string(edge_port),
@@ -426,7 +426,7 @@ defmodule Mix.Tasks.Casein.Doctor do
           lan_host
         ])
 
-        Mix.Task.rerun("dev_ide.lan.up", [
+        Mix.Task.rerun("casein.lan.up", [
           "--listen-port",
           Integer.to_string(insecure_http_port),
           "--backend-port",
@@ -468,7 +468,7 @@ defmodule Mix.Tasks.Casein.Doctor do
     defp check_sqlite(fix?) do
       database_path =
         System.get_env("DATABASE_PATH") ||
-          Path.expand("../dev_ide_dev.sqlite3", System.tmp_dir!())
+          Path.expand("../casein_dev.sqlite3", System.tmp_dir!())
 
       database_dir = Path.dirname(database_path)
 

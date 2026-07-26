@@ -16,8 +16,8 @@ defmodule Casein.Files.JanitorTest do
   end
 
   test "removes stale tmp files inside root", %{root: root} do
-    stale = Path.join(root, ".devide.tmp.aaaa")
-    fresh = Path.join(root, ".devide.tmp.bbbb")
+    stale = Path.join(root, ".casein.tmp.aaaa")
+    fresh = Path.join(root, ".casein.tmp.bbbb")
     File.write!(stale, "")
     File.write!(fresh, "")
     age(stale, 7200)
@@ -40,7 +40,7 @@ defmodule Casein.Files.JanitorTest do
   test "does not chase symlinked directories outside root", %{root: root} do
     outside = Path.join(System.tmp_dir!(), "jan-out-#{System.unique_integer([:positive])}")
     File.mkdir_p!(outside)
-    target = Path.join(outside, ".devide.tmp.escape")
+    target = Path.join(outside, ".casein.tmp.escape")
     File.write!(target, "")
     age(target, 7200)
     File.ln_s!(outside, Path.join(root, "linked"))

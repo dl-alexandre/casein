@@ -15,12 +15,12 @@
 #   bash scripts/cleanup-agent-worktrees.sh --apply    # delete clean+idle ones
 #
 # Env:
-#   DEVIDE_AGENT_WORKTREE_ROOT  worktree root (default $TMPDIR/casein-agent-worktrees)
-#   DEVIDE_TMUX_LABEL           tmux server label to probe for live panes (default devide)
+#   CASEIN_AGENT_WORKTREE_ROOT  worktree root (default $TMPDIR/casein-agent-worktrees)
+#   CASEIN_TMUX_LABEL           tmux server label to probe for live panes (default casein)
 set -euo pipefail
 
-WT_ROOT="${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
-TMUX_LABEL="${DEVIDE_TMUX_LABEL:-casein}"
+WT_ROOT="${CASEIN_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
+TMUX_LABEL="${CASEIN_TMUX_LABEL:-casein}"
 
 APPLY=0
 case "${1:-}" in
@@ -52,7 +52,7 @@ fi
 
 if [[ "$APPLY" == "1" && "$tmux_ok" != "1" ]]; then
   echo "error: cannot reach tmux (-L $TMUX_LABEL) to verify which worktrees are live." >&2
-  echo "       refusing to delete anything. (set DEVIDE_TMUX_LABEL, or run as the tmux owner)" >&2
+  echo "       refusing to delete anything. (set CASEIN_TMUX_LABEL, or run as the tmux owner)" >&2
   exit 3
 fi
 

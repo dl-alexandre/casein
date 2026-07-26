@@ -9,8 +9,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEMO_DIR="${DEVIDE_PREVIEW_DEMO_DIR:-${ROOT}/.casein/preview-demo}"
-DEMO_PORT="${DEVIDE_PREVIEW_DEMO_PORT:-5173}"
+DEMO_DIR="${CASEIN_PREVIEW_DEMO_DIR:-${ROOT}/.casein/preview-demo}"
+DEMO_PORT="${CASEIN_PREVIEW_DEMO_PORT:-5173}"
 SRC="${ROOT}/priv/preview_demo"
 
 if [[ ! -d "${SRC}" ]]; then

@@ -1,7 +1,7 @@
 # Working safely with concurrent agents in the shared checkout
 
 > Multiple agents run against the **same** primary checkout
-> (`/data/workspaces/dalexandre/dev_ide`) at once, plus a dozen-plus
+> (`/data/workspaces/dalexandre/casein`) at once, plus a dozen-plus
 > `git worktree`s. Uncommitted work in the shared root is not yours alone —
 > another agent can wipe or race it. This doc is the convention that avoids
 > the corruption modes we have actually hit.

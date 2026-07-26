@@ -1,9 +1,9 @@
 defmodule Casein.Files.Janitor do
   @moduledoc """
-  Removes stale `.devide.tmp.*` sidecar files left by aborted atomic writes.
+  Removes stale `.casein.tmp.*` sidecar files left by aborted atomic writes.
 
   Conservative on purpose:
-    * Only files matching `.devide.tmp.*`.
+    * Only files matching `.casein.tmp.*`.
     * Only files older than `:max_age_seconds` (default 1 hour).
     * Only inside an allowed workspace root (`PathSafety.resolve/2`-checked).
 
@@ -16,11 +16,11 @@ defmodule Casein.Files.Janitor do
   alias Casein.Files.PathSafety
   require Logger
 
-  @prefix ".devide.tmp."
+  @prefix ".casein.tmp."
   @default_max_age 3600
 
   @doc """
-  Walk `root` and delete `.devide.tmp.*` files older than `max_age_seconds`.
+  Walk `root` and delete `.casein.tmp.*` files older than `max_age_seconds`.
 
   Returns `{:ok, removed_paths}` or `{:error, reason}`. Refuses to operate
   if `root` does not resolve safely against itself (which catches a missing

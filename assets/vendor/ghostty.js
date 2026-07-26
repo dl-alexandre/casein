@@ -966,7 +966,7 @@ const GhosttyTerminal = {
 			if (mouseModeActive(this)) {
 				clearSelection(this);
 			}
-			// dev_ide patch: let the GhosttyTerminal extension hook supply its own
+			// casein patch: let the GhosttyTerminal extension hook supply its own
 			// cell renderer (renderCellsRLE — full-height rows/runs that kill the
 			// inter-row seams under TUIs) so the grid is built once per frame
 			// instead of here-then-overwritten. Falls back to the vendor renderer

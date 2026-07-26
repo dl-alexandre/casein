@@ -19,7 +19,7 @@ defmodule Casein.Agents.TerminalToolsTest do
       api_token: Application.get_env(:casein, :api_token),
       agent_mcp_base_url: Application.get_env(:casein, :agent_mcp_base_url),
       env_api_token: System.get_env("CASEIN_API_TOKEN"),
-      env_agent_mcp_home: System.get_env("DEVIDE_AGENT_MCP_HOME"),
+      env_agent_mcp_home: System.get_env("CASEIN_AGENT_MCP_HOME"),
       env_home: System.get_env("HOME")
     }
 
@@ -40,7 +40,7 @@ defmodule Casein.Agents.TerminalToolsTest do
       restore_app_env(:api_token, previous.api_token)
       restore_app_env(:agent_mcp_base_url, previous.agent_mcp_base_url)
       restore_system_env("CASEIN_API_TOKEN", previous.env_api_token)
-      restore_system_env("DEVIDE_AGENT_MCP_HOME", previous.env_agent_mcp_home)
+      restore_system_env("CASEIN_AGENT_MCP_HOME", previous.env_agent_mcp_home)
       restore_system_env("HOME", previous.env_home)
 
       MemoryAdapter.clear()
@@ -64,7 +64,7 @@ defmodule Casein.Agents.TerminalToolsTest do
     assert {:error, :workspace_mismatch} =
              TerminalTools.invoke("terminal_topology", %{
                "workspace_id" => "alpha",
-               "session" => "devide_other_u-dev"
+               "session" => "casein_other_u-dev"
              })
   end
 
@@ -117,16 +117,16 @@ defmodule Casein.Agents.TerminalToolsTest do
     git!(root, ["worktree", "add", "-b", "agent-branch", worktree, "main"])
     seed_workspace("ws-report-worktree", root)
 
-    # staging_home/2 only honors an inherited DEVIDE_AGENT_MCP_HOME when it
+    # staging_home/2 only honors an inherited CASEIN_AGENT_MCP_HOME when it
     # already matches the workspace-name-derived default (see
     # MCPMaterializer), so isolate this test's MCP staging dir via a fake
-    # HOME rather than DEVIDE_AGENT_MCP_HOME directly.
+    # HOME rather than CASEIN_AGENT_MCP_HOME directly.
     home = tmp_dir!("report-worktree-home")
     staging = Path.join([home, ".casein", "agent-mcp", "runtime"])
     previous_home = System.get_env("HOME")
 
     System.put_env("HOME", home)
-    System.delete_env("DEVIDE_AGENT_MCP_HOME")
+    System.delete_env("CASEIN_AGENT_MCP_HOME")
 
     on_exit(fn ->
       restore_system_env("HOME", previous_home)
@@ -151,17 +151,17 @@ defmodule Casein.Agents.TerminalToolsTest do
 
     assert_receive {:fake_tmux_set_environments, ^tmux_session, env}
 
-    assert env["DEVIDE_WORKSPACE_ID"] == "ws-report-worktree"
-    assert env["DEVIDE_WORKSPACE_NAME"] == "runtime"
-    assert env["DEVIDE_CHECKOUT"] == worktree
-    assert env["DEVIDE_TMUX_SESSION"] == tmux_session
-    assert env["DEVIDE_TERMINAL_MCP_URL"] =~ "workspace_id=ws-report-worktree"
-    assert env["DEVIDE_TERMINAL_MCP_URL"] =~ "tmux_session=#{tmux_session}"
-    assert env["DEVIDE_PREVIEW_MCP_URL"] =~ "workspace_id=ws-report-worktree"
-    assert env["DEVIDE_PREVIEW_MCP_URL"] =~ "tmux_session=#{tmux_session}"
-    assert env["DEVIDE_ARTIFACT_MCP_URL"] =~ "workspace_id=ws-report-worktree"
-    refute env["DEVIDE_ARTIFACT_MCP_URL"] =~ "tmux_session="
-    assert File.read!(Path.join(staging, "env.sh")) =~ "DEVIDE_TMUX_SESSION='#{tmux_session}'"
+    assert env["CASEIN_WORKSPACE_ID"] == "ws-report-worktree"
+    assert env["CASEIN_WORKSPACE_NAME"] == "runtime"
+    assert env["CASEIN_CHECKOUT"] == worktree
+    assert env["CASEIN_TMUX_SESSION"] == tmux_session
+    assert env["CASEIN_TERMINAL_MCP_URL"] =~ "workspace_id=ws-report-worktree"
+    assert env["CASEIN_TERMINAL_MCP_URL"] =~ "tmux_session=#{tmux_session}"
+    assert env["CASEIN_PREVIEW_MCP_URL"] =~ "workspace_id=ws-report-worktree"
+    assert env["CASEIN_PREVIEW_MCP_URL"] =~ "tmux_session=#{tmux_session}"
+    assert env["CASEIN_ARTIFACT_MCP_URL"] =~ "workspace_id=ws-report-worktree"
+    refute env["CASEIN_ARTIFACT_MCP_URL"] =~ "tmux_session="
+    assert File.read!(Path.join(staging, "env.sh")) =~ "CASEIN_TMUX_SESSION='#{tmux_session}'"
   end
 
   test "agent pane shortcuts target only the marked agent pane" do
@@ -685,7 +685,7 @@ defmodule Casein.Agents.TerminalToolsTest do
         branch: "main",
         status: :running,
         path: path,
-        metadata: %{"id" => id, "repo" => "dev_ide", "branch" => "main"}
+        metadata: %{"id" => id, "repo" => "casein", "branch" => "main"}
       })
 
     {:ok, _} =
@@ -715,7 +715,7 @@ defmodule Casein.Agents.TerminalToolsTest do
 
   defp tmp_dir!(name) do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    path = Path.join(root, "devide-terminal-tools-#{System.unique_integer([:positive])}-#{name}")
+    path = Path.join(root, "casein-terminal-tools-#{System.unique_integer([:positive])}-#{name}")
     make_tree_writable(path)
     File.rm_rf!(path)
     File.mkdir_p!(path)

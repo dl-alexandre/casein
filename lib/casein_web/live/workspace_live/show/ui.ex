@@ -25,10 +25,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.UI do
   @doc """
   The distinguishing tail of a workspace name for cramped chrome.
 
-  Workspace names are often owner/repo style (e.g. `dalexandre/dev_ide`) where
+  Workspace names are often owner/repo style (e.g. `dalexandre/casein`) where
   the owner segment repeats across every workspace and is pure noise — naive
   truncation surfaces only that prefix (`dalexandre…`) and hides the repo. This
-  returns the final path segment (`dev_ide`); the full name stays in tooltips.
+  returns the final path segment (`casein`); the full name stays in tooltips.
   """
   def workspace_short_name(name) when is_binary(name) do
     trimmed = name |> String.trim() |> String.trim_trailing("/")

@@ -12,9 +12,9 @@
 >   sessions, policy, and evidence.
 >
 > **Naming:** Casein is both the public product name and the implementation
-> family — `Casein.*`, `:casein`, `CASEIN_*`. The former `DevIDE.*` / `:dev_ide`
-> / `DEV_IDE_*` names were migrated; the frozen `DEVIDE_*` env namespace and the
-> `X-DevIDE-Caller-Pane` header are deliberate exceptions. See
+> family — `Casein.*`, `:casein`, `CASEIN_*`. The former `Casein.*` / `:casein`
+> / `CASEIN_*` names were migrated; the frozen `CASEIN_*` env namespace and the
+> `X-Casein-Caller-Pane` header are deliberate exceptions. See
 > [`naming-gate.md`](naming-gate.md).
 >
 > **History:** delegated-execution terms such as assignment, lease, runner,
@@ -35,7 +35,7 @@ term — do not overload an existing one.
 | Term | Means | Must not mean |
 |---|---|---|
 | **Casein** | The public product: a server-authoritative workspace for people and coding agents | A code namespace; a package coordinate; one UI component; one process; the CLI alone |
-| **DevIDE** | The compatibility-stable implementation family (`Casein.*`, `:casein`, `CASEIN_*`) beneath Casein | A second product; a requirement that public copy use the old name; authorization for a codebase-wide rename |
+| **Casein** | The compatibility-stable implementation family (`Casein.*`, `:casein`, `CASEIN_*`) beneath Casein | A second product; a requirement that public copy use the old name; authorization for a codebase-wide rename |
 | **Server-authoritative** | Each concern has one named server-side authority; clients authenticate, authorize, then observe or request effects | One database reconstructs everything; the browser is trusted state; “the backend decides somehow” |
 | **Authority** | The component whose current answer is binding for one concern | Every component that stores a copy; a projection; a transport; a person with an admin title |
 | **Runtime** | The server-side execution environment that hosts workspace sessions and the named authorities that govern them | The browser UI; a JavaScript loop; a fleet scheduler; a universal database |
@@ -119,7 +119,7 @@ agent-write capabilities.
 External coding agents use three workspace-scoped MCP surfaces:
 
 - **Terminal MCP** (`Casein.Agents.TerminalTools`) — list sessions, read pane
-  scrollback, send keys/commands to `devide_`-prefixed tmux sessions.
+  scrollback, send keys/commands to `casein_`-prefixed tmux sessions.
 - **Preview MCP** (`Casein.Agents.PreviewTools`) — open/observe/screenshot a
   scoped preview session.
 - **Artifact MCP** (`Casein.Agents.ArtifactTools`) — create and iterate on

@@ -3,7 +3,7 @@
 # Spawn a dedicated agent worker in a new tmux window and print its pane id.
 #
 # The launcher execs the agent in the *current* pane, so workers need a fresh
-# window. Worktrees are created from the primary checkout (DEVIDE_CHECKOUT).
+# window. Worktrees are created from the primary checkout (CASEIN_CHECKOUT).
 #
 set -euo pipefail
 
@@ -19,8 +19,8 @@ Spawn an external agent in a new tmux window on the workspace session.
 
 Arguments:
   runtime     grok | codex | claude | opencode | agent
-  task-slug   short slug for branch/worktree naming (DEVIDE_AGENT_TASK)
-  session     optional devide_* tmux session; defaults to DEVIDE_TMUX_SESSION
+  task-slug   short slug for branch/worktree naming (CASEIN_AGENT_TASK)
+  session     optional casein_* tmux session; defaults to CASEIN_TMUX_SESSION
               or the current attached session
 
 Prints the new pane id (e.g. %42) on stdout — use it for explicit-pane MCP calls.
@@ -50,8 +50,8 @@ spawn_worker_resolve_session() {
     return 0
   fi
 
-  if [[ -n "${DEVIDE_TMUX_SESSION:-}" ]]; then
-    printf '%s\n' "${DEVIDE_TMUX_SESSION}"
+  if [[ -n "${CASEIN_TMUX_SESSION:-}" ]]; then
+    printf '%s\n' "${CASEIN_TMUX_SESSION}"
     return 0
   fi
 
@@ -70,7 +70,7 @@ spawn_worker_window_name() {
 
 # Resolve the primary (main) working tree for a candidate checkout.
 #
-# In an agent's environment DEVIDE_CHECKOUT points at *that agent's own* linked
+# In an agent's environment CASEIN_CHECKOUT points at *that agent's own* linked
 # worktree, not the primary repo. Launching a worker there is a trap:
 # agent_worktree_ensure adopts any linked worktree it is started inside instead
 # of branching a fresh one (see scripts/lib/agent-worktree.sh), so the worker
@@ -118,17 +118,17 @@ if [[ -z "$SESSION" ]]; then
   exit 1
 fi
 
-if [[ "$SESSION" != devide_* ]]; then
-  warn_degraded "session '${SESSION}' does not look like a Casein session (expected devide_* prefix)"
+if [[ "$SESSION" != casein_* ]]; then
+  warn_degraded "session '${SESSION}' does not look like a Casein session (expected casein_* prefix)"
 fi
 
-CHECKOUT="${DEVIDE_CHECKOUT:-$ROOT}"
+CHECKOUT="${CASEIN_CHECKOUT:-$ROOT}"
 if [[ ! -d "$CHECKOUT" ]]; then
   echo "error: checkout not found at ${CHECKOUT}" >&2
   exit 1
 fi
 
-# DEVIDE_CHECKOUT may point at the orchestrator's own linked worktree; the
+# CASEIN_CHECKOUT may point at the orchestrator's own linked worktree; the
 # worker must branch off the primary repo, not launch inside it.
 CHECKOUT="$(spawn_worker_resolve_primary_checkout "$CHECKOUT")"
 
@@ -138,17 +138,17 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
 fi
 
 WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
-# Clear stale worktree pointers and pin DEVIDE_CHECKOUT to the primary so each
+# Clear stale worktree pointers and pin CASEIN_CHECKOUT to the primary so each
 # spawn gets a fresh agent/<runtime>/<slug>-<stamp> worktree off the primary
 # checkout. Both matter: launch-casein-agent.sh keys worktree creation off the
-# cwd *and* DEVIDE_CHECKOUT, and an inherited value would point back at the
-# orchestrator's linked worktree. DEVIDE_AGENT_FORCE_FRESH_WORKTREE makes
+# cwd *and* CASEIN_CHECKOUT, and an inherited value would point back at the
+# orchestrator's linked worktree. CASEIN_AGENT_FORCE_FRESH_WORKTREE makes
 # agent_worktree_ensure refuse to adopt whatever tree the launcher lands in
 # (the cwd heuristic has proven unreliable from nested worktrees) and always
 # branch a fresh one — so a worker can never operate in a shared checkout.
-LAUNCH_CMD="cd $(printf '%q' "$CHECKOUT") && unset DEVIDE_AGENT_WORKTREE_PATH DEVIDE_WORKTREE DEVIDE_GIT_DIR && export DEVIDE_CHECKOUT=$(printf '%q' "$CHECKOUT") DEVIDE_AGENT_FORCE_FRESH_WORKTREE=1 && DEVIDE_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "${CHECKOUT}/scripts/launch-casein-agent.sh") $(printf '%q' "$RUNTIME")"
+LAUNCH_CMD="cd $(printf '%q' "$CHECKOUT") && unset CASEIN_AGENT_WORKTREE_PATH CASEIN_WORKTREE CASEIN_GIT_DIR && export CASEIN_CHECKOUT=$(printf '%q' "$CHECKOUT") CASEIN_AGENT_FORCE_FRESH_WORKTREE=1 && CASEIN_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "${CHECKOUT}/scripts/launch-casein-agent.sh") $(printf '%q' "$RUNTIME")"
 
-if [[ "${DEVIDE_SPAWN_DRY_RUN:-0}" == "1" ]]; then
+if [[ "${CASEIN_SPAWN_DRY_RUN:-0}" == "1" ]]; then
   printf 'session=%s\ncheckout=%s\nwindow=%s\nlaunch=%s\n' \
     "$SESSION" "$CHECKOUT" "$WINDOW_NAME" "$LAUNCH_CMD"
   exit 0

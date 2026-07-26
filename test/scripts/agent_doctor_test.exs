@@ -4,13 +4,13 @@ defmodule Scripts.AgentDoctorTest do
   @script Path.expand("../../scripts/lib/agent-doctor.sh", __DIR__)
   @bundle_script Path.expand("../../scripts/lib/grok-capability-bundle.py", __DIR__)
   @leader_runtime Path.expand("../../scripts/lib/grok-leader-runtime.py", __DIR__)
-  @runtimes ~w(grok claude codex opencode agent devide)
+  @runtimes ~w(grok claude codex opencode agent casein)
 
   setup do
     root =
       Path.join(
         System.tmp_dir!(),
-        "devide-agent-doctor-#{System.unique_integer([:positive, :monotonic])}"
+        "casein-agent-doctor-#{System.unique_integer([:positive, :monotonic])}"
       )
 
     home = Path.join(root, "home")
@@ -53,7 +53,7 @@ defmodule Scripts.AgentDoctorTest do
         home,
         cwd,
         """
-        DEVIDE_AGENT_LAUNCH_CONTEXT=grok
+        CASEIN_AGENT_LAUNCH_CONTEXT=grok
         check_shims
         printf 'COUNTS pass=%s warn=%s fail=%s\n' "$PASS" "$WARN" "$FAIL"
         """,
@@ -97,15 +97,15 @@ defmodule Scripts.AgentDoctorTest do
         printf 'COUNTS pass=%s warn=%s fail=%s\n' "$PASS" "$WARN" "$FAIL"
         """,
         [
-          {"DEVIDE_WORKSPACE_NAME", "Demo Workspace"},
-          {"DEVIDE_WORKSPACE_ID", "workspace-123"},
-          {"DEVIDE_AGENT_LAUNCH_CONTEXT", "grok"},
-          {"DEVIDE_GROK_BUNDLE_ROOT", bundle.root},
-          {"DEVIDE_GROK_BUNDLE_DIR", bundle.dir},
-          {"DEVIDE_GROK_BUNDLE_DIGEST", bundle.digest},
-          {"DEVIDE_GROK_LEADER_ROOT", leader.root},
-          {"DEVIDE_GROK_LEADER_SOCKET", leader.socket},
-          {"DEVIDE_GROK_PROVIDER_AUTH_MODE", "api-key"},
+          {"CASEIN_WORKSPACE_NAME", "Demo Workspace"},
+          {"CASEIN_WORKSPACE_ID", "workspace-123"},
+          {"CASEIN_AGENT_LAUNCH_CONTEXT", "grok"},
+          {"CASEIN_GROK_BUNDLE_ROOT", bundle.root},
+          {"CASEIN_GROK_BUNDLE_DIR", bundle.dir},
+          {"CASEIN_GROK_BUNDLE_DIGEST", bundle.digest},
+          {"CASEIN_GROK_LEADER_ROOT", leader.root},
+          {"CASEIN_GROK_LEADER_SOCKET", leader.socket},
+          {"CASEIN_GROK_PROVIDER_AUTH_MODE", "api-key"},
           {"CASEIN_API_TOKEN", "never-print-this-token"}
         ]
       )
@@ -142,13 +142,13 @@ defmodule Scripts.AgentDoctorTest do
         cwd,
         "check_grok_runtime",
         [
-          {"DEVIDE_AGENT_LAUNCH_CONTEXT", "grok"},
-          {"DEVIDE_GROK_BUNDLE_ROOT", bundle.root},
-          {"DEVIDE_GROK_BUNDLE_DIR", bundle.dir},
-          {"DEVIDE_GROK_BUNDLE_DIGEST", bundle.digest},
-          {"DEVIDE_GROK_LEADER_ROOT", leader.root},
-          {"DEVIDE_GROK_LEADER_SOCKET", leader.socket},
-          {"DEVIDE_GROK_PROVIDER_AUTH_MODE", "oauth-inline-refresh"}
+          {"CASEIN_AGENT_LAUNCH_CONTEXT", "grok"},
+          {"CASEIN_GROK_BUNDLE_ROOT", bundle.root},
+          {"CASEIN_GROK_BUNDLE_DIR", bundle.dir},
+          {"CASEIN_GROK_BUNDLE_DIGEST", bundle.digest},
+          {"CASEIN_GROK_LEADER_ROOT", leader.root},
+          {"CASEIN_GROK_LEADER_SOCKET", leader.socket},
+          {"CASEIN_GROK_PROVIDER_AUTH_MODE", "oauth-inline-refresh"}
         ]
       )
 
@@ -171,8 +171,8 @@ defmodule Scripts.AgentDoctorTest do
         printf 'COUNTS pass=%s warn=%s fail=%s\n' "$PASS" "$WARN" "$FAIL"
         """,
         [
-          {"DEVIDE_WORKSPACE_NAME", "Demo Workspace"},
-          {"DEVIDE_WORKSPACE_ID", "workspace-123"}
+          {"CASEIN_WORKSPACE_NAME", "Demo Workspace"},
+          {"CASEIN_WORKSPACE_ID", "workspace-123"}
         ]
       )
 
@@ -189,16 +189,16 @@ defmodule Scripts.AgentDoctorTest do
         printf 'COUNTS pass=%s warn=%s fail=%s\n' "$PASS" "$WARN" "$FAIL"
         """,
         [
-          {"DEVIDE_AGENT_LAUNCH_CONTEXT", "grok"},
-          {"DEVIDE_WORKSPACE_NAME", "Demo Workspace"},
-          {"DEVIDE_WORKSPACE_ID", "workspace-123"}
+          {"CASEIN_AGENT_LAUNCH_CONTEXT", "grok"},
+          {"CASEIN_WORKSPACE_NAME", "Demo Workspace"},
+          {"CASEIN_WORKSPACE_ID", "workspace-123"}
         ]
       )
 
     assert managed_output =~
-             "FAIL Grok managed launch is missing DEVIDE_GROK_BUNDLE_DIR and DEVIDE_GROK_BUNDLE_DIGEST"
+             "FAIL Grok managed launch is missing CASEIN_GROK_BUNDLE_DIR and CASEIN_GROK_BUNDLE_DIGEST"
 
-    assert managed_output =~ "FAIL Grok managed launch is missing DEVIDE_GROK_LEADER_SOCKET"
+    assert managed_output =~ "FAIL Grok managed launch is missing CASEIN_GROK_LEADER_SOCKET"
     refute managed_output =~ "fail=0"
   end
 
@@ -228,14 +228,14 @@ defmodule Scripts.AgentDoctorTest do
         printf 'COUNTS pass=%s warn=%s fail=%s\n' "$PASS" "$WARN" "$FAIL"
         """,
         [
-          {"DEVIDE_WORKSPACE_NAME", "Demo Workspace"},
-          {"DEVIDE_WORKSPACE_ID", "workspace-123"},
-          {"DEVIDE_AGENT_LAUNCH_CONTEXT", "grok"},
-          {"DEVIDE_GROK_BUNDLE_ROOT", bundle.root},
-          {"DEVIDE_GROK_BUNDLE_DIR", bundle.dir},
-          {"DEVIDE_GROK_BUNDLE_DIGEST", bundle.digest},
-          {"DEVIDE_GROK_LEADER_ROOT", leader.root},
-          {"DEVIDE_GROK_LEADER_SOCKET", leader.socket},
+          {"CASEIN_WORKSPACE_NAME", "Demo Workspace"},
+          {"CASEIN_WORKSPACE_ID", "workspace-123"},
+          {"CASEIN_AGENT_LAUNCH_CONTEXT", "grok"},
+          {"CASEIN_GROK_BUNDLE_ROOT", bundle.root},
+          {"CASEIN_GROK_BUNDLE_DIR", bundle.dir},
+          {"CASEIN_GROK_BUNDLE_DIGEST", bundle.digest},
+          {"CASEIN_GROK_LEADER_ROOT", leader.root},
+          {"CASEIN_GROK_LEADER_SOCKET", leader.socket},
           {"CASEIN_API_TOKEN", "never-print-this-token"}
         ]
       )
@@ -275,7 +275,7 @@ defmodule Scripts.AgentDoctorTest do
     base = Path.join(home, ".casein/grok-leaders")
     root = Path.join(base, String.duplicate("a", 24))
     socket = Path.join(root, "leader.sock")
-    metadata = Path.join(root, ".devide-launcher")
+    metadata = Path.join(root, ".casein-launcher")
     log = Path.join(base, "fake-leader.log")
     server = Path.join(base, "fake-leader.py")
     File.mkdir_p!(root)
@@ -409,16 +409,16 @@ defmodule Scripts.AgentDoctorTest do
       {"HOME", home},
       {"PATH", "/usr/bin:/bin"},
       {"TMUX", ""},
-      {"DEVIDE_AGENT_LAUNCH_CONTEXT", ""},
-      {"DEVIDE_WORKTREE", ""},
-      {"DEVIDE_WORKSPACE_NAME", ""},
-      {"DEVIDE_WORKSPACE_ID", ""},
+      {"CASEIN_AGENT_LAUNCH_CONTEXT", ""},
+      {"CASEIN_WORKTREE", ""},
+      {"CASEIN_WORKSPACE_NAME", ""},
+      {"CASEIN_WORKSPACE_ID", ""},
       {"CASEIN_API_TOKEN", ""},
-      {"DEVIDE_GROK_BUNDLE_ROOT", ""},
-      {"DEVIDE_GROK_BUNDLE_DIR", ""},
-      {"DEVIDE_GROK_BUNDLE_DIGEST", ""},
-      {"DEVIDE_GROK_LEADER_ROOT", ""},
-      {"DEVIDE_GROK_LEADER_SOCKET", ""}
+      {"CASEIN_GROK_BUNDLE_ROOT", ""},
+      {"CASEIN_GROK_BUNDLE_DIR", ""},
+      {"CASEIN_GROK_BUNDLE_DIGEST", ""},
+      {"CASEIN_GROK_LEADER_ROOT", ""},
+      {"CASEIN_GROK_LEADER_SOCKET", ""}
     ]
 
     System.cmd("bash", ["-c", command],

@@ -753,7 +753,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
     # and rollback while production uses the shared terminal session backend.
     #
     # Deterministic per-tab attach: `tmux_session` is now scoped per browser
-    # tab (devide_<ws>_u-<id>-<tab>, see WorkspaceLive.Show mount), so each tab
+    # tab (casein_<ws>_u-<id>-<tab>, see WorkspaceLive.Show mount), so each tab
     # attaches to (or creates) its OWN session. A refresh of the same tab
     # reattaches the same name (work survives); separate windows get distinct
     # names and stay independent instead of converging on one session.

@@ -249,14 +249,14 @@ defmodule Casein.AgentSessions.GrokACP do
         fs: %{readTextFile: false, writeTextFile: false},
         terminal: false
       },
-      clientInfo: %{name: "devide", title: "Casein", version: client_version},
+      clientInfo: %{name: "casein", title: "Casein", version: client_version},
       _meta: %{
         startupHints: %{
           nonInteractive: true,
           skipGitStatus: true,
           skipProjectLayout: true
         },
-        clientType: "devide",
+        clientType: "casein",
         clientVersion: client_version
       }
     }

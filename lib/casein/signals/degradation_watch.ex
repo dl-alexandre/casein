@@ -47,18 +47,18 @@ defmodule Casein.Signals.DegradationWatch do
       threshold: 5,
       window_ms: 60_000
     },
-    # Domain events published on the bus by #184 (devide.<event> namespace, not
-    # devide.audit.*). A run of failures = a degradation storm worth surfacing.
+    # Domain events published on the bus by #184 (casein.<event> namespace, not
+    # casein.audit.*). A run of failures = a degradation storm worth surfacing.
     # Domain-event data is flat, so metadata-key fingerprints don't apply here;
     # fingerprint on action + workspace only (empty key list).
     %{
-      action: "devide.deploy.failed",
+      action: "casein.deploy.failed",
       fingerprint: [],
       threshold: 3,
       window_ms: 300_000
     },
     %{
-      action: "devide.runtime.preview_failed",
+      action: "casein.runtime.preview_failed",
       fingerprint: [],
       threshold: 3,
       window_ms: 300_000
@@ -103,14 +103,14 @@ defmodule Casein.Signals.DegradationWatch do
     {:ok, %{rules: rules, windows: %{}, alerted: MapSet.new()}}
   end
 
-  # Audit rules are covered by the audit wildcard (`devide.audit.**`). Domain
-  # rules key on a full CloudEvents type (`devide.<event>`), which lives outside
+  # Audit rules are covered by the audit wildcard (`casein.audit.**`). Domain
+  # rules key on a full CloudEvents type (`casein.<event>`), which lives outside
   # the audit prefix — subscribe to each exactly so audit signals are never
   # double-delivered (which would halve their effective threshold).
   @doc false
   def subscription_patterns(rules) do
     domain =
-      for {action, _rule} <- rules, String.starts_with?(action, "devide."), do: action
+      for {action, _rule} <- rules, String.starts_with?(action, "casein."), do: action
 
     [Publish.audit_subscription_pattern() | Enum.uniq(domain)]
   end

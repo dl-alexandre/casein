@@ -374,7 +374,7 @@ defmodule Casein.Agents.TranscriptsTest do
         home,
         ".grok",
         "sessions",
-        "%2Ftmp%2Fdevide-test",
+        "%2Ftmp%2Fcasein-test",
         session_id,
         "updates.jsonl"
       ])
@@ -408,7 +408,7 @@ defmodule Casein.Agents.TranscriptsTest do
 
   defp tmp_home! do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    home = Path.join(root, "devide-transcripts-#{System.unique_integer([:positive])}")
+    home = Path.join(root, "casein-transcripts-#{System.unique_integer([:positive])}")
     File.rm_rf!(home)
     File.mkdir_p!(home)
     System.put_env("HOME", home)

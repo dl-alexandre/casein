@@ -68,12 +68,12 @@ defmodule Casein.RuntimesTest do
         repo: "onebackend-v3",
         branch: "feature/runtime",
         status: "provisioned",
-        tmux_session_id: "devide_ws-runtime_rt",
+        tmux_session_id: "casein_ws-runtime_rt",
         worktree_path: "/tmp/ws-runtime/.casein/runtimes/manual"
       )
 
     assert runtime.status == "provisioned"
-    assert runtime.tmux_session_id == "devide_ws-runtime_rt"
+    assert runtime.tmux_session_id == "casein_ws-runtime_rt"
     assert Runtimes.get_runtime(runtime.id) == {:ok, runtime}
 
     events = Runtimes.events_for(runtime.id)
@@ -116,7 +116,7 @@ defmodule Casein.RuntimesTest do
   test "observe_worktree creates runtime preview server records in the worktree cwd" do
     root = tmp_repo!("preview-server-parent")
     worktree = Path.join(root, "agent-worktree")
-    tmux_session = "devide_runtime_wt"
+    tmux_session = "casein_runtime_wt"
 
     git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
     seed_workspace("ws-preview-worktree", root)
@@ -125,7 +125,7 @@ defmodule Casein.RuntimesTest do
       RuntimeSeed.seed_runtime("ws-preview-worktree",
         runtime_id: "base-runtime",
         worktree_path: root,
-        tmux_session_id: "devide_runtime_base",
+        tmux_session_id: "casein_runtime_base",
         runtime_profile: %{
           "name" => "phoenix",
           "cwd" => root,
@@ -162,12 +162,12 @@ defmodule Casein.RuntimesTest do
     assert server["port"] in min_port..max_port
     refute server["port"] == 4000
     assert server["env"]["PORT"] == Integer.to_string(server["port"])
-    assert server["env"]["DEVIDE_RUNTIME_ID"] == runtime.id
-    assert server["env"]["DEVIDE_WORKSPACE_ID"] == "ws-preview-worktree"
-    assert server["env"]["DEVIDE_TMUX_SESSION"] == tmux_session
-    assert server["env"]["DEVIDE_PREVIEW_HOME"] == Path.join(root, ".casein-preview")
+    assert server["env"]["CASEIN_RUNTIME_ID"] == runtime.id
+    assert server["env"]["CASEIN_WORKSPACE_ID"] == "ws-preview-worktree"
+    assert server["env"]["CASEIN_TMUX_SESSION"] == tmux_session
+    assert server["env"]["CASEIN_PREVIEW_HOME"] == Path.join(root, ".casein-preview")
 
-    socket = server["env"]["DEVIDE_RUNTIME_PREVIEW_SOCKET"]
+    socket = server["env"]["CASEIN_RUNTIME_PREVIEW_SOCKET"]
     assert String.starts_with?(socket, Path.join([root, ".casein-preview", "sockets"]))
     assert Path.basename(socket) =~ ~r/^rt-[0-9a-z]+\.sock$/
     assert byte_size(socket) < 100
@@ -322,7 +322,7 @@ defmodule Casein.RuntimesTest do
   test "observe_worktree starts runtime preview server from the worktree record" do
     root = tmp_repo!("preview-launch-parent")
     worktree = Path.join(root, "agent-worktree")
-    tmux_session = "devide_runtime_launch_wt"
+    tmux_session = "casein_runtime_launch_wt"
 
     git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
     seed_workspace("ws-preview-launch", root)
@@ -345,7 +345,7 @@ defmodule Casein.RuntimesTest do
     assert spec["runtime_id"] == runtime.id
     assert spec["port"] == server["port"]
     assert spec["env"]["PORT"] == Integer.to_string(server["port"])
-    assert spec["env"]["DEVIDE_TMUX_SESSION"] == tmux_session
+    assert spec["env"]["CASEIN_TMUX_SESSION"] == tmux_session
 
     assert ["bash", launcher, "--port", port_arg] = spec["command"]
     assert Path.basename(launcher) == "runtime-preview-launch.sh"
@@ -433,7 +433,7 @@ defmodule Casein.RuntimesTest do
   test "observe_worktree replaces legacy worktree-local preview command" do
     root = tmp_repo!("preview-legacy-command-parent")
     worktree = Path.join(root, "agent-worktree")
-    tmux_session = "devide_runtime_legacy_wt"
+    tmux_session = "casein_runtime_legacy_wt"
 
     git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
     seed_workspace("ws-preview-legacy", root)
@@ -469,7 +469,7 @@ defmodule Casein.RuntimesTest do
   test "observe_worktree replaces legacy command reported in attrs metadata" do
     root = tmp_repo!("preview-legacy-attrs-parent")
     worktree = Path.join(root, "agent-worktree")
-    tmux_session = "devide_runtime_legacy_attrs_wt"
+    tmux_session = "casein_runtime_legacy_attrs_wt"
 
     git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
     seed_workspace("ws-preview-legacy-attrs", root)
@@ -496,7 +496,7 @@ defmodule Casein.RuntimesTest do
   test "observe_worktree preserves an existing runtime preview launch across heartbeats" do
     root = tmp_repo!("preview-heartbeat-parent")
     worktree = Path.join(root, "agent-worktree")
-    tmux_session = "devide_runtime_heartbeat_wt"
+    tmux_session = "casein_runtime_heartbeat_wt"
 
     git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
     seed_workspace("ws-preview-heartbeat", root)
@@ -533,7 +533,7 @@ defmodule Casein.RuntimesTest do
         host_id: "host-a",
         status: "provisioned",
         tools: ["mix"],
-        tmux_session_id: "devide_ws_rt_decorate",
+        tmux_session_id: "casein_ws_rt_decorate",
         worktree_path: "/tmp/ws-runtime/.casein/runtimes/rt-decorate"
       )
 
@@ -544,7 +544,7 @@ defmodule Casein.RuntimesTest do
       })
 
     assert decorated["runtime"]["status"] == "provisioned"
-    assert decorated["runtime"]["tmux_session_id"] == "devide_ws_rt_decorate"
+    assert decorated["runtime"]["tmux_session_id"] == "casein_ws_rt_decorate"
     assert decorated["routing"]["runtime_id"] == runtime.id
     assert decorated["routing"]["tools"] == ["mix"]
   end
@@ -823,7 +823,7 @@ defmodule Casein.RuntimesTest do
 
   defp tmp_dir!(name) do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    path = Path.join(root, "devide-runtimes-#{System.unique_integer([:positive])}-#{name}")
+    path = Path.join(root, "casein-runtimes-#{System.unique_integer([:positive])}-#{name}")
     File.rm_rf!(path)
     File.mkdir_p!(path)
     on_exit(fn -> File.rm_rf!(path) end)

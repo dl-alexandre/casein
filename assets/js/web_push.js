@@ -7,19 +7,19 @@
 // "agent needs you" push while the app is backgrounded or closed.
 //
 // Permission itself is requested by the existing notification opt-in button in
-// app.js; on grant it dispatches `devide:notification-permission-granted`, which
+// app.js; on grant it dispatches `casein:notification-permission-granted`, which
 // we listen for so subscription happens right after the user opts in.
 
 export const WebPush = {
   mounted() {
     this._onGranted = () => this._subscribe()
-    window.addEventListener("devide:notification-permission-granted", this._onGranted)
+    window.addEventListener("casein:notification-permission-granted", this._onGranted)
     // Re-register on load for a device that granted permission in a past session.
     this._subscribe()
   },
 
   destroyed() {
-    window.removeEventListener("devide:notification-permission-granted", this._onGranted)
+    window.removeEventListener("casein:notification-permission-granted", this._onGranted)
   },
 
   async _subscribe() {

@@ -10,7 +10,7 @@ defmodule CaseinWeb.WorkspaceRoutesTest do
     root =
       Path.join(
         System.tmp_dir!(),
-        "devide-workspace-routes-#{System.unique_integer([:positive])}"
+        "casein-workspace-routes-#{System.unique_integer([:positive])}"
       )
 
     project = Path.join(root, "project")

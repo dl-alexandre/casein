@@ -157,10 +157,10 @@ Configured adapter: `Application.get_env(:casein, :preview_control_adapter, :mem
 - **Artifact pruning is best-effort** — a screenshot capture never fails because
   cleanup of older PNGs failed.
 - **Ephemeral preview envs are dual-bound (socket + loopback port).**
-  `scripts/preview-env.sh` boots each env with `DEVIDE_HTTP_SOCKET=<state>/sockets/<id>.sock`
+  `scripts/preview-env.sh` boots each env with `CASEIN_HTTP_SOCKET=<state>/sockets/<id>.sock`
   (the canonical front door — a pure function of the id, collision-free, dialed by
   `scripts/preview-router.sh` as `reverse_proxy unix//…`, mirroring the live
-  `/run/casein/current.sock` model) **and** `DEVIDE_PREVIEW_TIDEWAVE_PORT=<port>`.
+  `/run/casein/current.sock` model) **and** `CASEIN_PREVIEW_TIDEWAVE_PORT=<port>`.
   The port spins a second, loopback-only Bandit listener
   (`Casein.Application.preview_tidewave_listener/0`) serving the same endpoint, so
   the programmatic Tidewave MCP dial (`Casein.Agents.TidewaveMCP` →

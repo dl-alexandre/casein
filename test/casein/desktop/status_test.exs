@@ -7,7 +7,7 @@ defmodule Casein.Desktop.StatusTest do
     dir =
       Path.join(
         System.tmp_dir!(),
-        "devide-status-test-#{System.unique_integer([:positive])}"
+        "casein-status-test-#{System.unique_integer([:positive])}"
       )
 
     on_exit(fn -> File.rm_rf!(dir) end)

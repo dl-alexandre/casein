@@ -5,7 +5,7 @@ defmodule Casein.Terminals.CleanExecTest do
 
   describe "wrap_argv/1 — non-tmux execs are scrubbed" do
     test "wraps a bare shell exec in the fd-closing /bin/sh wrapper" do
-      assert ["/bin/sh", "-c", script, "devide-clean-exec", "bash", "-l"] =
+      assert ["/bin/sh", "-c", script, "casein-clean-exec", "bash", "-l"] =
                CleanExec.wrap_argv(["bash", "-l"])
 
       assert script =~ "exec \"$@\""
@@ -13,7 +13,7 @@ defmodule Casein.Terminals.CleanExecTest do
     end
 
     test "wraps an env-prefixed non-tmux exec" do
-      assert ["/bin/sh", "-c", _script, "devide-clean-exec", "env", "FOO=1", "bash", "-l"] =
+      assert ["/bin/sh", "-c", _script, "casein-clean-exec", "env", "FOO=1", "bash", "-l"] =
                CleanExec.wrap_argv(["env", "FOO=1", "bash", "-l"])
     end
   end

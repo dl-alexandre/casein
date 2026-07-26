@@ -43,7 +43,7 @@ onto the same Casein deployment.
   tmux sessions outside the release artifact.
 - `/api/deploy_status` must pass before traffic handoff is considered healthy.
 - `scripts/deploy-local.sh` runs `scripts/hardening-audit.sh --live` after
-  activation unless `DEVIDE_SKIP_HARDENING_AUDIT=1` is set.
+  activation unless `CASEIN_SKIP_HARDENING_AUDIT=1` is set.
 
 ## Recovery
 
@@ -63,7 +63,7 @@ Only set a positive value when you explicitly want idle tmux reclamation.
 
 ## Workspace-Scoped Tokens
 
-Keep the global admin bearer in `/etc/casein/devide.env` as `CASEIN_API_TOKEN`.
+Keep the global admin bearer in `/etc/casein/casein.env` as `CASEIN_API_TOKEN`.
 `setup-devbox-agent-pairing.sh` registers per-workspace tokens and writes the
 scoped bearer into `.devbox-agent.env` as `CASEIN_API_TOKEN` (admin preserved as
 `CASEIN_ADMIN_API_TOKEN`). Manual addition also works with:
@@ -96,5 +96,5 @@ Collect a workspace recovery bundle:
 
 ```bash
 source .devbox-agent.env
-scripts/workspace-doctor.sh "$DEVIDE_WORKSPACE_ID"
+scripts/workspace-doctor.sh "$CASEIN_WORKSPACE_ID"
 ```

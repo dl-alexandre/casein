@@ -27,7 +27,7 @@ defmodule Casein.Desktop.RuntimeTest do
     System.put_env("CASEIN_DESKTOP_DATA_DIR", "/tmp/casein-desktop")
 
     assert Runtime.data_dir() == "/tmp/casein-desktop"
-    assert Runtime.database_path() == "/tmp/casein-desktop/devide.sqlite3"
+    assert Runtime.database_path() == "/tmp/casein-desktop/casein.sqlite3"
     assert Runtime.status_path() == "/tmp/casein-desktop/runtime.json"
   end
 
@@ -47,7 +47,7 @@ defmodule Casein.Desktop.RuntimeTest do
     System.put_env("XDG_DATA_HOME", "/home/test/.local/share")
 
     assert Runtime.data_dir({:win32, :nt}) == "C:/Users/test/AppData/Local/Casein"
-    assert Runtime.data_dir({:unix, :linux}) == "/home/test/.local/share/devide"
+    assert Runtime.data_dir({:unix, :linux}) == "/home/test/.local/share/casein"
 
     assert Runtime.data_dir({:unix, :darwin}) ==
              Path.join(System.user_home!(), "Library/Application Support/Casein")

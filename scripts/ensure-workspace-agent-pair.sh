@@ -9,7 +9,7 @@
 #
 # Usage:
 #   # From a paired tmux session (env already set):
-#   bash /path/to/dev_ide/scripts/ensure-workspace-agent-pair.sh
+#   bash /path/to/casein/scripts/ensure-workspace-agent-pair.sh
 #
 #   # Explicit workspace + runtime:
 #   bash scripts/ensure-workspace-agent-pair.sh \
@@ -24,7 +24,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/lib/agent-skills.sh
 source "${ROOT}/scripts/lib/agent-skills.sh"
 
-WORKSPACE_NAME="${DEVIDE_WORKSPACE_NAME:-}"
+WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-}"
 WORKSPACE_EXPLICIT=0
 RUNTIME="all"
 VERIFY=0
@@ -38,17 +38,17 @@ Ensure Casein terminal/preview/artifact MCP + host infrastructure skills are
 installed for a product workspace agent runtime.
 
 Options:
-  --workspace NAME   Workspace name (default: $DEVIDE_WORKSPACE_NAME)
+  --workspace NAME   Workspace name (default: $CASEIN_WORKSPACE_NAME)
   --runtime NAME     opencode | claude | grok | codex | all  (default: all)
   --verify           Probe terminal MCP tools/list + OpenCode skill/config when possible
   --quiet            Less chatter
   -h, --help         Show this help
 
 Environment (usually from ~/.casein/agent-mcp/<name>/env.sh or tmux session):
-  DEVIDE_WORKSPACE_NAME, DEVIDE_WORKSPACE_ID, DEVIDE_CHECKOUT,
-  DEVIDE_AGENT_MCP_HOME, CASEIN_API_TOKEN, DEVIDE_*_MCP_URL
+  CASEIN_WORKSPACE_NAME, CASEIN_WORKSPACE_ID, CASEIN_CHECKOUT,
+  CASEIN_AGENT_MCP_HOME, CASEIN_API_TOKEN, CASEIN_*_MCP_URL
 
-When --workspace is passed, ambient DEVIDE_AGENT_MCP_HOME / DEVIDE_CHECKOUT from
+When --workspace is passed, ambient CASEIN_AGENT_MCP_HOME / CASEIN_CHECKOUT from
 another workspace are ignored so a foreign shell cannot pair the wrong target.
 EOF
 }
@@ -97,16 +97,16 @@ case "$RUNTIME" in
   *) die "unsupported --runtime '${RUNTIME}' (opencode|claude|grok|codex|all)" ;;
 esac
 
-[[ -n "$WORKSPACE_NAME" ]] || die "workspace name required (--workspace or DEVIDE_WORKSPACE_NAME)"
+[[ -n "$WORKSPACE_NAME" ]] || die "workspace name required (--workspace or CASEIN_WORKSPACE_NAME)"
 
-# Always key staging by workspace *name*. Prefer ambient DEVIDE_AGENT_MCP_HOME
+# Always key staging by workspace *name*. Prefer ambient CASEIN_AGENT_MCP_HOME
 # only when it already points at that name (session env). Never let a foreign
-# shell's DEVIDE_AGENT_MCP_HOME override an explicit --workspace.
+# shell's CASEIN_AGENT_MCP_HOME override an explicit --workspace.
 CANONICAL_STAGING="${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
 if [[ "$WORKSPACE_EXPLICIT" -eq 1 ]]; then
   STAGING="$CANONICAL_STAGING"
-elif [[ -n "${DEVIDE_AGENT_MCP_HOME:-}" && "${DEVIDE_AGENT_MCP_HOME}" == *"/agent-mcp/${WORKSPACE_NAME}" ]]; then
-  STAGING="${DEVIDE_AGENT_MCP_HOME}"
+elif [[ -n "${CASEIN_AGENT_MCP_HOME:-}" && "${CASEIN_AGENT_MCP_HOME}" == *"/agent-mcp/${WORKSPACE_NAME}" ]]; then
+  STAGING="${CASEIN_AGENT_MCP_HOME}"
 else
   STAGING="$CANONICAL_STAGING"
 fi
@@ -116,9 +116,9 @@ if [[ -f "$ENV_SH" ]]; then
   # Drop foreign pairing vars before source so a wrong ambient checkout/token
   # cannot survive when --workspace selected a different staging tree.
   if [[ "$WORKSPACE_EXPLICIT" -eq 1 ]]; then
-    unset DEVIDE_CHECKOUT DEVIDE_AGENT_MCP_HOME DEVIDE_WORKSPACE_ID CASEIN_API_TOKEN \
-      DEVIDE_TERMINAL_MCP_URL DEVIDE_PREVIEW_MCP_URL DEVIDE_ARTIFACT_MCP_URL \
-      DEVIDE_TMUX_SESSION DEVIDE_API_BASE_URL 2>/dev/null || true
+    unset CASEIN_CHECKOUT CASEIN_AGENT_MCP_HOME CASEIN_WORKSPACE_ID CASEIN_API_TOKEN \
+      CASEIN_TERMINAL_MCP_URL CASEIN_PREVIEW_MCP_URL CASEIN_ARTIFACT_MCP_URL \
+      CASEIN_TMUX_SESSION CASEIN_API_BASE_URL 2>/dev/null || true
   fi
   # shellcheck source=/dev/null
   set -a
@@ -130,34 +130,34 @@ else
   die "missing ${ENV_SH} — run refresh/setup pairing for workspace '${WORKSPACE_NAME}' first"
 fi
 
-: "${DEVIDE_WORKSPACE_ID:?DEVIDE_WORKSPACE_ID missing after sourcing env.sh}"
+: "${CASEIN_WORKSPACE_ID:?CASEIN_WORKSPACE_ID missing after sourcing env.sh}"
 : "${CASEIN_API_TOKEN:?CASEIN_API_TOKEN missing after sourcing env.sh}"
-: "${DEVIDE_TERMINAL_MCP_URL:?DEVIDE_TERMINAL_MCP_URL missing after sourcing env.sh}"
+: "${CASEIN_TERMINAL_MCP_URL:?CASEIN_TERMINAL_MCP_URL missing after sourcing env.sh}"
 
 # Guard: env.sh must describe the workspace we asked for.
-if [[ "${DEVIDE_WORKSPACE_NAME:-}" != "$WORKSPACE_NAME" ]]; then
-  die "env.sh workspace name '${DEVIDE_WORKSPACE_NAME:-}' != requested '${WORKSPACE_NAME}' (${ENV_SH})"
+if [[ "${CASEIN_WORKSPACE_NAME:-}" != "$WORKSPACE_NAME" ]]; then
+  die "env.sh workspace name '${CASEIN_WORKSPACE_NAME:-}' != requested '${WORKSPACE_NAME}' (${ENV_SH})"
 fi
 
-CHECKOUT="${DEVIDE_CHECKOUT:-}"
+CHECKOUT="${CASEIN_CHECKOUT:-}"
 if [[ -z "$CHECKOUT" || ! -d "$CHECKOUT" ]]; then
   if [[ -d "/data/workspaces/${WORKSPACE_NAME}" ]]; then
     CHECKOUT="/data/workspaces/${WORKSPACE_NAME}"
   else
-    die "DEVIDE_CHECKOUT not set and /data/workspaces/${WORKSPACE_NAME} missing"
+    die "CASEIN_CHECKOUT not set and /data/workspaces/${WORKSPACE_NAME} missing"
   fi
 fi
-export DEVIDE_CHECKOUT="$CHECKOUT"
-export DEVIDE_AGENT_MCP_HOME="$STAGING"
-export DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME"
+export CASEIN_CHECKOUT="$CHECKOUT"
+export CASEIN_AGENT_MCP_HOME="$STAGING"
+export CASEIN_WORKSPACE_NAME="$WORKSPACE_NAME"
 
-# Host skills live in the dev_ide tree. Prefer this script's repo, then common
+# Host skills live in the casein tree. Prefer this script's repo, then common
 # checkouts, then release overlays if present.
 skill_source_dir() {
   local candidate
   for candidate in \
     "${ROOT}/.claude/skills" \
-    "/data/workspaces/dalexandre/dev_ide/.claude/skills" \
+    "/data/workspaces/dalexandre/casein/.claude/skills" \
     "/opt/casein/deploy-build/.claude/skills" \
     "/opt/casein/release/lib/casein-0.1.0/priv/claude/skills"
   do
@@ -172,7 +172,7 @@ skill_source_dir() {
 
 SKILL_SRC="$(skill_source_dir)"
 log "skill source: ${SKILL_SRC}"
-log "workspace: ${WORKSPACE_NAME} (${DEVIDE_WORKSPACE_ID})"
+log "workspace: ${WORKSPACE_NAME} (${CASEIN_WORKSPACE_ID})"
 log "checkout: ${CHECKOUT}"
 log "staging: ${STAGING}"
 
@@ -204,8 +204,8 @@ install_for_opencode() {
 install_for_claude() {
   # Owner profile if present, else global (already done above).
   local profile="${CLAUDE_CONFIG_DIR:-}"
-  if [[ -z "$profile" && -n "${DEVIDE_WORKSPACE_NAME:-}" ]]; then
-    local guess="${HOME}/.casein/agent-auth/profiles/${DEVIDE_WORKSPACE_NAME%%-*}/claude"
+  if [[ -z "$profile" && -n "${CASEIN_WORKSPACE_NAME:-}" ]]; then
+    local guess="${HOME}/.casein/agent-auth/profiles/${CASEIN_WORKSPACE_NAME%%-*}/claude"
     # profiles are per-owner (dalexandre), not per-workspace — leave global.
     :
   fi
@@ -259,10 +259,10 @@ verify_terminal_mcp() {
   python3 - <<'PY'
 import json, os, sys, urllib.request
 
-url = os.environ.get("DEVIDE_TERMINAL_MCP_URL", "")
+url = os.environ.get("CASEIN_TERMINAL_MCP_URL", "")
 token = os.environ.get("CASEIN_API_TOKEN", "")
 if not url or not token:
-    print("verify: missing DEVIDE_TERMINAL_MCP_URL or CASEIN_API_TOKEN", file=sys.stderr)
+    print("verify: missing CASEIN_TERMINAL_MCP_URL or CASEIN_API_TOKEN", file=sys.stderr)
     sys.exit(1)
 
 def call(method, params=None, id=1, session=None):
@@ -347,11 +347,11 @@ print(f"verify: opencode skills present={sorted(names & need)}")
 if missing:
     print(f"verify: WARN missing skills {missing}", file=sys.stderr)
 mcp = cfg.get("mcp") or {}
-keys = [k for k in mcp if k.startswith("devide-")]
+keys = [k for k in mcp if k.startswith("casein-")]
 print(f"verify: opencode MCP servers={keys}")
 matched = [k for k in keys if ws in k]
 if not keys:
-    print("verify: FAIL no devide-* MCP in opencode config", file=sys.stderr)
+    print("verify: FAIL no casein-* MCP in opencode config", file=sys.stderr)
     sys.exit(1)
 if not any("terminal" in k for k in keys):
     print("verify: FAIL no terminal MCP server", file=sys.stderr)
@@ -369,7 +369,7 @@ if [[ "$VERIFY" -eq 1 ]]; then
   log "verifying…"
   verify_terminal_mcp
   case "$RUNTIME" in
-    opencode|all) verify_opencode || true ;;
+    opencode|all) verify_opencode ;;
   esac
 fi
 
@@ -380,7 +380,7 @@ ok: workspace agent pair ready
   checkout:   ${CHECKOUT}
   staging:    ${STAGING}
   runtime:    ${RUNTIME}
-  skills:     ${DEVIDE_GLOBAL_AGENT_SKILLS}
+  skills:     ${CASEIN_GLOBAL_AGENT_SKILLS}
 
 Next:
   source ${ENV_SH}

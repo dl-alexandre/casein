@@ -24,7 +24,7 @@ to a workspace. It does four distinct jobs:
    JSON-RPC.
 3. **Wiring agents in** (`MCPUrls`, `MCPMaterializer`, `PaneEnv`, `TidewaveMCP`)
    — build the MCP endpoint URLs, materialize per-workspace client config files
-   for each agent CLI, and push the `DEVIDE_*` env into a tmux session so a bare
+   for each agent CLI, and push the `CASEIN_*` env into a tmux session so a bare
    `claude` / `grok` / `codex` command picks up the Casein MCP servers
    automatically.
 4. **Operational replay** (`AgentEvents`, `AgentEvent`, `Activity`) — append
@@ -50,7 +50,7 @@ compile-time-fixed argv.
 | `Casein.Agents.PreviewTools.MCPCapability` | `lib/casein/agents/preview_tools/mcp_capability.ex` | Detect the preview-control MCP endpoint; advertises URL + tool names. |
 | `Casein.Agents.ArtifactMCPCapability` | `lib/casein/agents/artifact_mcp_capability.ex` | Detect the artifact-project MCP endpoint; advertises URL + tool names. |
 | `Casein.Agents.TidewaveCapability` | `lib/casein/agents/tidewave_capability.ex` | Detect locally-hosted Tidewave (dev/preview-env only) via configured URL-provider MFA. |
-| `Casein.Agents.TerminalTools` | `lib/casein/agents/terminal_tools.ex` | MCP tool definitions + dispatch for tmux control (list/topology/capture/send/label/worktree). `devide_`-prefix and workspace scoping. |
+| `Casein.Agents.TerminalTools` | `lib/casein/agents/terminal_tools.ex` | MCP tool definitions + dispatch for tmux control (list/topology/capture/send/label/worktree). `casein_`-prefix and workspace scoping. |
 | `Casein.Agents.PreviewTools` | `lib/casein/agents/preview_tools.ex` | MCP tool definitions + dispatch for preview control (open/observe/click/type/screenshot/navigate/reload). |
 | `Casein.Agents.ArtifactTools` | `lib/casein/agents/artifact_tools.ex` | MCP tool definitions + dispatch for artifact projects (create/update/list/get/serve/snapshot). |
 | `Casein.Agents.AnnotationTools` | `lib/casein/agents/annotation_tools.ex` | Annotation tools (`annotation_list`, `annotation_propose`) appended to the terminal tool set. |
@@ -60,7 +60,7 @@ compile-time-fixed argv.
 | `Casein.Agents.MCPMaterializer` | `lib/casein/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
 | `Casein.Agents.AgentCapabilityToken` / `AgentCapabilityTokens` | `lib/casein/agents/agent_capability_token.ex`, `lib/casein/agents/agent_capability_tokens.ex` | Hash-at-rest, expiring managed-Grok bearer claims and replacement/revocation lifecycle. |
 | `Casein.Agents.GrokCapabilityPolicy` | `lib/casein/agents/grok_capability_policy.ex` | Computes exact direct-tool grants and intersects them with live workspace mode/write-unlock policy on every request. |
-| `Casein.Agents.PaneEnv` | `lib/casein/agents/pane_env.ex` | Build the `DEVIDE_*` env map and push it into a tmux session; materializes configs as a side effect. |
+| `Casein.Agents.PaneEnv` | `lib/casein/agents/pane_env.ex` | Build the `CASEIN_*` env map and push it into a tmux session; materializes configs as a side effect. |
 | `Casein.Agents.AuthProfile` | `lib/casein/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.casein/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login — except owners registered in `agent-auth/owners`, whose profiles apply even before sign-in (opt-in fail-closed). |
 | `Casein.Agents.TidewaveMCP` | `lib/casein/agents/tidewave_mcp.ex` | Resolve an optional Tidewave MCP URL (env → self-hosted → workspace metadata → preview registry) + server key. |
 | `Casein.Agents.MCPAudit` | `lib/casein/agents/mcp_audit.ex` | Record every tool completion as a metadata-only `AgentEvent` and in `Activity`; emit an `Audit` event for successful mutating tools; propose labels from terminal calls. |
@@ -95,10 +95,10 @@ compile-time-fixed argv.
    launcher shims via `Casein.Agents.AgentShims.ensure/0` (partial loss of e.g.
    only `claude` has bitten after deploys/npm updates), refreshes
    `:tmux_ctl` `:terminal_env` so the next `new-window`/`split-window` gets
-   `-e PATH=…` with agent bins, then builds the `DEVIDE_*` env map
-   (`CASEIN_API_TOKEN`, `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`,
-   `DEVIDE_PREVIEW_MCP_URL`, `DEVIDE_AGENT_MCP_HOME`, prepended `PATH`, optional
-   `DEVIDE_TIDEWAVE_MCP_URL`) and pushes it into the session with
+   `-e PATH=…` with agent bins, then builds the `CASEIN_*` env map
+   (`CASEIN_API_TOKEN`, `CASEIN_WORKSPACE_ID`, `CASEIN_TERMINAL_MCP_URL`,
+   `CASEIN_PREVIEW_MCP_URL`, `CASEIN_AGENT_MCP_HOME`, prepended `PATH`, optional
+   `CASEIN_TIDEWAVE_MCP_URL`) and pushes it into the session with
    `Tmux.set_environments/2`. Template apply calls this **before** creating
    panes so the first window is not racy. `PATH` always includes
    `~/.casein/agent-shims` and the npm global bin dir (also embedded in
@@ -119,12 +119,12 @@ compile-time-fixed argv.
    `-c mcp_servers...` overrides. Codex defaults are workspace-mode aware:
    review/observe/locked use `read-only + never`, while manual workspaces use
    `workspace-write + on-request`. Unrestricted mode is an explicit opt-in via
-   `DEVIDE_CODEX_DEFAULT_YOLO=1`; bearer credentials are excluded from Codex's
+   `CASEIN_CODEX_DEFAULT_YOLO=1`; bearer credentials are excluded from Codex's
    repo-command environment while remaining available to the MCP client.
    The default is sandboxed `workspace-write + on-request`; unrestricted mode
    is never enabled implicitly.
    Claude still defaults to `--dangerously-skip-permissions` unless the operator
-   passes an explicit permission option or sets `DEVIDE_CLAUDE_DEFAULT_YOLO=0`.
+   passes an explicit permission option or sets `CASEIN_CLAUDE_DEFAULT_YOLO=0`.
    Palette id `clauded` maps to bare `claude`
    (`PaneEnv.launch_command/3` / allowlist) — do not rely on the host bash alias.
    Plain agent starts do not depend on `CASEIN_API_TOKEN` because Casein MCP is
@@ -132,17 +132,17 @@ compile-time-fixed argv.
    (`--version`/`--help`/`-h` for any runtime, plus `codex update|doctor` and
    `claude update`) bypass the launcher entirely and exec the real binary —
    they never resolve env, create a worktree, or inject MCP
-   (`agent_runtime_passthrough` in `scripts/devide`). `install-agent-shims.sh`
-   (`--check` / `--ensure`), the deploy poller, and `devide agent doctor` all
+   (`agent_runtime_passthrough` in `scripts/casein`). `install-agent-shims.sh`
+   (`--check` / `--ensure`), the deploy poller, and `casein agent doctor` all
    verify shim completeness and PATH precedence; a shadowed or partial shim set
    is a hard failure because agents would launch without MCP or with
-   `command not found`. When no agent env resolves, `devide agent launch`
-   silently falls back to the real binary (`DEVIDE_AGENT_LAUNCH_VERBOSE=1`
-   explains the fallback on stderr; `DEVIDE_AGENT_LAUNCH_STRICT=1` restores
+   `command not found`. When no agent env resolves, `casein agent launch`
+   silently falls back to the real binary (`CASEIN_AGENT_LAUNCH_VERBOSE=1`
+   explains the fallback on stderr; `CASEIN_AGENT_LAUNCH_STRICT=1` restores
    the hard failure), and the installer's migration cleanup removes legacy
    launcher shims from `~/.local/bin` so plain terminals are untouched by
-   Casein. Every launch also stamps the tmux pane options `@devide_paired`
-   (`1`/`0`) and `@devide_paired_reason`; topology reads them
+   Casein. Every launch also stamps the tmux pane options `@casein_paired`
+   (`1`/`0`) and `@casein_paired_reason`; topology reads them
    (`TmuxCtl.Client` `list-panes` formats → pane `paired`/`paired_reason`)
    and the viewer badges unpaired panes in the terminal chrome — pairing
    failures are visible in the UI, never as terminal output.
@@ -156,7 +156,7 @@ compile-time-fixed argv.
 2. The web handler resolves/scopes `workspace_id` (pre-scoped from the URL query
    param when present), then dispatches `tools/call` to
    `TerminalTools.invoke/2`, `PreviewTools.invoke/3`, or `ArtifactTools.invoke/2`.
-3. The tool handler validates scope (terminal: `devide_` prefix +
+3. The tool handler validates scope (terminal: `casein_` prefix +
    `workspace_matches?`; preview: `ensure_pane_workspace_scope`), performs the
    tmux/preview operation, and returns `{:ok, map}` or `{:error, reason}`.
 4. Result is recorded via `MCPAudit.record_terminal/3` /
@@ -246,7 +246,7 @@ capability.
 - Constructors allowlist metadata. Raw prompts, assistant text, thoughts, code,
   command/keys/text, and tool input/output are excluded. Deliberate handoff text
   is the sole current `operator_content` payload.
-- Inserted events publish `devide.agent_event.*` Jido signals with the same event
+- Inserted events publish `casein.agent_event.*` Jido signals with the same event
   id and Grok/Claude `agent_session_id`. Blocked Audit/Jido payloads also carry
   `agent_session_id` when the hook supplied one.
 
@@ -302,13 +302,13 @@ available. The list is surfaced through agent UI and `GET
   through a configured MFA (`:tidewave_url_provider`, etc.) so context code never
   references `CaseinWeb.Endpoint`. Keep this inversion.
 - **Bearer token is fully trusted on the host.** Scoping, not auth, is what
-  keeps agents inside their workspace. Terminal tools only touch `devide_`-prefixed
+  keeps agents inside their workspace. Terminal tools only touch `casein_`-prefixed
   sessions; `workspace_id` resolves both the manager UUID *and* the workspace
-  **name** to tmux prefixes (sessions are `devide_<name>_<sid>`). Cross-workspace
+  **name** to tmux prefixes (sessions are `casein_<name>_<sid>`). Cross-workspace
   access is rejected with `:workspace_mismatch`.
 - **Pass `workspace_id` on every call.** Generated configs append
   `?workspace_id=<uuid>` so the transport injects it; without it, tools can see
-  every `devide_*` session on the host.
+  every `casein_*` session on the host.
 - **Mutating agent-pane shortcuts require the `agent_pair` marker.**
   `terminal_send_agent_*` use `find_agent_pane(..., allow_process_fallback:
   false)` — they refuse to fall back to process detection, so they never type
@@ -327,18 +327,18 @@ available. The list is surfaced through agent UI and `GET
   profile directory or its provider credentials (`.credentials.json` for
   Claude, `auth.json` for Codex) are missing. This fallback is intended only for
   trusted single-operator environments; multi-user deployments should set
-  `DEVIDE_AGENT_AUTH_FALLBACK=none` so a workspace fails closed until its owner
-  signs in. Run `devide agent auth signin <runtime>` from a Casein workspace
-  once per provider, or `devide agent auth signin <owner> <runtime>` outside a
+  `CASEIN_AGENT_AUTH_FALLBACK=none` so a workspace fails closed until its owner
+  signs in. Run `casein agent auth signin <runtime>` from a Casein workspace
+  once per provider, or `casein agent auth signin <owner> <runtime>` outside a
   workspace. Workspaces named `<owner>-...` use that owner's profile after
-  sign-in. Use `devide agent auth status [workspace] [runtime]` or `devide agent
+  sign-in. Use `casein agent auth status [workspace] [runtime]` or `casein agent
   auth list` to audit profile and sign-in state.
 - **Registered owners never fall back to the host global login.**
   `~/.casein/agent-auth/owners` lists owner slugs (one per line, `#` comments)
-  managed with `devide agent auth register <owner>` / `unregister <owner>`.
+  managed with `casein agent auth register <owner>` / `unregister <owner>`.
   For a registered owner the profile dir applies even before sign-in, so
   Claude/Codex prompt for their own login inside the profile instead of using
-  the host global account. `DEVIDE_AGENT_AUTH_FALLBACK=none` treats every
+  the host global account. `CASEIN_AGENT_AUTH_FALLBACK=none` treats every
   owner as registered. Per-owner registration remains opt-in for compatibility;
   fail-closed authentication for every owner is the recommended policy for
   multi-user deployments.

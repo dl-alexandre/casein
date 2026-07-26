@@ -182,7 +182,7 @@ defmodule Casein.Agents.RunTest do
 
   describe "init failure" do
     test "unresolvable command argv stops the GenServer with {:spawn_failed, _}", %{root: root} do
-      bogus = "devide-no-such-bin-#{System.unique_integer([:positive])}"
+      bogus = "casein-no-such-bin-#{System.unique_integer([:positive])}"
       ws = "ws-#{System.unique_integer([:positive])}"
 
       # Commands.spawn returns {:error, {:executable_not_found, _}}, so init/1

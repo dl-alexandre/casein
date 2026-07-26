@@ -7,8 +7,8 @@ defmodule Casein.Release.Metadata do
   """
 
   @metadata_version 1
-  @default_app "devide"
-  @default_manifest_url "https://github.com/dl-alexandre/casein/releases/latest/download/devide-canary.json"
+  @default_app "casein"
+  @default_manifest_url "https://github.com/dl-alexandre/casein/releases/latest/download/casein-canary.json"
 
   @type t :: %{
           metadata_version: pos_integer(),
@@ -38,21 +38,21 @@ defmodule Casein.Release.Metadata do
       app: Keyword.get(opts, :app, @default_app),
       version: Keyword.get(opts, :version, app_version()),
       revision: Keyword.get(opts, :revision, resolve_revision()),
-      profile: Keyword.get(opts, :profile, env_or_default("DEVIDE_RELEASE_PROFILE", "devbox")),
+      profile: Keyword.get(opts, :profile, env_or_default("CASEIN_RELEASE_PROFILE", "devbox")),
       repo_adapter:
         Keyword.get(
           opts,
           :repo_adapter,
-          env_or_default("DEVIDE_RELEASE_REPO_ADAPTER", default_repo_adapter())
+          env_or_default("CASEIN_RELEASE_REPO_ADAPTER", default_repo_adapter())
         ),
       target:
-        Keyword.get(opts, :target, env_or_default("DEVIDE_RELEASE_TARGET", default_target())),
-      channel: Keyword.get(opts, :channel, env_or_default("DEVIDE_RELEASE_CHANNEL", "canary")),
+        Keyword.get(opts, :target, env_or_default("CASEIN_RELEASE_TARGET", default_target())),
+      channel: Keyword.get(opts, :channel, env_or_default("CASEIN_RELEASE_CHANNEL", "canary")),
       update_manifest_url:
         Keyword.get(
           opts,
           :update_manifest_url,
-          env_or_default("DEVIDE_UPDATE_MANIFEST_URL", @default_manifest_url)
+          env_or_default("CASEIN_UPDATE_MANIFEST_URL", @default_manifest_url)
         ),
       built_at: Keyword.get(opts, :built_at, DateTime.utc_now() |> DateTime.to_iso8601())
     }
@@ -93,7 +93,7 @@ defmodule Casein.Release.Metadata do
   Load metadata for the active release root.
 
   Resolution order:
-  1. `DEVIDE_RELEASE_ROOT` when set.
+  1. `CASEIN_RELEASE_ROOT` when set.
   2. `release-out/` under the current checkout when present.
   3. `_build/prod/rel/casein` when present.
   4. Synthesized dev metadata from git + Mix version.
@@ -116,7 +116,7 @@ defmodule Casein.Release.Metadata do
   @doc "Return the manifest URL for update checks (env override wins)."
   @spec manifest_url(t()) :: String.t()
   def manifest_url(%{update_manifest_url: url}) when is_binary(url) do
-    System.get_env("DEVIDE_UPDATE_MANIFEST_URL") || url
+    System.get_env("CASEIN_UPDATE_MANIFEST_URL") || url
   end
 
   @doc false
@@ -164,7 +164,7 @@ defmodule Casein.Release.Metadata do
   defp locate_release_root do
     candidates =
       [
-        System.get_env("DEVIDE_RELEASE_ROOT"),
+        System.get_env("CASEIN_RELEASE_ROOT"),
         Path.join(File.cwd!(), "release-out"),
         Path.join(File.cwd!(), "_build/prod/rel/casein")
       ]
@@ -182,7 +182,7 @@ defmodule Casein.Release.Metadata do
   end
 
   defp resolve_revision do
-    System.get_env("DEVIDE_GIT_REVISION") ||
+    System.get_env("CASEIN_GIT_REVISION") ||
       case System.cmd("git", ["rev-parse", "HEAD"], stderr_to_stdout: true) do
         {sha, 0} -> String.trim(sha)
         _ -> "unknown"

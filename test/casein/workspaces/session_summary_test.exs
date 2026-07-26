@@ -46,7 +46,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
     }
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_summary_u-alice" => [
+      "casein_summary_u-alice" => [
         %{
           id: "@1",
           index: 0,
@@ -60,7 +60,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-      "devide_summary_u-alice" => [
+      "casein_summary_u-alice" => [
         %{
           id: "%1",
           window_id: "@1",
@@ -112,16 +112,16 @@ defmodule Casein.Workspaces.SessionSummaryTest do
     }
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_summary_u-alice-old" => [
+      "casein_summary_u-alice-old" => [
         %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 10}
       ],
-      "devide_summary_u-alice-new" => [
+      "casein_summary_u-alice-new" => [
         %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 99}
       ]
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-      "devide_summary_u-alice-old" => [
+      "casein_summary_u-alice-old" => [
         %{
           id: "%1",
           window_id: "@1",
@@ -135,7 +135,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
           current_path: "/data/workspaces/alice/summary"
         }
       ],
-      "devide_summary_u-alice-new" => [
+      "casein_summary_u-alice-new" => [
         %{
           id: "%1",
           window_id: "@1",
@@ -159,10 +159,10 @@ defmodule Casein.Workspaces.SessionSummaryTest do
 
   test "newest_shell_sid resumes the most-recently-active shell" do
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_summary_u-alice-old" => [
+      "casein_summary_u-alice-old" => [
         %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 10}
       ],
-      "devide_summary_u-alice-new" => [
+      "casein_summary_u-alice-new" => [
         %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 99}
       ]
     })
@@ -183,7 +183,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
       path: "/data/workspaces/alice/summary"
     }
 
-    tmux_session = "devide_summary_agent"
+    tmux_session = "casein_summary_agent"
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
@@ -257,7 +257,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
       path: "/data/workspaces/alice/summary"
     }
 
-    tmux_session = "devide_summary_reported"
+    tmux_session = "casein_summary_reported"
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
@@ -304,7 +304,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
       path: "/data/workspaces/alice/summary"
     }
 
-    tmux_session = "devide_summary_transcript"
+    tmux_session = "casein_summary_transcript"
     path = transcript_fixture!()
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -392,7 +392,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
     # Only `alive` has a live tmux session; `dead` is a leftover worktree
     # directory with nothing running in it.
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_alive_u-alice" => [
+      "casein_alive_u-alice" => [
         %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 5}
       ]
     })
@@ -414,7 +414,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
     assert [%{live?: true}] = SessionSummary.build_many([ws])
   end
 
-  test "orphan_tmux_sessions mirrors devide tmux sessions outside known workspaces" do
+  test "orphan_tmux_sessions mirrors casein tmux sessions outside known workspaces" do
     ws = %Workspace{
       id: "summary-ws",
       name: "summary",
@@ -422,10 +422,10 @@ defmodule Casein.Workspaces.SessionSummaryTest do
     }
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_summary_u-alice" => [
+      "casein_summary_u-alice" => [
         %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 10}
       ],
-      "devide_ws-adapter_sid-adapter" => [
+      "casein_ws-adapter_sid-adapter" => [
         %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 99}
       ],
       "other_tmux" => [
@@ -436,11 +436,11 @@ defmodule Casein.Workspaces.SessionSummaryTest do
     summary = SessionSummary.build(ws)
 
     assert [orphan] = SessionSummary.orphan_tmux_sessions([summary])
-    assert orphan.id == "tmux:devide_ws-adapter_sid-adapter"
+    assert orphan.id == "tmux:casein_ws-adapter_sid-adapter"
     assert orphan.label == "ws-adapter"
     assert orphan.detail == "sid-adapter"
     assert orphan.href == nil
-    assert orphan.tmux_session == "devide_ws-adapter_sid-adapter"
+    assert orphan.tmux_session == "casein_ws-adapter_sid-adapter"
   end
 
   defp git_stub(branch, dirty_count) do

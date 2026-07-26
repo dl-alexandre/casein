@@ -35,8 +35,8 @@ defmodule CaseinWeb.API.DeployWebhookControllerTest do
   end
 
   test "returns 503 when the webhook secret is not configured", %{conn: conn} do
-    prev_secret = System.get_env("DEVIDE_DEPLOY_WEBHOOK_SECRET")
-    System.delete_env("DEVIDE_DEPLOY_WEBHOOK_SECRET")
+    prev_secret = System.get_env("CASEIN_DEPLOY_WEBHOOK_SECRET")
+    System.delete_env("CASEIN_DEPLOY_WEBHOOK_SECRET")
 
     deployment =
       :casein
@@ -47,8 +47,8 @@ defmodule CaseinWeb.API.DeployWebhookControllerTest do
 
     on_exit(fn ->
       if prev_secret,
-        do: System.put_env("DEVIDE_DEPLOY_WEBHOOK_SECRET", prev_secret),
-        else: System.delete_env("DEVIDE_DEPLOY_WEBHOOK_SECRET")
+        do: System.put_env("CASEIN_DEPLOY_WEBHOOK_SECRET", prev_secret),
+        else: System.delete_env("CASEIN_DEPLOY_WEBHOOK_SECRET")
     end)
 
     conn =

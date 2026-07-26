@@ -48,14 +48,14 @@ grant, is bound to one workspace/private leader/tmux session/agent pane, and is
 intersected with current workspace mode and write-unlock policy on every request.
 It cannot call `search_tools` or `invoke_tool`, use a different MCP endpoint, or
 reuse another bearer's streamable session id. All terminal tools still touch only
-Casein-managed tmux sessions (`devide_*` prefix), never unrelated sessions.
+Casein-managed tmux sessions (`casein_*` prefix), never unrelated sessions.
 
 **Pass `workspace_id` on every call unless the MCP URL is pre-scoped.** Generated
 same-host agent configs include `?workspace_id=<manager UUID>` on the MCP URL,
 and the transport injects that value into tool calls when the agent omits it.
 When set, discovery and mutation are scoped to that workspace's sessions. Casein
 resolves both the manager UUID and the workspace **name** to tmux prefixes —
-sessions are named `devide_<workspace_name>_<sid>`, not `devide_<uuid>_`.
+sessions are named `casein_<workspace_name>_<sid>`, not `casein_<uuid>_`.
 Cross-workspace session access is rejected with `workspace_mismatch`.
 
 Global tokens may initialize and list the available tools, but Terminal MCP
@@ -191,13 +191,13 @@ reconciled by staleness rules (a live title spinner always wins over a stale
 report; `blocked`/`done` are never inferred from the title):
 
 - **Explicit reports** via the MCP tool below. Launched agents report
-  automatically (opt out of all of it with `DEVIDE_AGENT_STATE_HOOKS=0`):
+  automatically (opt out of all of it with `CASEIN_AGENT_STATE_HOOKS=0`):
   - **Claude Code**: hooks in a materialized `--settings` file run
     `casein-agent-state.sh` on UserPromptSubmit/PreToolUse (working),
     Notification (blocked), Stop (done), SessionStart/End (idle). The
     materializer stages the script into the workspace MCP home and the hook
-    resolves it via `$DEVIDE_AGENT_MCP_HOME`, so it works for any paired
-    project, not only the dev_ide checkout itself.
+    resolves it via `$CASEIN_AGENT_MCP_HOME`, so it works for any paired
+    project, not only the casein checkout itself.
   - **Grok**: the launcher installs a global hook file
     (`~/.grok/hooks/casein-agent-state.json`, from
     `scripts/agent-hooks/grok-casein-agent-state.json`) that runs the same
@@ -257,8 +257,8 @@ call to keep long-polling.
 
 ### Agent skills (cross-repo)
 
-Casein-infrastructure skills live in the dev_ide repo under `.claude/skills`, so
-they only travel with dev_ide checkouts. But agents routinely run in **other**
+Casein-infrastructure skills live in the casein repo under `.claude/skills`, so
+they only travel with casein checkouts. But agents routinely run in **other**
 product-repo worktrees (e.g. auditing OneBackend-v3) that do not carry them — so
 an orchestrator there could not invoke `delegate-to-grok` even though delegation
 is host infrastructure, not app code.
@@ -274,13 +274,13 @@ refreshes when the canonical source changes (`scripts/lib/agent-skills.sh`). The
 allowlist defaults to `delegate-to-grok`, `preview-ui-walk`, and
 `workspace-agent-pair` (re-pair any product workspace's agent MCP + skills);
 project-only skills like `verify` are excluded because they only make sense
-inside the dev_ide checkout, where the project `.claude/skills` copy already
-provides them. Override with `DEVIDE_GLOBAL_AGENT_SKILLS="a b c"`, or opt out
-entirely with `DEVIDE_AGENT_SKILLS=0`.
+inside the casein checkout, where the project `.claude/skills` copy already
+provides them. Override with `CASEIN_GLOBAL_AGENT_SKILLS="a b c"`, or opt out
+entirely with `CASEIN_AGENT_SKILLS=0`.
 
 OpenCode MCP is injected as project `.opencode/opencode.json` from the workspace
-staging tree whenever the launch is paired (`DEVIDE_WORKSPACE_ID` +
-`DEVIDE_AGENT_MCP_HOME`) — primary checkout or agent worktree. Grok still keeps
+staging tree whenever the launch is paired (`CASEIN_WORKSPACE_ID` +
+`CASEIN_AGENT_MCP_HOME`) — primary checkout or agent worktree. Grok still keeps
 project `.mcp.json` injection worktree-only to avoid colliding shared primary
 checkouts.
 
@@ -295,11 +295,11 @@ bash scripts/ensure-workspace-agent-pair.sh \
 
 ```bash
 source .devbox-agent.env
-WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci
+WORKSPACE_ID=$CASEIN_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci
 ```
 
 On the milc devbox, MCP is also reachable at
-`https://devide.devbox.milcgroup.com/api/terminals/mcp` (same bearer token).
+`https://casein.devbox.milcgroup.com/api/terminals/mcp` (same bearer token).
 Same-host agents may use `http://127.0.0.1:4000/api/terminals/mcp`.
 
 Deploy durability: commit and push to `master` before relying on devbox
@@ -314,7 +314,7 @@ behavior — `deploy-devbox.yml` replaces `/opt/casein/release` from git. See
    recommended session, agent pane safety, and exact `next_tool` /
    `next_arguments`.
 4. Call `terminal_list_sessions` with `workspace_id` to discover session names
-   (e.g. `devide_my_workspace_u-alice-abcd1234`).
+   (e.g. `casein_my_workspace_u-alice-abcd1234`).
 5. Call `terminal_topology` with that `session` and `workspace_id` to inspect
    windows and panes (each pane carries an id like `%3`).
 6. Read output with `terminal_capture` (pass `pane`, `lines` to tail,
@@ -323,7 +323,7 @@ behavior — `deploy-devbox.yml` replaces `/opt/casein/release` from git. See
    (a shell command + Enter). Target the **agent** pane explicitly.
    Prefer `terminal_paste_agent_text` for multiline/literal text.
 
-All session-scoped tools require a `devide_`-prefixed session that currently
+All session-scoped tools require a `casein_`-prefixed session that currently
 exists; a `pane` must belong to that session.
 
 ## Smoke Test
@@ -331,7 +331,7 @@ exists; a `pane` must belong to that session.
 Set the base URL, token, and workspace:
 
 ```bash
-export DEVIDE_URL=http://localhost:4000
+export CASEIN_URL=http://localhost:4000
 export CASEIN_API_TOKEN=...
 export WORKSPACE_ID=my-workspace-id
 ```
@@ -345,7 +345,7 @@ WORKSPACE_ID=$WORKSPACE_ID bash scripts/verify_agent_pairing.sh
 Initialize:
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/terminals/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -359,7 +359,7 @@ curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
 List tools:
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/terminals/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -372,7 +372,7 @@ curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
 List live sessions (scoped):
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/terminals/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -389,7 +389,7 @@ curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
 Read the tail of a pane (plain text):
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/terminals/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -400,7 +400,7 @@ curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
       "name": "terminal_capture",
       "arguments": {
         "workspace_id": "'"$WORKSPACE_ID"'",
-        "session": "devide_my_workspace_main",
+        "session": "casein_my_workspace_main",
         "pane": "%3",
         "lines": 50,
         "ansi": false
@@ -412,7 +412,7 @@ curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
 Run a command in the agent pane:
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/terminals/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -423,7 +423,7 @@ curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
       "name": "terminal_send_command",
       "arguments": {
         "workspace_id": "'"$WORKSPACE_ID"'",
-        "session": "devide_my_workspace_main",
+        "session": "casein_my_workspace_main",
         "pane": "%3",
         "command": "mix test"
       }
@@ -434,7 +434,7 @@ curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
 ## Notes
 
 `terminal_send_keys` and `terminal_send_command` inject input into a live
-shell. Access control is the API token plus the `devide_` session guardrail and
+shell. Access control is the API token plus the `casein_` session guardrail and
 workspace scoping; command execution can additionally be constrained with the
 configurable [command policy](#command-policy).
 `terminal_capture` returns the full scrollback by default; pass `lines` to

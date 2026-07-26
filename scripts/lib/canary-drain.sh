@@ -21,40 +21,40 @@
 
 # Stale instance JSON records store a PID that may be reused by unrelated
 # processes (mix test, opencode, etc.). Require an /opt/casein/release beam.
-dev_ide_release_pid_alive() {
+casein_release_pid_alive() {
   pid="$1"
   [ -n "${pid}" ] || return 1
   kill -0 "${pid}" 2>/dev/null || return 1
   cmdline="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
   case "${cmdline}" in
     */opt/casein/release/*) return 0 ;;
-    *dev_ide_*@*) return 0 ;;
+    *casein_*@*) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 # Instance liveness with the systemd unit as the authority. The heartbeat pid
-# can be poisoned: a secondary boot under the same DEVIDE_INSTANCE_UUID
+# can be poisoned: a secondary boot under the same CASEIN_INSTANCE_UUID
 # (release eval, seeds) overwrites the record with its own short-lived pid,
 # which then reads as dead. Treating such a record as stale deleted it before
 # the drain loop ran — every deploy logged "no old instances found to drain"
 # and the superseded instance ran forever (seen 2026-07-07: zombie canaries
 # fighting the live one over tmux window sizes).
-dev_ide_instance_alive() {
+casein_instance_alive() {
   inst_uuid="$1"
   inst_pid="$2"
-  if [ -n "${inst_uuid}" ] && systemctl is-active --quiet "devide-${inst_uuid}" 2>/dev/null; then
+  if [ -n "${inst_uuid}" ] && systemctl is-active --quiet "casein-${inst_uuid}" 2>/dev/null; then
     return 0
   fi
-  dev_ide_release_pid_alive "${inst_pid}"
+  casein_release_pid_alive "${inst_pid}"
 }
 
-# UUIDs of running devide-<16hex> canary units, one per line. systemd is the
+# UUIDs of running casein-<16hex> canary units, one per line. systemd is the
 # source of truth for what is actually running; instance records are advisory.
 running_canary_uuids() {
-  systemctl list-units --type=service --state=running --plain --no-legend 'devide-*' 2>/dev/null |
+  systemctl list-units --type=service --state=running --plain --no-legend 'casein-*' 2>/dev/null |
     awk '{print $1}' |
-    sed -n 's/^devide-\([0-9a-f]\{16\}\)\.service$/\1/p'
+    sed -n 's/^casein-\([0-9a-f]\{16\}\)\.service$/\1/p'
 }
 
 # UUID that current.sock currently resolves to, or empty. The drain loop must
@@ -91,11 +91,11 @@ canary_uuid_in_list() {
 # SIGKILL — so escalate rather than leave a zombie still fighting tmux sizes.
 stop_canary_unit() {
   stop_uuid="$1"
-  if sudo -n systemctl stop "devide-${stop_uuid}" >/dev/null 2>&1; then
+  if sudo -n systemctl stop "casein-${stop_uuid}" >/dev/null 2>&1; then
     return 0
   fi
 
-  stop_pid="$(systemctl show "devide-${stop_uuid}" -p MainPID --value 2>/dev/null || true)"
+  stop_pid="$(systemctl show "casein-${stop_uuid}" -p MainPID --value 2>/dev/null || true)"
   if [ -z "${stop_pid}" ] || [ "${stop_pid}" = "0" ]; then
     # No live main process — nothing to signal (already down, or unit gone).
     return 0
@@ -109,11 +109,11 @@ stop_canary_unit() {
     sleep 1
   done
 
-  log "devide-${stop_uuid} ignored SIGTERM (pid ${stop_pid}) — escalating to SIGKILL"
+  log "casein-${stop_uuid} ignored SIGTERM (pid ${stop_pid}) — escalating to SIGKILL"
   kill -9 "${stop_pid}" 2>/dev/null || true
   sleep 1
   if kill -0 "${stop_pid}" 2>/dev/null; then
-    log "WARNING: devide-${stop_uuid} (pid ${stop_pid}) still alive after SIGKILL"
+    log "WARNING: casein-${stop_uuid} (pid ${stop_pid}) still alive after SIGKILL"
   fi
   return 0
 }
@@ -139,7 +139,7 @@ proc_cmdline() { tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null || true; }
 # as "<path> (deleted)".
 proc_cwd() { readlink "/proc/$1/cwd" 2>/dev/null || true; }
 
-# True when pid is a leaked dev_ide beam that is safe to reap: one of our beams
+# True when pid is a leaked casein beam that is safe to reap: one of our beams
 # (a mix phx.server dev server or a release node), with a DELETED working
 # directory. The live release and running canaries run from /opt/casein with
 # cwd /opt/casein (never deleted), so the deleted-cwd gate alone already spares
@@ -151,7 +151,7 @@ orphaned_dev_server() {
   case "${od_cmdline}" in
     */opt/casein/release/*) return 1 ;;
     *phx.server*) : ;;
-    *dev_ide_*@*) : ;;
+    *casein_*@*) : ;;
     *) return 1 ;;
   esac
   case "$(proc_cwd "${od_pid}")" in
@@ -227,8 +227,8 @@ drain_instance() {
 
   # Unreachable over its socket/port. If its unit is still running it is a
   # zombie that will never drain itself — stop it directly.
-  if [ -n "${d_uuid}" ] && systemctl is-active --quiet "devide-${d_uuid}" 2>/dev/null; then
-    log "drain unreachable for running unit devide-${d_uuid} — stopping it"
+  if [ -n "${d_uuid}" ] && systemctl is-active --quiet "casein-${d_uuid}" 2>/dev/null; then
+    log "drain unreachable for running unit casein-${d_uuid} — stopping it"
     stop_canary_unit "${d_uuid}"
   else
     log "drain skipped (${d_uuid:-record-only}) — instance not reachable and not running"

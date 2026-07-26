@@ -13,7 +13,7 @@ defmodule Casein.Config.FilterParametersTest do
     access_token
     refresh_token
     workspace_api_tokens
-    dev_ide_api_token
+    casein_api_token
     password
     secret
   )

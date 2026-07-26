@@ -3,7 +3,7 @@ defmodule Casein.Previews.TerminalOutput do
 
   alias Casein.Previews.Deps
 
-  @session_prefix "devide_"
+  @session_prefix "casein_"
   @max_lines 300
   @max_panes 12
 

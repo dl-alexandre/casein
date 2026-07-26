@@ -31,7 +31,7 @@ defmodule Casein.ProcessEnv do
       defp impl, do: Casein.ProcessEnv.get(:casein, :git_adapter, Casein.Git.LocalAdapter)
   """
 
-  @absent :"$devide_process_env_absent"
+  @absent :"$casein_process_env_absent"
 
   @doc """
   Resolve `key`, preferring a process-scoped override and falling back to

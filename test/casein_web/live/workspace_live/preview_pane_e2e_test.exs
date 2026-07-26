@@ -125,7 +125,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneE2ETest do
 
   test "preview pane renders the fixture matching the golden", %{bypass: bypass} do
     path = seed_workspace!()
-    session = "devide_ws_e2e"
+    session = "casein_ws_e2e"
     pane_id = "%e2e"
     seed_session!(session, pane_id)
     url = "http://localhost:#{bypass.port}/"

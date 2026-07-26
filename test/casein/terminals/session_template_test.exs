@@ -66,7 +66,7 @@ defmodule Casein.Terminals.SessionTemplateTest do
                name: "saved_layout",
                description: "Saved export",
                body: body,
-               source_session: "devide_ws",
+               source_session: "casein_ws",
                schema_version: 2
              })
 
@@ -186,7 +186,7 @@ defmodule Casein.Terminals.SessionTemplateTest do
     web_root = Path.join(root, "apps/web")
 
     topology = %{
-      session: "devide_alpha_u-dev",
+      session: "casein_alpha_u-dev",
       version: 42,
       active_window_id: "@1",
       active_pane_id: "%2",
@@ -244,7 +244,7 @@ defmodule Casein.Terminals.SessionTemplateTest do
     assert template["version"] == 2
     assert template["name"] == "current_layout"
     assert template["root"] == "${workspace_root}"
-    assert template["metadata"]["session"] == "devide_alpha_u-dev"
+    assert template["metadata"]["session"] == "casein_alpha_u-dev"
     assert template["metadata"]["topology_version"] == 42
     assert template["startup"] == %{"window" => "server", "pane" => "iex"}
 
@@ -312,7 +312,7 @@ defmodule Casein.Terminals.SessionTemplateTest do
   end
 
   test "execute persists agent_pair pane roles in tmux metadata" do
-    session = "devide_alpha_agent_pair"
+    session = "casein_alpha_agent_pair"
     root = temp_workspace_root!()
     TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{session => "@9"})
 
@@ -348,7 +348,7 @@ defmodule Casein.Terminals.SessionTemplateTest do
 
   defp temp_workspace_root! do
     root =
-      Path.join(System.tmp_dir!(), "devide-template-root-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-template-root-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(root)
     on_exit(fn -> File.rm_rf!(root) end)

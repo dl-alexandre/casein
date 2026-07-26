@@ -21,15 +21,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE="${DEVIDE_PREVIEW_HOME:-$(dirname "$ROOT")/.casein-preview}"
+STATE="${CASEIN_PREVIEW_HOME:-$(dirname "$ROOT")/.casein-preview}"
 INST_DIR="$STATE/instances"
 ROUTER_DIR="$STATE/router"
 CADDYFILE="$ROUTER_DIR/Caddyfile"
 PIDFILE="$ROUTER_DIR/caddy.pid"
 ROUTE_COUNT_FILE="$ROUTER_DIR/route-count"
-LISTEN="${DEVIDE_PREVIEW_ROUTER_LISTEN:-:41080}"
-ADMIN="${DEVIDE_PREVIEW_ROUTER_ADMIN:-127.0.0.1:41081}"
-DOMAIN="${DEVIDE_PREVIEW_DOMAIN:-devbox.milcgroup.com}"
+LISTEN="${CASEIN_PREVIEW_ROUTER_LISTEN:-:41080}"
+ADMIN="${CASEIN_PREVIEW_ROUTER_ADMIN:-127.0.0.1:41081}"
+DOMAIN="${CASEIN_PREVIEW_DOMAIN:-devbox.milcgroup.com}"
 
 mkdir -p "$ROUTER_DIR"
 json_get() { sed -n "s/.*\"$2\":\"\\([^\"]*\\)\".*/\\1/p" "$1"; }

@@ -21,7 +21,7 @@ Casein refuses to boot in prod with any of these missing — see
 | Variable                    | Purpose                                                              |
 |-----------------------------|----------------------------------------------------------------------|
 | `SECRET_KEY_BASE`           | Cookie + token signing key. Generate with `mix phx.gen.secret`.       |
-| `DATABASE_URL`              | Postgres URL: `ecto://user:pass@host:5432/dev_ide_prod`.              |
+| `DATABASE_URL`              | Postgres URL: `ecto://user:pass@host:5432/casein_prod`.              |
 | `PHX_HOST`                  | The public hostname (e.g. `cloud-1.dev`). Used for cookie scope + URL. |
 | `PHX_SERVER`                | Set to `true` to actually accept HTTP traffic (set in Dockerfile).    |
 | `CASEIN_API_TOKEN`         | Bearer token for the API + MCP endpoints. The API returns 503 if unset. |
@@ -39,7 +39,7 @@ repository can keep those site-specific values outside the core checkout in a
 strict JSON file:
 
 ```bash
-export CASEIN_OPERATOR_CONFIG_FILE=/etc/devide/operator.json
+export CASEIN_OPERATOR_CONFIG_FILE=/etc/casein/operator.json
 ```
 
 [`config/operator.example.json`](../config/operator.example.json) documents the
@@ -69,7 +69,7 @@ locally so you can validate the production Dockerfile end-to-end
 without provisioning a real remote machine.
 
 For the single-machine or local-network development flow, including
-`dev_ide.lan.up`, direct `home` workspace, port-80 LAN edge, and optional
+`casein.lan.up`, direct `home` workspace, port-80 LAN edge, and optional
 mkcert HTTPS, see
 [`docs/lan-access.md`](lan-access.md).
 
@@ -91,7 +91,7 @@ mkdir -p workspaces-local/alpha
 
 # 3. Build, migrate, run.
 docker compose build
-docker compose run --rm dev_ide /app/bin/migrate
+docker compose run --rm casein /app/bin/migrate
 docker compose up
 ```
 
@@ -118,7 +118,7 @@ opening a browser):
 # up under the `dev` profile so a workspace exists in the picker.
 
 # 1. Sign a user token from inside the running release.
-TOKEN=$(docker compose exec -T dev_ide /app/bin/dev_ide rpc \
+TOKEN=$(docker compose exec -T casein /app/bin/casein rpc \
     'IO.write(CaseinWeb.ChannelAuth.sign_user_token("smoke-user"))')
 
 # 2. Run the smoke. Sends `echo <marker>\n` as a channel `input`
@@ -158,14 +158,14 @@ Everything runs in a uniquely named Compose project and is removed on exit.
 
 The host needs Docker, the Docker Compose plugin, and `curl`; no local
 Elixir/Erlang, Node, or Python installation is used. Set
-`DEVIDE_PORTABLE_SMOKE_TIMEOUT_SECONDS` to extend the default 120-second boot
-wait on slow builders. Set `DEVIDE_PORTABLE_SMOKE_KEEP_IMAGES=1` to retain the
+`CASEIN_PORTABLE_SMOKE_TIMEOUT_SECONDS` to extend the default 120-second boot
+wait on slow builders. Set `CASEIN_PORTABLE_SMOKE_KEEP_IMAGES=1` to retain the
 two built images for debugging.
 
 ## Building the image (without compose)
 
 ```bash
-docker build -t dev_ide:latest .
+docker build -t casein:latest .
 ```
 
 The build is a two-stage Dockerfile:
@@ -173,10 +173,10 @@ The build is a two-stage Dockerfile:
 - **builder** (`hexpm/elixir:1.20.0-erlang-28.5-debian-bookworm-...-slim`;
   versions are `ARG`s at the top of the Dockerfile)
   pulls deps, compiles assets and Elixir code, builds the erlexec port
-  driver, and runs `mix release dev_ide`.
+  driver, and runs `mix release casein`.
 - **runtime** (`debian:bookworm-...-slim`) installs `tmux`, `openssl`,
   `libstdc++6`, `libncurses6`, `ca-certificates`, `locales`; copies
-  the release; runs as a non-root `dev_ide` user.
+  the release; runs as a non-root `casein` user.
 
 The release bundles ERTS so the runtime image has no Erlang/Elixir
 package dependency.
@@ -191,10 +191,10 @@ docker run --rm \
   -e PHX_HOST="$PHX_HOST" \
   -e CASEIN_API_TOKEN="$CASEIN_API_TOKEN" \
   -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
-  dev_ide:latest /app/bin/migrate
+  casein:latest /app/bin/migrate
 
 # 2. Start the server.
-docker run -d --name dev_ide \
+docker run -d --name casein \
   -p 4000:4000 \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   -e DATABASE_URL="$DATABASE_URL" \
@@ -203,7 +203,7 @@ docker run -d --name dev_ide \
   -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
   -e CASEIN_WORKSPACES_ROOT=/workspaces \
   -v /srv/workspaces:/workspaces \
-  dev_ide:latest
+  casein:latest
 ```
 
 The migrate step is intentionally explicit — it lets a CI/CD pipeline
@@ -259,10 +259,10 @@ curl -sf "http://${PHX_HOST}/api/workspaces" \
 ## Upgrades
 
 ```bash
-docker pull dev_ide:<new>
-docker run --rm <env...> dev_ide:<new> /app/bin/migrate
-docker stop dev_ide && docker rm dev_ide
-docker run -d --name dev_ide <env...> dev_ide:<new>
+docker pull casein:<new>
+docker run --rm <env...> casein:<new> /app/bin/migrate
+docker stop casein && docker rm casein
+docker run -d --name casein <env...> casein:<new>
 ```
 
 Sessions are durable across the restart: tmux survives in the kernel,
@@ -281,7 +281,7 @@ the operational ground truth in the meantime.
 ## macOS (Darwin) native builds
 
 A release can be built and run natively on macOS with
-`MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite mix dev_ide.release.lan`
+`MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite mix casein.release.lan`
 (toolchain via mise, per AGENTS.md). Two Darwin-specific hazards are
 handled by the build itself:
 
@@ -291,13 +291,13 @@ handled by the build itself:
   enforce the same dependency graph on APFS, NTFS, and case-sensitive Linux.
 - **Tailwind's Bun-compiled CLI.** Darwin kills it with SIGKILL
   (`Code Signature Invalid`) unless it is ad-hoc re-signed after
-  download; the `dev_ide.release.lan` alias does this automatically
+  download; the `casein.release.lan` alias does this automatically
   (`resign_bun_binaries` in mix.exs).
 
-Run the release directly (`bin/migrate`, `bin/dev_ide daemon`) with an
-env file — `bin/devide lan install` manages systemd units and is
-Linux-only. After `bin/dev_ide stop`, wait for epmd to drop the
-`dev_ide` name before starting again or the new node fails with "name
+Run the release directly (`bin/migrate`, `bin/casein daemon`) with an
+env file — `bin/casein lan install` manages systemd units and is
+Linux-only. After `bin/casein stop`, wait for epmd to drop the
+`casein` name before starting again or the new node fails with "name
 in use". Note the same collision still makes the Boundary compiler
 flaky in *dev* on macOS (occasional spurious `unknown boundary`
 warnings); the durable fix is renaming one module of each pair.

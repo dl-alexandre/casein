@@ -5,20 +5,20 @@
 //
 // Drives an isolated dev-preview instance (see scripts/dev-preview-instance.sh),
 // focuses the raw Ghostty terminal, types isolated keystrokes, and reads back
-// window.devideTermLatency.stats() (p50/p95 of perceived echo latency).
+// window.caseinTermLatency.stats() (p50/p95 of perceived echo latency).
 //
 // Usage:
 //   node scripts/term-latency-probe.mjs [baseURL] [samples]
 //   node scripts/term-latency-probe.mjs http://127.0.0.1:4196/workspaces/preview-sandbox?host=local 50
 //
-import { chromium } from "/data/workspaces/dalexandre/dev_ide/priv/scripts/node_modules/playwright/index.mjs";
+import { chromium } from "/data/workspaces/dalexandre/casein/priv/scripts/node_modules/playwright/index.mjs";
 
 const base =
   process.argv[2] ||
   "http://127.0.0.1:4196/workspaces/preview-sandbox?host=local";
 const samples = parseInt(process.argv[3] || "50", 10);
 const injects = [0, 40, 80, 160];
-const authEmail = process.env.DEVIDE_FORWARD_AUTH_EMAIL || "admin@local";
+const authEmail = process.env.CASEIN_FORWARD_AUTH_EMAIL || "admin@local";
 
 const sep = base.includes("?") ? "&" : "?";
 const browser = await chromium.launch();
@@ -40,7 +40,7 @@ for (const inject of injects) {
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
 
   await page
-    .waitForFunction(() => typeof window.devideTermLatency === "object", { timeout: 25000 })
+    .waitForFunction(() => typeof window.caseinTermLatency === "object", { timeout: 25000 })
     .catch(() => {});
   const input = await page
     .waitForSelector('[data-ghostty-input="true"]', { state: "attached", timeout: 25000 })
@@ -56,7 +56,7 @@ for (const inject of injects) {
 
   await page.click('[phx-hook="GhosttyTerminal"]').catch(() => {});
   await input.focus().catch(() => {});
-  await page.evaluate(() => window.devideTermLatency && window.devideTermLatency.reset());
+  await page.evaluate(() => window.caseinTermLatency && window.caseinTermLatency.reset());
 
   // Type isolated printable chars; gaps keep one keystroke ↔ one echo frame.
   // Space keystrokes wider than the largest round trip so only one is ever in
@@ -70,7 +70,7 @@ for (const inject of injects) {
   await page.waitForTimeout(500);
 
   const stats = await page.evaluate(() =>
-    window.devideTermLatency ? window.devideTermLatency.stats() : null
+    window.caseinTermLatency ? window.caseinTermLatency.stats() : null
   );
   rows.push({ inject, ...(stats || { error: "no stats" }) });
   await context.close();

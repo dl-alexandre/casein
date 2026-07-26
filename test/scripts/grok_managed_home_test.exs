@@ -12,7 +12,7 @@ defmodule Scripts.GrokManagedHomeTest do
     CASEIN_API_TOKEN
     CASEIN_ADMIN_API_TOKEN
     CASEIN_WORKSPACE_API_TOKENS
-    DEVIDE_GROK_XAI_API_KEY
+    CASEIN_GROK_XAI_API_KEY
   )
 
   setup do

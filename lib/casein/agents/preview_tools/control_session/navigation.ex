@@ -51,7 +51,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Navigation do
   end
 
   defp self_preview_recursion_target?(_workspace, url) when is_binary(url),
-    do: Shared.devide_loopback_url?(url)
+    do: Shared.casein_loopback_url?(url)
 
   defp self_preview_recursion_target?(_workspace, _url), do: false
 
@@ -81,7 +81,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Navigation do
   def maybe_put_self_preview_snapshot(payload, _result), do: payload
 
   def maybe_navigate_to_workspace(workspace, session) do
-    if Shared.loopback_devide_session?(session) do
+    if Shared.loopback_casein_session?(session) do
       route = Shared.workspace_viewer_route(workspace)
 
       case PreviewControl.navigate(session.id, route) do

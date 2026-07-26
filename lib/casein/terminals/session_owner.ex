@@ -1318,12 +1318,12 @@ defmodule Casein.Terminals.SessionOwner do
   #
   # Conservative by construction: only true when we positively have our own
   # managed socket AND `current.sock` resolves to a DIFFERENT one. Dev/test and
-  # the legacy service (no DEVIDE_HTTP_SOCKET) read as not-superseded, as does a
+  # the legacy service (no CASEIN_HTTP_SOCKET) read as not-superseded, as does a
   # brand-new instance before the deploy swaps `current.sock` to it (it is
   # legitimately not yet the owner). Reads the env directly — no cross-process
   # call on this per-owner 30s hot path.
   defp superseded? do
-    case System.get_env("DEVIDE_HTTP_SOCKET") do
+    case System.get_env("CASEIN_HTTP_SOCKET") do
       our_socket when is_binary(our_socket) and our_socket != "" ->
         case File.read_link(current_socket_path()) do
           {:ok, ^our_socket} -> false

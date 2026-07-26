@@ -21,8 +21,8 @@ defmodule Casein.Deployment.OperatorConfigTest do
                  "deploy_service" => "example-deploy.service",
                  "git_branch" => "stable",
                  "git_credential_helper" => "example-credential-helper",
-                 "git_remote" => "https://example.com/acme/devide.git",
-                 "github_repo" => "acme/devide",
+                 "git_remote" => "https://example.com/acme/casein.git",
+                 "github_repo" => "acme/casein",
                  "last_deploy_path" => "/run/example/last-deploy.json",
                  "ls_remote_timeout_ms" => 4_000,
                  "phase_stale_in_progress_ms" => %{"activate" => 600_000},
@@ -117,7 +117,7 @@ defmodule Casein.Deployment.OperatorConfigTest do
     path =
       Path.join(
         System.tmp_dir!(),
-        "devide-operator-config-#{System.unique_integer([:positive])}.json"
+        "casein-operator-config-#{System.unique_integer([:positive])}.json"
       )
 
     on_exit(fn -> File.rm(path) end)

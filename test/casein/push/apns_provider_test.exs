@@ -14,7 +14,7 @@ defmodule Casein.Push.APNSProviderTest do
     origin_id: "origin-local-mac",
     origin_name: "Local Mac",
     locator: %{origin_id: "origin-local-mac", workspace_id: "ws-7", session_id: "run-1"},
-    deep_link: "devide://review/needs_review%3Aws-7%3Arun-1"
+    deep_link: "casein://review/needs_review%3Aws-7%3Arun-1"
   }
 
   setup do
@@ -23,7 +23,7 @@ defmodule Casein.Push.APNSProviderTest do
     Application.put_env(:casein, APNSProvider,
       team_id: "TEAM123456",
       key_id: "KEY1234567",
-      topic: "com.example.devide_mob",
+      topic: "com.example.casein_mob",
       private_key: private_key_pem(),
       http_client: Casein.Push.APNS.StubHTTP,
       now_fun: fn -> 1_800_000_000 end
@@ -49,7 +49,7 @@ defmodule Casein.Push.APNSProviderTest do
     assert_receive {:apns_request, url, headers, body}, 1_000
 
     assert url == "https://api.sandbox.push.apple.com/3/device/apns-device-token"
-    assert {"apns-topic", "com.example.devide_mob"} in headers
+    assert {"apns-topic", "com.example.casein_mob"} in headers
     assert {"apns-push-type", "alert"} in headers
     assert {"apns-priority", "10"} in headers
 
@@ -70,7 +70,7 @@ defmodule Casein.Push.APNSProviderTest do
     assert body["id"] == "needs_review:ws-7:run-1"
     assert body["workspace_id"] == "ws-7"
     assert body["action"] == "mobile.needs_review"
-    assert body["deep_link"] == "devide://review/needs_review%3Aws-7%3Arun-1"
+    assert body["deep_link"] == "casein://review/needs_review%3Aws-7%3Arun-1"
     assert body["card_id"] == "needs_review:ws-7:run-1"
     assert body["card_type"] == "needs_review"
     assert body["session_id"] == "run-1"
@@ -94,7 +94,7 @@ defmodule Casein.Push.APNSProviderTest do
     Application.put_env(:casein, APNSProvider,
       team_id: "TEAM123456",
       key_id: "KEY1234567",
-      topic: "com.example.devide_mob",
+      topic: "com.example.casein_mob",
       private_key: private_key_pem(),
       http_client: Casein.Push.APNS.StubHTTP,
       environment: "production"

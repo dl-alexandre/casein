@@ -20,7 +20,7 @@ case "${CASEIN_MANAGE_NPM_PREFIX:-}" in
     exit 0
     ;;
   *)
-    if [[ ! -f /etc/casein/devide.env ]]; then
+    if [[ ! -f /etc/casein/casein.env ]]; then
       echo "npm global prefix left alone (not a Casein-managed host; set CASEIN_MANAGE_NPM_PREFIX=1 to opt in)"
       exit 0
     fi

@@ -1,14 +1,14 @@
 {
-  "name": "devide-first-party",
+  "name": "casein-first-party",
   "interface": {
     "displayName": "Casein First-party"
   },
   "plugins": [
     {
-      "name": "devide",
+      "name": "casein",
       "source": {
         "source": "local",
-        "path": "./plugins/devide"
+        "path": "./plugins/casein"
       },
       "policy": {
         "installation": "AVAILABLE",

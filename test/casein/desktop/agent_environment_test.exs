@@ -39,24 +39,24 @@ defmodule Casein.Desktop.AgentEnvironmentTest do
 
     assert {:ok, env} = AgentEnvironment.build(workspace, checkout)
     assert env["CASEIN_API_TOKEN"] =~ ~r/^[0-9a-f]{64}$/
-    assert env["DEVIDE_WORKSPACE_ID"] == "desktop-ws"
-    assert env["DEVIDE_CHECKOUT"] == checkout
+    assert env["CASEIN_WORKSPACE_ID"] == "desktop-ws"
+    assert env["CASEIN_CHECKOUT"] == checkout
 
-    assert env["DEVIDE_TERMINAL_MCP_URL"] ==
+    assert env["CASEIN_TERMINAL_MCP_URL"] ==
              "http://127.0.0.1:58068/api/terminals/mcp?workspace_id=desktop-ws"
 
     refute File.exists?(Path.join(checkout, ".mcp.json"))
 
-    staging = env["DEVIDE_AGENT_MCP_HOME"]
+    staging = env["CASEIN_AGENT_MCP_HOME"]
     config = File.read!(Path.join(staging, ".mcp.json"))
     assert config =~ "casein-terminal-desktop-workspace"
     assert config =~ "Bearer ${CASEIN_API_TOKEN}"
     refute config =~ env["CASEIN_API_TOKEN"]
 
     staged_env = File.read!(Path.join(staging, "env.sh"))
-    assert staged_env =~ "DEVIDE_GROK_BUNDLE_DIR="
-    assert staged_env =~ "DEVIDE_GROK_BUNDLE_DIGEST="
-    assert staged_env =~ "DEVIDE_GROK_LEADER_SOCKET="
+    assert staged_env =~ "CASEIN_GROK_BUNDLE_DIR="
+    assert staged_env =~ "CASEIN_GROK_BUNDLE_DIGEST="
+    assert staged_env =~ "CASEIN_GROK_LEADER_SOCKET="
   end
 
   defp restore(key, nil), do: Application.delete_env(:casein, key)

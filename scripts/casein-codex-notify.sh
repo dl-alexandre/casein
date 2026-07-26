@@ -7,9 +7,9 @@ set -u
 trap 'exit 0' ERR
 
 TOKEN="${CASEIN_API_TOKEN:-}"
-WORKSPACE_ID="${DEVIDE_WORKSPACE_ID:-}"
+WORKSPACE_ID="${CASEIN_WORKSPACE_ID:-}"
 PANE="${TMUX_PANE:-}"
-TMUX_SESSION="${DEVIDE_TMUX_SESSION:-}"
+TMUX_SESSION="${CASEIN_TMUX_SESSION:-}"
 TRANSPORT="hook"
 
 [[ -n "$TOKEN" && -n "$WORKSPACE_ID" ]] || exit 0
@@ -45,12 +45,12 @@ PY
   fi
 fi
 
-HOOK_URL="${DEVIDE_CODEX_HOOK_URL:-}"
-if [[ -z "$HOOK_URL" && -n "${DEVIDE_API_BASE_URL:-}" ]]; then
-  HOOK_URL="${DEVIDE_API_BASE_URL%/}/api/workspaces/${WORKSPACE_ID}/codex/hooks"
+HOOK_URL="${CASEIN_CODEX_HOOK_URL:-}"
+if [[ -z "$HOOK_URL" && -n "${CASEIN_API_BASE_URL:-}" ]]; then
+  HOOK_URL="${CASEIN_API_BASE_URL%/}/api/workspaces/${WORKSPACE_ID}/codex/hooks"
 fi
-if [[ -z "$HOOK_URL" && -n "${DEVIDE_TERMINAL_MCP_URL:-}" ]]; then
-  API_BASE="${DEVIDE_TERMINAL_MCP_URL%%/api/terminals/mcp*}"
+if [[ -z "$HOOK_URL" && -n "${CASEIN_TERMINAL_MCP_URL:-}" ]]; then
+  API_BASE="${CASEIN_TERMINAL_MCP_URL%%/api/terminals/mcp*}"
   HOOK_URL="${API_BASE}/api/workspaces/${WORKSPACE_ID}/codex/hooks"
 fi
 [[ -n "$HOOK_URL" ]] || exit 0

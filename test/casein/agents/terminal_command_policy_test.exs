@@ -123,7 +123,7 @@ defmodule Casein.Agents.TerminalCommandPolicyTest do
 
       assert {:error, %{error: :command_blocked, reason: :denylisted}} =
                TerminalTools.invoke("terminal_send_command", %{
-                 "session" => "devide_demo_main",
+                 "session" => "casein_demo_main",
                  "command" => "rm -rf /"
                })
     end

@@ -44,7 +44,7 @@ defmodule Casein.Push.DiagnosticsTest do
     Application.put_env(:casein, APNSProvider,
       team_id: "TEAM123456",
       key_id: "KEY1234567",
-      topic: "com.example.devide_mob",
+      topic: "com.example.casein_mob",
       private_key: private_key_pem()
     )
 

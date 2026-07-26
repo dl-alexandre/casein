@@ -25,10 +25,10 @@ defmodule Casein.Terminals.Shims do
     "COLORTERM" => "truecolor"
   }
   @registry %{
-    "devide-open" => %{
+    "casein-open" => %{
       env: %{},
       requires: ["api"],
-      script: :devide_open,
+      script: :casein_open,
       notes: "Open files and localhost URLs in the connected Casein viewer."
     },
     "elio" => %{
@@ -100,7 +100,7 @@ defmodule Casein.Terminals.Shims do
           optional(:install) => install_spec(),
           optional(:shim) => boolean(),
           optional(:theme) => theme_spec(),
-          optional(:script) => :devide_open,
+          optional(:script) => :casein_open,
           env: %{String.t() => String.t()},
           requires: [String.t()],
           notes: String.t() | nil
@@ -320,7 +320,7 @@ defmodule Casein.Terminals.Shims do
         _ -> @default_path
       end
 
-    # Terminal shims first (elio/devide-open), then tools, then agent launcher
+    # Terminal shims first (elio/casein-open), then tools, then agent launcher
     # shims + npm package bins so panes can find `claude`/`grok` without
     # relying on bashrc. Agent bins must precede npm bins so Casein shims win
     # over bare package symlinks (MCP injection).
@@ -395,33 +395,33 @@ defmodule Casein.Terminals.Shims do
     end
   end
 
-  defp shim_script("devide-open", %{script: :devide_open}) do
+  defp shim_script("casein-open", %{script: :casein_open}) do
     """
     #!/bin/sh
     set -eu
 
     target="${1:-}"
     if [ -z "$target" ]; then
-      echo "usage: devide-open <target>" >&2
+      echo "usage: casein-open <target>" >&2
       exit 64
     fi
 
-    api_base="${DEVIDE_API_BASE_URL:-}"
-    workspace_id="${DEVIDE_WORKSPACE_ID:-}"
+    api_base="${CASEIN_API_BASE_URL:-}"
+    workspace_id="${CASEIN_WORKSPACE_ID:-}"
     token="${CASEIN_API_TOKEN:-}"
 
     if [ -z "$api_base" ]; then
-      echo "devide-open: DEVIDE_API_BASE_URL is not set" >&2
+      echo "casein-open: CASEIN_API_BASE_URL is not set" >&2
       exit 64
     fi
 
     if [ -z "$workspace_id" ]; then
-      echo "devide-open: DEVIDE_WORKSPACE_ID is not set" >&2
+      echo "casein-open: CASEIN_WORKSPACE_ID is not set" >&2
       exit 64
     fi
 
     if [ -z "$token" ]; then
-      echo "devide-open: CASEIN_API_TOKEN is not set" >&2
+      echo "casein-open: CASEIN_API_TOKEN is not set" >&2
       exit 64
     fi
 
@@ -430,7 +430,7 @@ defmodule Casein.Terminals.Shims do
       value="$2"
       stripped="$(printf '%s' "$value" | LC_ALL=C tr -d '\\001-\\037\\177')"
       if [ "$stripped" != "$value" ]; then
-        echo "devide-open: ${name} contains unsupported control characters" >&2
+        echo "casein-open: ${name} contains unsupported control characters" >&2
         exit 64
       fi
 
@@ -440,7 +440,7 @@ defmodule Casein.Terminals.Shims do
     escaped_target="$(json_escape target "$target")"
     escaped_base_dir="$(json_escape base_dir "${PWD:-}")"
     payload="{\\"target\\":\\"${escaped_target}\\",\\"base_dir\\":\\"${escaped_base_dir}\\"}"
-    response_file="${TMPDIR:-/tmp}/devide-open.$$"
+    response_file="${TMPDIR:-/tmp}/casein-open.$$"
     trap 'rm -f "$response_file"' EXIT HUP INT TERM
 
     status="$(
@@ -468,7 +468,7 @@ defmodule Casein.Terminals.Shims do
       cat "$response_file" >&2
       echo >&2
     else
-      echo "devide-open: request failed with HTTP ${status}" >&2
+      echo "casein-open: request failed with HTTP ${status}" >&2
     fi
 
     exit 1
@@ -533,8 +533,8 @@ defmodule Casein.Terminals.Shims do
       echo "Casein: #{name} not found. Installing into ${tool_root}..." >&2
 
       installed=0
-      if PATH="$clean_path" command -v devide >/dev/null 2>&1; then
-        if CASEIN_TERMINAL_SHIMS_DIR="$shim_dir" CASEIN_TERMINAL_TOOLS_DIR="$tool_root" PATH="$clean_path" devide ensure-installed #{shell_quote(name)}; then
+      if PATH="$clean_path" command -v casein >/dev/null 2>&1; then
+        if CASEIN_TERMINAL_SHIMS_DIR="$shim_dir" CASEIN_TERMINAL_TOOLS_DIR="$tool_root" PATH="$clean_path" casein ensure-installed #{shell_quote(name)}; then
           installed=1
         fi
       fi
@@ -543,7 +543,7 @@ defmodule Casein.Terminals.Shims do
         if [[ -x "$installer" ]]; then
           "$installer"
         else
-          echo "devide-shim: no installer available for #{name} at $installer" >&2
+          echo "casein-shim: no installer available for #{name} at $installer" >&2
           exit 127
         fi
       fi
@@ -554,7 +554,7 @@ defmodule Casein.Terminals.Shims do
       fi
 
       if [[ -z "$real_cmd" ]]; then
-        echo "devide-shim: installed #{name}, but it is still not executable in PATH" >&2
+        echo "casein-shim: installed #{name}, but it is still not executable in PATH" >&2
         exit 127
       fi
 
@@ -933,7 +933,7 @@ defmodule Casein.Terminals.Shims do
     """
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "devide-shim: no installer is registered for #{name}" >&2
+    echo "casein-shim: no installer is registered for #{name}" >&2
     exit 127
     """
   end
@@ -1070,7 +1070,7 @@ defmodule Casein.Terminals.Shims do
     [Desktop Entry]
     Type=Application
     Name=Casein Preview
-    Exec=devide-open %f
+    Exec=casein-open %f
     Terminal=true
     MimeType=text/markdown;text/x-markdown;
     Categories=Utility;TextEditor;

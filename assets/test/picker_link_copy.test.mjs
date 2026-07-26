@@ -3,9 +3,9 @@ import test from "node:test"
 
 import {pickerLinkToastDetail, resolvePickerCopyTarget} from "../js/picker_link_copy_url.mjs"
 
-const SHARE_URL = "https://devide.devbox.milcgroup.com/workspaces/ws-1?session=wt-f9874a83"
+const SHARE_URL = "https://casein.devbox.milcgroup.com/workspaces/ws-1?session=wt-f9874a83"
 const AGENT_URL =
-  "https://devide.devbox.milcgroup.com/api/terminals/mcp?workspace_id=ws-1&tmux_session=devide_dalexandre-devide_wt-f9874a83"
+  "https://casein.devbox.milcgroup.com/api/terminals/mcp?workspace_id=ws-1&tmux_session=casein_dalexandre-casein_wt-f9874a83"
 
 test("plain click copies the human share link", () => {
   const dataset = {copySessionLink: SHARE_URL, copySessionLinkAgent: AGENT_URL, copyLinkKind: "session"}

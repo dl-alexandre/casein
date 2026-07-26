@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
+CASEIN_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
 TOKEN="${CASEIN_API_TOKEN:-}"
 CI_MODE=0
 
@@ -15,7 +15,7 @@ Usage: verify_deploy_handoff.sh [--ci]
 Smoke-checks the deploy handoff endpoint exposed by the running release.
 
 Environment:
-  DEVIDE_URL          Base URL (default http://127.0.0.1:4000)
+  CASEIN_URL          Base URL (default http://127.0.0.1:4000)
   CASEIN_API_TOKEN   Bearer token (optional; endpoint is unauthenticated today)
 
   --ci                Strict mode: non-200 responses fail the script
@@ -36,9 +36,9 @@ if [[ -n "$TOKEN" ]]; then
 fi
 
 echo "==> Casein deploy handoff verification"
-echo "    URL: $DEVIDE_URL/api/deploy_status"
+echo "    URL: $CASEIN_URL/api/deploy_status"
 
-response="$(curl -fsS "${auth_header[@]}" "$DEVIDE_URL/api/deploy_status" || true)"
+response="$(curl -fsS "${auth_header[@]}" "$CASEIN_URL/api/deploy_status" || true)"
 status="${response:+ok}"
 
 if [[ -z "$response" ]]; then

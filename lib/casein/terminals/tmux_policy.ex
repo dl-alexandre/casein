@@ -3,7 +3,7 @@ defmodule Casein.Terminals.TmuxPolicy do
   Casein-specific tmux session naming and sanitization rules.
   """
 
-  @session_prefix "devide"
+  @session_prefix "casein"
 
   @doc """
   Build a managed tmux session name for a workspace and session id.

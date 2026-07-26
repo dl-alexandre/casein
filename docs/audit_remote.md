@@ -157,7 +157,7 @@ Shipped:
 - [`Dockerfile`](../Dockerfile) — two-stage build (slim builder →
   `debian:bookworm-slim` runtime). Runtime image installs `tmux`,
   `openssl`, `libstdc++6`, `libncurses6`, `ca-certificates`, `locales`.
-  Non-root `dev_ide` user. ERTS bundled in the release; runtime has no
+  Non-root `casein` user. ERTS bundled in the release; runtime has no
   Elixir/Erlang apt dependency.
 - [`.dockerignore`](../.dockerignore) — excludes `_build`, `deps`,
   `ui-iterations*`, `docs`, `.git`, etc. for a tight build context.

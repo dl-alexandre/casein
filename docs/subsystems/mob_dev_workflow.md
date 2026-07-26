@@ -68,14 +68,14 @@ def handle_info({:mob_device, :will_enter_foreground}, socket), do: ...
   (`Node.set_cookie(new_session_cookie)`, dist.ex:161-167). But its quickstart
   examples still use a static `cookie: :secret` (README.md:84). A generator that
   emits a random per-developer cookie would be a small, genuine enhancement — but
-  it belongs in **`mob_new`'s** project generator, not in dev_ide.
+  it belongs in **`mob_new`'s** project generator, not in casein.
 
 ## Mob has no terminal — the ghostty sketch premise was unfounded
 
 `contrib/mob-tooling/TERMINAL-INTEGRATION-SKETCH.md` imagined embedding a
 `ghostty_ex` terminal as a native Mob view. Mob has **no ghostty/terminal
 anything** — UI renders via Compose (Android) and SwiftUI (iOS), and `grep
-ghostty` over the whole repo is empty (mix.exs deps 198-226). dev_ide is the real
+ghostty` over the whole repo is empty (mix.exs deps 198-226). casein is the real
 `ghostty` user; its verified terminal contract lives in
 [`ghostty_terminal_contract.md`](ghostty_terminal_contract.md). The "native
 ghostty terminal in a Mob app" idea has no basis in either codebase and is

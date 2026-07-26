@@ -181,9 +181,9 @@ defmodule Casein.Deployment.LastDeployTest do
         else: Application.delete_env(:casein, :deployment)
     end)
 
-    prev_rev = System.get_env("DEVIDE_GIT_REVISION")
-    System.put_env("DEVIDE_GIT_REVISION", @deployed)
-    on_exit(fn -> restore_env("DEVIDE_GIT_REVISION", prev_rev) end)
+    prev_rev = System.get_env("CASEIN_GIT_REVISION")
+    System.put_env("CASEIN_GIT_REVISION", @deployed)
+    on_exit(fn -> restore_env("CASEIN_GIT_REVISION", prev_rev) end)
 
     Phoenix.PubSub.subscribe(Casein.PubSub, "deploy:updates")
 
@@ -198,7 +198,7 @@ defmodule Casein.Deployment.LastDeployTest do
 
     assert :failed = LastDeploy.check_and_broadcast(remote_head: {:ok, @remote})
     assert_receive {:deploy_failure, %{phase: "gate"}}
-    assert_receive {:signal, %{type: "devide.deploy.failed", data: %{phase: "gate"}}}
+    assert_receive {:signal, %{type: "casein.deploy.failed", data: %{phase: "gate"}}}
   end
 
   defp restore_env(key, nil), do: System.delete_env(key)

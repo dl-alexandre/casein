@@ -58,7 +58,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
       %Phoenix.LiveView.Socket{
         assigns:
           Map.merge(
-            %{__changed__: %{}, flash: %{}, tmux_session: "devide_ws_test"},
+            %{__changed__: %{}, flash: %{}, tmux_session: "casein_ws_test"},
             assigns
           )
       }
@@ -140,7 +140,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
             %{
               __changed__: %{},
               flash: %{},
-              tmux_session: "devide_alpha_u-dev",
+              tmux_session: "casein_alpha_u-dev",
               tmux_mutations_enabled?: true,
               tmux_windows: [
                 %{id: "@0", index: 0},
@@ -179,7 +179,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
                  socket
                )
 
-      assert_receive {:fake_tmux_move_window, "devide_alpha_u-dev", "@0", "@1", :after}
+      assert_receive {:fake_tmux_move_window, "casein_alpha_u-dev", "@0", "@1", :after}
     end
 
     test "move at the right edge is a no-op" do
@@ -219,7 +219,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
                  socket
                )
 
-      assert_receive {:fake_tmux_move_window, "devide_alpha_u-dev", "@2", "@0", :before}
+      assert_receive {:fake_tmux_move_window, "casein_alpha_u-dev", "@2", "@0", :before}
     end
 
     test "drag-drop past the end moves after the last window" do
@@ -232,7 +232,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
                  socket
                )
 
-      assert_receive {:fake_tmux_move_window, "devide_alpha_u-dev", "@0", "@2", :after}
+      assert_receive {:fake_tmux_move_window, "casein_alpha_u-dev", "@0", "@2", :after}
     end
   end
 
@@ -248,7 +248,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
           __changed__: %{},
           flash: %{},
           workspace: %Workspace{id: "ws-1", name: "alpha"},
-          tmux_session: "devide_alpha_u-dev",
+          tmux_session: "casein_alpha_u-dev",
           tmux_windows: [
             %{
               id: "@1",
@@ -263,7 +263,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
                   top: 0,
                   width: 100,
                   height: 30,
-                  current_path: "/work/dev_ide",
+                  current_path: "/work/casein",
                   current_command: "bash"
                 }
               ]
@@ -278,8 +278,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
       assert %{
                pane_id: "%7",
                window_id: "@1",
-               session: "devide_alpha_u-dev",
-               key: "devide_alpha_u-dev:@1:%7",
+               session: "casein_alpha_u-dev",
+               key: "casein_alpha_u-dev:@1:%7",
                cols: 100,
                rows: 30,
                term: nil,
@@ -287,7 +287,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
              } = socket.assigns.pane_history
 
       assert is_pid(worker)
-      assert socket.assigns.pane_history.title =~ "/work/dev_ide"
+      assert socket.assigns.pane_history.title =~ "/work/casein"
       assert is_integer(socket.assigns.pane_history.refreshed_at)
 
       _socket = TerminalEvents.close_pane_history(socket)
@@ -329,7 +329,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
 
     test "a frame-blocking site falls back to opening a browser tab" do
       Application.put_env(:casein, :embeddability_checker, BlockedChecker)
-      socket = preview_socket(%{tmux_session: "devide_alpha_u-dev"})
+      socket = preview_socket(%{tmux_session: "casein_alpha_u-dev"})
 
       assert {:noreply, socket} =
                TerminalEvents.handle_event(

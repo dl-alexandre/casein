@@ -5,7 +5,7 @@ description: >
   Casein terminal/preview/artifact MCP plus host infrastructure skills
   (preview-ui-walk, delegate-to-grok, this skill). Use when the user says pair
   opencode, share MCP/skills with a workspace agent, "tools missing", "skill not
-  found outside dev_ide", run preview-ui-walk from another workspace, or
+  found outside casein", run preview-ui-walk from another workspace, or
   OpenCode/Claude cannot see Casein MCP on a product checkout.
 ---
 
@@ -13,7 +13,7 @@ description: >
 
 Host infrastructure for **product-repo** agents. Casein skills and MCP live with
 the Casein host, not with OneBackend / milc-devbox / etc. This skill makes a
-target workspace agent able to drive Casein the same way a dalexandre-devide
+target workspace agent able to drive Casein the same way a dalexandre-casein
 agent does.
 
 **Do not** hand-copy tokens into chat. **Do not** write bearer tokens into
@@ -22,8 +22,8 @@ tracked git files (staging uses `{env:CASEIN_API_TOKEN}` / `${CASEIN_API_TOKEN}`
 ## When to run
 
 - User asks to pair OpenCode (or Claude/Grok/Codex) on a named workspace
-- `preview-ui-walk` / `delegate-to-grok` missing outside the dev_ide checkout
-- OpenCode `debug config` has no `devide-*-<workspace>` MCP servers
+- `preview-ui-walk` / `delegate-to-grok` missing outside the casein checkout
+- OpenCode `debug config` has no `casein-*-<workspace>` MCP servers
 - Terminal/preview MCP tools 401 or wrong-workspace scope
 
 ## 1. Resolve the workspace
@@ -31,18 +31,18 @@ tracked git files (staging uses `{env:CASEIN_API_TOKEN}` / `${CASEIN_API_TOKEN}`
 Prefer already-paired session env (tmux session for that workspace):
 
 ```bash
-echo "$DEVIDE_WORKSPACE_NAME" "$DEVIDE_WORKSPACE_ID" "$DEVIDE_CHECKOUT"
+echo "$CASEIN_WORKSPACE_NAME" "$CASEIN_WORKSPACE_ID" "$CASEIN_CHECKOUT"
 # or:
 source ~/.casein/agent-mcp/<workspace-name>/env.sh
 ```
 
 | Var | Meaning |
 |-----|---------|
-| `DEVIDE_WORKSPACE_NAME` | e.g. `dalexandre-devbox`, `dalexandre-reports` |
-| `DEVIDE_WORKSPACE_ID` | UUID used in MCP query strings |
-| `DEVIDE_CHECKOUT` | Product tree the agent should `cd` into |
-| `DEVIDE_AGENT_MCP_HOME` | `~/.casein/agent-mcp/<name>/` staging |
-| `DEVIDE_TERMINAL_MCP_URL` / `PREVIEW` / `ARTIFACT` | Pre-scoped MCP URLs |
+| `CASEIN_WORKSPACE_NAME` | e.g. `dalexandre-devbox`, `dalexandre-reports` |
+| `CASEIN_WORKSPACE_ID` | UUID used in MCP query strings |
+| `CASEIN_CHECKOUT` | Product tree the agent should `cd` into |
+| `CASEIN_AGENT_MCP_HOME` | `~/.casein/agent-mcp/<name>/` staging |
+| `CASEIN_TERMINAL_MCP_URL` / `PREVIEW` / `ARTIFACT` | Pre-scoped MCP URLs |
 | `CASEIN_API_TOKEN` | Workspace-scoped bearer (never echo) |
 
 If `~/.casein/agent-mcp/<name>/env.sh` is **missing**, this is first-time pairing —
@@ -55,7 +55,7 @@ configs + skills from existing staging.
 From any cwd (use a path that actually exists on the box):
 
 ```bash
-bash /data/workspaces/dalexandre/dev_ide/scripts/ensure-workspace-agent-pair.sh \
+bash /data/workspaces/dalexandre/casein/scripts/ensure-workspace-agent-pair.sh \
   --workspace <name> \
   --runtime opencode \
   --verify
@@ -64,13 +64,13 @@ bash /data/workspaces/dalexandre/dev_ide/scripts/ensure-workspace-agent-pair.sh 
 Or when session env is already set:
 
 ```bash
-bash /data/workspaces/dalexandre/dev_ide/scripts/ensure-workspace-agent-pair.sh --runtime all --verify
+bash /data/workspaces/dalexandre/casein/scripts/ensure-workspace-agent-pair.sh --runtime all --verify
 ```
 
 What it does:
 
 1. Sources `~/.casein/agent-mcp/<name>/env.sh`
-2. Stages host skills (`DEVIDE_GLOBAL_AGENT_SKILLS`) into the runtime’s skill home
+2. Stages host skills (`CASEIN_GLOBAL_AGENT_SKILLS`) into the runtime’s skill home
 3. Writes project MCP config where that runtime discovers it
 4. Optionally verifies terminal MCP `tools/list` + OpenCode skill/config
 
@@ -78,13 +78,13 @@ What it does:
 
 | Runtime | Skills land in | MCP lands in | Launch |
 |---------|----------------|--------------|--------|
-| **OpenCode** | `~/.config/opencode/skills`, project `.opencode/skills` (+ auto-loads `~/.claude/skills`) | project `.opencode/opencode.json` from staging | `cd $DEVIDE_CHECKOUT && opencode` (restart to reload) |
+| **OpenCode** | `~/.config/opencode/skills`, project `.opencode/skills` (+ auto-loads `~/.claude/skills`) | project `.opencode/opencode.json` from staging | `cd $CASEIN_CHECKOUT && opencode` (restart to reload) |
 | **Claude** | `~/.claude/skills` (or owner `CLAUDE_CONFIG_DIR`) | staging `.mcp.json` via `launch-casein-agent.sh claude --mcp-config` | `bash …/launch-casein-agent.sh claude` |
 | **Grok** | (n/a skill loader; host skills still staged for siblings) | project `.mcp.json` (worktree preferred; ensure script can write primary) | `bash …/launch-casein-agent.sh grok` |
 | **Codex** | n/a | per-launch `-c mcp_servers…` from launcher | `bash …/launch-casein-agent.sh codex` |
 
 Default host skill allowlist: `delegate-to-grok`, `preview-ui-walk`,
-`workspace-agent-pair`. Override with `DEVIDE_GLOBAL_AGENT_SKILLS="…"`.
+`workspace-agent-pair`. Override with `CASEIN_GLOBAL_AGENT_SKILLS="…"`.
 
 ## 3. Manual fallback (if the script is unavailable)
 
@@ -93,19 +93,19 @@ set -a
 source ~/.casein/agent-mcp/<name>/env.sh
 set +a
 
-SKILL_SRC=/data/workspaces/dalexandre/dev_ide/.claude/skills
+SKILL_SRC=/data/workspaces/dalexandre/casein/.claude/skills
 # shellcheck source=/dev/null
-source /data/workspaces/dalexandre/dev_ide/scripts/lib/agent-skills.sh
+source /data/workspaces/dalexandre/casein/scripts/lib/agent-skills.sh
 
 # skills
 agent_skills_install "$SKILL_SRC" "$HOME/.claude"
 agent_skills_install "$SKILL_SRC" "$HOME/.config/opencode"
-mkdir -p "$DEVIDE_CHECKOUT/.opencode"
-agent_skills_install "$SKILL_SRC" "$DEVIDE_CHECKOUT/.opencode"
+mkdir -p "$CASEIN_CHECKOUT/.opencode"
+agent_skills_install "$SKILL_SRC" "$CASEIN_CHECKOUT/.opencode"
 
 # OpenCode MCP
-cp "$DEVIDE_AGENT_MCP_HOME/opencode.json" "$DEVIDE_CHECKOUT/.opencode/opencode.json"
-chmod 600 "$DEVIDE_CHECKOUT/.opencode/opencode.json"
+cp "$CASEIN_AGENT_MCP_HOME/opencode.json" "$CASEIN_CHECKOUT/.opencode/opencode.json"
+chmod 600 "$CASEIN_CHECKOUT/.opencode/opencode.json"
 ```
 
 ## 4. Verify (never print the token)
@@ -114,18 +114,18 @@ chmod 600 "$DEVIDE_CHECKOUT/.opencode/opencode.json"
 # Terminal MCP alive + scoped
 # (ensure script --verify does this)
 python3 - <<'PY'
-# tools/list against DEVIDE_TERMINAL_MCP_URL with Authorization bearer
+# tools/list against CASEIN_TERMINAL_MCP_URL with Authorization bearer
 # expect terminal_list_sessions among tools
 PY
 
 # OpenCode sees skills + MCP (use real binary, not a shim that re-enters launch)
-cd "$DEVIDE_CHECKOUT"
+cd "$CASEIN_CHECKOUT"
 ~/.opencode/bin/opencode debug skill   # expect preview-ui-walk, workspace-agent-pair
-~/.opencode/bin/opencode debug config  # expect devide-terminal-<workspace>, preview, artifact
+~/.opencode/bin/opencode debug config  # expect casein-terminal-<workspace>, preview, artifact
 ```
 
 Wrong-workspace check: MCP server names / URLs must include **this**
-`workspace_id` / name, not `dalexandre-devide` unless that is the target.
+`workspace_id` / name, not `dalexandre-casein` unless that is the target.
 
 ## 5. After pairing — do the actual work
 
@@ -134,7 +134,7 @@ Wrong-workspace check: MCP server names / URLs must include **this**
 | App UI smoke (any surface) | `preview-ui-walk` — product workflows under `.casein/preview-walk.json` and/or `.casein/preview-walks/<id>.json` |
 | Author/improve a walk | Edit/add product manifests; do not fork the skill |
 | Parallel Grok implementation | `delegate-to-grok` |
-| Casein-itself UI check | `verify` (only inside dev_ide checkout) |
+| Casein-itself UI check | `verify` (only inside casein checkout) |
 
 **Restart OpenCode** after pairing — config and skills are load-time, not hot-reload.
 

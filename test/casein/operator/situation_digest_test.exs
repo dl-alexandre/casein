@@ -245,7 +245,7 @@ defmodule Casein.Operator.SituationDigestTest do
         workspace_id: "ws-digest",
         source: :terminal_mcp,
         tool: "terminal_capture",
-        summary: "session=devide_digest_agent",
+        summary: "session=casein_digest_agent",
         status: :ok
       })
 
@@ -370,7 +370,7 @@ defmodule Casein.Operator.SituationDigestTest do
 
   defp tmp_dir!(name) do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    path = Path.join(root, "devide-digest-#{System.unique_integer([:positive])}-#{name}")
+    path = Path.join(root, "casein-digest-#{System.unique_integer([:positive])}-#{name}")
     File.rm_rf!(path)
     File.mkdir_p!(path)
     on_exit(fn -> File.rm_rf!(path) end)

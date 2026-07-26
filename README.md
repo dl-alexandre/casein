@@ -13,10 +13,10 @@ of what happened instead of rebuilding context from chat logs and screenshots.
 > **Naming:** Casein is both the public product name and the implementation
 > identity — modules are `Casein.*`, the OTP app is `:casein`, environment
 > variables are `CASEIN_*`, and the release binary is `casein`. A few externally
-> registered identifiers still carry the former DevIDE name pending coordination
+> registered identifiers still carry the former Casein name pending coordination
 > (public host name, Apple bundle id, and the workspace slug plus the tmux
-> session prefix and MCP server slugs derived from it). The `DEVIDE_*` env
-> namespace and the `X-DevIDE-Caller-Pane` header are deliberate, frozen
+> session prefix and MCP server slugs derived from it). The `CASEIN_*` env
+> namespace and the `X-Casein-Caller-Pane` header are deliberate, frozen
 > exceptions. See [`docs/naming-gate.md`](docs/naming-gate.md).
 
 ### Why it exists
@@ -141,7 +141,7 @@ version:
 ```bash
 docker build -t casein:latest .
 docker run --rm <env...> casein:latest /app/bin/migrate
-docker run -d --name dev_ide -p 4000:4000 <env...> casein:latest
+docker run -d --name casein -p 4000:4000 <env...> casein:latest
 ```
 
 Required env for the default Postgres profile: `SECRET_KEY_BASE`,

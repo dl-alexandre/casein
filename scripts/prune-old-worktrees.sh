@@ -13,7 +13,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT}/scripts/lib/agent-worktree.sh"
 
 DRY_RUN=0
-MAX_AGE_DAYS="${DEVIDE_AGENT_WORKTREE_MAX_AGE_DAYS:-1}"
+MAX_AGE_DAYS="${CASEIN_AGENT_WORKTREE_MAX_AGE_DAYS:-1}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

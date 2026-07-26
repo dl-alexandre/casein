@@ -18,7 +18,7 @@ import tempfile
 MANIFEST = (
     '{"description":"Session-scoped Casein tools, hooks, and skills",'
     '"hooks":"./hooks/hooks.json","mcpServers":"./.mcp.json",'
-    '"name":"devide-grok-capabilities","skills":"./skills",'
+    '"name":"casein-grok-capabilities","skills":"./skills",'
     '"version":"1.0.0"}\n'
 )
 DIGEST_RE = re.compile(r"[0-9a-f]{64}")

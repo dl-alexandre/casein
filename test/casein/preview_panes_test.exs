@@ -116,7 +116,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "register creates preview pane registration and broadcasts" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_1"
+    session = "casein_ws_1"
     pane_id = "%9"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -141,7 +141,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "register accepts external http preview URLs" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_external"
+    session = "casein_ws_external"
     pane_id = "%12"
     url = "https://www.whitehouse.gov/"
     seed_session!(session, pane_id)
@@ -161,11 +161,11 @@ defmodule Casein.PreviewPanesTest do
 
   test "register uses loopback control URL for Casein-hosted display URLs" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_devide_host"
+    session = "casein_ws_casein_host"
     pane_id = "%13"
-    display_url = "https://devide.example.com/whitehouse-preview.html"
+    display_url = "https://casein.example.com/whitehouse-preview.html"
     seed_session!(session, pane_id)
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
     Application.put_env(:casein, :preview_loopback_port, 4100)
 
     assert {:ok, registration} =
@@ -186,7 +186,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "register displays Casein loopback previews as same-origin paths" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_devide_loopback"
+    session = "casein_ws_casein_loopback"
     pane_id = "%14"
     seed_session!(session, pane_id)
     Application.put_env(:casein, :preview_loopback_port, 4000)
@@ -211,7 +211,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "register displays localhost app previews through the preview proxy" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_project_proxy"
+    session = "casein_ws_project_proxy"
     pane_id = "%16"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -241,7 +241,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "register proxies localhost app previews by default when unset" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_default_proxy"
+    session = "casein_ws_default_proxy"
     pane_id = "%17"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -264,11 +264,11 @@ defmodule Casein.PreviewPanesTest do
 
   test "sync control navigation keeps Casein loopback previews on same-origin paths" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_devide_loopback_sync"
+    session = "casein_ws_casein_loopback_sync"
     pane_id = "%15"
     seed_session!(session, pane_id)
     Application.put_env(:casein, :preview_loopback_port, 4000)
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -292,12 +292,12 @@ defmodule Casein.PreviewPanesTest do
 
   test "sync control navigation keeps runtime localhost previews proxied for browser refresh" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_runtime_loopback_sync"
+    session = "casein_ws_runtime_loopback_sync"
     pane_id = "%16"
     seed_session!(session, pane_id)
     Application.put_env(:casein, :preview_loopback_port, 4000)
     Application.put_env(:casein, :preview_proxy_enabled, true)
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
 
     assert {:ok, registration} =
@@ -321,7 +321,7 @@ defmodule Casein.PreviewPanesTest do
   end
 
   test "register threads workspace forward-auth headers into the control session" do
-    session = "devide_ws_forward_auth"
+    session = "casein_ws_forward_auth"
     pane_id = "%20"
     seed_session!(session, pane_id)
 
@@ -356,7 +356,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "navigate updates pane registration and broadcasts the new display URL" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_nav"
+    session = "casein_ws_nav"
     pane_id = "%14"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -386,7 +386,7 @@ defmodule Casein.PreviewPanesTest do
     on_exit(fn -> restore(:preview_proxy_hmr, prev_hmr) end)
 
     {_root, path} = seed_workspace!()
-    session = "devide_ws_nav_hmr"
+    session = "casein_ws_nav_hmr"
     pane_id = "%19"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -404,7 +404,7 @@ defmodule Casein.PreviewPanesTest do
              })
 
     Application.put_env(:casein, :preview_proxy_enabled, true)
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
     Application.put_env(:casein, :preview_proxy_hmr, enabled: true)
 
     assert {:ok, navigated} = PreviewPanes.navigate(pane_id, "/settings")
@@ -413,7 +413,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "history controls update pane registration and broadcast display URL" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_history"
+    session = "casein_ws_history"
     pane_id = "%18"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -487,7 +487,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "navigate falls back to a snapshot when the target refuses framing" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_noframe"
+    session = "casein_ws_noframe"
     pane_id = "%19"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -544,7 +544,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "show_artifact points a registered pane at a screenshot artifact" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_snapshot"
+    session = "casein_ws_snapshot"
     pane_id = "%15"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -575,7 +575,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "click_snapshot forwards a coordinate click and refreshes the snapshot artifact" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_snapshot_click"
+    session = "casein_ws_snapshot_click"
     pane_id = "%16"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -613,7 +613,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "click_snapshot rejects coordinates outside the stored viewport" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_snapshot_bounds"
+    session = "casein_ws_snapshot_bounds"
     pane_id = "%17"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -639,7 +639,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "double register replaces the existing pane registration" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_2"
+    session = "casein_ws_2"
     pane_id = "%2"
     seed_session!(session, pane_id)
 
@@ -665,7 +665,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "share_session registers another pane against the same control session" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_shared"
+    session = "casein_ws_shared"
     source_pane_id = "%21"
     shared_pane_id = "%22"
     seed_session!(session, source_pane_id)
@@ -699,7 +699,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "set_viewport locks, retunes and clears a pane's viewport" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_viewport"
+    session = "casein_ws_viewport"
     pane_id = "%40"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -738,7 +738,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "set_viewport survives a restart via the persisted registration" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_viewport_persist"
+    session = "casein_ws_viewport_persist"
     pane_id = "%41"
     seed_session!(session, pane_id)
 
@@ -758,7 +758,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "set_viewport refuses a malformed size rather than silently unlocking" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_viewport_bad"
+    session = "casein_ws_viewport_bad"
     pane_id = "%42"
     seed_session!(session, pane_id)
 
@@ -787,7 +787,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "shared panes navigate together and close the session on the last deregistration" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_shared_nav"
+    session = "casein_ws_shared_nav"
     source_pane_id = "%23"
     shared_pane_id = "%24"
     seed_session!(session, source_pane_id)
@@ -824,7 +824,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "share_session returns no_shared_preview_found without a source" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_shared_missing"
+    session = "casein_ws_shared_missing"
     pane_id = "%25"
     seed_session!(session, pane_id)
 
@@ -840,7 +840,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "heartbeat register refreshes without replacing the preview session" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_heartbeat"
+    session = "casein_ws_heartbeat"
     pane_id = "%22"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -874,7 +874,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "stale topology update does not expire a pane that still exists in tmux" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_stale_topology"
+    session = "casein_ws_stale_topology"
     pane_id = "%12"
     seed_session!(session, pane_id)
 
@@ -911,7 +911,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "list_for_workspace_exact rehydrates persisted registrations after registry restart" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_rehydrate"
+    session = "casein_ws_rehydrate"
     pane_id = "%14"
     seed_session!(session, pane_id)
 
@@ -937,7 +937,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "rehydration closes persisted registrations whose tmux pane is gone" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_rehydrate_stale"
+    session = "casein_ws_rehydrate_stale"
     pane_id = "%15"
     seed_session!(session, pane_id)
 
@@ -960,7 +960,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "distinct panes are distinct previews even at the same surface label" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_split"
+    session = "casein_ws_split"
 
     FakeState.put(:fake_tmux_windows, %{
       session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 2, activity: 0}]
@@ -1032,7 +1032,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "topology update expires vanished pane ids" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_3"
+    session = "casein_ws_3"
     pane_id = "%3"
     seed_session!(session, pane_id)
     :ok = TmuxTopology.subscribe(session)
@@ -1059,7 +1059,7 @@ defmodule Casein.PreviewPanesTest do
 
   test "topology expire closes all persisted registrations for vanished panes" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_batch_expire"
+    session = "casein_ws_batch_expire"
     pane_ids = ["%50", "%51", "%52"]
 
     FakeState.put(:fake_tmux_windows, %{

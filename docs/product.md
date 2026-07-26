@@ -287,7 +287,7 @@ A coding agent is a client of three MCP surfaces: the **terminal MCP**
 (`Casein.Agents.TerminalTools`), the **preview MCP**
 (`Casein.Agents.PreviewTools`), and the **artifact MCP**
 (`Casein.Agents.ArtifactTools`). Terminal tools let an agent list sessions,
-read a pane's scrollback, and send keys/commands to a `devide_`-prefixed
+read a pane's scrollback, and send keys/commands to a `casein_`-prefixed
 session — the same actions a human takes from the CLI, with no arbitrary host
 shell access. Artifact tools create and iterate isolated previewable worktrees.
 Every mutating MCP call is audited and surfaced in the live activity feed.

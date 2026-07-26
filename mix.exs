@@ -29,6 +29,7 @@ defmodule Casein.MixProject do
             &ensure_static_assets/1,
             &assert_no_case_colliding_modules/1,
             :assemble,
+            &install_operator_cli/1,
             &prune_duplicate_exec_ports/1,
             &write_release_metadata/1,
             &copy_release_docs/1
@@ -331,6 +332,17 @@ defmodule Casein.MixProject do
       for port <- ports, port != keep, do: File.rm_rf!(Path.dirname(port))
     end
 
+    release
+  end
+
+  defp install_operator_cli(release) do
+    bin_dir = Path.join(release.path, "bin")
+    generated_entrypoint = Path.join(bin_dir, "casein")
+    runtime_entrypoint = Path.join(bin_dir, "casein-runtime")
+
+    File.rename!(generated_entrypoint, runtime_entrypoint)
+    File.cp!("rel/casein", generated_entrypoint)
+    File.chmod!(generated_entrypoint, 0o755)
     release
   end
 

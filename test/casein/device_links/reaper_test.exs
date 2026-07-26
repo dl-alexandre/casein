@@ -51,14 +51,14 @@ defmodule Casein.DeviceLinks.ReaperTest do
 
   defp insert_token(attrs) do
     defaults = %{
-      origin_id: "dev_ide",
+      origin_id: "casein",
       origin_name: "Casein",
       subject_id: "owner",
       subject_role: "owner",
       token_hash: Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false),
       resource_kind: "workspace",
       resource_id: "ws-1",
-      capabilities: ["dev_ide.session"]
+      capabilities: ["casein.session"]
     }
 
     %Token{}

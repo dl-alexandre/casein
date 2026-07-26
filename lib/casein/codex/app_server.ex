@@ -444,7 +444,7 @@ defmodule Casein.Codex.AppServer do
   defp send_initialize(state, client_info) do
     client_info =
       %{
-        "name" => "devide",
+        "name" => "casein",
         "title" => "Casein",
         "version" => app_version()
       }

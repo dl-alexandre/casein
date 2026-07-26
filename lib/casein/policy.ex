@@ -1,6 +1,6 @@
 defmodule Casein.Policy do
   @moduledoc """
-  Single decision point for sensitive actions in dev_ide.
+  Single decision point for sensitive actions in casein.
 
   Pure functions — every check returns `%Casein.Policy.Decision{}`. Callers
   must funnel here **before** doing the work and **before** mutating any

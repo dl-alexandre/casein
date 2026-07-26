@@ -171,7 +171,7 @@ defmodule CaseinWeb.NotificationsDrawerTest do
     end
 
     test "badge at mount, toggle opens the drawer with the inbox", %{conn: conn} do
-      mount_env!("devide-notif-panel-cockpit")
+      mount_env!("casein-notif-panel-cockpit")
       notification = deliver!(%{})
 
       {:ok, view, html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
@@ -191,7 +191,7 @@ defmodule CaseinWeb.NotificationsDrawerTest do
     end
 
     test "?drawer=notifications deep link opens the drawer on the cockpit", %{conn: conn} do
-      mount_env!("devide-notif-panel-deeplink")
+      mount_env!("casein-notif-panel-deeplink")
       deliver!(%{title: "Cockpit deep link alert"})
 
       {:ok, _view, html} =
@@ -202,7 +202,7 @@ defmodule CaseinWeb.NotificationsDrawerTest do
     end
 
     test "live broadcast increments the cockpit badge", %{conn: conn} do
-      mount_env!("devide-notif-panel-live")
+      mount_env!("casein-notif-panel-live")
 
       {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
 

@@ -81,7 +81,7 @@ defmodule PreviewCtl.Playwright.AdapterBridgeTest do
   setup_all do
     previous = Application.get_env(:preview_ctl, :playwright_script)
 
-    dir = Path.join(System.tmp_dir!(), "devide-cov-80-pw-#{System.unique_integer([:positive])}")
+    dir = Path.join(System.tmp_dir!(), "casein-cov-80-pw-#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
     script = Path.join(dir, "fake_playwright.js")
     File.write!(script, @fake_script)

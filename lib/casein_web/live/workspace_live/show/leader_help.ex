@@ -153,10 +153,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             <.tip_row term="Stay logged in">
               Previews start fresh each session, so logins reset. Keep auth across restarts with
               <code class="rounded bg-base-200 px-1 py-0.5">
-                DEVIDE_PREVIEW_STORAGE_PROFILE=workspace
+                CASEIN_PREVIEW_STORAGE_PROFILE=workspace
               </code>
               (or <code class="rounded bg-base-200 px-1 py-0.5">profile</code>
-              plus <code class="rounded bg-base-200 px-1 py-0.5">DEVIDE_PREVIEW_STORAGE_PROFILE_NAME</code>).
+              plus <code class="rounded bg-base-200 px-1 py-0.5">CASEIN_PREVIEW_STORAGE_PROFILE_NAME</code>).
             </.tip_row>
             <.tip_row term="Responsive">
               <code class="rounded bg-base-200 px-1 py-0.5">casein-preview :4000 --viewport 375x812</code>
@@ -232,11 +232,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             <.tip_row term="Sign in">
               By default, agents use the host's global Claude/Codex login. For an
               owner-isolated login instead, sign in once with
-              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin codex</code>
-              and <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin claude</code>.
+              <code class="rounded bg-base-200 px-1 py-0.5">casein agent auth signin codex</code>
+              and <code class="rounded bg-base-200 px-1 py-0.5">casein agent auth signin claude</code>.
               Casein detects the owner from the current workspace; once signed in,
               matching workspaces share that owner login automatically. Use
-              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status</code>
+              <code class="rounded bg-base-200 px-1 py-0.5">casein agent auth status</code>
               to check sign-in state.
             </.tip_row>
             <.tip_row term="Pairing">

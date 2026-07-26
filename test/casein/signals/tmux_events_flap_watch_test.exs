@@ -45,7 +45,7 @@ defmodule Casein.Signals.TmuxEventsFlapWatchTest do
   end
 
   defp feed(pid, event) do
-    feed(pid, event, %{label: "devide_test"})
+    feed(pid, event, %{label: "casein_test"})
   end
 
   defp feed(pid, event, meta) do

@@ -13,13 +13,13 @@ defmodule Casein.Release.Update.ManifestTest do
     "signature": null,
     "artifacts": [
       {
-        "app": "devide",
+        "app": "casein",
         "version": "0.1.0",
         "revision": "67f393adeadbeef",
         "profile": "lan",
         "repo_adapter": "sqlite",
         "target": "linux-x86_64",
-        "url": "https://example.com/devide.tar.gz",
+        "url": "https://example.com/casein.tar.gz",
         "sha256": "abc",
         "size": 123,
         "min_installer_metadata_version": 1,
@@ -31,14 +31,14 @@ defmodule Casein.Release.Update.ManifestTest do
 
   @metadata %{
     metadata_version: 1,
-    app: "devide",
+    app: "casein",
     version: "0.1.0",
     revision: "504670cdeadbeef",
     profile: "lan",
     repo_adapter: "sqlite",
     target: "linux-x86_64",
     channel: "canary",
-    update_manifest_url: "https://example.com/devide-canary.json",
+    update_manifest_url: "https://example.com/casein-canary.json",
     built_at: "2026-07-02T12:00:00Z"
   }
 
@@ -53,14 +53,14 @@ defmodule Casein.Release.Update.ManifestTest do
 
     bypass = HTTPStub.open()
 
-    HTTPStub.expect_once(bypass, "GET", "/devide-canary.json", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/casein-canary.json", fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, @manifest_json)
     end)
 
     assert {:ok, manifest} =
-             Manifest.fetch("http://127.0.0.1:#{bypass.port}/devide-canary.json")
+             Manifest.fetch("http://127.0.0.1:#{bypass.port}/casein-canary.json")
 
     assert manifest.channel == "canary"
     assert Enum.any?(Application.started_applications(), fn {app, _, _} -> app == :req end)
@@ -69,14 +69,14 @@ defmodule Casein.Release.Update.ManifestTest do
   test "fetch decodes application/json responses as raw manifest JSON" do
     bypass = HTTPStub.open()
 
-    HTTPStub.expect_once(bypass, "GET", "/devide-canary.json", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/casein-canary.json", fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, @manifest_json)
     end)
 
     assert {:ok, manifest} =
-             Manifest.fetch("http://127.0.0.1:#{bypass.port}/devide-canary.json")
+             Manifest.fetch("http://127.0.0.1:#{bypass.port}/casein-canary.json")
 
     assert manifest.channel == "canary"
     assert length(manifest.artifacts) == 1

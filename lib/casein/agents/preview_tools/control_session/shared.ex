@@ -54,7 +54,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Shared do
 
   def preview_api_base_url do
     cond do
-      url = System.get_env("DEVIDE_URL") ->
+      url = System.get_env("CASEIN_URL") ->
         url
 
       host = System.get_env("PHX_HOST") ->
@@ -281,12 +281,12 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Shared do
 
   def navigation_failure_payload(reason), do: %{error: :navigation_failed, reason: reason}
 
-  def loopback_devide_session?(%{current_url: url}) when is_binary(url),
-    do: devide_loopback_url?(url)
+  def loopback_casein_session?(%{current_url: url}) when is_binary(url),
+    do: casein_loopback_url?(url)
 
-  def loopback_devide_session?(_), do: false
+  def loopback_casein_session?(_), do: false
 
-  def devide_loopback_url?(url) do
+  def casein_loopback_url?(url) do
     port = Application.get_env(:casein, :preview_loopback_port, 4000)
 
     Url.localhost_url?(url) and

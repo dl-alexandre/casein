@@ -20,8 +20,8 @@ set -u
 trap 'exit 0' ERR
 
 TOKEN="${CASEIN_API_TOKEN:-}"
-WORKSPACE_ID="${DEVIDE_WORKSPACE_ID:-}"
-MCP_URL="${DEVIDE_TERMINAL_MCP_URL:-}"
+WORKSPACE_ID="${CASEIN_WORKSPACE_ID:-}"
+MCP_URL="${CASEIN_TERMINAL_MCP_URL:-}"
 PANE="${TMUX_PANE:-}"
 
 # Without credentials, a target pane, or an endpoint there is nothing to do.
@@ -70,7 +70,7 @@ esac
 
 # Debounce: skip a repeated `working` report within 30s (PreToolUse fires
 # constantly). blocked/done/idle are low-frequency and always sent.
-CACHE_DIR="${DEVIDE_AGENT_MCP_HOME:-${TMPDIR:-/tmp}}"
+CACHE_DIR="${CASEIN_AGENT_MCP_HOME:-${TMPDIR:-/tmp}}"
 CACHE_FILE="${CACHE_DIR}/.casein-agent-state.${PANE//[^A-Za-z0-9_]/_}"
 NOW="$(date +%s 2>/dev/null || echo 0)"
 
@@ -87,7 +87,7 @@ fi
 printf '%s %s\n' "$STATE" "$NOW" >"$CACHE_FILE" 2>/dev/null || true
 
 arguments="$(
-  DEVIDE_WORKSPACE_ID="$WORKSPACE_ID" \
+  CASEIN_WORKSPACE_ID="$WORKSPACE_ID" \
     AGENT_STATE="$STATE" \
     AGENT_PANE="$PANE" \
     AGENT_MESSAGE="$MESSAGE" \
@@ -96,12 +96,12 @@ arguments="$(
     python3 - <<'PY' 2>/dev/null || true
 import json, os
 args = {
-    "workspace_id": os.environ["DEVIDE_WORKSPACE_ID"],
+    "workspace_id": os.environ["CASEIN_WORKSPACE_ID"],
     "state": os.environ["AGENT_STATE"],
     "pane": os.environ["AGENT_PANE"],
     "source": "hook",
 }
-agent_runtime = os.environ.get("DEVIDE_AGENT_LAUNCH_CONTEXT") or ""
+agent_runtime = os.environ.get("CASEIN_AGENT_LAUNCH_CONTEXT") or ""
 if agent_runtime:
     args["agent_runtime"] = agent_runtime
 message = os.environ.get("AGENT_MESSAGE") or ""
@@ -115,9 +115,9 @@ if agent_session_id:
     args["agent_session_id"] = agent_session_id
 if agent_runtime == "grok" or os.environ.get("GROK_HOOK_EVENT"):
     for env_name, key in [
-        ("DEVIDE_GROK_LEADER_SOCKET", "grok_leader_socket"),
-        ("DEVIDE_GROK_BUNDLE_DIR", "grok_bundle_dir"),
-        ("DEVIDE_GROK_BUNDLE_DIGEST", "grok_bundle_digest"),
+        ("CASEIN_GROK_LEADER_SOCKET", "grok_leader_socket"),
+        ("CASEIN_GROK_BUNDLE_DIR", "grok_bundle_dir"),
+        ("CASEIN_GROK_BUNDLE_DIGEST", "grok_bundle_digest"),
     ]:
         value = os.environ.get(env_name) or ""
         if value:

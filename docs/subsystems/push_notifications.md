@@ -1,7 +1,7 @@
 # Push notifications
 
 > OS push fan-out for session alerts and high-priority mobile cards. Reaches a
-> backgrounded or killed `devide_mob` app — the "tell me when I need to pay
+> backgrounded or killed `casein_mob` app — the "tell me when I need to pay
 > attention, even when I'm not at my desk" half of the mobile companion.
 
 ## Responsibility
@@ -15,7 +15,7 @@ live socket.
 ## End-to-end flow
 
 ```
-device (devide_mob)                         server (dev_ide)
+device (casein_mob)                         server (casein)
 ──────────────────                          ────────────────
 OS push permission grant
   │
@@ -41,10 +41,10 @@ SessionClient.register_push ───ws──▶ Channel "register_push"
 
 Token acquisition is real on both platforms:
 
-- **iOS** — `native/devide_mob/ios/AppDelegate.m`
+- **iOS** — `native/casein_mob/ios/AppDelegate.m`
   (`didRegisterForRemoteNotificationsWithDeviceToken`) hex-encodes the APNs
   device token and emits `{:push_token, :ios, token}`.
-- **Android** — `native/devide_mob/android/.../io/mob/notify/MobNotifyBridge.kt`
+- **Android** — `native/casein_mob/android/.../io/mob/notify/MobNotifyBridge.kt`
   resolves the FCM token via `FirebaseMessaging.getInstance().token`; refreshes
   flow through `MobFirebaseService`.
 
@@ -88,7 +88,7 @@ needed.
 |---------|---------|
 | `CASEIN_APNS_TEAM_ID` | Apple developer team id |
 | `CASEIN_APNS_KEY_ID` | APNs auth key id (the `.p8`'s key id) |
-| `CASEIN_APNS_TOPIC` | iOS app bundle id — **must match the signed build** (`com.alexandrefamilyfarm.devide-mob`, from `ios/Info.plist` / `ios/Provision.xcodeproj`). A mismatch is rejected with `DeviceTokenNotForTopic`. Note this is the iOS bundle id; Android's FCM applicationId is independent. |
+| `CASEIN_APNS_TOPIC` | iOS app bundle id — **must match the signed build** (`com.alexandrefamilyfarm.casein-mob`, from `ios/Info.plist` / `ios/Provision.xcodeproj`). A mismatch is rejected with `DeviceTokenNotForTopic`. Note this is the iOS bundle id; Android's FCM applicationId is independent. |
 | `CASEIN_APNS_PRIVATE_KEY` | The `.p8` PEM contents inline |
 | `CASEIN_APNS_PRIVATE_KEY_PATH` | Path to the `.p8` file (alternative to inline) |
 | `CASEIN_APNS_ENV` | `sandbox` (default) or `production` |
@@ -114,7 +114,7 @@ the raw 64-byte form APNs requires.
 ### APNs
 
 The iOS app id and its push entitlement are registered with Apple by signing
-`ios/Provision.xcodeproj` (bundle id `com.alexandrefamilyfarm.devide-mob`,
+`ios/Provision.xcodeproj` (bundle id `com.alexandrefamilyfarm.casein-mob`,
 entitlement `aps-environment: development` → **sandbox**). That gives you the
 provisioning profile and entitlement, but **not** the server credential — the
 server authenticates to APNs with a `.p8` **auth key** you create separately.
@@ -124,19 +124,19 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
    Notifications service (APNs)** → register → **download the `.p8`** (only
    downloadable once). Note the **Key ID** shown next to it.
 2. Note your **Team ID** (Membership page, 10 chars) and the **bundle id** of the
-   build that mints the token (`com.alexandrefamilyfarm.devide-mob`). The topic
+   build that mints the token (`com.alexandrefamilyfarm.casein-mob`). The topic
    must equal that bundle id.
 3. Export and start:
    ```bash
    export CASEIN_PUSH_PROVIDER=native
    export CASEIN_APNS_TEAM_ID=ABCDE12345              # your team id
    export CASEIN_APNS_KEY_ID=KEY1234567               # the .p8's key id
-   export CASEIN_APNS_TOPIC=com.alexandrefamilyfarm.devide-mob
+   export CASEIN_APNS_TOPIC=com.alexandrefamilyfarm.casein-mob
    export CASEIN_APNS_PRIVATE_KEY_PATH=/run/secrets/AuthKey_KEY1234567.p8
    export CASEIN_APNS_ENV=sandbox   # development builds register against sandbox
    ```
 4. Verify: `mix casein.push.check --platform ios`
-5. The device token comes from the **real `devide_mob` build** (not the
+5. The device token comes from the **real `casein_mob` build** (not the
    `MobProvision` shell) — `AppDelegate.m` registers for remote notifications via
    `mob_notify` after the user grants permission. Run it on a real device,
    pair, trigger an approval request, confirm the push arrives backgrounded.

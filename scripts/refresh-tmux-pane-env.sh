@@ -3,8 +3,8 @@
 # Repair Casein tmux session environment for agent panes.
 #
 # Usage:
-#   bash scripts/refresh-tmux-pane-env.sh                           # all devide_* sessions
-#   bash scripts/refresh-tmux-pane-env.sh --workspace-prefix NAME   # devide_NAME_* only
+#   bash scripts/refresh-tmux-pane-env.sh                           # all casein_* sessions
+#   bash scripts/refresh-tmux-pane-env.sh --workspace-prefix NAME   # casein_NAME_* only
 #   bash scripts/refresh-tmux-pane-env.sh <session>                   # one session
 #
 set -euo pipefail
@@ -39,14 +39,14 @@ if [[ ${#SESSIONS[@]} -gt 0 ]]; then
     bash "$REPAIR" "$session"
   done
 else
-  pattern='^devide_'
+  pattern='^casein_'
   if [[ -n "$WORKSPACE_PREFIX" ]]; then
-    pattern="^devide_${WORKSPACE_PREFIX}_"
+    pattern="^casein_${WORKSPACE_PREFIX}_"
   fi
 
   mapfile -t sessions < <(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -E "$pattern" || true)
   if [[ ${#sessions[@]} -eq 0 ]]; then
-    log "no matching devide tmux sessions found"
+    log "no matching casein tmux sessions found"
     exit 0
   fi
 

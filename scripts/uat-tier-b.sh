@@ -21,7 +21,7 @@
 #   bash scripts/uat-tier-b.sh            # live run (requires the wiring above)
 set -euo pipefail
 
-SOCKET="${DEVIDE_SOCKET:-/run/casein/current.sock}"
+SOCKET="${CASEIN_SOCKET:-/run/casein/current.sock}"
 DRY_RUN=0
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
 

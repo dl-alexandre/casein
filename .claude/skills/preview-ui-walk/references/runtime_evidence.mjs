@@ -23,11 +23,11 @@ const MAX_PROBE_CODE = 2000;
 
 /**
  * Resolve Tidewave MCP URL.
- * Order: explicit → DEVIDE_TIDEWAVE_MCP_URL → <appBase>/tidewave/mcp
+ * Order: explicit → CASEIN_TIDEWAVE_MCP_URL → <appBase>/tidewave/mcp
  */
 export function resolveTidewaveUrl({ base, explicit } = {}) {
   if (explicit && String(explicit).trim()) return normalizeMcpUrl(explicit);
-  const env = process.env.DEVIDE_TIDEWAVE_MCP_URL;
+  const env = process.env.CASEIN_TIDEWAVE_MCP_URL;
   if (env && env.trim()) return normalizeMcpUrl(env);
   if (base && String(base).trim()) {
     try {

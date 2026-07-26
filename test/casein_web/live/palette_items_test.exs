@@ -15,7 +15,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItemsTest do
         "palette-items-#{System.unique_integer([:positive])}"
       )
 
-    File.mkdir_p!(Path.join(root, ".dev_ide/workflows"))
+    File.mkdir_p!(Path.join(root, ".casein/workflows"))
     on_exit(fn -> File.rm_rf!(root) end)
 
     {:ok, root: root}
@@ -199,7 +199,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItemsTest do
                 label: "shell",
                 detail: "workspace shell",
                 title: "shell",
-                tmux_session: "devide_ws",
+                tmux_session: "casein_ws",
                 windows: []
               }
             ]
@@ -246,7 +246,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItemsTest do
   end
 
   defp write_workflow(root, name, body) do
-    dir = Path.join(root, ".dev_ide/workflows")
+    dir = Path.join(root, ".casein/workflows")
     File.mkdir_p!(dir)
     File.write!(Path.join(dir, name), body)
   end

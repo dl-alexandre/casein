@@ -7,7 +7,7 @@ defmodule Casein.AgentSessions.GrokACP.Transport.StdioTest do
     root =
       Path.join(
         System.tmp_dir!(),
-        "devide-grok-stdio-#{System.unique_integer([:positive])}"
+        "casein-grok-stdio-#{System.unique_integer([:positive])}"
       )
 
     executable = Path.join(root, "fake-grok")

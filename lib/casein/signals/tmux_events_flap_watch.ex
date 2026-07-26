@@ -31,7 +31,7 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
 
   **Ladder:** dev default ON (this PR) → canary soak via this telemetry → prod
   default later (operational; not code here). `runtime.exs` env
-  `DEVIDE_TMUX_EVENTS` still overrides both ways.
+  `CASEIN_TMUX_EVENTS` still overrides both ways.
 
   **Watch during canary soak (≈48h):**
 
@@ -56,15 +56,15 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
 
       # Enable on a host (canary / prod soak) — no restart required if already
       # compiled with the flag; restart the release so the listener child starts.
-      # /etc/casein/devide.env:
-      DEVIDE_TMUX_EVENTS=1
+      # /etc/casein/casein.env:
+      CASEIN_TMUX_EVENTS=1
 
       # Kill switch (immediate poll path on next watcher tick / resubscribe):
-      DEVIDE_TMUX_EVENTS=0
+      CASEIN_TMUX_EVENTS=0
 
       # Dev (compile-time default after this PR):
       # config/dev.exs → config :casein, :tmux_events, true
-      # Override: DEVIDE_TMUX_EVENTS=0 in the shell before mix phx.server
+      # Override: CASEIN_TMUX_EVENTS=0 in the shell before mix phx.server
 
   **Do not flip prod default** until soak shows zero flap alarms, no
   session_terminated regression, and watcher refresh mix dominated by
@@ -80,7 +80,7 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
   @ops_topic "ops:health"
   @workspace_id "_ops"
   @telemetry_event [:tmux_ctl, :events, :listener]
-  @handler_id_prefix "dev_ide.tmux_events_flap_watch"
+  @handler_id_prefix "casein.tmux_events_flap_watch"
 
   @degraded_action "tmux.events_listener_degraded"
   @recovered_action "tmux.events_listener_recovered"
@@ -384,13 +384,13 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
           reason == :listener_down ->
             "Host tmux control listener is down / never connected. Check the anchor " <>
               "session (`__casein_keepalive`), tmux server health " <>
-              "(`tmux -L <label> list-sessions`), and DEVIDE_TMUX_EVENTS. Topology " <>
+              "(`tmux -L <label> list-sessions`), and CASEIN_TMUX_EVENTS. Topology " <>
               "falls back to polling automatically."
 
           true ->
             "Host tmux control listener is flapping. Check the anchor session " <>
               "(`__casein_keepalive`), tmux server health (`tmux -L <label> list-sessions`), " <>
-              "and DEVIDE_TMUX_EVENTS. Topology falls back to polling automatically."
+              "and CASEIN_TMUX_EVENTS. Topology falls back to polling automatically."
         end
     }
 

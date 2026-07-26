@@ -73,7 +73,7 @@ defmodule Casein.Deployment.Health do
           else: not_configured(:socket)
         ),
       current_socket_points_to_instance: socket_check,
-      caddy_devide_upstream: caddy_check,
+      caddy_casein_upstream: caddy_check,
       deploy_revision_current: drift_check,
       deploy_pipeline_ok: pipeline_check
     }

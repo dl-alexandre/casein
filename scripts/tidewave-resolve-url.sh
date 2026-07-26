@@ -2,20 +2,20 @@
 #
 # tidewave-resolve-url.sh — resolve Tidewave MCP URL using the Elixir resolver.
 #
-# Reads DEVIDE_TIDEWAVE_MCP_URL / DEVIDE_PREVIEW_ENV_ID from the environment and
+# Reads CASEIN_TIDEWAVE_MCP_URL / CASEIN_PREVIEW_ENV_ID from the environment and
 # optional workspace name/id args. Prints the URL or exits 1 when unavailable.
 #
 # Usage:
 #   bash scripts/tidewave-resolve-url.sh
-#   bash scripts/tidewave-resolve-url.sh dalexandre-devide <workspace-uuid>
+#   bash scripts/tidewave-resolve-url.sh dalexandre-casein <workspace-uuid>
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-WS_NAME="${1:-${DEVIDE_WORKSPACE_NAME:-}}"
-WS_ID="${2:-${DEVIDE_WORKSPACE_ID:-}}"
+WS_NAME="${1:-${CASEIN_WORKSPACE_NAME:-}}"
+WS_ID="${2:-${CASEIN_WORKSPACE_ID:-}}"
 
 mise exec elixir@1.20.0-otp-28 erlang@28.5 -- mix run --no-start -e "
 workspace =

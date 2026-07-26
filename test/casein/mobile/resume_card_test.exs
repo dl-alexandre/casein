@@ -37,7 +37,7 @@ defmodule Casein.Mobile.ResumeCardTest do
            }
 
     deep_link = ResumeCard.deep_link(card)
-    assert deep_link =~ "devide://review/needs_review%3Aworkspace-1%3Asession-1?"
+    assert deep_link =~ "casein://review/needs_review%3Aworkspace-1%3Asession-1?"
     assert deep_link =~ "origin_id=#{URI.encode_www_form(Casein.Origin.id())}"
     assert deep_link =~ "workspace_id=workspace-1"
     assert deep_link =~ "session_id=session-1"

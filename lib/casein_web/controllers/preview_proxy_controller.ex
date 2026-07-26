@@ -286,7 +286,7 @@ defmodule CaseinWeb.PreviewProxyController do
   defp read_proxy_body(%{method: method}) when method in ~w(GET HEAD OPTIONS), do: ""
 
   defp read_proxy_body(conn) do
-    case conn.private[:devide_preview_proxy_raw_body] do
+    case conn.private[:casein_preview_proxy_raw_body] do
       body when is_binary(body) ->
         body
 

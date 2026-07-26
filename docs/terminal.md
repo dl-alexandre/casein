@@ -22,7 +22,7 @@ Ghostty.Terminal (libghostty-vt cell grid)
    ↕  {:data, binary} messages
 Ghostty.PTY (forkpty)
    ↕
-tmux new-session -A -s devide_<workspace>_<sid>
+tmux new-session -A -s casein_<workspace>_<sid>
 ```
 
 The tmux session is the persistence boundary. The `Ghostty.Terminal` and
@@ -183,12 +183,12 @@ UI affordances:
 
 `Casein.Terminals.TmuxJanitor` is a singleton GenServer that tracks
 LiveView subscribers per tmux session (keyed by session name, e.g.
-`devide_alpha_u-<user>`). On mount the LiveView calls
+`casein_alpha_u-<user>`). On mount the LiveView calls
 `TmuxJanitor.subscribe/1`; the janitor monitors the socket pid. On `:DOWN`
 or explicit `unsubscribe/1`, if no subscribers remain for that session, it
 schedules `tmux kill-session -t <name>` after `:tmux_idle_seconds` (config,
 default disabled in dev, `600` in prod). A new subscriber arriving cancels
-the pending kill. Safety: only sessions whose name starts with `devide_`
+the pending kill. Safety: only sessions whose name starts with `casein_`
 are killed.
 
 ## Ghostty raw renderer

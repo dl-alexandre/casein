@@ -420,7 +420,7 @@ defmodule Casein.Notifications do
       dedupe_key: "#{user_id}:needs_review:#{workspace_id}:#{session_id || id}",
       ttl_seconds: 86_400,
       dedupe_window_seconds: 600,
-      deep_link: "devide://review/#{URI.encode_www_form(to_string(id))}",
+      deep_link: "casein://review/#{URI.encode_www_form(to_string(id))}",
       channels: ["in_app", "push", "mobile"],
       default_delivery: %{"in_app" => true, "push" => true, "mobile" => true},
       source_type: "mobile_card",

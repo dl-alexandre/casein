@@ -11,7 +11,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
     prev_home_workspace_path = Application.get_env(:casein, :home_workspace_path)
 
     # Create a unique temporary root for this test
-    root = Path.join(System.tmp_dir!(), "devide_local_test_#{System.unique_integer([:positive])}")
+    root = Path.join(System.tmp_dir!(), "casein_local_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)
 
     Application.put_env(:casein, :workspaces_root, root)
@@ -65,7 +65,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
 
     test "includes configured home workspace even when it is outside the root", %{root: root} do
       home =
-        Path.join(System.tmp_dir!(), "devide-local-home-#{System.unique_integer([:positive])}")
+        Path.join(System.tmp_dir!(), "casein-local-home-#{System.unique_integer([:positive])}")
 
       File.mkdir_p!(home)
       Application.put_env(:casein, :home_workspace_path, home)
@@ -97,7 +97,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
       home =
         Path.join(
           System.tmp_dir!(),
-          "devide-local-get-home-#{System.unique_integer([:positive])}"
+          "casein-local-get-home-#{System.unique_integer([:positive])}"
         )
 
       File.mkdir_p!(home)
@@ -138,7 +138,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
       home =
         Path.join(
           System.tmp_dir!(),
-          "devide-local-create-home-#{System.unique_integer([:positive])}"
+          "casein-local-create-home-#{System.unique_integer([:positive])}"
         )
 
       File.mkdir_p!(home)
@@ -171,7 +171,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
       home =
         Path.join(
           System.tmp_dir!(),
-          "devide-local-delete-home-#{System.unique_integer([:positive])}"
+          "casein-local-delete-home-#{System.unique_integer([:positive])}"
         )
 
       File.mkdir_p!(home)
@@ -202,7 +202,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
       home =
         Path.join(
           System.tmp_dir!(),
-          "devide-local-safe-home-#{System.unique_integer([:positive])}"
+          "casein-local-safe-home-#{System.unique_integer([:positive])}"
         )
 
       File.mkdir_p!(home)

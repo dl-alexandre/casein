@@ -2,7 +2,7 @@ defmodule Casein.Terminals.TmuxEvents do
   @moduledoc """
   Casein facade for the host-tmux control-mode event source.
 
-  Flag-gated by `config :casein, :tmux_events` (env `DEVIDE_TMUX_EVENTS`).
+  Flag-gated by `config :casein, :tmux_events` (env `CASEIN_TMUX_EVENTS`).
   When off, `child_spec/1` starts as `:ignore` and `subscribe/2` returns
   `{:error, :unavailable}` so watchers stay on pure polling.
   """

@@ -17,7 +17,7 @@ defmodule Casein.Agents.AuthProfileTest do
   end
 
   test "missing profile dirs leave provider auth global", %{root: root} do
-    workspace = %{id: "ws-1", name: "dalexandre-devide"}
+    workspace = %{id: "ws-1", name: "dalexandre-casein"}
 
     assert AuthProfile.env_for_workspace(workspace, :claude) == %{}
     assert AuthProfile.env_for_workspace(workspace, :codex) == %{}
@@ -57,7 +57,7 @@ defmodule Casein.Agents.AuthProfileTest do
              "CODEX_HOME" => codex_dir
            }
 
-    assert File.read!(Path.join(claude_dir, "README.devide-profile")) =~
+    assert File.read!(Path.join(claude_dir, "README.casein-profile")) =~
              "opt-in Casein owner auth home"
   end
 
@@ -120,7 +120,7 @@ defmodule Casein.Agents.AuthProfileTest do
 
   test "shell helper reports auth profile status and list", %{root: root} do
     script = Path.expand("../../../scripts/lib/agent-auth-profile.sh", __DIR__)
-    env = [{"DEVIDE_AGENT_AUTH_ROOT", root}]
+    env = [{"CASEIN_AGENT_AUTH_ROOT", root}]
     dir = Path.join([root, "profiles", "sconde", "codex"])
 
     File.mkdir_p!(dir)
@@ -148,7 +148,7 @@ defmodule Casein.Agents.AuthProfileTest do
 
   test "shell helper registers and unregisters fail-closed owners", %{root: root} do
     script = Path.expand("../../../scripts/lib/agent-auth-profile.sh", __DIR__)
-    env = [{"DEVIDE_AGENT_AUTH_ROOT", root}]
+    env = [{"CASEIN_AGENT_AUTH_ROOT", root}]
 
     assert {out, 0} = System.cmd("bash", [script, "--register", "sconde"], env: env)
     assert out =~ "registered owner sconde"
@@ -174,8 +174,8 @@ defmodule Casein.Agents.AuthProfileTest do
     assert {pairs, 0} = System.cmd("bash", [script, "--pairs", "sconde-test", "claude"], env: env)
     assert pairs == ""
 
-    # DEVIDE_AGENT_AUTH_FALLBACK=none treats every owner as registered.
-    none_env = [{"DEVIDE_AGENT_AUTH_FALLBACK", "none"} | env]
+    # CASEIN_AGENT_AUTH_FALLBACK=none treats every owner as registered.
+    none_env = [{"CASEIN_AGENT_AUTH_FALLBACK", "none"} | env]
 
     assert {pairs, 0} =
              System.cmd("bash", [script, "--pairs", "tramzel-ws", "codex"], env: none_env)
@@ -183,8 +183,8 @@ defmodule Casein.Agents.AuthProfileTest do
     assert pairs =~ "CODEX_HOME\t#{Path.join([root, "profiles", "tramzel", "codex"])}"
   end
 
-  test "devide signin detects owner from current workspace", %{root: root} do
-    devide = Path.expand("../../../scripts/devide", __DIR__)
+  test "casein signin detects owner from current workspace", %{root: root} do
+    casein = Path.expand("../../../scripts/casein", __DIR__)
     home = Path.join(root, "home")
     codex = Path.join([home, ".casein", "real-bins", "codex"])
     codex_dir = Path.join([root, "profiles", "sconde", "codex"])
@@ -200,15 +200,15 @@ defmodule Casein.Agents.AuthProfileTest do
     File.chmod!(codex, 0o755)
 
     # System.cmd/3 merges `env:` into the BEAM process environment on the devbox,
-    # so leaked DEVIDE_SCRIPTS/CODEX_HOME from tmux would invoke the real provider
+    # so leaked CASEIN_SCRIPTS/CODEX_HOME from tmux would invoke the real provider
     # CLI (OAuth hang). env -i keeps only the vars this test needs.
     signin_env = [
-      {"DEVIDE_AGENT_AUTH_ROOT", root},
-      {"DEVIDE_SCRIPTS", Path.dirname(devide)},
+      {"CASEIN_AGENT_AUTH_ROOT", root},
+      {"CASEIN_SCRIPTS", Path.dirname(casein)},
       {"HOME", home},
       {"CASEIN_API_TOKEN", "token"},
-      {"DEVIDE_WORKSPACE_ID", "ws-1"},
-      {"DEVIDE_WORKSPACE_NAME", "Sconde-Test"},
+      {"CASEIN_WORKSPACE_ID", "ws-1"},
+      {"CASEIN_WORKSPACE_NAME", "Sconde-Test"},
       {"PATH", "/usr/bin:/bin"},
       {"SHELL", "/bin/bash"},
       {"LANG", "C.UTF-8"}
@@ -219,7 +219,7 @@ defmodule Casein.Agents.AuthProfileTest do
     assert {output, 0} =
              System.cmd(
                "env",
-               ["-i" | env_args ++ ["bash", devide, "agent", "auth", "signin", "codex"]],
+               ["-i" | env_args ++ ["bash", casein, "agent", "auth", "signin", "codex"]],
                stderr_to_stdout: true
              )
 

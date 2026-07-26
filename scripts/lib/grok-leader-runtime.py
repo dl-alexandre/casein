@@ -290,7 +290,7 @@ def probe(path: Path, expected_pgid: int, timeout: float) -> None:
             client,
             {
                 "type": "register",
-                "client_type": "devide-readiness-probe",
+                "client_type": "casein-readiness-probe",
                 "mode": "stdio",
                 "capabilities": {},
             },

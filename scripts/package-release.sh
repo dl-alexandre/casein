@@ -8,7 +8,7 @@
 # Produces (under dist/):
 #   casein-lan-linux-x86_64-<shortsha>.tar.gz
 #   casein-lan-linux-x86_64-<shortsha>.tar.gz.sha256
-#   devide-canary.json
+#   casein-canary.json
 #
 # Does not publish to GitHub Releases — generate locally, verify, then publish
 # separately once the format is proven.
@@ -18,7 +18,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DIST_DIR="${DIST_DIR:-${REPO_DIR}/dist}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO_DIR}/release-out}"
-CHANNEL="${DEVIDE_RELEASE_CHANNEL:-canary}"
+CHANNEL="${CASEIN_RELEASE_CHANNEL:-canary}"
 
 PROFILE=""
 TARGET=""
@@ -34,8 +34,8 @@ Options:
 Environment:
   DIST_DIR                  Output directory (default: ./dist)
   OUTPUT_DIR                Release tree directory (default: ./release-out)
-  DEVIDE_RELEASE_CHANNEL    Manifest channel (default: canary)
-  DEVIDE_UPDATE_MANIFEST_URL  Embedded manifest URL override
+  CASEIN_RELEASE_CHANNEL    Manifest channel (default: canary)
+  CASEIN_UPDATE_MANIFEST_URL  Embedded manifest URL override
 EOF
 }
 
@@ -81,7 +81,7 @@ case "${PROFILE}" in
 esac
 
 if ! command -v git >/dev/null 2>&1; then
-  die "git is required to pin DEVIDE_GIT_REVISION"
+  die "git is required to pin CASEIN_GIT_REVISION"
 fi
 
 REVISION="$(git -C "${REPO_DIR}" rev-parse HEAD)"
@@ -91,9 +91,9 @@ TARBALL="${DIST_DIR}/${ARTIFACT_BASENAME}.tar.gz"
 SHA_FILE="${TARBALL}.sha256"
 PREVIOUS_REVISION=""
 
-if [ -f "${DIST_DIR}/devide-${CHANNEL}.json" ]; then
+if [ -f "${DIST_DIR}/casein-${CHANNEL}.json" ]; then
   PREVIOUS_REVISION="$(
-    python3 - "${DIST_DIR}/devide-${CHANNEL}.json" "${PROFILE}" "${TARGET}" <<'PY' 2>/dev/null || true
+    python3 - "${DIST_DIR}/casein-${CHANNEL}.json" "${PROFILE}" "${TARGET}" <<'PY' 2>/dev/null || true
 import json, sys
 path, profile, target = sys.argv[1:4]
 with open(path) as fh:
@@ -109,11 +109,11 @@ fi
 log "building ${PROFILE}/${TARGET} release at ${REVISION}"
 
 export CASEIN_REPO_ADAPTER="${REPO_ADAPTER}"
-export DEVIDE_GIT_REVISION="${REVISION}"
-export DEVIDE_RELEASE_PROFILE="${PROFILE}"
-export DEVIDE_RELEASE_REPO_ADAPTER="${REPO_ADAPTER}"
-export DEVIDE_RELEASE_TARGET="${TARGET}"
-export DEVIDE_RELEASE_CHANNEL="${CHANNEL}"
+export CASEIN_GIT_REVISION="${REVISION}"
+export CASEIN_RELEASE_PROFILE="${PROFILE}"
+export CASEIN_RELEASE_REPO_ADAPTER="${REPO_ADAPTER}"
+export CASEIN_RELEASE_TARGET="${TARGET}"
+export CASEIN_RELEASE_CHANNEL="${CHANNEL}"
 
 (
   cd "${REPO_DIR}"
@@ -132,15 +132,15 @@ tar -C "${OUTPUT_DIR}" -czf "${TARBALL}" .
   sha256sum "$(basename "${TARBALL}")" > "$(basename "${SHA_FILE}")"
 )
 
-log "writing dist/devide-${CHANNEL}.json"
+log "writing dist/casein-${CHANNEL}.json"
 WRITE_CODE="$(cat <<EOF
 alias Casein.Release.Package
-prev = System.get_env("DEVIDE_PACKAGE_PREVIOUS_REVISION")
+prev = System.get_env("CASEIN_PACKAGE_PREVIOUS_REVISION")
 opts = [
-  release_root: System.get_env("DEVIDE_PACKAGE_RELEASE_ROOT"),
-  tarball: System.get_env("DEVIDE_PACKAGE_TARBALL"),
-  dist_dir: System.get_env("DEVIDE_PACKAGE_DIST_DIR"),
-  channel: System.get_env("DEVIDE_PACKAGE_CHANNEL")
+  release_root: System.get_env("CASEIN_PACKAGE_RELEASE_ROOT"),
+  tarball: System.get_env("CASEIN_PACKAGE_TARBALL"),
+  dist_dir: System.get_env("CASEIN_PACKAGE_DIST_DIR"),
+  channel: System.get_env("CASEIN_PACKAGE_CHANNEL")
 ]
 opts = if prev in [nil, ""], do: opts, else: Keyword.put(opts, :previous_revision, prev)
 result = Package.write_dist_manifest!(opts)
@@ -148,11 +148,11 @@ IO.puts(result.manifest_path)
 EOF
 )"
 
-export DEVIDE_PACKAGE_RELEASE_ROOT="${OUTPUT_DIR}"
-export DEVIDE_PACKAGE_TARBALL="${TARBALL}"
-export DEVIDE_PACKAGE_DIST_DIR="${DIST_DIR}"
-export DEVIDE_PACKAGE_CHANNEL="${CHANNEL}"
-export DEVIDE_PACKAGE_PREVIOUS_REVISION="${PREVIOUS_REVISION}"
+export CASEIN_PACKAGE_RELEASE_ROOT="${OUTPUT_DIR}"
+export CASEIN_PACKAGE_TARBALL="${TARBALL}"
+export CASEIN_PACKAGE_DIST_DIR="${DIST_DIR}"
+export CASEIN_PACKAGE_CHANNEL="${CHANNEL}"
+export CASEIN_PACKAGE_PREVIOUS_REVISION="${PREVIOUS_REVISION}"
 
 if command -v mise >/dev/null 2>&1; then
   (cd "${REPO_DIR}" && mise exec -- mix run --no-start -e "${WRITE_CODE}")
@@ -162,5 +162,5 @@ fi
 
 log "artifact:  ${TARBALL}"
 log "sha256:      ${SHA_FILE}"
-log "manifest:    ${DIST_DIR}/devide-${CHANNEL}.json"
+log "manifest:    ${DIST_DIR}/casein-${CHANNEL}.json"
 log "verify with: tar -tzf ${TARBALL} | head && (cd ${DIST_DIR} && sha256sum -c $(basename "${SHA_FILE}"))"

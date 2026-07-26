@@ -29,7 +29,7 @@ defmodule Casein.Workspaces.ScratchTest do
   end
 
   test "workspace/0 builds a synthetic running workspace rooted at home" do
-    home = Path.join(System.tmp_dir!(), "devide-scratch-home-#{System.unique_integer()}")
+    home = Path.join(System.tmp_dir!(), "casein-scratch-home-#{System.unique_integer()}")
     File.mkdir_p!(home)
     Application.put_env(:casein, :home_workspace_path, home)
 
@@ -55,7 +55,7 @@ defmodule Casein.Workspaces.ScratchTest do
   end
 
   test "Workspaces.get/2 resolves the scratch sentinel without source lookup" do
-    home = Path.join(System.tmp_dir!(), "devide-scratch-get-#{System.unique_integer()}")
+    home = Path.join(System.tmp_dir!(), "casein-scratch-get-#{System.unique_integer()}")
     File.mkdir_p!(home)
     Application.put_env(:casein, :home_workspace_path, home)
 
@@ -67,7 +67,7 @@ defmodule Casein.Workspaces.ScratchTest do
   end
 
   test "safe_host_loc/1 and safe_host_path/1 return the home directory for scratch" do
-    home = Path.join(System.tmp_dir!(), "devide-scratch-loc-#{System.unique_integer()}")
+    home = Path.join(System.tmp_dir!(), "casein-scratch-loc-#{System.unique_integer()}")
     File.mkdir_p!(home)
     Application.put_env(:casein, :home_workspace_path, home)
 

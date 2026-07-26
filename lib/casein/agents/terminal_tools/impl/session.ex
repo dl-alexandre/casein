@@ -8,7 +8,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
 
   import Casein.Agents.TerminalTools.Impl.Shared
 
-  @session_prefix "devide_"
+  @session_prefix "casein_"
 
   # Session-level active window/pane track the attached operator's focus and
   # move when the operator switches windows. Deictic pane references ("the

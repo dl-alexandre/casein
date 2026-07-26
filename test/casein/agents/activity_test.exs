@@ -15,7 +15,7 @@ defmodule Casein.Agents.ActivityTest do
         workspace_id: "ws-alpha",
         source: :terminal_mcp,
         tool: "terminal_capture",
-        summary: "session=devide_alpha_u-1",
+        summary: "session=casein_alpha_u-1",
         status: :ok
       })
 
@@ -31,12 +31,12 @@ defmodule Casein.Agents.ActivityTest do
         workspace_id: "ws-alpha",
         source: :terminal_mcp,
         tool: "terminal_send_command",
-        summary: "session=devide_alpha_u-dev · pane=%3",
-        metadata: %{session: "devide_alpha_u-dev", pane: "%3"},
+        summary: "session=casein_alpha_u-dev · pane=%3",
+        metadata: %{session: "casein_alpha_u-dev", pane: "%3"},
         status: :ok
       })
 
-    assert entry.metadata == %{session: "devide_alpha_u-dev", pane: "%3"}
+    assert entry.metadata == %{session: "casein_alpha_u-dev", pane: "%3"}
   end
 
   test "broadcasts activity to subscribers" do

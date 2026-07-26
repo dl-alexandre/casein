@@ -59,14 +59,14 @@ defmodule CaseinPreviewBrowser.ExternalBackend.ProtocolTest do
         "browser_id" => "browser-1",
         "event" => [
           "preview_signal",
-          "devide:preview:live_socket_connected",
+          "casein:preview:live_socket_connected",
           %{"request_id" => "pv-test", "timestamp" => 123},
           %{
             "state" => "liveview_stable",
             "bridge_ready" => true,
             "dom_loaded" => true,
             "live_socket_connected" => true,
-            "last_event_type" => "devide:preview:live_socket_connected",
+            "last_event_type" => "casein:preview:live_socket_connected",
             "last_event_at" => 123,
             "client_errors" => []
           }
@@ -75,7 +75,7 @@ defmodule CaseinPreviewBrowser.ExternalBackend.ProtocolTest do
 
     assert {:ok,
             {:event, "browser-1",
-             {:preview_signal, "devide:preview:live_socket_connected",
+             {:preview_signal, "casein:preview:live_socket_connected",
               %{"request_id" => "pv-test", "timestamp" => 123},
               %Health{state: :liveview_stable, live_socket_connected: true}}}} =
              Protocol.decode_line(line)
@@ -83,14 +83,14 @@ defmodule CaseinPreviewBrowser.ExternalBackend.ProtocolTest do
 
   test "decodes standalone health events" do
     line =
-      ~s({"type":"event","browser_id":"browser-1","event":["health",{"state":"navigation_started","last_event_type":"devide:preview:page_loading_start"}]})
+      ~s({"type":"event","browser_id":"browser-1","event":["health",{"state":"navigation_started","last_event_type":"casein:preview:page_loading_start"}]})
 
     assert {:ok,
             {:event, "browser-1",
              {:health,
               %Health{
                 state: :navigation_started,
-                last_event_type: "devide:preview:page_loading_start"
+                last_event_type: "casein:preview:page_loading_start"
               }}}} =
              Protocol.decode_line(line)
   end

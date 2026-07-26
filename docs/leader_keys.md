@@ -101,7 +101,7 @@ All of these require the `C-b` prefix first (except where noted).
 | `y`       | (custom)          | `copy-link` — copies a full-view link (session, window, pane, zoom when set) |
 | `1`–`9`   | select window     | clicks `[data-tmux-window-index="N"]` |
 | `,`       | rename window     | `rename-window` — starts inline rename on the active window tab |
-| `$`       | rename session    | `rename-session` — opens the session dropdown, starts inline rename of the active session. Stored as the tmux user option `@devide_session_alias` (not a real `rename-session`, which would break the load-bearing `devide_<workspace>_<sid>` name). Works for any session, including the default/landing session (which renders as a normal row marked "home") |
+| `$`       | rename session    | `rename-session` — opens the session dropdown, starts inline rename of the active session. Stored as the tmux user option `@casein_session_alias` (not a real `rename-session`, which would break the load-bearing `casein_<workspace>_<sid>` name). Works for any session, including the default/landing session (which renders as a normal row marked "home") |
 | `&`       | kill window       | `kill-window` — kills the active window after a confirm prompt (tmux asks y/n too) |
 | `d`       | detach            | `detach` — returns to the workspace shell |
 

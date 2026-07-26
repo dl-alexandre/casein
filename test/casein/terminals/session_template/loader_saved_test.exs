@@ -34,7 +34,7 @@ defmodule Casein.Terminals.SessionTemplate.LoaderSavedTest do
                name: "My Saved Layout",
                description: "A saved export",
                body: body,
-               source_session: "devide_ws",
+               source_session: "casein_ws",
                schema_version: 2
              })
 
@@ -68,7 +68,7 @@ defmodule Casein.Terminals.SessionTemplate.LoaderSavedTest do
         workspace_id: @ws,
         name: "No Desc",
         body: body,
-        source_session: "devide_ws",
+        source_session: "casein_ws",
         schema_version: 2
       })
 

@@ -26,7 +26,7 @@ defmodule CaseinWeb.TerminalBoundaryLiveTest do
           "-c",
           "user.name=Casein Test",
           "-c",
-          "user.email=devide-test@example.invalid",
+          "user.email=casein-test@example.invalid",
           "commit",
           "--quiet",
           "-m",
@@ -124,7 +124,7 @@ defmodule CaseinWeb.TerminalBoundaryLiveTest do
     # Same-workspace target (the attached session): handled, view stays alive.
     render_click(view, "terminal:picker_preview", %{"window-id" => "@1"})
     # Foreign session prefix: validation refuses the capture, still no crash.
-    render_click(view, "terminal:picker_preview", %{"tmux-session" => "devide_other-ws_u-x"})
+    render_click(view, "terminal:picker_preview", %{"tmux-session" => "casein_other-ws_u-x"})
 
     assert Process.alive?(view.pid)
   end

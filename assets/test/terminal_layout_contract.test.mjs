@@ -459,9 +459,9 @@ test("triggers: the keyboard event alone engages row-pinning", async (t) => {
 
   // Shrink the container and mark the keyboard open, but do NOT call
   // onWindowResize — no ResizeObserver, no window resize. Only the event.
-  document.documentElement.classList.add("devide-keyboard-open")
+  document.documentElement.classList.add("casein-keyboard-open")
   setViewport(el, { width: 390, height: 280 })
-  window.dispatchEvent(new window.CustomEvent("devide:keyboard-open-changed", {
+  window.dispatchEvent(new window.CustomEvent("casein:keyboard-open-changed", {
     detail: { open: true },
   }))
   await wait(150)

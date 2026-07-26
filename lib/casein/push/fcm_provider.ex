@@ -119,7 +119,7 @@ defmodule Casein.Push.FCMProvider do
         "workspace_id" => to_string(notification[:workspace_id]),
         "action" => to_string(notification[:action]),
         "deep_link" =>
-          notification[:deep_link] || "devide://session/#{notification[:workspace_id]}"
+          notification[:deep_link] || "casein://session/#{notification[:workspace_id]}"
       }
       |> maybe_put_string("session_id", notification[:session_id])
       |> maybe_put_string("card_id", notification[:card_id])

@@ -268,7 +268,7 @@ defmodule Casein.Runtimes.PreviewServerTest do
         "workspace_id" => "ws-ext-1",
         "cwd" => cwd,
         "port" => port,
-        "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+        "env" => %{"CASEIN_PREVIEW_HOME" => preview_home}
       }
 
       assert PreviewServer.owns_live_port?(server)
@@ -381,12 +381,12 @@ defmodule Casein.Runtimes.PreviewServerTest do
       assert env["FROM_PROFILE"] == "p"
       # computed values override both existing and profile env
       assert env["PORT"] == "8000"
-      assert env["DEVIDE_RUNTIME_ID"] == "rt-env"
-      assert env["DEVIDE_WORKSPACE_ID"] == "ws-env"
-      assert env["DEVIDE_TMUX_SESSION"] == "tmux-env"
-      assert env["DEVIDE_PREVIEW_HOME"] == "/host/root/.casein-preview"
+      assert env["CASEIN_RUNTIME_ID"] == "rt-env"
+      assert env["CASEIN_WORKSPACE_ID"] == "ws-env"
+      assert env["CASEIN_TMUX_SESSION"] == "tmux-env"
+      assert env["CASEIN_PREVIEW_HOME"] == "/host/root/.casein-preview"
 
-      assert env["DEVIDE_RUNTIME_PREVIEW_SOCKET"] ==
+      assert env["CASEIN_RUNTIME_PREVIEW_SOCKET"] ==
                Path.join(["/host/root", ".casein-preview", "sockets", socket_name("rt-env")])
     end
 
@@ -406,7 +406,7 @@ defmodule Casein.Runtimes.PreviewServerTest do
       env = server["env"]
       refute Map.has_key?(env, "BAD")
       assert env["OK"] == "5"
-      assert env["DEVIDE_PREVIEW_HOME"] == "/wt/only/.casein-preview"
+      assert env["CASEIN_PREVIEW_HOME"] == "/wt/only/.casein-preview"
     end
   end
 

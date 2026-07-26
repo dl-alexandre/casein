@@ -17,7 +17,7 @@
 # passing tests nothing (assert_receive returns as soon as the message lands)
 # and only extends the wait before a genuine failure. refute_receive keeps its
 # own (short, explicit) timeouts, so negative assertions are unaffected.
-# `DEVIDE_GROK_BUNDLE_ROOT` / `DEVIDE_GROK_LEADER_ROOT` are production operator
+# `CASEIN_GROK_BUNDLE_ROOT` / `CASEIN_GROK_LEADER_ROOT` are production operator
 # overrides that `GrokCapabilityBundle` honors ahead of the `:casein` app env.
 # A paired-agent shell (which launches Grok) exports them, so running the suite
 # from such a shell leaks the live `/home/devbox/.casein/grok-*` roots into
@@ -25,7 +25,7 @@
 # via app env and failing them with `:unsafe_leader_directory` /
 # `:invalid_grok_attachment_metadata`. CI never sets these (hence green there);
 # clear them so local + precommit runs isolate from ambient env the same way.
-for var <- ~w(DEVIDE_GROK_BUNDLE_ROOT DEVIDE_GROK_LEADER_ROOT) do
+for var <- ~w(CASEIN_GROK_BUNDLE_ROOT CASEIN_GROK_LEADER_ROOT) do
   System.delete_env(var)
 end
 
@@ -74,13 +74,13 @@ end
 ExUnit.after_suite(fn _result ->
   # Some LiveView/PTY tests intentionally attach real tmux clients. If a test
   # process crashes after spawning the client but before its on_exit cleanup,
-  # tmux can retain blank `devide_*` sessions indefinitely. Keep this limited
+  # tmux can retain blank `casein_*` sessions indefinitely. Keep this limited
   # to synthetic test prefixes so local user/workspace sessions are untouched.
   test_session? = fn session ->
     Regex.match?(
-      ~r/^devide_(alpha-\d+|hdr-ws-\d+|prevobs-ws-\d+|ws-dupe-\d+|ws-mode-transition-\d+|ws-open-close-\d+|leader-\d+|pane-link-\d+|dead-link-\d+|raw-stale-\d+|stale-\d+)_/,
+      ~r/^casein_(alpha-\d+|hdr-ws-\d+|prevobs-ws-\d+|ws-dupe-\d+|ws-mode-transition-\d+|ws-open-close-\d+|leader-\d+|pane-link-\d+|dead-link-\d+|raw-stale-\d+|stale-\d+)_/,
       session
-    ) or session == "devide_ws-adapter_sid-adapter"
+    ) or session == "casein_ws-adapter_sid-adapter"
   end
 
   if tmux = not match?({:win32, _}, :os.type()) && System.find_executable("tmux") do
@@ -93,7 +93,7 @@ ExUnit.after_suite(fn _result ->
       end)
     end
 
-    _ = System.cmd(tmux, ["-L", "devide_test", "kill-server"], stderr_to_stdout: true)
+    _ = System.cmd(tmux, ["-L", "casein_test", "kill-server"], stderr_to_stdout: true)
   end
 
   :ok

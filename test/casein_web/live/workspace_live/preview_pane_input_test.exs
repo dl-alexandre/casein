@@ -14,7 +14,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneInputTest do
 
   @workspace_id "ws-1"
   @pane_id "%1"
-  @tmux_session "devide_alpha_u-dev"
+  @tmux_session "casein_alpha_u-dev"
 
   setup do
     workspace_root =

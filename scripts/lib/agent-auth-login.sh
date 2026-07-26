@@ -3,7 +3,7 @@
 # Log a provider CLI into a Casein auth profile.
 #
 # Usage:
-#   scripts/devide agent auth signin <claude|codex>
+#   scripts/casein agent auth signin <claude|codex>
 #
 set -euo pipefail
 
@@ -17,7 +17,7 @@ usage() {
   cat <<'EOF'
 Usage: agent-auth-login.sh <owner> <claude|codex> [provider args...]
 
-Normally use: devide agent auth signin <claude|codex>
+Normally use: casein agent auth signin <claude|codex>
 
 Creates an owner auth home and launches the provider CLI inside it. Workspaces
 for the same owner use that isolated home instead of the host global provider auth.

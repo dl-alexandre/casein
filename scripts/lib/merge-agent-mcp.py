@@ -44,7 +44,7 @@ def claude_mcp_payload(
                 # Anchors terminal MCP pane resolution to the calling agent's
                 # own pane; expanded per process from launch-casein-agent.sh's
                 # export. The server ignores empty/unexpanded values.
-                "X-Casein-Caller-Pane": "${DEVIDE_CALLER_PANE}",
+                "X-Casein-Caller-Pane": "${CASEIN_CALLER_PANE}",
             },
         },
         preview_key: {
@@ -84,7 +84,7 @@ def write_claude_mcp_json(
     path.chmod(0o600)
 
 
-def remove_devide_mcp_toml(text: str) -> str:
+def remove_casein_mcp_toml(text: str) -> str:
     lines = text.splitlines()
     kept: list[str] = []
     skip = False
@@ -92,7 +92,7 @@ def remove_devide_mcp_toml(text: str) -> str:
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("[") and stripped.endswith("]"):
-            skip = re.match(r"^\[mcp_servers\.devide-[^\]]+\]$", stripped) is not None
+            skip = re.match(r"^\[mcp_servers\.casein-[^\]]+\]$", stripped) is not None
 
         if not skip:
             kept.append(line)
@@ -102,7 +102,7 @@ def remove_devide_mcp_toml(text: str) -> str:
 
 def merge_toml(path: Path, blocks: list[str]) -> None:
     existing = path.read_text() if path.exists() else ""
-    merged = remove_devide_mcp_toml(existing)
+    merged = remove_casein_mcp_toml(existing)
     body = "\n\n".join(block for block in blocks if block)
     path.parent.mkdir(parents=True, exist_ok=True)
     if merged and body:
@@ -117,10 +117,10 @@ def write_grok_config(path: Path) -> None:
     # The `[ui].theme` line is owned by Casein.Terminals.ToolThemes now, which
     # stamps groknight (dark) / tokyonight (light) — grokday is banned as
     # illegible in the Casein viewer. This helper only
-    # strips stale devide-* MCP blocks and preserves everything else, theme
+    # strips stale casein-* MCP blocks and preserves everything else, theme
     # included.
     existing = path.read_text() if path.exists() else ""
-    cleaned = remove_devide_mcp_toml(existing)
+    cleaned = remove_casein_mcp_toml(existing)
 
     output = (cleaned.rstrip() + "\n") if cleaned.strip() else ""
 
@@ -136,7 +136,7 @@ def write_grok_config(path: Path) -> None:
         path.write_text(output)
 
 
-def remove_devide_mcp_json(path: Path) -> None:
+def remove_casein_mcp_json(path: Path) -> None:
     if not path.exists():
         return
 
@@ -147,7 +147,7 @@ def remove_devide_mcp_json(path: Path) -> None:
         servers = data.get(key)
         if isinstance(servers, dict):
             for name in list(servers):
-                if name.startswith("devide-"):
+                if name.startswith("casein-"):
                     del servers[name]
                     changed = True
 
@@ -165,19 +165,19 @@ def cleanup_grok_project_cache(home: Path) -> None:
             continue
 
         for child in mcps_dir.iterdir():
-            if child.name.startswith("devide-") and child.is_dir():
+            if child.name.startswith("casein-") and child.is_dir():
                 shutil.rmtree(child)
 
 
 def main() -> int:
-    terminal = os.environ.get("DEVIDE_TERMINAL_MCP_URL", "")
-    preview = os.environ.get("DEVIDE_PREVIEW_MCP_URL", "")
-    artifact = os.environ.get("DEVIDE_ARTIFACT_MCP_URL", "")
+    terminal = os.environ.get("CASEIN_TERMINAL_MCP_URL", "")
+    preview = os.environ.get("CASEIN_PREVIEW_MCP_URL", "")
+    artifact = os.environ.get("CASEIN_ARTIFACT_MCP_URL", "")
     home = Path(os.environ["HOME"])
 
     if not terminal or not preview:
         print(
-            "error: DEVIDE_TERMINAL_MCP_URL and DEVIDE_PREVIEW_MCP_URL required",
+            "error: CASEIN_TERMINAL_MCP_URL and CASEIN_PREVIEW_MCP_URL required",
             file=sys.stderr,
         )
         return 1
@@ -187,18 +187,18 @@ def main() -> int:
     # global agent homes. Aggregating every discovered workspace previously
     # bloated shared configs with all workspaces across all users, and Codex/
     # OpenCode can fail when a persisted server references a missing token.
-    # Keep this helper as an idempotent cleanup pass for old global devide-* MCP
+    # Keep this helper as an idempotent cleanup pass for old global casein-* MCP
     # entries while preserving non-Casein auth/config state.
     write_grok_config(home / ".grok" / "config.toml")
     merge_toml(home / ".codex" / "config.toml", [])
-    remove_devide_mcp_json(home / ".cursor" / "mcp.json")
+    remove_casein_mcp_json(home / ".cursor" / "mcp.json")
     cleanup_grok_project_cache(home)
 
     for opencode_path in (
         home / ".config" / "opencode" / "opencode.json",
         home / ".opencode" / "opencode.json",
     ):
-        remove_devide_mcp_json(opencode_path)
+        remove_casein_mcp_json(opencode_path)
 
     # Claude no longer reads a shared-checkout project .mcp.json — the launcher
     # injects the workspace's isolated staging file via `claude --mcp-config`
@@ -209,13 +209,13 @@ def main() -> int:
 
 
 def _self_test() -> int:
-    # devide-* MCP blocks are stripped; the [ui].theme line (owned by
+    # casein-* MCP blocks are stripped; the [ui].theme line (owned by
     # ToolThemes) and other sections survive untouched.
-    cleaned = remove_devide_mcp_toml(
-        '[ui]\ntheme = "groknight"\n\n[mcp_servers.devide-foo]\nurl = "x"\n'
+    cleaned = remove_casein_mcp_toml(
+        '[ui]\ntheme = "groknight"\n\n[mcp_servers.casein-foo]\nurl = "x"\n'
     )
     assert 'theme = "groknight"' in cleaned
-    assert "devide-foo" not in cleaned
+    assert "casein-foo" not in cleaned
 
     return 0
 
@@ -231,8 +231,8 @@ if __name__ == "__main__":
                 file=sys.stderr,
             )
             raise SystemExit(2)
-        active_workspace = os.environ.get("DEVIDE_WORKSPACE_NAME", "workspace")
-        tidewave = os.environ.get("DEVIDE_TIDEWAVE_MCP_URL", "") or None
+        active_workspace = os.environ.get("CASEIN_WORKSPACE_NAME", "workspace")
+        tidewave = os.environ.get("CASEIN_TIDEWAVE_MCP_URL", "") or None
         artifact_url = (
             sys.argv[5]
             if len(sys.argv) == 6
@@ -250,7 +250,7 @@ if __name__ == "__main__":
                 file=sys.stderr,
             )
             raise SystemExit(2)
-        active_workspace = os.environ.get("DEVIDE_WORKSPACE_NAME", "workspace")
+        active_workspace = os.environ.get("CASEIN_WORKSPACE_NAME", "workspace")
         # Managed Grok is confined by a Casein capability bearer. Tidewave is
         # a third-party endpoint outside that authorization boundary, so it is
         # deliberately absent from the session bundle.

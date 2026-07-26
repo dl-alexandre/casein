@@ -32,7 +32,7 @@ Assert-Condition ($metadata.repo_adapter -eq 'sqlite') 'Package repository adapt
 Assert-Condition ($metadata.target -eq 'windows-x86_64') 'Package target must be windows-x86_64'
 
 $originalLocalAppData = $env:LOCALAPPDATA
-$testLocalAppData = Join-Path ([IO.Path]::GetTempPath()) ("devide-package-smoke-" + [guid]::NewGuid().ToString('N'))
+$testLocalAppData = Join-Path ([IO.Path]::GetTempPath()) ("casein-package-smoke-" + [guid]::NewGuid().ToString('N'))
 $env:LOCALAPPDATA = $testLocalAppData
 
 try {
@@ -49,7 +49,7 @@ try {
     Assert-Condition (-not (Test-Path -LiteralPath $script:Paths.RuntimeStatus)) 'Stale runtime status was not cleared'
 
     $desktopEnvironment = Get-CaseinEnvironment 54321
-    Assert-Condition ($desktopEnvironment.DEVIDE_RELEASE_ROOT -eq $packageRoot) 'Release root was not injected into the desktop runtime'
+    Assert-Condition ($desktopEnvironment.CASEIN_RELEASE_ROOT -eq $packageRoot) 'Release root was not injected into the desktop runtime'
     Assert-Condition ($desktopEnvironment.CASEIN_ORIGIN_ID.StartsWith('windows-')) 'Windows origin id was not generated'
     Assert-Condition ($desktopEnvironment.CASEIN_ORIGIN_DISPLAY_NAME.EndsWith(' (Windows)')) 'Windows origin name is not platform-distinct'
     $firstOriginId = $desktopEnvironment.CASEIN_ORIGIN_ID
@@ -89,7 +89,7 @@ try {
 
     $dataRoot = Join-Path $testLocalAppData 'Casein'
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
-    Set-Content -LiteralPath (Join-Path $dataRoot 'devide.sqlite3') -Value 'desktop-package-smoke' -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $dataRoot 'casein.sqlite3') -Value 'desktop-package-smoke' -Encoding ascii
     foreach ($name in @('secret-key-base.txt', 'api-token.txt', 'desktop-launch-token.txt')) {
         Set-Content -LiteralPath (Join-Path $dataRoot $name) -Value 'dpapi:package-smoke-placeholder' -Encoding ascii
     }
@@ -101,7 +101,7 @@ try {
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
     Assert-Condition ($null -ne $backup) 'Upgrade did not create a data backup'
-    Assert-Condition ((Get-Content -Raw -LiteralPath (Join-Path $backup.FullName 'devide.sqlite3')).Trim() -eq 'desktop-package-smoke') 'Upgrade backup did not preserve the database'
+    Assert-Condition ((Get-Content -Raw -LiteralPath (Join-Path $backup.FullName 'casein.sqlite3')).Trim() -eq 'desktop-package-smoke') 'Upgrade backup did not preserve the database'
     foreach ($name in @('secret-key-base.txt', 'api-token.txt', 'desktop-launch-token.txt')) {
         Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $backup.FullName $name))) "Upgrade backup copied credential $name"
     }

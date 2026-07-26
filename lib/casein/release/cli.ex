@@ -2,7 +2,7 @@ defmodule Casein.Release.CLI do
   @moduledoc """
   Operator CLI entrypoints for LAN release metadata and update checks.
 
-  Invoked from `scripts/devide` (checkout) and `bin/devide` (release) — see
+  Invoked from `scripts/casein` (checkout) and `bin/casein` (release) — see
   `docs/lan-release-updates.md`.
   """
 
@@ -29,7 +29,7 @@ defmodule Casein.Release.CLI do
     end
   end
 
-  @doc "Decode base64 NUL-separated argv (release `bin/devide` transport)."
+  @doc "Decode base64 NUL-separated argv (release `bin/casein` transport)."
   @spec main_base64(String.t()) :: non_neg_integer()
   def main_base64(encoded) when is_binary(encoded) do
     argv =
@@ -138,7 +138,7 @@ defmodule Casein.Release.CLI do
     current:   #{short_revision(current.revision)} (#{current.version})
     available: #{short_revision(available.revision)} (#{available.version})
     channel:   #{result.manifest.channel}
-    install:   sudo devide update install
+    install:   sudo casein update install
     """
     |> String.trim()
   end
@@ -154,7 +154,7 @@ defmodule Casein.Release.CLI do
   defp format_error(reason), do: inspect(reason)
 
   defp argv_from_env do
-    case System.get_env("DEVIDE_CLI_ARGV") do
+    case System.get_env("CASEIN_CLI_ARGV") do
       nil -> System.argv()
       raw -> decode_argv_transport(raw)
     end
@@ -171,8 +171,8 @@ defmodule Casein.Release.CLI do
   defp usage do
     """
     Usage:
-      devide version [--json]
-      devide update check [--json]
+      casein version [--json]
+      casein update check [--json]
     """
     |> String.trim()
   end

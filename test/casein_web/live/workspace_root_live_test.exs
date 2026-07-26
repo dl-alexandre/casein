@@ -13,7 +13,7 @@ defmodule CaseinWeb.WorkspaceRootLiveTest do
 
   setup do
     MemoryAdapter.clear()
-    home = Path.join(System.tmp_dir!(), "devide-root-home-#{System.unique_integer([:positive])}")
+    home = Path.join(System.tmp_dir!(), "casein-root-home-#{System.unique_integer([:positive])}")
     File.mkdir_p!(home)
 
     prev_home = Application.get_env(:casein, :home_workspace_path)

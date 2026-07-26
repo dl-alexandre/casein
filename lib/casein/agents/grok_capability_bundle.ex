@@ -9,7 +9,7 @@ defmodule Casein.Agents.GrokCapabilityBundle do
 
   import Bitwise
 
-  @manifest ~s({"description":"Session-scoped Casein tools, hooks, and skills","hooks":"./hooks/hooks.json","mcpServers":"./.mcp.json","name":"devide-grok-capabilities","skills":"./skills","version":"1.0.0"}\n)
+  @manifest ~s({"description":"Session-scoped Casein tools, hooks, and skills","hooks":"./hooks/hooks.json","mcpServers":"./.mcp.json","name":"casein-grok-capabilities","skills":"./skills","version":"1.0.0"}\n)
   @digest_regex ~r/^sha256-([0-9a-f]{64})$/
   @skill_regex ~r/^[A-Za-z0-9][A-Za-z0-9_.-]*$/
 
@@ -55,14 +55,14 @@ defmodule Casein.Agents.GrokCapabilityBundle do
 
   @spec root() :: String.t()
   def root do
-    System.get_env("DEVIDE_GROK_BUNDLE_ROOT") ||
+    System.get_env("CASEIN_GROK_BUNDLE_ROOT") ||
       Application.get_env(:casein, :grok_capability_bundle_root) ||
       Path.join([home_dir(), ".casein", "grok-bundles"])
   end
 
   @spec leader_root() :: String.t()
   def leader_root do
-    System.get_env("DEVIDE_GROK_LEADER_ROOT") ||
+    System.get_env("CASEIN_GROK_LEADER_ROOT") ||
       Application.get_env(:casein, :grok_leader_root) ||
       Path.join([home_dir(), ".casein", "grok-leaders"])
   end
@@ -370,7 +370,7 @@ defmodule Casein.Agents.GrokCapabilityBundle do
     # the exact per-leader directory added to Casein's custom profile.
     uid = current_uid()
     base = if File.dir?("/dev/shm"), do: "/dev/shm", else: "/tmp"
-    Path.join(base, "devide-grok-leaders-#{uid}")
+    Path.join(base, "casein-grok-leaders-#{uid}")
   end
 
   defp current_uid do

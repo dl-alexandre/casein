@@ -15,9 +15,9 @@ defmodule Casein.PreviousSessionsTest do
       workspace_id: @workspace_id,
       source: :terminal_mcp,
       tool: "terminal_paste_agent_text",
-      summary: "session=devide_alpha_agent - pane=%3",
+      summary: "session=casein_alpha_agent - pane=%3",
       metadata: %{
-        session: "devide_alpha_agent",
+        session: "casein_alpha_agent",
         pane: "%3",
         text: "Restart Phoenix and verify preview routing"
       },
@@ -35,11 +35,11 @@ defmodule Casein.PreviousSessionsTest do
              )
 
     assert result.source == :activity
-    assert result.session == "devide_alpha_agent"
+    assert result.session == "casein_alpha_agent"
     assert result.pane == "%3"
 
     assert_href(result.href, "/workspaces/ws-alpha", %{
-      "session" => "devide_alpha_agent",
+      "session" => "casein_alpha_agent",
       "pane" => "%3"
     })
 
@@ -54,9 +54,9 @@ defmodule Casein.PreviousSessionsTest do
       workspace_id: @workspace_id,
       source: :terminal_mcp,
       tool: "terminal_send_agent_prompt",
-      summary: "session=devide_alpha_agent",
+      summary: "session=casein_alpha_agent",
       metadata: %{
-        session: "devide_alpha_agent",
+        session: "casein_alpha_agent",
         nested: %{seen_at: ~U[2026-06-29 12:01:00Z]}
       },
       status: :ok,
@@ -82,9 +82,9 @@ defmodule Casein.PreviousSessionsTest do
       workspace_id: @workspace_id,
       source: :terminal_mcp,
       tool: "terminal_send_agent_prompt",
-      summary: "session=devide_alpha_agent",
+      summary: "session=casein_alpha_agent",
       metadata: %{
-        session: "devide_alpha_agent",
+        session: "casein_alpha_agent",
         workspace_name: "alpha",
         text: "Alpha workspace prompt"
       },
@@ -97,9 +97,9 @@ defmodule Casein.PreviousSessionsTest do
       workspace_id: "ws-other",
       source: :terminal_mcp,
       tool: "terminal_send_agent_prompt",
-      summary: "session=devide_other_agent",
+      summary: "session=casein_other_agent",
       metadata: %{
-        session: "devide_other_agent",
+        session: "casein_other_agent",
         workspace_name: "beta",
         text: "Other workspace prompt"
       },
@@ -128,12 +128,12 @@ defmodule Casein.PreviousSessionsTest do
         status: :active,
         metadata: %{
           session_alias: "Agent repair shell",
-          cwd: "/workspace/dev_ide",
+          cwd: "/workspace/casein",
           git_branch: "feature/session-search",
           activity: 1_782_736_000
         }
       )
-      |> Map.put(:tmux_session, "devide_alpha_api-session")
+      |> Map.put(:tmux_session, "casein_alpha_api-session")
 
     assert %{results: [result]} =
              PreviousSessions.search(@workspace_id,
@@ -145,10 +145,10 @@ defmodule Casein.PreviousSessionsTest do
              )
 
     assert result.source == :session
-    assert result.session == "devide_alpha_api-session"
+    assert result.session == "casein_alpha_api-session"
     assert result.title == "Agent repair shell"
     assert result.status == "active"
-    assert_href(result.href, "/workspaces/ws-alpha", %{"session" => "devide_alpha_api-session"})
+    assert_href(result.href, "/workspaces/ws-alpha", %{"session" => "casein_alpha_api-session"})
     assert result.summary =~ "branch=feature/session-search"
     assert result.occurred_at == DateTime.from_unix!(1_782_736_000)
     assert "metadata.git_branch" in result.matched_fields
@@ -168,21 +168,21 @@ defmodule Casein.PreviousSessionsTest do
   test "filters audit rows by session pane and date" do
     older =
       audit_event("audit-old", ~U[2026-06-27 12:00:00Z], %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "pane" => "%4",
         "command" => "mix test test/casein/old_test.exs"
       })
 
     newer =
       audit_event("audit-new", ~U[2026-06-29 12:00:00Z], %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "pane" => "%4",
         "command" => "mix test test/casein/previous_sessions_test.exs"
       })
 
     other_pane =
       audit_event("audit-pane", ~U[2026-06-29 12:00:01Z], %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "pane" => "%5",
         "command" => "mix test test/casein/previous_sessions_test.exs"
       })
@@ -201,7 +201,7 @@ defmodule Casein.PreviousSessionsTest do
 
     assert result.id == "audit:audit-new"
     assert result.source == :audit
-    assert result.session == "devide_alpha_agent"
+    assert result.session == "casein_alpha_agent"
     assert result.pane == "%4"
   end
 
@@ -211,8 +211,8 @@ defmodule Casein.PreviousSessionsTest do
       workspace_id: @workspace_id,
       source: :terminal_mcp,
       tool: "terminal_capture",
-      summary: "session=devide_alpha_agent",
-      metadata: %{session: "devide_alpha_agent"},
+      summary: "session=casein_alpha_agent",
+      metadata: %{session: "casein_alpha_agent"},
       status: :ok,
       inserted_at: ~U[2026-06-29 12:05:00Z]
     }
@@ -232,7 +232,7 @@ defmodule Casein.PreviousSessionsTest do
   test "searches prompt audit titles excerpts and status metadata" do
     event =
       audit_event("audit-prompt", ~U[2026-06-29 12:00:00Z], %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "pane" => "%2",
         "title" => "Fix preview auth",
         "prompt_excerpt" => "Fix preview auth\n\nRun focused tests",
@@ -272,7 +272,7 @@ defmodule Casein.PreviousSessionsTest do
   test "derives prompt audit status from action when metadata status is absent" do
     event =
       audit_event("audit-attention", ~U[2026-06-29 12:00:00Z], %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "pane" => "%2",
         "title" => "Fix preview auth",
         "tool" => "send_agent_prompt"
@@ -295,7 +295,7 @@ defmodule Casein.PreviousSessionsTest do
   test "derives running prompt audit status from action when metadata status is absent" do
     event =
       audit_event("audit-running", ~U[2026-06-29 12:00:00Z], %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "pane" => "%2",
         "title" => "Fix preview auth",
         "tool" => "send_agent_prompt"
@@ -321,9 +321,9 @@ defmodule Casein.PreviousSessionsTest do
       workspace_id: @workspace_id,
       source: :terminal_mcp,
       tool: "send_agent_prompt",
-      summary: "done: Fix preview auth · session=devide_alpha_agent pane=%2 chunks=2/2",
+      summary: "done: Fix preview auth · session=casein_alpha_agent pane=%2 chunks=2/2",
       metadata: %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "pane" => "%2",
         "title" => "Fix preview auth",
         "prompt_excerpt" => "Fix preview auth\n\nRun focused tests",
@@ -370,7 +370,7 @@ defmodule Casein.PreviousSessionsTest do
       tool: "send_agent_prompt",
       summary: "failed to paste prompt",
       metadata: %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "pane" => "%2",
         "title" => "Fix preview auth"
       },
@@ -399,7 +399,7 @@ defmodule Casein.PreviousSessionsTest do
       tool: "preview_screenshot",
       summary: "preview_screenshot · session preview-123",
       metadata: %{
-        "agent_session" => "devide_alpha_agent",
+        "agent_session" => "casein_alpha_agent",
         "agent_pane" => "%2",
         "session_id" => "preview-123",
         "pane_id" => "%8",
@@ -438,7 +438,7 @@ defmodule Casein.PreviousSessionsTest do
 
     assert result.preview == %{
              agent_action: "preview_screenshot",
-             agent_session: "devide_alpha_agent",
+             agent_session: "casein_alpha_agent",
              agent_pane: "%2",
              tool: "preview_screenshot",
              session_id: "preview-123",
@@ -475,7 +475,7 @@ defmodule Casein.PreviousSessionsTest do
   test "filters results by source including preview-context rows" do
     audit =
       audit_event("audit-source", ~U[2026-06-29 12:00:00Z], %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "command" => "mix test"
       })
 
@@ -485,7 +485,7 @@ defmodule Casein.PreviousSessionsTest do
       source: :terminal_mcp,
       tool: "terminal_capture",
       summary: "mix test output",
-      metadata: %{session: "devide_alpha_agent"},
+      metadata: %{session: "casein_alpha_agent"},
       status: :ok,
       inserted_at: ~U[2026-06-29 12:01:00Z]
     }
@@ -546,11 +546,11 @@ defmodule Casein.PreviousSessionsTest do
       SessionInfo.new_shell(@workspace_id, "u-dev",
         metadata: %{session_alias: "Dev shell", activity: 1_782_736_000}
       )
-      |> Map.put(:tmux_session, "devide_alpha_u-dev")
+      |> Map.put(:tmux_session, "casein_alpha_u-dev")
 
     labels = %{
-      "devide_alpha_u-dev" => %{
-        "devide_alpha_u-dev::%1" => %{
+      "casein_alpha_u-dev" => %{
+        "casein_alpha_u-dev::%1" => %{
           label: "Checkout restore flow",
           base_label: "Checkout restore flow",
           source: :agent,
@@ -571,7 +571,7 @@ defmodule Casein.PreviousSessionsTest do
              )
 
     assert result.source == :label
-    assert result.session == "devide_alpha_u-dev"
+    assert result.session == "casein_alpha_u-dev"
     assert result.pane == "%1"
     assert result.title == "Checkout restore flow"
   end
@@ -640,7 +640,7 @@ defmodule Casein.PreviousSessionsTest do
   test "empty query returns recent rows sorted newest first" do
     audit =
       audit_event("audit-1", ~U[2026-06-29 12:00:00Z], %{
-        "session" => "devide_alpha_agent",
+        "session" => "casein_alpha_agent",
         "command" => "mix test"
       })
 
@@ -649,8 +649,8 @@ defmodule Casein.PreviousSessionsTest do
       workspace_id: @workspace_id,
       source: :terminal_mcp,
       tool: "terminal_capture",
-      summary: "session=devide_alpha_agent",
-      metadata: %{session: "devide_alpha_agent"},
+      summary: "session=casein_alpha_agent",
+      metadata: %{session: "casein_alpha_agent"},
       status: :ok,
       inserted_at: ~U[2026-06-29 12:05:00Z]
     }

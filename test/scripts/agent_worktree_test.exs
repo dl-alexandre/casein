@@ -13,9 +13,9 @@ defmodule Scripts.AgentWorktreeTest do
         agent_worktree_create codex pin
         """,
         env: [
-          {"DEVIDE_CHECKOUT", repo},
-          {"DEVIDE_AGENT_WORKTREE_ROOT", worktree_root},
-          {"DEVIDE_AGENT_WORKTREE_BASE", "HEAD"}
+          {"CASEIN_CHECKOUT", repo},
+          {"CASEIN_AGENT_WORKTREE_ROOT", worktree_root},
+          {"CASEIN_AGENT_WORKTREE_BASE", "HEAD"}
         ]
       )
 
@@ -47,8 +47,8 @@ defmodule Scripts.AgentWorktreeTest do
         agent_worktree_create codex mainrepo
         """,
         env: [
-          {"DEVIDE_CHECKOUT", repo},
-          {"DEVIDE_AGENT_WORKTREE_ROOT", worktree_root}
+          {"CASEIN_CHECKOUT", repo},
+          {"CASEIN_AGENT_WORKTREE_ROOT", worktree_root}
         ]
       )
 
@@ -79,13 +79,13 @@ defmodule Scripts.AgentWorktreeTest do
         agent_worktree_spawn_reaper() { :; }
         cd "#{linked}"
         agent_worktree_ensure grok freshtest
-        printf 'RESULT=%s\\n' "$DEVIDE_CHECKOUT"
+        printf 'RESULT=%s\\n' "$CASEIN_CHECKOUT"
         """,
         env: [
-          {"DEVIDE_CHECKOUT", repo},
-          {"DEVIDE_AGENT_WORKTREE_ROOT", worktree_root},
-          {"DEVIDE_AGENT_WORKTREE_BASE", "HEAD"},
-          {"DEVIDE_AGENT_FORCE_FRESH_WORKTREE", "1"}
+          {"CASEIN_CHECKOUT", repo},
+          {"CASEIN_AGENT_WORKTREE_ROOT", worktree_root},
+          {"CASEIN_AGENT_WORKTREE_BASE", "HEAD"},
+          {"CASEIN_AGENT_FORCE_FRESH_WORKTREE", "1"}
         ]
       )
 
@@ -108,12 +108,12 @@ defmodule Scripts.AgentWorktreeTest do
         agent_worktree_spawn_reaper() { :; }
         cd "#{linked}"
         agent_worktree_ensure grok adopttest
-        printf 'RESULT=%s\\n' "$DEVIDE_CHECKOUT"
+        printf 'RESULT=%s\\n' "$CASEIN_CHECKOUT"
         """,
         env: [
-          {"DEVIDE_CHECKOUT", repo},
-          {"DEVIDE_AGENT_WORKTREE_ROOT", worktree_root},
-          {"DEVIDE_AGENT_WORKTREE_BASE", "HEAD"}
+          {"CASEIN_CHECKOUT", repo},
+          {"CASEIN_AGENT_WORKTREE_ROOT", worktree_root},
+          {"CASEIN_AGENT_WORKTREE_BASE", "HEAD"}
         ]
       )
 
@@ -130,17 +130,17 @@ defmodule Scripts.AgentWorktreeTest do
     {stderr, 0} =
       bash_agent_worktree(
         """
-        agent_worktree_report_mcp "$DEVIDE_CHECKOUT" codex
+        agent_worktree_report_mcp "$CASEIN_CHECKOUT" codex
         """,
         env: [
-          {"DEVIDE_CHECKOUT", repo},
+          {"CASEIN_CHECKOUT", repo},
           {"ROOT", @root},
           {"PATH", "#{Path.dirname(curl_bin)}:#{system_path()}"},
           {"FAKE_CURL_BODY", body_path},
           {"CASEIN_API_TOKEN", "scoped-token"},
-          {"DEVIDE_WORKSPACE_ID", "workspace-123"},
-          {"DEVIDE_TMUX_SESSION", "devide_workspace-123_u-agent"},
-          {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"}
+          {"CASEIN_WORKSPACE_ID", "workspace-123"},
+          {"CASEIN_TMUX_SESSION", "casein_workspace-123_u-agent"},
+          {"CASEIN_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"}
         ],
         stderr_to_stdout: true
       )
@@ -159,7 +159,7 @@ defmodule Scripts.AgentWorktreeTest do
     assert args["worktree_path"] == repo
     assert args["branch"] == "master"
     assert args["agent"] == "codex"
-    assert args["tmux_session_id"] == "devide_workspace-123_u-agent"
+    assert args["tmux_session_id"] == "casein_workspace-123_u-agent"
   end
 
   test "launcher keeps materialize and tmux repair failures visible" do
@@ -173,12 +173,12 @@ defmodule Scripts.AgentWorktreeTest do
           {"HOME", home},
           {"PATH", system_path()},
           {"CASEIN_API_TOKEN", "scoped-token"},
-          {"DEVIDE_WORKSPACE_ID", "workspace-123"},
-          {"DEVIDE_WORKSPACE_NAME", "workspace-123"},
-          {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"},
-          {"DEVIDE_PREVIEW_MCP_URL", "http://127.0.0.1:4000/api/preview/mcp"},
-          {"DEVIDE_TMUX_SESSION", "devide_workspace-123_u-agent"},
-          {"DEVIDE_AGENT_SKIP_WORKTREE", "1"}
+          {"CASEIN_WORKSPACE_ID", "workspace-123"},
+          {"CASEIN_WORKSPACE_NAME", "workspace-123"},
+          {"CASEIN_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"},
+          {"CASEIN_PREVIEW_MCP_URL", "http://127.0.0.1:4000/api/preview/mcp"},
+          {"CASEIN_TMUX_SESSION", "casein_workspace-123_u-agent"},
+          {"CASEIN_AGENT_SKIP_WORKTREE", "1"}
         ],
         stderr_to_stdout: true
       )
@@ -284,11 +284,11 @@ defmodule Scripts.AgentWorktreeTest do
     assert File.read_link!(Path.join(home, ".casein/real-bins/codex")) == user_codex
 
     assert File.read!(Path.join(home, ".casein/agent-shims/codex")) =~
-             "devide\" agent launch codex"
+             "casein\" agent launch codex"
   end
 
-  test "devide shim passes codex update directly to the real CLI" do
-    tmp = tmp_dir!("devide-codex-update-test")
+  test "casein shim passes codex update directly to the real CLI" do
+    tmp = tmp_dir!("casein-codex-update-test")
     home = Path.join(tmp, "home")
     npm_prefix = Path.join(home, ".local/share/npm-global")
 
@@ -335,7 +335,7 @@ defmodule Scripts.AgentWorktreeTest do
     {output, 0} =
       System.cmd(
         "bash",
-        [Path.join(@root, "scripts/devide"), "agent", "launch", "codex", "update"],
+        [Path.join(@root, "scripts/casein"), "agent", "launch", "codex", "update"],
         env: [
           {"HOME", home},
           {"CASEIN_NPM_PREFIX", npm_prefix},
@@ -351,11 +351,11 @@ defmodule Scripts.AgentWorktreeTest do
     assert File.read!(npm_set) == npm_prefix <> "\n"
 
     assert File.read!(Path.join(home, ".casein/agent-shims/codex")) =~
-             "devide\" agent launch codex"
+             "casein\" agent launch codex"
   end
 
-  test "installed devide CLI does not route launches through a stale paired scripts tree" do
-    tmp = tmp_dir!("devide-launch-revision-test")
+  test "installed casein CLI does not route launches through a stale paired scripts tree" do
+    tmp = tmp_dir!("casein-launch-revision-test")
     root = Path.join(tmp, "installed")
     scripts = Path.join(root, "scripts")
     lib = Path.join(scripts, "lib")
@@ -363,7 +363,7 @@ defmodule Scripts.AgentWorktreeTest do
 
     File.mkdir_p!(lib)
     File.mkdir_p!(stale_scripts)
-    File.cp!(Path.join(@root, "scripts/devide"), Path.join(scripts, "devide"))
+    File.cp!(Path.join(@root, "scripts/casein"), Path.join(scripts, "casein"))
 
     for file <- ["agent-env.sh", "real-agent-bin.sh"] do
       File.ln_s!(Path.join(@root, "scripts/lib/#{file}"), Path.join(lib, file))
@@ -382,14 +382,14 @@ defmodule Scripts.AgentWorktreeTest do
     {output, 0} =
       System.cmd(
         "bash",
-        [Path.join(scripts, "devide"), "agent", "launch", "grok"],
+        [Path.join(scripts, "casein"), "agent", "launch", "grok"],
         env: [
           {"HOME", Path.join(tmp, "home")},
           {"PATH", system_path()},
           {"CASEIN_API_TOKEN", "scoped-token"},
-          {"DEVIDE_WORKSPACE_ID", "workspace-123"},
-          {"DEVIDE_WORKSPACE_NAME", "workspace-123"},
-          {"DEVIDE_SCRIPTS", stale_scripts}
+          {"CASEIN_WORKSPACE_ID", "workspace-123"},
+          {"CASEIN_WORKSPACE_NAME", "workspace-123"},
+          {"CASEIN_SCRIPTS", stale_scripts}
         ],
         stderr_to_stdout: true
       )
@@ -407,7 +407,7 @@ defmodule Scripts.AgentWorktreeTest do
     File.mkdir_p!(repo)
 
     git!(["init", "--initial-branch=master", repo])
-    git!(["-C", repo, "config", "user.email", "devide@example.invalid"])
+    git!(["-C", repo, "config", "user.email", "casein@example.invalid"])
     git!(["-C", repo, "config", "user.name", "Casein Test"])
     File.write!(Path.join(repo, "README.md"), "test\n")
     git!(["-C", repo, "add", "README.md"])
@@ -528,9 +528,9 @@ defmodule Scripts.AgentWorktreeTest do
       |> Keyword.get(:env, [])
       |> then(fn env ->
         [
-          {"DEVIDE_AGENT_WORKTREE_PATH", ""},
-          {"DEVIDE_AGENT_FORCE_FRESH_WORKTREE", "0"},
-          {"DEVIDE_AGENT_SKIP_WORKTREE", "0"}
+          {"CASEIN_AGENT_WORKTREE_PATH", ""},
+          {"CASEIN_AGENT_FORCE_FRESH_WORKTREE", "0"},
+          {"CASEIN_AGENT_SKIP_WORKTREE", "0"}
           | env
         ]
       end)

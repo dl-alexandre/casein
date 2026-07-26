@@ -19,10 +19,10 @@ SshRunner.System
 # plus Zig build API types.
 Build.Module
 Build.Step.Compile
-DevideMob.GhosttyVt
-DevideMob.HostBridge
-DevideMob.Nifs.GhosttyVt
-DevideMob.Terminal
+CaseinMob.GhosttyVt
+CaseinMob.HostBridge
+CaseinMob.Nifs.GhosttyVt
+CaseinMob.Terminal
 Mob.Dev
 Mob.Dev.Connection
 Mob.Dist

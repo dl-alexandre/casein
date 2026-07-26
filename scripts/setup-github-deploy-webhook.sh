@@ -4,19 +4,19 @@
 # poller via POST /api/deploy_webhook.
 #
 # Prerequisites:
-#   - DEVIDE_DEPLOY_WEBHOOK_SECRET in /etc/casein/devide.env (or exported)
+#   - CASEIN_DEPLOY_WEBHOOK_SECRET in /etc/casein/casein.env (or exported)
 #   - Caddy serves /api/deploy_webhook WITHOUT forward_auth (GitHub has no session)
 #   - bash scripts/ensure-casein-deploy-poller.sh (sudoers for systemctl start)
 #
 # Usage:
-#   DEVIDE_URL=https://devide.devbox.milcgroup.com bash scripts/setup-github-deploy-webhook.sh
-#   DEVIDE_URL=... GITHUB_REPO=dl-alexandre/casein bash scripts/setup-github-deploy-webhook.sh --dry-run
+#   CASEIN_URL=https://casein.devbox.milcgroup.com bash scripts/setup-github-deploy-webhook.sh
+#   CASEIN_URL=... GITHUB_REPO=dl-alexandre/casein bash scripts/setup-github-deploy-webhook.sh --dry-run
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
-DEVIDE_URL="${DEVIDE_URL:-https://devide.devbox.milcgroup.com}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
+CASEIN_URL="${CASEIN_URL:-https://casein.devbox.milcgroup.com}"
 GITHUB_REPO="${GITHUB_REPO:-dl-alexandre/casein}"
 DRY_RUN=0
 
@@ -34,13 +34,13 @@ done
 log() { printf '>>> %s\n' "$*"; }
 
 read_secret() {
-  if [[ -n "${DEVIDE_DEPLOY_WEBHOOK_SECRET:-}" ]]; then
-    printf '%s' "${DEVIDE_DEPLOY_WEBHOOK_SECRET}"
+  if [[ -n "${CASEIN_DEPLOY_WEBHOOK_SECRET:-}" ]]; then
+    printf '%s' "${CASEIN_DEPLOY_WEBHOOK_SECRET}"
     return 0
   fi
 
   if [[ -r "${ENV_FILE}" ]]; then
-    val="$(sed -n 's/^DEVIDE_DEPLOY_WEBHOOK_SECRET=//p' "${ENV_FILE}" | tail -1)"
+    val="$(sed -n 's/^CASEIN_DEPLOY_WEBHOOK_SECRET=//p' "${ENV_FILE}" | tail -1)"
     if [[ -n "${val}" ]]; then
       printf '%s' "${val}"
       return 0
@@ -52,12 +52,12 @@ read_secret() {
 
 SECRET="$(read_secret || true)"
 if [[ -z "${SECRET}" ]]; then
-  echo "error: DEVIDE_DEPLOY_WEBHOOK_SECRET is not set (env or ${ENV_FILE})" >&2
+  echo "error: CASEIN_DEPLOY_WEBHOOK_SECRET is not set (env or ${ENV_FILE})" >&2
   echo "Generate one with: mise exec -- mix phx.gen.secret" >&2
   exit 1
 fi
 
-WEBHOOK_URL="${DEVIDE_URL%/}/api/deploy_webhook"
+WEBHOOK_URL="${CASEIN_URL%/}/api/deploy_webhook"
 
 log "target webhook URL: ${WEBHOOK_URL}"
 log "repository: ${GITHUB_REPO}"

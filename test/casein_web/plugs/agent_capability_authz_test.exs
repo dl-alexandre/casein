@@ -7,7 +7,7 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthzTest do
   alias CaseinWeb.Plugs.AgentCapabilityAuthz
 
   @workspace_id "ws-cap-authz"
-  @tmux_session "devide_ws-cap-authz_agent"
+  @tmux_session "casein_ws-cap-authz_agent"
   @token_id "cap-token-1"
 
   @claims %{
@@ -115,7 +115,7 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthzTest do
       conn =
         capability_conn("/api/terminals/mcp", %{
           "workspace_id" => @workspace_id,
-          "tmux_session" => "devide_ws-cap-authz_other"
+          "tmux_session" => "casein_ws-cap-authz_other"
         })
         |> AgentCapabilityAuthz.call([])
 

@@ -45,7 +45,7 @@ defmodule Casein.DeviceLinksTest do
     assert claims.workspace_id == "ws-1"
     assert claims.resource_kind == "workspace"
     assert claims.device_link_id == link.id
-    assert "dev_ide.session" in claims.capabilities
+    assert "casein.session" in claims.capabilities
 
     assert %Token{last_seen_at: %DateTime{}} = Repo.get!(Token, link.id)
   end

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Stage Casein-infra agent skills into a provider config home.
 #
-# The skill files live in the dev_ide repo under .claude/skills, so they only
-# travel with dev_ide checkouts. But Casein agents frequently run in OTHER
+# The skill files live in the casein repo under .claude/skills, so they only
+# travel with casein checkouts. But Casein agents frequently run in OTHER
 # product-repo worktrees (e.g. an audit of OneBackend-v3) that do not carry the
-# dev_ide skills — so an orchestrator there cannot invoke delegate-to-grok even
+# casein skills — so an orchestrator there cannot invoke delegate-to-grok even
 # though the capability is host infrastructure, not app code.
 #
 # Used by launch-casein-agent.sh for:
@@ -12,18 +12,18 @@
 #   - OpenCode → ~/.config/opencode and project .opencode
 #     (skills/<name>/SKILL.md; OpenCode also auto-loads ~/.claude/skills)
 #
-# Copies are idempotent, opt-out via DEVIDE_AGENT_SKILLS=0, best-effort
+# Copies are idempotent, opt-out via CASEIN_AGENT_SKILLS=0, best-effort
 # (never fail the launch).
 
 # Skills that are Casein host infrastructure (they drive Casein MCP / the
 # spawn-agent-worker helper) and therefore belong in every agent's config home
 # regardless of the checked-out repo. Project-specific skills (e.g. `verify`,
-# which runs the dev_ide dev server from the current checkout) are intentionally
-# excluded: they only make sense inside the dev_ide checkout, where the project
+# which runs the casein dev server from the current checkout) are intentionally
+# excluded: they only make sense inside the casein checkout, where the project
 # .claude/skills copy already provides them. Space-separated; override to extend.
 # preview-ui-walk is host infrastructure for product-repo agents (OneBackend-v3
-# etc.): it drives Casein preview/artifact MCP, not the dev_ide checkout itself.
-: "${DEVIDE_GLOBAL_AGENT_SKILLS:=delegate-to-grok preview-ui-walk workspace-agent-pair}"
+# etc.): it drives Casein preview/artifact MCP, not the casein checkout itself.
+: "${CASEIN_GLOBAL_AGENT_SKILLS:=delegate-to-grok preview-ui-walk workspace-agent-pair}"
 
 # agent_skills_install <source-skills-dir> <dest-config-dir>
 #
@@ -35,13 +35,13 @@ agent_skills_install() {
   local src_root="$1"
   local config_dir="$2"
 
-  [[ "${DEVIDE_AGENT_SKILLS:-1}" != "0" ]] || return 0
+  [[ "${CASEIN_AGENT_SKILLS:-1}" != "0" ]] || return 0
   [[ -n "$src_root" && -d "$src_root" ]] || return 0
   [[ -n "$config_dir" ]] || return 0
 
   local dst_root="${config_dir}/skills"
   local -a skills
-  read -r -a skills <<<"${DEVIDE_GLOBAL_AGENT_SKILLS}"
+  read -r -a skills <<<"${CASEIN_GLOBAL_AGENT_SKILLS}"
 
   local name src dst
   for name in "${skills[@]}"; do

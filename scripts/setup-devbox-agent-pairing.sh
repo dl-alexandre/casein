@@ -4,7 +4,7 @@
 # Builds the current checkout, deploys to the local systemd release, pins
 # workspace mode, ensures Playwright, and writes .devbox-agent.env.
 #
-# Run on the devbox host from the dev_ide checkout:
+# Run on the devbox host from the casein checkout:
 #   bash scripts/setup-devbox-agent-pairing.sh
 #
 set -euo pipefail
@@ -12,9 +12,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
-SERVICE="${CASEIN_SYSTEMD_SERVICE:-devide}"
-WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-dalexandre-devide}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
+SERVICE="${CASEIN_SYSTEMD_SERVICE:-casein}"
+WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-dalexandre-casein}"
 AGENT_ENV="${ROOT}/.devbox-agent.env"
 
 log() { printf '>>> %s\n' "$*"; }
@@ -105,13 +105,13 @@ if [[ -n "$scripts_dir" ]] && [[ -f "${scripts_dir}/node_modules/playwright/cli.
   )
 fi
 
-PUBLIC_URL="https://devide.devbox.milcgroup.com"
+PUBLIC_URL="https://casein.devbox.milcgroup.com"
 
 TIDEWAVE_MCP_URL=""
 if [[ -x "${ROOT}/scripts/tidewave-resolve-url.sh" ]]; then
   TIDEWAVE_MCP_URL="$(
-    DEVIDE_WORKSPACE_NAME="${WORKSPACE_NAME}" \
-      DEVIDE_WORKSPACE_ID="${WORKSPACE_ID}" \
+    CASEIN_WORKSPACE_NAME="${WORKSPACE_NAME}" \
+      CASEIN_WORKSPACE_ID="${WORKSPACE_ID}" \
       bash "${ROOT}/scripts/tidewave-resolve-url.sh" 2>/dev/null || true
   )"
 fi
@@ -123,21 +123,21 @@ cat >"$AGENT_ENV" <<EOF
 # Casein devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
 # CASEIN_API_TOKEN is workspace-scoped. The global admin token stays only in
-# /etc/casein/devide.env; never copy it into an agent-readable checkout.
+# /etc/casein/casein.env; never copy it into an agent-readable checkout.
 
 export CASEIN_API_TOKEN='${AGENT_TOKEN}'
-export DEVIDE_URL='${LOCAL_URL}'
-export DEVIDE_API_BASE_URL='${LOCAL_URL}'
-export DEVIDE_PUBLIC_URL='${PUBLIC_URL}'
-export DEVIDE_WORKSPACE_ID='${WORKSPACE_ID}'
-export DEVIDE_WORKSPACE_NAME='${WORKSPACE_NAME}'
-export DEVIDE_TERMINAL_MCP_URL='${LOCAL_URL}/api/terminals/mcp?workspace_id=${WORKSPACE_ID}'
-export DEVIDE_PREVIEW_MCP_URL='${LOCAL_URL}/api/preview/mcp?workspace_id=${WORKSPACE_ID}'
-export DEVIDE_ARTIFACT_MCP_URL='${LOCAL_URL}/api/artifacts/mcp?workspace_id=${WORKSPACE_ID}'
-$( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export DEVIDE_TIDEWAVE_MCP_URL='%s'\n" "$TIDEWAVE_MCP_URL" )
-export DEVIDE_CHECKOUT='${ROOT}'
-export DEVIDE_SCRIPTS='${ROOT}/scripts'
-export DEVIDE_AGENT_MCP_HOME="\${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
+export CASEIN_URL='${LOCAL_URL}'
+export CASEIN_API_BASE_URL='${LOCAL_URL}'
+export CASEIN_PUBLIC_URL='${PUBLIC_URL}'
+export CASEIN_WORKSPACE_ID='${WORKSPACE_ID}'
+export CASEIN_WORKSPACE_NAME='${WORKSPACE_NAME}'
+export CASEIN_TERMINAL_MCP_URL='${LOCAL_URL}/api/terminals/mcp?workspace_id=${WORKSPACE_ID}'
+export CASEIN_PREVIEW_MCP_URL='${LOCAL_URL}/api/preview/mcp?workspace_id=${WORKSPACE_ID}'
+export CASEIN_ARTIFACT_MCP_URL='${LOCAL_URL}/api/artifacts/mcp?workspace_id=${WORKSPACE_ID}'
+$( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export CASEIN_TIDEWAVE_MCP_URL='%s'\n" "$TIDEWAVE_MCP_URL" )
+export CASEIN_CHECKOUT='${ROOT}'
+export CASEIN_SCRIPTS='${ROOT}/scripts'
+export CASEIN_AGENT_MCP_HOME="\${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
 export CASEIN_NPM_PREFIX="\${CASEIN_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
 export CASEIN_AGENT_BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}"
 case ":\${PATH:-}:" in *":\${HOME}/.local/bin:"*) ;; *) export PATH="\${HOME}/.local/bin:\${PATH:-}" ;; esac
@@ -165,8 +165,8 @@ log "installing agent shims on PATH (grok/claude/codex/opencode → MCP auto-inj
 bash scripts/install-agent-shims.sh
 
 log "verifying MCP endpoints (workspace-scoped token)"
-DEVIDE_URL="$LOCAL_URL" CASEIN_API_TOKEN="$AGENT_TOKEN" \
-  WORKSPACE_ID="$WORKSPACE_ID" DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME" \
+CASEIN_URL="$LOCAL_URL" CASEIN_API_TOKEN="$AGENT_TOKEN" \
+  WORKSPACE_ID="$WORKSPACE_ID" CASEIN_WORKSPACE_NAME="$WORKSPACE_NAME" \
   bash scripts/verify_agent_pairing.sh --ci
 
 log "done"

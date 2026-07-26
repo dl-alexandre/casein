@@ -13,7 +13,7 @@ defmodule Casein.Previews.EnvRegistry do
   @spec home() :: String.t()
   def home do
     Application.get_env(:casein, :preview_env_home) ||
-      System.get_env("DEVIDE_PREVIEW_HOME") ||
+      System.get_env("CASEIN_PREVIEW_HOME") ||
       default_home()
   end
 

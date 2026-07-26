@@ -323,7 +323,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         %{
           arguments: %{
             "workspace_id" => "ws-1",
-            "session" => "devide_ws-1_default",
+            "session" => "casein_ws-1_default",
             "pane" => "%3",
             "command" => "mix test"
           },
@@ -348,7 +348,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         %{
           arguments: %{
             "workspace_id" => "ws-1",
-            "session" => "devide_ws-1_default",
+            "session" => "casein_ws-1_default",
             "path" => "lib/foo.ex",
             "line" => 12
           },

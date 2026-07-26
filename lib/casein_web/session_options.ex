@@ -1,7 +1,7 @@
 defmodule CaseinWeb.SessionOptions do
   @moduledoc false
 
-  @default_key "_dev_ide_key"
+  @default_key "_casein_key"
   @default_same_site "Lax"
 
   def options do

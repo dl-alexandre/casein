@@ -14,7 +14,7 @@ defmodule CaseinWeb.WindowTerminalModeLiveTest do
   alias Casein.Workspaces.State
 
   setup do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-window-mode-live")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-window-mode-live")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 

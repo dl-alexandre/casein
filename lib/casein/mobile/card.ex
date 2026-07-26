@@ -395,7 +395,7 @@ defmodule Casein.Mobile.Card do
     %{
       id: id(type, workspace_id, session_id),
       type: type,
-      source: Map.get(attrs, :source, "devide"),
+      source: Map.get(attrs, :source, "casein"),
       kind: Map.get(attrs, :kind, default_kind(type)),
       status: Map.get(attrs, :status, "open"),
       priority: attrs.priority,

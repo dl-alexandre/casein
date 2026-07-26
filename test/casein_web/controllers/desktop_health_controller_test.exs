@@ -27,7 +27,7 @@ defmodule CaseinWeb.DesktopHealthControllerTest do
       path =
         Path.join(
           System.tmp_dir!(),
-          "devide-health-test-#{System.unique_integer([:positive])}/runtime.json"
+          "casein-health-test-#{System.unique_integer([:positive])}/runtime.json"
         )
 
       on_exit(fn -> File.rm_rf!(Path.dirname(path)) end)

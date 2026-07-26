@@ -37,7 +37,7 @@ jobs:
     env:
       MIX_ENV: test
       # Isolated test DB so this job never collides with the pr-gate's default
-      # `dev_ide_test` database if both run on the devbox at once
+      # `casein_test` database if both run on the devbox at once
       # (config/test.exs suffixes the DB name with MIX_TEST_PARTITION).
       MIX_TEST_PARTITION: _pe2e
     steps:

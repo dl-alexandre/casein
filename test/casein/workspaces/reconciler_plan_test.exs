@@ -87,7 +87,7 @@ defmodule Casein.Workspaces.ReconcilerPlanTest do
     test "scratch and folder-attach records are never retired" do
       records = [
         record("__scratch__"),
-        record("folder:/data/workspaces/dalexandre/dev_ide")
+        record("folder:/data/workspaces/dalexandre/casein")
       ]
 
       plan = build([listed("alive", "dalexandre")], records)

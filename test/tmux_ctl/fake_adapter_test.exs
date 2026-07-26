@@ -3,7 +3,7 @@ defmodule TmuxCtl.FakeAdapterTest do
 
   alias TmuxCtl.Test.{FakeAdapter, FakeState}
 
-  @session "devide_alpha_main"
+  @session "casein_alpha_main"
 
   setup do
     previous_windows = FakeState.get(:fake_tmux_windows)
@@ -37,7 +37,7 @@ defmodule TmuxCtl.FakeAdapterTest do
   end
 
   test "consolidating sessions does not import source window history" do
-    source = "devide_alpha_agent"
+    source = "casein_alpha_agent"
 
     FakeState.put(:fake_tmux_windows, %{
       @session => [

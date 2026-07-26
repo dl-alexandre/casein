@@ -1,0 +1,10 @@
+[Unit]
+Description=Casein ephemeral /tmp cleanup (age-prune credo-diff, ghostty & test artifacts)
+
+[Service]
+Type=oneshot
+User=__USER__
+EnvironmentFile=-/etc/casein/casein.env
+# The installer fills the args below: empty for a dry-run (log-only) install, or
+# --apply for the deleting install. Age filtering keeps anything recently used.
+ExecStart=__CHECKOUT__/scripts/casein-tmp-cleanup.sh __CLEANUP_ARGS__

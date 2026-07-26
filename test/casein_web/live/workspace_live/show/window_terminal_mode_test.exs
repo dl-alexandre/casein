@@ -58,7 +58,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WindowTerminalModeTest do
           worker: nil,
           backend: nil,
           session_sid: "u-dev",
-          tmux_session: "devide_alpha_u-dev",
+          tmux_session: "casein_alpha_u-dev",
           cols: 120,
           rows: 40,
           error: nil,

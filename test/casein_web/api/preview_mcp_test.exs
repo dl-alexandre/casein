@@ -427,7 +427,7 @@ defmodule CaseinWeb.API.PreviewMCPTest do
   end
 
   test "session-scoped endpoint opens recording playback beside the agent pane" do
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.test/workspaces")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.test/workspaces")
 
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-playback"
 
@@ -438,7 +438,7 @@ defmodule CaseinWeb.API.PreviewMCPTest do
     )
 
     artifact_path = "/preview-artifacts/#{@v3_workspace.id}/demo.webm"
-    playback_url = "https://devide.example.test:443#{artifact_path}?fit=playback&loop=1"
+    playback_url = "https://casein.example.test:443#{artifact_path}?fit=playback&loop=1"
 
     assert {:reply, %{result: result}} =
              PreviewMCP.handle(

@@ -1833,7 +1833,7 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
   end
 
   defp temp_workspace_root! do
-    root = Path.join(System.tmp_dir!(), "devide-api-root-#{System.unique_integer([:positive])}")
+    root = Path.join(System.tmp_dir!(), "casein-api-root-#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)
     on_exit(fn -> File.rm_rf!(root) end)
     root

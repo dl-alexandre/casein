@@ -2,7 +2,7 @@
 # Static validation for the self-contained macOS desktop package.
 set -euo pipefail
 
-APP="${1:-native/devide_menubar/build/Casein MenuBar.app}"
+APP="${1:-native/casein_menubar/build/Casein MenuBar.app}"
 APP="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
 RELEASE="$APP/Contents/Resources/release"
 
@@ -24,18 +24,18 @@ plutil -lint "$APP/Contents/Info.plist"
 codesign --verify --deep --strict "$APP"
 env -u TMUX "$tmux_bin" -V | rg -x 'tmux 3\.7b'
 resolver_secret="package-smoke-secret-package-smoke-secret-package-smoke-secret-1234"
-resolved_tmux="$(DATABASE_PATH="${TMPDIR:-/tmp}/devide-resolver-$$.sqlite3" \
+resolved_tmux="$(DATABASE_PATH="${TMPDIR:-/tmp}/casein-resolver-$$.sqlite3" \
   SECRET_KEY_BASE="$resolver_secret" \
   CASEIN_API_TOKEN="$resolver_secret" \
   "$RELEASE/bin/casein" eval 'IO.puts(Casein.Terminals.TmuxExecutable.resolve())' | tail -n 1)"
 [[ "$resolved_tmux" == "$tmux_bin" ]]
 
-smoke_label="devide_package_$$"
+smoke_label="casein_package_$$"
 smoke_socket="${TMPDIR:-/tmp}/$smoke_label.sock"
 tmux_environment=(env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=xterm-256color)
-smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/devide-package-smoke.XXXXXX")"
+smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/casein-package-smoke.XXXXXX")"
 smoke_account="$(dirname "$smoke_dir")/$(basename "$smoke_dir")"
-keychain_service="com.onebackend.devide.desktop.secrets.v1"
+keychain_service="com.onebackend.casein.desktop.secrets.v1"
 runtime_file="$smoke_dir/runtime.json"
 host_pid=""
 launch_token="package-smoke-launch-secret-package-smoke-launch-secret-1234"

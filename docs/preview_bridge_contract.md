@@ -21,7 +21,7 @@ preview-specific code to each LiveView.
 The signaling layer is passive unless a page is clearly in preview context:
 
 - the page is embedded (`window.parent !== window`) in a development bundle,
-- the URL contains `devide_preview=1`, or
+- the URL contains `casein_preview=1`, or
 - the URL contains the legacy `preview_superadmin=1` marker during migration.
 
 Production-style bundles require an explicit preview marker. This prevents
@@ -39,7 +39,7 @@ window.parent.postMessage(
   {
     source: "casein-preview",
     version: 1,
-    type: "devide:preview:live_socket_connected",
+    type: "casein:preview:live_socket_connected",
     payload: {
       url: window.location.href,
       pathname: window.location.pathname,
@@ -52,20 +52,20 @@ window.parent.postMessage(
 ```
 
 The same payload is also dispatched on the page as a `CustomEvent` named
-`devide:preview:signal` so a controlled browser backend can observe or inject
+`casein:preview:signal` so a controlled browser backend can observe or inject
 listeners without relying on iframe parent messaging.
 
 ## Event Types
 
 | Event | Meaning |
 |-------|---------|
-| `devide:preview:bridge_ready` | The centralized bridge script is active. |
-| `devide:preview:dom_loaded` | The document reached DOM ready. |
-| `devide:preview:page_loading_start` | LiveView or browser navigation/loading began. |
-| `devide:preview:page_loading_stop` | LiveView or browser navigation/loading ended. |
-| `devide:preview:live_socket_connected` | Phoenix LiveView client state appears connected. |
-| `devide:preview:live_socket_disconnected` | Phoenix LiveView client state appears disconnected. |
-| `devide:preview:client_error` | Browser JS error or unhandled promise rejection occurred. |
+| `casein:preview:bridge_ready` | The centralized bridge script is active. |
+| `casein:preview:dom_loaded` | The document reached DOM ready. |
+| `casein:preview:page_loading_start` | LiveView or browser navigation/loading began. |
+| `casein:preview:page_loading_stop` | LiveView or browser navigation/loading ended. |
+| `casein:preview:live_socket_connected` | Phoenix LiveView client state appears connected. |
+| `casein:preview:live_socket_disconnected` | Phoenix LiveView client state appears disconnected. |
+| `casein:preview:client_error` | Browser JS error or unhandled promise rejection occurred. |
 
 ## Payload Shape
 
@@ -75,7 +75,7 @@ All events share the base payload:
 {
   "source": "casein-preview",
   "version": 1,
-  "type": "devide:preview:dom_loaded",
+  "type": "casein:preview:dom_loaded",
   "payload": {
     "url": "http://127.0.0.1:4000/superadmin",
     "pathname": "/superadmin",
@@ -149,7 +149,7 @@ External browser sidecars forward bridge signals over the JSON-line event stream
   "browser_id": "browser-1",
   "event": [
     "preview_signal",
-    "devide:preview:live_socket_connected",
+    "casein:preview:live_socket_connected",
     {"request_id": "pv-abc123", "connected": true},
     {"state": "liveview_stable", "dom_loaded": true, "live_socket_connected": true}
   ]
@@ -160,7 +160,7 @@ Elixir normalizes that into:
 
 ```elixir
 {:preview_browser, browser_id,
- {:preview_signal, "devide:preview:live_socket_connected", payload, health}}
+ {:preview_signal, "casein:preview:live_socket_connected", payload, health}}
 ```
 
 where `health` is a `CaseinPreviewBrowser.Health` snapshot. `observe/1` also

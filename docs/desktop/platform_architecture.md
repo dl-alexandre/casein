@@ -260,7 +260,7 @@ seams behind that shared cockpit.
 
 The host persists only local runtime state under `%LOCALAPPDATA%\Casein`:
 
-- `devide.sqlite3` — desktop SQLite database;
+- `casein.sqlite3` — desktop SQLite database;
 - `desktop-host.json` — retained port and launch-at-sign-in preference;
 - `secret-key-base.txt` — per-install Phoenix secret;
 - `api-token.txt` — per-install local API bearer token;

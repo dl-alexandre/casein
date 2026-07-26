@@ -13,11 +13,11 @@
 # slugs (one per line, # comments) that must never fall back to the host
 # global login. For a registered owner the profile dir applies even before
 # sign-in, so the provider CLI prompts for its own login inside the profile
-# instead of using the host account. DEVIDE_AGENT_AUTH_FALLBACK=none treats
+# instead of using the host account. CASEIN_AGENT_AUTH_FALLBACK=none treats
 # every owner as registered.
 
 agent_auth_profile_root() {
-  printf '%s\n' "${DEVIDE_AGENT_AUTH_ROOT:-${HOME}/.casein/agent-auth}"
+  printf '%s\n' "${CASEIN_AGENT_AUTH_ROOT:-${HOME}/.casein/agent-auth}"
 }
 
 agent_auth_owners_file() {
@@ -35,7 +35,7 @@ agent_auth_owner_listed() {
 agent_auth_owner_registered() {
   local owner="$1"
   [[ -n "$owner" ]] || return 1
-  if [[ "${DEVIDE_AGENT_AUTH_FALLBACK:-}" == "none" ]]; then
+  if [[ "${CASEIN_AGENT_AUTH_FALLBACK:-}" == "none" ]]; then
     return 0
   fi
   agent_auth_owner_listed "$owner"
@@ -63,7 +63,7 @@ agent_auth_owner_register() {
 
   printf 'registered owner %s: %s-* workspaces no longer fall back to global auth\n' \
     "$owner" "$owner"
-  printf 'next: devide agent auth signin %s claude   (and: codex)\n' "$owner"
+  printf 'next: casein agent auth signin %s claude   (and: codex)\n' "$owner"
 }
 
 agent_auth_owner_unregister() {
@@ -139,7 +139,7 @@ agent_auth_profile_named_dir() {
 agent_auth_profile_seed_readme() {
   local dir="$1"
   local runtime="$2"
-  local readme="${dir}/README.devide-profile"
+  local readme="${dir}/README.casein-profile"
 
   if [[ ! -f "$readme" ]]; then
     {

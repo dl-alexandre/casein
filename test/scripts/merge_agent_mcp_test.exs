@@ -2,14 +2,14 @@ defmodule Scripts.MergeAgentMcpTest do
   use ExUnit.Case, async: true
 
   # The grok `[ui].theme` line is owned by Casein.Terminals.ToolThemes now, so
-  # this script only strips stale devide-* MCP blocks and must leave the theme
+  # this script only strips stale casein-* MCP blocks and must leave the theme
   # (and all other config) untouched.
   @script Path.expand("../../scripts/lib/merge-agent-mcp.py", __DIR__)
 
   @base_env [
-    {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"},
-    {"DEVIDE_PREVIEW_MCP_URL", "http://127.0.0.1:4000/api/preview/mcp"},
-    {"DEVIDE_ARTIFACT_MCP_URL", "http://127.0.0.1:4000/api/artifacts/mcp"}
+    {"CASEIN_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"},
+    {"CASEIN_PREVIEW_MCP_URL", "http://127.0.0.1:4000/api/preview/mcp"},
+    {"CASEIN_ARTIFACT_MCP_URL", "http://127.0.0.1:4000/api/artifacts/mcp"}
   ]
 
   test "self-test passes" do
@@ -31,13 +31,13 @@ defmodule Scripts.MergeAgentMcpTest do
     refute content =~ "grokday"
   end
 
-  test "strips devide-* MCP blocks while preserving ui.theme and other sections" do
+  test "strips casein-* MCP blocks while preserving ui.theme and other sections" do
     config =
       write_config("""
       [ui]
       theme = "groknight"
 
-      [mcp_servers.devide-alpha]
+      [mcp_servers.casein-alpha]
       url = "http://127.0.0.1:4000/api/terminals/mcp"
 
       [mcp_servers.keep-me]
@@ -50,7 +50,7 @@ defmodule Scripts.MergeAgentMcpTest do
     content = File.read!(config)
     assert content =~ ~s/theme = "groknight"/
     assert content =~ "[mcp_servers.keep-me]"
-    refute content =~ "devide-alpha"
+    refute content =~ "casein-alpha"
   end
 
   test "write-claude-mcp includes the artifact server" do
@@ -68,7 +68,7 @@ defmodule Scripts.MergeAgentMcpTest do
                  "http://127.0.0.1:4000/api/preview/mcp",
                  "http://127.0.0.1:4000/api/artifacts/mcp"
                ],
-               env: [{"DEVIDE_WORKSPACE_NAME", "Alpha Workspace"}],
+               env: [{"CASEIN_WORKSPACE_NAME", "Alpha Workspace"}],
                stderr_to_stdout: true
              )
 

@@ -136,7 +136,7 @@ defmodule Casein.Terminals.ThemeTest do
 
   describe "merge via load_for_scheme/1" do
     test "merges a temp ghostty.conf over the preset" do
-      path = Path.join(System.tmp_dir!(), "devide-theme-test-#{System.unique_integer()}.conf")
+      path = Path.join(System.tmp_dir!(), "casein-theme-test-#{System.unique_integer()}.conf")
 
       content = """
       background = #101010

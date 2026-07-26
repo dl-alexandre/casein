@@ -70,7 +70,7 @@ defmodule Casein.Panes.EventsParityTest do
 
   test "register/heartbeat/deregister dual-broadcast onto Panes.Events with matching payloads" do
     {_root, path} = seed_workspace!()
-    session = "devide_pane_events_1"
+    session = "casein_pane_events_1"
     pane_id = "%31"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)

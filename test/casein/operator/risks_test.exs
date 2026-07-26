@@ -182,19 +182,19 @@ defmodule Casein.Operator.RisksTest do
     sessions = [
       %{
         sid: "main",
-        tmux_session: "devide_alpha_main",
+        tmux_session: "casein_alpha_main",
         panes: [
           %{id: "%1", agent_state: :blocked, agent_state_age_s: 30, task_summary: "perm prompt"},
           %{id: "%2", agent_state: :working}
         ]
       },
-      %{sid: "other", tmux_session: "devide_alpha_other", panes: [%{id: "%3"}]}
+      %{sid: "other", tmux_session: "casein_alpha_other", panes: [%{id: "%3"}]}
     ]
 
     assert [risk] = Risks.detect(digest(sessions: sessions))
     assert risk.id == :agent_blocked
     assert risk.severity == :warn
-    assert risk.subject == "devide_alpha_main %1"
+    assert risk.subject == "casein_alpha_main %1"
     assert risk.evidence == %{agent_state_age_s: 30, task_summary: "perm prompt"}
     assert risk.suggestion =~ "terminal_capture_agent"
   end

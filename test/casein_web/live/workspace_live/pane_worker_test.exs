@@ -10,7 +10,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
       {PaneWorker,
        parent: self(),
        pane_id: "pane-gen-1",
-       tmux_session: "devide_test_pane_worker_gen",
+       tmux_session: "casein_test_pane_worker_gen",
        backend: :shared_session,
        session_module: FakeTerminalSession,
        workspace_key: "ws-key-gen",

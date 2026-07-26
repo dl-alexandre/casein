@@ -109,7 +109,7 @@ defmodule CaseinWeb.API.MCPContractTest do
         |> post_mcp(path, %{
           "jsonrpc" => "2.0",
           "id" => "contract-1",
-          "method" => "devide/unknown",
+          "method" => "casein/unknown",
           "params" => %{"secret" => @secret, "path" => @workspace_path}
         })
 
@@ -123,7 +123,7 @@ defmodule CaseinWeb.API.MCPContractTest do
                  "message" => "Method not found",
                  "data" => %{
                    "error_version" => "mcp-jsonrpc-v1",
-                   "name" => "devide/unknown"
+                   "name" => "casein/unknown"
                  }
                }
              } = json_response(response, 400)
@@ -144,7 +144,7 @@ defmodule CaseinWeb.API.MCPContractTest do
             |> post_mcp(path, %{
               "jsonrpc" => "2.0",
               "id" => "contract-1",
-              "method" => "devide/unknown",
+              "method" => "casein/unknown",
               "params" => %{"secret" => @secret, "path" => @workspace_path}
             })
 

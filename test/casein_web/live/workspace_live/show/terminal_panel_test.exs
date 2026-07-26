@@ -15,8 +15,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanelTest do
     test "labels the current workspace and lists other workspaces from the sidebar tree" do
       home =
         shell_tab("shell-home", %{
-          cwd: "/home/dev_ide",
-          git_toplevel: "/home/dev_ide",
+          cwd: "/home/casein",
+          git_toplevel: "/home/casein",
           git_branch: "master"
         })
 
@@ -24,13 +24,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanelTest do
         shell_tab("shell-abc", %{
           cwd: "/wt/fx",
           git_toplevel: "/wt/fx",
-          git_common_dir: "/home/dev_ide/.git",
+          git_common_dir: "/home/casein/.git",
           git_branch: "agent/fix-nav",
           git_worktree?: true
         })
 
       summaries = [
-        %{id: "ws1", name: "dev_ide", session_count: 2, sessions: []},
+        %{id: "ws1", name: "casein", session_count: 2, sessions: []},
         %{
           id: "ws2",
           name: "reports",
@@ -51,15 +51,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanelTest do
       html =
         render_component(&TerminalPanel.mobile_nav_sheet/1, %{
           mobile_nav_open: true,
-          workspace: %{id: "ws1", name: "dev_ide"},
-          workspace_route: "/dev_ide",
+          workspace: %{id: "ws1", name: "casein"},
+          workspace_route: "/casein",
           mobile_nav_focus: nil,
           mobile_nav_view: "sessions",
           session_tabs: [home, worktree],
           sessions_sidebar_tree: tree,
           terminal_sid: "shell-abc",
           default_terminal_sid: "shell-home",
-          shell_button_label: "dev_ide",
+          shell_button_label: "casein",
           shell_button_detail: ""
         })
 
@@ -69,7 +69,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanelTest do
       assert html =~ "reports"
 
       # The worktree row surfaces the parent repo it descends from.
-      assert html =~ "dev_ide⑂"
+      assert html =~ "casein⑂"
       assert html =~ "fix-nav"
 
       # Rows are single-line, and the default branch stays out of the way.
@@ -78,22 +78,22 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanelTest do
     end
 
     test "no Other-workspaces group when the tree has only the current workspace" do
-      home = shell_tab("shell-home", %{cwd: "/home/dev_ide", git_toplevel: "/home/dev_ide"})
-      summaries = [%{id: "ws1", name: "dev_ide", session_count: 1, sessions: []}]
+      home = shell_tab("shell-home", %{cwd: "/home/casein", git_toplevel: "/home/casein"})
+      summaries = [%{id: "ws1", name: "casein", session_count: 1, sessions: []}]
       tree = SessionBarVM.workspace_session_tree(summaries, "ws1", current_session_tabs: [home])
 
       html =
         render_component(&TerminalPanel.mobile_nav_sheet/1, %{
           mobile_nav_open: true,
-          workspace: %{id: "ws1", name: "dev_ide"},
-          workspace_route: "/dev_ide",
+          workspace: %{id: "ws1", name: "casein"},
+          workspace_route: "/casein",
           mobile_nav_focus: nil,
           mobile_nav_view: "sessions",
           session_tabs: [home],
           sessions_sidebar_tree: tree,
           terminal_sid: "shell-home",
           default_terminal_sid: "shell-home",
-          shell_button_label: "dev_ide",
+          shell_button_label: "casein",
           shell_button_detail: ""
         })
 

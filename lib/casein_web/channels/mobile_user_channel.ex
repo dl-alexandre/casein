@@ -288,7 +288,7 @@ defmodule CaseinWeb.MobileUserChannel do
       type: Atom.to_string(card.type),
       # Normalized contract (v1). Legacy keys below remain for existing native
       # consumers until the native client migrates to `actions`.
-      source: Map.get(card, :source, "devide"),
+      source: Map.get(card, :source, "casein"),
       kind: Map.get(card, :kind, Atom.to_string(card.type)),
       status: Map.get(card, :status, "open"),
       resource: render_value(Map.get(card, :resource, %{})),

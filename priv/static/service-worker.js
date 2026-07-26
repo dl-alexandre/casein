@@ -1,4 +1,4 @@
-const CACHE_PREFIX = "devide-pwa";
+const CACHE_PREFIX = "casein-pwa";
 const CACHE_VERSION = "v1";
 const STATIC_CACHE = `${CACHE_PREFIX}-${CACHE_VERSION}:static`;
 const OFFLINE_URL = "/offline.html";
@@ -88,7 +88,7 @@ self.addEventListener("push", (event) => {
     body: data.body || "",
     icon: "/images/pwa-icon-192.png",
     badge: "/images/pwa-icon-192.png",
-    tag: data.tag || "devide",
+    tag: data.tag || "casein",
     renotify: true,
     data: { url: data.url || "/", ...data }
   };
@@ -152,7 +152,7 @@ async function openNotificationTarget(targetUrl, detail) {
   });
 
   const message = {
-    type: "DEVIDE_AGENT_QUIET_OPEN",
+    type: "CASEIN_AGENT_QUIET_OPEN",
     detail
   };
 

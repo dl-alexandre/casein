@@ -314,7 +314,7 @@ defmodule Casein.ArtifactProjects do
   # Durable, login-gated URL served by CaseinWeb.ArtifactProjectController straight
   # from the worktree — safe to paste in a PR (references stable ids, not the
   # ephemeral loopback preview port). nil when no public base URL is configured
-  # (e.g. local dev without DEVIDE_URL).
+  # (e.g. local dev without CASEIN_URL).
   defp public_url(%Project{workspace_id: ws, id: id}) when is_binary(ws) and is_binary(id) do
     case artifact_public_origin() do
       nil -> nil
@@ -712,7 +712,7 @@ defmodule Casein.ArtifactProjects do
     %{
       "name" => "artifact-static",
       "kind" => "static",
-      "env" => %{"DEVIDE_RUNTIME_PREVIEW_COMMAND" => @static_preview_command}
+      "env" => %{"CASEIN_RUNTIME_PREVIEW_COMMAND" => @static_preview_command}
     }
   end
 
@@ -1155,7 +1155,7 @@ defmodule Casein.ArtifactProjects do
           "-c",
           "user.name=Casein Artifact",
           "-c",
-          "user.email=devide-artifacts@localhost",
+          "user.email=casein-artifacts@localhost",
           "commit",
           "--no-verify"
         ] ++ allow_empty_args ++ ["-m", message]

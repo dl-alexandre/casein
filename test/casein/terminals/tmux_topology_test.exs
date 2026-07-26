@@ -101,7 +101,7 @@ defmodule Casein.Terminals.TmuxTopologyTest do
           width: 100,
           height: 32,
           current_command: "mix",
-          current_path: "/workspace/apps/dev_ide",
+          current_path: "/workspace/apps/casein",
           activity: 20,
           activity_flag: false,
           bell: true,
@@ -121,7 +121,7 @@ defmodule Casein.Terminals.TmuxTopologyTest do
                        active_pane_id: "%1",
                        windows: [%{name: "tests"}],
                        panes: [
-                         %{current_path: "/workspace/apps/dev_ide", activity: 20, bell: true}
+                         %{current_path: "/workspace/apps/casein", activity: 20, bell: true}
                        ]
                      }}},
                    500

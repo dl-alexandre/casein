@@ -42,7 +42,7 @@ review checkpoint without file changes.
 
 `Casein.ArtifactProjects.serve/1` delegates to
 `Casein.Runtimes.PreviewLauncher.ensure_started/1`. Static artifacts currently
-use the runtime preview launcher with `DEVIDE_RUNTIME_PREVIEW_COMMAND` set to:
+use the runtime preview launcher with `CASEIN_RUNTIME_PREVIEW_COMMAND` set to:
 
 ```bash
 python3 -m http.server "$PORT" --bind 127.0.0.1 --directory .casein/public
@@ -200,9 +200,9 @@ port — so it survives restarts and deploys.
 
 **Origin selection.** `public_url` is built from the first configured of:
 
-1. `:artifact_public_url` (env `DEVIDE_ARTIFACT_URL`) — a **dedicated, isolated
+1. `:artifact_public_url` (env `CASEIN_ARTIFACT_URL`) — a **dedicated, isolated
    origin** for artifacts.
-2. `:preview_app_url` (env `DEVIDE_URL`) — the cockpit origin (default).
+2. `:preview_app_url` (env `CASEIN_URL`) — the cockpit origin (default).
 
 Serving workspace-authored (untrusted) HTML from its own origin is stronger
 isolation: a compromised artifact can't reach cockpit cookies or its same-origin
@@ -216,10 +216,10 @@ no-op until the manager routes a subdomain here:
 1. DNS: point `artifacts.devbox.milcgroup.com` at the devbox.
 2. TLS: a cert for that host (Caddy auto-cert or the existing wildcard).
 3. Manager/Caddy: route that host through the **same** oauth2-proxy `forward_auth`
-   block as `devide.devbox…`, upstreaming to the Casein port. A single shared
+   block as `casein.devbox…`, upstreaming to the Casein port. A single shared
    origin — **not** per-workspace subdomains (rejected: collide with legacy/v3
    wildcard routing, which is intentionally non-OAuth).
-4. Set `DEVIDE_ARTIFACT_URL=https://artifacts.devbox.milcgroup.com` in the release
+4. Set `CASEIN_ARTIFACT_URL=https://artifacts.devbox.milcgroup.com` in the release
    env. `public_url`s then resolve to the dedicated origin automatically.
 
 ## Next Steps

@@ -12,7 +12,7 @@ import Config
 # If you use `mix release`, you need to explicitly enable the server
 # by passing the PHX_SERVER=true when you start it:
 #
-#     PHX_SERVER=true bin/dev_ide start
+#     PHX_SERVER=true bin/casein start
 #
 # Alternatively, you can use `mix phx.gen.release` to generate a `bin/server`
 # script that automatically sets the env var above.
@@ -77,7 +77,7 @@ config :casein, :situation_server, truthy_env?.("CASEIN_SITUATION_SERVER")
 
 # When on, Casein.Ops.PgProbe polls the box's Postgres servers (host 5432 +
 # release 15432 by default) for connection saturation and leak-shaped
-# application_names (wf_*, devide-<uuid>), emitting ops.pg_saturation_*
+# application_names (wf_*, casein-<uuid>), emitting ops.pg_saturation_*
 # audit rows and "ops:health" broadcasts on threshold transitions. Off by
 # default — it shells out to psql once per interval.
 config :casein, :pg_probe, truthy_env?.("CASEIN_PG_PROBE")
@@ -85,10 +85,10 @@ config :casein, :pg_probe, truthy_env?.("CASEIN_PG_PROBE")
 # When on, start the host-tmux control-mode listener and wire topology
 # watchers to event-triggered refreshes (reconcile poll remains). Default
 # off — flag-off path is byte-identical to pure 300ms polling.
-# Rollback: DEVIDE_TMUX_EVENTS=0. Only applied when the env var is set, so
+# Rollback: CASEIN_TMUX_EVENTS=0. Only applied when the env var is set, so
 # a config-file default (e.g. flipping dev/test on) survives unset envs.
-if System.get_env("DEVIDE_TMUX_EVENTS") do
-  config :casein, :tmux_events, truthy_env?.("DEVIDE_TMUX_EVENTS")
+if System.get_env("CASEIN_TMUX_EVENTS") do
+  config :casein, :tmux_events, truthy_env?.("CASEIN_TMUX_EVENTS")
 end
 
 # Probe targets as JSON, e.g.
@@ -197,7 +197,7 @@ if config_env() != :test do
       deployment_capabilities: [],
       tmux_host_anchor: false,
       secure_session_cookie: false,
-      session_cookie_key: "_dev_ide_desktop_key"
+      session_cookie_key: "_casein_desktop_key"
   end
 
   if default_workspace = System.get_env("CASEIN_DEFAULT_WORKSPACE") do
@@ -209,17 +209,17 @@ if config_env() != :test do
   end
 
   if config_env() == :dev do
-    if sock = System.get_env("DEVIDE_HTTP_SOCKET") do
+    if sock = System.get_env("CASEIN_HTTP_SOCKET") do
       config :casein, CaseinWeb.Endpoint, http: [ip: {:local, sock}, port: 0]
     end
   else
-    devide_http =
-      case System.get_env("DEVIDE_HTTP_SOCKET") do
+    casein_http =
+      case System.get_env("CASEIN_HTTP_SOCKET") do
         nil -> [port: String.to_integer(System.get_env("PORT", "4000"))]
         sock -> [ip: {:local, sock}, port: 0]
       end
 
-    config :casein, CaseinWeb.Endpoint, http: devide_http
+    config :casein, CaseinWeb.Endpoint, http: casein_http
   end
 
   present_env = fn name ->
@@ -343,12 +343,12 @@ if config_env() == :prod and not release_cli? do
             Casein.Desktop.Runtime.database_path()
 
           lan_mode? ->
-            "/var/lib/devide/lan/devide.sqlite3"
+            "/var/lib/casein/lan/casein.sqlite3"
 
           true ->
             raise """
             environment variable DATABASE_PATH is missing for SQLite releases.
-            For local LAN mode, devide lan up writes DATABASE_PATH automatically.
+            For local LAN mode, casein lan up writes DATABASE_PATH automatically.
             """
         end
 
@@ -361,7 +361,7 @@ if config_env() == :prod and not release_cli? do
     if desktop_mode? do
       raise """
       CASEIN_PROFILE=desktop requires a SQLite-compiled release.
-      Rebuild with CASEIN_REPO_ADAPTER=sqlite and DEVIDE_RELEASE_PROFILE=desktop.
+      Rebuild with CASEIN_REPO_ADAPTER=sqlite and CASEIN_RELEASE_PROFILE=desktop.
       """
     end
 
@@ -457,14 +457,14 @@ if config_env() == :prod and not release_cli? do
         end
     end
 
-  http_socket = System.get_env("DEVIDE_HTTP_SOCKET")
+  http_socket = System.get_env("CASEIN_HTTP_SOCKET")
 
   if forward_auth? and is_nil(http_socket) and
        bind_ip not in [{127, 0, 0, 1}, {0, 0, 0, 0, 0, 0, 0, 1}] do
     raise """
     forward-auth is enabled, but PHX_IP binds Casein outside loopback.
 
-    Set PHX_IP=127.0.0.1, unset PHX_IP, or run behind DEVIDE_HTTP_SOCKET so
+    Set PHX_IP=127.0.0.1, unset PHX_IP, or run behind CASEIN_HTTP_SOCKET so
     browser identity headers cannot be spoofed by direct network access.
     """
   end
@@ -679,7 +679,7 @@ if config_env() == :prod and not release_cli? do
          Casein.Proposals.AutoApply,
          enabled: boolean_env?.("CASEIN_AGENT_AUTO_APPLY_ENABLED")
 
-  # Idle GC for `devide_*` tmux sessions. Durable workspace sessions are the
+  # Idle GC for `casein_*` tmux sessions. Durable workspace sessions are the
   # default, so session GC is opt-in via env vars rather than enabled by a
   # short production default.
   config :casein,
@@ -687,7 +687,7 @@ if config_env() == :prod and not release_cli? do
          positive_integer_env.("CASEIN_TMUX_IDLE_SECONDS")
 
   # Periodic sweep for blank, auto-named, never-used windows that pile up
-  # *inside* `devide_*` sessions (extra `Ctrl-b c` windows a user opens and
+  # *inside* `casein_*` sessions (extra `Ctrl-b c` windows a user opens and
   # abandons, or orphans the subscriber-based session GC can't see after a
   # restart). See Casein.Terminals.TmuxWindowJanitor for the kill policy. The
   # sweep is opt-in because Casein's primary contract is durable tmux sessions.
@@ -700,7 +700,7 @@ if config_env() == :prod and not release_cli? do
          :tmux_window_idle_seconds,
          positive_integer_env.("CASEIN_TMUX_WINDOW_IDLE_SECONDS")
 
-  # Same sweep also reaps whole orphaned sessions: blank `devide_*` sessions
+  # Same sweep also reaps whole orphaned sessions: blank `casein_*` sessions
   # with no attached client, idle this long, where every pane is just a shell.
   # Catches per-tab sessions left by closed tabs and orphans the restart wiped
   # from the reactive janitor's subscriber map. Per-tab independence is kept —
@@ -712,15 +712,15 @@ if config_env() == :prod and not release_cli? do
   # Agent-worktree runtime reaper: expires stale `terminal_report_worktree`
   # records and tears down clean, idle worktrees so the pane picker does not
   # accumulate one tab per agent launch. Enabled by default in prod; set
-  # DEVIDE_RUNTIME_REAPER_ENABLED=0 to disable or DRY_RUN=1 for log-only.
+  # CASEIN_RUNTIME_REAPER_ENABLED=0 to disable or DRY_RUN=1 for log-only.
   runtime_reaper_enabled? =
-    case System.get_env("DEVIDE_RUNTIME_REAPER_ENABLED") do
+    case System.get_env("CASEIN_RUNTIME_REAPER_ENABLED") do
       value when value in ~w(0 false FALSE no NO off OFF) -> false
       _ -> true
     end
 
   runtime_reaper_dry_run? =
-    case System.get_env("DEVIDE_RUNTIME_REAPER_DRY_RUN") do
+    case System.get_env("CASEIN_RUNTIME_REAPER_DRY_RUN") do
       value when value in ~w(1 true TRUE yes YES on ON) -> true
       _ -> false
     end
@@ -730,38 +730,38 @@ if config_env() == :prod and not release_cli? do
 
   config :casein,
          :runtime_reaper_ttl_seconds,
-         positive_integer_env.("DEVIDE_RUNTIME_REAPER_TTL_SECONDS") || 6 * 60 * 60
+         positive_integer_env.("CASEIN_RUNTIME_REAPER_TTL_SECONDS") || 6 * 60 * 60
 
   config :casein,
          :runtime_reaper_sweep_interval_ms,
-         positive_integer_env.("DEVIDE_RUNTIME_REAPER_SWEEP_INTERVAL_MS") || 3_600_000
+         positive_integer_env.("CASEIN_RUNTIME_REAPER_SWEEP_INTERVAL_MS") || 3_600_000
 
   # Workspace reconciler — retires persisted workspace records the devbox
   # manager has stopped listing (deleted workspaces otherwise linger in the
   # sidebar forever). Only ever acts under the Manager source; see
   # `Casein.Workspaces.Reconciler`. Off by default, and dry-run unless told
   # otherwise, so a deploy starts by logging its plan. Env names keep the
-  # frozen DEVIDE_ operator prefix, matching the runtime reaper above.
+  # frozen CASEIN_ operator prefix, matching the runtime reaper above.
   config :casein,
          :workspace_reconciler_enabled,
-         System.get_env("DEVIDE_WORKSPACE_RECONCILER_ENABLED") in ~w(1 true TRUE yes YES on ON)
+         System.get_env("CASEIN_WORKSPACE_RECONCILER_ENABLED") in ~w(1 true TRUE yes YES on ON)
 
   config :casein,
          :workspace_reconciler_dry_run,
-         System.get_env("DEVIDE_WORKSPACE_RECONCILER_DRY_RUN") not in ~w(0 false FALSE no NO off OFF)
+         System.get_env("CASEIN_WORKSPACE_RECONCILER_DRY_RUN") not in ~w(0 false FALSE no NO off OFF)
 
   config :casein,
          :workspace_reconciler_grace_ms,
-         positive_integer_env.("DEVIDE_WORKSPACE_RECONCILER_GRACE_MS") || 30 * 60 * 1_000
+         positive_integer_env.("CASEIN_WORKSPACE_RECONCILER_GRACE_MS") || 30 * 60 * 1_000
 
   config :casein,
          :workspace_reconciler_sweep_interval_ms,
-         positive_integer_env.("DEVIDE_WORKSPACE_RECONCILER_SWEEP_INTERVAL_MS") || 3_600_000
+         positive_integer_env.("CASEIN_WORKSPACE_RECONCILER_SWEEP_INTERVAL_MS") || 3_600_000
 
   # Identity the reconciler presents to the manager. An admin email widens its
   # listing to every user's workspaces; without one it safely reconciles only
   # the workspaces of whichever user the manager resolves it to.
-  if admin_email = System.get_env("DEVIDE_WORKSPACE_RECONCILER_ADMIN_EMAIL") do
+  if admin_email = System.get_env("CASEIN_WORKSPACE_RECONCILER_ADMIN_EMAIL") do
     config :casein, :workspace_reconciler_admin_email, admin_email
   end
 
@@ -776,7 +776,7 @@ if config_env() == :prod and not release_cli? do
       end
     end)
     |> then(fn config ->
-      case System.get_env("DEVIDE_DEPLOY_WEBHOOK_SECRET") do
+      case System.get_env("CASEIN_DEPLOY_WEBHOOK_SECRET") do
         secret when is_binary(secret) and secret != "" ->
           Keyword.put(config, :github_webhook_secret, secret)
 
@@ -785,7 +785,7 @@ if config_env() == :prod and not release_cli? do
       end
     end)
     |> then(fn config ->
-      case System.get_env("DEVIDE_GITHUB_REPO") do
+      case System.get_env("CASEIN_GITHUB_REPO") do
         repo when is_binary(repo) and repo != "" -> Keyword.put(config, :github_repo, repo)
         _ -> config
       end
@@ -932,7 +932,7 @@ if config_env() == :prod and not release_cli? do
     config :casein, :preview_loopback_port, String.to_integer(System.get_env("PORT") || "4000")
 
     preview_app_url =
-      case System.get_env("DEVIDE_URL") do
+      case System.get_env("CASEIN_URL") do
         url when is_binary(url) and url != "" -> url
         _ -> "https://#{host}"
       end
@@ -942,11 +942,11 @@ if config_env() == :prod and not release_cli? do
     # Optional dedicated, isolated origin for PR-shareable artifacts. Serving
     # workspace-authored (untrusted) HTML from its own origin — rather than the
     # cockpit's — means a compromised artifact can't reach cockpit cookies or its
-    # same-origin surface. When DEVIDE_ARTIFACT_URL is set AND the manager routes
+    # same-origin surface. When CASEIN_ARTIFACT_URL is set AND the manager routes
     # that subdomain through the same oauth2-proxy forward_auth to this host,
     # artifact public_urls are built from it; unset → artifacts stay on the
     # cockpit origin (current behavior). Safe no-op until the infra route exists.
-    case System.get_env("DEVIDE_ARTIFACT_URL") do
+    case System.get_env("CASEIN_ARTIFACT_URL") do
       url when is_binary(url) and url != "" ->
         config :casein, :artifact_public_url, url
 

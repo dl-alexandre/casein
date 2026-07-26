@@ -77,18 +77,18 @@ defdelegates to `TmuxCtl.Test.FakeAdapter`.
 
 Casein does **not** drive the host's default tmux server. Every invocation is
 prefixed with a per-env server label (`Casein.Terminals.TmuxServer.args/0` →
-`["-L", label]`): `devide` (prod), `devide_dev` (dev), `devide_test` (test).
+`["-L", label]`): `casein` (prod), `casein_dev` (dev), `casein_test` (test).
 Each label is a fully independent server — its own socket, session list, and
 config — so Casein coexists with a plain SSH user's `tmux` (default server,
 their `~/.tmux.conf`) and the three envs never collide on the shared devbox.
 
 On the **host** path, `TmuxRunner` also appends `-f <file>` (precedence:
 `:tmux_ctl, :config_file` → `:casein, :tmux_config_file` →
-`$CASEIN_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`). **Container** sessions
+`$CASEIN_TMUX_CONFIG` → bundled `priv/tmux/casein.conf`). **Container** sessions
 skip `-f` and get the same options via `TmuxCtl.Client.apply_defaults/1`
 instead. Because tmux reads `-f` only when it *starts* a server, config is
 per-server, not per-client: a different config means a different `-L` label.
-To attach from a shell: `tmux -L devide attach`.
+To attach from a shell: `tmux -L casein attach`.
 
 See `docs/subsystems/terminals.md` ("Server isolation & config") for the full
 table and the operator cutover note (changing a label points Casein at a fresh,
@@ -149,7 +149,7 @@ behavior stays lazy in command shims such as `~/.casein/terminal-shims/elio`.
 The pane `PATH` also includes `~/.casein/tools/bin/`, where known missing tools
 can be installed on first invocation. For example, typing `elio` in a Casein
 terminal resolves the real binary if present; otherwise the shim runs
-`devide ensure-installed elio` or its materialized fallback installer, then
+`casein ensure-installed elio` or its materialized fallback installer, then
 launches Elio with OSC52 clipboard env.
 
 ## Topology API
@@ -165,8 +165,8 @@ as a query parameter or JSON body field.
 
 ```bash
 curl -sS \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
-  "https://devide.example.test/api/workspaces/ws-1/topology?session=devide_alpha_u-dev"
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
+  "https://casein.example.test/api/workspaces/ws-1/topology?session=casein_alpha_u-dev"
 ```
 
 Response shape:
@@ -174,7 +174,7 @@ Response shape:
 ```json
 {
   "workspace_id": "ws-1",
-  "session": "devide_alpha_u-dev",
+  "session": "casein_alpha_u-dev",
   "active_window_id": "@1",
   "active_pane_id": "%2",
   "version": 1234567,
@@ -218,7 +218,7 @@ alert fields for the pane's window on tmux versions that do not expose
 pane-specific alert formats.
 
 `role` is Casein pane metadata persisted in tmux as the pane user option
-`@devide_pane_role`. It is `null` for ordinary panes. The built-in
+`@casein_pane_role`. It is `null` for ordinary panes. The built-in
 `agent_pair` templates set `operator` on the root pane, `agent` on the MCP
 target pane, and `verify` on the verification pane so callers can identify
 pane purpose without scraping scrollback.
@@ -247,8 +247,8 @@ redirects there with its search params preserved.
 
 ```bash
 curl -sS \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
-  "https://devide.example.test/api/workspaces/ws-1/previous_sessions?query=phoenix&session=devide_alpha_u-dev"
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
+  "https://casein.example.test/api/workspaces/ws-1/previous_sessions?query=phoenix&session=casein_alpha_u-dev"
 ```
 
 ## Mutation conventions
@@ -304,40 +304,40 @@ Create a window:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","name":"tests","cwd":"."}' \
-  "https://devide.example.test/api/workspaces/ws-1/windows"
+  -d '{"session":"casein_alpha_u-dev","name":"tests","cwd":"."}' \
+  "https://casein.example.test/api/workspaces/ws-1/windows"
 ```
 
 Select a window:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev"}' \
-  "https://devide.example.test/api/workspaces/ws-1/windows/@2/select"
+  -d '{"session":"casein_alpha_u-dev"}' \
+  "https://casein.example.test/api/workspaces/ws-1/windows/@2/select"
 ```
 
 Rename a window:
 
 ```bash
 curl -sS -X PATCH \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","name":"server"}' \
-  "https://devide.example.test/api/workspaces/ws-1/windows/@2"
+  -d '{"session":"casein_alpha_u-dev","name":"server"}' \
+  "https://casein.example.test/api/workspaces/ws-1/windows/@2"
 ```
 
 Kill a window:
 
 ```bash
 curl -sS -X DELETE \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev"}' \
-  "https://devide.example.test/api/workspaces/ws-1/windows/@2"
+  -d '{"session":"casein_alpha_u-dev"}' \
+  "https://casein.example.test/api/workspaces/ws-1/windows/@2"
 ```
 
 ## Pane mutations
@@ -347,40 +347,40 @@ accepted for the split target.
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","target_pane_id":"%1","direction":"h"}' \
-  "https://devide.example.test/api/workspaces/ws-1/panes"
+  -d '{"session":"casein_alpha_u-dev","target_pane_id":"%1","direction":"h"}' \
+  "https://casein.example.test/api/workspaces/ws-1/panes"
 ```
 
 Select a pane:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev"}' \
-  "https://devide.example.test/api/workspaces/ws-1/panes/%2/select"
+  -d '{"session":"casein_alpha_u-dev"}' \
+  "https://casein.example.test/api/workspaces/ws-1/panes/%2/select"
 ```
 
 Split a pane explicitly:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","direction":"v"}' \
-  "https://devide.example.test/api/workspaces/ws-1/panes/%2/split"
+  -d '{"session":"casein_alpha_u-dev","direction":"v"}' \
+  "https://casein.example.test/api/workspaces/ws-1/panes/%2/split"
 ```
 
 Resize a pane:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","direction":"right","amount":5}' \
-  "https://devide.example.test/api/workspaces/ws-1/panes/%2/resize"
+  -d '{"session":"casein_alpha_u-dev","direction":"right","amount":5}' \
+  "https://casein.example.test/api/workspaces/ws-1/panes/%2/resize"
 ```
 
 Resize directions are `left`, `right`, `up`, and `down`. Amount defaults to
@@ -390,10 +390,10 @@ Kill a pane:
 
 ```bash
 curl -sS -X DELETE \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev"}' \
-  "https://devide.example.test/api/workspaces/ws-1/panes/%2"
+  -d '{"session":"casein_alpha_u-dev"}' \
+  "https://casein.example.test/api/workspaces/ws-1/panes/%2"
 ```
 
 tmux and the adapter protect the last pane in a window; attempting to delete
@@ -405,18 +405,18 @@ List built-in templates:
 
 ```bash
 curl -sS \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
-  "https://devide.example.test/api/workspaces/ws-1/templates"
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
+  "https://casein.example.test/api/workspaces/ws-1/templates"
 ```
 
 Apply a built-in template:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","dry_run":true}' \
-  "https://devide.example.test/api/workspaces/ws-1/templates/generic_project/apply"
+  -d '{"session":"casein_alpha_u-dev","dry_run":true}' \
+  "https://casein.example.test/api/workspaces/ws-1/templates/generic_project/apply"
 ```
 
 Preview how a saved exported template would reconcile against the current
@@ -424,10 +424,10 @@ session without mutating tmux:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","dry_run":true,"reconcile":true}' \
-  "https://devide.example.test/api/workspaces/ws-1/templates/<saved-template-id>/apply"
+  -d '{"session":"casein_alpha_u-dev","dry_run":true,"reconcile":true}' \
+  "https://casein.example.test/api/workspaces/ws-1/templates/<saved-template-id>/apply"
 ```
 
 Reconcile mode currently supports saved v2 exports only. With
@@ -468,10 +468,10 @@ Apply that same reconciliation plan:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","reconcile":true}' \
-  "https://devide.example.test/api/workspaces/ws-1/templates/<saved-template-id>/apply"
+  -d '{"session":"casein_alpha_u-dev","reconcile":true}' \
+  "https://casein.example.test/api/workspaces/ws-1/templates/<saved-template-id>/apply"
 ```
 
 Executable reconciliation is additive: it reuses matching windows/panes,
@@ -484,38 +484,38 @@ Export the current tmux topology as a Casein template v2 map and YAML:
 
 ```bash
 curl -sS \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
-  "https://devide.example.test/api/workspaces/ws-1/templates/export?session=devide_alpha_u-dev&name=current_layout"
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
+  "https://casein.example.test/api/workspaces/ws-1/templates/export?session=casein_alpha_u-dev&name=current_layout"
 ```
 
 Save the current tmux topology as a persisted workspace template export:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","name":"daily_layout","description":"Daily dev stack","tags":["phoenix","daily"]}' \
-  "https://devide.example.test/api/workspaces/ws-1/templates/export"
+  -d '{"session":"casein_alpha_u-dev","name":"daily_layout","description":"Daily dev stack","tags":["phoenix","daily"]}' \
+  "https://casein.example.test/api/workspaces/ws-1/templates/export"
 ```
 
 Dry-run a save without inserting a saved template or emitting audit:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","name":"daily_layout","dry_run":true}' \
-  "https://devide.example.test/api/workspaces/ws-1/templates/export"
+  -d '{"session":"casein_alpha_u-dev","name":"daily_layout","dry_run":true}' \
+  "https://casein.example.test/api/workspaces/ws-1/templates/export"
 ```
 
 Update saved template metadata:
 
 ```bash
 curl -sS -X PATCH \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{"name":"daily_layout_v2","description":"Updated daily dev stack","tags":["phoenix","ci"]}' \
-  "https://devide.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000"
+  "https://casein.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000"
 ```
 
 Only saved exported templates are mutable. Built-in templates remain read-only.
@@ -527,8 +527,8 @@ List saved templates with a tag filter:
 
 ```bash
 curl -sS \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
-  "https://devide.example.test/api/workspaces/ws-1/templates?tag=phoenix"
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
+  "https://casein.example.test/api/workspaces/ws-1/templates?tag=phoenix"
 ```
 
 Tag filters match saved/exported templates. Built-ins are returned only when no
@@ -539,10 +539,10 @@ Duplicate a saved workspace template export:
 
 ```bash
 curl -sS -X POST \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{"name":"daily_layout_copy","description":"Safe variant for branch work","tags":["phoenix","branch"]}' \
-  "https://devide.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000/duplicate"
+  "https://casein.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000/duplicate"
 ```
 
 If `name` is omitted, Casein chooses the next available copy name, such as
@@ -553,8 +553,8 @@ Delete a saved workspace template export:
 
 ```bash
 curl -sS -X DELETE \
-  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
-  "https://devide.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000"
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
+  "https://casein.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000"
 ```
 
 Response shape:
@@ -562,14 +562,14 @@ Response shape:
 ```json
 {
   "workspace_id": "ws-1",
-  "session": "devide_alpha_u-dev",
+  "session": "casein_alpha_u-dev",
   "template": {
     "version": 2,
     "name": "current_layout",
     "root": "${workspace_root}",
     "metadata": {
-      "source": "devide_topology_export",
-      "session": "devide_alpha_u-dev",
+      "source": "casein_topology_export",
+      "session": "casein_alpha_u-dev",
       "topology_version": 1234567
     },
     "windows": [

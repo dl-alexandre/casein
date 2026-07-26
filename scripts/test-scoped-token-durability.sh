@@ -73,7 +73,7 @@ printf "CASEIN_WORKSPACE_API_TOKENS='%s'\n" \
   "{\"${ENV_TOKEN}\":\"${WS}\",\"${OTHER_TOKEN}\":\"ws-different\",\"${LIST_TOKEN}\":[\"ws-a\",\"${WS}\"]}" \
   >"$VAL_ENV"
 printf '{"%s":"%s"}\n' "$STORE_TOKEN" "$WS" >"$VAL_STORE"
-export DEVIDE_WORKSPACE_TOKENS_STORE="$VAL_STORE"
+export CASEIN_WORKSPACE_TOKENS_STORE="$VAL_STORE"
 
 assert_registered() { # label token expect_rc
   local label="$1" token="$2" expect="$3" rc=0

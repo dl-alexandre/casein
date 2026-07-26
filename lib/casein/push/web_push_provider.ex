@@ -82,7 +82,7 @@ defmodule Casein.Push.WebPushProvider do
     }
   end
 
-  # Prefer an http(s) deep link; a native devide:// scheme can't open in a
+  # Prefer an http(s) deep link; a native casein:// scheme can't open in a
   # browser, so fall back to the app root (the attention strip shows which agent).
   defp web_url(notification) do
     case notification[:deep_link] || notification[:url] do
@@ -92,7 +92,7 @@ defmodule Casein.Push.WebPushProvider do
   end
 
   defp tag(%{workspace_id: wid}) when is_binary(wid) and wid != "", do: "ws:#{wid}"
-  defp tag(_), do: "devide"
+  defp tag(_), do: "casein"
 
   defp decode_subscription(%{"endpoint" => endpoint, "keys" => %{"p256dh" => p, "auth" => a}})
        when is_binary(endpoint) do

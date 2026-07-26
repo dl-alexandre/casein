@@ -10,7 +10,7 @@ defmodule Casein.Terminals.Workflows do
 
   alias Casein.Workspaces.State
 
-  @workflow_dirs [".dev_ide/workflows", ".warp/workflows"]
+  @workflow_dirs [".casein/workflows", ".warp/workflows"]
   @placeholder ~r/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/
   @encoded_prefix "workflow:"
 

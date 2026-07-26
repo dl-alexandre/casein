@@ -76,14 +76,14 @@ async function openBrowser(payload) {
     health: newHealth(),
   };
 
-  await context.exposeBinding("__devidePreviewSignal", (_source, message) => {
+  await context.exposeBinding("__caseinPreviewSignal", (_source, message) => {
     handlePreviewSignal(entry, message);
   });
 
   await context.addInitScript(() => {
-    window.addEventListener("devide:preview:signal", (event) => {
-      if (typeof window.__devidePreviewSignal === "function") {
-        window.__devidePreviewSignal(event.detail);
+    window.addEventListener("casein:preview:signal", (event) => {
+      if (typeof window.__caseinPreviewSignal === "function") {
+        window.__caseinPreviewSignal(event.detail);
       }
     });
   });
@@ -109,7 +109,7 @@ async function openBrowser(payload) {
 
 async function navigate(payload) {
   const entry = entryFor(payload.browser_ref);
-  transitionHealth(entry, "devide:preview:page_loading_start", {
+  transitionHealth(entry, "casein:preview:page_loading_start", {
     url: payload.url,
     timestamp: Date.now(),
   });
@@ -119,7 +119,7 @@ async function navigate(payload) {
     waitUntil: "domcontentloaded",
     timeout: 15_000,
   });
-  transitionHealth(entry, "devide:preview:page_loading_stop", {
+  transitionHealth(entry, "casein:preview:page_loading_stop", {
     url: entry.page.url(),
     timestamp: Date.now(),
   });
@@ -215,22 +215,22 @@ function transitionHealth(entry, type, payload = {}) {
   health.last_event_type = type;
   health.last_event_at = Number.isFinite(payload.timestamp) ? payload.timestamp : Date.now();
 
-  if (type === "devide:preview:bridge_ready") {
+  if (type === "casein:preview:bridge_ready") {
     health.bridge_ready = true;
-  } else if (type === "devide:preview:dom_loaded") {
+  } else if (type === "casein:preview:dom_loaded") {
     health.dom_loaded = true;
-  } else if (type === "devide:preview:live_socket_connected") {
+  } else if (type === "casein:preview:live_socket_connected") {
     health.live_socket_connected = true;
-  } else if (type === "devide:preview:live_socket_disconnected") {
+  } else if (type === "casein:preview:live_socket_disconnected") {
     health.live_socket_connected = false;
     health.state = "degraded";
     return;
-  } else if (type === "devide:preview:page_loading_start") {
+  } else if (type === "casein:preview:page_loading_start") {
     health.state = "navigation_started";
     health.dom_loaded = false;
     health.live_socket_connected = null;
     return;
-  } else if (type === "devide:preview:client_error") {
+  } else if (type === "casein:preview:client_error") {
     health.state = "degraded";
     health.client_errors = [payload, ...health.client_errors].slice(0, 10);
     return;

@@ -4,7 +4,7 @@ defmodule TmuxCtl.ClientTest do
   alias TmuxCtl.Client
   alias TmuxCtl.Test.FakeState
 
-  @session "devide_alpha_main"
+  @session "casein_alpha_main"
 
   setup do
     previous = %{
@@ -82,7 +82,7 @@ defmodule TmuxCtl.ClientTest do
     assert Enum.member?(argv, ";")
   end
 
-  test "resize_pane issues resize-pane for managed devide sessions" do
+  test "resize_pane issues resize-pane for managed casein sessions" do
     assert :ok = Client.resize_pane(@session, "%1", "right", 8)
     assert_receive {:tmux_runner, ["resize-pane", "-t", target, "-R", "8"]}
     assert target == "%1"
@@ -93,8 +93,8 @@ defmodule TmuxCtl.ClientTest do
     assert_receive {:tmux_runner, ["resize-pane", "-t", "%8031", "-D", "3"]}
   end
 
-  test "resize_pane rejects non-devide sessions and invalid input" do
-    assert {:error, :refused_non_devide_session} =
+  test "resize_pane rejects non-casein sessions and invalid input" do
+    assert {:error, :refused_non_casein_session} =
              Client.resize_pane("other_session", "%1", "left")
 
     assert {:error, :invalid_amount} = Client.resize_pane(@session, "%1", "up", 0)
@@ -129,7 +129,7 @@ defmodule TmuxCtl.ClientTest do
     assert_receive {:tmux_runner, ["resize-window", "-t", @session, "-x", "100", "-y", "30"]}
   end
 
-  test "set_session_alias sets the devide alias user option" do
+  test "set_session_alias sets the casein alias user option" do
     assert :ok = Client.set_session_alias(@session, "billing")
 
     assert_receive {:tmux_runner,
@@ -153,14 +153,14 @@ defmodule TmuxCtl.ClientTest do
   test "set_pane_role refuses unsafe roles and unmanaged sessions" do
     assert {:error, :invalid_role} = Client.set_pane_role(@session, "%1", "Agent Pane")
 
-    assert {:error, :refused_non_devide_session} =
+    assert {:error, :refused_non_casein_session} =
              Client.set_pane_role("other_session", "%1", "agent")
 
     refute_received {:tmux_runner, ["set-option", "-p", "-t", "%1", "@casein_pane_role", _]}
   end
 
   test "consolidate_sessions appends source windows into target session" do
-    source = "devide_alpha_agent"
+    source = "casein_alpha_agent"
 
     FakeState.update(:fake_tmux_windows, %{}, fn windows ->
       Map.put(windows, source, [
@@ -197,16 +197,16 @@ defmodule TmuxCtl.ClientTest do
     assert_receive {:tmux_runner, ["move-window", "-d", "-s", ^source_window_3, "-t", ^target]}
   end
 
-  test "consolidate_sessions refuses non-devide sessions" do
-    assert {:error, :refused_non_devide_session} =
+  test "consolidate_sessions refuses non-casein sessions" do
+    assert {:error, :refused_non_casein_session} =
              Client.consolidate_sessions("other_session", [@session])
 
-    assert {:error, :refused_non_devide_session} =
+    assert {:error, :refused_non_casein_session} =
              Client.consolidate_sessions(@session, ["other_session"])
   end
 
-  test "kill refuses non-devide sessions" do
-    assert {:error, :refused_non_devide_session} = Client.kill("other_session")
+  test "kill refuses non-casein sessions" do
+    assert {:error, :refused_non_casein_session} = Client.kill("other_session")
     refute_received {:tmux_runner, ["kill-session", "-t", "other_session"]}
   end
 
@@ -231,12 +231,12 @@ defmodule TmuxCtl.ClientTest do
   end
 
   test "new_window appends configured default command when no command is provided" do
-    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+    Application.put_env(:tmux_ctl, :default_command, "casein-shell")
 
     assert {:ok, _window_id} = Client.new_window(@session, name: "files", cwd: "/workspace")
     assert_receive {:tmux_runner, argv}
 
-    assert List.last(argv) == "devide-shell"
+    assert List.last(argv) == "casein-shell"
   end
 
   test "split_pane includes configured terminal env" do
@@ -248,16 +248,16 @@ defmodule TmuxCtl.ClientTest do
   end
 
   test "split_pane appends default command unless an explicit command is provided" do
-    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+    Application.put_env(:tmux_ctl, :default_command, "casein-shell")
 
     assert {:ok, _pane_id} = Client.split_pane(@session, "%1", "h")
     assert_receive {:tmux_runner, argv}
-    assert List.last(argv) == "devide-shell"
+    assert List.last(argv) == "casein-shell"
 
     assert {:ok, _pane_id} = Client.split_pane(@session, "%1", "h", command: "htop")
     assert_receive {:tmux_runner, argv}
     assert List.last(argv) == "htop"
-    refute "devide-shell" in argv
+    refute "casein-shell" in argv
   end
 
   test "apply_defaults succeeds when batched tmux call exits cleanly" do
@@ -309,7 +309,7 @@ defmodule TmuxCtl.ClientTest do
   end
 
   test "apply_defaults sets configured default command on the session" do
-    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+    Application.put_env(:tmux_ctl, :default_command, "casein-shell")
 
     assert :ok = Client.apply_defaults(@session)
     assert_receive {:tmux_runner, argv}
@@ -319,7 +319,7 @@ defmodule TmuxCtl.ClientTest do
              "-t",
              @session,
              "default-command",
-             "devide-shell"
+             "casein-shell"
            ])
   end
 

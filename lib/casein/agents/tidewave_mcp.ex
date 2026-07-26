@@ -4,7 +4,7 @@ defmodule Casein.Agents.TidewaveMCP do
 
   Tidewave is dev-only and never ships in the prod release. Resolution order:
 
-  1. `DEVIDE_TIDEWAVE_MCP_URL` (explicit override, e.g. preview-env pairing)
+  1. `CASEIN_TIDEWAVE_MCP_URL` (explicit override, e.g. preview-env pairing)
   2. Self-hosted Tidewave on this BEAM node (`MIX_ENV=dev` / preview-env port)
   3. Workspace metadata (manager `ports.tidewave`, socket-fingerprinted ports)
   4. Latest running ephemeral preview environment from the registry
@@ -48,7 +48,7 @@ defmodule Casein.Agents.TidewaveMCP do
   end
 
   defp env_override(opts) do
-    case Keyword.get(opts, :tidewave_mcp_url) || non_empty_env("DEVIDE_TIDEWAVE_MCP_URL") do
+    case Keyword.get(opts, :tidewave_mcp_url) || non_empty_env("CASEIN_TIDEWAVE_MCP_URL") do
       url when is_binary(url) and url != "" -> normalize_mcp_url(url)
       _ -> nil
     end
@@ -118,7 +118,7 @@ defmodule Casein.Agents.TidewaveMCP do
 
   defp preview_registry_url(opts) do
     if Keyword.get(opts, :preview_env_fallback, true) do
-      preview_env_id = non_empty_env("DEVIDE_PREVIEW_ENV_ID")
+      preview_env_id = non_empty_env("CASEIN_PREVIEW_ENV_ID")
 
       instance =
         if is_binary(preview_env_id) do

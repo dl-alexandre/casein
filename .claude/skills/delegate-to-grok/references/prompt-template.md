@@ -13,7 +13,7 @@ Keep the orchestrator context summary under ~4k tokens.
 
 {{BULLET_SUMMARY_OF_RELEVANT_STATE}}
 
-- Primary checkout (read-only mirror of origin/master): `/data/workspaces/dalexandre/dev_ide`
+- Primary checkout (read-only mirror of origin/master): `/data/workspaces/dalexandre/casein`
 - Your worktree is isolated — do all edits there.
 - Toolchain: `mise exec -- mix ...` from inside your worktree (never host `mix`).
 - Pre-push gate: `bash scripts/pre-push-check.sh` before any push.

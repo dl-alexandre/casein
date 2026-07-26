@@ -135,13 +135,13 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_ws_agent" => [
+      "casein_ws_agent" => [
         %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
       ]
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-      "devide_ws_agent" => [
+      "casein_ws_agent" => [
         %{
           id: "%1",
           window_id: "@1",
@@ -163,7 +163,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
           params: %{
             name: "terminal_send_command",
             arguments: %{
-              session: "devide_ws_agent",
+              session: "casein_ws_agent",
               command: "echo orchestrator"
             }
           }
@@ -220,7 +220,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
           params: %{
             name: "terminal_send_command",
             arguments: %{
-              session: "devide_ws_query_agent",
+              session: "casein_ws_query_agent",
               command: "echo should-not-run"
             }
           }
@@ -245,13 +245,13 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_ws-scoped_agent" => [
+      "casein_ws-scoped_agent" => [
         %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
       ]
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-      "devide_ws-scoped_agent" => [
+      "casein_ws-scoped_agent" => [
         %{
           id: "%1",
           window_id: "@1",
@@ -273,7 +273,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
           params: %{
             name: "terminal_send_command",
             arguments: %{
-              session: "devide_ws-scoped_agent",
+              session: "casein_ws-scoped_agent",
               command: "echo scoped"
             }
           }
@@ -298,13 +298,13 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_ws-scoped_agent" => [
+      "casein_ws-scoped_agent" => [
         %{id: "@1", index: 0, name: "agent", active: true, panes: 2, activity: 0}
       ]
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-      "devide_ws-scoped_agent" => [
+      "casein_ws-scoped_agent" => [
         %{id: "%1", window_id: "@1", index: 0, active: true, current_command: "claude"},
         %{id: "%2", window_id: "@1", index: 1, active: false, current_command: "bash"}
       ]
@@ -312,7 +312,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
 
     conn =
       conn
-      |> put_req_header("x-devide-caller-pane", "%1")
+      |> put_req_header("x-casein-caller-pane", "%1")
       |> post_mcp(
         %{
           jsonrpc: "2.0",
@@ -320,7 +320,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
           method: "tools/call",
           params: %{
             name: "terminal_topology",
-            arguments: %{session: "devide_ws-scoped_agent"}
+            arguments: %{session: "casein_ws-scoped_agent"}
           }
         },
         "ws-token"
@@ -344,13 +344,13 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_ws-scoped_agent" => [
+      "casein_ws-scoped_agent" => [
         %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
       ]
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-      "devide_ws-scoped_agent" => [
+      "casein_ws-scoped_agent" => [
         %{id: "%1", window_id: "@1", index: 0, active: true, current_command: "bash"}
       ]
     })
@@ -358,7 +358,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     conn =
       conn
       # An unexpanded client-side env placeholder must not become a pane id.
-      |> put_req_header("x-devide-caller-pane", "${DEVIDE_CALLER_PANE}")
+      |> put_req_header("x-casein-caller-pane", "${CASEIN_CALLER_PANE}")
       |> post_mcp(
         %{
           jsonrpc: "2.0",
@@ -366,7 +366,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
           method: "tools/call",
           params: %{
             name: "terminal_topology",
-            arguments: %{session: "devide_ws-scoped_agent"}
+            arguments: %{session: "casein_ws-scoped_agent"}
           }
         },
         "ws-token"
@@ -382,13 +382,13 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_ws-scoped_agent" => [
+      "casein_ws-scoped_agent" => [
         %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
       ]
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-      "devide_ws-scoped_agent" => [
+      "casein_ws-scoped_agent" => [
         %{
           id: "%1",
           window_id: "@1",
@@ -413,7 +413,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
           params: %{
             name: "terminal_send_command",
             arguments: %{
-              session: "devide_ws-scoped_agent",
+              session: "casein_ws-scoped_agent",
               command: "echo actor"
             }
           }
@@ -533,13 +533,13 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-        "devide_ws-scoped_agent" => [
+        "casein_ws-scoped_agent" => [
           %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
         ]
       })
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-        "devide_ws-scoped_agent" => [
+        "casein_ws-scoped_agent" => [
           %{
             id: "%1",
             window_id: "@1",
@@ -562,7 +562,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
               name: "invoke_tool",
               arguments: %{
                 name: "terminal_send_command",
-                arguments: %{session: "devide_ws-scoped_agent", command: "echo via-invoke"}
+                arguments: %{session: "casein_ws-scoped_agent", command: "echo via-invoke"}
               }
             }
           },
@@ -660,7 +660,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
       prev_roots = Application.get_env(:casein, :agent_worktree_roots)
 
       Application.put_env(:casein, :agent_worktree_roots, [
-        Path.join(System.tmp_dir!(), "devide-situation-test-empty")
+        Path.join(System.tmp_dir!(), "casein-situation-test-empty")
       ])
 
       on_exit(fn ->

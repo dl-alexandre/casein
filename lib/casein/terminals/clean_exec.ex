@@ -41,7 +41,7 @@ defmodule Casein.Terminals.CleanExec do
       # the foreground new-session attach. Leave it untouched.
       argv
     else
-      ["/bin/sh", "-c", @close_inherited_fds_script, "devide-clean-exec" | argv]
+      ["/bin/sh", "-c", @close_inherited_fds_script, "casein-clean-exec" | argv]
     end
   end
 

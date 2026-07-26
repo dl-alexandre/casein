@@ -61,7 +61,7 @@ defmodule GitCtl.CacheTest do
   end
 
   test "lookup rescues missing ETS table", %{table: table} do
-    Application.put_env(:git_ctl, :cache_table, :devide_missing_git_ctl_cache_table)
+    Application.put_env(:git_ctl, :cache_table, :casein_missing_git_ctl_cache_table)
     assert Cache.lookup("/tmp", 10_000) == :miss
     assert :ok = Cache.store("/tmp", :error)
     Application.put_env(:git_ctl, :cache_table, table)

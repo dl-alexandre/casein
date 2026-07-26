@@ -34,7 +34,7 @@ if [[ ! -d "${ROOT}/deps" ]]; then
 fi
 
 log "verify_agent_pairing.sh --ci"
-WORKSPACE_ID="${DEVIDE_WORKSPACE_ID}" bash scripts/verify_agent_pairing.sh --ci \
+WORKSPACE_ID="${CASEIN_WORKSPACE_ID}" bash scripts/verify_agent_pairing.sh --ci \
   >"${SCRATCH}/verify.log" 2>&1
 
 log "mcp-dogfood-agent-pair.sh"

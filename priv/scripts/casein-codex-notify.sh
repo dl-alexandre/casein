@@ -18,8 +18,8 @@ set -u
 trap 'exit 0' ERR
 
 TOKEN="${CASEIN_API_TOKEN:-}"
-WORKSPACE_ID="${DEVIDE_WORKSPACE_ID:-}"
-MCP_URL="${DEVIDE_TERMINAL_MCP_URL:-}"
+WORKSPACE_ID="${CASEIN_WORKSPACE_ID:-}"
+MCP_URL="${CASEIN_TERMINAL_MCP_URL:-}"
 PANE="${TMUX_PANE:-}"
 
 [[ -n "$TOKEN" && -n "$WORKSPACE_ID" && -n "$MCP_URL" && -n "$PANE" ]] || exit 0
@@ -30,7 +30,7 @@ NOTIFICATION="${!#}"
 
 arguments="$(
   CODEX_NOTIFICATION="$NOTIFICATION" \
-    DEVIDE_WORKSPACE_ID="$WORKSPACE_ID" \
+    CASEIN_WORKSPACE_ID="$WORKSPACE_ID" \
     AGENT_PANE="$PANE" \
     python3 - <<'PY' 2>/dev/null || true
 import json, os
@@ -44,7 +44,7 @@ if data.get("type") != "agent-turn-complete":
     raise SystemExit(0)
 
 args = {
-    "workspace_id": os.environ["DEVIDE_WORKSPACE_ID"],
+    "workspace_id": os.environ["CASEIN_WORKSPACE_ID"],
     "state": "done",
     "pane": os.environ["AGENT_PANE"],
     "source": "hook",

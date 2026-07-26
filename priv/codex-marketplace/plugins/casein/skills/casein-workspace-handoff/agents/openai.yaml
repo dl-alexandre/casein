@@ -1,0 +1,4 @@
+interface:
+  display_name: "Casein Workspace Handoff"
+  short_description: "Report durable agent worktree outcomes"
+  default_prompt: "Use $casein-workspace-handoff to finish this agent session with a durable, explicit handoff."

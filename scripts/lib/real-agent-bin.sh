@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Resolve the real agent binary, skipping Casein launcher shims.
 
-devide_npm_prefix() {
+casein_npm_prefix() {
   printf '%s\n' "${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
 }
 
-devide_agent_shim_dir() {
+casein_agent_shim_dir() {
   printf '%s\n' "${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
 }
 
 real_agent_bin_path_without_shims() {
   local IFS=':'
   local part out=() shim_dir
-  shim_dir="$(devide_agent_shim_dir)"
+  shim_dir="$(casein_agent_shim_dir)"
   for part in ${PATH:-/usr/bin:/bin}; do
     [[ "$part" == "$shim_dir" ]] && continue
     # Legacy shim home — stale launcher shims may linger there until the
@@ -23,15 +23,15 @@ real_agent_bin_path_without_shims() {
   (IFS=:; printf '%s' "${out[*]}")
 }
 
-is_devide_shim() {
+is_casein_shim() {
   local path="$1"
-  [[ -f "$path" ]] && grep -q 'devide" agent launch' "$path" 2>/dev/null
+  [[ -f "$path" ]] && grep -q 'casein" agent launch' "$path" 2>/dev/null
 }
 
 real_agent_npm_candidate() {
   local name="$1"
   local npm_prefix
-  npm_prefix="$(devide_npm_prefix)"
+  npm_prefix="$(casein_npm_prefix)"
 
   case "$name" in
     claude)
@@ -79,13 +79,13 @@ real_agent_bin() {
       ;;
   esac
 
-  if [[ -e "$recorded" ]] && ! is_devide_shim "$recorded"; then
+  if [[ -e "$recorded" ]] && ! is_casein_shim "$recorded"; then
     printf '%s\n' "$recorded"
     return 0
   fi
 
   candidate="$(PATH="$(real_agent_bin_path_without_shims)" command -v "$name" 2>/dev/null || true)"
-  if [[ -n "$candidate" ]] && ! is_devide_shim "$candidate"; then
+  if [[ -n "$candidate" ]] && ! is_casein_shim "$candidate"; then
     printf '%s\n' "$candidate"
     return 0
   fi

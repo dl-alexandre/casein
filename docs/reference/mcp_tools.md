@@ -68,7 +68,7 @@ returns `{name, description, inputSchema}`; `tools/call` returns
 ## Tool catalog — Terminal MCP (`POST /api/terminals/mcp`)
 
 Implemented in `Casein.Agents.TerminalTools` (dispatch in `invoke/2`). Every
-session-scoped tool is guarded to `devide_`-prefixed tmux sessions. `workspace_id`
+session-scoped tool is guarded to `casein_`-prefixed tmux sessions. `workspace_id`
 is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 
 | Tool | Does | Key params (required\*) | Implementing fn |
@@ -176,7 +176,7 @@ is discovery and client-config materialization:
 - `Casein.Agents.TidewaveCapability.detect/0` reports the endpoint
   (`url <> "/tidewave"`, `details.mcp_url = url <> "/tidewave/mcp"`).
 - `Casein.Agents.TidewaveMCP.resolve_url/2` resolves an MCP URL by precedence:
-  `DEVIDE_TIDEWAVE_MCP_URL` → self-hosted node → workspace metadata
+  `CASEIN_TIDEWAVE_MCP_URL` → self-hosted node → workspace metadata
   (`ports.tidewave`, fingerprinted ports) → latest running preview-env instance;
   `normalize_mcp_url/1` canonicalizes to the `…/tidewave/mcp` path.
 
@@ -225,8 +225,8 @@ are mapped to HTTP status by the controllers.
 
 - **Bearer token is the only access control.** `terminal_send_command` /
   `terminal_send_keys` inject into a live shell with no command allow-list beyond
-  the `devide_` session guardrail and workspace scoping (see `../terminal_mcp.md`).
-- **`devide_` session prefix is enforced** (`@session_prefix`); unscoped sessions
+  the `casein_` session guardrail and workspace scoping (see `../terminal_mcp.md`).
+- **`casein_` session prefix is enforced** (`@session_prefix`); unscoped sessions
   return `:unscoped_session`, cross-workspace returns `:workspace_mismatch`.
 - **Agent-pane shortcuts refuse the operator pane.** `terminal_send_agent_*` use
   `find_agent_pane/2` with `allow_process_fallback: false` — they require the

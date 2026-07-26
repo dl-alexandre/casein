@@ -15,8 +15,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MAIN_SOCK="${DEVIDE_CURRENT_SOCK:-/run/casein/current.sock}"
-PREVIEW_HOME="${DEVIDE_PREVIEW_HOME:-$(dirname "$ROOT")/.casein-preview}"
+MAIN_SOCK="${CASEIN_CURRENT_SOCK:-/run/casein/current.sock}"
+PREVIEW_HOME="${CASEIN_PREVIEW_HOME:-$(dirname "$ROOT")/.casein-preview}"
 PREVIEW_INSTANCES="${PREVIEW_HOME}/instances"
 PREVIEW_SOCKETS="${PREVIEW_HOME}/sockets"
 PREVIEW_ROUTER="${ROOT}/scripts/preview-router.sh"

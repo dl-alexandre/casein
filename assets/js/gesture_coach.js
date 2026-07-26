@@ -6,7 +6,7 @@
 // trip. Bump COACH_VERSION to re-show after the gesture set changes.
 
 const COACH_VERSION = "1"
-const SEEN_KEY = `devide:gestures-seen:v${COACH_VERSION}`
+const SEEN_KEY = `casein:gestures-seen:v${COACH_VERSION}`
 
 const GESTURES = [
   {glyph: "↕", name: "One finger", desc: "scroll the buffer"},

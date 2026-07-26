@@ -97,7 +97,7 @@ defmodule Casein.Release.Update.Check do
           current: nil,
           available: nil,
           manifest: nil,
-          manifest_url: System.get_env("DEVIDE_UPDATE_MANIFEST_URL"),
+          manifest_url: System.get_env("CASEIN_UPDATE_MANIFEST_URL"),
           message: format_error(reason)
         }
     end

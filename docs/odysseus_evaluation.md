@@ -87,10 +87,10 @@ This is almost exactly the mental model already described in `docs/product.md` �
    - Implement a small MCP server (stdio or streamable HTTP) that exposes governed Casein actions as tools:
      - `casein_list_workspaces`
      - `casein_get_status(workspace_id)`
-     - `devide_submit_governed_run(workspace_id, command_id, args?)`  (the safe action path)
-     - `devide_read_recent_output(workspace_id, run_id?)`
+     - `casein_submit_governed_run(workspace_id, command_id, args?)`  (the safe action path)
+     - `casein_read_recent_output(workspace_id, run_id?)`
      - `casein_get_audit(workspace_id)`
-     - `devide_attach_terminal(...)` (read buffer / stream events)
+     - `casein_attach_terminal(...)` (read buffer / stream events)
    - Odysseus's agent (via its opencode/MCP machinery) or a custom skill can then "use the Casein workspace" when it needs safe, auditable, durable execution.
    - The agent gets power without the host getting pwned.
    - This is a natural extension of the existing `Casein.Agents` detection + Tidewave MCP surface.
@@ -121,9 +121,9 @@ The "fff" MCP tool visible in the current Grok session is a delightful coinciden
 
 ## Proposed immediate next steps
 
-- [x] Prototype a `devide_mcp` server (Python, using the `mcp_servers/` layout that Odysseus expects for stdio MCP servers). Expose list/get + the safe `casein_run_command` surface. → See `mcp_servers/casein_server.py` + `mcp_servers/README.md`.
+- [x] Prototype a `casein_mcp` server (Python, using the `mcp_servers/` layout that Odysseus expects for stdio MCP servers). Expose list/get + the safe `casein_run_command` surface. → See `mcp_servers/casein_server.py` + `mcp_servers/README.md`.
 - [ ] Stand up Odysseus (Docker or native) in a sibling directory and do a 1–2 day dogfood to feel the agent loop + UI.
-- [ ] Register the devide MCP server inside a running Odysseus (Settings) and verify the agent can discover + call `casein_list_workspaces`, `casein_get_status`, `casein_run_command` (e.g. `opencode` or `test`), then observe via audit/status.
+- [ ] Register the casein MCP server inside a running Odysseus (Settings) and verify the agent can discover + call `casein_list_workspaces`, `casein_get_status`, `casein_run_command` (e.g. `opencode` or `test`), then observe via audit/status.
 - [ ] Update `docs/product.md` / architecture if the integration changes any invariants or adds new capability gates.
 - [ ] Decide: "Odysseus (or equivalent) is the daily AI driver + memory/research surface; Casein is the execution backend it can choose to use for serious, governed, durable workspace work."
 

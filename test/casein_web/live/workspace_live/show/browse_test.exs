@@ -4,7 +4,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.BrowseTest do
   alias CaseinWeb.WorkspaceLive.Show.Browse
 
   setup do
-    root = Path.join(System.tmp_dir!(), "devide-browse-#{System.unique_integer([:positive])}")
+    root = Path.join(System.tmp_dir!(), "casein-browse-#{System.unique_integer([:positive])}")
     alice = Path.join(root, "alice")
     bob = Path.join(root, "bob")
     nested = Path.join(alice, "project")

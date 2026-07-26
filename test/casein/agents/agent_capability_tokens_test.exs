@@ -14,7 +14,7 @@ defmodule Casein.Agents.AgentCapabilityTokensTest do
       %{
         workspace_id: "workspace-123",
         runtime: "grok",
-        tmux_session_id: "devide_workspace-123_agent-7",
+        tmux_session_id: "casein_workspace-123_agent-7",
         pane_id: "%7",
         leader_id: @leader_id,
         bundle_digest: @bundle_digest,
@@ -49,7 +49,7 @@ defmodule Casein.Agents.AgentCapabilityTokensTest do
     assert claims.id == record.id
     assert claims.workspace_id == "workspace-123"
     assert claims.runtime == "grok"
-    assert claims.tmux_session_id == "devide_workspace-123_agent-7"
+    assert claims.tmux_session_id == "casein_workspace-123_agent-7"
     assert claims.pane_id == "%7"
     assert claims.leader_id == @leader_id
     assert claims.bundle_digest == @bundle_digest

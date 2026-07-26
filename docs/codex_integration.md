@@ -94,7 +94,7 @@ arguments:
 | --- | --- | --- |
 | `review`, `observe`, `locked` | `read-only` | `never` |
 | `manual` (default) | `workspace-write` | `on-request` |
-| explicit `DEVIDE_CODEX_DEFAULT_YOLO=1` | unrestricted | bypassed |
+| explicit `CASEIN_CODEX_DEFAULT_YOLO=1` | unrestricted | bypassed |
 
 `shell_environment_policy.exclude` removes `CASEIN_API_TOKEN`,
 `CASEIN_ADMIN_API_TOKEN`, and `CASEIN_WORKSPACE_API_TOKENS` from commands run
@@ -114,7 +114,7 @@ server.
 Run:
 
 ```bash
-devide agent doctor codex
+casein agent doctor codex
 ```
 
 The doctor probes the actual binary instead of assuming a version. It checks
@@ -125,7 +125,7 @@ bubblewrap isolation, and all Casein MCP endpoints.
 ## First-party plugin
 
 The repo-local marketplace is `priv/codex-marketplace/marketplace.json`. Its
-`devide` plugin bundles Terminal/Preview/Artifact MCP, lifecycle hooks, and four
+`casein` plugin bundles Terminal/Preview/Artifact MCP, lifecycle hooks, and four
 skills:
 
 - safe operator/agent pane pairing;

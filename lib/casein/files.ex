@@ -266,7 +266,7 @@ defmodule Casein.Files do
   defp atomic_write(abs, content, mode) do
     dir = Path.dirname(abs)
     rand = Base.url_encode64(:crypto.strong_rand_bytes(8), padding: false)
-    tmp = Path.join(dir, ".devide.tmp." <> rand)
+    tmp = Path.join(dir, ".casein.tmp." <> rand)
 
     with :ok <- File.write(tmp, content),
          _ <- File.chmod(tmp, mode),

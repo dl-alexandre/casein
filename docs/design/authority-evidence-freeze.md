@@ -79,7 +79,7 @@ Historical decisions need not be recomputed. Present access must always be reche
 
 - No universal run ledger (do not fold every MCP/agent lifecycle event into `run.*`).
 - No new MCP protocol version; keep additive tool evolution on existing contracts.
-- No premature `casein_core` domain package (mechanism `dev_ide_core` stays as-is).
+- No premature `casein_core` domain package (mechanism `casein_core` stays as-is).
 - No tamper-evidence claim: append-only API ≠ tamper-evident storage. Hash chaining
   or signed checkpoints only after an explicit threat model.
 

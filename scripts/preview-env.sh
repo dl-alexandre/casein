@@ -7,7 +7,7 @@
 #   * its own detached git WORKTREE at a specific commit (not the live tree, so
 #     uncommitted edits / broken assets elsewhere can't leak in)
 #   * its own allocated PORT
-#   * its own isolated DATABASE (dev_ide_preview_<id>, dropped on teardown)
+#   * its own isolated DATABASE (casein_preview_<id>, dropped on teardown)
 #   * its own seeded local sandbox workspace (no manager, no tmux collision)
 # Instances are tracked in a JSON REGISTRY so they can be listed, stopped, and
 # garbage-collected.
@@ -32,7 +32,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE="${DEVIDE_PREVIEW_HOME:-$(dirname "$ROOT")/.casein-preview}"
+STATE="${CASEIN_PREVIEW_HOME:-$(dirname "$ROOT")/.casein-preview}"
 INST_DIR="$STATE/instances"
 WT_DIR="$STATE/worktrees"
 WS_DIR="$STATE/workspaces"
@@ -42,9 +42,9 @@ LOG_DIR="$STATE/logs"
 # Caddy preview router dials this socket. The TCP port (below) is kept only as a
 # loopback convenience for local tooling + the Tidewave agent dial.
 SOCK_DIR="$STATE/sockets"
-PORT_BASE="${DEVIDE_PREVIEW_PORT_BASE:-41000}"
-PORT_MAX="${DEVIDE_PREVIEW_PORT_MAX:-41049}"
-SANDBOX="${DEVIDE_PREVIEW_WORKSPACE:-preview-sandbox}"
+PORT_BASE="${CASEIN_PREVIEW_PORT_BASE:-41000}"
+PORT_MAX="${CASEIN_PREVIEW_PORT_MAX:-41049}"
+SANDBOX="${CASEIN_PREVIEW_WORKSPACE:-preview-sandbox}"
 MISE=(mise exec elixir@1.20.0-otp-28 erlang@28.5 --)
 
 mkdir -p "$INST_DIR" "$WT_DIR" "$WS_DIR" "$LOG_DIR" "$SOCK_DIR"
@@ -58,8 +58,8 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 # --- DB helpers: reuse the release creds/host, swap the database name ----------
 base_db_url() {
   local url
-  url="$(grep -E '^DATABASE_URL=' /etc/casein/devide.env | cut -d= -f2- | tr -d '"')"
-  [ -n "$url" ] || die "no DATABASE_URL in /etc/casein/devide.env"
+  url="$(grep -E '^DATABASE_URL=' /etc/casein/casein.env | cut -d= -f2- | tr -d '"')"
+  [ -n "$url" ] || die "no DATABASE_URL in /etc/casein/casein.env"
   printf '%s' "$url"
 }
 db_url_for() { printf '%s/%s' "$(base_db_url | sed 's#/[^/]*$##')" "$1"; }
@@ -123,9 +123,9 @@ start_preview_server() {
   env_args=(
     "MIX_ENV=dev"
     "PHX_SERVER=true"
-    "DEVIDE_URL=http://127.0.0.1:$port"
-    "DEVIDE_HTTP_SOCKET=$sock"
-    "DEVIDE_PREVIEW_TIDEWAVE_PORT=$port"
+    "CASEIN_URL=http://127.0.0.1:$port"
+    "CASEIN_HTTP_SOCKET=$sock"
+    "CASEIN_PREVIEW_TIDEWAVE_PORT=$port"
     "CASEIN_WORKSPACE_SOURCE=local"
     "CASEIN_WORKSPACES_ROOT=$ws"
     "DATABASE_URL=$db_url"
@@ -162,7 +162,7 @@ running_count() {
 }
 
 resolve_running_json() {
-  local want_id="${DEVIDE_PREVIEW_ENV_ID:-}"
+  local want_id="${CASEIN_PREVIEW_ENV_ID:-}"
   if [ -n "$want_id" ]; then
     local f="$INST_DIR/${want_id}.json"
     [ -f "$f" ] || die "no such running preview env: $want_id"
@@ -177,7 +177,7 @@ resolve_running_json() {
 
   [ ${#files[@]} -gt 0 ] || die "no running preview environments"
   if [ ${#files[@]} -gt 1 ]; then
-    warn "multiple preview environments running — using newest (set DEVIDE_PREVIEW_ENV_ID to pin)"
+    warn "multiple preview environments running — using newest (set CASEIN_PREVIEW_ENV_ID to pin)"
   fi
 
   ls -t "${files[@]}" | head -1
@@ -220,7 +220,7 @@ cmd_up() {
   local sha; sha="$(git -C "$ROOT" rev-parse --short "$ref")" || die "bad ref: $ref"
   local id="prev-$sha" n=2
   while [ -e "$INST_DIR/$id.json" ]; do id="prev-$sha-$n"; n=$((n+1)); done
-  local db="dev_ide_preview_${id//-/_}"
+  local db="casein_preview_${id//-/_}"
   local wt="$WT_DIR/$id" ws="$WS_DIR/$id" logf="$LOG_DIR/$id.log"
   local port="${want_port:-$(alloc_port "$id")}"
   port_taken "$port" && [ -n "$want_port" ] && die "port $port is taken"
@@ -247,12 +247,12 @@ cmd_up() {
     "${MISE[@]}" mix ecto.migrate >/dev/null
     log "[$id] building assets"
     "${MISE[@]}" mix assets.build >/dev/null 2>&1 \
-      || { log "[$id] assets.build failed — building CSS only"; "${MISE[@]}" mix tailwind dev_ide >/dev/null 2>&1 || true; }
+      || { log "[$id] assets.build failed — building CSS only"; "${MISE[@]}" mix tailwind casein >/dev/null 2>&1 || true; }
   )
 
   log "[$id] booting preview server"
-  # DEVIDE_HTTP_SOCKET makes the endpoint bind the unix socket (runtime.exs);
-  # DEVIDE_PREVIEW_TIDEWAVE_PORT spins the second loopback listener that serves
+  # CASEIN_HTTP_SOCKET makes the endpoint bind the unix socket (runtime.exs);
+  # CASEIN_PREVIEW_TIDEWAVE_PORT spins the second loopback listener that serves
   # the same endpoint (Tidewave + local tooling) on the TCP port.
   local pid; pid="$(start_preview_server "$wt" "$sock" "$port" "$ws" "$(db_url_for "$db")" "$logf")"
 
@@ -275,7 +275,7 @@ cmd_up() {
   echo "  local: http://127.0.0.1:$port/workspaces/$SANDBOX?host=local"
   echo "  tidewave: $(tidewave_url_for "$port")"
   echo "  tidewave_mcp: $(tidewave_mcp_url_for "$port")"
-  echo "  url:   https://$id.${DEVIDE_PREVIEW_DOMAIN:-devbox.milcgroup.com}/workspaces/$SANDBOX?host=local  (once edge hookup is live)"
+  echo "  url:   https://$id.${CASEIN_PREVIEW_DOMAIN:-devbox.milcgroup.com}/workspaces/$SANDBOX?host=local  (once edge hookup is live)"
   echo "  shot:  node $ROOT/scripts/dev-preview-shot.mjs http://127.0.0.1:$port/workspaces/$SANDBOX?host=local out.png 390x844"
   echo "  logs:  $0 logs $id"
   [ "$keep" = 1 ] && echo "  (--keep: env left running)"
@@ -295,7 +295,7 @@ cmd_dirty() {
   # line trips `set -u` (id still unbound at expansion time).
   local id="dirty-$(date +%s)"
   local ws="$WS_DIR/$id" logf="$LOG_DIR/$id.log"
-  local db="${DEVIDE_PREVIEW_DB:-dev_ide_preview}"
+  local db="${CASEIN_PREVIEW_DB:-casein_preview}"
   local port="${want_port:-$(alloc_port "$id")}"
   port_taken "$port" && [ -n "$want_port" ] && die "port $port is taken"
   local sock; sock="$(sock_for "$id")"
@@ -314,7 +314,7 @@ cmd_dirty() {
     "${MISE[@]}" mix ecto.migrate
     log "[$id] building assets"
     "${MISE[@]}" mix assets.build >/dev/null 2>&1 \
-      || { log "[$id] assets.build failed — building CSS only"; "${MISE[@]}" mix tailwind dev_ide >/dev/null 2>&1 || true; }
+      || { log "[$id] assets.build failed — building CSS only"; "${MISE[@]}" mix tailwind casein >/dev/null 2>&1 || true; }
   )
 
   if [ "$foreground" = 1 ]; then
@@ -325,7 +325,7 @@ cmd_dirty() {
     echo ">>>   http://127.0.0.1:${port}/workspaces/${SANDBOX}?host=local"
     echo ">>>   tidewave: $(tidewave_url_for "$port")"
     export MIX_ENV=dev PHX_SERVER=true
-    export DEVIDE_HTTP_SOCKET="$sock" DEVIDE_PREVIEW_TIDEWAVE_PORT="$port"
+    export CASEIN_HTTP_SOCKET="$sock" CASEIN_PREVIEW_TIDEWAVE_PORT="$port"
     export CASEIN_WORKSPACE_SOURCE=local CASEIN_WORKSPACES_ROOT="$ws"
     exec "${MISE[@]}" mix phx.server
   fi
@@ -361,7 +361,7 @@ cmd_ls() {
 
   local running; running="$(running_count)"
   if [ "$running" -gt 1 ]; then
-    warn "$running preview environments running — pin one with DEVIDE_PREVIEW_ENV_ID for agent pairing"
+    warn "$running preview environments running — pin one with CASEIN_PREVIEW_ENV_ID for agent pairing"
   fi
 
   printf '%-16s %-8s %-10s %-6s %-8s %-36s %s\n' ID KIND REF PORT PID TIDEWAVE URL
@@ -441,8 +441,8 @@ cmd_tidewave() {
 cmd_tidewave_latest() {
   local f; f="$(resolve_running_json)"
   local count; count="$(running_count)"
-  if [ "$count" -gt 1 ] && [ -z "${DEVIDE_PREVIEW_ENV_ID:-}" ]; then
-    warn "$count preview environments running — using newest (set DEVIDE_PREVIEW_ENV_ID to pin)"
+  if [ "$count" -gt 1 ] && [ -z "${CASEIN_PREVIEW_ENV_ID:-}" ]; then
+    warn "$count preview environments running — using newest (set CASEIN_PREVIEW_ENV_ID to pin)"
   fi
   local tw; tw="$(json_get "$f" tidewave_mcp_url)"
   [ -n "$tw" ] || tw="$(tidewave_mcp_url_for "$(json_get "$f" port)")"
@@ -450,7 +450,7 @@ cmd_tidewave_latest() {
 }
 
 preview_api_token() {
-  awk -F= '/^CASEIN_API_TOKEN=/{print $2}' /etc/casein/devide.env 2>/dev/null | tail -n 1 | tr -d '"'
+  awk -F= '/^CASEIN_API_TOKEN=/{print $2}' /etc/casein/casein.env 2>/dev/null | tail -n 1 | tr -d '"'
 }
 
 preview_workspace_id() {
@@ -478,24 +478,24 @@ cmd_agent_env() {
   tw_mcp=$(json_get "$f" tidewave_mcp_url)
   [ -n "$tw_mcp" ] || tw_mcp=$(tidewave_mcp_url_for "$port")
   token=$(preview_api_token)
-  [ -n "$token" ] || die "CASEIN_API_TOKEN missing from /etc/casein/devide.env"
+  [ -n "$token" ] || die "CASEIN_API_TOKEN missing from /etc/casein/casein.env"
   ws_id=$(preview_workspace_id "$base_url" "$token" "$SANDBOX")
   [ -n "$ws_id" ] || die "workspace $SANDBOX not found on preview env — is it up"
   mcp_home="\${HOME}/.casein/agent-mcp/${SANDBOX}"
 
   emit_export CASEIN_API_TOKEN "${token}"
-  emit_export DEVIDE_URL "${base_url}"
-  emit_export DEVIDE_API_BASE_URL "${base_url}"
-  emit_export DEVIDE_WORKSPACE_ID "${ws_id}"
-  emit_export DEVIDE_WORKSPACE_NAME "${SANDBOX}"
-  emit_export DEVIDE_TERMINAL_MCP_URL "${base_url}/api/terminals/mcp?workspace_id=${ws_id}"
-  emit_export DEVIDE_PREVIEW_MCP_URL "${base_url}/api/preview/mcp?workspace_id=${ws_id}"
-  emit_export DEVIDE_ARTIFACT_MCP_URL "${base_url}/api/artifacts/mcp?workspace_id=${ws_id}"
-  emit_export DEVIDE_TIDEWAVE_MCP_URL "${tw_mcp}"
-  emit_export DEVIDE_PREVIEW_ENV_ID "${id}"
-  emit_export DEVIDE_CHECKOUT "${checkout}"
-  emit_export DEVIDE_SCRIPTS "${ROOT}/scripts"
-  emit_export DEVIDE_AGENT_MCP_HOME "${mcp_home}"
+  emit_export CASEIN_URL "${base_url}"
+  emit_export CASEIN_API_BASE_URL "${base_url}"
+  emit_export CASEIN_WORKSPACE_ID "${ws_id}"
+  emit_export CASEIN_WORKSPACE_NAME "${SANDBOX}"
+  emit_export CASEIN_TERMINAL_MCP_URL "${base_url}/api/terminals/mcp?workspace_id=${ws_id}"
+  emit_export CASEIN_PREVIEW_MCP_URL "${base_url}/api/preview/mcp?workspace_id=${ws_id}"
+  emit_export CASEIN_ARTIFACT_MCP_URL "${base_url}/api/artifacts/mcp?workspace_id=${ws_id}"
+  emit_export CASEIN_TIDEWAVE_MCP_URL "${tw_mcp}"
+  emit_export CASEIN_PREVIEW_ENV_ID "${id}"
+  emit_export CASEIN_CHECKOUT "${checkout}"
+  emit_export CASEIN_SCRIPTS "${ROOT}/scripts"
+  emit_export CASEIN_AGENT_MCP_HOME "${mcp_home}"
 }
 
 case "${1:-}" in

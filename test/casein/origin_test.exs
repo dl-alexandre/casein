@@ -34,11 +34,11 @@ defmodule Casein.OriginTest do
 
   test "friendly defaults distinguish local and devbox origins" do
     assert Origin.display_name("http://my-mac.local:4000") == "Local Mac"
-    assert Origin.display_name("https://devide.devbox.example") == "Devbox"
+    assert Origin.display_name("https://casein.devbox.example") == "Devbox"
   end
 
   test "public descriptors infer their friendly name from the configured endpoint" do
-    Application.put_env(:casein, CaseinWeb.Endpoint, url: [host: "devide.devbox.example"])
+    Application.put_env(:casein, CaseinWeb.Endpoint, url: [host: "casein.devbox.example"])
 
     assert Origin.public_descriptor().display_name == "Devbox"
   end

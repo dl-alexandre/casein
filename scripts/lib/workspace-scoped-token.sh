@@ -37,7 +37,7 @@ workspace_scoped_token_lookup() {
 
   workspace_scoped_token_read_json "$env_file" |
     WORKSPACE_ID="$workspace_id" \
-      TOKEN_STORE="${DEVIDE_WORKSPACE_TOKENS_STORE:-${HOME}/.casein/workspace-api-tokens.json}" \
+      TOKEN_STORE="${CASEIN_WORKSPACE_TOKENS_STORE:-${HOME}/.casein/workspace-api-tokens.json}" \
       python3 -c "
 import json, os, sys
 
@@ -77,7 +77,7 @@ workspace_scoped_token_is_registered_for() {
 
   workspace_scoped_token_read_json "$env_file" |
     WORKSPACE_ID="$workspace_id" TOKEN="$token" \
-      TOKEN_STORE="${DEVIDE_WORKSPACE_TOKENS_STORE:-${HOME}/.casein/workspace-api-tokens.json}" \
+      TOKEN_STORE="${CASEIN_WORKSPACE_TOKENS_STORE:-${HOME}/.casein/workspace-api-tokens.json}" \
       python3 -c "
 import json, os, sys
 

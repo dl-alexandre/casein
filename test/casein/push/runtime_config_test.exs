@@ -33,23 +33,23 @@ defmodule Casein.Push.RuntimeConfigTest do
   test "FCM credentials select native platform routing by default" do
     System.put_env("CASEIN_FCM_PROJECT_ID", "demo-project")
 
-    assert devide_runtime_config()[:push_provider] == Casein.Push.NativeProvider
+    assert casein_runtime_config()[:push_provider] == Casein.Push.NativeProvider
   end
 
   test "APNs credentials select native platform routing by default" do
     System.put_env("CASEIN_APNS_TEAM_ID", "TEAM123456")
     System.put_env("CASEIN_APNS_KEY_ID", "KEY1234567")
-    System.put_env("CASEIN_APNS_TOPIC", "com.example.devide_mob")
+    System.put_env("CASEIN_APNS_TOPIC", "com.example.casein_mob")
     System.put_env("CASEIN_APNS_PRIVATE_KEY_PATH", "/tmp/AuthKey_KEY1234567.p8")
 
-    config = devide_runtime_config()
+    config = casein_runtime_config()
 
     assert config[:push_provider] == Casein.Push.NativeProvider
 
     assert config[Casein.Push.APNSProvider] == [
              team_id: "TEAM123456",
              key_id: "KEY1234567",
-             topic: "com.example.devide_mob",
+             topic: "com.example.casein_mob",
              private_key_path: "/tmp/AuthKey_KEY1234567.p8",
              environment: "sandbox"
            ]
@@ -57,13 +57,13 @@ defmodule Casein.Push.RuntimeConfigTest do
 
   test "explicit provider overrides are preserved" do
     System.put_env("CASEIN_PUSH_PROVIDER", "fcm")
-    assert devide_runtime_config()[:push_provider] == Casein.Push.FCMProvider
+    assert casein_runtime_config()[:push_provider] == Casein.Push.FCMProvider
 
     System.put_env("CASEIN_PUSH_PROVIDER", "apns")
-    assert devide_runtime_config()[:push_provider] == Casein.Push.APNSProvider
+    assert casein_runtime_config()[:push_provider] == Casein.Push.APNSProvider
   end
 
-  defp devide_runtime_config do
+  defp casein_runtime_config do
     "config/runtime.exs"
     |> Config.Reader.read!(env: :dev)
     |> Keyword.fetch!(:casein)

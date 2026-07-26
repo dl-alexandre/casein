@@ -32,14 +32,14 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
   end
 
   test "session options use runtime LAN cookie config" do
-    Application.put_env(:casein, :session_cookie_key, "_dev_ide_lan_http_key")
+    Application.put_env(:casein, :session_cookie_key, "_casein_lan_http_key")
     Application.put_env(:casein, :secure_session_cookie, true)
     Application.put_env(:casein, :lan_insecure_http, true)
     Application.put_env(:casein, :session_same_site, nil)
 
     opts = SessionOptions.options()
 
-    assert opts[:key] == "_dev_ide_lan_http_key"
+    assert opts[:key] == "_casein_lan_http_key"
     assert opts[:secure] == false
     refute Keyword.has_key?(opts, :same_site)
   end
@@ -54,7 +54,7 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
   end
 
   test "runtime session plug writes the current cookie key" do
-    Application.put_env(:casein, :session_cookie_key, "_dev_ide_lan_http_key")
+    Application.put_env(:casein, :session_cookie_key, "_casein_lan_http_key")
     Application.put_env(:casein, :session_same_site, nil)
 
     conn =
@@ -68,7 +68,7 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
 
     [cookie] = Plug.Conn.get_resp_header(conn, "set-cookie")
 
-    assert cookie =~ "_dev_ide_lan_http_key="
+    assert cookie =~ "_casein_lan_http_key="
     refute cookie =~ "SameSite"
   end
 

@@ -214,7 +214,7 @@ defmodule CaseinWeb.API.TerminalMCPTest do
     assert text =~ "Multiple workspace sessions"
   end
 
-  test "tools/call rejects a session name outside the devide_ prefix" do
+  test "tools/call rejects a session name outside the casein_ prefix" do
     assert {:reply, %{result: %{isError: true, content: [%{text: text}]}}} =
              TerminalMCP.handle(%{
                "jsonrpc" => "2.0",

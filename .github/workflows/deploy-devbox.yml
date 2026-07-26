@@ -120,9 +120,9 @@ jobs:
     needs: test
     timeout-minutes: 45
     env:
-      RELEASE_TARBALL: dev_ide-release-${{ github.sha }}.tgz
-      REMOTE_TARBALL: /tmp/dev_ide-release-${{ github.sha }}.tgz
-      REMOTE_DEPLOY_SCRIPT: /tmp/dev_ide-deploy-${{ github.sha }}.sh
+      RELEASE_TARBALL: casein-release-${{ github.sha }}.tgz
+      REMOTE_TARBALL: /tmp/casein-release-${{ github.sha }}.tgz
+      REMOTE_DEPLOY_SCRIPT: /tmp/casein-deploy-${{ github.sha }}.sh
       DEVBOX_SSH_HOST: ${{ secrets.DEVBOX_SSH_HOST }}
       DEVBOX_SSH_USER: ${{ secrets.DEVBOX_SSH_USER }}
       DEVBOX_SSH_PORT: ${{ secrets.DEVBOX_SSH_PORT }}
@@ -178,7 +178,7 @@ jobs:
         if: steps.latest_before_build.outputs.current == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: dev_ide-release-${{ github.sha }}
+          name: casein-release-${{ github.sha }}
           path: ${{ env.RELEASE_TARBALL }}
           retention-days: 7
 

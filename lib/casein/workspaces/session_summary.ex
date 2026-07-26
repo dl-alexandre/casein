@@ -195,7 +195,7 @@ defmodule Casein.Workspaces.SessionSummary do
   defp orphan_tmux_session(raw, known_tmux_sessions) do
     with session when is_binary(session) and session != "" <- raw_tmux_session_name(raw),
          false <- MapSet.member?(known_tmux_sessions, session),
-         {:ok, workspace_name, sid} <- parse_devide_tmux_session(session) do
+         {:ok, workspace_name, sid} <- parse_casein_tmux_session(session) do
       [
         %{
           id: "tmux:" <> session,
@@ -222,7 +222,7 @@ defmodule Casein.Workspaces.SessionSummary do
   defp raw_tmux_activity(%{"activity" => activity}), do: activity
   defp raw_tmux_activity(_raw), do: 0
 
-  defp parse_devide_tmux_session("devide_" <> rest) do
+  defp parse_casein_tmux_session("casein_" <> rest) do
     case String.split(rest, "_") do
       [_, _ | _] = parts ->
         sid = List.last(parts)
@@ -235,7 +235,7 @@ defmodule Casein.Workspaces.SessionSummary do
     end
   end
 
-  defp parse_devide_tmux_session(_session), do: :error
+  defp parse_casein_tmux_session(_session), do: :error
 
   defp session_link(ws, session, preview_pane_ids, agent_activity_by_session) do
     id = session_id(session)

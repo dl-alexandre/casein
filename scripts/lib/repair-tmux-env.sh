@@ -14,9 +14,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
-LOCAL_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
-CANONICAL_SCRIPTS="${DEVIDE_SCRIPTS_ROOT:-${ROOT}/scripts}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
+LOCAL_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
+CANONICAL_SCRIPTS="${CASEIN_SCRIPTS_ROOT:-${ROOT}/scripts}"
 # shellcheck source=agent-auth-profile.sh
 source "${ROOT}/scripts/lib/agent-auth-profile.sh"
 # shellcheck source=workspace-scoped-token.sh
@@ -56,7 +56,7 @@ for ws in json.load(sys.stdin):
 default_checkout() {
   local workspace_name="$1"
   case "$workspace_name" in
-    dalexandre-devide | dev_ide) printf '%s\n' "${ROOT}" ;;
+    dalexandre-casein | casein) printf '%s\n' "${ROOT}" ;;
     *)
       if [[ -d "/data/workspaces/${workspace_name}" ]]; then
         printf '%s\n' "/data/workspaces/${workspace_name}"
@@ -71,7 +71,7 @@ default_checkout() {
 
 scripts_for_checkout() {
   local checkout="$1"
-  if [[ -f "${checkout}/scripts/devide" ]]; then
+  if [[ -f "${checkout}/scripts/casein" ]]; then
     printf '%s\n' "${checkout}/scripts"
   else
     printf '%s\n' "${CANONICAL_SCRIPTS}"
@@ -85,8 +85,8 @@ discover_tidewave_mcp_url() {
 
   if [[ -x "${ROOT}/scripts/tidewave-resolve-url.sh" ]]; then
     url="$(
-      DEVIDE_WORKSPACE_NAME="${workspace_name}" \
-        DEVIDE_WORKSPACE_ID="${workspace_id}" \
+      CASEIN_WORKSPACE_NAME="${workspace_name}" \
+        CASEIN_WORKSPACE_ID="${workspace_id}" \
         bash "${ROOT}/scripts/tidewave-resolve-url.sh" 2>/dev/null || true
     )"
   fi
@@ -114,16 +114,16 @@ materialize_workspace() {
   fi
 
   CASEIN_API_TOKEN="${agent_token}" \
-    DEVIDE_WORKSPACE_NAME="${workspace_name}" \
-    DEVIDE_WORKSPACE_ID="${workspace_id}" \
-    DEVIDE_TMUX_SESSION="${session}" \
-    DEVIDE_API_BASE_URL="${LOCAL_URL}" \
-    DEVIDE_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?${query_suffix}" \
-    DEVIDE_PREVIEW_MCP_URL="${LOCAL_URL}/api/preview/mcp?${query_suffix}" \
-    DEVIDE_ARTIFACT_MCP_URL="${LOCAL_URL}/api/artifacts/mcp?workspace_id=${workspace_id}" \
-    DEVIDE_TIDEWAVE_MCP_URL="${tidewave_url}" \
-    DEVIDE_CHECKOUT="${checkout}" \
-    DEVIDE_SCRIPTS="${scripts}" \
+    CASEIN_WORKSPACE_NAME="${workspace_name}" \
+    CASEIN_WORKSPACE_ID="${workspace_id}" \
+    CASEIN_TMUX_SESSION="${session}" \
+    CASEIN_API_BASE_URL="${LOCAL_URL}" \
+    CASEIN_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?${query_suffix}" \
+    CASEIN_PREVIEW_MCP_URL="${LOCAL_URL}/api/preview/mcp?${query_suffix}" \
+    CASEIN_ARTIFACT_MCP_URL="${LOCAL_URL}/api/artifacts/mcp?workspace_id=${workspace_id}" \
+    CASEIN_TIDEWAVE_MCP_URL="${tidewave_url}" \
+    CASEIN_CHECKOUT="${checkout}" \
+    CASEIN_SCRIPTS="${scripts}" \
     bash "${ROOT}/scripts/materialize-agent-mcp.sh" >/dev/null
 }
 
@@ -167,8 +167,8 @@ repair_session() {
   local session="$1"
   local workspace_name workspace_id checkout scripts staging env_sh
 
-  if [[ ! "$session" =~ ^devide_([^_]+)_ ]]; then
-    log "skip ${session} (not a devide workspace session)"
+  if [[ ! "$session" =~ ^casein_([^_]+)_ ]]; then
+    log "skip ${session} (not a casein workspace session)"
     return 0
   fi
 
@@ -212,22 +212,22 @@ repair_session() {
   set_session_env_if_missing "$session" COLORFGBG "15;0"
 
   tmux set-environment -t "$session" CASEIN_API_TOKEN "$agent_token"
-  tmux set-environment -t "$session" DEVIDE_WORKSPACE_ID "$workspace_id"
-  tmux set-environment -t "$session" DEVIDE_WORKSPACE_NAME "$workspace_name"
-  tmux set-environment -t "$session" DEVIDE_TMUX_SESSION "$session"
-  tmux set-environment -t "$session" DEVIDE_API_BASE_URL "${LOCAL_URL}"
-  tmux set-environment -t "$session" DEVIDE_TERMINAL_MCP_URL "${LOCAL_URL}/api/terminals/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
-  tmux set-environment -t "$session" DEVIDE_PREVIEW_MCP_URL "${LOCAL_URL}/api/preview/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
-  tmux set-environment -t "$session" DEVIDE_ARTIFACT_MCP_URL "${LOCAL_URL}/api/artifacts/mcp?workspace_id=${workspace_id}"
+  tmux set-environment -t "$session" CASEIN_WORKSPACE_ID "$workspace_id"
+  tmux set-environment -t "$session" CASEIN_WORKSPACE_NAME "$workspace_name"
+  tmux set-environment -t "$session" CASEIN_TMUX_SESSION "$session"
+  tmux set-environment -t "$session" CASEIN_API_BASE_URL "${LOCAL_URL}"
+  tmux set-environment -t "$session" CASEIN_TERMINAL_MCP_URL "${LOCAL_URL}/api/terminals/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
+  tmux set-environment -t "$session" CASEIN_PREVIEW_MCP_URL "${LOCAL_URL}/api/preview/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
+  tmux set-environment -t "$session" CASEIN_ARTIFACT_MCP_URL "${LOCAL_URL}/api/artifacts/mcp?workspace_id=${workspace_id}"
   if [[ -n "$tidewave_url" ]]; then
-    tmux set-environment -t "$session" DEVIDE_TIDEWAVE_MCP_URL "$tidewave_url"
+    tmux set-environment -t "$session" CASEIN_TIDEWAVE_MCP_URL "$tidewave_url"
   else
-    tmux set-environment -t "$session" -u DEVIDE_TIDEWAVE_MCP_URL 2>/dev/null || true
+    tmux set-environment -t "$session" -u CASEIN_TIDEWAVE_MCP_URL 2>/dev/null || true
   fi
-  tmux set-environment -t "$session" DEVIDE_CHECKOUT "$checkout"
-  tmux set-environment -t "$session" DEVIDE_AGENT_MCP_HOME "$staging"
-  tmux set-environment -t "$session" DEVIDE_SCRIPTS "$scripts"
-  tmux set-environment -t "$session" DEVIDE_AGENT_ENV_FILE "$env_sh"
+  tmux set-environment -t "$session" CASEIN_CHECKOUT "$checkout"
+  tmux set-environment -t "$session" CASEIN_AGENT_MCP_HOME "$staging"
+  tmux set-environment -t "$session" CASEIN_SCRIPTS "$scripts"
+  tmux set-environment -t "$session" CASEIN_AGENT_ENV_FILE "$env_sh"
   local npm_prefix terminal_shims tools_bin repaired_path
   npm_prefix="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
   terminal_shims="${CASEIN_TERMINAL_SHIMS_DIR:-${HOME}/.casein/terminal-shims}"

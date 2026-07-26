@@ -15,7 +15,7 @@ defmodule Casein.Panes.Pane do
       in the browser capture phase *before* a pane's `c:handle_input/2` ever runs.
       Implementing this behaviour does not let a pane claim global keys.
 
-    * **Agents declare intent only; dev_ide owns placement/geometry.** `c:attach/2` is
+    * **Agents declare intent only; casein owns placement/geometry.** `c:attach/2` is
       invoked by the execute/reconcile pipeline, never by an MCP/agent tool. No pane
       type may expose geometry mutation to an agent.
 
@@ -23,7 +23,7 @@ defmodule Casein.Panes.Pane do
 
   This behaviour is deliberately geometry-agnostic. tmux remains the geometry
   *allocator* (a pane rides a real tmux pane's rectangle) and the web layer remains
-  the *renderer*. Lifting geometry allocation into dev_ide ("Tier 2") is out of scope
+  the *renderer*. Lifting geometry allocation into casein ("Tier 2") is out of scope
   and gated on the per-pane PTY cost becoming a measured problem.
   """
 

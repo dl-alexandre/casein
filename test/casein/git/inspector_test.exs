@@ -6,7 +6,7 @@ defmodule Casein.Git.InspectorTest do
 
   setup do
     tmp =
-      Path.join(tmp_root(), "devide-git-inspector-#{System.unique_integer([:positive])}")
+      Path.join(tmp_root(), "casein-git-inspector-#{System.unique_integer([:positive])}")
 
     main = Path.join(tmp, "main")
     worktree = Path.join(tmp, "feature-worktree")
@@ -61,7 +61,7 @@ defmodule Casein.Git.InspectorTest do
   end
 
   test "returns error for non-git directories and missing paths" do
-    tmp = Path.join(tmp_root(), "devide-non-git-#{System.unique_integer([:positive])}")
+    tmp = Path.join(tmp_root(), "casein-non-git-#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)
     on_exit(fn -> File.rm_rf!(tmp) end)
 
@@ -96,7 +96,7 @@ defmodule Casein.Git.InspectorTest do
     assert Inspector.infer_agent("/home/dalexandre/.claude/worktrees/fix-api") == "claude"
     assert Inspector.infer_agent("/tmp/grok-build-session") == "grok"
     assert Inspector.infer_agent("/tmp/codex-worktree") == "codex"
-    assert Inspector.infer_agent("/home/dalexandre/dev_ide") == nil
+    assert Inspector.infer_agent("/home/dalexandre/casein") == nil
   end
 
   defp git!(cwd, args) do

@@ -1,7 +1,7 @@
 # LAN release updates
 
 > Operator contract for self-hosted LAN installs: versioned release trees,
-> channel-scoped update manifests, and an explicit `devide` CLI update path.
+> channel-scoped update manifests, and an explicit `casein` CLI update path.
 > v1 does **not** silently install updates.
 
 This doc is the authoritative contract for LAN packaging and updates. Devbox
@@ -13,11 +13,11 @@ systemd/canary deploys remain documented in
 
 | Topic | Decision |
 |-------|----------|
-| Update source | Embedded release metadata includes `update_manifest_url`; env override `DEVIDE_UPDATE_MANIFEST_URL` wins at check time. |
+| Update source | Embedded release metadata includes `update_manifest_url`; env override `CASEIN_UPDATE_MANIFEST_URL` wins at check time. |
 | Comparison key | `revision` is the update identity. `version` is display-only (Mix app version). |
 | Install layout | Versioned release directories plus stable symlinks (see Filesystem shape). |
 | Ownership | Release trees owned by `root:root`; the BEAM still runs as the LAN user from `/etc/casein/lan.env`. |
-| Privilege | `devide update check` is unprivileged; `devide update install` and `devide update rollback` require `sudo`. |
+| Privilege | `casein update check` is unprivileged; `casein update install` and `casein update rollback` require `sudo`. |
 | Auto-update | No silent install in v1. The UI may show the exact terminal command only. |
 
 ## Filesystem shape
@@ -62,14 +62,14 @@ Schema (metadata version 1):
 ```json
 {
   "metadata_version": 1,
-  "app": "devide",
+  "app": "casein",
   "version": "0.1.0",
   "revision": "504670cdeadbeef...",
   "profile": "lan",
   "repo_adapter": "sqlite",
   "target": "linux-x86_64",
   "channel": "canary",
-  "update_manifest_url": "https://github.com/dl-alexandre/casein/releases/latest/download/devide-canary.json",
+  "update_manifest_url": "https://github.com/dl-alexandre/casein/releases/latest/download/casein-canary.json",
   "built_at": "2026-07-02T12:00:00Z"
 }
 ```
@@ -78,12 +78,12 @@ Build-time env vars (all optional; sensible defaults when unset):
 
 | Variable | Purpose |
 |----------|---------|
-| `DEVIDE_GIT_REVISION` | Git SHA written to `revision` (falls back to `git rev-parse HEAD` in the builder). |
-| `DEVIDE_RELEASE_PROFILE` | `profile` field (`lan` for LAN tarballs). |
-| `DEVIDE_RELEASE_REPO_ADAPTER` | `repo_adapter` field (`sqlite` for LAN). |
-| `DEVIDE_RELEASE_TARGET` | `target` triplet (`linux-x86_64`). |
-| `DEVIDE_RELEASE_CHANNEL` | `channel` field (`canary`). |
-| `DEVIDE_UPDATE_MANIFEST_URL` | Default manifest URL embedded in metadata. |
+| `CASEIN_GIT_REVISION` | Git SHA written to `revision` (falls back to `git rev-parse HEAD` in the builder). |
+| `CASEIN_RELEASE_PROFILE` | `profile` field (`lan` for LAN tarballs). |
+| `CASEIN_RELEASE_REPO_ADAPTER` | `repo_adapter` field (`sqlite` for LAN). |
+| `CASEIN_RELEASE_TARGET` | `target` triplet (`linux-x86_64`). |
+| `CASEIN_RELEASE_CHANNEL` | `channel` field (`canary`). |
+| `CASEIN_UPDATE_MANIFEST_URL` | Default manifest URL embedded in metadata. |
 
 ## Remote manifest
 
@@ -97,7 +97,7 @@ Channel-scoped, evolvable JSON published to GitHub Releases (or any HTTPS host):
   "signature": null,
   "artifacts": [
     {
-      "app": "devide",
+      "app": "casein",
       "version": "0.1.0",
       "revision": "67f393adeadbeef...",
       "profile": "lan",
@@ -124,57 +124,57 @@ Rules:
 ## CLI contract
 
 ```bash
-devide version
-devide version --json
+casein version
+casein version --json
 
-devide update check
-devide update check --json
+casein update check
+casein update check --json
 
-sudo devide update install          # Phase 4+
-sudo devide update install --to 67f393a
-sudo devide update rollback
+sudo casein update install          # Phase 4+
+sudo casein update install --to 67f393a
+sudo casein update rollback
 
-devide lan status                   # Phase 5+
-devide lan status --json
+casein lan status                   # Phase 5+
+casein lan status --json
 ```
 
-`devide version` and `devide update check` are implemented in Phase 1–2.
+`casein version` and `casein update check` are implemented in Phase 1–2.
 Install and rollback are implemented in Phase 4. `lan status --json` follows in
 Phase 5.
 
-Release-local metadata/update commands set `DEVIDE_RELEASE_ROOT` to the wrapper's
+Release-local metadata/update commands set `CASEIN_RELEASE_ROOT` to the wrapper's
 release tree and `CASEIN_RELEASE_CLI=1` while invoking `bin/casein eval`. That
 keeps read-only operator commands independent of server runtime requirements like
 `DATABASE_PATH`, `DATABASE_URL`, and `SECRET_KEY_BASE`.
 
-Human `devide version` example:
+Human `casein version` example:
 
 ```text
-devide 0.1.0 (504670c) lan/linux-x86_64 canary
+casein 0.1.0 (504670c) lan/linux-x86_64 canary
 ```
 
-Human `devide update check` example when an update exists:
+Human `casein update check` example when an update exists:
 
 ```text
 current:  504670c (0.1.0)
 available: 67f393a (0.1.0)
 channel:  canary
-install:  sudo devide update install
+install:  sudo casein update install
 ```
 
-JSON `devide update check` statuses: `current`, `update_available`, `error`.
+JSON `casein update check` statuses: `current`, `update_available`, `error`.
 
 ## Install algorithm (Phase 4)
 
 1. Read current metadata from `/opt/casein/lan-release/releases/casein.relmeta.json`.
-2. Fetch manifest (`DEVIDE_UPDATE_MANIFEST_URL` override, else embedded URL).
+2. Fetch manifest (`CASEIN_UPDATE_MANIFEST_URL` override, else embedded URL).
 3. Select artifact matching `profile + target`.
 4. Refuse incompatible manifest/installer versions.
 5. Download tarball to `/opt/casein/lan/downloads/`.
 6. Verify SHA256.
 7. Extract to `/opt/casein/lan/releases/<revision>.staging`.
 8. Validate staging tree:
-   - `bin/devide`, `bin/casein`, `bin/migrate`
+   - `bin/casein`, `bin/casein`, `bin/migrate`
    - static assets under `lib/casein-*/priv/static`
    - metadata `profile` / `repo_adapter` / `target`
 9. Move staging → `/opt/casein/lan/releases/<revision>`.
@@ -196,12 +196,12 @@ making the dynamic probe mandatory.
 
 | Phase | Deliverable |
 |-------|-------------|
-| 1 | Release metadata generation + `devide version` |
-| 2 | Manifest parser + `devide update check` |
-| 3 | `scripts/package-release.sh` for `lan/linux-x86_64` tarballs + local `dist/devide-canary.json` |
+| 1 | Release metadata generation + `casein version` |
+| 2 | Manifest parser + `casein update check` |
+| 3 | `scripts/package-release.sh` for `lan/linux-x86_64` tarballs + local `dist/casein-canary.json` |
 | 4 | `update install` / symlink swap / rollback |
-| 5 | `devide lan status --json` + update-awareness line |
-| 6 | UI banner showing the exact `sudo devide update install` command |
+| 5 | `casein lan status --json` + update-awareness line |
+| 6 | UI banner showing the exact `sudo casein update install` command |
 | 7 | Dogfood on r630, then carbon; milcmini stays manual until launchd/Caddy |
 
 ## Code map (Phase 1–4)
@@ -212,12 +212,12 @@ making the dynamic probe mandatory.
 | `Casein.Release.Update.Manifest` | Parse and validate remote manifest JSON. |
 | `Casein.Release.Update.Check` | Compare installed revision vs manifest artifact. |
 | `Casein.Release.Update.InstallPlan` | Read-only install planning for the root-owned release wrapper. |
-| `Casein.Release.CLI` | `version` and `update check` entrypoints for `bin/devide`. |
+| `Casein.Release.CLI` | `version` and `update check` entrypoints for `bin/casein`. |
 | `mix.exs` `write_release_metadata/1` | Release assemble step emitting metadata. |
-| `rel/overlays/bin/devide` | Release-local CLI wrapper, LAN systemd install, update install, rollback. |
-| `scripts/devide` | Checkout CLI wrapper (`mix run --no-start`). |
+| `rel/overlays/bin/casein` | Release-local CLI wrapper, LAN systemd install, update install, rollback. |
+| `scripts/casein` | Checkout CLI wrapper (`mix run --no-start`). |
 | `scripts/package-release.sh` | Build + tarball + sha256 + local manifest generation (Phase 3). |
-| `Casein.Release.Package` | Upsert packaged artifacts into `dist/devide-<channel>.json`. |
+| `Casein.Release.Package` | Upsert packaged artifacts into `dist/casein-<channel>.json`. |
 
 ## Rollout targets
 

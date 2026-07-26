@@ -47,7 +47,7 @@ defmodule Casein.Terminals.HostServerAnchorTest do
 
     test "false when the flag is disabled even if a label is set" do
       Application.put_env(:casein, :tmux_host_anchor, false)
-      Application.put_env(:casein, :tmux_server_label, "devide_test")
+      Application.put_env(:casein, :tmux_server_label, "casein_test")
       refute HostServerAnchor.enabled?()
     end
 
@@ -59,7 +59,7 @@ defmodule Casein.Terminals.HostServerAnchorTest do
 
     test "true when enabled and a host label is configured" do
       Application.put_env(:casein, :tmux_host_anchor, true)
-      Application.put_env(:casein, :tmux_server_label, "devide")
+      Application.put_env(:casein, :tmux_server_label, "casein")
       assert HostServerAnchor.enabled?()
     end
   end

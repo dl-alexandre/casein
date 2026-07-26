@@ -8,7 +8,7 @@ mkdir -p "$SCRATCH"
 
 WORKSPACE_NAME="dalexandre-user-investigation"
 WORKSPACE_ID="e7c18b93-688b-4bb0-904d-ac93d61e9372"
-SESSION_NAME="devide_${WORKSPACE_NAME}_u-test"
+SESSION_NAME="casein_${WORKSPACE_NAME}_u-test"
 STAGED_TOKEN="staged-token-from-env-sh"
 TMUX_TOKEN="tmux-supplied-token"
 TMUX_WORKSPACE_ID="tmux-supplied-workspace-id"
@@ -34,7 +34,7 @@ case "${1:-}" in
   show-environment)
     if [[ "${FAKE_TMUX_ENV_MODE:-empty}" == "complete" ]]; then
       printf 'CASEIN_API_TOKEN=%s\n' "${FAKE_TMUX_TOKEN:-}"
-      printf 'DEVIDE_WORKSPACE_ID=%s\n' "${FAKE_TMUX_WORKSPACE_ID:-}"
+      printf 'CASEIN_WORKSPACE_ID=%s\n' "${FAKE_TMUX_WORKSPACE_ID:-}"
     fi
     ;;
 esac
@@ -45,13 +45,13 @@ setup_staged_env() {
   mkdir -p "$(dirname "$STAGED_ENV")"
   cat >"$STAGED_ENV" <<EOF
 export CASEIN_API_TOKEN="${STAGED_TOKEN}"
-export DEVIDE_WORKSPACE_NAME="${WORKSPACE_NAME}"
-export DEVIDE_WORKSPACE_ID="${WORKSPACE_ID}"
-export DEVIDE_TERMINAL_MCP_URL="http://127.0.0.1:4000/api/terminals/mcp?workspace_id=${WORKSPACE_ID}"
-export DEVIDE_PREVIEW_MCP_URL="http://127.0.0.1:4000/api/preview/mcp?workspace_id=${WORKSPACE_ID}"
-export DEVIDE_ARTIFACT_MCP_URL="http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=${WORKSPACE_ID}"
-export DEVIDE_AGENT_MCP_HOME="${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
-export DEVIDE_CHECKOUT="${TEST_HOME}/checkout"
+export CASEIN_WORKSPACE_NAME="${WORKSPACE_NAME}"
+export CASEIN_WORKSPACE_ID="${WORKSPACE_ID}"
+export CASEIN_TERMINAL_MCP_URL="http://127.0.0.1:4000/api/terminals/mcp?workspace_id=${WORKSPACE_ID}"
+export CASEIN_PREVIEW_MCP_URL="http://127.0.0.1:4000/api/preview/mcp?workspace_id=${WORKSPACE_ID}"
+export CASEIN_ARTIFACT_MCP_URL="http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=${WORKSPACE_ID}"
+export CASEIN_AGENT_MCP_HOME="${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
+export CASEIN_CHECKOUT="${TEST_HOME}/checkout"
 EOF
   mkdir -p "${TEST_HOME}/checkout"
 }
@@ -83,16 +83,16 @@ run_test_a_inherited_token_falls_through_to_staged_env() (
   export PATH="${MOCK_BIN}:${PATH}"
 
   export CASEIN_API_TOKEN="inherited-server-token"
-  unset DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME DEVIDE_AGENT_ENV_FILE
+  unset CASEIN_WORKSPACE_ID CASEIN_WORKSPACE_NAME CASEIN_AGENT_ENV_FILE
 
   # shellcheck source=/dev/null
   source "${ROOT}/scripts/lib/agent-env.sh"
   agent_env_resolve
 
-  assert_nonempty "DEVIDE_WORKSPACE_NAME" "${DEVIDE_WORKSPACE_NAME:-}"
-  assert_nonempty "DEVIDE_WORKSPACE_ID" "${DEVIDE_WORKSPACE_ID:-}"
-  assert_eq "DEVIDE_WORKSPACE_NAME" "$WORKSPACE_NAME" "${DEVIDE_WORKSPACE_NAME}"
-  assert_eq "DEVIDE_WORKSPACE_ID" "$WORKSPACE_ID" "${DEVIDE_WORKSPACE_ID}"
+  assert_nonempty "CASEIN_WORKSPACE_NAME" "${CASEIN_WORKSPACE_NAME:-}"
+  assert_nonempty "CASEIN_WORKSPACE_ID" "${CASEIN_WORKSPACE_ID:-}"
+  assert_eq "CASEIN_WORKSPACE_NAME" "$WORKSPACE_NAME" "${CASEIN_WORKSPACE_NAME}"
+  assert_eq "CASEIN_WORKSPACE_ID" "$WORKSPACE_ID" "${CASEIN_WORKSPACE_ID}"
   assert_eq "CASEIN_API_TOKEN" "$STAGED_TOKEN" "${CASEIN_API_TOKEN}"
 
   echo "PASS: Test A"
@@ -110,14 +110,14 @@ run_test_b_complete_tmux_env_succeeds_at_step_4() (
   export FAKE_TMUX_WORKSPACE_ID="$TMUX_WORKSPACE_ID"
   export PATH="${MOCK_BIN}:${PATH}"
 
-  unset CASEIN_API_TOKEN DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME DEVIDE_AGENT_ENV_FILE
+  unset CASEIN_API_TOKEN CASEIN_WORKSPACE_ID CASEIN_WORKSPACE_NAME CASEIN_AGENT_ENV_FILE
 
   # shellcheck source=/dev/null
   source "${ROOT}/scripts/lib/agent-env.sh"
   agent_env_resolve
 
   assert_eq "CASEIN_API_TOKEN" "$TMUX_TOKEN" "${CASEIN_API_TOKEN}"
-  assert_eq "DEVIDE_WORKSPACE_ID" "$TMUX_WORKSPACE_ID" "${DEVIDE_WORKSPACE_ID}"
+  assert_eq "CASEIN_WORKSPACE_ID" "$TMUX_WORKSPACE_ID" "${CASEIN_WORKSPACE_ID}"
   if [[ -f "$STAGED_ENV" ]]; then
     echo "FAIL: staged env.sh was read when tmux session env was complete" >&2
     exit 1
@@ -137,7 +137,7 @@ run_test_materialize_after_inherited_token_resolve() (
   export PATH="${MOCK_BIN}:${PATH}"
 
   export CASEIN_API_TOKEN="inherited-server-token"
-  unset DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME DEVIDE_AGENT_ENV_FILE DEVIDE_CHECKOUT
+  unset CASEIN_WORKSPACE_ID CASEIN_WORKSPACE_NAME CASEIN_AGENT_ENV_FILE CASEIN_CHECKOUT
 
   # shellcheck source=/dev/null
   source "${ROOT}/scripts/lib/agent-env.sh"
@@ -146,12 +146,12 @@ run_test_materialize_after_inherited_token_resolve() (
   local export_log="${SCRATCH}/materialize-after-resolve.log"
   bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export >"$export_log"
   if grep -q 'HEAD is now at' "$export_log"; then
-    echo "FAIL: materialize --export polluted DEVIDE_CHECKOUT from inherited env" >&2
+    echo "FAIL: materialize --export polluted CASEIN_CHECKOUT from inherited env" >&2
     cat "$export_log" >&2
     exit 1
   fi
-  if ! grep -Fq "export DEVIDE_CHECKOUT=${TEST_HOME}/checkout" "$export_log"; then
-    echo "FAIL: materialize --export did not emit staged DEVIDE_CHECKOUT" >&2
+  if ! grep -Fq "export CASEIN_CHECKOUT=${TEST_HOME}/checkout" "$export_log"; then
+    echo "FAIL: materialize --export did not emit staged CASEIN_CHECKOUT" >&2
     cat "$export_log" >&2
     exit 1
   fi

@@ -18,12 +18,12 @@ defmodule Casein.Agents.MCPErrorTest do
     reason = %{
       error: :ambiguous_workspace_sessions,
       ambiguous: true,
-      candidate_sessions: [%{session: "devide_alpha_a", activity: 1}]
+      candidate_sessions: [%{session: "casein_alpha_a", activity: 1}]
     }
 
     formatted = MCPError.format(reason)
     assert formatted["ambiguous"] == true
-    assert [%{"session" => "devide_alpha_a"}] = formatted["candidate_sessions"]
+    assert [%{"session" => "casein_alpha_a"}] = formatted["candidate_sessions"]
   end
 
   test "format/1 maps atom errors" do

@@ -728,20 +728,20 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
 
     []
     |> maybe_add_preview_env("CASEIN_API_TOKEN", Shared.preview_api_token())
-    |> maybe_add_preview_env("DEVIDE_URL", Shared.preview_api_base_url())
-    |> maybe_add_preview_env("DEVIDE_WORKSPACE_ID", Keyword.get(opts, :workspace_id))
-    |> maybe_add_preview_env("DEVIDE_PREVIEW_PLACEMENT", Keyword.get(opts, :placement))
-    |> maybe_add_preview_env("DEVIDE_PREVIEW_ANCHOR_PANE_ID", Keyword.get(opts, :anchor_pane_id))
+    |> maybe_add_preview_env("CASEIN_URL", Shared.preview_api_base_url())
+    |> maybe_add_preview_env("CASEIN_WORKSPACE_ID", Keyword.get(opts, :workspace_id))
+    |> maybe_add_preview_env("CASEIN_PREVIEW_PLACEMENT", Keyword.get(opts, :placement))
+    |> maybe_add_preview_env("CASEIN_PREVIEW_ANCHOR_PANE_ID", Keyword.get(opts, :anchor_pane_id))
     |> maybe_add_preview_env(
-      "DEVIDE_PREVIEW_ANCHOR_WINDOW_ID",
+      "CASEIN_PREVIEW_ANCHOR_WINDOW_ID",
       Keyword.get(opts, :anchor_window_id)
     )
     |> maybe_add_preview_env(
-      "DEVIDE_PREVIEW_STORAGE_PROFILE",
+      "CASEIN_PREVIEW_STORAGE_PROFILE",
       Keyword.get(opts, :storage_profile)
     )
     |> maybe_add_preview_env(
-      "DEVIDE_PREVIEW_STORAGE_PROFILE_NAME",
+      "CASEIN_PREVIEW_STORAGE_PROFILE_NAME",
       Keyword.get(opts, :storage_profile_name)
     )
     |> Kernel.++([preview_cli_executable(), Shared.shell_quote(url)])
@@ -773,7 +773,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
     do: parts ++ ["--attach-to-pane", Shared.shell_quote(pane_id)]
 
   defp preview_cli_executable do
-    case Application.get_env(:casein, :devide_preview_script) do
+    case Application.get_env(:casein, :casein_preview_script) do
       path when is_binary(path) and path != "" ->
         Shared.shell_quote(path)
 

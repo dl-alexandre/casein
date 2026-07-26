@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Shared Casein agent env resolution — sourced by devide CLI and launch scripts.
+# Shared Casein agent env resolution — sourced by casein CLI and launch scripts.
 # Resolution order (first match wins):
-#   1. CASEIN_API_TOKEN + DEVIDE_WORKSPACE_ID already exported
-#   2. DEVIDE_AGENT_ENV_FILE (explicit env.sh path)
+#   1. CASEIN_API_TOKEN + CASEIN_WORKSPACE_ID already exported
+#   2. CASEIN_AGENT_ENV_FILE (explicit env.sh path)
 #   3. Walk up from cwd for .devbox-agent.env
 #   4. tmux show-environment (Casein pane injection)
 #   5. tmux session name → ~/.casein/agent-mcp/<workspace>/env.sh
-#   6. Host /etc/casein/devide.env + workspace API lookup from tmux session name
+#   6. Host /etc/casein/casein.env + workspace API lookup from tmux session name
 
 agent_env_load_file() {
   local file="$1"
-  export DEVIDE_AGENT_BOOTSTRAP_FILE="$(realpath -m "$file")"
+  export CASEIN_AGENT_BOOTSTRAP_FILE="$(realpath -m "$file")"
   # shellcheck source=/dev/null
   source "$file"
 }
@@ -56,17 +56,17 @@ agent_env_tmux_session_name() {
 agent_env_bind_current_tmux_session() {
   local session_name workspace_id key url bound
   session_name="$(agent_env_tmux_session_name)" || return 1
-  workspace_id="${DEVIDE_WORKSPACE_ID:-}"
+  workspace_id="${CASEIN_WORKSPACE_ID:-}"
 
   [[ -n "$session_name" && -n "$workspace_id" ]] || return 1
 
-  for key in DEVIDE_TERMINAL_MCP_URL DEVIDE_PREVIEW_MCP_URL; do
+  for key in CASEIN_TERMINAL_MCP_URL CASEIN_PREVIEW_MCP_URL; do
     url="${!key:-}"
     [[ -n "$url" ]] || return 1
 
     bound="$(
-      MCP_URL="$url" DEVIDE_WORKSPACE_ID="$workspace_id" \
-        DEVIDE_TMUX_SESSION="$session_name" python3 - <<'PY'
+      MCP_URL="$url" CASEIN_WORKSPACE_ID="$workspace_id" \
+        CASEIN_TMUX_SESSION="$session_name" python3 - <<'PY'
 import os
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -80,8 +80,8 @@ query = [
     if key not in {"workspace_id", "tmux_session"}
 ]
 query.extend([
-    ("workspace_id", os.environ["DEVIDE_WORKSPACE_ID"]),
-    ("tmux_session", os.environ["DEVIDE_TMUX_SESSION"]),
+    ("workspace_id", os.environ["CASEIN_WORKSPACE_ID"]),
+    ("tmux_session", os.environ["CASEIN_TMUX_SESSION"]),
 ])
 print(urlunsplit((url.scheme, url.netloc, url.path, urlencode(query), url.fragment)))
 PY
@@ -91,7 +91,7 @@ PY
     export "$key"
   done
 
-  export DEVIDE_TMUX_SESSION="$session_name"
+  export CASEIN_TMUX_SESSION="$session_name"
 }
 
 # Prefer the repository the operator actually launched from over a checkout
@@ -101,12 +101,12 @@ agent_env_bind_current_checkout() {
   local checkout
   checkout="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || return 0
   [[ -n "$checkout" && -d "$checkout" ]] || return 0
-  export DEVIDE_CHECKOUT="$(realpath -m "$checkout")"
+  export CASEIN_CHECKOUT="$(realpath -m "$checkout")"
 }
 
 agent_env_parse_workspace_name() {
   local session_name="$1"
-  if [[ "$session_name" =~ ^devide_([^_]+)_ ]]; then
+  if [[ "$session_name" =~ ^casein_([^_]+)_ ]]; then
     printf '%s\n' "${BASH_REMATCH[1]}"
     return 0
   fi
@@ -128,7 +128,7 @@ agent_env_load_tmux_session_env() {
     key="${line%%=*}"
     value="${line#*=}"
     case "$key" in
-      CASEIN_API_TOKEN|DEVIDE_WORKSPACE_ID|DEVIDE_WORKSPACE_NAME|DEVIDE_TMUX_SESSION|DEVIDE_API_BASE_URL|DEVIDE_TERMINAL_MCP_URL|DEVIDE_PREVIEW_MCP_URL|DEVIDE_ARTIFACT_MCP_URL|DEVIDE_TIDEWAVE_MCP_URL|DEVIDE_PREVIEW_ENV_ID|DEVIDE_CHECKOUT|DEVIDE_AGENT_MCP_HOME|DEVIDE_SCRIPTS|DEVIDE_AGENT_ENV_FILE|CASEIN_TERMINAL_SCHEME|CASEIN_TERMINAL_PRESET|COLORFGBG|CLAUDE_CONFIG_DIR|CODEX_HOME|PATH)
+      CASEIN_API_TOKEN|CASEIN_WORKSPACE_ID|CASEIN_WORKSPACE_NAME|CASEIN_TMUX_SESSION|CASEIN_API_BASE_URL|CASEIN_TERMINAL_MCP_URL|CASEIN_PREVIEW_MCP_URL|CASEIN_ARTIFACT_MCP_URL|CASEIN_TIDEWAVE_MCP_URL|CASEIN_PREVIEW_ENV_ID|CASEIN_CHECKOUT|CASEIN_AGENT_MCP_HOME|CASEIN_SCRIPTS|CASEIN_AGENT_ENV_FILE|CASEIN_TERMINAL_SCHEME|CASEIN_TERMINAL_PRESET|COLORFGBG|CLAUDE_CONFIG_DIR|CODEX_HOME|PATH)
         if [[ -z "${!key:-}" ]]; then
           export "${key}=${value}"
         fi
@@ -136,7 +136,7 @@ agent_env_load_tmux_session_env() {
     esac
   done < <(tmux show-environment -t "$session_id" 2>/dev/null || true)
 
-  [[ -n "${CASEIN_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]]
+  [[ -n "${CASEIN_API_TOKEN:-}" && -n "${CASEIN_WORKSPACE_ID:-}" ]]
 }
 
 agent_env_load_staged_env() {
@@ -150,8 +150,8 @@ agent_env_load_staged_env() {
   return 1
 }
 
-agent_env_load_host_devide_env() {
-  local host_env="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
+agent_env_load_host_casein_env() {
+  local host_env="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
   if [[ ! -r "$host_env" ]]; then
     return 1
   fi
@@ -159,7 +159,7 @@ agent_env_load_host_devide_env() {
   # shellcheck source=/dev/null
   source "$host_env"
   set +a
-  export DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
+  export CASEIN_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
   [[ -n "${CASEIN_API_TOKEN:-}" ]]
 }
 
@@ -167,8 +167,8 @@ agent_env_default_checkout() {
   local workspace_name="$1"
 
   case "$workspace_name" in
-    dalexandre-devide | dev_ide)
-      printf '%s\n' "/data/workspaces/dalexandre/dev_ide"
+    dalexandre-casein | casein)
+      printf '%s\n' "/data/workspaces/dalexandre/casein"
       ;;
     *)
       if [[ -d "/data/workspaces/${workspace_name}" ]]; then
@@ -183,7 +183,7 @@ agent_env_default_checkout() {
 
 agent_env_resolve_workspace_id_from_api() {
   local workspace_name="$1"
-  local base_url="${DEVIDE_URL:-http://127.0.0.1:4000}"
+  local base_url="${CASEIN_URL:-http://127.0.0.1:4000}"
   local token="${CASEIN_API_TOKEN:-}"
 
   [[ -n "$token" && -n "$workspace_name" ]] || return 1
@@ -207,16 +207,16 @@ for ws in json.load(sys.stdin):
     query_suffix="workspace_id=${workspace_id}"
     if [[ -n "$tmux_session" ]]; then
       query_suffix="${query_suffix}&tmux_session=${tmux_session}"
-      export DEVIDE_TMUX_SESSION="$tmux_session"
+      export CASEIN_TMUX_SESSION="$tmux_session"
     fi
 
-    export DEVIDE_WORKSPACE_ID="$workspace_id"
-    export DEVIDE_WORKSPACE_NAME="$workspace_name"
-    export DEVIDE_CHECKOUT="$(agent_env_default_checkout "$workspace_name")"
-    export DEVIDE_API_BASE_URL="${DEVIDE_API_BASE_URL:-$base_url}"
-    export DEVIDE_TERMINAL_MCP_URL="${base_url}/api/terminals/mcp?${query_suffix}"
-    export DEVIDE_PREVIEW_MCP_URL="${base_url}/api/preview/mcp?${query_suffix}"
-    export DEVIDE_ARTIFACT_MCP_URL="${base_url}/api/artifacts/mcp?workspace_id=${workspace_id}"
+    export CASEIN_WORKSPACE_ID="$workspace_id"
+    export CASEIN_WORKSPACE_NAME="$workspace_name"
+    export CASEIN_CHECKOUT="$(agent_env_default_checkout "$workspace_name")"
+    export CASEIN_API_BASE_URL="${CASEIN_API_BASE_URL:-$base_url}"
+    export CASEIN_TERMINAL_MCP_URL="${base_url}/api/terminals/mcp?${query_suffix}"
+    export CASEIN_PREVIEW_MCP_URL="${base_url}/api/preview/mcp?${query_suffix}"
+    export CASEIN_ARTIFACT_MCP_URL="${base_url}/api/artifacts/mcp?workspace_id=${workspace_id}"
     return 0
   fi
 
@@ -232,9 +232,9 @@ agent_env_resolve_from_tmux_session_name() {
     return 0
   fi
 
-  export DEVIDE_WORKSPACE_NAME="$workspace_name"
+  export CASEIN_WORKSPACE_NAME="$workspace_name"
 
-  if agent_env_load_host_devide_env && agent_env_resolve_workspace_id_from_api "$workspace_name"; then
+  if agent_env_load_host_casein_env && agent_env_resolve_workspace_id_from_api "$workspace_name"; then
     return 0
   fi
 
@@ -242,12 +242,12 @@ agent_env_resolve_from_tmux_session_name() {
 }
 
 agent_env_resolve() {
-  if [[ -n "${CASEIN_API_TOKEN:-}" ]] && [[ -n "${DEVIDE_WORKSPACE_ID:-}" ]]; then
+  if [[ -n "${CASEIN_API_TOKEN:-}" ]] && [[ -n "${CASEIN_WORKSPACE_ID:-}" ]]; then
     return 0
   fi
 
-  if [[ -n "${DEVIDE_AGENT_ENV_FILE:-}" && -f "${DEVIDE_AGENT_ENV_FILE}" ]]; then
-    agent_env_load_file "${DEVIDE_AGENT_ENV_FILE}"
+  if [[ -n "${CASEIN_AGENT_ENV_FILE:-}" && -f "${CASEIN_AGENT_ENV_FILE}" ]]; then
+    agent_env_load_file "${CASEIN_AGENT_ENV_FILE}"
     return 0
   fi
 
@@ -282,7 +282,7 @@ agent_env_stamp_pane_pairing() {
 }
 
 agent_env_export_runtime_paths() {
-  # Deliberately not requiring DEVIDE_AGENT_MCP_HOME: a degraded launch (MCP
+  # Deliberately not requiring CASEIN_AGENT_MCP_HOME: a degraded launch (MCP
   # materialization failed) must still put the launcher shims and the real
   # agent binaries on PATH. The npm prefix rides along so `codex update`
   # installs stay reachable; ~/.local/bin covers user-installed real bins.

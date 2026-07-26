@@ -226,7 +226,7 @@ defmodule Casein.Export.WorkspaceStatusTest do
       summary: "preview_screenshot snap.png",
       status: :ok,
       metadata: %{
-        "agent_session" => "devide_alpha_agent",
+        "agent_session" => "casein_alpha_agent",
         "agent_pane" => "%2",
         "session_id" => "preview-123",
         "pane_id" => "%8",
@@ -255,7 +255,7 @@ defmodule Casein.Export.WorkspaceStatusTest do
     assert result.href == "/workspaces/ws-deploy"
 
     assert result.preview.agent_action == "preview_screenshot"
-    assert result.preview.agent_session == "devide_alpha_agent"
+    assert result.preview.agent_session == "casein_alpha_agent"
     assert result.preview.agent_pane == "%2"
     assert result.preview.session_id == "preview-123"
     assert result.preview.pane == "%8"
@@ -352,7 +352,7 @@ defmodule Casein.Export.WorkspaceStatusTest do
         actor_id: "agent-1",
         action: "terminal.command_sent",
         target_type: "tmux_session",
-        target_ref: "devide_alpha_main"
+        target_ref: "casein_alpha_main"
       })
 
     assert {:ok, [audit_entry | _]} = WorkspaceStatus.audit("ws-deploy")

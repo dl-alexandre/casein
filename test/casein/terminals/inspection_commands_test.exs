@@ -8,7 +8,7 @@ defmodule Casein.Terminals.InspectionCommandsTest do
     root =
       Path.join(
         System.tmp_dir!(),
-        "devide-inspection-commands-#{System.unique_integer([:positive])}"
+        "casein-inspection-commands-#{System.unique_integer([:positive])}"
       )
 
     File.mkdir_p!(root)

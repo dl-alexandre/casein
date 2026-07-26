@@ -2,7 +2,7 @@ defmodule CaseinWeb.API.DeployStatusControllerTest do
   use CaseinWeb.ConnCase, async: false
 
   @token "test-token"
-  @host "devide.devbox.example.com"
+  @host "casein.devbox.example.com"
   @revision "1fb643af2c58da2c9b10019cc3de1b06555e3732"
 
   setup %{conn: conn} do
@@ -56,7 +56,7 @@ defmodule CaseinWeb.API.DeployStatusControllerTest do
     assert body["ok"] == true
 
     assert get_in(body, ["checks", "socket_exists", "status"]) == "not_configured"
-    assert get_in(body, ["checks", "caddy_devide_upstream", "status"]) == "not_configured"
+    assert get_in(body, ["checks", "caddy_casein_upstream", "status"]) == "not_configured"
     assert get_in(body, ["checks", "deploy_revision_current", "status"]) == "not_configured"
   end
 

@@ -127,7 +127,7 @@ defmodule CaseinWeb.WorkspaceLive.FilePaneUiTest do
     # The split was anchored on the operator pane %1.
     assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", new_pane_id}
 
-    # dev_ide restores tmux focus to the anchor so Ghostty keeps the operator
+    # casein restores tmux focus to the anchor so Ghostty keeps the operator
     # pane (the focus-restore trick).
     assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
 

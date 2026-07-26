@@ -38,7 +38,7 @@ defmodule Casein.Push.DeliveryIntegrationTest do
     Application.put_env(:casein, APNSProvider,
       team_id: "TEAM123456",
       key_id: "KEY1234567",
-      topic: "com.example.devide_mob",
+      topic: "com.example.casein_mob",
       private_key: private_key_pem(),
       http_client: Casein.Push.APNS.StubHTTP,
       now_fun: fn -> 1_800_000_000 end
@@ -80,7 +80,7 @@ defmodule Casein.Push.DeliveryIntegrationTest do
     refute_receive {:fcm_request, _, _, _}, 100
 
     assert url == "https://api.sandbox.push.apple.com/3/device/ios-device"
-    assert {"apns-topic", "com.example.devide_mob"} in headers
+    assert {"apns-topic", "com.example.casein_mob"} in headers
     assert {"apns-push-type", "alert"} in headers
     assert {"apns-priority", "10"} in headers
 
@@ -99,7 +99,7 @@ defmodule Casein.Push.DeliveryIntegrationTest do
 
     assert body["action"] == "policy.blocked"
     assert body["workspace_id"] == workspace_id
-    assert body["deep_link"] == "devide://session/#{workspace_id}"
+    assert body["deep_link"] == "casein://session/#{workspace_id}"
   end
 
   test "a needs_review card reaches FCM as a fully-formed request for an Android token" do
@@ -141,7 +141,7 @@ defmodule Casein.Push.DeliveryIntegrationTest do
     assert is_binary(data["origin_id"])
 
     deep_link = URI.parse(data["deep_link"])
-    assert deep_link.scheme == "devide"
+    assert deep_link.scheme == "casein"
     assert deep_link.host == "review"
     assert deep_link.path == "/needs_review%3A#{workspace_id}%3Arun-1"
 

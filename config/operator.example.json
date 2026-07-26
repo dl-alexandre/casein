@@ -12,8 +12,8 @@
     "deploy_service": "example-deploy.service",
     "git_branch": "main",
     "git_credential_helper": "example-credential-helper",
-    "git_remote": "https://example.com/acme/devide.git",
-    "github_repo": "acme/devide",
+    "git_remote": "https://example.com/acme/casein.git",
+    "github_repo": "acme/casein",
     "last_deploy_path": "/run/example/last-deploy.json",
     "ls_remote_timeout_ms": 5000,
     "phase_stale_in_progress_ms": {

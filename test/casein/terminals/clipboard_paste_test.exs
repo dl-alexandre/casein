@@ -5,7 +5,7 @@ defmodule Casein.Terminals.ClipboardPasteTest do
 
   setup do
     root =
-      Path.join(System.tmp_dir!(), "devide-clipboard-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-clipboard-#{System.unique_integer([:positive])}")
 
     File.rm_rf!(root)
     File.mkdir_p!(root)

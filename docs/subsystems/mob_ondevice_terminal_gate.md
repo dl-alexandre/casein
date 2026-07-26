@@ -9,7 +9,7 @@
 >
 > **Status: DEVICE GATE CROSSED (Android arm64).** `libghostty-vt` is built for
 > `aarch64-linux-android`, statically linked into the MobNode app via a project
-> Zigler NIF (`DevideMob.Nifs.GhosttyVt`), and **verified running on a real arm64
+> Zigler NIF (`CaseinMob.Nifs.GhosttyVt`), and **verified running on a real arm64
 > tablet** (SM-T577U): on-device `nif_new` → `nif_vt_write("DEVICE_VT_OK 42")` →
 > `nif_snapshot` returned `"DEVICE_VT_OK 42"`. The `unknown application: :ghostty`
 > crash is gone. Getting here took **5 patches to the `GenericJam/zigler`
@@ -33,7 +33,7 @@ ghostty's NIF is really **two halves**, with very different mobile stories:
 
 **Consequence — the gate is narrower than "port ghostty."** The device only needs
 the **VT-parser NIF** rendering `cells/1`. The **shell/PTY runs on the host** (the
-devbox dev_ide `SessionOwner`) and streams bytes over Mob distribution to the
+devbox casein `SessionOwner`) and streams bytes over Mob distribution to the
 device's terminal — exactly the **Model-B-over-the-wire** the contract (§3) and
 the screen moduledoc already name as the fallback. The on-device target is
 therefore: **`libghostty-vt` (Terminal half only) static-linked on-device, fed
@@ -132,18 +132,18 @@ host-dev.** Rationale: we have the Android `libghostty-vt.a` (from ghostty *main
 this Mac** (the host wall), so a uniform host+device NIF must wait for the iOS/
 macOS-host phase. The `TerminalScreen` branches on backend: `ghostty_ex`'s
 `Ghostty.Terminal` (prebuilt, already works on the Mac host) for host-dev;
-`DevideMob.Nifs.GhosttyVt` (our project NIF + Android `.a`) on-device.
+`CaseinMob.Nifs.GhosttyVt` (our project NIF + Android `.a`) on-device.
 
 1. ✅ Build `libghostty-vt.a` for `aarch64-linux-android` (off-host, devbox).
 2. ✅ `mix mob.add_nif ghostty_vt --type zigler` — stub at
-   `lib/devide_mob/nifs/ghostty_vt.ex`; `static_nifs` entry; zigler-fork +
+   `lib/casein_mob/nifs/ghostty_vt.ex`; `static_nifs` entry; zigler-fork +
    `override: true`; deps resolved.
 3. ⏳ Fill the Zig surface — adapt ghostty's `ghostty_nif.zig` **Terminal half**
    (`nif_new`, `nif_vt_write`, `nif_render_cells`, `nif_resize`, `nif_get_cursor`,
    `nif_snapshot`; **drop** the `nif_tty_*` / `termios` PTY half). Configure
    `use Zig` with `c: [include_dirs: [native/ghostty_vt/include], link_lib:
    <android .a>]`; set `static_nifs` to `archs: [:android]`.
-4. ⏳ `DevideMob.GhosttyVt` Elixir wrapper over the NIF; `TerminalScreen` calls it
+4. ⏳ `CaseinMob.GhosttyVt` Elixir wrapper over the NIF; `TerminalScreen` calls it
    on-device (host keeps `ghostty_ex`), fed bytes **streamed from a host terminal**
    (Model-B-over-the-wire) instead of an on-device PTY.
 5. ⏳ Rebuild + redeploy to SM-T577U; verify `cells/1` populates on-device (the
@@ -158,7 +158,7 @@ macOS-host phase. The `TerminalScreen` branches on backend: `ghostty_ex`'s
   `build.zig`, but zig 0.16 moved `addObjectFile`/`linkSystemLibrary`/
   `addCSourceFiles` off `Build.Step.Compile` onto `Build.Module`. Patched
   `render_c` (`lib/zig/_module.ex`) to route through `mode.root_module.*`; lives in
-  `scratch/zigler-fork`, wired via the `path:` override in `native/devide_mob/mix.exs`.
+  `scratch/zigler-fork`, wired via the `path:` override in `native/casein_mob/mix.exs`.
   **Proven** with a trivial macOS `.a` (Zigler's `local_lib_test` pattern — link a
   local `.a`, call a function → returned 42). Zigler's own `local_lib`/`priv_lib`/
   `system_lib` cxx tests are Linux-only (need `libblas.so`); run them on the devbox
@@ -189,12 +189,12 @@ macOS-host phase. The `TerminalScreen` branches on backend: `ghostty_ex`'s
 - **Also verified since the gate (the full on-device terminal works):**
   - `nif_render_cells` on-device — the earlier `:badarg` was an RPC
     resource-association artifact, not a bug (`{24, 10, true}` run on-device).
-  - `DevideMob.Terminal` backend abstraction — ghostty_ex on host, the NIF
+  - `CaseinMob.Terminal` backend abstraction — ghostty_ex on host, the NIF
     on-device; both yield `[[{grapheme, fg, bg, flags}]]`. `TerminalScreen`
     rewired to it; verified on-device (`backend=:nif`, banner → 49 Canvas ops).
   - **`MobBridge.kt` Canvas painter** already drew `rect`/`text`; added monospace
     `family` support so the grid is fixed-width.
-  - **Host↔device transport (`DevideMob.HostBridge`)** — a host shell's PTY bytes
+  - **Host↔device transport (`CaseinMob.HostBridge`)** — a host shell's PTY bytes
     stream to the device's `:mob_screen` as `{:vt_bytes, _}`; **proven end-to-end**
     (host `echo` rendered in the on-device terminal, live, with the real prompt).
   - **Device → host input** — `HostBridge` announces itself (`{:vt_host, pid}`)
@@ -224,7 +224,7 @@ macOS-host phase. The `TerminalScreen` branches on backend: `ghostty_ex`'s
 
 ## 8. The exact upstream PRs (deps are forked locally — not reproducible until these land)
 
-Two forked dependency branches currently make `native/devide_mob` build; the
+Two forked dependency branches currently make `native/casein_mob` build; the
 checkout is pinned to GitHub URLs in `mix.exs`/`mix.lock`, but should converge
 back to upstream releases once the PRs land. Project-owned Android build edits
 still live in the untracked `native/` tree until that app work is committed.

@@ -63,7 +63,7 @@ defmodule CaseinWeb.API.TerminalMCPController do
   # hand-built URLs may use a caller_pane query param. Values that are not a
   # tmux pane id (unset/unexpanded env placeholders) are ignored.
   defp default_caller_pane(conn) do
-    header = conn |> get_req_header("x-devide-caller-pane") |> List.first()
+    header = conn |> get_req_header("x-casein-caller-pane") |> List.first()
     value = header || conn.query_params["caller_pane"]
 
     with value when is_binary(value) <- value,

@@ -59,7 +59,7 @@ defmodule Casein.Mobile.ResumeCard do
       end)
       |> URI.encode_query()
 
-    base = "devide://review/#{URI.encode_www_form(resume.card_id)}"
+    base = "casein://review/#{URI.encode_www_form(resume.card_id)}"
     if query == "", do: base, else: base <> "?" <> query
   end
 

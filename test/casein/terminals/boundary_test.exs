@@ -17,7 +17,7 @@ defmodule Casein.Terminals.BoundaryTest do
     prev_allow_raw = Application.get_env(:casein, :allow_local_raw_terminal)
     prev_raw_everywhere = Application.get_env(:casein, :raw_terminal_everywhere)
     prev_root = Application.get_env(:casein, :workspaces_root)
-    root = Path.join(System.tmp_dir!(), "devide-boundary-test")
+    root = Path.join(System.tmp_dir!(), "casein-boundary-test")
     workspace_path = Path.join(root, "ws-1")
     File.rm_rf!(root)
     File.mkdir_p!(workspace_path)

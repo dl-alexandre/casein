@@ -9,7 +9,7 @@ defmodule CaseinPreviewBrowser.HealthTest do
              bridge_ready: true,
              dom_loaded: true,
              live_socket_connected: true,
-             last_event_type: "devide:preview:live_socket_connected",
+             last_event_type: "casein:preview:live_socket_connected",
              last_event_at: 123,
              client_errors: []
            } =
@@ -18,7 +18,7 @@ defmodule CaseinPreviewBrowser.HealthTest do
                "bridge_ready" => true,
                "dom_loaded" => true,
                "live_socket_connected" => true,
-               "last_event_type" => "devide:preview:live_socket_connected",
+               "last_event_type" => "casein:preview:live_socket_connected",
                "last_event_at" => 123
              })
   end
@@ -26,8 +26,8 @@ defmodule CaseinPreviewBrowser.HealthTest do
   test "transitions through LiveView-aware states" do
     health =
       Health.new()
-      |> Health.transition({:preview_signal, "devide:preview:bridge_ready", %{"timestamp" => 1}})
-      |> Health.transition({:preview_signal, "devide:preview:dom_loaded", %{"timestamp" => 2}})
+      |> Health.transition({:preview_signal, "casein:preview:bridge_ready", %{"timestamp" => 1}})
+      |> Health.transition({:preview_signal, "casein:preview:dom_loaded", %{"timestamp" => 2}})
 
     assert health.state == :dom_loaded
     assert health.bridge_ready
@@ -36,7 +36,7 @@ defmodule CaseinPreviewBrowser.HealthTest do
     health =
       Health.transition(
         health,
-        {:preview_signal, "devide:preview:live_socket_connected", %{"timestamp" => 3}}
+        {:preview_signal, "casein:preview:live_socket_connected", %{"timestamp" => 3}}
       )
 
     assert health.state == :liveview_stable
@@ -47,7 +47,7 @@ defmodule CaseinPreviewBrowser.HealthTest do
     health =
       Health.new()
       |> Health.transition(
-        {:preview_signal, "devide:preview:client_error", %{"message" => "boom"}}
+        {:preview_signal, "casein:preview:client_error", %{"message" => "boom"}}
       )
 
     assert health.state == :degraded
@@ -56,7 +56,7 @@ defmodule CaseinPreviewBrowser.HealthTest do
     health =
       Health.transition(
         Health.new(),
-        {:preview_signal, "devide:preview:live_socket_disconnected", %{}}
+        {:preview_signal, "casein:preview:live_socket_disconnected", %{}}
       )
 
     assert health.state == :degraded

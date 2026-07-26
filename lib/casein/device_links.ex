@@ -17,8 +17,8 @@ defmodule Casein.DeviceLinks do
   @resource_kind "workspace"
   @capabilities [
     "phoenix_socket",
-    "dev_ide.session",
-    "dev_ide.mobile_cards"
+    "casein.session",
+    "casein.mobile_cards"
   ]
 
   @type exchange_result :: %{

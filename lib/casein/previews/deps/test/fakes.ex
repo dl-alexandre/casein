@@ -58,7 +58,7 @@ defmodule Casein.Previews.Deps.Test.Fakes do
     def capture_scrollback(_session, _opts), do: ""
 
     @impl true
-    def workspace_session_prefix(name), do: "devide_" <> to_string(name) <> "_"
+    def workspace_session_prefix(name), do: "casein_" <> to_string(name) <> "_"
 
     @impl true
     def session_name(name, sid), do: workspace_session_prefix(name) <> to_string(sid)

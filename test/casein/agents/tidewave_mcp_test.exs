@@ -5,22 +5,22 @@ defmodule Casein.Agents.TidewaveMCPTest do
 
   setup do
     prev_home = Application.get_env(:casein, :preview_env_home)
-    prev_env_url = System.get_env("DEVIDE_TIDEWAVE_MCP_URL")
-    prev_preview_env_id = System.get_env("DEVIDE_PREVIEW_ENV_ID")
+    prev_env_url = System.get_env("CASEIN_TIDEWAVE_MCP_URL")
+    prev_preview_env_id = System.get_env("CASEIN_PREVIEW_ENV_ID")
 
-    System.delete_env("DEVIDE_TIDEWAVE_MCP_URL")
-    System.delete_env("DEVIDE_PREVIEW_ENV_ID")
+    System.delete_env("CASEIN_TIDEWAVE_MCP_URL")
+    System.delete_env("CASEIN_PREVIEW_ENV_ID")
 
     on_exit(fn ->
       restore_preview_home(prev_home)
 
       if prev_env_url,
-        do: System.put_env("DEVIDE_TIDEWAVE_MCP_URL", prev_env_url),
-        else: System.delete_env("DEVIDE_TIDEWAVE_MCP_URL")
+        do: System.put_env("CASEIN_TIDEWAVE_MCP_URL", prev_env_url),
+        else: System.delete_env("CASEIN_TIDEWAVE_MCP_URL")
 
       if prev_preview_env_id,
-        do: System.put_env("DEVIDE_PREVIEW_ENV_ID", prev_preview_env_id),
-        else: System.delete_env("DEVIDE_PREVIEW_ENV_ID")
+        do: System.put_env("CASEIN_PREVIEW_ENV_ID", prev_preview_env_id),
+        else: System.delete_env("CASEIN_PREVIEW_ENV_ID")
     end)
 
     :ok

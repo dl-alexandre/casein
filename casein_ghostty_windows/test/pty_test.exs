@@ -9,10 +9,10 @@ defmodule Ghostty.WindowsPTYTest do
     prompt = receive_until_prompt("")
     assert prompt =~ "PS C:\\>"
 
-    assert :ok = Ghostty.PTY.write(pty, "Write-Output DEVIDE_WINDOWS_PTY_OK\r")
+    assert :ok = Ghostty.PTY.write(pty, "Write-Output CASEIN_WINDOWS_PTY_OK\r")
     output = receive_until_prompt("")
     assert output =~ "Write-Output"
-    assert output =~ "DEVIDE_WINDOWS_PTY_OK"
+    assert output =~ "CASEIN_WINDOWS_PTY_OK"
     assert Process.alive?(pty)
 
     assert :ok = Ghostty.PTY.close(pty)
@@ -20,10 +20,10 @@ defmodule Ghostty.WindowsPTYTest do
 
   test "passes a scoped environment into the child console" do
     {:ok, pty} =
-      Ghostty.PTY.start_link(cwd: "C:\\", env: %{"DEVIDE_PTY_ENV_TEST" => "workspace-scoped"})
+      Ghostty.PTY.start_link(cwd: "C:\\", env: %{"CASEIN_PTY_ENV_TEST" => "workspace-scoped"})
 
     _prompt = receive_until_prompt("")
-    assert :ok = Ghostty.PTY.write(pty, "Write-Output $env:DEVIDE_PTY_ENV_TEST\r")
+    assert :ok = Ghostty.PTY.write(pty, "Write-Output $env:CASEIN_PTY_ENV_TEST\r")
     output = receive_until_prompt("")
     assert output =~ "workspace-scoped"
     assert :ok = Ghostty.PTY.close(pty)

@@ -154,7 +154,7 @@ Collection status in `playwright_walk.mjs` + `runtime_evidence.mjs`:
 4. **`per_page` / `page.runtime` SQL** (SELECT-only) — **wired**
 5. LiveView assign keys / optional fields — **wired**
 
-Override Tidewave URL with `DEVIDE_TIDEWAVE_MCP_URL` or `--tidewave-url`.
+Override Tidewave URL with `CASEIN_TIDEWAVE_MCP_URL` or `--tidewave-url`.
 
 Safety for runtime:
 

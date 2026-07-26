@@ -81,7 +81,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
                nil,
                [],
                "@1",
-               "devide_alpha_u-alice"
+               "casein_alpha_u-alice"
              ) == nil
     end
 
@@ -95,7 +95,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
           pane_id: "%preview",
           title: "Live",
           display_url: "https://example.com/live",
-          tmux_session: "devide_alpha_u-alice"
+          tmux_session: "casein_alpha_u-alice"
         }
       }
 
@@ -106,7 +106,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
                  "%preview",
                  windows,
                  "@1",
-                 "devide_alpha_u-alice"
+                 "casein_alpha_u-alice"
                )
     end
 
@@ -124,7 +124,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
                  nil,
                  windows,
                  "@1",
-                 "devide_alpha_u-alice"
+                 "casein_alpha_u-alice"
                )
     end
 
@@ -137,7 +137,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
                nil,
                [%{id: "@1", pane_list: [%{id: "%preview"}]}],
                nil,
-               "devide_alpha_u-alice"
+               "casein_alpha_u-alice"
              ) == nil
     end
   end
@@ -196,24 +196,24 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
   # ---------------------------------------------------------------------------
   describe "tmux_session_for_info/2" do
     test "shell with explicit non-empty tmux_session returns it verbatim" do
-      info = %SessionInfo{kind: :shell, sid: "s1", tmux_session: "devide_explicit"}
-      assert TerminalState.tmux_session_for_info(info, "ws") == "devide_explicit"
+      info = %SessionInfo{kind: :shell, sid: "s1", tmux_session: "casein_explicit"}
+      assert TerminalState.tmux_session_for_info(info, "ws") == "casein_explicit"
     end
 
     test "shell with blank tmux_session derives the name from workspace + sid" do
-      # Tmux.session_name/2 -> "devide_<sanitized ws>_<sanitized sid>"
+      # Tmux.session_name/2 -> "casein_<sanitized ws>_<sanitized sid>"
       info = %SessionInfo{kind: :shell, sid: "my sid", tmux_session: ""}
-      assert TerminalState.tmux_session_for_info(info, "My WS") == "devide_My_WS_my_sid"
+      assert TerminalState.tmux_session_for_info(info, "My WS") == "casein_My_WS_my_sid"
     end
 
     test "shell with nil tmux_session derives the name from workspace + sid" do
       info = %SessionInfo{kind: :shell, sid: "abc", tmux_session: nil}
-      assert TerminalState.tmux_session_for_info(info, "alpha") == "devide_alpha_abc"
+      assert TerminalState.tmux_session_for_info(info, "alpha") == "casein_alpha_abc"
     end
 
     test "non-shell session with an explicit tmux_session returns it" do
-      info = %SessionInfo{kind: :agent, tmux_session: "devide_agent_sess"}
-      assert TerminalState.tmux_session_for_info(info, "ws") == "devide_agent_sess"
+      info = %SessionInfo{kind: :agent, tmux_session: "casein_agent_sess"}
+      assert TerminalState.tmux_session_for_info(info, "ws") == "casein_agent_sess"
     end
 
     test "non-shell session with no tmux_session returns nil" do
@@ -232,7 +232,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
   # ---------------------------------------------------------------------------
   describe "primary_pane_data/2" do
     test "builds the single pane-1 entry with the session/tmux ids and defaults" do
-      data = TerminalState.primary_pane_data("sid-9", "devide_ws_sid-9")
+      data = TerminalState.primary_pane_data("sid-9", "casein_ws_sid-9")
 
       assert %{
                "pane-1" => %{
@@ -241,7 +241,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
                  worker: nil,
                  backend: nil,
                  session_sid: "sid-9",
-                 tmux_session: "devide_ws_sid-9",
+                 tmux_session: "casein_ws_sid-9",
                  cols: 120,
                  rows: 40,
                  error: nil,
@@ -279,22 +279,22 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
 
     test "delegates to the adapter's session_alive?/1 when exported (true)" do
       Application.put_env(:casein, :tmux_adapter, __MODULE__.AliveAdapter)
-      assert TerminalState.tmux_session_alive?("devide_x") == true
+      assert TerminalState.tmux_session_alive?("casein_x") == true
     end
 
     test "delegates to the adapter's session_alive?/1 when exported (false)" do
       Application.put_env(:casein, :tmux_adapter, __MODULE__.DeadAdapter)
-      assert TerminalState.tmux_session_alive?("devide_x") == false
+      assert TerminalState.tmux_session_alive?("casein_x") == false
     end
 
     test "assumes alive when the adapter does not export session_alive?/1" do
       Application.put_env(:casein, :tmux_adapter, __MODULE__.NoAliveCheckAdapter)
-      assert TerminalState.tmux_session_alive?("devide_x") == true
+      assert TerminalState.tmux_session_alive?("casein_x") == true
     end
 
     test "a raising adapter is treated as not alive (rescue path)" do
       Application.put_env(:casein, :tmux_adapter, __MODULE__.RaisingAdapter)
-      assert TerminalState.tmux_session_alive?("devide_x") == false
+      assert TerminalState.tmux_session_alive?("casein_x") == false
     end
   end
 

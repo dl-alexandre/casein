@@ -4,7 +4,7 @@ defmodule Casein.Test.GitRepoCase do
   import ExUnit.Callbacks, only: [on_exit: 1]
 
   def setup_git_repo(_context) do
-    tmp = Path.join(tmp_root(), "devide-git-#{System.unique_integer([:positive])}")
+    tmp = Path.join(tmp_root(), "casein-git-#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf!(tmp) end)
     main = Path.join(tmp, "main")
     worktree = Path.join(tmp, "feature-worktree")

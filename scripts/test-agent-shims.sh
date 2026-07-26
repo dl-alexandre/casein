@@ -58,7 +58,7 @@ echo package-claude"
   assert_not_under "recorded claude target" "$target" "$bin_dir"
 )
 
-run_resolver_rejects_recorded_devide_shim() (
+run_resolver_rejects_recorded_casein_shim() (
   echo "== real-agent-bin rejects recorded Casein shims =="
 
   local home real_dir real_codex resolved
@@ -71,7 +71,7 @@ run_resolver_rejects_recorded_devide_shim() (
   real_codex="${real_dir}/codex"
 
   write_executable "${HOME}/.casein/real-bins/codex" "#!/usr/bin/env bash
-exec \"${ROOT}/scripts/devide\" agent launch codex \"\$@\""
+exec \"${ROOT}/scripts/casein\" agent launch codex \"\$@\""
   write_executable "$real_codex" "#!/usr/bin/env bash
 echo real-codex"
 
@@ -84,7 +84,7 @@ echo real-codex"
 )
 
 run_installer_generated_shims_carry_marker() (
-  echo "== installer-generated shims are detected by is_devide_shim =="
+  echo "== installer-generated shims are detected by is_casein_shim =="
 
   local home name
   home="$(cd "$(mktemp -d)" && pwd -P)"
@@ -101,17 +101,17 @@ run_installer_generated_shims_carry_marker() (
   # The shim template (installer) and the marker grep (real-agent-bin.sh)
   # live in different files; this pins their coupling.
   for name in grok claude codex opencode agent; do
-    if ! is_devide_shim "${HOME}/.casein/agent-shims/${name}"; then
+    if ! is_casein_shim "${HOME}/.casein/agent-shims/${name}"; then
       echo "FAIL: installed shim not detected as a Casein shim: ${name}" >&2
       exit 1
     fi
   done
 
-  # agent-doctor.sh extracts the embedded devide CLI path with this sed
+  # agent-doctor.sh extracts the embedded casein CLI path with this sed
   # pattern; pin it against the installer's shim template.
   local embedded
   embedded="$(sed -n 's/^exec "\(.*\)" agent launch .*/\1/p' "${HOME}/.casein/agent-shims/claude" | head -n 1)"
-  assert_eq "embedded devide CLI path" "${ROOT}/scripts/devide" "$embedded"
+  assert_eq "embedded casein CLI path" "${ROOT}/scripts/casein" "$embedded"
 )
 
 run_installer_cleans_legacy_shims() (
@@ -127,7 +127,7 @@ run_installer_cleans_legacy_shims() (
   # A legacy marker-carrying launcher shim and a user's own script side by
   # side in ~/.local/bin: migration must remove exactly the former.
   write_executable "${HOME}/.local/bin/grok" "#!/usr/bin/env bash
-exec \"${ROOT}/scripts/devide\" agent launch grok \"\$@\""
+exec \"${ROOT}/scripts/casein\" agent launch grok \"\$@\""
   write_executable "${HOME}/.local/bin/my-tool" "#!/usr/bin/env bash
 echo mine"
 
@@ -195,13 +195,13 @@ echo \"real-opencode \$*\""
   # Version/help probes must not resolve env, create a worktree, or inject
   # MCP — with no Casein env in this HOME, anything but a clean passthrough
   # would fail or hang rather than print the real binary's output.
-  out="$(cd "$home" && bash "${ROOT}/scripts/devide" agent launch claude --version)"
+  out="$(cd "$home" && bash "${ROOT}/scripts/casein" agent launch claude --version)"
   assert_eq "claude --version passthrough" "real-claude --version" "$out"
 
-  out="$(cd "$home" && bash "${ROOT}/scripts/devide" agent launch claude update)"
+  out="$(cd "$home" && bash "${ROOT}/scripts/casein" agent launch claude update)"
   assert_eq "claude update passthrough" "real-claude update" "$out"
 
-  out="$(cd "$home" && bash "${ROOT}/scripts/devide" agent launch opencode --help)"
+  out="$(cd "$home" && bash "${ROOT}/scripts/casein" agent launch opencode --help)"
   assert_eq "opencode --help passthrough" "real-opencode --help" "$out"
 )
 
@@ -224,8 +224,8 @@ echo \"real-grok \$*\""
   # cwd ancestry. The shimmed name must launch the real binary with ZERO
   # added output — the shim never adds noise to the command it wraps.
   err="${home}/stderr.log"
-  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
-    bash "${ROOT}/scripts/devide" agent launch grok chat 2>"$err")"
+  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u CASEIN_WORKSPACE_ID -u CASEIN_AGENT_ENV_FILE \
+    bash "${ROOT}/scripts/casein" agent launch grok chat 2>"$err")"
   assert_eq "unpaired fallback execs real grok" "real-grok chat" "$out"
   if [[ -s "$err" ]]; then
     echo "FAIL: unpaired fallback must be silent by default, got stderr:" >&2
@@ -233,22 +233,22 @@ echo \"real-grok \$*\""
     exit 1
   fi
 
-  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
-    DEVIDE_AGENT_LAUNCH_VERBOSE=1 \
-    bash "${ROOT}/scripts/devide" agent launch grok chat 2>"$err")"
+  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u CASEIN_WORKSPACE_ID -u CASEIN_AGENT_ENV_FILE \
+    CASEIN_AGENT_LAUNCH_VERBOSE=1 \
+    bash "${ROOT}/scripts/casein" agent launch grok chat 2>"$err")"
   assert_eq "verbose unpaired fallback execs real grok" "real-grok chat" "$out"
   if ! grep -q 'launching grok unpaired' "$err"; then
-    echo "FAIL: DEVIDE_AGENT_LAUNCH_VERBOSE=1 should explain the fallback, got:" >&2
+    echo "FAIL: CASEIN_AGENT_LAUNCH_VERBOSE=1 should explain the fallback, got:" >&2
     cat "$err" >&2
     exit 1
   fi
 
   status=0
-  (cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
-    DEVIDE_AGENT_LAUNCH_STRICT=1 \
-    bash "${ROOT}/scripts/devide" agent launch grok chat >/dev/null 2>"$err") || status=$?
+  (cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u CASEIN_WORKSPACE_ID -u CASEIN_AGENT_ENV_FILE \
+    CASEIN_AGENT_LAUNCH_STRICT=1 \
+    bash "${ROOT}/scripts/casein" agent launch grok chat >/dev/null 2>"$err") || status=$?
   if [[ "$status" -eq 0 ]]; then
-    echo "FAIL: DEVIDE_AGENT_LAUNCH_STRICT=1 should hard-fail without env" >&2
+    echo "FAIL: CASEIN_AGENT_LAUNCH_STRICT=1 should hard-fail without env" >&2
     exit 1
   fi
   if ! grep -q 'could not resolve Casein agent env' "$err"; then
@@ -281,9 +281,9 @@ echo real-grok"
 printf '%s\\n' \"\$*\" >>\"${tmux_log}\"
 exit 0"
 
-  out="$(cd "$home" && env -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+  out="$(cd "$home" && env -u CASEIN_API_TOKEN -u CASEIN_WORKSPACE_ID -u CASEIN_AGENT_ENV_FILE \
     TMUX="${home}/fake-socket,1,0" TMUX_PANE="%7" PATH="${HOME}/fake-bin:${PATH:-/usr/bin:/bin}" \
-    bash "${ROOT}/scripts/devide" agent launch grok chat 2>&1)"
+    bash "${ROOT}/scripts/casein" agent launch grok chat 2>&1)"
   assert_eq "stamped fallback still execs real grok" "real-grok" "$out"
 
   if ! grep -q '^set-option -p -t %7 @casein_paired 0$' "$tmux_log"; then
@@ -338,7 +338,7 @@ run_check_and_ensure_modes() (
 
 main() {
   run_installer_rejects_bin_dir_candidate
-  run_resolver_rejects_recorded_devide_shim
+  run_resolver_rejects_recorded_casein_shim
   run_installer_generated_shims_carry_marker
   run_installer_cleans_legacy_shims
   run_installer_verifies_precedence_when_bin_dir_off_path

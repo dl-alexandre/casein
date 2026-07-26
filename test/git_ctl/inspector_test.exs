@@ -74,7 +74,7 @@ defmodule GitCtl.InspectorTest do
   end
 
   test "returns error for non-git directories and missing paths" do
-    tmp = Path.join(tmp_root(), "devide-non-git-#{System.unique_integer([:positive])}")
+    tmp = Path.join(tmp_root(), "casein-non-git-#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)
     on_exit(fn -> File.rm_rf!(tmp) end)
 

@@ -105,7 +105,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register without a url returns missing_url" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_nourl"
+    session = "casein_ws_extra_nourl"
     pane_id = "%30"
     seed_session!(session, pane_id)
 
@@ -119,7 +119,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register rejects non-http(s) schemes at the http_url guard" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_untrusted"
+    session = "casein_ws_extra_untrusted"
     pane_id = "%32"
     seed_session!(session, pane_id)
 
@@ -134,7 +134,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register accepts a well-formed external https url and persists it via the preview changeset" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_external_https"
+    session = "casein_ws_extra_external_https"
     pane_id = "%32a"
     seed_session!(session, pane_id)
     url = "https://cdn.external.example/dashboard"
@@ -154,7 +154,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register accepts a well-formed external http url on a non-loopback host" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_external_http"
+    session = "casein_ws_extra_external_http"
     pane_id = "%32b"
     seed_session!(session, pane_id)
     url = "http://api.external.example:8080/v1"
@@ -174,7 +174,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register rejects https urls with an invalid port before the changeset" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_bad_port"
+    session = "casein_ws_extra_bad_port"
     pane_id = "%32c"
     seed_session!(session, pane_id)
 
@@ -189,7 +189,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register rejects https urls without a host before the changeset" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_no_host"
+    session = "casein_ws_extra_no_host"
     pane_id = "%32d"
     seed_session!(session, pane_id)
 
@@ -203,7 +203,7 @@ defmodule Casein.PreviewPanesExtraTest do
   end
 
   test "register resolves a workspace from a workspace map when no cwd is given" do
-    session = "devide_ws_extra_wsmap"
+    session = "casein_ws_extra_wsmap"
     pane_id = "%33"
     seed_session!(session, pane_id)
 
@@ -228,7 +228,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register normalizes a bare :port url to a localhost url" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_bareport"
+    session = "casein_ws_extra_bareport"
     pane_id = "%34"
     seed_session!(session, pane_id)
 
@@ -238,7 +238,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register normalizes a bare :port url with a path" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_bareport_path"
+    session = "casein_ws_extra_bareport_path"
     pane_id = "%35"
     seed_session!(session, pane_id)
 
@@ -248,7 +248,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register ignores a malformed viewport string" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_badviewport"
+    session = "casein_ws_extra_badviewport"
     pane_id = "%36"
     seed_session!(session, pane_id)
 
@@ -258,7 +258,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "register stores placement/anchor metadata when provided" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_placement"
+    session = "casein_ws_extra_placement"
     pane_id = "%37"
     seed_session!(session, pane_id)
 
@@ -296,7 +296,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "navigate to external https passes the http_url guard but may fail at control origin check" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_nav_external_https"
+    session = "casein_ws_extra_nav_external_https"
     pane_id = "%38a"
     seed_session!(session, pane_id)
     _registration = register_pane!(session, pane_id, path)
@@ -307,7 +307,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "navigate to an untrusted preview url returns an error" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_nav_untrusted"
+    session = "casein_ws_extra_nav_untrusted"
     pane_id = "%38"
     seed_session!(session, pane_id)
     _registration = register_pane!(session, pane_id, path)
@@ -327,7 +327,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "click_snapshot on a non-snapshot pane returns not_snapshot_preview" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_click_nonsnap"
+    session = "casein_ws_extra_click_nonsnap"
     pane_id = "%39"
     seed_session!(session, pane_id)
     _registration = register_pane!(session, pane_id, path, %{"viewport" => "120x80"})
@@ -340,7 +340,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "click_snapshot with non-numeric coordinates is rejected on snapshot panes" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_click_badcoord"
+    session = "casein_ws_extra_click_badcoord"
     pane_id = "%40"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -365,7 +365,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "show_artifact rejects a path outside the artifacts root" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_badartifact"
+    session = "casein_ws_extra_badartifact"
     pane_id = "%41"
     seed_session!(session, pane_id)
     registration = register_pane!(session, pane_id, path)
@@ -379,7 +379,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "show_artifact uses the playback fit for video artifacts" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_video"
+    session = "casein_ws_extra_video"
     pane_id = "%42"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -405,7 +405,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "sync_control_navigation returns unchanged when the display url is identical" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_sync_same"
+    session = "casein_ws_extra_sync_same"
     pane_id = "%43"
     seed_session!(session, pane_id)
     Application.put_env(:casein, :preview_proxy_enabled, false)
@@ -437,7 +437,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "list_for_workspace_map keys registrations by pane id" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_listmap"
+    session = "casein_ws_extra_listmap"
     pane_id = "%44"
     seed_session!(session, pane_id)
     registration = register_pane!(session, pane_id, path)
@@ -483,7 +483,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "session_terminated topology event deregisters that session's panes" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_terminated"
+    session = "casein_ws_extra_terminated"
     pane_id = "%45"
     seed_session!(session, pane_id)
     registration = register_pane!(session, pane_id, path)
@@ -507,7 +507,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "list_for_workspace is not head-of-line blocked by slow browser navigate" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_async"
+    session = "casein_ws_extra_async"
     pane_id = "%47"
     seed_session!(session, pane_id)
     registration = register_pane!(session, pane_id, path)
@@ -553,7 +553,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
   test "an unrelated info message leaves the registry intact" do
     {_root, path} = seed_workspace!()
-    session = "devide_ws_extra_noise"
+    session = "casein_ws_extra_noise"
     pane_id = "%46"
     seed_session!(session, pane_id)
     _registration = register_pane!(session, pane_id, path)

@@ -43,7 +43,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
   defp blank_window(overrides \\ %{}) do
     Map.merge(
       %{
-        session: "devide_ws_u-abc-tab1",
+        session: "casein_ws_u-abc-tab1",
         window_id: "@7",
         active: false,
         panes: 1,
@@ -59,7 +59,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
     assert Janitor.killable?(blank_window(), @now, @idle)
   end
 
-  test "spares foreign (non-devide_) sessions" do
+  test "spares foreign (non-casein_) sessions" do
     refute Janitor.killable?(blank_window(%{session: "other_session"}), @now, @idle)
   end
 
@@ -110,14 +110,14 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
   describe "session_killable?/4" do
     defp orphan_session(overrides \\ %{}) do
       Map.merge(
-        %{session: "devide_ws_u-abc-tab1", attached: false, activity: @now - @idle - 1},
+        %{session: "casein_ws_u-abc-tab1", attached: false, activity: @now - @idle - 1},
         overrides
       )
     end
 
     @empty MapSet.new()
 
-    test "reaps an unattached, idle, blank devide_ session" do
+    test "reaps an unattached, idle, blank casein_ session" do
       assert Janitor.session_killable?(orphan_session(), @now, @idle, @empty)
     end
 
@@ -130,7 +130,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
     end
 
     test "spares a session with a non-shell pane (busy)" do
-      busy = MapSet.new(["devide_ws_u-abc-tab1"])
+      busy = MapSet.new(["casein_ws_u-abc-tab1"])
       refute Janitor.session_killable?(orphan_session(), @now, @idle, busy)
     end
 
@@ -160,7 +160,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
     end
 
     test "a non-empty busy set that excludes this session does not spare it" do
-      other = MapSet.new(["devide_ws_other-tab"])
+      other = MapSet.new(["casein_ws_other-tab"])
       assert Janitor.session_killable?(orphan_session(), @now, @idle, other)
     end
 
@@ -190,8 +190,8 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
       FakeState.put(
         :fake_tmux_list_windows_all,
         [
-          "devide_ws_u-abc-tab1|@7|0|1|1|#{idle_activity}|bash",
-          "devide_ws_u-abc-tab1|@1|1|1|1|#{idle_activity}|bash",
+          "casein_ws_u-abc-tab1|@7|0|1|1|#{idle_activity}|bash",
+          "casein_ws_u-abc-tab1|@1|1|1|1|#{idle_activity}|bash",
           "other_session|@2|0|1|1|#{idle_activity}|bash"
         ]
         |> Enum.join("\n")
@@ -200,25 +200,25 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
       FakeState.put(
         :fake_tmux_list_sessions,
         [
-          "devide_ws_u-orphan|0|#{idle_activity}|",
-          "devide_ws_u-busy|0|#{idle_activity}|"
+          "casein_ws_u-orphan|0|#{idle_activity}|",
+          "casein_ws_u-busy|0|#{idle_activity}|"
         ]
         |> Enum.join("\n")
       )
 
-      FakeState.put(:fake_tmux_list_panes_all, "devide_ws_u-busy|vim\n")
+      FakeState.put(:fake_tmux_list_panes_all, "casein_ws_u-busy|vim\n")
 
       assert %{
                total: 2,
                windows: [
                  %{
-                   session: "devide_ws_u-abc-tab1",
+                   session: "casein_ws_u-abc-tab1",
                    window_id: "@7",
                    reason: :blank_idle_window
                  }
                ],
                sessions: [
-                 %{session: "devide_ws_u-orphan", reason: :blank_orphan_session}
+                 %{session: "casein_ws_u-orphan", reason: :blank_orphan_session}
                ]
              } = Janitor.dry_run_now()
 
@@ -233,8 +233,8 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
       FakeState.put(
         :fake_tmux_list_windows_all,
         [
-          "devide_ws_u-abc-tab1|@7|0|1|1|#{idle_activity}|bash",
-          "devide_ws_u-abc-tab1|@1|1|1|1|#{idle_activity}|bash",
+          "casein_ws_u-abc-tab1|@7|0|1|1|#{idle_activity}|bash",
+          "casein_ws_u-abc-tab1|@1|1|1|1|#{idle_activity}|bash",
           "other_session|@2|0|1|1|#{idle_activity}|bash"
         ]
         |> Enum.join("\n")
@@ -243,21 +243,21 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
       FakeState.put(
         :fake_tmux_list_sessions,
         [
-          "devide_ws_u-orphan|0|#{idle_activity}|",
-          "devide_ws_u-busy|0|#{idle_activity}|"
+          "casein_ws_u-orphan|0|#{idle_activity}|",
+          "casein_ws_u-busy|0|#{idle_activity}|"
         ]
         |> Enum.join("\n")
       )
 
       FakeState.put(
         :fake_tmux_list_panes_all,
-        "devide_ws_u-busy|vim\n"
+        "casein_ws_u-busy|vim\n"
       )
 
       assert Janitor.sweep_now() == 2
 
-      assert_receive {:tmux_runner, ["kill-window", "-t", "devide_ws_u-abc-tab1:@7"]}
-      assert_receive {:tmux_runner, ["kill-session", "-t", "devide_ws_u-orphan"]}
+      assert_receive {:tmux_runner, ["kill-window", "-t", "casein_ws_u-abc-tab1:@7"]}
+      assert_receive {:tmux_runner, ["kill-session", "-t", "casein_ws_u-orphan"]}
     end
   end
 

@@ -8,7 +8,7 @@ defmodule Casein.AgentSessions.GrokACP.AttachmentsTest do
     root =
       Path.join(
         System.tmp_dir!(),
-        "devide-grok-attachments-#{System.unique_integer([:positive])}"
+        "casein-grok-attachments-#{System.unique_integer([:positive])}"
       )
 
     home = Path.join(root, "home")
@@ -211,7 +211,7 @@ defmodule Casein.AgentSessions.GrokACP.AttachmentsTest do
   defp observation(ctx, opts) do
     %{
       workspace_id: Keyword.fetch!(opts, :workspace_id),
-      tmux_session_id: "devide_workspace_session",
+      tmux_session_id: "casein_workspace_session",
       pane_id: "%7",
       cwd: ctx.root,
       transcript_path: ctx.transcript_path,

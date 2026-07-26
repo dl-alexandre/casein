@@ -85,20 +85,20 @@ defmodule Scripts.AgentSkillsTest do
     assert File.read!(dst) == "# delegate\nv2\n"
   end
 
-  test "DEVIDE_AGENT_SKILLS=0 opts out entirely" do
+  test "CASEIN_AGENT_SKILLS=0 opts out entirely" do
     src = seed_source()
     config = tmp("config")
 
-    assert {_, 0} = install(src, config, [{"DEVIDE_AGENT_SKILLS", "0"}])
+    assert {_, 0} = install(src, config, [{"CASEIN_AGENT_SKILLS", "0"}])
     refute File.exists?(Path.join(config, "skills"))
   end
 
-  test "DEVIDE_GLOBAL_AGENT_SKILLS overrides the allowlist" do
+  test "CASEIN_GLOBAL_AGENT_SKILLS overrides the allowlist" do
     src = seed_source()
     config = tmp("config")
 
     assert {_, 0} =
-             install(src, config, [{"DEVIDE_GLOBAL_AGENT_SKILLS", "delegate-to-grok verify"}])
+             install(src, config, [{"CASEIN_GLOBAL_AGENT_SKILLS", "delegate-to-grok verify"}])
 
     assert File.exists?(Path.join([config, "skills", "delegate-to-grok", "SKILL.md"]))
     assert File.exists?(Path.join([config, "skills", "verify", "SKILL.md"]))

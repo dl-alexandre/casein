@@ -87,7 +87,7 @@ defmodule Casein.FilePanesTest do
 
   test "open_file_in_pane splits a pane, registers, and broadcasts" do
     {root, workspace} = seed_workspace!()
-    session = "devide_ws_files"
+    session = "casein_ws_files"
     seed_session!(session, "%1")
     write_file!(root, "lib/foo.ex", "defmodule Foo do\nend\n")
     PaneEvents.subscribe(workspace.id)
@@ -111,7 +111,7 @@ defmodule Casein.FilePanesTest do
 
   test "second open reuses the window's file pane and adds a tab" do
     {root, workspace} = seed_workspace!()
-    session = "devide_ws_files2"
+    session = "casein_ws_files2"
     seed_session!(session, "%1")
     write_file!(root, "a.ex", "a")
     write_file!(root, "b.ex", "b")
@@ -134,7 +134,7 @@ defmodule Casein.FilePanesTest do
 
   test "render payload reads the active file fresh; facade snapshot includes it" do
     {root, workspace} = seed_workspace!()
-    session = "devide_ws_files3"
+    session = "casein_ws_files3"
     seed_session!(session, "%1")
     write_file!(root, "readme.md", "hello")
 
@@ -156,7 +156,7 @@ defmodule Casein.FilePanesTest do
 
   test "save_tab writes with optimistic concurrency" do
     {root, workspace} = seed_workspace!()
-    session = "devide_ws_files4"
+    session = "casein_ws_files4"
     seed_session!(session, "%1")
     write_file!(root, "note.txt", "one")
 
@@ -180,7 +180,7 @@ defmodule Casein.FilePanesTest do
 
   test "closing the last tab deregisters the pane" do
     {root, workspace} = seed_workspace!()
-    session = "devide_ws_files5"
+    session = "casein_ws_files5"
     seed_session!(session, "%1")
     write_file!(root, "only.ex", "x")
 
@@ -196,7 +196,7 @@ defmodule Casein.FilePanesTest do
 
   test "deferred persistence survives register→deregister ordering and never resurrects" do
     {root, workspace} = seed_workspace!()
-    session = "devide_ws_defer"
+    session = "casein_ws_defer"
     seed_session!(session, "%1")
     write_file!(root, "d.ex", "x")
 
@@ -222,7 +222,7 @@ defmodule Casein.FilePanesTest do
 
   test "open_file_in_pane without anchors takes exactly one topology snapshot" do
     {root, workspace} = seed_workspace!()
-    session = "devide_ws_files_topo"
+    session = "casein_ws_files_topo"
     seed_session!(session, "%1")
     write_file!(root, "topo.ex", "defmodule Topo do\nend\n")
 

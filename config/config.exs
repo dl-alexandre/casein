@@ -32,7 +32,7 @@ config :casein, CaseinWeb.Plugs.McpRateLimit,
 config :casein,
   # Event-driven tmux topology (Slices 1/2). Default OFF — polling path
   # unchanged. Dev flips ON in config/dev.exs (Slice 3); canary/prod via
-  # DEVIDE_TMUX_EVENTS after soak on flap/refresh telemetry (see
+  # CASEIN_TMUX_EVENTS after soak on flap/refresh telemetry (see
   # TmuxEventsFlapWatch moduledoc).
   tmux_events: false,
   tmux_topology_reconcile_ms: 10_000,
@@ -40,7 +40,7 @@ config :casein,
   # old 2s poll, but keeps quiet-agent / needs_you attention flips tighter than
   # the design doc's 10s option — open question §8.1).
   session_directory_reconcile_ms: 5_000,
-  tmux_events_anchor_session: "__devide_keepalive",
+  tmux_events_anchor_session: "__casein_keepalive",
   # Listener-flap degradation thresholds (Slice 3).
   tmux_events_flap_watch: [
     threshold: 3,
@@ -49,7 +49,7 @@ config :casein,
   ],
   tmux_ctl: [
     runner: Casein.Terminals.TmuxRunner,
-    session_prefix: "devide",
+    session_prefix: "casein",
     pubsub: Casein.PubSub,
     topology_reconcile_ms: 10_000,
     prefix_window_picker_hint: "Casein: use the browser window picker (C-b w)",
@@ -70,7 +70,7 @@ config :casein,
     pane_sink: Casein.Panes.PreviewDeps
   ],
   git_ctl: [
-    cache_table: :devide_git_inspector_cache,
+    cache_table: :casein_git_inspector_cache,
     cache_ttl_ms: 10_000,
     agent_inference: {Casein.Git.Inspector, :infer_agent}
   ],
@@ -140,7 +140,7 @@ config :tailwind,
 
 # Configure Elixir's Logger.
 # The metadata keys are the structured-log fields emitted across the
-# terminal code (see Logger calls in lib/dev_ide); keys not listed here would
+# terminal code (see Logger calls in lib/casein); keys not listed here would
 # be silently dropped from log output.
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
@@ -185,7 +185,7 @@ config :phoenix, :filter_parameters, [
   "access_token",
   "refresh_token",
   "workspace_api_tokens",
-  "dev_ide_api_token",
+  "casein_api_token",
   "password",
   "secret"
 ]

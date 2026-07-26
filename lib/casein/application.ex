@@ -75,18 +75,18 @@ defmodule Casein.Application do
   end
 
   # Ephemeral preview environments boot the endpoint on a unix socket
-  # (DEVIDE_HTTP_SOCKET, wired in runtime.exs) so the Caddy preview router can
+  # (CASEIN_HTTP_SOCKET, wired in runtime.exs) so the Caddy preview router can
   # dial them collision-free, mirroring the live /run/casein/current.sock model.
   # But the Tidewave agent integration dials Tidewave over a *loopback TCP* URL
   # (http://127.0.0.1:<port>/tidewave/mcp — see Casein.Agents.TidewaveMCP), which
-  # a unix socket can't serve. So when DEVIDE_PREVIEW_TIDEWAVE_PORT is set we run
+  # a unix socket can't serve. So when CASEIN_PREVIEW_TIDEWAVE_PORT is set we run
   # a SECOND Bandit listener on that loopback port serving the same endpoint plug
   # (Tidewave is `plug Tidewave` in the endpoint), giving Tidewave its TCP front
   # door without taking the primary listener off the socket. Bound to 127.0.0.1
   # only — Tidewave is a runtime-eval surface and must never leave loopback. Prod
   # never sets the var, so the live supervision tree is byte-for-byte unchanged.
   defp preview_tidewave_listener do
-    with raw when is_binary(raw) <- System.get_env("DEVIDE_PREVIEW_TIDEWAVE_PORT"),
+    with raw when is_binary(raw) <- System.get_env("CASEIN_PREVIEW_TIDEWAVE_PORT"),
          {port, ""} when port > 0 and port < 65_536 <- Integer.parse(raw) do
       [
         Supervisor.child_spec(

@@ -32,7 +32,7 @@ defmodule Scripts.AgentStateScriptsTest do
 
       assert command =~ "casein-agent-state.sh"
       assert command =~ "GROK_PLUGIN_ROOT"
-      assert command =~ ~s([ -n "${DEVIDE_AGENT_MCP_HOME:-}" ] || exit 0)
+      assert command =~ ~s([ -n "${CASEIN_AGENT_MCP_HOME:-}" ] || exit 0)
     end
   end
 
@@ -41,8 +41,8 @@ defmodule Scripts.AgentStateScriptsTest do
              System.cmd("bash", [@state_script],
                env: [
                  {"CASEIN_API_TOKEN", nil},
-                 {"DEVIDE_WORKSPACE_ID", nil},
-                 {"DEVIDE_TERMINAL_MCP_URL", nil},
+                 {"CASEIN_WORKSPACE_ID", nil},
+                 {"CASEIN_TERMINAL_MCP_URL", nil},
                  {"TMUX_PANE", nil}
                ],
                stderr_to_stdout: true
@@ -84,10 +84,10 @@ defmodule Scripts.AgentStateScriptsTest do
     body =
       run_state_script(%{
         "GROK_HOOK_EVENT" => "session_start",
-        "DEVIDE_AGENT_LAUNCH_CONTEXT" => "grok",
-        "DEVIDE_GROK_LEADER_SOCKET" => "/tmp/casein-grok-leaders-test/abc.sock",
-        "DEVIDE_GROK_BUNDLE_DIR" => "/tmp/grok-bundles/sha256-#{digest}",
-        "DEVIDE_GROK_BUNDLE_DIGEST" => digest
+        "CASEIN_AGENT_LAUNCH_CONTEXT" => "grok",
+        "CASEIN_GROK_LEADER_SOCKET" => "/tmp/casein-grok-leaders-test/abc.sock",
+        "CASEIN_GROK_BUNDLE_DIR" => "/tmp/grok-bundles/sha256-#{digest}",
+        "CASEIN_GROK_BUNDLE_DIGEST" => digest
       })
 
     assert body =~ ~s("agent_runtime": "grok")
@@ -175,8 +175,8 @@ defmodule Scripts.AgentStateScriptsTest do
              System.cmd("bash", [@codex_script, "{}"],
                env: [
                  {"CASEIN_API_TOKEN", nil},
-                 {"DEVIDE_WORKSPACE_ID", nil},
-                 {"DEVIDE_TERMINAL_MCP_URL", nil},
+                 {"CASEIN_WORKSPACE_ID", nil},
+                 {"CASEIN_TERMINAL_MCP_URL", nil},
                  {"TMUX_PANE", nil}
                ],
                stderr_to_stdout: true
@@ -238,10 +238,10 @@ defmodule Scripts.AgentStateScriptsTest do
       {"PATH", stub_dir <> ":" <> System.get_env("PATH")},
       {"CURL_CAPTURE", capture},
       {"CASEIN_API_TOKEN", "test-token"},
-      {"DEVIDE_WORKSPACE_ID", "ws-test"},
-      {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:1/api/terminals/mcp"},
+      {"CASEIN_WORKSPACE_ID", "ws-test"},
+      {"CASEIN_TERMINAL_MCP_URL", "http://127.0.0.1:1/api/terminals/mcp"},
       {"TMUX_PANE", "%9"},
-      {"DEVIDE_AGENT_MCP_HOME", stub_dir},
+      {"CASEIN_AGENT_MCP_HOME", stub_dir},
       {"GROK_HOOK_EVENT", nil}
     ]
   end

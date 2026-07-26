@@ -6,7 +6,7 @@
 /_build_windows_update/
 /_build_windows_update_test/
 /.desktop-runtime/
-/dev_ide_ghostty_windows/_build/
+/casein_ghostty_windows/_build/
 
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
@@ -30,7 +30,7 @@ erl_crash.dump
 /tmp/
 
 # Ignore package tarball (built via "mix hex.build").
-dev_ide-*.tar
+casein-*.tar
 
 # Ignore assets that are produced by build tools.
 /priv/static/assets/
@@ -98,5 +98,5 @@ npm-debug.log
 # Local mkcert output for LAN HTTPS. Contains private keys.
 /priv/cert/
 
-# SwiftPM build output (native/devide_menubar)
-native/devide_menubar/.build/
+# SwiftPM build output (native/casein_menubar)
+native/casein_menubar/.build/

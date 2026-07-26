@@ -9,7 +9,7 @@
 #   git commit && git push origin master
 #   bash scripts/deploy-local.sh
 #
-# Run on the devbox host from the dev_ide checkout:
+# Run on the devbox host from the casein checkout:
 #   bash scripts/deploy-local.sh
 #
 set -euo pipefail
@@ -35,7 +35,7 @@ done
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
 
 log() { printf '>>> %s\n' "$*"; }
 
@@ -54,17 +54,17 @@ REVISION="$(git rev-parse HEAD 2>/dev/null || echo local)"
 log "building release from ${REVISION}"
 ./scripts/build-release.sh
 
-TARBALL="/tmp/dev_ide-release-$(date +%s).tgz"
+TARBALL="/tmp/casein-release-$(date +%s).tgz"
 tar -C release-out -czf "$TARBALL" .
 
 log "deploying ${TARBALL}"
 if [[ "$ALLOW_DRIFT" -eq 1 ]]; then
-  DEVIDE_ALLOW_DEPLOY_DRIFT=1 bash scripts/deploy-devbox-release.sh "$TARBALL" "$REVISION"
+  CASEIN_ALLOW_DEPLOY_DRIFT=1 bash scripts/deploy-devbox-release.sh "$TARBALL" "$REVISION"
 else
   bash scripts/deploy-devbox-release.sh "$TARBALL" "$REVISION"
 fi
 
-if [ "${DEVIDE_SKIP_HARDENING_AUDIT:-0}" != "1" ]; then
+if [ "${CASEIN_SKIP_HARDENING_AUDIT:-0}" != "1" ]; then
   log "running live hardening audit"
   # shellcheck source=/dev/null
   set -a

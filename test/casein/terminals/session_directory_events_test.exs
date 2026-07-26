@@ -36,7 +36,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
   test "event triggers recompute and sessions_updated broadcast", %{fake: fake} do
     ws = "sdevt-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     assert :ok =
              SessionDirectory.subscribe(
@@ -51,7 +51,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     assert [%{sid: "u-alice"}] = SessionDirectory.tabs(ws, workspace_name: ws)
     flush_sessions_updated(ws)
 
-    put_fake_session("devide_#{ws}_u-bob")
+    put_fake_session("casein_#{ws}_u-bob")
 
     FakeEventSource.emit(fake, %{
       type: :window_add,
@@ -65,7 +65,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
   test "coalesces events within min_interval (old poll period) into one recompute", %{fake: fake} do
     ws = "sdevt-coal-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     counter = :counters.new(1, [:atomics])
     install_counting_adapter(counter)
@@ -89,7 +89,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
     # Burst of events well inside min_interval.
     for i <- 1..5 do
-      put_fake_session("devide_#{ws}_u-extra#{i}")
+      put_fake_session("casein_#{ws}_u-extra#{i}")
       FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
     end
 
@@ -108,7 +108,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     fake: fake
   } do
     ws = "sdevt-fb-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     counter = :counters.new(1, [:atomics])
     install_counting_adapter(counter)
@@ -136,7 +136,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     after_down = :counters.get(counter, 1)
     assert after_down > mid + 1
 
-    put_fake_session("devide_#{ws}_u-bob")
+    put_fake_session("casein_#{ws}_u-bob")
     flush_sessions_updated(ws)
 
     FakeEventSource.set_connected(fake, true)
@@ -147,7 +147,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
   test "duplicate listener_up in event mode does not trigger extra recomputes", %{fake: fake} do
     ws = "sdevt-dup-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     counter = :counters.new(1, [:atomics])
     install_counting_adapter(counter)
@@ -174,7 +174,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
   test "reconcile tick still recomputes with zero events", %{fake: fake} do
     ws = "sdevt-rec-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     assert :ok =
              SessionDirectory.subscribe(
@@ -190,7 +190,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     flush_sessions_updated(ws)
 
     # No FakeEventSource.emit — only the stretched reconcile timer.
-    put_fake_session("devide_#{ws}_u-bob")
+    put_fake_session("casein_#{ws}_u-bob")
 
     assert_receive {SessionDirectory, {:sessions_updated, ^ws, tabs}}, 1_000
     assert Enum.map(tabs, & &1.sid) |> Enum.sort() == ["u-alice", "u-bob"]
@@ -198,7 +198,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
   test "event_source nil keeps pure 2s-style polling (existing path)", %{fake: _fake} do
     ws = "sdevt-nil-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     counter = :counters.new(1, [:atomics])
     install_counting_adapter(counter)
@@ -217,14 +217,14 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     after_poll = :counters.get(counter, 1)
     assert after_poll >= 2
 
-    put_fake_session("devide_#{ws}_u-bob")
+    put_fake_session("casein_#{ws}_u-bob")
     assert_receive {SessionDirectory, {:sessions_updated, ^ws, tabs}}, 1_000
     assert Enum.map(tabs, & &1.sid) |> Enum.sort() == ["u-alice", "u-bob"]
   end
 
   test "pane_mode_changed does not trigger an event recompute", %{fake: fake} do
     ws = "sdevt-pane-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     counter = :counters.new(1, [:atomics])
     install_counting_adapter(counter)
@@ -242,7 +242,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     pid = directory_pid!(ws)
     before = wait_counter_stable(pid, counter)
 
-    put_fake_session("devide_#{ws}_u-bob")
+    put_fake_session("casein_#{ws}_u-bob")
     FakeEventSource.emit(fake, %{type: :pane_mode_changed, pane_id: "%1"})
     flush_state(pid)
 
@@ -255,7 +255,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     fake: fake
   } do
     ws = "sdevt-defer-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     counter = :counters.new(1, [:atomics])
     install_counting_adapter(counter)
@@ -283,7 +283,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     end)
 
     # Event A recomputes immediately (nothing recent).
-    put_fake_session("devide_#{ws}_u-bob")
+    put_fake_session("casein_#{ws}_u-bob")
     FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
     flush_state(pid)
     wait_until(fn -> :counters.get(counter, 1) == init_calls + 1 end)
@@ -293,7 +293,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     # Event B lands inside min_interval AFTER A's recompute completed, so the
     # single-flight guard cannot mask it: an unthrottled implementation would
     # recompute immediately here.
-    put_fake_session("devide_#{ws}_u-carol")
+    put_fake_session("casein_#{ws}_u-carol")
     FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
     flush_state(pid)
     # Hold the "no immediate recompute" tooth across a short window so an
@@ -309,7 +309,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
   test "quiet flip broadcasts via reconcile in event mode with zero events", %{fake: fake} do
     ws = "sdevt-quiet-#{System.unique_integer([:positive])}"
-    tmux_session = "devide_#{ws}_u-alice"
+    tmux_session = "casein_#{ws}_u-alice"
     now = DateTime.utc_now() |> DateTime.to_unix()
 
     put_agent_window = fn activity ->
@@ -357,7 +357,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
   test "volatile-only activity change + event recomputes without broadcasting", %{fake: fake} do
     ws = "sdevt-vol-#{System.unique_integer([:positive])}"
-    tmux_session = "devide_#{ws}_u-alice"
+    tmux_session = "casein_#{ws}_u-alice"
 
     put_shell_window = fn activity ->
       FakeState.update(:fake_tmux_windows, %{}, fn windows ->

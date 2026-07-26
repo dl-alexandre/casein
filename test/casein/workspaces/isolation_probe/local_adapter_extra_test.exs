@@ -259,13 +259,13 @@ defmodule Casein.Workspaces.IsolationProbe.LocalAdapterExtraTest do
       postgres:
         image: postgres:16-alpine
         environment:
-          POSTGRES_USER: ${POSTGRES_USER:-dev_ide}
-          POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_ide_local_password}
-          POSTGRES_DB: ${POSTGRES_DB:-dev_ide_prod}
+          POSTGRES_USER: ${POSTGRES_USER:-casein}
+          POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-casein_local_password}
+          POSTGRES_DB: ${POSTGRES_DB:-casein_prod}
         healthcheck:
-          test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dev_ide} -d ${POSTGRES_DB:-dev_ide_prod}"]
+          test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-casein} -d ${POSTGRES_DB:-casein_prod}"]
 
-      dev_ide:
+      casein:
         build: .
         image: casein:latest
         environment:
@@ -273,7 +273,7 @@ defmodule Casein.Workspaces.IsolationProbe.LocalAdapterExtraTest do
           PHX_HOST: ${PHX_HOST:-localhost}
           PORT: ${PORT:-4000}
           SECRET_KEY_BASE: ${SECRET_KEY_BASE:?required}
-          DATABASE_URL: ecto://${POSTGRES_USER:-dev_ide}:${POSTGRES_PASSWORD:-dev_ide_local_password}@postgres:5432/${POSTGRES_DB:-dev_ide_prod}
+          DATABASE_URL: ecto://${POSTGRES_USER:-casein}:${POSTGRES_PASSWORD:-casein_local_password}@postgres:5432/${POSTGRES_DB:-casein_prod}
     """)
 
     iso = LocalAdapter.detect(%{}, root)
@@ -281,7 +281,7 @@ defmodule Casein.Workspaces.IsolationProbe.LocalAdapterExtraTest do
     assert iso.source == :docker_compose
     # Redacted summary keeps the container host + port but never credentials.
     assert iso.summary =~ "postgres:5432"
-    refute iso.summary =~ "dev_ide_local_password"
+    refute iso.summary =~ "casein_local_password"
   end
 
   test "compose-only file with no recognizable env yields a raw signal and :unknown",

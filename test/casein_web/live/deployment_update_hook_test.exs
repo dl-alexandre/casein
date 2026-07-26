@@ -43,7 +43,7 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
       (prev_deploy || [])
       |> Keyword.put(
         :last_deploy_path,
-        Path.join(System.tmp_dir!(), "devide-no-deploy-#{System.unique_integer([:positive])}")
+        Path.join(System.tmp_dir!(), "casein-no-deploy-#{System.unique_integer([:positive])}")
       )
     )
 
@@ -109,7 +109,7 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
     File.write!(path, Jason.encode!(record) <> "\n")
 
     prev_deploy = Application.get_env(:casein, :deployment)
-    prev_rev = System.get_env("DEVIDE_GIT_REVISION")
+    prev_rev = System.get_env("CASEIN_GIT_REVISION")
 
     Application.put_env(
       :casein,
@@ -117,7 +117,7 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
       (prev_deploy || []) |> Keyword.put(:last_deploy_path, path)
     )
 
-    System.put_env("DEVIDE_GIT_REVISION", String.duplicate("a", 40))
+    System.put_env("CASEIN_GIT_REVISION", String.duplicate("a", 40))
 
     on_exit(fn ->
       if prev_deploy,
@@ -125,8 +125,8 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
         else: Application.delete_env(:casein, :deployment)
 
       if prev_rev,
-        do: System.put_env("DEVIDE_GIT_REVISION", prev_rev),
-        else: System.delete_env("DEVIDE_GIT_REVISION")
+        do: System.put_env("CASEIN_GIT_REVISION", prev_rev),
+        else: System.delete_env("CASEIN_GIT_REVISION")
     end)
 
     branch = "hook-failure-#{System.unique_integer([:positive])}"
@@ -173,7 +173,7 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
     File.write!(path, Jason.encode!(record) <> "\n")
 
     prev_deploy = Application.get_env(:casein, :deployment)
-    prev_rev = System.get_env("DEVIDE_GIT_REVISION")
+    prev_rev = System.get_env("CASEIN_GIT_REVISION")
 
     Application.put_env(
       :casein,
@@ -181,7 +181,7 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
       (prev_deploy || []) |> Keyword.put(:last_deploy_path, path)
     )
 
-    System.put_env("DEVIDE_GIT_REVISION", String.duplicate("a", 40))
+    System.put_env("CASEIN_GIT_REVISION", String.duplicate("a", 40))
 
     on_exit(fn ->
       if prev_deploy,
@@ -189,8 +189,8 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
         else: Application.delete_env(:casein, :deployment)
 
       if prev_rev,
-        do: System.put_env("DEVIDE_GIT_REVISION", prev_rev),
-        else: System.delete_env("DEVIDE_GIT_REVISION")
+        do: System.put_env("CASEIN_GIT_REVISION", prev_rev),
+        else: System.delete_env("CASEIN_GIT_REVISION")
     end)
 
     branch = "hook-progress-#{System.unique_integer([:positive])}"

@@ -4,7 +4,7 @@
 # Sourced by scripts/launch-casein-agent.sh. Not meant to be executed directly.
 
 # Resolve --sidechat target to session + pane identifiers for the advisor prompt.
-#   %2              — pane in DEVIDE_TMUX_SESSION
+#   %2              — pane in CASEIN_TMUX_SESSION
 #   session:pane    — explicit tmux session and pane id
 #   agent           — advisor discovers the agent pane via terminal_agent_pane
 sidechat_resolve_target() {
@@ -16,7 +16,7 @@ sidechat_resolve_target() {
   case "$target" in
     agent)
       SIDECHAT_TARGET_MODE="agent"
-      SIDECHAT_SESSION="${DEVIDE_TMUX_SESSION:-}"
+      SIDECHAT_SESSION="${CASEIN_TMUX_SESSION:-}"
       ;;
     *:*)
       SIDECHAT_SESSION="${target%%:*}"
@@ -24,7 +24,7 @@ sidechat_resolve_target() {
       SIDECHAT_TARGET_MODE="explicit"
       ;;
     %*)
-      SIDECHAT_SESSION="${DEVIDE_TMUX_SESSION:-}"
+      SIDECHAT_SESSION="${CASEIN_TMUX_SESSION:-}"
       SIDECHAT_PANE="$target"
       SIDECHAT_TARGET_MODE="pane"
       ;;
@@ -43,7 +43,7 @@ sidechat_resolve_target() {
 sidechat_write_prompt() {
   local out="$1"
   local runtime="${2:-agent}"
-  local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
+  local workspace_id="${CASEIN_WORKSPACE_ID:-}"
   local session="${SIDECHAT_SESSION:-}"
   local pane="${SIDECHAT_PANE:-}"
   local mode="${SIDECHAT_TARGET_MODE:-pane}"

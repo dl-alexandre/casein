@@ -13,11 +13,11 @@ defmodule Casein.Terminals.SessionDirectory.ComposeTest do
 
   describe "compose/2" do
     test "dedupes by {kind, attach_id} preferring the scanned (tmux) entry" do
-      scanned = scanned_shell("ws", "u-alice", "devide_ws_u-alice", %{activity: 5})
+      scanned = scanned_shell("ws", "u-alice", "casein_ws_u-alice", %{activity: 5})
       registry = SessionInfo.new_shell("ws", "u-alice")
 
       assert [tab] = Compose.compose([scanned], [registry])
-      assert tab.tmux_session == "devide_ws_u-alice"
+      assert tab.tmux_session == "casein_ws_u-alice"
       assert tab.metadata == %{activity: 5}
     end
 
@@ -32,9 +32,9 @@ defmodule Casein.Terminals.SessionDirectory.ComposeTest do
   describe "scan_tmux_sessions/3" do
     test "maps only sessions with the workspace prefix and keeps metadata" do
       raw = [
-        %{session: "devide_alpha_u-alice", activity: 9, attached: true},
-        %{session: "devide_other_u-bob", activity: 1},
-        "devide_alpha_u-carol-tabc12",
+        %{session: "casein_alpha_u-alice", activity: 9, attached: true},
+        %{session: "casein_other_u-bob", activity: 1},
+        "casein_alpha_u-carol-tabc12",
         "unrelated"
       ]
 
@@ -46,21 +46,21 @@ defmodule Casein.Terminals.SessionDirectory.ComposeTest do
              ] = tabs
 
       assert Enum.all?(tabs, &(&1.workspace_id == "ws-alpha"))
-      assert Enum.all?(tabs, &String.starts_with?(&1.tmux_session, "devide_alpha_"))
+      assert Enum.all?(tabs, &String.starts_with?(&1.tmux_session, "casein_alpha_"))
     end
 
     test "maps sessions from workspace name and id aliases" do
       raw = [
-        %{session: "devide_alpha_u-alice", activity: 9},
-        %{session: "devide_ws-1_u-bob", activity: 8},
-        %{session: "devide_other_u-carol", activity: 7}
+        %{session: "casein_alpha_u-alice", activity: 9},
+        %{session: "casein_ws-1_u-bob", activity: 8},
+        %{session: "casein_other_u-carol", activity: 7}
       ]
 
       tabs = Compose.scan_tmux_sessions(raw, "ws-1", ["alpha", "ws-1"])
 
       assert Enum.map(tabs, &{&1.sid, &1.tmux_session}) == [
-               {"u-alice", "devide_alpha_u-alice"},
-               {"u-bob", "devide_ws-1_u-bob"}
+               {"u-alice", "casein_alpha_u-alice"},
+               {"u-bob", "casein_ws-1_u-bob"}
              ]
     end
   end
@@ -110,7 +110,7 @@ defmodule Casein.Terminals.SessionDirectory.ComposeTest do
       assert rest == [other]
       assert home.kind == :shell
       assert home.sid == "u-alice-aaaa1111"
-      assert home.tmux_session == "devide_alpha_u-alice-aaaa1111"
+      assert home.tmux_session == "casein_alpha_u-alice-aaaa1111"
     end
 
     test "leaves the list unchanged when the landing session is already scanned" do
@@ -265,7 +265,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
     sandbox =
       Path.join(
         System.tmp_dir!(),
-        "devide-session-directory-#{System.system_time(:nanosecond)}-#{System.unique_integer([:positive])}"
+        "casein-session-directory-#{System.system_time(:nanosecond)}-#{System.unique_integer([:positive])}"
       )
 
     File.rm_rf!(sandbox)
@@ -292,7 +292,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "read composes scanned tmux sessions for the workspace" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     assert [%{sid: "u-alice", kind: :shell}] = SessionDirectory.read(ws, workspace_name: ws)
   end
@@ -315,7 +315,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "read enriches scanned tmux sessions with active pane cwd" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice-abc1234", "/workspace/apps/web")
+    put_fake_session("casein_#{ws}_u-alice-abc1234", "/workspace/apps/web")
 
     assert [%{sid: "u-alice-abc1234", metadata: %{cwd: "/workspace/apps/web"}}] =
              SessionDirectory.read(ws, workspace_name: ws)
@@ -323,7 +323,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "read enriches scanned tmux sessions with window summaries" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     assert [%{sid: "u-alice", metadata: %{windows: [window]} = metadata}] =
              SessionDirectory.read(ws, workspace_name: ws)
@@ -337,7 +337,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "read flags quiet agent windows in stable window metadata" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    tmux_session = "devide_#{ws}_u-alice"
+    tmux_session = "casein_#{ws}_u-alice"
     now = DateTime.utc_now() |> DateTime.to_unix()
 
     TmuxCtl.Test.FakeState.update(:fake_tmux_windows, %{}, fn windows ->
@@ -373,7 +373,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "read surfaces a reported agent state in stable window metadata" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    tmux_session = "devide_#{ws}_u-alice"
+    tmux_session = "casein_#{ws}_u-alice"
     Casein.Terminals.AgentState.clear()
     put_fake_session(tmux_session, "/data/workspaces/alice/summary")
 
@@ -421,7 +421,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
     cwd = Path.join(repo, "apps/web")
     File.mkdir_p!(cwd)
 
-    put_fake_session("devide_#{ws}_u-alice-abc1234", cwd)
+    put_fake_session("casein_#{ws}_u-alice-abc1234", cwd)
 
     assert [%{sid: "u-alice-abc1234", metadata: metadata}] =
              SessionDirectory.read(ws, workspace_name: ws)
@@ -675,13 +675,13 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "broadcasts sessions_updated when the tab list changes while watched" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    s1 = "devide_#{ws}_u-alice"
+    s1 = "casein_#{ws}_u-alice"
     put_fake_session(s1)
 
     assert :ok = SessionDirectory.subscribe(ws, workspace_name: ws)
     assert [%{sid: "u-alice"}] = SessionDirectory.tabs(ws, workspace_name: ws)
 
-    s2 = "devide_#{ws}_u-bob"
+    s2 = "casein_#{ws}_u-bob"
     put_fake_session(s2)
 
     assert_receive {SessionDirectory, {:sessions_updated, ^ws, tabs}}, 1_000
@@ -695,7 +695,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "does not broadcast when only volatile activity changes" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    s1 = "devide_#{ws}_u-alice"
+    s1 = "casein_#{ws}_u-alice"
     put_fake_session(s1)
 
     assert :ok = SessionDirectory.subscribe(ws, workspace_name: ws)
@@ -706,11 +706,11 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "refresh_now returns fresh tabs synchronously" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     assert [%{sid: "u-alice"}] = SessionDirectory.refresh_now(ws, workspace_name: ws)
 
-    put_fake_session("devide_#{ws}_u-bob")
+    put_fake_session("casein_#{ws}_u-bob")
 
     sids =
       SessionDirectory.refresh_now(ws, workspace_name: ws) |> Enum.map(& &1.sid) |> Enum.sort()
@@ -720,7 +720,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "unsubscribe drops watcher and stops directory when last watcher leaves" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     assert :ok = SessionDirectory.subscribe(ws, workspace_name: ws)
     assert {:ok, pid} = SessionDirectory.ensure_started(ws, workspace_name: ws)
@@ -733,7 +733,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "directory stops when its last watcher goes away" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     watcher =
       spawn(fn ->
@@ -756,7 +756,7 @@ defmodule Casein.Terminals.SessionDirectoryTest do
 
   test "fetch finds tabs by attach id" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
-    put_fake_session("devide_#{ws}_u-alice")
+    put_fake_session("casein_#{ws}_u-alice")
 
     assert {:ok, %{sid: "u-alice"}} =
              SessionDirectory.fetch(ws, "u-alice", workspace_name: ws)

@@ -142,7 +142,7 @@ defmodule Casein.Runtimes.WorktreeAlarmTest do
         branch: "main",
         status: :running,
         path: path,
-        metadata: %{"id" => id, "repo" => "dev_ide", "branch" => "main"}
+        metadata: %{"id" => id, "repo" => "casein", "branch" => "main"}
       })
 
     {:ok, _} =
@@ -180,7 +180,7 @@ defmodule Casein.Runtimes.WorktreeAlarmTest do
 
   defp tmp_dir!(name) do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    path = Path.join(root, "devide-alarm-#{System.unique_integer([:positive])}-#{name}")
+    path = Path.join(root, "casein-alarm-#{System.unique_integer([:positive])}-#{name}")
     File.rm_rf!(path)
     File.mkdir_p!(path)
     on_exit(fn -> File.rm_rf!(path) end)

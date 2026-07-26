@@ -706,7 +706,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     transform 140ms ease;
 }
 
-#devide-clipboard-toast {
+#casein-clipboard-toast {
   position: fixed;
   left: 50%;
   bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
@@ -726,17 +726,17 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   transition: opacity 160ms ease, transform 160ms ease;
 }
 
-#devide-clipboard-toast.devide-clipboard-toast--visible {
+#casein-clipboard-toast.casein-clipboard-toast--visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
 
-#devide-clipboard-toast[data-kind="pending"] {
+#casein-clipboard-toast[data-kind="pending"] {
   border-color: rgba(56, 189, 248, 0.45);
   color: #bae6fd;
 }
 
-#devide-clipboard-toast[data-kind="shortcut"] {
+#casein-clipboard-toast[data-kind="shortcut"] {
   border-color: rgba(217, 119, 6, 0.5);
   color: #fcd34d;
 }
@@ -1342,12 +1342,12 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
     box-shadow: 0 -4px 16px rgb(0 0 0 / 0.35);
   }
 
-  .mobile-key-bar.devide-keybar-app-mode > [id^="mobile-key-bar-scroll-"] {
+  .mobile-key-bar.casein-keybar-app-mode > [id^="mobile-key-bar-scroll-"] {
     gap: 0.3rem;
   }
 
   /* Keyboard-open keys stay tappable (≥ ~32px) without reclaiming half the screen. */
-  .mobile-key-bar.devide-keybar-app-mode button {
+  .mobile-key-bar.casein-keybar-app-mode button {
     min-height: 1.75rem;
     min-width: 2rem;
     padding-inline: 0.45rem;
@@ -1355,24 +1355,24 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
     border-radius: 0.35rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] {
+  .mobile-key-bar.casein-keybar-app-mode [id^="mobile-key-bar-mode-"] {
     min-height: 1.75rem;
     padding-inline: 0.45rem;
     max-width: min(34vw, 8.5rem);
   }
 
-  .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] span {
+  .mobile-key-bar.casein-keybar-app-mode [id^="mobile-key-bar-mode-"] span {
     font-size: 0.625rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode .leader-indicator {
+  .mobile-key-bar.casein-keybar-app-mode .leader-indicator {
     padding-inline: 0.3rem;
     padding-block: 0;
     font-size: 0.5625rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode span[aria-hidden],
-  .mobile-key-bar.devide-keybar-app-mode .h-5.w-px {
+  .mobile-key-bar.casein-keybar-app-mode span[aria-hidden],
+  .mobile-key-bar.casein-keybar-app-mode .h-5.w-px {
     height: 1.1rem;
   }
 

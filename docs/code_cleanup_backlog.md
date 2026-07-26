@@ -18,13 +18,13 @@
 | ~~A1~~ | ~~`Export.Sanitizer.redact_text/1` is public, `@doc`'d and `@spec`'d but has **zero callers** in `lib/`.~~ | ~~`lib/casein/export/sanitizer.ex:34-49`~~ | **Resolved** — has multiple callers: `workspace_status.ex` (via `redact_text_values/1`), `mcp_audit.ex`, and `agent_prompt_sender.ex`. Finding was inaccurate. |
 | A2 | Export emits permanently-inert fields: `WorkspaceStatus.active_run_summary/1` always returns `nil`, `run_artifacts/1` always `[]` (retired with the delegated-execution stack). | `lib/casein/export/workspace_status.ex` — `active_run_summary/1` at `defp active_run_summary`, `run_artifacts/1` | Intentionally kept: both are live in the payload / UI (`run_events.ex` calls `run_artifacts/1`). The comment in the source documents the retirement. No action needed unless the feature returns. |
 | ~~A3~~ | ~~`runtimes.ex:list_agent_worktrees/1` filters a `"failed"` status that no transition in `StateMachine.statuses/0` produces; `Runtime.failure_reason` is likewise unreachable.~~ | ~~`lib/casein/runtimes.ex` (+ `runtimes/state_machine.ex`)~~ | **Resolved/inaccurate** — `list_agent_worktrees/1` only rejects `"cleaned"` and `"expired"`, which are the real terminal statuses. `failure_reason` is set in `expire_runtime/2` and used in the payload, ecto adapter, and preview server. No dead code. |
-| A4 | `DevIdeCore` convenience facade (`git_inspect/1`, `exec_run/3`, `mcp_tool/3`) is unused — callers reach `GitCtl.Inspector` / `McpCtl.Tool` directly. | `dev_ide_core/lib/dev_ide_core.ex` | Keep as documented sugar, or delete if it will never be the call path. |
+| A4 | `CaseinCore` convenience facade (`git_inspect/1`, `exec_run/3`, `mcp_tool/3`) is unused — callers reach `GitCtl.Inspector` / `McpCtl.Tool` directly. | `casein_core/lib/casein_core.ex` | Keep as documented sugar, or delete if it will never be the call path. |
 
 ## B. Duplication to consolidate
 
 | # | Finding | Location | Action |
 |---|---------|----------|--------|
-| B1 | `ExecCtl.Port` (erlexec spawn + proxy + monitor) has **no production caller** — only tests and the unused `DevIdeCore.exec_run/3`. The app's real executor `Casein.Commands.spawn/3` reimplements the same plumbing inline. | `dev_ide_core/lib/exec_ctl/port.ex` vs `lib/casein/commands.ex` | Point `Casein.Commands.spawn/3` at `ExecCtl.Port`, deleting the duplicate plumbing — or drop `ExecCtl.Port` if the app's copy must own it. |
+| B1 | `ExecCtl.Port` (erlexec spawn + proxy + monitor) has **no production caller** — only tests and the unused `CaseinCore.exec_run/3`. The app's real executor `Casein.Commands.spawn/3` reimplements the same plumbing inline. | `casein_core/lib/exec_ctl/port.ex` vs `lib/casein/commands.ex` | Point `Casein.Commands.spawn/3` at `ExecCtl.Port`, deleting the duplicate plumbing — or drop `ExecCtl.Port` if the app's copy must own it. |
 
 ## C. Contract / spec mismatches
 

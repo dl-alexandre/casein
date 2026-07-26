@@ -158,7 +158,7 @@ defmodule CaseinWeb.API.ArtifactProjectControllerTest do
     File.mkdir_p!(repo)
     git!(repo, ["init", "--initial-branch=main"])
     git!(repo, ["config", "user.name", "Casein Test"])
-    git!(repo, ["config", "user.email", "devide-test@localhost"])
+    git!(repo, ["config", "user.email", "casein-test@localhost"])
     File.write!(Path.join(repo, "README.md"), "# Artifact Restore Test\n")
     git!(repo, ["add", "README.md"])
     git!(repo, ["commit", "-m", "Initial commit"])

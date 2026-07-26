@@ -19,7 +19,7 @@ Register in Odysseus (Settings → MCP Servers) by pointing at the
 absolute path to this file (or run it as a stdio server).
 
 Env vars (required):
-    CASEIN_BASE_URL   e.g. http://localhost:4000 or https://devide.example.com
+    CASEIN_BASE_URL   e.g. http://localhost:4000 or https://casein.example.com
     CASEIN_API_TOKEN  the bearer token (same as CASEIN_API_TOKEN on the server)
 
 Optional:

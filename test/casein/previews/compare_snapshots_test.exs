@@ -91,7 +91,7 @@ defmodule Casein.Previews.CompareSnapshotsTest do
 
   test "accepts a full artifact URL, using only its path", %{ws: ws, a: a, b: b} do
     assert {:ok, diff} =
-             Control.compare_snapshots(%{id: ws}, "https://devide.example.com" <> a, b)
+             Control.compare_snapshots(%{id: ws}, "https://casein.example.com" <> a, b)
 
     assert diff.diff_pct == 1.5
     assert String.starts_with?(diff.diff_image_url, "/preview-artifacts/#{ws}/")

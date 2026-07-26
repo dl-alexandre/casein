@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Casein ephemeral /tmp cleanup
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=casein-tmp-cleanup.service
+
+[Install]
+WantedBy=timers.target

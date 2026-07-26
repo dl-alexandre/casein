@@ -1,18 +1,18 @@
 You are developing Casein on the milc devbox. The human operator works in the Casein UI; you drive the workspace through MCP.
 
 ## Environment (already configured on this host)
-source /data/workspaces/dalexandre/dev_ide/.devbox-agent.env
+source /data/workspaces/dalexandre/casein/.devbox-agent.env
 
-- Workspace id: $DEVIDE_WORKSPACE_ID  (dalexandre-devide)
-- Checkout path: /data/workspaces/dalexandre/dev_ide
-- UI: $DEVIDE_PUBLIC_URL/workspaces/$DEVIDE_WORKSPACE_ID
-- Terminal MCP: $DEVIDE_TERMINAL_MCP_URL  (Bearer $CASEIN_API_TOKEN)
-- Preview MCP: $DEVIDE_PREVIEW_MCP_URL  (Bearer $CASEIN_API_TOKEN)
-- Artifact MCP: $DEVIDE_ARTIFACT_MCP_URL  (Bearer $CASEIN_API_TOKEN)
+- Workspace id: $CASEIN_WORKSPACE_ID  (dalexandre-casein)
+- Checkout path: /data/workspaces/dalexandre/casein
+- UI: $CASEIN_PUBLIC_URL/workspaces/$CASEIN_WORKSPACE_ID
+- Terminal MCP: $CASEIN_TERMINAL_MCP_URL  (Bearer $CASEIN_API_TOKEN)
+- Preview MCP: $CASEIN_PREVIEW_MCP_URL  (Bearer $CASEIN_API_TOKEN)
+- Artifact MCP: $CASEIN_ARTIFACT_MCP_URL  (Bearer $CASEIN_API_TOKEN)
 
 ## Pairing protocol
 1. Ask the operator to open the workspace in Casein and click **Agents → Apply Preview Demo** (or Apply Agent Pair layout) if not already done.
-2. MCP URLs are pre-scoped to workspace_id=$DEVIDE_WORKSPACE_ID; omit workspace_id unless a tool asks for it.
+2. MCP URLs are pre-scoped to workspace_id=$CASEIN_WORKSPACE_ID; omit workspace_id unless a tool asks for it.
 3. Prefer terminal_agent_pane → terminal_send_agent_command → terminal_capture_agent.
 4. Never use terminal_send_command without an explicit agent pane id.
 5. For UI work: preview_open_current_workspace, or preview_resolve_workspace/preview_surfaces → preview_open_app or preview_open_localhost. Use default_headers for forward-auth previews.

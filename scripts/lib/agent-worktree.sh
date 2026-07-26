@@ -3,11 +3,11 @@
 # Sourced by launch-casein-agent.sh — not executed directly.
 
 agent_worktree_root() {
-  printf '%s\n' "${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
+  printf '%s\n' "${CASEIN_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
 }
 
 agent_worktree_primary_repo() {
-  local checkout="${DEVIDE_CHECKOUT:-}"
+  local checkout="${CASEIN_CHECKOUT:-}"
   if [[ -z "$checkout" ]]; then
     return 1
   fi
@@ -37,7 +37,7 @@ agent_worktree_branch_name() {
 
 agent_worktree_default_base_ref() {
   local primary="$1"
-  local configured="${DEVIDE_AGENT_WORKTREE_BASE:-}"
+  local configured="${CASEIN_AGENT_WORKTREE_BASE:-}"
   local remote_head
 
   if [[ -n "$configured" ]]; then
@@ -67,7 +67,7 @@ agent_worktree_create() {
   local primary wt_root branch path
 
   primary="$(agent_worktree_primary_repo)" || {
-    echo "error: DEVIDE_CHECKOUT is not a git repository" >&2
+    echo "error: CASEIN_CHECKOUT is not a git repository" >&2
     return 1
   }
 
@@ -97,33 +97,33 @@ agent_worktree_report_mcp() {
   local worktree_path="$1"
   local runtime="${2:-}"
   local token="${CASEIN_API_TOKEN:-}"
-  local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
-  local mcp_url="${DEVIDE_TERMINAL_MCP_URL:-${DEVIDE_URL:-http://127.0.0.1:4000}/api/terminals/mcp}"
+  local workspace_id="${CASEIN_WORKSPACE_ID:-}"
+  local mcp_url="${CASEIN_TERMINAL_MCP_URL:-${CASEIN_URL:-http://127.0.0.1:4000}/api/terminals/mcp}"
 
   [[ -n "$token" && -n "$workspace_id" ]] || {
-    echo "warn: skipping terminal_report_worktree (missing CASEIN_API_TOKEN or DEVIDE_WORKSPACE_ID)" >&2
+    echo "warn: skipping terminal_report_worktree (missing CASEIN_API_TOKEN or CASEIN_WORKSPACE_ID)" >&2
     return 0
   }
 
   local branch tmux_session
   branch="$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
-  tmux_session="${DEVIDE_TMUX_SESSION:-}"
+  tmux_session="${CASEIN_TMUX_SESSION:-}"
 
   local params
   params="$(
     WORKTREE_PATH="$worktree_path" \
     WORKTREE_BRANCH="$branch" \
-    DEVIDE_WORKSPACE_ID="$workspace_id" \
-    DEVIDE_AGENT_RUNTIME="$runtime" \
-    DEVIDE_TMUX_SESSION="$tmux_session" \
+    CASEIN_WORKSPACE_ID="$workspace_id" \
+    CASEIN_AGENT_RUNTIME="$runtime" \
+    CASEIN_TMUX_SESSION="$tmux_session" \
     python3 -c '
 import json, os
 print(json.dumps({
-    "workspace_id": os.environ["DEVIDE_WORKSPACE_ID"],
+    "workspace_id": os.environ["CASEIN_WORKSPACE_ID"],
     "worktree_path": os.environ["WORKTREE_PATH"],
     "branch": os.environ.get("WORKTREE_BRANCH") or None,
-    "agent": os.environ.get("DEVIDE_AGENT_RUNTIME") or None,
-    "tmux_session_id": os.environ.get("DEVIDE_TMUX_SESSION") or None,
+    "agent": os.environ.get("CASEIN_AGENT_RUNTIME") or None,
+    "tmux_session_id": os.environ.get("CASEIN_TMUX_SESSION") or None,
 }))
 '
   )"
@@ -134,7 +134,7 @@ print(json.dumps({
   local rpc_body response
   rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"terminal_report_worktree\",\"arguments\":${params}}}"
 
-  if ! response="$(devide_curl -fsS -X POST "$mcp_url" \
+  if ! response="$(casein_curl -fsS -X POST "$mcp_url" \
     -H "authorization: Bearer ${token}" \
     -H "content-type: application/json" \
     -d "$rpc_body" 2>&1)" \
@@ -174,35 +174,35 @@ agent_worktree_ensure() {
   local runtime="$1"
   local task="${2:-adhoc}"
 
-  if [[ "${DEVIDE_AGENT_SKIP_WORKTREE:-0}" == "1" ]]; then
+  if [[ "${CASEIN_AGENT_SKIP_WORKTREE:-0}" == "1" ]]; then
     return 0
   fi
 
   # Adoption paths: a human launching *inside* an existing worktree reuses it.
-  # A SPAWNED worker (DEVIDE_AGENT_FORCE_FRESH_WORKTREE=1, set by
+  # A SPAWNED worker (CASEIN_AGENT_FORCE_FRESH_WORKTREE=1, set by
   # spawn-agent-worker.sh) must NEVER adopt — adopting silently shares the
   # orchestrator's checkout and branch, so the worker's git ops (including a
   # tree-wide `git restore`/discard to satisfy a gate) hit other sessions' work.
   # Force it past adoption to branch a fresh worktree off the primary; because
   # agent_worktree_create runs `git -C <primary> worktree add`, it works even
   # when PWD is a linked worktree.
-  if [[ "${DEVIDE_AGENT_FORCE_FRESH_WORKTREE:-0}" != "1" ]]; then
-    if [[ -n "${DEVIDE_AGENT_WORKTREE_PATH:-}" && -d "${DEVIDE_AGENT_WORKTREE_PATH}" ]]; then
-      export DEVIDE_CHECKOUT="${DEVIDE_AGENT_WORKTREE_PATH}"
-      export DEVIDE_WORKTREE=1
-      agent_worktree_report_mcp "${DEVIDE_AGENT_WORKTREE_PATH}" "$runtime"
+  if [[ "${CASEIN_AGENT_FORCE_FRESH_WORKTREE:-0}" != "1" ]]; then
+    if [[ -n "${CASEIN_AGENT_WORKTREE_PATH:-}" && -d "${CASEIN_AGENT_WORKTREE_PATH}" ]]; then
+      export CASEIN_CHECKOUT="${CASEIN_AGENT_WORKTREE_PATH}"
+      export CASEIN_WORKTREE=1
+      agent_worktree_report_mcp "${CASEIN_AGENT_WORKTREE_PATH}" "$runtime"
       return 0
     fi
 
     if agent_worktree_is_linked "${PWD}"; then
-      export DEVIDE_CHECKOUT="$(git -C "${PWD}" rev-parse --show-toplevel)"
-      export DEVIDE_WORKTREE=1
-      agent_worktree_report_mcp "${DEVIDE_CHECKOUT}" "$runtime"
+      export CASEIN_CHECKOUT="$(git -C "${PWD}" rev-parse --show-toplevel)"
+      export CASEIN_WORKTREE=1
+      agent_worktree_report_mcp "${CASEIN_CHECKOUT}" "$runtime"
       return 0
     fi
 
     if ! agent_worktree_inside_primary "${PWD}"; then
-      export DEVIDE_WORKTREE=1
+      export CASEIN_WORKTREE=1
       return 0
     fi
   fi
@@ -211,10 +211,10 @@ agent_worktree_ensure() {
   primary="$(agent_worktree_primary_repo)" || return 1
   path="$(agent_worktree_create "$runtime" "$task")" || return 1
 
-  export DEVIDE_CHECKOUT="$path"
-  export DEVIDE_AGENT_WORKTREE_PATH="$path"
-  export DEVIDE_WORKTREE=1
-  export DEVIDE_GIT_DIR="${path}/.git"
+  export CASEIN_CHECKOUT="$path"
+  export CASEIN_AGENT_WORKTREE_PATH="$path"
+  export CASEIN_WORKTREE=1
+  export CASEIN_GIT_DIR="${path}/.git"
 
   agent_worktree_report_mcp "$path" "$runtime"
   agent_worktree_spawn_reaper "$path" "$primary" "$$"

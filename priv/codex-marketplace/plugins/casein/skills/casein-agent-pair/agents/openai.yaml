@@ -1,0 +1,4 @@
+interface:
+  display_name: "Casein Agent Pair"
+  short_description: "Control the dedicated agent pane safely"
+  default_prompt: "Use $casein-agent-pair to inspect the tmux topology and work through the dedicated agent pane."

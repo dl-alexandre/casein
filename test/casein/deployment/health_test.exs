@@ -27,10 +27,10 @@ defmodule Casein.Deployment.HealthTest do
     status = Health.status(capabilities: [:reverse_proxy], host: "example.com")
 
     assert %{ok: false, error: ":probe_disabled"} =
-             status.checks.caddy_devide_upstream
+             status.checks.caddy_casein_upstream
   end
 
-  @host "devide.devbox.example.com"
+  @host "casein.devbox.example.com"
   @revision "1fb643af2c58da2c9b10019cc3de1b06555e3732"
 
   defp caddy_config do
@@ -94,7 +94,7 @@ defmodule Casein.Deployment.HealthTest do
 
   test "status reports ok when injected checks pass" do
     socket =
-      Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
+      Path.join(System.tmp_dir!(), "casein-health-#{System.unique_integer([:positive])}.sock")
 
     on_exit(fn -> File.rm(socket) end)
     File.write!(socket, "")
@@ -104,7 +104,7 @@ defmodule Casein.Deployment.HealthTest do
 
     assert checks.socket_exists
     assert checks.current_socket_points_to_instance
-    assert %{ok: true} = checks.caddy_devide_upstream
+    assert %{ok: true} = checks.caddy_casein_upstream
     assert checks.deploy_revision_current
   end
 
@@ -118,7 +118,7 @@ defmodule Casein.Deployment.HealthTest do
 
   test "status reports ok when Caddy routes Casein through the loopback proxy" do
     socket =
-      Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
+      Path.join(System.tmp_dir!(), "casein-health-#{System.unique_integer([:positive])}.sock")
 
     on_exit(fn -> File.rm(socket) end)
     File.write!(socket, "")
@@ -151,12 +151,12 @@ defmodule Casein.Deployment.HealthTest do
                |> Keyword.put(:caddy_config, {:ok, loopback_config})
              )
 
-    assert %{ok: true, actual: "127.0.0.1:4000"} = checks.caddy_devide_upstream
+    assert %{ok: true, actual: "127.0.0.1:4000"} = checks.caddy_casein_upstream
   end
 
   test "status reports not ok when Caddy points at the wrong upstream" do
     socket =
-      Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
+      Path.join(System.tmp_dir!(), "casein-health-#{System.unique_integer([:positive])}.sock")
 
     on_exit(fn -> File.rm(socket) end)
     File.write!(socket, "")
@@ -189,12 +189,12 @@ defmodule Casein.Deployment.HealthTest do
                |> Keyword.put(:caddy_config, {:ok, bad_config})
              )
 
-    assert %{ok: false, actual: "127.0.0.1:9000"} = checks.caddy_devide_upstream
+    assert %{ok: false, actual: "127.0.0.1:9000"} = checks.caddy_casein_upstream
   end
 
   test "status reports not ok when the deploy poller failed on master" do
     socket =
-      Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
+      Path.join(System.tmp_dir!(), "casein-health-#{System.unique_integer([:positive])}.sock")
 
     on_exit(fn -> File.rm(socket) end)
     File.write!(socket, "")
@@ -244,7 +244,7 @@ defmodule Casein.Deployment.HealthTest do
 
   test "status reports not ok when deploy drift is detected" do
     socket =
-      Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
+      Path.join(System.tmp_dir!(), "casein-health-#{System.unique_integer([:positive])}.sock")
 
     on_exit(fn -> File.rm(socket) end)
     File.write!(socket, "")
@@ -260,7 +260,7 @@ defmodule Casein.Deployment.HealthTest do
 
   test "status reports not ok when Caddy config cannot be fetched" do
     socket =
-      Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
+      Path.join(System.tmp_dir!(), "casein-health-#{System.unique_integer([:positive])}.sock")
 
     on_exit(fn -> File.rm(socket) end)
     File.write!(socket, "")
@@ -271,6 +271,6 @@ defmodule Casein.Deployment.HealthTest do
                |> Keyword.put(:caddy_config, {:error, :econnrefused})
              )
 
-    assert %{ok: false, error: _} = checks.caddy_devide_upstream
+    assert %{ok: false, error: _} = checks.caddy_casein_upstream
   end
 end

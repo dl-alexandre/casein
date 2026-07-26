@@ -107,12 +107,12 @@ defmodule CaseinWeb.Endpoint do
 
   defp maybe_cache_preview_proxy_body(%{request_path: "/preview-proxy/" <> _} = conn, body)
        when is_binary(body) do
-    Plug.Conn.put_private(conn, :devide_preview_proxy_raw_body, body)
+    Plug.Conn.put_private(conn, :casein_preview_proxy_raw_body, body)
   end
 
   defp maybe_cache_preview_proxy_body(%{request_path: "/api/deploy_webhook"} = conn, body)
        when is_binary(body) do
-    Plug.Conn.put_private(conn, :devide_deploy_webhook_raw_body, body)
+    Plug.Conn.put_private(conn, :casein_deploy_webhook_raw_body, body)
   end
 
   defp maybe_cache_preview_proxy_body(conn, _body), do: conn

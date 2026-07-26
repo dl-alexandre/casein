@@ -1,6 +1,6 @@
 defmodule Casein.Agents.PaneEnv do
   @moduledoc """
-  Builds the `DEVIDE_*` environment (MCP URLs, API token, checkout, staging
+  Builds the `CASEIN_*` environment (MCP URLs, API token, checkout, staging
   home) external agents need, and pushes it into a workspace tmux session via
   `Tmux.set_environments/2`. Materializes MCP client configs as a side effect.
   """
@@ -48,16 +48,16 @@ defmodule Casein.Agents.PaneEnv do
       vars =
         %{
           "CASEIN_API_TOKEN" => token,
-          "DEVIDE_WORKSPACE_ID" => workspace_id,
-          "DEVIDE_WORKSPACE_NAME" => workspace_name,
-          "DEVIDE_API_BASE_URL" => MCPUrls.api_base_url(),
-          "DEVIDE_TERMINAL_MCP_URL" => MCPUrls.terminal_url(workspace_id, opts),
-          "DEVIDE_PREVIEW_MCP_URL" => MCPUrls.preview_url(workspace_id, opts),
-          "DEVIDE_ARTIFACT_MCP_URL" => MCPUrls.artifact_url(workspace_id),
-          "DEVIDE_CHECKOUT" => checkout,
-          "DEVIDE_AGENT_MCP_HOME" => staging,
-          "DEVIDE_SCRIPTS" => scripts_root,
-          "DEVIDE_AGENT_ENV_FILE" => env_sh,
+          "CASEIN_WORKSPACE_ID" => workspace_id,
+          "CASEIN_WORKSPACE_NAME" => workspace_name,
+          "CASEIN_API_BASE_URL" => MCPUrls.api_base_url(),
+          "CASEIN_TERMINAL_MCP_URL" => MCPUrls.terminal_url(workspace_id, opts),
+          "CASEIN_PREVIEW_MCP_URL" => MCPUrls.preview_url(workspace_id, opts),
+          "CASEIN_ARTIFACT_MCP_URL" => MCPUrls.artifact_url(workspace_id),
+          "CASEIN_CHECKOUT" => checkout,
+          "CASEIN_AGENT_MCP_HOME" => staging,
+          "CASEIN_SCRIPTS" => scripts_root,
+          "CASEIN_AGENT_ENV_FILE" => env_sh,
           "CASEIN_NPM_PREFIX" => npm_prefix,
           "PATH" => path
         }
@@ -120,11 +120,11 @@ defmodule Casein.Agents.PaneEnv do
   defp scripts_root(checkout) when is_binary(checkout) do
     candidate = Path.join(checkout, "scripts")
 
-    if File.regular?(Path.join(candidate, "devide")) do
+    if File.regular?(Path.join(candidate, "casein")) do
       candidate
     else
       Application.get_env(:casein, :agent_scripts_path) ||
-        non_empty_env("DEVIDE_SCRIPTS") ||
+        non_empty_env("CASEIN_SCRIPTS") ||
         candidate
     end
   end
@@ -154,7 +154,7 @@ defmodule Casein.Agents.PaneEnv do
   defp maybe_put_tmux_session(vars, opts) do
     case Keyword.get(opts, :tmux_session) do
       session when is_binary(session) and session != "" ->
-        Map.put(vars, "DEVIDE_TMUX_SESSION", session)
+        Map.put(vars, "CASEIN_TMUX_SESSION", session)
 
       _ ->
         vars
@@ -163,7 +163,7 @@ defmodule Casein.Agents.PaneEnv do
 
   defp maybe_put_tidewave(vars, workspace, opts) do
     case TidewaveMCP.resolve_url(workspace, opts) do
-      url when is_binary(url) -> Map.put(vars, "DEVIDE_TIDEWAVE_MCP_URL", url)
+      url when is_binary(url) -> Map.put(vars, "CASEIN_TIDEWAVE_MCP_URL", url)
       _ -> vars
     end
   end

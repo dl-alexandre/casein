@@ -5,19 +5,19 @@
 #
 # Usage:
 #   source scripts/casein-curl.sh
-#   devide_curl -fsS http://127.0.0.1:4000/api/workspaces
+#   casein_curl -fsS http://127.0.0.1:4000/api/workspaces
 #
 # Or:
 #   bash scripts/casein-curl.sh -fsS http://127.0.0.1:4000/api/workspaces
 #
 set -euo pipefail
 
-DEVIDE_LOOPBACK_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
+CASEIN_LOOPBACK_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
 CURRENT_SOCK="/run/casein/current.sock"
 
 _loopback_ok() {
   local code
-  code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "${DEVIDE_LOOPBACK_URL}/" 2>/dev/null || echo 000)"
+  code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "${CASEIN_LOOPBACK_URL}/" 2>/dev/null || echo 000)"
   [[ "${code}" != "000" && -n "${code}" ]]
 }
 
@@ -33,7 +33,7 @@ _to_unix_path() {
   printf '%s' "$path"
 }
 
-devide_curl() {
+casein_curl() {
   local args=("$@")
 
   if _loopback_ok; then
@@ -57,10 +57,10 @@ devide_curl() {
     return
   fi
 
-  echo "error: Casein API unreachable (${DEVIDE_LOOPBACK_URL} down, ${CURRENT_SOCK} missing)" >&2
+  echo "error: Casein API unreachable (${CASEIN_LOOPBACK_URL} down, ${CURRENT_SOCK} missing)" >&2
   return 1
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  devide_curl "$@"
+  casein_curl "$@"
 fi

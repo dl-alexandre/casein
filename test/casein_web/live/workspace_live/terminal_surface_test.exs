@@ -97,7 +97,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
   describe "preview_snapshot_mode?/1" do
     test "detects fitted artifact preview URLs" do
       assert TerminalChrome.preview_snapshot_mode?(%{
-               display_url: "https://devide.example.test/preview-artifacts/ws/1.png?fit=preview"
+               display_url: "https://casein.example.test/preview-artifacts/ws/1.png?fit=preview"
              })
     end
 
@@ -134,7 +134,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
           workspace: %{id: "ws-alpha"},
           active_tmux_window_panes: [pane("%1")],
           preview_panes: %{},
-          tmux_session: "devide_alpha_u-active",
+          tmux_session: "casein_alpha_u-active",
           ui_highlight_pane_id: "%1",
           tmux_active_pane_id: "%1",
           tmux_mutations_enabled?: false,
@@ -147,7 +147,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
     end
 
     test "renders preview pane owning tmux session metadata" do
-      tmux_session = "devide_alpha_u-agent-worktree"
+      tmux_session = "casein_alpha_u-agent-worktree"
 
       html =
         render_component(&TerminalChrome.tmux_pane_geometry/1,
@@ -186,10 +186,10 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
             "%2" => %{
               pane_id: "%2",
               display_url: "http://localhost:5173/",
-              tmux_session: "devide_alpha_u-other"
+              tmux_session: "casein_alpha_u-other"
             }
           },
-          tmux_session: "devide_alpha_u-active",
+          tmux_session: "casein_alpha_u-active",
           ui_highlight_pane_id: "%2",
           tmux_active_pane_id: "%2",
           tmux_mutations_enabled?: false,
@@ -199,7 +199,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
 
       assert html =~ ~s(data-preview-session-mismatch="true")
       assert html =~ "Other session: u-other"
-      assert html =~ "active tmux_session=devide_alpha_u-active"
+      assert html =~ "active tmux_session=casein_alpha_u-active"
     end
 
     test "renders mobile focus state and spatial pane rails" do
@@ -214,7 +214,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
           workspace: %{id: "ws-alpha", status: :running},
           active_tmux_window_panes: panes,
           preview_panes: %{},
-          tmux_session: "devide_alpha_u-active",
+          tmux_session: "casein_alpha_u-active",
           ui_highlight_pane_id: "%0",
           tmux_active_pane_id: "%0",
           tmux_mutations_enabled?: false,
@@ -255,7 +255,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
           workspace: %{id: "ws-alpha", status: :running},
           active_tmux_window_panes: panes,
           preview_panes: %{},
-          tmux_session: "devide_alpha_u-active",
+          tmux_session: "casein_alpha_u-active",
           ui_highlight_pane_id: "%0",
           tmux_active_pane_id: "%0",
           window_zoomed?: true,
@@ -286,18 +286,18 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
           workspace: %{id: "ws-alpha"},
           active_tmux_window_panes: [pane("%3")],
           preview_panes: %{},
-          tmux_session: "devide_alpha_u-active",
+          tmux_session: "casein_alpha_u-active",
           ui_highlight_pane_id: "%3",
           tmux_active_pane_id: "%3",
           tmux_mutations_enabled?: false,
           entered_preview_pane_id: nil,
           terminal_surface_pane_id: nil,
           pane_history: %{
-            key: "devide_alpha_u-active:@1:%3",
-            session: "devide_alpha_u-active",
+            key: "casein_alpha_u-active:@1:%3",
+            session: "casein_alpha_u-active",
             window_id: "@1",
             pane_id: "%3",
-            title: "/work/dev_ide · bash",
+            title: "/work/casein · bash",
             term: nil,
             cols: 80,
             rows: 24,
@@ -307,7 +307,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
 
       assert html =~ ~s(id="pane-history-drawer")
       assert html =~ ~s(phx-hook="PaneHistoryDrawer")
-      assert html =~ ~s(data-history-key="devide_alpha_u-active:@1:%3")
+      assert html =~ ~s(data-history-key="casein_alpha_u-active:@1:%3")
       assert html =~ ~s(phx-click="pane:history_open")
       assert html =~ ~s(phx-value-pane-id="%3")
       assert html =~ ~s(data-history-latest)
@@ -325,7 +325,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
           workspace: %{id: "ws-alpha"},
           active_tmux_window_panes: [unpaired],
           preview_panes: %{},
-          tmux_session: "devide_alpha_u-active",
+          tmux_session: "casein_alpha_u-active",
           ui_highlight_pane_id: "%1",
           tmux_active_pane_id: "%1",
           tmux_mutations_enabled?: false,
@@ -346,7 +346,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
           workspace: %{id: "ws-alpha"},
           active_tmux_window_panes: [paired, Map.put(pane("%2"), :id, "%2")],
           preview_panes: %{},
-          tmux_session: "devide_alpha_u-active",
+          tmux_session: "casein_alpha_u-active",
           ui_highlight_pane_id: "%1",
           tmux_active_pane_id: "%1",
           tmux_mutations_enabled?: false,
@@ -369,7 +369,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
       width: 80,
       height: 24,
       window_id: "@0",
-      current_path: "/work/dev_ide",
+      current_path: "/work/casein",
       current_command: "bash"
     }
   end

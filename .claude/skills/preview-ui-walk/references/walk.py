@@ -9,7 +9,7 @@ never click/type/press — so it cannot fire the app's mutating events. Honor th
 manifest's safety block regardless.
 
 Env (source the target workspace's env.sh first):
-    DEVIDE_PREVIEW_MCP_URL   workspace-scoped preview MCP endpoint
+    CASEIN_PREVIEW_MCP_URL   workspace-scoped preview MCP endpoint
     CASEIN_API_TOKEN        workspace-scoped bearer token
 
 Usage:
@@ -28,7 +28,7 @@ import time
 import urllib.request
 from urllib.parse import urlparse
 
-URL = os.environ.get("DEVIDE_PREVIEW_MCP_URL")
+URL = os.environ.get("CASEIN_PREVIEW_MCP_URL")
 TOKEN = os.environ.get("CASEIN_API_TOKEN")
 
 
@@ -39,7 +39,7 @@ def die(msg, code=2):
 
 def mcp(tool, args):
     if not URL or not TOKEN:
-        die("DEVIDE_PREVIEW_MCP_URL / CASEIN_API_TOKEN not set (source the workspace env.sh)")
+        die("CASEIN_PREVIEW_MCP_URL / CASEIN_API_TOKEN not set (source the workspace env.sh)")
     body = json.dumps(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
          "params": {"name": tool, "arguments": args}}

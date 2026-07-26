@@ -1,0 +1,26 @@
+{
+  "name": "casein",
+  "version": "0.1.0",
+  "description": "Operate Casein workspaces, previews, handoffs, and lifecycle telemetry from Codex.",
+  "author": {
+    "name": "Casein"
+  },
+  "repository": "https://github.com/dl-alexandre/casein",
+  "homepage": "https://github.com/dl-alexandre/casein",
+  "keywords": ["casein", "phoenix", "workspace", "preview", "agents"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Casein",
+    "shortDescription": "Operate paired workspaces safely",
+    "longDescription": "Connect Codex to Casein terminal, preview, and artifact tools; report lifecycle hooks; and use durable workspace workflows.",
+    "developerName": "Casein",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write", "Interactive"],
+    "defaultPrompt": [
+      "Inspect my Casein workspace and continue in the agent pane.",
+      "Verify this UI change in the visible Casein preview.",
+      "Finish this session with a durable worktree handoff."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

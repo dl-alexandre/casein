@@ -233,8 +233,8 @@ if (-not $SkipBuild) {
         $env:MIX_ENV = 'prod'
         $env:CASEIN_NATIVE_WINDOWS = 'true'
         $env:CASEIN_REPO_ADAPTER = 'sqlite'
-        $env:DEVIDE_RELEASE_PROFILE = 'desktop'
-        $env:DEVIDE_GIT_REVISION = $sourceRevision
+        $env:CASEIN_RELEASE_PROFILE = 'desktop'
+        $env:CASEIN_GIT_REVISION = $sourceRevision
         if (-not (Test-Path -LiteralPath (Join-Path $root 'assets\node_modules\@codemirror\view'))) {
             throw 'Asset dependencies are missing; run mix assets.npm before packaging'
         }

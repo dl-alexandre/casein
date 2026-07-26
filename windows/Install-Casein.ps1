@@ -26,7 +26,7 @@ function Test-ReleaseTrust {
     $manifestPath = Join-Path $Root 'windows\Casein.Release.psd1'
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Release trust manifest is missing.' }
     $signature = Get-AuthenticodeSignature -FilePath $manifestPath
-    $signatureRequired = $RequireSigned -or $env:DEVIDE_REQUIRE_SIGNED_RELEASES -eq '1'
+    $signatureRequired = $RequireSigned -or $env:CASEIN_REQUIRE_SIGNED_RELEASES -eq '1'
     if ($signatureRequired -and $signature.Status -ne 'Valid') {
         throw "A trusted Authenticode release signature is required; status: $($signature.Status)."
     }
@@ -111,7 +111,7 @@ function Backup-UserData {
     New-Item -ItemType Directory -Force -Path $backup | Out-Null
     # Credentials are machine/user-bound DPAPI blobs and are neither useful nor
     # appropriate in update backups. The live files remain in DataRoot.
-    foreach ($name in @('devide.sqlite3', 'desktop-host.json')) {
+    foreach ($name in @('casein.sqlite3', 'desktop-host.json')) {
         $source = Join-Path $DataRoot $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $backup -Force }
     }

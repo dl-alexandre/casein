@@ -125,7 +125,7 @@ defmodule Casein.ProposalApply do
   # sobelow_skip ["Traversal.FileModule"]
   defp write_temp_patch!(diff) do
     path =
-      Path.join(System.tmp_dir!(), "devide-proposal-#{:erlang.unique_integer([:positive])}.patch")
+      Path.join(System.tmp_dir!(), "casein-proposal-#{:erlang.unique_integer([:positive])}.patch")
 
     File.write!(path, diff)
     File.chmod(path, 0o600)

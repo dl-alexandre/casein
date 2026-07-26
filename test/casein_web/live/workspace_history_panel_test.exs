@@ -40,7 +40,7 @@ defmodule CaseinWeb.WorkspaceHistoryPanelTest do
 
   describe "history side panel" do
     test "lazy-loads: no previous-session search during cockpit mount", %{conn: conn} do
-      mount_env!("devide-workspace-history-lazy")
+      mount_env!("casein-workspace-history-lazy")
       seed_activity()
 
       {:ok, view, html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
@@ -67,7 +67,7 @@ defmodule CaseinWeb.WorkspaceHistoryPanelTest do
     end
 
     test "search filters, session deep links, and clear", %{conn: conn} do
-      mount_env!("devide-workspace-history-search")
+      mount_env!("casein-workspace-history-search")
       seed_activity()
 
       {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
@@ -107,7 +107,7 @@ defmodule CaseinWeb.WorkspaceHistoryPanelTest do
     end
 
     test "refreshes while open when new MCP activity arrives", %{conn: conn} do
-      mount_env!("devide-workspace-history-live")
+      mount_env!("casein-workspace-history-live")
 
       # Open pre-filtered (query=fresh) so cockpit-emitted audit noise stays out.
       {:ok, view, html} =
@@ -138,7 +138,7 @@ defmodule CaseinWeb.WorkspaceHistoryPanelTest do
     end
 
     test "surfaces normalized Grok ACP events while the History panel is open", %{conn: conn} do
-      mount_env!("devide-workspace-history-grok-acp")
+      mount_env!("casein-workspace-history-grok-acp")
 
       {:ok, view, html} =
         live(conn, ~p"/workspaces/#{@workspace_id}?host=local&tab=history&query=permission")
@@ -169,7 +169,7 @@ defmodule CaseinWeb.WorkspaceHistoryPanelTest do
     end
 
     test "hydrates History from durable AgentEvents after the live cache is empty", %{conn: conn} do
-      mount_env!("devide-workspace-history-agent-events")
+      mount_env!("casein-workspace-history-agent-events")
 
       assert {:ok, _event, :inserted} =
                AgentEvents.append_runtime(%{
@@ -192,7 +192,7 @@ defmodule CaseinWeb.WorkspaceHistoryPanelTest do
     end
 
     test "?tab=history deep link opens the panel and seeds search filters", %{conn: conn} do
-      mount_env!("devide-workspace-history-deeplink")
+      mount_env!("casein-workspace-history-deeplink")
       seed_activity()
 
       {:ok, _view, html} =
@@ -205,7 +205,7 @@ defmodule CaseinWeb.WorkspaceHistoryPanelTest do
     end
 
     test "renders compact preview context for preview MCP activity", %{conn: conn} do
-      mount_env!("devide-workspace-history-preview")
+      mount_env!("casein-workspace-history-preview")
 
       Activity.record(%{
         workspace_id: @workspace_id,

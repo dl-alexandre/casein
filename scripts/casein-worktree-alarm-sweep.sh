@@ -9,14 +9,14 @@
 # Usage:
 #   scripts/casein-worktree-alarm-sweep.sh              # release RPC sweep
 #   scripts/casein-worktree-alarm-sweep.sh --dry-run    # same, explicit
-#   DEVIDE_WORKTREE_ALARM_TTL_SECONDS=86400 scripts/...
+#   CASEIN_WORKTREE_ALARM_TTL_SECONDS=86400 scripts/...
 #
 set -euo pipefail
 
 MODE="sweep"
-TTL_SECONDS="${DEVIDE_WORKTREE_ALARM_TTL_SECONDS:-86400}"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
-RELEASE_BIN="${DEVIDE_RELEASE_BIN:-/opt/casein/release/bin/casein}"
+TTL_SECONDS="${CASEIN_WORKTREE_ALARM_TTL_SECONDS:-86400}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
+RELEASE_BIN="${CASEIN_RELEASE_BIN:-/opt/casein/release/bin/casein}"
 
 usage() {
   sed -n '2,13p' "$0"
@@ -43,12 +43,12 @@ run_release_sweep() {
   local unit node cookie expr
 
   unit="$(
-    { systemctl list-units 'devide-*.service' --state=active --no-legend --plain 2>/dev/null || true; } |
-      awk '$1 ~ /^devide-[0-9a-f]+\.service$/ {print $1; exit}'
+    { systemctl list-units 'casein-*.service' --state=active --no-legend --plain 2>/dev/null || true; } |
+      awk '$1 ~ /^casein-[0-9a-f]+\.service$/ {print $1; exit}'
   )"
 
   if [[ -z "$unit" ]]; then
-    echo "devide worktree alarm: no active devide canary unit found" >&2
+    echo "casein worktree alarm: no active casein canary unit found" >&2
     exit 1
   fi
 
@@ -59,14 +59,14 @@ run_release_sweep() {
   )"
 
   if [[ -z "$node" ]]; then
-    echo "devide worktree alarm: RELEASE_NODE missing from $unit" >&2
+    echo "casein worktree alarm: RELEASE_NODE missing from $unit" >&2
     exit 1
   fi
 
   cookie="$(awk -F= '/^RELEASE_COOKIE=/{print $2}' "$ENV_FILE" | tail -1)"
 
   if [[ -z "$cookie" ]]; then
-    echo "devide worktree alarm: RELEASE_COOKIE missing from $ENV_FILE" >&2
+    echo "casein worktree alarm: RELEASE_COOKIE missing from $ENV_FILE" >&2
     exit 1
   fi
 

@@ -2,7 +2,7 @@
 
 > Public product name: **Casein**
 >
-> Previous public name: **DevIDE**
+> Previous public name: **Casein**
 >
 > Decision: **GO WITH ACCEPTED RISKS** (2026-07-22)
 
@@ -23,30 +23,30 @@ legal clearance, and the collision evidence is not a legal conclusion.
 > implementation identifiers unchanged. The product owner has since directed
 > the separate migration that scope anticipated, and it has been executed:
 >
-> - **Migrated to Casein:** module namespace (`DevIDE.*` → `Casein.*`), OTP app
->   atom (`:dev_ide` → `:casein`), environment variables (`DEV_IDE_*` →
+> - **Migrated to Casein:** module namespace (`Casein.*` → `Casein.*`), OTP app
+>   atom (`:casein` → `:casein`), environment variables (`CASEIN_*` →
 >   `CASEIN_*`), source directories, the release + `bin/casein`, `mix casein.*`
 >   tasks, systemd units, infra scripts, docker identity, Windows desktop
 >   identity, the MCP server, frontend event/CSS namespaces, and DB + private
 >   package names.
-> - **Frozen by design:** the `DEVIDE_*` env namespace (a separate namespace
+> - **Frozen by design:** the `CASEIN_*` env namespace (a separate namespace
 >   that now coexists with `CASEIN_*`) and the `:ghostty` app atom. (The
->   `X-DevIDE-Caller-Pane` caller-pane header and the remaining user-facing
->   DevIDE copy were later renamed too — the header as a coordinated wire cutover
->   where running agents send the old name until restarted. The only DevIDE names
+>   `X-Casein-Caller-Pane` caller-pane header and the remaining user-facing
+>   Casein copy were later renamed too — the header as a coordinated wire cutover
+>   where running agents send the old name until restarted. The only Casein names
 >   that remain are the `native/` Apple/OS-registered ids pending registration,
 >   and the former-name references in this record.)
 > - **N4 updated:** the canonical repository was renamed
->   `dl-alexandre/dev_ide` → **`dl-alexandre/casein`** (still private). GitHub
+>   `dl-alexandre/casein` → **`dl-alexandre/casein`** (still private). GitHub
 >   redirects the former URL.
 > - **Still deferred**, because each needs an external registration or a
 >   running-system re-provisioning that a source-only rename would break: the
->   public host name (`devide.devbox.milcgroup.com` — needs DNS + Caddy in
->   milc-devbox), the Apple bundle id `com.alexandrefamilyfarm.devide-mob`
+>   public host name (`casein.devbox.milcgroup.com` — needs DNS + Caddy in
+>   milc-devbox), the Apple bundle id `com.alexandrefamilyfarm.casein-mob`
 >   (needs an Apple App ID + provisioning profile), and the workspace slug
->   `dalexandre-devide` together with the tmux session prefix and MCP server
+>   `dalexandre-casein` together with the tmux session prefix and MCP server
 >   slugs derived from it (needs workspace re-provisioning). The live host also
->   still uses the `/opt/devide`, `/etc/devide`, `/run/devide` paths; the deploy
+>   still uses the `/opt/casein`, `/etc/casein`, `/run/casein` paths; the deploy
 >   scripts target those, with `casein` aliases symlinked on the box.
 > - **N3 unchanged:** no unqualified `casein` package coordinate is claimed or
 >   published. The renamed package names are private and unpublished.
@@ -55,8 +55,8 @@ legal clearance, and the collision evidence is not a legal conclusion.
 >   separate, not-yet-performed step.
 
 The public-brand decision was deliberately separate from implementation
-identity. *(Superseded by the amendment above.)* Keep `DevIDE.*`, `:dev_ide`,
-`dev_ide`, and `DEV_IDE_*` unchanged. Existing commands, package coordinates,
+identity. *(Superseded by the amendment above.)* Keep `Casein.*`, `:casein`,
+`casein`, and `CASEIN_*` unchanged. Existing commands, package coordinates,
 repository paths, release artifacts, URLs, and deployment configuration remain
 compatibility surfaces unless a separate migration is approved.
 
@@ -115,7 +115,7 @@ before claiming clearance or an unqualified package or web identity.
 ## Test script
 
 Use the same artifact and questions for every participant. Do not mention milk,
-protein, DevIDE, or the intended pronunciation before the first response.
+protein, Casein, or the intended pronunciation before the first response.
 
 1. Show **Casein** for five seconds. Ask the participant to say it.
 2. Say the name once. Ask the participant to write it.

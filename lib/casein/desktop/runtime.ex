@@ -26,7 +26,7 @@ defmodule Casein.Desktop.Runtime do
   def database_path do
     System.get_env("DATABASE_PATH") ||
       System.get_env("SQLITE_DATABASE_PATH") ||
-      Path.join(data_dir(), "devide.sqlite3")
+      Path.join(data_dir(), "casein.sqlite3")
   end
 
   @spec status_path() :: Path.t()
@@ -57,7 +57,7 @@ defmodule Casein.Desktop.Runtime do
   end
 
   defp default_data_dir(_os_type) do
-    Path.join(xdg_data_home(), "devide")
+    Path.join(xdg_data_home(), "casein")
   end
 
   defp xdg_data_home do

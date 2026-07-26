@@ -12,7 +12,7 @@ defmodule Casein.Terminals.ToolThemesTest do
     previous_enabled = Application.get_env(:casein, :tool_themes_enabled)
 
     home =
-      Path.join(System.tmp_dir!(), "devide-tool-themes-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-tool-themes-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(home)
     Application.put_env(:casein, :tool_theme_home, home)
@@ -144,12 +144,12 @@ defmodule Casein.Terminals.ToolThemesTest do
     test "appends a [ui] section when the file has none", %{home: home} do
       path = grok_path(home)
       File.mkdir_p!(Path.dirname(path))
-      File.write!(path, "[mcp_servers.devide]\nurl = \"https://example.test\"\n")
+      File.write!(path, "[mcp_servers.casein]\nurl = \"https://example.test\"\n")
 
       assert :ok = ToolThemes.ensure("grok", grok_spec(), :dark)
 
       assert File.read!(path) ==
-               "[mcp_servers.devide]\nurl = \"https://example.test\"\n\n[ui]\ntheme = \"groknight\"\n"
+               "[mcp_servers.casein]\nurl = \"https://example.test\"\n\n[ui]\ntheme = \"groknight\"\n"
     end
 
     test "second call with the same scheme does not rewrite the file", %{home: home} do
@@ -181,7 +181,7 @@ defmodule Casein.Terminals.ToolThemesTest do
         """
         # hand-written header
 
-        [mcp_servers.devide]
+        [mcp_servers.casein]
         url = "https://example.test"   # trailing comment
 
         [ui]
@@ -214,7 +214,7 @@ defmodule Casein.Terminals.ToolThemesTest do
       locked =
         Path.join(
           System.tmp_dir!(),
-          "devide-tool-themes-ro-#{System.unique_integer([:positive])}"
+          "casein-tool-themes-ro-#{System.unique_integer([:positive])}"
         )
 
       File.mkdir_p!(locked)

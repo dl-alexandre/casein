@@ -14,7 +14,7 @@ defmodule Casein.Deployment.GithubWebhook do
   @spec configured_secret() :: String.t() | nil
   def configured_secret do
     config(:github_webhook_secret) ||
-      blank_to_nil(System.get_env("DEVIDE_DEPLOY_WEBHOOK_SECRET"))
+      blank_to_nil(System.get_env("CASEIN_DEPLOY_WEBHOOK_SECRET"))
   end
 
   @doc "Verifies the GitHub HMAC signature for a raw JSON body."
@@ -70,7 +70,7 @@ defmodule Casein.Deployment.GithubWebhook do
   defp assert_repository(_payload), do: :ok
 
   defp expected_repo do
-    config(:github_repo) || blank_to_nil(System.get_env("DEVIDE_GITHUB_REPO"))
+    config(:github_repo) || blank_to_nil(System.get_env("CASEIN_GITHUB_REPO"))
   end
 
   defp secure_compare?(left, right) when is_binary(left) and is_binary(right) do

@@ -41,7 +41,7 @@ defmodule CaseinWeb.PwaStaticTest do
     assert body =~ "networkFirstStatic"
     assert body =~ "/offline.html"
     assert body =~ "notificationclick"
-    assert body =~ "DEVIDE_AGENT_QUIET_OPEN"
+    assert body =~ "CASEIN_AGENT_QUIET_OPEN"
   end
 
   test "standalone PWA chrome respects iOS safe areas" do

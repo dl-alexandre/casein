@@ -7,7 +7,7 @@ defmodule Casein.Release.CLITest do
   alias Casein.Release.Metadata
 
   setup do
-    tmp = System.tmp_dir!() |> Path.join("devide-cli-#{System.unique_integer([:positive])}")
+    tmp = System.tmp_dir!() |> Path.join("casein-cli-#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)
 
     :ok =
@@ -20,15 +20,15 @@ defmodule Casein.Release.CLITest do
         )
       )
 
-    prev_root = System.get_env("DEVIDE_RELEASE_ROOT")
-    System.put_env("DEVIDE_RELEASE_ROOT", tmp)
+    prev_root = System.get_env("CASEIN_RELEASE_ROOT")
+    System.put_env("CASEIN_RELEASE_ROOT", tmp)
 
     on_exit(fn ->
       File.rm_rf!(tmp)
 
       if prev_root,
-        do: System.put_env("DEVIDE_RELEASE_ROOT", prev_root),
-        else: System.delete_env("DEVIDE_RELEASE_ROOT")
+        do: System.put_env("CASEIN_RELEASE_ROOT", prev_root),
+        else: System.delete_env("CASEIN_RELEASE_ROOT")
     end)
 
     :ok
@@ -36,7 +36,7 @@ defmodule Casein.Release.CLITest do
 
   test "version prints human output" do
     output = capture_io(fn -> assert CLI.print_version([]) == :ok end)
-    assert output =~ "devide"
+    assert output =~ "casein"
     assert output =~ "abc123"
     assert output =~ "lan/linux-x86_64"
   end

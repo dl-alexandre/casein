@@ -20,15 +20,15 @@ defmodule Casein.Operator.DetectorsTest do
   describe "blocked_too_long/3" do
     test "flags blocked entries older than the threshold, with redacted evidence" do
       entries = %{
-        {"devide_a_agent", "%1"} => entry(:blocked, 700, "token=sk-live-1234567890abcdef"),
-        {"devide_a_agent", "%2"} => entry(:blocked, 30),
-        {"devide_a_agent", "%3"} => entry(:working, 700)
+        {"casein_a_agent", "%1"} => entry(:blocked, 700, "token=sk-live-1234567890abcdef"),
+        {"casein_a_agent", "%2"} => entry(:blocked, 30),
+        {"casein_a_agent", "%3"} => entry(:working, 700)
       }
 
       assert [risk] = Detectors.blocked_too_long(entries, @now, 600)
       assert risk.id == :blocked_too_long
       assert risk.severity == :critical
-      assert risk.subject == "devide_a_agent %1"
+      assert risk.subject == "casein_a_agent %1"
       assert risk.detected_at == @now
       assert risk.evidence.blocked_for_s == 700
       assert risk.evidence.message =~ "[REDACTED]"
@@ -49,7 +49,7 @@ defmodule Casein.Operator.DetectorsTest do
         sessions: [
           %{
             sid: "sid-1",
-            tmux_session: "devide_a_agent",
+            tmux_session: "casein_a_agent",
             panes: [
               %{id: "%1", agent_state: :working, task_summary: "refactor"},
               %{id: "%2", agent_state: :idle}
@@ -57,7 +57,7 @@ defmodule Casein.Operator.DetectorsTest do
           },
           %{
             sid: "sid-2",
-            tmux_session: "devide_a_shell",
+            tmux_session: "casein_a_shell",
             panes: [%{id: "%3", agent_state: :working}]
           }
         ]
@@ -75,7 +75,7 @@ defmodule Casein.Operator.DetectorsTest do
       assert [risk] = Detectors.working_no_output(digest, last_output_at, @now, 300)
       assert risk.id == :working_no_output
       assert risk.severity == :warn
-      assert risk.subject == "devide_a_agent %1"
+      assert risk.subject == "casein_a_agent %1"
       assert risk.evidence.sid == "sid-1"
       assert risk.evidence.silent_for_s == 400
       assert risk.evidence.task_summary == "refactor"

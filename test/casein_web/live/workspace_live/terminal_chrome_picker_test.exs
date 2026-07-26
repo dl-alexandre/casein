@@ -11,6 +11,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromePickerTest do
   end
 
   test "preview_favicon_url uses a same-origin favicon" do
-    assert TerminalChrome.preview_favicon_url("https://devide.example.test/app") == "/favicon.ico"
+    assert TerminalChrome.preview_favicon_url("https://casein.example.test/app") == "/favicon.ico"
   end
 end

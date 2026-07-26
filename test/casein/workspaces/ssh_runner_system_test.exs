@@ -3,7 +3,7 @@ defmodule Casein.Workspaces.SshRunner.SystemTest do
 
   alias Casein.Workspaces.SshRunner.System, as: SshSystem
 
-  @invalid_host "devide-ssh-invalid.#{System.unique_integer([:positive])}.invalid"
+  @invalid_host "casein-ssh-invalid.#{System.unique_integer([:positive])}.invalid"
 
   test "run/2 returns error for unreachable host without hanging" do
     assert {:error, {:ssh_failed, _code, _err}} = SshSystem.run(@invalid_host, ["echo", "hi"])

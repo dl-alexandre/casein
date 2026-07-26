@@ -85,9 +85,9 @@ PWA surface for deeper work.
 
 ## Platform ownership
 
-- Android lane: `native/devide_mob/android/**`, SM-T390 build/install/logcat and
+- Android lane: `native/casein_mob/android/**`, SM-T390 build/install/logcat and
   lifecycle evidence.
-- iOS lane: `native/devide_mob/ios/**`, signed iPad build/install/logs, lifecycle,
+- iOS lane: `native/casein_mob/ios/**`, signed iPad build/install/logs, lifecycle,
   and landscape evidence.
 - Lead lane: all shared Elixir contracts, server actions, shared Mob state/UI,
   migrations, PR scope, and integration decisions.

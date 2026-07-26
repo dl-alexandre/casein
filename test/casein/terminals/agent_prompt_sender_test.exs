@@ -61,7 +61,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
     assert {:ok, result} =
              AgentPromptSender.send_prompt(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "%2",
                "## Fix MCP auth\r\none\n\ntwo\nthree",
                max_lines_per_chunk: 2,
@@ -69,7 +69,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
              )
 
     assert result == %{
-             session: "devide_alpha_agent",
+             session: "casein_alpha_agent",
              pane: "%2",
              chunks_sent: 3,
              total_chunks: 3,
@@ -88,19 +88,19 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
              }
            }
 
-    assert_receive {:fake_tmux_set_session_alias, "devide_alpha_agent", "Fix MCP auth"}
-    assert_receive {:fake_tmux_rename_window, "devide_alpha_agent", "@1", "Fix MCP auth"}
+    assert_receive {:fake_tmux_set_session_alias, "casein_alpha_agent", "Fix MCP auth"}
+    assert_receive {:fake_tmux_rename_window, "casein_alpha_agent", "@1", "Fix MCP auth"}
 
-    assert_receive {:fake_tmux_paste_text, "devide_alpha_agent", "%2", "## Fix MCP auth\none\n",
+    assert_receive {:fake_tmux_paste_text, "casein_alpha_agent", "%2", "## Fix MCP auth\none\n",
                     [target: "%2", submit: false]}
 
-    assert_receive {:fake_tmux_paste_text, "devide_alpha_agent", "%2", "\ntwo\n",
+    assert_receive {:fake_tmux_paste_text, "casein_alpha_agent", "%2", "\ntwo\n",
                     [target: "%2", submit: false]}
 
-    assert_receive {:fake_tmux_paste_text, "devide_alpha_agent", "%2", "three",
+    assert_receive {:fake_tmux_paste_text, "casein_alpha_agent", "%2", "three",
                     [target: "%2", submit: true]}
 
-    assert_receive {:fake_tmux_keys, "devide_alpha_agent", "%2", "Enter", [target: "%2"]}
+    assert_receive {:fake_tmux_keys, "casein_alpha_agent", "%2", "Enter", [target: "%2"]}
   end
 
   test "empty prompts do not submit or send chunks" do
@@ -120,7 +120,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
                 errors: []
               }
             }} =
-             AgentPromptSender.send_prompt("devide_alpha_agent", "%2", "", submit: true)
+             AgentPromptSender.send_prompt("casein_alpha_agent", "%2", "", submit: true)
 
     refute_receive {:fake_tmux_paste_text, _, _, _, _}
     refute_receive {:fake_tmux_keys, _, _, _, _}
@@ -137,7 +137,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
               title: nil,
               title_source: :none
             }} =
-             AgentPromptSender.send_prompt("devide_alpha_agent", "%2", "",
+             AgentPromptSender.send_prompt("casein_alpha_agent", "%2", "",
                submit: true,
                workspace_id: "ws-alpha"
              )
@@ -153,7 +153,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
              }
            ] = Audit.recent_for("ws-alpha", 5)
 
-    assert metadata["session"] == "devide_alpha_agent"
+    assert metadata["session"] == "casein_alpha_agent"
     assert metadata["pane"] == "%2"
     assert metadata["tool"] == "send_agent_prompt"
     assert metadata["status"] == "noop"
@@ -190,7 +190,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
     assert {:error, error} =
              AgentPromptSender.send_prompt(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "%2",
                "ok\nfail\nlater",
                max_lines_per_chunk: 1,
@@ -199,7 +199,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
              )
 
     assert error == %{
-             session: "devide_alpha_agent",
+             session: "casein_alpha_agent",
              pane: "%2",
              reason: :paste_failed,
              chunks_sent: 1,
@@ -220,25 +220,25 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
              }
            }
 
-    assert_receive {:failing_tmux_paste_text, "devide_alpha_agent", "ok\n",
+    assert_receive {:failing_tmux_paste_text, "casein_alpha_agent", "ok\n",
                     [target: "%2", submit: false]}
 
-    assert_receive {:failing_tmux_paste_text, "devide_alpha_agent", "fail\n",
+    assert_receive {:failing_tmux_paste_text, "casein_alpha_agent", "fail\n",
                     [target: "%2", submit: false]}
 
-    refute_receive {:failing_tmux_paste_text, "devide_alpha_agent", "later", _}
+    refute_receive {:failing_tmux_paste_text, "casein_alpha_agent", "later", _}
   end
 
   test "terminal facade uses the configured tmux adapter" do
     assert {:ok, %{chunks_sent: 1, title: "Run focused tests"}} =
              Terminals.send_agent_prompt(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "%2",
                "Run focused tests",
                submit: false
              )
 
-    assert_receive {:fake_tmux_paste_text, "devide_alpha_agent", "%2", "Run focused tests",
+    assert_receive {:fake_tmux_paste_text, "casein_alpha_agent", "%2", "Run focused tests",
                     [target: "%2", submit: false]}
   end
 
@@ -246,16 +246,16 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
     seed_agent_pane()
 
     assert {:ok, %{id: "%2", agent_match: "pane_role"}} =
-             Terminals.find_agent_pane("devide_alpha_agent")
+             Terminals.find_agent_pane("casein_alpha_agent")
 
     assert {:ok, %{pane: "%2", title: "Facade prompt"}} =
              Terminals.send_agent_prompt_to_agent_pane(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "Facade prompt",
                submit: false
              )
 
-    assert_receive {:fake_tmux_paste_text, "devide_alpha_agent", "%2", "Facade prompt",
+    assert_receive {:fake_tmux_paste_text, "casein_alpha_agent", "%2", "Facade prompt",
                     [target: "%2", submit: false]}
   end
 
@@ -273,7 +273,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
               }
             }} =
              AgentPromptSender.send_prompt(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "%2",
                "New prompt title",
                submit: false
@@ -297,13 +297,13 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
               }
             }} =
              AgentPromptSender.send_prompt(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "%2",
                "Operator pane prompt",
                submit: false
              )
 
-    assert_receive {:fake_tmux_set_session_alias, "devide_alpha_agent", "Operator pane prompt"}
+    assert_receive {:fake_tmux_set_session_alias, "casein_alpha_agent", "Operator pane prompt"}
     refute_receive {:fake_tmux_rename_window, _, _, _}
   end
 
@@ -312,12 +312,12 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
     assert {:ok, %{pane: "%2", title: "Use agent role"}} =
              AgentPromptSender.send_to_agent_pane(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "Use agent role",
                submit: false
              )
 
-    assert_receive {:fake_tmux_paste_text, "devide_alpha_agent", "%2", "Use agent role",
+    assert_receive {:fake_tmux_paste_text, "casein_alpha_agent", "%2", "Use agent role",
                     [target: "%2", submit: false]}
   end
 
@@ -333,7 +333,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
               auto_apply_option: :auto_apply_agent_pair,
               candidate_panes: [%{id: "%2", role: "operator"}]
             }} =
-             AgentPromptSender.send_to_agent_pane("devide_alpha_agent", "hello")
+             AgentPromptSender.send_to_agent_pane("casein_alpha_agent", "hello")
 
     refute_receive {:fake_tmux_paste_text, _, _, _, _}
   end
@@ -343,21 +343,21 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
     assert {:ok, %{pane: "%4", title: "Recover missing layout"}} =
              AgentPromptSender.send_to_agent_pane(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "Recover missing layout",
                submit: false,
                auto_apply_agent_pair: true
              )
 
-    assert_receive {:fake_tmux_new_window, "devide_alpha_agent", opts}
+    assert_receive {:fake_tmux_new_window, "casein_alpha_agent", opts}
     assert opts[:name] == "work"
 
-    assert_receive {:fake_tmux_set_pane_role, "devide_alpha_agent", "%3", "operator"}
-    assert_receive {:fake_tmux_split_pane, "devide_alpha_agent", "%3", "h", "%4"}
-    assert_receive {:fake_tmux_set_pane_role, "devide_alpha_agent", "%4", "agent"}
-    assert_receive {:fake_tmux_send_command, "devide_alpha_agent", "%4", _, _}
+    assert_receive {:fake_tmux_set_pane_role, "casein_alpha_agent", "%3", "operator"}
+    assert_receive {:fake_tmux_split_pane, "casein_alpha_agent", "%3", "h", "%4"}
+    assert_receive {:fake_tmux_set_pane_role, "casein_alpha_agent", "%4", "agent"}
+    assert_receive {:fake_tmux_send_command, "casein_alpha_agent", "%4", _, _}
 
-    assert_receive {:fake_tmux_paste_text, "devide_alpha_agent", "%4", "Recover missing layout",
+    assert_receive {:fake_tmux_paste_text, "casein_alpha_agent", "%4", "Recover missing layout",
                     [target: "%4", submit: false]}
   end
 
@@ -378,7 +378,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
               ]
             }} =
              AgentPromptSender.send_to_agent_pane(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "Recover missing layout",
                auto_apply_agent_pair: true
              )
@@ -394,7 +394,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
     assert {:ok, %{status: :done, title: "Fix preview auth"}} =
              AgentPromptSender.send_prompt(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "%2",
                "## Fix preview auth\r\nKeep blank lines\n\nThen run tests",
                max_lines_per_chunk: 2,
@@ -420,7 +420,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
              }
            ] = Audit.recent_for("ws-alpha", 5)
 
-    assert metadata["session"] == "devide_alpha_agent"
+    assert metadata["session"] == "casein_alpha_agent"
     assert metadata["pane"] == "%2"
     assert metadata["tool"] == "send_agent_prompt"
     assert metadata["status"] == "done"
@@ -449,7 +449,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
              source: :agent,
              tool: "send_agent_prompt",
              frozen?: false
-           } = Labels.get("devide_alpha_agent", "%2")
+           } = Labels.get("casein_alpha_agent", "%2")
 
     assert [
              %{
@@ -470,7 +470,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
     assert summary =~ "done: Fix preview auth"
     assert summary =~ "pane=%2"
-    assert activity_metadata["session"] == "devide_alpha_agent"
+    assert activity_metadata["session"] == "casein_alpha_agent"
     assert activity_metadata["pane"] == "%2"
     assert activity_metadata["title"] == "Fix preview auth"
     assert activity_metadata["title_source"] == "first_prompt"
@@ -498,17 +498,17 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
   test "prompt title labels the pane without overwriting a frozen manual label" do
     seed_agent_pane()
-    Labels.set_agent_label("ws-alpha", "devide_alpha_agent", "%2", "Pinned review", freeze: true)
+    Labels.set_agent_label("ws-alpha", "casein_alpha_agent", "%2", "Pinned review", freeze: true)
 
     assert {:ok, %{naming: %{pane_label: :kept}}} =
              AgentPromptSender.send_prompt(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "%2",
                "New prompt title",
                workspace_id: "ws-alpha"
              )
 
-    assert %{label: "Pinned review", frozen?: true} = Labels.get("devide_alpha_agent", "%2")
+    assert %{label: "Pinned review", frozen?: true} = Labels.get("casein_alpha_agent", "%2")
   end
 
   test "redacts obvious secrets from derived names audit and activity" do
@@ -518,18 +518,18 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
     assert {:ok, %{title: "Bearer [REDACTED]"}} =
              AgentPromptSender.send_prompt(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "%2",
                prompt,
                workspace_id: "ws-alpha"
              )
 
-    assert_receive {:fake_tmux_set_session_alias, "devide_alpha_agent", "Bearer [REDACTED]"}
-    assert_receive {:fake_tmux_rename_window, "devide_alpha_agent", "@1", "Bearer [REDACTED]"}
-    assert_receive {:fake_tmux_paste_text, "devide_alpha_agent", "%2", ^prompt, _opts}
+    assert_receive {:fake_tmux_set_session_alias, "casein_alpha_agent", "Bearer [REDACTED]"}
+    assert_receive {:fake_tmux_rename_window, "casein_alpha_agent", "@1", "Bearer [REDACTED]"}
+    assert_receive {:fake_tmux_paste_text, "casein_alpha_agent", "%2", ^prompt, _opts}
 
     assert %{label: "Bearer [REDACTED]", tool: "send_agent_prompt"} =
-             Labels.get("devide_alpha_agent", "%2")
+             Labels.get("casein_alpha_agent", "%2")
 
     [%{metadata: audit_metadata} | _] = Audit.recent_for("ws-alpha", 5)
 
@@ -553,7 +553,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
     assert {:error, %{status: :attention}} =
              AgentPromptSender.send_prompt(
-               "devide_alpha_agent",
+               "casein_alpha_agent",
                "%2",
                "ok\nfail\nlater",
                max_lines_per_chunk: 1,
@@ -606,7 +606,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
   end
 
   defp seed_agent_pane(opts \\ []) do
-    session = "devide_alpha_agent"
+    session = "casein_alpha_agent"
     window_name = Keyword.get(opts, :window_name, "work")
     pane_role = Keyword.get(opts, :pane_role, "agent")
 

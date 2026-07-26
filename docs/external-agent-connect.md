@@ -2,7 +2,7 @@
 
 Ready-to-go connection bundles for reaching Casein's agent-control MCP from **outside**
 the devbox. Two transports ("doors"); the tool surface and semantics are identical — only
-how you reach the endpoints and authenticate differ. See the host-side `devide-remote`
+how you reach the endpoints and authenticate differ. See the host-side `casein-remote`
 skill for the full map.
 
 Three JSON-RPC 2.0 MCP servers back everything:
@@ -13,12 +13,12 @@ Three JSON-RPC 2.0 MCP servers back everything:
 | Preview | `/api/preview/mcp` | preview panes + headless browser control |
 | Artifact | `/api/artifacts/mcp` | artifact projects |
 
-**Injected params for the `dalexandre-devide` workspace:**
+**Injected params for the `dalexandre-casein` workspace:**
 
 | Param | Value |
 |---|---|
 | Workspace UUID | `e7c18b93-688b-4bb0-904d-ac93d61e9372` |
-| Public host (Door 2) | `devide.devbox.milcgroup.com` |
+| Public host (Door 2) | `casein.devbox.milcgroup.com` |
 | Loopback base (Door 1) | `http://127.0.0.1:4000` |
 | Tool-search | ON (`CASEIN_MCP_TOOL_SEARCH=1` on the box) |
 
@@ -31,7 +31,7 @@ Three JSON-RPC 2.0 MCP servers back everything:
 Both doors work today (verified 2026-07-14).
 
 - **Door 1 (SSH tunnel):** ✅ loopback `:4000` token gate is live.
-- **Door 2 (public HTTPS):** ✅ the Caddy `@bearer` bypass on the `devide.*` host is live
+- **Door 2 (public HTTPS):** ✅ the Caddy `@bearer` bypass on the `casein.*` host is live
   (`manager/lib/caddy.js`, shipped in milc-devbox #245). Bearer requests to the three
   `/api/*/mcp` paths reach Phoenix `ApiAuth` directly; the browser cockpit still goes
   through oauth2-proxy.
@@ -74,7 +74,7 @@ Same for either door — just swap the host. Note: **no `?workspace_id`** in any
 ```json
 {
   "mcpServers": {
-    "devide-terminal": {
+    "casein-terminal": {
       "url": "http://127.0.0.1:4000/api/terminals/mcp",
       "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
     },
@@ -82,7 +82,7 @@ Same for either door — just swap the host. Note: **no `?workspace_id`** in any
       "url": "http://127.0.0.1:4000/api/preview/mcp",
       "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
     },
-    "devide-artifact": {
+    "casein-artifact": {
       "url": "http://127.0.0.1:4000/api/artifacts/mcp",
       "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
     }
@@ -95,7 +95,7 @@ Same for either door — just swap the host. Note: **no `?workspace_id`** in any
 With no workspace pinned, **discover first, then confine each call**:
 
 ```text
-1. terminal_list_sessions            (no workspace_id) → every live devide_* session, box-wide
+1. terminal_list_sessions            (no workspace_id) → every live casein_* session, box-wide
 2. GET /api/workspaces               → id / name / host path for each workspace
 3. <any tool> with "workspace_id":"<uuid>" in arguments → confined to that workspace
 ```
@@ -107,12 +107,12 @@ With no workspace pinned, **discover first, then confine each call**:
   change. Reclaiming the underlying worktree/tmux is a separate concern handled by the
   reaper / `cleanup-agent-worktrees.sh`; it does not require touching this config.
 - **Pick up a new workspace:** pass its `workspace_id` (from step 2) in `arguments`. Nothing
-  to materialize — a global token sees new `devide_*` sessions the moment they exist.
+  to materialize — a global token sees new `casein_*` sessions the moment they exist.
 
 Curl form of the discover-then-target loop:
 
 ```bash
-export CASEIN_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # GLOBAL token, chmod 600
+export CASEIN_API_TOKEN="$(cat ~/.casein-orchestrator-token)"   # GLOBAL token, chmod 600
 BASE=http://127.0.0.1:4000                                        # or the Door 2 public host
 rpc() { curl -s -X POST "$BASE/api/terminals/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" -H 'content-type: application/json' -d "$1"; }
@@ -145,7 +145,7 @@ for any off-box agent/CI you control.
 ssh -N -L 4000:127.0.0.1:4000 devbox &          # ← replace 'devbox' with your SSH host/alias
 
 # token from a private file, never committed / never pasted into a prompt
-export CASEIN_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # chmod 600 this file
+export CASEIN_API_TOKEN="$(cat ~/.casein-orchestrator-token)"   # chmod 600 this file
 
 # sanity: 401 = gate reached (good). 000 = tunnel not up. 200 with bearer = you're in.
 curl -s -o /dev/null -w "no-bearer: %{http_code}\n" http://127.0.0.1:4000/api/workspaces
@@ -155,12 +155,12 @@ curl -s -o /dev/null -w "bearer:    %{http_code}\n" -H "Authorization: Bearer $C
 
 ### Step 2 — MCP client config
 
-Save as `devide-remote.mcp.json`, replace the token placeholder, keep it gitignored:
+Save as `casein-remote.mcp.json`, replace the token placeholder, keep it gitignored:
 
 ```json
 {
   "mcpServers": {
-    "devide-terminal": {
+    "casein-terminal": {
       "url": "http://127.0.0.1:4000/api/terminals/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
@@ -168,7 +168,7 @@ Save as `devide-remote.mcp.json`, replace the token placeholder, keep it gitigno
       "url": "http://127.0.0.1:4000/api/preview/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
-    "devide-artifact": {
+    "casein-artifact": {
       "url": "http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     }
@@ -176,7 +176,7 @@ Save as `devide-remote.mcp.json`, replace the token placeholder, keep it gitigno
 }
 ```
 
-Launch: `claude --mcp-config devide-remote.mcp.json`. Drop `?workspace_id=…` on all three
+Launch: `claude --mcp-config casein-remote.mcp.json`. Drop `?workspace_id=…` on all three
 URLs to traverse the whole box (global token only).
 
 ---
@@ -190,50 +190,50 @@ tunnel is possible there).
 ### Step 1 — Token + verify (must send a bearer)
 
 ```bash
-export CASEIN_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # chmod 600 this file
+export CASEIN_API_TOKEN="$(cat ~/.casein-orchestrator-token)"   # chmod 600 this file
 
 # Correct test — WITH a bearer. Expect 200 (good token) or 401 (bad token).
 curl -s -o /dev/null -w "bearer:    %{http_code}\n" -X POST \
-  https://devide.devbox.milcgroup.com/api/terminals/mcp \
+  https://casein.devbox.milcgroup.com/api/terminals/mcp \
   -H "Authorization: Bearer $CASEIN_API_TOKEN" -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 
 # Sanity of the "no-bearer 302 is expected" behavior — this SHOULD show 302, not a failure.
 curl -s -o /dev/null -w "no-bearer: %{http_code}\n" -X POST \
-  https://devide.devbox.milcgroup.com/api/terminals/mcp \
+  https://casein.devbox.milcgroup.com/api/terminals/mcp \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 ```
 
 Expected: `bearer: 200` and `no-bearer: 302`. If the **bearer** line shows `302`, the
-`@bearer` route on the `devide.*` host regressed — check `manager/lib/caddy.js` and that
+`@bearer` route on the `casein.*` host regressed — check `manager/lib/caddy.js` and that
 the running manager (`/opt/devbox/manager`) regenerated + reloaded Caddy
-(`devide-remote/references/operator-setup.md` §2).
+(`casein-remote/references/operator-setup.md` §2).
 
 ### Step 2 — MCP client config
 
-Save as `devide-remote-door2.mcp.json`, replace the token placeholder, keep it gitignored:
+Save as `casein-remote-door2.mcp.json`, replace the token placeholder, keep it gitignored:
 
 ```json
 {
   "mcpServers": {
-    "devide-terminal": {
-      "url": "https://devide.devbox.milcgroup.com/api/terminals/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
+    "casein-terminal": {
+      "url": "https://casein.devbox.milcgroup.com/api/terminals/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
     "casein-preview": {
-      "url": "https://devide.devbox.milcgroup.com/api/preview/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
+      "url": "https://casein.devbox.milcgroup.com/api/preview/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
-    "devide-artifact": {
-      "url": "https://devide.devbox.milcgroup.com/api/artifacts/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
+    "casein-artifact": {
+      "url": "https://casein.devbox.milcgroup.com/api/artifacts/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     }
   }
 }
 ```
 
-Launch: `claude --mcp-config devide-remote-door2.mcp.json`. Drop `?workspace_id=…` to
+Launch: `claude --mcp-config casein-remote-door2.mcp.json`. Drop `?workspace_id=…` to
 traverse the whole box (global token only). For a **claude.ai custom connector**, add each
 URL with an `Authorization: Bearer …` header once the door is open.
 
@@ -242,7 +242,7 @@ URL with an `Authorization: Bearer …` header once the door is open.
 ## Copyable prompt for the external agent
 
 Pick by config shape. The **pinned** variants (Door 1 / Door 2) lock the agent to
-`dalexandre-devide`; the **durable** variant lets it roam every live workspace and abandon
+`dalexandre-casein`; the **durable** variant lets it roam every live workspace and abandon
 stale ones with no re-wiring.
 
 ### Durable (workspace-agnostic, global token)
@@ -251,20 +251,20 @@ stale ones with no re-wiring.
 You are connected to a remote Casein dev box over MCP with a workspace-agnostic (durable)
 config — no workspace is pinned. Three JSON-RPC 2.0 servers are wired as MCP clients:
 
-  • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
+  • casein-terminal  — tmux/agent control (list/topology/capture/send/wait)
   • casein-preview   — preview panes + headless browser control
-  • devide-artifact  — artifact projects
+  • casein-artifact  — artifact projects
 
 How to work here:
 - DISCOVER FIRST. Call terminal_list_sessions with NO workspace_id to see every live
-  devide_* session box-wide, then GET /api/workspaces for the id/name/path of each
+  casein_* session box-wide, then GET /api/workspaces for the id/name/path of each
   workspace. Report which workspaces are live and which look stale (low last-activity,
   no attached client).
 - TARGET PER CALL. To act inside a workspace, pass its "workspace_id" in the tool call's
   arguments — that confines the call to that workspace. Omit it only for box-wide discovery.
 - ABANDON is free: to drop a stale workspace, just stop targeting its id. Do not tear down
   or reconfigure anything. Reclaiming its worktree/session is a separate reaper concern.
-- NEW workspaces need nothing — a new devide_* session is reachable the moment it exists;
+- NEW workspaces need nothing — a new casein_* session is reachable the moment it exists;
   just pass its workspace_id.
 - Tool-search is ON: each big server lists a small CORE set plus search_tools/invoke_tool.
   For a tool that isn't listed, search_tools (natural language; "picture"→screenshot,
@@ -282,18 +282,18 @@ stale). Then wait for me to name which workspace to work in.
 ---
 
 The two **pinned** variants below are identical except the transport line; both lock to
-`dalexandre-devide`.
+`dalexandre-casein`.
 
 ### Door 1 (SSH tunnel)
 
 ```text
 You are connected to a remote Casein dev box over MCP (SSH tunnel → http://127.0.0.1:4000).
-Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandre-devide
+Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandre-casein
 workspace (workspace_id e7c18b93-688b-4bb0-904d-ac93d61e9372):
 
-  • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
+  • casein-terminal  — tmux/agent control (list/topology/capture/send/wait)
   • casein-preview   — preview panes + headless browser control
-  • devide-artifact  — artifact projects
+  • casein-artifact  — artifact projects
 
 Ground rules:
 - Always pass workspace_id "e7c18b93-688b-4bb0-904d-ac93d61e9372" on terminal calls.
@@ -315,13 +315,13 @@ windows, and any agent panes you find. Then wait for my instructions.
 ### Door 2 (public HTTPS)
 
 ```text
-You are connected to a remote Casein dev box over MCP (public HTTPS → https://devide.devbox.milcgroup.com).
-Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandre-devide
+You are connected to a remote Casein dev box over MCP (public HTTPS → https://casein.devbox.milcgroup.com).
+Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandre-casein
 workspace (workspace_id e7c18b93-688b-4bb0-904d-ac93d61e9372):
 
-  • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
+  • casein-terminal  — tmux/agent control (list/topology/capture/send/wait)
   • casein-preview   — preview panes + headless browser control
-  • devide-artifact  — artifact projects
+  • casein-artifact  — artifact projects
 
 Ground rules:
 - Always pass workspace_id "e7c18b93-688b-4bb0-904d-ac93d61e9372" on terminal calls.

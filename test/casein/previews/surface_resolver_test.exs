@@ -71,7 +71,7 @@ defmodule Casein.Previews.SurfaceResolverTest do
     Application.put_env(:casein, :workspaces_root, Path.dirname(workspace))
     Application.put_env(:casein, :on_devbox, true)
     Application.put_env(:casein, :preview_loopback_port, 4000)
-    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
 
     on_exit(fn ->
       File.rm_rf(workspace)
@@ -80,16 +80,16 @@ defmodule Casein.Previews.SurfaceResolverTest do
       restore_env(:workspaces_root, previous_root)
     end)
 
-    ws = %{id: "devide-checkout", path: workspace, metadata: %{attached_folder: true}}
+    ws = %{id: "casein-checkout", path: workspace, metadata: %{attached_folder: true}}
     surfaces = SurfaceResolver.resolve(ws)
     names = Enum.map(surfaces, & &1.name)
 
     assert "app" in names
     assert "app-local" in names
-    assert "devide" in names
+    assert "casein" in names
 
-    devide = Enum.find(surfaces, &(&1.name == "devide"))
-    assert devide.url =~ "/workspaces/devide-checkout"
+    casein = Enum.find(surfaces, &(&1.name == "casein"))
+    assert casein.url =~ "/workspaces/casein-checkout"
 
     app_local = Enum.find(surfaces, &(&1.name == "app-local"))
     assert app_local.url == "http://127.0.0.1:4000"
@@ -121,7 +121,7 @@ defmodule Casein.Previews.SurfaceResolverTest do
     end)
 
     ws = %{
-      id: "devide-detected",
+      id: "casein-detected",
       path: workspace,
       metadata: %{attached_folder: true, detected_ports: [8765]}
     }

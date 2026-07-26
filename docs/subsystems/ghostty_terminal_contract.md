@@ -2,13 +2,13 @@
 
 > **Provenance:** every contract below is read from source **in this repo** —
 > the `ghostty` hex dep (`~> 0.4`, locked **0.4.9**, `mix.exs:88` / `mix.lock:41`)
-> and dev_ide's own terminal adapters. File:line citations are given so it can
+> and casein's own terminal adapters. File:line citations are given so it can
 > be re-checked. This **supersedes the `# ASSUMPTION` parts** of
 > `contrib/mob-tooling/TERMINAL-INTEGRATION-SKETCH.md` that concern the terminal
 > grid/PTY — those are no longer speculative.
 >
 > **Still NOT verified here** (no source on this machine): the Mob `mix mob.*`
-> device task surface, and any **native iOS/Android renderer** — dev_ide renders
+> device task surface, and any **native iOS/Android renderer** — casein renders
 > the grid in a browser today (§5). Those remain explicitly fenced in §7.
 
 ## 1. The dependency is real and native
@@ -70,9 +70,9 @@ So vs. the draft's proposed `%{cells: [{row, col, codepoints, fg, bg, attrs, wid
 - **No `dirty_regions` in the API** — 0.4.9 returns the full grid; incremental
   rendering is an **app-level diff** (see §3), not a ghostty feature.
 
-## 3. How dev_ide renders today: Model B, in the browser
+## 3. How casein renders today: Model B, in the browser
 
-`Ghostty.Terminal.cells/1` gives the grid as data and dev_ide renders it
+`Ghostty.Terminal.cells/1` gives the grid as data and casein renders it
 client-side — i.e. **§6 Q1 = Model B, already shipped** (for web):
 
 - `lib/casein_web/components/ghostty_terminal_component.ex` mounts a JS hook
@@ -81,7 +81,7 @@ client-side — i.e. **§6 Q1 = Model B, already shipped** (for web):
   (:212). Input is captured via a hidden `<textarea data-ghostty-input>` (:60).
 - **Incremental frames are an app-level diff:** the component threads
   `previous_cells` → `last_render_cells` (:25, :206–:211) and only encodes
-  what changed. That's the answer to "dirty regions" — dev_ide computes them; the
+  what changed. That's the answer to "dirty regions" — casein computes them; the
   dep does not expose them.
 
 A native iOS/Android view would consume the **same `cells/1` contract**, but the
@@ -151,7 +151,7 @@ Do **not** treat these as settled — there is no source for them on this machin
   and `Mob.Device.subscribe/1`'s event shape remain `# ASSUMED MOB API` in
   `contrib/mob-tooling/`. This doc does **not** rename them to "real" tasks,
   because the Mob repo isn't here to confirm them.
-- **Native iOS/Android renderer.** dev_ide renders the grid in a browser (§3).
+- **Native iOS/Android renderer.** casein renders the grid in a browser (§3).
   A SwiftUI/Compose/Metal renderer that consumes `cells/1` is a *design target*,
   not existing code. The **contract it would consume is verified**; the renderer
   is not built.

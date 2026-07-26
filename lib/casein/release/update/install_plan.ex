@@ -2,7 +2,7 @@ defmodule Casein.Release.Update.InstallPlan do
   @moduledoc """
   Read-only planning helpers for release-side LAN update installs.
 
-  The root-only `bin/devide` wrapper owns downloads, extraction, symlink swaps,
+  The root-only `bin/casein` wrapper owns downloads, extraction, symlink swaps,
   service restarts, and rollback. This module keeps manifest parsing and
   compatibility checks in Elixir where structured data is already available.
   """

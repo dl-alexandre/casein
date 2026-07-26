@@ -390,7 +390,7 @@ defmodule Casein.Previews.Control do
   defp recording_dir(recording_id) do
     base =
       Application.get_env(:casein, :preview_recordings_root) ||
-        Path.join([System.tmp_dir!(), "devide_recordings"])
+        Path.join([System.tmp_dir!(), "casein_recordings"])
 
     Path.join(base, recording_id)
   end

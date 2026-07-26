@@ -13,7 +13,7 @@ defmodule Casein.Terminals.TmuxJanitorTest do
     :ok
   end
 
-  defp session_name(suffix \\ ""), do: "devide_jtest_" <> unique(suffix)
+  defp session_name(suffix \\ ""), do: "casein_jtest_" <> unique(suffix)
   defp unique(s), do: s <> Integer.to_string(System.unique_integer([:positive]))
 
   # Polls a condition instead of blindly sleeping: returns as soon as it holds,
@@ -152,7 +152,7 @@ defmodule Casein.Terminals.TmuxJanitorTest do
     Application.put_env(:casein, :tmux_idle_seconds, 1)
     workspace_key = "jtest_ws"
     sid = unique("shell_")
-    session = "devide_#{workspace_key}_#{sid}"
+    session = "casein_#{workspace_key}_#{sid}"
 
     info = Casein.Terminals.Session.Info.new_shell("ws-id", sid)
 
@@ -181,7 +181,7 @@ defmodule Casein.Terminals.TmuxJanitorTest do
   test "kill_idle keeps scratch shells durable when a live SessionOwner backs them" do
     # Scratch uses the same durable-shell path as real workspaces: a live
     # :shell SessionOwner marks the tmux session durable, so idle GC must not
-    # special-case/kill `devide___scratch___*`.
+    # special-case/kill `casein___scratch___*`.
     Application.put_env(:casein, :tmux_idle_seconds, 1)
     workspace_key = "__scratch__"
     sid = unique("shell_")
@@ -214,7 +214,7 @@ defmodule Casein.Terminals.TmuxJanitorTest do
     assert Process.alive?(owner_pid)
   end
 
-  test "session name without devide_ prefix is rejected at subscribe time" do
+  test "session name without casein_ prefix is rejected at subscribe time" do
     # Guards against accidentally tracking — and later killing — the
     # dev-time `phoenix` or `mock_manager` tmux sessions.
     foreign = "phoenix_pretend_" <> unique("")

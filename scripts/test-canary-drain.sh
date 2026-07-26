@@ -93,8 +93,8 @@ ok
 # ── running_canary_uuids: parse systemctl output to bare 16-hex uuids ────────
 systemctl() {
   cat <<'UNITS'
-devide-aaaaaaaaaaaaaaaa.service loaded active running Casein canary a
-devide-bbbbbbbbbbbbbbbb.service loaded active running Casein canary b
+casein-aaaaaaaaaaaaaaaa.service loaded active running Casein canary a
+casein-bbbbbbbbbbbbbbbb.service loaded active running Casein canary b
 casein-loopback.service         loaded active running Casein loopback
 casein-preview-router.service   loaded active running Casein preview
 UNITS
@@ -117,8 +117,8 @@ FIX_CWD[100]="/tmp/casein-agent-worktrees/agent-x (deleted)"
 orphaned_dev_server 100 || fail "leaked phx.server with deleted cwd must be orphaned"
 ok
 
-# A leaked release-node beam (dev_ide_*@host) with deleted cwd → reapable.
-FIX_CMDLINE[101]="/erts/bin/beam.smp -- ... -name dev_ide_abc@host ..."
+# A leaked release-node beam (casein_*@host) with deleted cwd → reapable.
+FIX_CMDLINE[101]="/erts/bin/beam.smp -- ... -name casein_abc@host ..."
 FIX_CWD[101]="/data/workspaces/x/.claude/worktrees/agent-y (deleted)"
 orphaned_dev_server 101 || fail "leaked release node with deleted cwd must be orphaned"
 ok
@@ -131,7 +131,7 @@ orphaned_dev_server 200 && fail "live release must never be orphaned" || ok
 
 # A canary boot from the release path but (implausibly) a deleted cwd is still
 # spared by the release-path exclusion — defense in depth.
-FIX_CMDLINE[201]="/opt/casein/release/bin/beam.smp -- -name dev_ide_ccc@host"
+FIX_CMDLINE[201]="/opt/casein/release/bin/beam.smp -- -name casein_ccc@host"
 FIX_CWD[201]="/opt/casein (deleted)"
 orphaned_dev_server 201 && fail "release-path beam must never be orphaned even if cwd deleted" || ok
 
@@ -143,7 +143,7 @@ orphaned_dev_server 300 && fail "dev server in a live worktree must not be orpha
 # A non-dev-ide beam (some other Elixir app) with deleted cwd → not ours, skip.
 FIX_CMDLINE[400]="/erts/bin/beam.smp -- -name other_app@host"
 FIX_CWD[400]="/tmp/whatever (deleted)"
-orphaned_dev_server 400 && fail "a non-dev_ide beam must not be reaped" || ok
+orphaned_dev_server 400 && fail "a non-casein beam must not be reaped" || ok
 
 # reap_orphaned_dev_servers kills exactly the orphaned pids from a mixed list.
 # The lib calls `kill "${od_pid}"` (single arg), so the stub captures $1.

@@ -132,10 +132,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
     end
 
     test "shell button label uses cwd and detail keeps sid suffix" do
-      panes = [%{active: true, current_path: "/data/workspaces/dalexandre/dev_ide"}]
+      panes = [%{active: true, current_path: "/data/workspaces/dalexandre/casein"}]
 
       assert TerminalChrome.shell_button_label("u-alice-aaaa1111", "u-alice-aaaa1111", panes) ==
-               "dalexandre/dev_ide"
+               "dalexandre/casein"
 
       assert TerminalChrome.shell_button_detail("u-alice-aaaa1111", "u-alice-aaaa1111", panes) ==
                "aaaa1111"
@@ -144,26 +144,26 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
     test "optimistically refreshes cwd-derived fields for a matching tmux session" do
       info =
         SessionInfo.new_shell("ws-1", "u-alice",
-          metadata: %{cwd: "/data/workspaces/dalexandre/dev_ide"}
+          metadata: %{cwd: "/data/workspaces/dalexandre/casein"}
         )
-        |> Map.put(:tmux_session, "devide_ws-1_u-alice")
+        |> Map.put(:tmux_session, "casein_ws-1_u-alice")
 
       [tab] = SessionBarVM.session_tabs([info])
 
-      assert tab.label == "dalexandre/dev_ide"
-      assert tab.cwd == "/data/workspaces/dalexandre/dev_ide"
+      assert tab.label == "dalexandre/casein"
+      assert tab.cwd == "/data/workspaces/dalexandre/casein"
 
       assert [updated] =
                SessionBarVM.update_tmux_session_cwd(
                  [tab],
-                 "devide_ws-1_u-alice",
-                 "/data/workspaces/dalexandre/dev_ide/assets"
+                 "casein_ws-1_u-alice",
+                 "/data/workspaces/dalexandre/casein/assets"
                )
 
-      assert updated.label == "dev_ide/assets"
-      assert updated.cwd == "/data/workspaces/dalexandre/dev_ide/assets"
-      assert updated.title =~ "/data/workspaces/dalexandre/dev_ide/assets"
-      refute updated.title =~ "/data/workspaces/dalexandre/dev_ide ·"
+      assert updated.label == "casein/assets"
+      assert updated.cwd == "/data/workspaces/dalexandre/casein/assets"
+      assert updated.title =~ "/data/workspaces/dalexandre/casein/assets"
+      refute updated.title =~ "/data/workspaces/dalexandre/casein ·"
     end
 
     test "leaves unrelated tmux session tabs unchanged during cwd refresh" do
@@ -178,12 +178,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
 
     test "raw terminal session label avoids repeating the full tmux session" do
       assert TerminalChrome.terminal_session_label(
-               "devide_dalexandre-integration_u-dalexandre-cj0e9ycd",
+               "casein_dalexandre-integration_u-dalexandre-cj0e9ycd",
                "u-dalexandre-cj0e9ycd"
              ) == "cj0e9ycd"
 
       assert TerminalChrome.terminal_session_label(
-               "devide_workspace_with_underscores_u-alice-abcd1234"
+               "casein_workspace_with_underscores_u-alice-abcd1234"
              ) == "abcd1234"
     end
 
@@ -290,17 +290,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
         SessionBarVM.workspace_session_tabs(
           [
             %{
-              id: "ws-devide",
-              name: "dalexandre-devide",
-              path_label: "dalexandre/dev_ide",
+              id: "ws-casein",
+              name: "dalexandre-casein",
+              path_label: "dalexandre/casein",
               sessions: [
                 %{
                   id: "u-dalexandre-scxzocku",
                   kind: :shell,
-                  href: "/workspaces/ws-devide?session=u-dalexandre-scxzocku",
+                  href: "/workspaces/ws-casein?session=u-dalexandre-scxzocku",
                   metadata: %{
-                    cwd: "/data/workspaces/dalexandre/dev_ide",
-                    git_toplevel: "/data/workspaces/dalexandre/dev_ide",
+                    cwd: "/data/workspaces/dalexandre/casein",
+                    git_toplevel: "/data/workspaces/dalexandre/casein",
                     git_branch: "master"
                   }
                 }
@@ -329,7 +329,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
 
       assert [
                %{
-                 label: "dev_ide",
+                 label: "casein",
                  detail: "master · scxzocku",
                  window_count: 0
                },
@@ -480,11 +480,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
       workspace_tabs =
         SessionBarVM.tmux_inventory_tabs([
           %{
-            id: "tmux:devide_ws-adapter_sid-adapter",
+            id: "tmux:casein_ws-adapter_sid-adapter",
             kind: :shell,
             label: "ws-adapter",
             detail: "sid-adapter",
-            title: "devide_ws-adapter_sid-adapter"
+            title: "casein_ws-adapter_sid-adapter"
           }
         ])
 
@@ -1064,17 +1064,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
 
   describe "agent_mcp_url/2" do
     test "builds a terminal MCP URL pre-scoped to the workspace and tmux session" do
-      url = SessionBar.agent_mcp_url("ws-1", "devide_ws-adapter_wt-abc123")
+      url = SessionBar.agent_mcp_url("ws-1", "casein_ws-adapter_wt-abc123")
 
       assert url =~ "/api/terminals/mcp"
       assert url =~ "workspace_id=ws-1"
-      assert url =~ "tmux_session=devide_ws-adapter_wt-abc123"
+      assert url =~ "tmux_session=casein_ws-adapter_wt-abc123"
     end
 
     test "returns nil when there is no concrete tmux session to scope to" do
       assert SessionBar.agent_mcp_url("ws-1", nil) == nil
       assert SessionBar.agent_mcp_url("ws-1", "") == nil
-      assert SessionBar.agent_mcp_url("", "devide_ws_wt-abc") == nil
+      assert SessionBar.agent_mcp_url("", "casein_ws_wt-abc") == nil
     end
   end
 
@@ -1084,7 +1084,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
         render_component(&SessionBar.copy_link_button/1,
           url: "https://host/workspaces/ws-1?session=wt-abc123",
           agent_url:
-            "https://host/api/terminals/mcp?workspace_id=ws-1&tmux_session=devide_ws_wt-abc",
+            "https://host/api/terminals/mcp?workspace_id=ws-1&tmux_session=casein_ws_wt-abc",
           label: "shell",
           kind: "session"
         )
@@ -1092,7 +1092,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(data-copy-session-link="https://host/workspaces/ws-1?session=wt-abc123")
 
       assert html =~
-               ~s(data-copy-session-link-agent="https://host/api/terminals/mcp?workspace_id=ws-1&amp;tmux_session=devide_ws_wt-abc")
+               ~s(data-copy-session-link-agent="https://host/api/terminals/mcp?workspace_id=ws-1&amp;tmux_session=casein_ws_wt-abc")
 
       assert html =~ "Ctrl/⌘-click copies the agent MCP link"
     end
@@ -1412,16 +1412,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
         shell_tab(%{
           cwd: "/wt/fx",
           git_toplevel: "/wt/fx",
-          git_common_dir: "/home/dev_ide/.git",
+          git_common_dir: "/home/casein/.git",
           git_branch: "agent/grok/fix-nav",
           git_worktree?: true
         })
 
       html = render_component(&SessionBar.session_anchor_chip/1, tab: tab)
 
-      assert html =~ "dev_ide⑂", "surfaces the parent repo a worktree cwd hides"
+      assert html =~ "casein⑂", "surfaces the parent repo a worktree cwd hides"
       assert html =~ ~s(max-w-32 truncate">fix-nav<), "visible text is the branch tail"
-      assert html =~ "Worktree of dev_ide · branch agent/grok/fix-nav", "full branch in title"
+      assert html =~ "Worktree of casein · branch agent/grok/fix-nav", "full branch in title"
     end
 
     test "non-default branch on a primary checkout shows the branch" do
@@ -1449,13 +1449,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
         shell_tab(%{
           cwd: "/wt/fx",
           git_toplevel: "/wt/fx",
-          git_common_dir: "/home/dev_ide/.git",
+          git_common_dir: "/home/casein/.git",
           git_branch: "feature-x",
           git_worktree?: true
         })
 
       assert tab.worktree?
-      assert tab.repo == "dev_ide"
+      assert tab.repo == "casein"
       assert tab.branch == "feature-x"
       assert tab.detail =~ "feature-x"
       refute tab.detail_secondary =~ "feature-x"

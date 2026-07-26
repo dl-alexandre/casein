@@ -181,7 +181,7 @@ topology. `?dry_run=1` returns the action + current topology without mutating.
 |---|---|---|---|
 | GET | `/api/deploy_status` | `DeployStatusController` · `:show` | `Casein.Deployment.Health.status/1`; 200 when `ok`, else **503** |
 | POST | `/api/drain` | `DrainController` · `:drain` | `Casein.Deployment.Drain.start_drain/1` (`commits_behind` arg); 409 `already_draining` if already draining |
-| POST | `/api/deploy_webhook` | `DeployWebhookController` · `:github` | GitHub push webhook (`X-Hub-Signature-256` + `X-GitHub-Event`); starts `casein-deploy.service` on `master` pushes; **503** when `DEVIDE_DEPLOY_WEBHOOK_SECRET` unset; must bypass Caddy `forward_auth` |
+| POST | `/api/deploy_webhook` | `DeployWebhookController` · `:github` | GitHub push webhook (`X-Hub-Signature-256` + `X-GitHub-Event`); starts `casein-deploy.service` on `master` pushes; **503** when `CASEIN_DEPLOY_WEBHOOK_SECRET` unset; must bypass Caddy `forward_auth` |
 
 ### Agent MCP — pipeline `:mcp_api`
 
@@ -322,7 +322,7 @@ Reply on join is the `SessionOwner` attach payload (scrollback replay etc.).
   single inline theme-bootstrap script — editing that script requires
   recomputing the hash (recipe in `router.ex`).
 - The terminal channel's capability fast-path keeps a 60 s claim cache in both
-  a named ETS table (`:dev_ide_terminal_fast_path_cache`) and socket assigns;
+  a named ETS table (`:casein_terminal_fast_path_cache`) and socket assigns;
   cache misses fall back to `Workspaces.get/2` + `Boundary.authorize_raw/2`.
 
 ## See also

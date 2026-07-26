@@ -19,7 +19,7 @@ defmodule Casein.Deployment.TerminalSmoke do
 
   alias Casein.Terminals.TmuxServer
 
-  @session_prefix "devide_smoke_"
+  @session_prefix "casein_smoke_"
 
   @doc """
   Run the terminal smoke. Returns `:ok` when a fresh terminal is usable, or

@@ -142,7 +142,7 @@ defmodule Casein.FilePanesOffloadTest do
 
   test "mailbox stays responsive while a slow register is in flight" do
     {_path, workspace} = seed_workspace!()
-    session = "devide_ws_fp_offload_responsive"
+    session = "casein_ws_fp_offload_responsive"
     warm_pane = "%warm"
     slow_pane = "%slow"
     seed_session!(session, warm_pane)
@@ -191,7 +191,7 @@ defmodule Casein.FilePanesOffloadTest do
 
   test "concurrent registers for one pane_id serialize via the per-pane queue" do
     {_path, workspace} = seed_workspace!()
-    session = "devide_ws_fp_offload_collapse"
+    session = "casein_ws_fp_offload_collapse"
     pane_id = "%collapse"
     seed_session!(session, pane_id)
 
@@ -251,7 +251,7 @@ defmodule Casein.FilePanesOffloadTest do
 
   test "re-register after deregister queues behind deregister and ends open" do
     {_path, workspace} = seed_workspace!()
-    session = "devide_ws_fp_offload_order"
+    session = "casein_ws_fp_offload_order"
     pane_id = "%order"
     seed_session!(session, pane_id)
     _registration = register_pane!(workspace, session, pane_id)
@@ -301,7 +301,7 @@ defmodule Casein.FilePanesOffloadTest do
 
   test "workspace_index and window_index stay consistent after interleaved ops" do
     {_path, workspace} = seed_workspace!()
-    session = "devide_ws_fp_offload_invariant"
+    session = "casein_ws_fp_offload_invariant"
     panes = ["%i1", "%i2", "%i3"]
 
     for {pane_id, idx} <- Enum.with_index(panes, 1) do
@@ -384,7 +384,7 @@ defmodule Casein.FilePanesOffloadTest do
 
   test "killed offload task replies file_op_crashed and drains the pane queue" do
     {_path, workspace} = seed_workspace!()
-    session = "devide_ws_fp_offload_crash"
+    session = "casein_ws_fp_offload_crash"
     pane_id = "%crash"
     seed_session!(session, pane_id)
 
@@ -478,7 +478,7 @@ defmodule Casein.FilePanesOffloadTest do
 
   test "flush waits for an acknowledged tab mutation to persist" do
     {_path, workspace} = seed_workspace!()
-    session = "devide_ws_fp_flush"
+    session = "casein_ws_fp_flush"
     pane_id = "%flush"
     seed_session!(session, pane_id)
 
@@ -507,7 +507,7 @@ defmodule Casein.FilePanesOffloadTest do
 
   test "clear replies file_cleared to queued (not yet started) op waiters" do
     {_path, workspace} = seed_workspace!()
-    session = "devide_ws_fp_clear_queue"
+    session = "casein_ws_fp_clear_queue"
     pane_id = "%clearq"
     seed_session!(session, pane_id)
 
@@ -556,7 +556,7 @@ defmodule Casein.FilePanesOffloadTest do
 
   test "session_terminated batch-closes persisted rows and drops ETS entries" do
     {_path, workspace} = seed_workspace!()
-    session = "devide_ws_fp_session_term"
+    session = "casein_ws_fp_session_term"
     panes = [{"%t1", "@1"}, {"%t2", "@2"}]
 
     for {pane_id, window_id} <- panes do
@@ -596,7 +596,7 @@ defmodule Casein.FilePanesOffloadTest do
 
   test "rehydrate keeps the GenServer responsive (delay is in the offload task)" do
     {_path, workspace} = seed_workspace!()
-    session = "devide_ws_fp_rehydrate_offload"
+    session = "casein_ws_fp_rehydrate_offload"
     pane_id = "%rehydrate-off"
     seed_session!(session, pane_id)
 

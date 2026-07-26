@@ -118,7 +118,7 @@ Historical decisions need not be recomputed. Present access is always rechecked.
 
 - **No universal run ledger** — projections stay specialized.
 - **No new MCP protocol version** — additive tools and result schemas only.
-- **No premature domain `casein_core`** — `dev_ide_core` remains a mechanism package.
+- **No premature domain `casein_core`** — `casein_core` remains a mechanism package.
 - **No tamper-evidence claim** — append-only API is not tamper-evident storage;
   hash chaining or signed checkpoints require an explicit threat model first.
 
@@ -181,7 +181,7 @@ Browser / MCP agent --attach/input--> Casein --PTY--> tmux session
 │    • Authenticated via bearer token (ApiAuth plug)                       │
 │    • Principal must be resolved server-side; audit must not accept       │
 │      caller-forged actor attribution                                     │
-│    • Terminal MCP drives tmux on devide_-prefixed sessions only          │
+│    • Terminal MCP drives tmux on casein_-prefixed sessions only          │
 │    • Preview MCP drives a scoped preview session                         │
 │    • Agents cannot reach arbitrary tmux sessions or arbitrary argv on    │
 │      the host beyond what they type into a guarded session               │
@@ -227,7 +227,7 @@ New sources should document any additional keys they populate.
 | Attach raw terminal | Casein | `Policy.can_use_raw_terminal?/1` | `run.session_attached` ledger event |
 | Refuse raw terminal | Casein | `Policy.can_use_raw_terminal?/1` deny | `run.session_denied` ledger event |
 | Start review-agent run | Casein | `Policy.can_start_review_agent?/1` + allowlisted `ReviewCommand` | `run.started` / terminal run event |
-| MCP terminal tool call | Casein | Bearer auth + `devide_`-prefixed session guard | `Audit.Event` + activity feed |
+| MCP terminal tool call | Casein | Bearer auth + `casein_`-prefixed session guard | `Audit.Event` + activity feed |
 | MCP preview tool call | Casein | Bearer auth + scoped preview session | `Audit.Event` + activity feed |
 | Apply proposal | Casein | `Policy.can_apply_proposal?/1` (operator + `:manual` mode) via `Casein.ProposalApply` | `Audit.Event` (`apply_proposal` decision + `proposal.applied` mutation) |
 | Enable agent write (auto-apply) | Casein | `Policy.can_enable_agent_write?/1` (`:manual` mode + active `Workspaces.grant_agent_write_unlock/3` unlock) via `Casein.Proposals.AutoApply` | `Audit.Event` (`proposals.auto_apply_authorize`/`proposals.auto_applied`) + `run.approval_granted` ledger event |
@@ -278,7 +278,7 @@ Application.get_env(:casein, :isolation_probe, Casein.Workspaces.IsolationProbe.
 2. **Raw-terminal admission is a server decision.** Every raw attach passes
    through `Policy.can_use_raw_terminal?/1`; the verdict (allow or deny) is
    recorded in the run ledger.
-3. **MCP tools are scoped.** Terminal tools touch only `devide_`-prefixed tmux
+3. **MCP tools are scoped.** Terminal tools touch only `casein_`-prefixed tmux
    sessions; preview tools touch only a scoped preview session.
 4. **Audit at egress.** Per-subsystem sanitizers strip credentials before JSON
    serialization.

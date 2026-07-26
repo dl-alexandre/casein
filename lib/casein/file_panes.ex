@@ -10,7 +10,7 @@ defmodule Casein.FilePanes do
   Policy: **one file pane per tmux window**. Opening a file in a window that
   already has a file pane reuses it and adds/activates a tab; otherwise a pane is
   split off the anchor. Agents (and the web layer) declare *intent* through
-  `open_file_in_pane/3`; dev_ide owns the split/reuse/placement decision.
+  `open_file_in_pane/3`; casein owns the split/reuse/placement decision.
 
   State ownership: the registration persists the tab list + active path only.
   File **content and version tokens are never stored** — they are read fresh from
@@ -1287,7 +1287,7 @@ defmodule Casein.FilePanes do
   # --- tmux helpers (stay here; used by split_and_register / run_deregister_io) --
 
   defp holder_command do
-    Application.app_dir(:casein, "priv/scripts/devide-file-pane")
+    Application.app_dir(:casein, "priv/scripts/casein-file-pane")
   end
 
   defp kill_pane(%{tmux_session: session, pane_id: pane_id})

@@ -135,7 +135,7 @@ lanes:
 - Preview envs: `.casein-preview/sockets/*.sock`
 
 The preview router must never become the upstream for
-`devide.devbox.milcgroup.com`, and a worktree preview launch must not touch the
+`casein.devbox.milcgroup.com`, and a worktree preview launch must not touch the
 main app socket. Use the boundary smoke check before and after preview lifecycle
 changes:
 
@@ -312,14 +312,14 @@ Non-goals for this pass:
 Set the base URL and token:
 
 ```bash
-export DEVIDE_URL=http://localhost:4000
+export CASEIN_URL=http://localhost:4000
 export CASEIN_API_TOKEN=...
 ```
 
 Initialize:
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/preview/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -333,7 +333,7 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
 List tools:
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/preview/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -346,7 +346,7 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
 Open the app preview:
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/preview/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -369,7 +369,7 @@ fast static HTML fetch, or `preview_observe_live` when you need the hydrated DOM
 from the browser runtime:
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/preview/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -388,7 +388,7 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
 Close the session:
 
 ```bash
-curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
+curl -sS -X POST "$CASEIN_URL/api/preview/mcp" \
   -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
@@ -470,7 +470,7 @@ cd /opt/casein/release/lib/casein-*/priv/scripts
 sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install chromium
 ```
 
-Then restart `devide` so `PreviewCtl.Playwright.Bridge` starts with the
+Then restart `casein` so `PreviewCtl.Playwright.Bridge` starts with the
 configured helper (`Casein.PreviewControl.PlaywrightBridge` is a thin facade). The generic Docker runtime image does not currently
 include Node or browser OS dependencies, so keep
 `CASEIN_PREVIEW_CONTROL_ADAPTER=memory` there until the image is extended for

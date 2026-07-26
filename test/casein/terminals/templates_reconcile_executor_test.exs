@@ -222,7 +222,7 @@ defmodule Casein.Terminals.TemplatesReconcileExecutorTest do
     root =
       Path.join(
         System.tmp_dir!(),
-        "devide-reconcile-template-root-#{System.unique_integer([:positive])}"
+        "casein-reconcile-template-root-#{System.unique_integer([:positive])}"
       )
 
     File.mkdir_p!(root)

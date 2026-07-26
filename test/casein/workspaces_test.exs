@@ -100,7 +100,7 @@ defmodule Casein.WorkspacesTest do
   end
 
   test "list syncs local source workspaces into state" do
-    root = tmp_dir("devide-workspaces-source")
+    root = tmp_dir("casein-workspaces-source")
     alpha_path = Path.join(root, "alpha")
     File.mkdir_p!(alpha_path)
 
@@ -117,7 +117,7 @@ defmodule Casein.WorkspacesTest do
   end
 
   test "attached folder ids round-trip through get and sync state" do
-    root = tmp_dir("devide-attached-root")
+    root = tmp_dir("casein-attached-root")
     folder = Path.join(root, "attached")
     File.mkdir_p!(folder)
 
@@ -137,7 +137,7 @@ defmodule Casein.WorkspacesTest do
   end
 
   test "path_under_allowed_roots? rejects sibling prefixes" do
-    root = tmp_dir("devide-root")
+    root = tmp_dir("casein-root")
     Application.put_env(:casein, :workspaces_root, root)
 
     assert Workspaces.path_under_allowed_roots?(root)
@@ -226,7 +226,7 @@ defmodule Casein.WorkspacesTest do
   describe "attached folder owner derivation" do
     test "attach_folder derives the owner from the /<root>/<user>/<project> segment" do
       Application.put_env(:casein, :forward_auth_email_domain, "milcgroup.com")
-      root = tmp_dir("devide-owner-root")
+      root = tmp_dir("casein-owner-root")
       Application.put_env(:casein, :workspaces_root, root)
       project = Path.join([root, "alice", "proj"])
       File.mkdir_p!(project)
@@ -243,7 +243,7 @@ defmodule Casein.WorkspacesTest do
 
     test "attach_folder leaves owner nil when the path is the root itself" do
       Application.put_env(:casein, :forward_auth_email_domain, "milcgroup.com")
-      root = tmp_dir("devide-owner-root-only")
+      root = tmp_dir("casein-owner-root-only")
       Application.put_env(:casein, :workspaces_root, root)
 
       assert {:ok, ws} = Workspaces.attach_folder(root)

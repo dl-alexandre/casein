@@ -306,8 +306,8 @@ function renderCellsRLE(pre, rows) {
     html += "\n"
   }
 
-  if (pre.__devideLastHtml === html) return
-  pre.__devideLastHtml = html
+  if (pre.__caseinLastHtml === html) return
+  pre.__caseinLastHtml = html
   pre.innerHTML = html
 }
 
@@ -350,7 +350,7 @@ const TOUCH_INERTIA_FRICTION = 0.94
 const TOUCH_INERTIA_MIN_VEL = 0.02 // px/ms
 
 function markTerminalPerf(hook, name, detail = {}) {
-  const marker = window.__devideMarkPerf
+  const marker = window.__caseinMarkPerf
   if (typeof marker !== "function") return
 
   marker(`terminal:${name}`, {
@@ -367,7 +367,7 @@ function markTerminalPerf(hook, name, detail = {}) {
 // localhost without netem/root. Fully inert unless `?termlat` is present.
 //   ?termlat       enable measurement + HUD (zero injection)
 //   ?termlat=80    also inject 80ms symmetric RTT (40ms each direction)
-// Console API once enabled: window.devideTermLatency.probe({count,intervalMs,char})
+// Console API once enabled: window.caseinTermLatency.probe({count,intervalMs,char})
 const TERM_LAT = (() => {
   try {
     const params = new URLSearchParams(window.location.search)
@@ -515,7 +515,7 @@ function termLatProbe(hook, opts) {
 }
 
 if (TERM_LAT && typeof window !== "undefined") {
-  window.devideTermLatency = {
+  window.caseinTermLatency = {
     probe: (opts) => termLatProbe(TERM_LAT.hook, opts),
     stats: () => ({
       p50: termLatPercentile(TERM_LAT.samples, 0.5),
@@ -881,7 +881,7 @@ function logScrollDebug(hook, label, extra = {}) {
   if (!scrollDebugEnabled()) return
   const ctx = currentScrollContext(hook)
   if (typeof console !== "undefined" && typeof console.debug === "function") {
-    console.debug("[devide:termscroll]", label, {...ctx, ...extra})
+    console.debug("[casein:termscroll]", label, {...ctx, ...extra})
   }
 }
 
@@ -1122,7 +1122,7 @@ function terminalDebugEnabled() {
   try {
     return (
       new URLSearchParams(window.location.search).has("termdebug") ||
-      window.localStorage?.getItem("devide:terminal-debug") === "1"
+      window.localStorage?.getItem("casein:terminal-debug") === "1"
     )
   } catch (_) {
     return false
@@ -1132,7 +1132,7 @@ function terminalDebugEnabled() {
 function terminalFrameEvent(hook, name, detail = {}) {
   markTerminalPerf(hook, name, detail)
   if (terminalDebugEnabled() && window.console?.debug) {
-    console.debug("[devide:terminal]", name, { id: hook?.el?.id, ...detail })
+    console.debug("[casein:terminal]", name, { id: hook?.el?.id, ...detail })
   }
 }
 
@@ -1811,7 +1811,7 @@ function teardownTerminalWebLinks(hook) {
 
 function refreshHookTheme(hook) {
   CELL_STYLE_CACHE.clear()
-  if (hook.pre) hook.pre.__devideLastHtml = undefined
+  if (hook.pre) hook.pre.__caseinLastHtml = undefined
   patchPreLayout(hook)
 
   // patchPreLayout re-applies opaque theme colors to the <pre>; in canvas mode
@@ -1853,7 +1853,7 @@ function pendingRawKey(hook) {
   const sessionSid = owner?.dataset?.sessionSid || hook.el.dataset.sessionSid
 
   if (!workspaceId || !sessionSid) return null
-  return `devide:pending-raw:${workspaceId}:${sessionSid}`
+  return `casein:pending-raw:${workspaceId}:${sessionSid}`
 }
 
 function pushText(hook, data) {
@@ -1886,7 +1886,7 @@ function reportViewportActive(hook, force = false) {
   const raw = viewportActiveForClient({
     visibilityState: document.visibilityState,
     hasFocus: typeof document.hasFocus === "function" ? document.hasFocus() : true,
-    keyboardOpen: document.documentElement.classList.contains("devide-keyboard-open"),
+    keyboardOpen: document.documentElement.classList.contains("casein-keyboard-open"),
     terminalInputFocused: isTerminalInputFocused(),
     mobileLayout
   })
@@ -2079,14 +2079,14 @@ function rowPinEnabled() {
       const m = /(?:\?|&)rowpin=([01])(?:&|$)/.exec(location.search)
       if (m) {
         try {
-          localStorage.setItem("devide:rowpin", m[1])
+          localStorage.setItem("casein:rowpin", m[1])
         } catch (_) {
           /* localStorage unavailable */
         }
         return m[1] === "1"
       }
     }
-    if (typeof localStorage !== "undefined" && localStorage.getItem("devide:rowpin") === "0") {
+    if (typeof localStorage !== "undefined" && localStorage.getItem("casein:rowpin") === "0") {
       return false
     }
   } catch (_) {
@@ -2098,7 +2098,7 @@ function rowPinEnabled() {
 function keyboardOpenNow() {
   return (
     typeof document !== "undefined" &&
-    document.documentElement.classList.contains("devide-keyboard-open")
+    document.documentElement.classList.contains("casein-keyboard-open")
   )
 }
 
@@ -2410,7 +2410,7 @@ function installTerminalDisplayZoom(hook) {
     reconcileLayout(hook, "display_zoom", {immediate: true})
   }
 
-  window.addEventListener("devide:terminal-display-zoom", hook.__onDisplayZoom)
+  window.addEventListener("casein:terminal-display-zoom", hook.__onDisplayZoom)
 }
 
 function installScaleFitLayout(hook) {
@@ -2705,7 +2705,7 @@ const GhosttyTerminal = {
       terminalFrameEvent(this, "refit_after_visibility", { reason })
       requestTerminalResync(this, reason)
     }
-    window.addEventListener("devide:terminal-refit", this.__onTerminalRefit)
+    window.addEventListener("casein:terminal-refit", this.__onTerminalRefit)
 
     // Tell the server which viewer is active so the shared PTY/tmux follows the
     // focused tab, not the smallest. Fires on tab show/hide and window
@@ -2722,13 +2722,13 @@ const GhosttyTerminal = {
     document.addEventListener("visibilitychange", this.__onViewportActive)
     window.addEventListener("focus", this.__onViewportActive)
     window.addEventListener("blur", this.__onViewportActive)
-    window.addEventListener("devide:keyboard-open-changed", this.__onViewportActive)
+    window.addEventListener("casein:keyboard-open-changed", this.__onViewportActive)
     // ...and straight to the layout. Routing it only through the authority
     // handler meant an unchanged-authority keyboard toggle never reached the
     // layout on its own, leaving row-pin engagement to depend on the keybar's
     // inset commit changing CSS padding and that reaching the ResizeObserver.
     this.__onKeyboardToggle = () => reconcileLayout(this, "keyboard_toggle", {immediate: true})
-    window.addEventListener("devide:keyboard-open-changed", this.__onKeyboardToggle)
+    window.addEventListener("casein:keyboard-open-changed", this.__onKeyboardToggle)
     document.addEventListener("focusin", this.__onViewportActive)
     document.addEventListener("focusout", this.__onViewportActive)
     reportViewportActive(this, true)
@@ -3235,7 +3235,7 @@ const GhosttyTerminal = {
       const wrapper = this.el.closest("[data-pane-id]")
       if (wrapper?.dataset.paneId) this.el.dataset.ctxPaneId = wrapper.dataset.paneId
     }
-    this.el.addEventListener("devide:ctx-before-open", this.__onCtxBeforeOpen)
+    this.el.addEventListener("casein:ctx-before-open", this.__onCtxBeforeOpen)
 
     this.__onCtxAction = (e) => {
       switch (e?.detail?.action) {
@@ -3264,10 +3264,10 @@ const GhosttyTerminal = {
         }
       }
     }
-    this.el.addEventListener("devide:ctx-action", this.__onCtxAction)
+    this.el.addEventListener("casein:ctx-action", this.__onCtxAction)
 
     this.__onTerminalTheme = () => refreshHookTheme(this)
-    window.addEventListener("devide:terminal-theme", this.__onTerminalTheme)
+    window.addEventListener("casein:terminal-theme", this.__onTerminalTheme)
 
     patchPreLayout(this)
     drainPendingRawCommand(this)
@@ -3288,12 +3288,12 @@ const GhosttyTerminal = {
     this.__ghosttyTerminalDestroying = true
 
     if (this.__onTerminalTheme) {
-      window.removeEventListener("devide:terminal-theme", this.__onTerminalTheme)
+      window.removeEventListener("casein:terminal-theme", this.__onTerminalTheme)
       this.__onTerminalTheme = null
     }
 
     if (this.__onDisplayZoom) {
-      window.removeEventListener("devide:terminal-display-zoom", this.__onDisplayZoom)
+      window.removeEventListener("casein:terminal-display-zoom", this.__onDisplayZoom)
       this.__onDisplayZoom = null
     }
 
@@ -3301,12 +3301,12 @@ const GhosttyTerminal = {
     this.__displayZoomBadge = null
 
     if (this.__onCtxBeforeOpen) {
-      this.el.removeEventListener("devide:ctx-before-open", this.__onCtxBeforeOpen)
+      this.el.removeEventListener("casein:ctx-before-open", this.__onCtxBeforeOpen)
       this.__onCtxBeforeOpen = null
     }
 
     if (this.__onCtxAction) {
-      this.el.removeEventListener("devide:ctx-action", this.__onCtxAction)
+      this.el.removeEventListener("casein:ctx-action", this.__onCtxAction)
       this.__onCtxAction = null
     }
 
@@ -3323,7 +3323,7 @@ const GhosttyTerminal = {
     }
 
     if (this.__onTerminalRefit) {
-      window.removeEventListener("devide:terminal-refit", this.__onTerminalRefit)
+      window.removeEventListener("casein:terminal-refit", this.__onTerminalRefit)
       this.__onTerminalRefit = null
     }
 
@@ -3331,8 +3331,8 @@ const GhosttyTerminal = {
       document.removeEventListener("visibilitychange", this.__onViewportActive)
       window.removeEventListener("focus", this.__onViewportActive)
       window.removeEventListener("blur", this.__onViewportActive)
-      window.removeEventListener("devide:keyboard-open-changed", this.__onViewportActive)
-      window.removeEventListener("devide:keyboard-open-changed", this.__onKeyboardToggle)
+      window.removeEventListener("casein:keyboard-open-changed", this.__onViewportActive)
+      window.removeEventListener("casein:keyboard-open-changed", this.__onKeyboardToggle)
       document.removeEventListener("focusin", this.__onViewportActive)
       document.removeEventListener("focusout", this.__onViewportActive)
       this.__onViewportActive = null

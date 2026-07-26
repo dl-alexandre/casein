@@ -31,7 +31,7 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
         "casein-lan-friendly-live-#{System.unique_integer([:positive])}"
       )
 
-    workspaces_root = Path.join(root, ".devide-workspaces")
+    workspaces_root = Path.join(root, ".casein-workspaces")
     aws = Path.join(root, "aws")
 
     File.mkdir_p!(workspaces_root)
@@ -138,20 +138,20 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
       conn: conn,
       root: root
     } do
-      alpha = Path.join(root, ".devide-workspaces/alpha")
+      alpha = Path.join(root, ".casein-workspaces/alpha")
       File.mkdir_p!(alpha)
 
       assert {:error, {:redirect, %{to: to}}} =
                live(conn, "/workspaces/alpha?session=s-1&zoom=1&host=local")
 
-      assert to == "/.devide-workspaces/alpha?session=s-1&zoom=1"
+      assert to == "/.casein-workspaces/alpha?session=s-1&zoom=1"
     end
 
     test "workspaces outside the path root keep serving at the id URL", %{conn: conn} do
       outside =
         Path.join(
           System.tmp_dir!(),
-          "devide-outside-root-#{System.unique_integer([:positive])}"
+          "casein-outside-root-#{System.unique_integer([:positive])}"
         )
 
       File.mkdir_p!(outside)
@@ -231,7 +231,7 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
       enable_forward_auth()
       conn = as_forward_auth_user(conn, "peer@local")
 
-      alpha = Path.join(root, ".devide-workspaces/alpha")
+      alpha = Path.join(root, ".casein-workspaces/alpha")
       File.mkdir_p!(alpha)
 
       {:ok, view, _html} = live(conn, "/workspaces/alpha")

@@ -54,7 +54,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.FilePaneEventsTest do
       FilePanes.register(%{
         pane_id: "%9",
         workspace_id: workspace.id,
-        tmux_session: "devide_ws_fpe",
+        tmux_session: "casein_ws_fpe",
         pane_window_id: "@1",
         open_files: [%{path: rel, line: nil}],
         active_path: rel
@@ -344,7 +344,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.FilePaneEventsTest do
 
   defp seed_link_workspace! do
     {ws_root, workspace} = seed_workspace!()
-    tmux_session = "devide_#{workspace.name || workspace.id}_main"
+    tmux_session = "casein_#{workspace.name || workspace.id}_main"
     seed_tmux!(tmux_session, ws_root)
     {ws_root, workspace, tmux_session}
   end

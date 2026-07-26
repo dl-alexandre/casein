@@ -40,7 +40,7 @@ defmodule CaseinWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
     prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_test_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-    workspace_root = Path.join(System.tmp_dir!(), "devide-window-switch-stale-preview")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-window-switch-stale-preview")
     workspace_path = Path.join(workspace_root, @workspace_id)
     File.mkdir_p!(workspace_path)
 

@@ -87,7 +87,7 @@ defmodule Casein.Ops.PgProbeTest do
       Enum.join(
         [
           "wf_runner_1#{@sep}30",
-          "devide-0f9c2ab1-3c1d-4e56-9b7a-1234567890ab#{@sep}20",
+          "casein-0f9c2ab1-3c1d-4e56-9b7a-1234567890ab#{@sep}20",
           "app#{@sep}50",
           "100"
         ],
@@ -101,11 +101,11 @@ defmodule Casein.Ops.PgProbeTest do
     assert pg_sample.leak_suspect_count == 50
 
     assert Enum.map(pg_sample.leak_suspects, & &1.application_name) ==
-             ["wf_runner_1", "devide-0f9c2ab1-3c1d-4e56-9b7a-1234567890ab"]
+             ["wf_runner_1", "casein-0f9c2ab1-3c1d-4e56-9b7a-1234567890ab"]
   end
 
   test "non-leak application names are not suspects" do
-    output = Enum.join(["phoenix#{@sep}9", "devide-viewer#{@sep}4", "200"], "\n")
+    output = Enum.join(["phoenix#{@sep}9", "casein-viewer#{@sep}4", "200"], "\n")
 
     assert %{leak_suspects: [], leak_suspect_count: 0} = PgProbe.build_sample(target(), output)
   end
@@ -211,10 +211,10 @@ defmodule Casein.Ops.PgProbeTest do
     Application.put_env(
       :casein,
       :pg_probe_targets_json,
-      ~s([{"host":"10.0.0.9","port":"6432","user":"dev_ide","dbname":"dev_ide_prod"}])
+      ~s([{"host":"10.0.0.9","port":"6432","user":"casein","dbname":"casein_prod"}])
     )
 
-    assert [%{host: "10.0.0.9", port: 6432, user: "dev_ide", dbname: "dev_ide_prod"}] =
+    assert [%{host: "10.0.0.9", port: 6432, user: "casein", dbname: "casein_prod"}] =
              PgProbe.targets()
   end
 

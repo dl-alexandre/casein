@@ -13,7 +13,7 @@ defmodule Casein.Workspaces.PathResolverTest do
     previous = Map.new(@config_keys, &{&1, Application.get_env(:casein, &1)})
 
     root =
-      Path.join(System.tmp_dir!(), "devide-path-root-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-path-root-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(root)
 
@@ -99,7 +99,7 @@ defmodule Casein.Workspaces.PathResolverTest do
 
     test "rejects symlinks that escape the root", %{root: root} do
       outside =
-        Path.join(System.tmp_dir!(), "devide-path-outside-#{System.unique_integer([:positive])}")
+        Path.join(System.tmp_dir!(), "casein-path-outside-#{System.unique_integer([:positive])}")
 
       File.mkdir_p!(outside)
       on_exit(fn -> File.rm_rf(outside) end)

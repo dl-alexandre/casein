@@ -1,7 +1,7 @@
 defmodule Casein.Setup.ReleaseLanCliTest do
   use ExUnit.Case, async: true
 
-  @script Path.expand("../../../rel/overlays/bin/devide", __DIR__)
+  @script Path.expand("../../../rel/casein", __DIR__)
 
   test "release LAN CLI has valid shell syntax" do
     assert {_, 0} = System.cmd("sh", ["-n", @script])
@@ -10,8 +10,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
   test "release LAN CLI help is runnable without Mix" do
     assert {out, 0} = System.cmd(@script, ["--help"])
 
-    assert out =~ "devide lan up"
-    assert out =~ "devide lan status"
+    assert out =~ "casein lan up"
+    assert out =~ "casein lan status"
   end
 
   test "release LAN CLI help runs from a clean release directory" do
@@ -19,8 +19,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     assert {out, 0} = run_cli(fixture, ["--help"], cd: "/")
 
-    assert out =~ "devide lan up"
-    assert out =~ "devide lan down"
+    assert out =~ "casein lan up"
+    assert out =~ "casein lan down"
   end
 
   test "release metadata commands run with release root and CLI runtime marker" do
@@ -30,7 +30,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     log = File.read!(fixture.app_bin_log)
     assert log =~ "CASEIN_RELEASE_CLI=1"
-    assert log =~ "DEVIDE_RELEASE_ROOT=#{fixture.release_dir}"
+    assert log =~ "CASEIN_RELEASE_ROOT=#{fixture.release_dir}"
     assert log =~ "args:eval Casein.Release.CLI.main_base64("
   end
 
@@ -55,7 +55,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     File.write!(fixture.env_file, """
     PORT='4010'
-    CASEIN_LAN_HOST='devide.home.arpa'
+    CASEIN_LAN_HOST='casein.home.arpa'
     CASEIN_LAN_INSECURE_HTTP_PORT='8080'
     CASEIN_DEFAULT_WORKSPACE='custom'
     CASEIN_WORKSPACES_ROOT='#{fixture.workspace_root}'
@@ -82,8 +82,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     socket = File.read!(Path.join(fixture.unit_dir, "casein-lan-http-edge.socket"))
     edge = File.read!(Path.join(fixture.unit_dir, "casein-lan-http-edge.service"))
 
-    assert File.exists?(Path.join(fixture.install_release_dir, "bin/devide"))
     assert File.exists?(Path.join(fixture.install_release_dir, "bin/casein"))
+    assert File.exists?(Path.join(fixture.install_release_dir, "bin/casein-runtime"))
     assert File.exists?(Path.join(fixture.install_release_dir, "bin/migrate"))
 
     refute backend =~ fixture.release_dir
@@ -100,7 +100,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     public_env = File.read!(fixture.public_env_file)
     assert public_env =~ "PORT='4010'"
-    assert public_env =~ "CASEIN_LAN_HOST='devide.home.arpa'"
+    assert public_env =~ "CASEIN_LAN_HOST='casein.home.arpa'"
     assert public_env =~ "CASEIN_LAN_IP='192.168.1.240'"
     assert public_env =~ "CASEIN_LAN_INSECURE_HTTP_PORT='8080'"
     assert public_env =~ "CASEIN_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
@@ -180,8 +180,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     assert {out, 1} =
              run_cli(fixture, ["lan", "up"],
                env: %{
-                 "DEVIDE_FAKE_EDGE_ACTIVE" => "0",
-                 "DEVIDE_FAKE_FAIL_RESTART" => "casein-lan-http-edge.socket"
+                 "CASEIN_FAKE_EDGE_ACTIVE" => "0",
+                 "CASEIN_FAKE_FAIL_RESTART" => "casein-lan-http-edge.socket"
                }
              )
 
@@ -196,7 +196,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     fixture = release_fixture()
 
     assert {out, 1} =
-             run_cli(fixture, ["lan", "status"], env: %{"DEVIDE_FAKE_BACKEND_ACTIVE" => "0"})
+             run_cli(fixture, ["lan", "status"], env: %{"CASEIN_FAKE_BACKEND_ACTIVE" => "0"})
 
     assert out =~ "NOT READY http://r630.local/"
     assert out =~ "OK        backend returned HTTP 302"
@@ -209,7 +209,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     fixture = release_fixture()
 
     assert {out, 1} =
-             run_cli(fixture, ["lan", "status"], env: %{"DEVIDE_FAKE_CANONICAL_CODE" => "000"})
+             run_cli(fixture, ["lan", "status"], env: %{"CASEIN_FAKE_CANONICAL_CODE" => "000"})
 
     assert out =~ "NOT READY http://r630.local/"
     assert out =~ "INFO      IP fallback http://192.168.1.240/"
@@ -222,7 +222,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     fixture = release_fixture()
 
     assert {out, 1} =
-             run_cli(fixture, ["lan", "status"], env: %{"DEVIDE_FAKE_ASSET_CODE" => "302"})
+             run_cli(fixture, ["lan", "status"], env: %{"CASEIN_FAKE_ASSET_CODE" => "302"})
 
     assert out =~ "NOT READY http://r630.local/"
     assert out =~ "WARN      http://r630.local/assets/css/app.css returned HTTP 302"
@@ -270,8 +270,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     assert File.read_link(fixture.current_link) == {:ok, "releases/#{fixture.update_revision}"}
     assert File.read_link(fixture.previous_link) == {:ok, "releases/#{fixture.current_revision}"}
 
-    assert File.exists?(Path.join(fixture.releases_dir, "#{fixture.current_revision}/bin/devide"))
-    assert File.exists?(Path.join(fixture.releases_dir, "#{fixture.update_revision}/bin/devide"))
+    assert File.exists?(Path.join(fixture.releases_dir, "#{fixture.current_revision}/bin/casein"))
+    assert File.exists?(Path.join(fixture.releases_dir, "#{fixture.update_revision}/bin/casein"))
     assert File.exists?(Path.join(fixture.downloads_dir, Path.basename(fixture.update_tarball)))
 
     systemctl_log = File.read!(fixture.systemctl_log)
@@ -303,7 +303,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     assert {out, 1} =
              run_cli(fixture, ["update", "install"],
-               env: %{"DEVIDE_FAKE_ASSET_CODE" => "302", "DEVIDE_LAN_READY_ATTEMPTS" => "1"}
+               env: %{"CASEIN_FAKE_ASSET_CODE" => "302", "CASEIN_LAN_READY_ATTEMPTS" => "1"}
              )
 
     assert out =~ "updated release did not become ready; rolling back"
@@ -314,7 +314,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
   defp release_fixture do
     root =
-      Path.join(System.tmp_dir!(), "devide-release-lan-cli-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-release-lan-cli-#{System.unique_integer([:positive])}")
 
     release_dir = Path.join(root, "release")
     bin_dir = Path.join(release_dir, "bin")
@@ -322,11 +322,11 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     unit_dir = Path.join(root, "systemd")
     env_file = Path.join(root, "etc/lan.env")
     public_env_file = Path.join(root, "etc/lan.public.env")
-    database_path = Path.join(root, "var/lib/devide/lan/devide.sqlite3")
+    database_path = Path.join(root, "var/lib/casein/lan/casein.sqlite3")
     workspace_root = Path.join(root, "workspaces")
     home_workspace_path = Path.join(root, "home")
-    install_release_dir = Path.join(root, "opt/devide/lan-release")
-    update_root = Path.join(root, "opt/devide/lan")
+    install_release_dir = Path.join(root, "opt/casein/lan-release")
+    update_root = Path.join(root, "opt/casein/lan")
     releases_dir = Path.join(update_root, "releases")
     downloads_dir = Path.join(update_root, "downloads")
     current_link = Path.join(update_root, "current")
@@ -345,32 +345,32 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     File.mkdir_p!(fakebin)
     File.mkdir_p!(home_workspace_path)
 
-    File.cp!(@script, Path.join(bin_dir, "devide"))
-    File.chmod!(Path.join(bin_dir, "devide"), 0o755)
+    File.cp!(@script, Path.join(bin_dir, "casein"))
+    File.chmod!(Path.join(bin_dir, "casein"), 0o755)
 
-    write_executable(Path.join(bin_dir, "casein"), """
+    write_executable(Path.join(bin_dir, "casein-runtime"), """
     #!/bin/sh
     {
       printf 'CASEIN_RELEASE_CLI=%s\\n' "${CASEIN_RELEASE_CLI:-}"
-      printf 'DEVIDE_RELEASE_ROOT=%s\\n' "${DEVIDE_RELEASE_ROOT:-}"
+      printf 'CASEIN_RELEASE_ROOT=%s\\n' "${CASEIN_RELEASE_ROOT:-}"
       printf 'args:%s\\n' "$*"
-    } >> "$DEVIDE_FAKE_APP_BIN_LOG"
+    } >> "$CASEIN_FAKE_APP_BIN_LOG"
     case "$0:$*" in
-      *"/releases/${DEVIDE_FAKE_CURRENT_REVISION}/bin/casein:"*InstallPlan.print_metadata_shell_base64*)
+      *"/releases/${CASEIN_FAKE_CURRENT_REVISION}/bin/casein-runtime:"*InstallPlan.print_metadata_shell_base64*)
         echo "old release does not contain InstallPlan" >&2
         exit 1
         ;;
     esac
     case "$*" in
       *InstallPlan.print_shell_base64*)
-        cat "$DEVIDE_FAKE_INSTALL_PLAN"
+        cat "$CASEIN_FAKE_INSTALL_PLAN"
         exit 0
         ;;
       *InstallPlan.print_metadata_shell_base64*)
-        if [ -f "$DEVIDE_RELEASE_ROOT/.fake-relmeta-shell" ]; then
-          cat "$DEVIDE_RELEASE_ROOT/.fake-relmeta-shell"
+        if [ -f "$CASEIN_RELEASE_ROOT/.fake-relmeta-shell" ]; then
+          cat "$CASEIN_RELEASE_ROOT/.fake-relmeta-shell"
         else
-          cat "$DEVIDE_FAKE_CURRENT_METADATA"
+          cat "$CASEIN_FAKE_CURRENT_METADATA"
         fi
         exit 0
         ;;
@@ -389,13 +389,13 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     current_metadata =
       release_metadata(
         revision: current_revision,
-        update_manifest_url: "https://example.com/devide-canary.json"
+        update_manifest_url: "https://example.com/casein-canary.json"
       )
 
     update_metadata =
       release_metadata(
         revision: update_revision,
-        update_manifest_url: "https://example.com/devide-canary.json"
+        update_manifest_url: "https://example.com/casein-canary.json"
       )
 
     write_release_metadata_files(release_dir, current_metadata)
@@ -404,8 +404,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     write_fake_release_tree(
       update_release_dir,
-      Path.join(bin_dir, "devide"),
-      File.read!(Path.join(bin_dir, "casein")),
+      File.read!(Path.join(bin_dir, "casein-runtime")),
       update_metadata
     )
 
@@ -427,14 +426,14 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     write_executable(Path.join(fakebin, "chown"), """
     #!/bin/sh
-    echo "$*" >> "$DEVIDE_FAKE_CHOWN_LOG"
+    echo "$*" >> "$CASEIN_FAKE_CHOWN_LOG"
     exit 0
     """)
 
     write_executable(Path.join(fakebin, "getent"), """
     #!/bin/sh
     if [ "$1" = "passwd" ]; then
-      echo "$2:x:1000:1000::${DEVIDE_FAKE_HOME}:/bin/bash"
+      echo "$2:x:1000:1000::${CASEIN_FAKE_HOME}:/bin/bash"
       exit 0
     fi
     exit 2
@@ -447,13 +446,13 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     write_executable(Path.join(fakebin, "journalctl"), """
     #!/bin/sh
-    echo "journalctl $*" >> "$DEVIDE_FAKE_JOURNAL_LOG"
+    echo "journalctl $*" >> "$CASEIN_FAKE_JOURNAL_LOG"
     echo "fake backend log"
     """)
 
     write_executable(Path.join(fakebin, "ufw"), """
     #!/bin/sh
-    echo "$*" >> "$DEVIDE_FAKE_UFW_LOG"
+    echo "$*" >> "$CASEIN_FAKE_UFW_LOG"
     exit 0
     """)
 
@@ -469,31 +468,31 @@ defmodule Casein.Setup.ReleaseLanCliTest do
       last="$1"
       shift
     done
-    echo "$last" >> "$DEVIDE_FAKE_CURL_LOG"
-    if [ "$output" != "" ] && [ "$last" = "$DEVIDE_FAKE_ARTIFACT_URL" ]; then
-      cp "$DEVIDE_FAKE_UPDATE_TARBALL" "$output"
+    echo "$last" >> "$CASEIN_FAKE_CURL_LOG"
+    if [ "$output" != "" ] && [ "$last" = "$CASEIN_FAKE_ARTIFACT_URL" ]; then
+      cp "$CASEIN_FAKE_UPDATE_TARBALL" "$output"
       exit 0
     fi
     case "$last" in
-      *assets/css/app.css*) printf "%s" "${DEVIDE_FAKE_ASSET_CODE:-200}" ;;
-      *127.0.0.1*) printf "%s" "${DEVIDE_FAKE_BACKEND_CODE:-302}" ;;
-      *192.168.1.240*) printf "%s" "${DEVIDE_FAKE_IP_CODE:-302}" ;;
-      *) printf "%s" "${DEVIDE_FAKE_CANONICAL_CODE:-302}" ;;
+      *assets/css/app.css*) printf "%s" "${CASEIN_FAKE_ASSET_CODE:-200}" ;;
+      *127.0.0.1*) printf "%s" "${CASEIN_FAKE_BACKEND_CODE:-302}" ;;
+      *192.168.1.240*) printf "%s" "${CASEIN_FAKE_IP_CODE:-302}" ;;
+      *) printf "%s" "${CASEIN_FAKE_CANONICAL_CODE:-302}" ;;
     esac
     exit 0
     """)
 
     write_executable(Path.join(fakebin, "systemctl"), """
     #!/bin/sh
-    echo "$*" >> "$DEVIDE_FAKE_SYSTEMCTL_LOG"
+    echo "$*" >> "$CASEIN_FAKE_SYSTEMCTL_LOG"
     if [ "$1" = "is-active" ]; then
       case "$3" in
         casein-lan.service)
-          [ "${DEVIDE_FAKE_BACKEND_ACTIVE:-1}" = "1" ]
+          [ "${CASEIN_FAKE_BACKEND_ACTIVE:-1}" = "1" ]
           exit $?
           ;;
         casein-lan-http-edge.socket)
-          [ "${DEVIDE_FAKE_EDGE_ACTIVE:-1}" = "1" ]
+          [ "${CASEIN_FAKE_EDGE_ACTIVE:-1}" = "1" ]
           exit $?
           ;;
         *)
@@ -502,7 +501,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
       esac
     fi
 
-    if [ "$1" = "restart" ] && [ "${DEVIDE_FAKE_FAIL_RESTART:-}" = "$2" ]; then
+    if [ "$1" = "restart" ] && [ "${CASEIN_FAKE_FAIL_RESTART:-}" = "$2" ]; then
       exit 1
     fi
 
@@ -514,26 +513,26 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     user = System.get_env("USER") || String.trim(elem(System.cmd("id", ["-un"]), 0))
 
     env = %{
-      "DEVIDE_LAN_REQUIRE_ROOT" => "false",
-      "DEVIDE_LAN_ENV_FILE" => env_file,
-      "DEVIDE_LAN_PUBLIC_ENV_FILE" => public_env_file,
-      "DEVIDE_LAN_RELEASE_DIR" => install_release_dir,
-      "DEVIDE_LAN_UPDATE_ROOT" => update_root,
-      "DEVIDE_LAN_UNIT_DIR" => unit_dir,
-      "DEVIDE_LAN_USER" => user,
-      "DEVIDE_LAN_WORKSPACES_ROOT" => workspace_root,
-      "DEVIDE_FAKE_SYSTEMCTL_LOG" => systemctl_log,
-      "DEVIDE_FAKE_CURL_LOG" => curl_log,
-      "DEVIDE_FAKE_CHOWN_LOG" => chown_log,
-      "DEVIDE_FAKE_APP_BIN_LOG" => app_bin_log,
-      "DEVIDE_FAKE_INSTALL_PLAN" => plan_file,
-      "DEVIDE_FAKE_CURRENT_REVISION" => current_revision,
-      "DEVIDE_FAKE_CURRENT_METADATA" => Path.join(release_dir, ".fake-relmeta-shell"),
-      "DEVIDE_FAKE_ARTIFACT_URL" => artifact_url,
-      "DEVIDE_FAKE_UPDATE_TARBALL" => update_tarball,
-      "DEVIDE_FAKE_HOME" => home_workspace_path,
-      "DEVIDE_FAKE_JOURNAL_LOG" => Path.join(root, "journal.log"),
-      "DEVIDE_FAKE_UFW_LOG" => ufw_log,
+      "CASEIN_LAN_REQUIRE_ROOT" => "false",
+      "CASEIN_LAN_ENV_FILE" => env_file,
+      "CASEIN_LAN_PUBLIC_ENV_FILE" => public_env_file,
+      "CASEIN_LAN_RELEASE_DIR" => install_release_dir,
+      "CASEIN_LAN_UPDATE_ROOT" => update_root,
+      "CASEIN_LAN_UNIT_DIR" => unit_dir,
+      "CASEIN_LAN_USER" => user,
+      "CASEIN_LAN_WORKSPACES_ROOT" => workspace_root,
+      "CASEIN_FAKE_SYSTEMCTL_LOG" => systemctl_log,
+      "CASEIN_FAKE_CURL_LOG" => curl_log,
+      "CASEIN_FAKE_CHOWN_LOG" => chown_log,
+      "CASEIN_FAKE_APP_BIN_LOG" => app_bin_log,
+      "CASEIN_FAKE_INSTALL_PLAN" => plan_file,
+      "CASEIN_FAKE_CURRENT_REVISION" => current_revision,
+      "CASEIN_FAKE_CURRENT_METADATA" => Path.join(release_dir, ".fake-relmeta-shell"),
+      "CASEIN_FAKE_ARTIFACT_URL" => artifact_url,
+      "CASEIN_FAKE_UPDATE_TARBALL" => update_tarball,
+      "CASEIN_FAKE_HOME" => home_workspace_path,
+      "CASEIN_FAKE_JOURNAL_LOG" => Path.join(root, "journal.log"),
+      "CASEIN_FAKE_UFW_LOG" => ufw_log,
       "CASEIN_LAN_HOST" => "r630.local",
       "DATABASE_PATH" => database_path,
       "PATH" => fakebin <> ":" <> System.get_env("PATH", "")
@@ -557,7 +556,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
       previous_link: previous_link,
       release_dir: release_dir,
       releases_dir: releases_dir,
-      script: Path.join(bin_dir, "devide"),
+      script: Path.join(bin_dir, "casein"),
       static_dir: static_dir,
       systemctl_log: systemctl_log,
       unit_dir: unit_dir,
@@ -581,14 +580,14 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     )
   end
 
-  defp write_fake_release_tree(release_dir, devide_script, app_script, metadata) do
+  defp write_fake_release_tree(release_dir, app_script, metadata) do
     bin_dir = Path.join(release_dir, "bin")
     static_dir = Path.join(release_dir, "lib/casein-0.1.0/priv/static")
 
     File.mkdir_p!(bin_dir)
-    File.cp!(devide_script, Path.join(bin_dir, "devide"))
-    File.chmod!(Path.join(bin_dir, "devide"), 0o755)
-    write_executable(Path.join(bin_dir, "casein"), app_script)
+    File.cp!(@script, Path.join(bin_dir, "casein"))
+    File.chmod!(Path.join(bin_dir, "casein"), 0o755)
+    write_executable(Path.join(bin_dir, "casein-runtime"), app_script)
     write_executable(Path.join(bin_dir, "migrate"), "#!/bin/sh\nexit 0\n")
 
     File.mkdir_p!(Path.join(static_dir, "assets/css"))
@@ -615,7 +614,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
   defp release_metadata(opts) do
     %{
-      app: "devide",
+      app: "casein",
       version: "0.1.0",
       revision: Keyword.fetch!(opts, :revision),
       profile: "lan",

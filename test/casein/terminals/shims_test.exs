@@ -12,7 +12,7 @@ defmodule Casein.Terminals.ShimsTest do
 
     previous_desktop_entries_dir = Application.get_env(:casein, :terminal_desktop_entries_dir)
     previous_mimeapps_path = Application.get_env(:casein, :terminal_mimeapps_path)
-    tmp = Path.join(System.tmp_dir!(), "devide-shims-test-#{System.unique_integer([:positive])}")
+    tmp = Path.join(System.tmp_dir!(), "casein-shims-test-#{System.unique_integer([:positive])}")
     shim_dir = Path.join(tmp, "shims")
     tool_root = Path.join(tmp, "tools")
     real_dir = Path.join(tmp, "real")
@@ -47,17 +47,17 @@ defmodule Casein.Terminals.ShimsTest do
      tmp: tmp}
   end
 
-  test "materializes devide-open shim and markdown desktop default", %{
+  test "materializes casein-open shim and markdown desktop default", %{
     desktop_dir: desktop_dir,
     mimeapps_path: mimeapps_path
   } do
-    assert :ok = Shims.materialize!(["devide-open"], desktop?: true)
+    assert :ok = Shims.materialize!(["casein-open"], desktop?: true)
 
-    shim = Shims.shim_path("devide-open")
+    shim = Shims.shim_path("casein-open")
     assert File.regular?(shim)
 
     script = File.read!(shim)
-    assert script =~ "DEVIDE_API_BASE_URL"
+    assert script =~ "CASEIN_API_BASE_URL"
     assert script =~ "/api/workspaces/${workspace_id}/open"
     assert script =~ "--max-time 5"
 
@@ -66,7 +66,7 @@ defmodule Casein.Terminals.ShimsTest do
 
     desktop = File.read!(desktop_entry)
     assert desktop =~ "Name=Casein Preview"
-    assert desktop =~ "Exec=devide-open %f"
+    assert desktop =~ "Exec=casein-open %f"
     assert desktop =~ "Terminal=true"
     assert desktop =~ "MimeType=text/markdown;text/x-markdown;"
 
@@ -76,7 +76,7 @@ defmodule Casein.Terminals.ShimsTest do
     assert mimeapps =~ "text/x-markdown=casein-preview.desktop"
   end
 
-  test "devide-open posts the target and current directory to the open API", %{
+  test "casein-open posts the target and current directory to the open API", %{
     clean_bin: clean_bin,
     real_dir: real_dir,
     tmp: tmp
@@ -84,17 +84,17 @@ defmodule Casein.Terminals.ShimsTest do
     workdir = Path.join(tmp, "workspace")
     File.mkdir_p!(workdir)
     write_fake_curl!(real_dir)
-    Shims.materialize!(["devide-open"])
+    Shims.materialize!(["casein-open"])
 
     capture = Path.join(tmp, "curl.capture")
 
     {out, 0} =
-      System.cmd(Shims.shim_path("devide-open"), ["docs/readme.md"],
+      System.cmd(Shims.shim_path("casein-open"), ["docs/readme.md"],
         cd: workdir,
         env: [
           {"PATH", Enum.join([real_dir, clean_bin], ":")},
-          {"DEVIDE_API_BASE_URL", "http://casein.test"},
-          {"DEVIDE_WORKSPACE_ID", "ws-open"},
+          {"CASEIN_API_BASE_URL", "http://casein.test"},
+          {"CASEIN_WORKSPACE_ID", "ws-open"},
           {"CASEIN_API_TOKEN", "open-token"},
           {"CASEIN_FAKE_CURL_CAPTURE", capture}
         ],
@@ -110,30 +110,30 @@ defmodule Casein.Terminals.ShimsTest do
                "\n"
   end
 
-  test "devide-open rejects targets with control characters before curl", %{
+  test "casein-open rejects targets with control characters before curl", %{
     clean_bin: clean_bin,
     tmp: tmp
   } do
     workdir = Path.join(tmp, "workspace")
     File.mkdir_p!(workdir)
-    Shims.materialize!(["devide-open"])
+    Shims.materialize!(["casein-open"])
 
     capture = Path.join(tmp, "curl.capture")
 
     {out, 64} =
-      System.cmd(Shims.shim_path("devide-open"), ["docs/\nreadme.md"],
+      System.cmd(Shims.shim_path("casein-open"), ["docs/\nreadme.md"],
         cd: workdir,
         env: [
           {"PATH", clean_bin},
-          {"DEVIDE_API_BASE_URL", "http://casein.test"},
-          {"DEVIDE_WORKSPACE_ID", "ws-open"},
+          {"CASEIN_API_BASE_URL", "http://casein.test"},
+          {"CASEIN_WORKSPACE_ID", "ws-open"},
           {"CASEIN_API_TOKEN", "open-token"},
           {"CASEIN_FAKE_CURL_CAPTURE", capture}
         ],
         stderr_to_stdout: true
       )
 
-    assert out =~ "devide-open: target contains unsupported control characters"
+    assert out =~ "casein-open: target contains unsupported control characters"
     refute File.exists?(capture)
   end
 
@@ -440,11 +440,11 @@ defmodule Casein.Terminals.ShimsTest do
     # agent-shims launcher (skip-permissions + MCP env) must win. Prepending
     # each dir individually used to reverse the order and let the npm bin
     # shadow it.
-    devide_shim = Path.join(local_bin, "claude")
+    casein_shim = Path.join(local_bin, "claude")
     npm_bare = Path.join(npm_bin, "claude")
-    File.write!(devide_shim, "#!/bin/sh\necho ok\n")
+    File.write!(casein_shim, "#!/bin/sh\necho ok\n")
     File.write!(npm_bare, "#!/bin/sh\necho ok\n")
-    File.chmod!(devide_shim, 0o755)
+    File.chmod!(casein_shim, 0o755)
     File.chmod!(npm_bare, 0o755)
 
     {out, 0} =
@@ -463,7 +463,7 @@ defmodule Casein.Terminals.ShimsTest do
         stderr_to_stdout: true
       )
 
-    assert String.trim(out) == devide_shim
+    assert String.trim(out) == casein_shim
   end
 
   test "shell integration forces agent shims back ahead of rc-prepended installer dirs",
@@ -477,11 +477,11 @@ defmodule Casein.Terminals.ShimsTest do
     File.mkdir_p!(agent_shims)
     File.mkdir_p!(installer_bin)
 
-    devide_shim = Path.join(agent_shims, "grok")
+    casein_shim = Path.join(agent_shims, "grok")
     real_grok = Path.join(installer_bin, "grok")
-    File.write!(devide_shim, "#!/bin/sh\necho shim\n")
+    File.write!(casein_shim, "#!/bin/sh\necho shim\n")
     File.write!(real_grok, "#!/bin/sh\necho real\n")
-    File.chmod!(devide_shim, 0o755)
+    File.chmod!(casein_shim, 0o755)
     File.chmod!(real_grok, 0o755)
 
     # The pane env put agent-shims first, then a user rc file prepended the
@@ -504,7 +504,7 @@ defmodule Casein.Terminals.ShimsTest do
         stderr_to_stdout: true
       )
 
-    assert String.trim(out) == devide_shim
+    assert String.trim(out) == casein_shim
   end
 
   test "prompt-end marker in PS1 expands to escape bytes without a stray bracket", %{tmp: tmp} do
@@ -600,8 +600,8 @@ defmodule Casein.Terminals.ShimsTest do
       File.mkdir_p!(home)
       File.mkdir_p!(user_zdotdir)
       File.write!(Path.join(user_zdotdir, ".zshenv"), "export ZDOTDIR=#{shell_quote(escaped)}\n")
-      File.write!(Path.join(user_zdotdir, ".zprofile"), "export DEVIDE_PROFILE_SEEN=1\n")
-      File.write!(Path.join(user_zdotdir, ".zshrc"), "export DEVIDE_RC_SEEN=1\n")
+      File.write!(Path.join(user_zdotdir, ".zprofile"), "export CASEIN_PROFILE_SEEN=1\n")
+      File.write!(Path.join(user_zdotdir, ".zshrc"), "export CASEIN_RC_SEEN=1\n")
 
       {out, 0} =
         System.cmd(
@@ -609,7 +609,7 @@ defmodule Casein.Terminals.ShimsTest do
           [
             "-il",
             "-c",
-            "print -r -- \"profile=$DEVIDE_PROFILE_SEEN rc=$DEVIDE_RC_SEEN loaded=$CASEIN_SHELL_INTEGRATION_LOADED zdotdir=$ZDOTDIR\""
+            "print -r -- \"profile=$CASEIN_PROFILE_SEEN rc=$CASEIN_RC_SEEN loaded=$CASEIN_SHELL_INTEGRATION_LOADED zdotdir=$ZDOTDIR\""
           ],
           env: [
             {"HOME", home},
@@ -657,11 +657,11 @@ defmodule Casein.Terminals.ShimsTest do
       File.mkdir_p!(local_bin)
       File.mkdir_p!(npm_bin)
 
-      devide_shim = Path.join(local_bin, "claude")
+      casein_shim = Path.join(local_bin, "claude")
       npm_bare = Path.join(npm_bin, "claude")
-      File.write!(devide_shim, "#!/bin/sh\necho ok\n")
+      File.write!(casein_shim, "#!/bin/sh\necho ok\n")
       File.write!(npm_bare, "#!/bin/sh\necho ok\n")
-      File.chmod!(devide_shim, 0o755)
+      File.chmod!(casein_shim, 0o755)
       File.chmod!(npm_bare, 0o755)
 
       {out, 0} =
@@ -681,7 +681,7 @@ defmodule Casein.Terminals.ShimsTest do
           stderr_to_stdout: true
         )
 
-      assert String.trim(out) |> String.ends_with?(devide_shim)
+      assert String.trim(out) |> String.ends_with?(casein_shim)
     end
   end
 

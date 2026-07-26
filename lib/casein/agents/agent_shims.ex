@@ -158,7 +158,7 @@ defmodule Casein.Agents.AgentShims do
   defp install_script_candidates do
     [
       Application.get_env(:casein, :install_agent_shims_path),
-      join_scripts_env("DEVIDE_SCRIPTS"),
+      join_scripts_env("CASEIN_SCRIPTS"),
       join_agent_scripts_path(),
       Path.expand("scripts/install-agent-shims.sh"),
       "/opt/casein/deploy-build/scripts/install-agent-shims.sh"

@@ -5,19 +5,19 @@ defmodule Casein.Release.MetadataTest do
 
   @valid %{
     "metadata_version" => 1,
-    "app" => "devide",
+    "app" => "casein",
     "version" => "0.1.0",
     "revision" => "504670cdeadbeef",
     "profile" => "lan",
     "repo_adapter" => "sqlite",
     "target" => "linux-x86_64",
     "channel" => "canary",
-    "update_manifest_url" => "https://example.com/devide-canary.json",
+    "update_manifest_url" => "https://example.com/casein-canary.json",
     "built_at" => "2026-07-02T12:00:00Z"
   }
 
   setup do
-    tmp = System.tmp_dir!() |> Path.join("devide-relmeta-#{System.unique_integer([:positive])}")
+    tmp = System.tmp_dir!() |> Path.join("casein-relmeta-#{System.unique_integer([:positive])}")
     on_exit(fn -> File.rm_rf!(tmp) end)
     %{tmp: tmp}
   end
@@ -51,9 +51,9 @@ defmodule Casein.Release.MetadataTest do
     metadata =
       Metadata.build_for_assemble(update_manifest_url: "https://embedded.example/manifest.json")
 
-    prev = System.get_env("DEVIDE_UPDATE_MANIFEST_URL")
-    System.put_env("DEVIDE_UPDATE_MANIFEST_URL", "https://override.example/manifest.json")
-    on_exit(fn -> restore_env("DEVIDE_UPDATE_MANIFEST_URL", prev) end)
+    prev = System.get_env("CASEIN_UPDATE_MANIFEST_URL")
+    System.put_env("CASEIN_UPDATE_MANIFEST_URL", "https://override.example/manifest.json")
+    on_exit(fn -> restore_env("CASEIN_UPDATE_MANIFEST_URL", prev) end)
 
     assert Metadata.manifest_url(metadata) == "https://override.example/manifest.json"
   end

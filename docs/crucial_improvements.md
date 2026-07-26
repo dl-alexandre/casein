@@ -133,7 +133,7 @@ Items where server authority, audit, or admission gates are weakened or absent.
 | Field | Detail |
 |-------|--------|
 | **Source** | `docs/hardening.md` §Workspace-Scoped Tokens, `config/runtime.exs` (`CASEIN_WORKSPACE_API_TOKENS`), `lib/casein_web/plugs/api_auth.ex` |
-| **Gap** | Dogfood agents use `CASEIN_API_TOKEN` (admin/global) materialized into `~/.grok/config.toml` etc. Workspace-scoped tokens exist but are optional; an agent with the global token can omit `workspace_id` and see **all** `devide_*` sessions (`docs/terminal_mcp.md` §Access scope). |
+| **Gap** | Dogfood agents use `CASEIN_API_TOKEN` (admin/global) materialized into `~/.grok/config.toml` etc. Workspace-scoped tokens exist but are optional; an agent with the global token can omit `workspace_id` and see **all** `casein_*` sessions (`docs/terminal_mcp.md` §Access scope). |
 | **Invariant** | **FP-10**, hardening boundary "every MCP call must be workspace-scoped" |
 | **Verify** | `test/casein_web/controllers/api/terminal_mcp_controller_test.exs` (scoped token rejects cross-workspace override); `scripts/verify_agent_pairing.sh` |
 | **Rationale** | On a shared devbox, global tokens are the largest blast-radius misconfiguration; default agent materialization should emit workspace-scoped tokens. |
@@ -160,11 +160,11 @@ Items where sessions, scrollback, or workspace attachment fail the user promise 
 | Field | Detail |
 |-------|--------|
 | **Source** | `docs/state_machines.md` terminal lifecycle rule 3, `lib/casein/terminals/tmux_janitor.ex`, `config/runtime.exs` (`:tmux_idle_seconds`, prod default 600s) |
-| **Gap** | After `:tmux_idle_seconds` with **no LiveView subscriber**, `TmuxJanitor` kills `devide_`-prefixed tmux sessions. Operator closes tab → work may be destroyed despite FP-2 "sessions durable by default." |
+| **Gap** | After `:tmux_idle_seconds` with **no LiveView subscriber**, `TmuxJanitor` kills `casein_`-prefixed tmux sessions. Operator closes tab → work may be destroyed despite FP-2 "sessions durable by default." |
 | **Invariant** | **FP-2**, **FP-8**, **FP-9**, product §8 promises 1–2 |
-| **Verify** | `test/casein/terminals/tmux_janitor_test.exs`; check prod `CASEIN_TMUX_IDLE_SECONDS` in `/etc/casein/devide.env` |
+| **Verify** | `test/casein/terminals/tmux_janitor_test.exs`; check prod `CASEIN_TMUX_IDLE_SECONDS` in `/etc/casein/casein.env` |
 | **Rationale** | The persistence story (tmux survives) conflicts with idle GC policy; prod needs either disabled GC, much longer TTL, or explicit operator opt-in to kill idle sessions. |
-| **Status (2026-06-26)** | 🟡 **SMALLER than described — and the "prod default 600s" claim is factually wrong.** `idle_ms/0` returns `nil` (GC **disabled**) unless `:tmux_idle_seconds` is set to a positive integer (`tmux_janitor.ex:159-164`); `runtime.exs` reads it only from `CASEIN_TMUX_IDLE_SECONDS` and the comment states GC is **opt-in** because durable sessions are the default. So the "tab close destroys durable work" risk does **not** exist at the default config. **Residual (real, but low-urgency):** *if* an operator enables idle GC, there is genuinely **no session-type guard** — the kill predicate fires on any `devide_`-prefixed session with no subscribers (`tmux_janitor.ex:115`), with no durable/ephemeral distinction. Defense-in-depth fix = a durable-session guard for the opt-in case, not "disable GC" (already disabled). Default-safe behavior shipped `9b75d9c`. |
+| **Status (2026-06-26)** | 🟡 **SMALLER than described — and the "prod default 600s" claim is factually wrong.** `idle_ms/0` returns `nil` (GC **disabled**) unless `:tmux_idle_seconds` is set to a positive integer (`tmux_janitor.ex:159-164`); `runtime.exs` reads it only from `CASEIN_TMUX_IDLE_SECONDS` and the comment states GC is **opt-in** because durable sessions are the default. So the "tab close destroys durable work" risk does **not** exist at the default config. **Residual (real, but low-urgency):** *if* an operator enables idle GC, there is genuinely **no session-type guard** — the kill predicate fires on any `casein_`-prefixed session with no subscribers (`tmux_janitor.ex:115`), with no durable/ephemeral distinction. Defense-in-depth fix = a durable-session guard for the opt-in case, not "disable GC" (already disabled). Default-safe behavior shipped `9b75d9c`. |
 
 ### P2 — Cross-host workspace attach not configured
 
@@ -219,7 +219,7 @@ Items that block or erode trust in human+agent side-by-side dogfood.
 | **Source** | `docs/dogfood_phase_2.md` §MCP side-by-side (ledger template + first targets), empty ledger |
 | **Gap** | Fleet-runner dogfood entries exist (2026-05-12/13) but **zero** MCP side-by-side ledger entries. Pre-flight checklist (deploy on master, `verify_agent_pairing.sh --ci`, agent_pair layout, `:manual` mode) is documented but not evidenced in-repo. |
 | **Invariant** | Product §12 demo paths 6–7 (agent pane, agent activity), **FP-10** |
-| **Verify** | `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci` |
+| **Verify** | `source .devbox-agent.env && WORKSPACE_ID=$CASEIN_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci` |
 | **Rationale** | The current product path is MCP agents, not fleet runners; without ledger entries, friction is unknown and fixes are speculative. |
 
 ### P2 — Agent pane targeting depends on manual `agent_pair` layout
@@ -237,7 +237,7 @@ Items that block or erode trust in human+agent side-by-side dogfood.
 | Field | Detail |
 |-------|--------|
 | **Source** | `AGENTS.md` §MCP client injection (project-local and launch-time injection) |
-| **Gap** | Historical global configs may still contain stale `devide-*` MCP entries until the launcher/materializer cleanup runs. New launches inject Casein MCP from resolved workspace env into project-local or launch-scoped config instead of global agent homes. |
+| **Gap** | Historical global configs may still contain stale `casein-*` MCP entries until the launcher/materializer cleanup runs. New launches inject Casein MCP from resolved workspace env into project-local or launch-scoped config instead of global agent homes. |
 | **Invariant** | Operational safety on multi-user host |
 | **Verify** | Read `scripts/materialize-agent-mcp.sh`, `scripts/launch-casein-agent.sh` |
 | **Rationale** | Plain agent starts should not inherit workspace-scoped MCP servers without a resolved `CASEIN_API_TOKEN`. |
@@ -257,7 +257,7 @@ Items that block or erode trust in human+agent side-by-side dogfood.
 | Field | Detail |
 |-------|--------|
 | **Source** | `docs/terminal_mcp.md` §Access scope, `AGENTS.md` friction table ("workspace_id filter matched nothing") |
-| **Gap** | Without pre-scoped MCP URL, agents see all `devide_*` sessions on host. Wrong id → empty results with no guided recovery. |
+| **Gap** | Without pre-scoped MCP URL, agents see all `casein_*` sessions on host. Wrong id → empty results with no guided recovery. |
 | **Invariant** | **FP-10**, hardening §Boundaries |
 | **Verify** | `test/casein_web/api/terminal_mcp_test.exs` (workspace_mismatch rejection) |
 | **Rationale** | Pre-scoped URLs are generated by pairing scripts but agents started outside checkout miss them; fail-closed default should require scope. |
@@ -314,7 +314,7 @@ Items that block repeatable push→deploy→dogfood loops or hide regressions.
 | Field | Detail |
 |-------|--------|
 | **Source** | `AGENTS.md` friction table, `lib/casein/deployment/drift.ex`, `test/casein/deployment/drift_test.exs` |
-| **Gap** | `bash scripts/deploy-local.sh` activates checkout builds immediately, but the on-box poller redeploys `origin/master` within ~2 min and overwrites manual releases. Drift banner appears only when `/etc/casein/devide.env` SHA/label differs from `origin/master`. |
+| **Gap** | `bash scripts/deploy-local.sh` activates checkout builds immediately, but the on-box poller redeploys `origin/master` within ~2 min and overwrites manual releases. Drift banner appears only when `/etc/casein/casein.env` SHA/label differs from `origin/master`. |
 | **Invariant** | AGENTS.md "everything that must stay deployed must land in git first" |
 | **Verify** | `mise exec -- mix test test/casein/deployment/drift_test.exs` |
 | **Rationale** | Operators dogfooding from dirty checkouts lose work silently; banner helps but prevention (push-first workflow) remains procedural. |
@@ -373,11 +373,11 @@ bash scripts/hardening-audit.sh
 
 # Live devbox MCP smoke (requires env)
 source .devbox-agent.env
-WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci
+WORKSPACE_ID=$CASEIN_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci
 
 # Workspace recovery bundle
 source .devbox-agent.env
-bash scripts/workspace-doctor.sh "$DEVIDE_WORKSPACE_ID"
+bash scripts/workspace-doctor.sh "$CASEIN_WORKSPACE_ID"
 
 # Policy denial paths
 mise exec -- mix test test/casein/policy_test.exs test/casein/audit_test.exs

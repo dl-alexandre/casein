@@ -5,7 +5,6 @@
 
 CASEIN_CADDY_CANONICAL_DIAL="${CASEIN_CADDY_CANONICAL_DIAL:-unix//run/casein/current.sock}"
 CASEIN_CADDY_LOOPBACK_DIAL="${CASEIN_CADDY_LOOPBACK_DIAL:-127.0.0.1:4000}"
-CASEIN_CADDY_LEGACY_DIAL="${CASEIN_CADDY_LEGACY_DIAL:-unix//run/devide/current.sock}"
 CADDY_UPSTREAM_PATH="${CADDY_UPSTREAM_PATH:-}"
 CADDY_PREVIOUS_DIAL="${CADDY_PREVIOUS_DIAL:-}"
 CADDY_UPSTREAM_PATCHED="${CADDY_UPSTREAM_PATCHED:-0}"
@@ -93,9 +92,6 @@ casein_reconcile_caddy_upstream() {
     "$CASEIN_CADDY_LOOPBACK_DIAL")
       log "Caddy upstream for ${host} uses the supported loopback proxy"
       return 0
-      ;;
-    "$CASEIN_CADDY_LEGACY_DIAL")
-      log "repairing Caddy upstream for ${host}: ${CADDY_PREVIOUS_DIAL} -> ${CASEIN_CADDY_CANONICAL_DIAL}"
       ;;
     *)
       if [ "$mode" = "repair" ]; then

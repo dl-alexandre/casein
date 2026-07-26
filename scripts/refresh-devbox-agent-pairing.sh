@@ -8,8 +8,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
-WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-dalexandre-devide}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
+WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-dalexandre-casein}"
 AGENT_ENV="${ROOT}/.devbox-agent.env"
 
 log() { printf '>>> %s\n' "$*"; }
@@ -26,7 +26,7 @@ source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 bash scripts/ensure-casein-loopback-proxy.sh
 
 LOCAL_URL="http://127.0.0.1:4000"
-PUBLIC_URL="https://devide.devbox.milcgroup.com"
+PUBLIC_URL="https://casein.devbox.milcgroup.com"
 SCOPED_TOKENS_JSON="$(workspace_scoped_token_read_json "$ENV_FILE")"
 SCOPED_TOKENS_CHANGED=0
 
@@ -87,7 +87,7 @@ write_scoped_tokens_if_needed() {
 relaunch_current_release_if_needed() {
   [[ "$SCOPED_TOKENS_CHANGED" == "1" ]] || return 0
 
-  if [[ "${DEVIDE_REFRESH_RELAUNCH_ON_TOKEN_CHANGE:-1}" != "1" ]]; then
+  if [[ "${CASEIN_REFRESH_RELAUNCH_ON_TOKEN_CHANGE:-1}" != "1" ]]; then
     log "workspace token env changed; relaunch the current Casein release before MCP verification"
     return 0
   fi
@@ -104,7 +104,7 @@ relaunch_current_release_if_needed() {
   revision="${revision:-manual-token-refresh}"
 
   log "relaunching current release so it sees updated workspace-scoped tokens"
-  tarball="$(sudo mktemp "${CASEIN_DEPLOY_ROOT:-/opt/casein}/dev_ide-token-refresh-XXXXXX.tgz")"
+  tarball="$(sudo mktemp "${CASEIN_DEPLOY_ROOT:-/opt/casein}/casein-token-refresh-XXXXXX.tgz")"
   sudo tar -C "$active_release" -czf "$tarball" .
   sudo chown "$(id -un):$(id -gn)" "$tarball"
 
@@ -145,7 +145,7 @@ ensure_scoped_token_for_workspace "$WORKSPACE_ID" AGENT_TOKEN
 default_checkout() {
   local workspace_name="$1"
   case "$workspace_name" in
-    dalexandre-devide | dev_ide) printf '%s\n' "${ROOT}" ;;
+    dalexandre-casein | casein) printf '%s\n' "${ROOT}" ;;
     *)
       if [[ -d "/data/workspaces/${workspace_name}" ]]; then
         printf '%s\n' "/data/workspaces/${workspace_name}"
@@ -160,7 +160,7 @@ default_checkout() {
 
 scripts_for_checkout() {
   local checkout="$1"
-  if [[ -f "${checkout}/scripts/devide" ]]; then
+  if [[ -f "${checkout}/scripts/casein" ]]; then
     printf '%s\n' "${checkout}/scripts"
   else
     printf '%s\n' "${ROOT}/scripts"
@@ -168,7 +168,7 @@ scripts_for_checkout() {
 }
 
 materialize_all_workspaces() {
-  local prefix="${DEVIDE_WORKSPACE_PREFIX:-dalexandre}"
+  local prefix="${CASEIN_WORKSPACE_PREFIX:-dalexandre}"
 
   WORKSPACES_JSON="$WORKSPACES_JSON" PREFIX="$prefix" python3 -c "
 import json, os
@@ -182,7 +182,7 @@ for ws in json.loads(os.environ['WORKSPACES_JSON']):
     if prefix and not name.startswith(prefix):
         continue
     print(f\"{name}\t{ws_id}\")
-" >"${TMPDIR:-/tmp}/devide-refresh-workspaces.$$"
+" >"${TMPDIR:-/tmp}/casein-refresh-workspaces.$$"
 
   while IFS=$'\t' read -r ws_name ws_id; do
     [[ -n "$ws_name" && -n "$ws_id" ]] || continue
@@ -191,24 +191,24 @@ for ws in json.loads(os.environ['WORKSPACES_JSON']):
     log "materializing MCP for ${ws_name}"
     ensure_scoped_token_for_workspace "$ws_id" ws_token
     CASEIN_API_TOKEN="${ws_token}" \
-      DEVIDE_WORKSPACE_NAME="${ws_name}" \
-      DEVIDE_WORKSPACE_ID="${ws_id}" \
-      DEVIDE_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?workspace_id=${ws_id}" \
-      DEVIDE_PREVIEW_MCP_URL="${LOCAL_URL}/api/preview/mcp?workspace_id=${ws_id}" \
-      DEVIDE_ARTIFACT_MCP_URL="${LOCAL_URL}/api/artifacts/mcp?workspace_id=${ws_id}" \
-      DEVIDE_CHECKOUT="${checkout}" \
-      DEVIDE_SCRIPTS="${scripts}" \
+      CASEIN_WORKSPACE_NAME="${ws_name}" \
+      CASEIN_WORKSPACE_ID="${ws_id}" \
+      CASEIN_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?workspace_id=${ws_id}" \
+      CASEIN_PREVIEW_MCP_URL="${LOCAL_URL}/api/preview/mcp?workspace_id=${ws_id}" \
+      CASEIN_ARTIFACT_MCP_URL="${LOCAL_URL}/api/artifacts/mcp?workspace_id=${ws_id}" \
+      CASEIN_CHECKOUT="${checkout}" \
+      CASEIN_SCRIPTS="${scripts}" \
       bash scripts/materialize-agent-mcp.sh >/dev/null
-  done <"${TMPDIR:-/tmp}/devide-refresh-workspaces.$$"
+  done <"${TMPDIR:-/tmp}/casein-refresh-workspaces.$$"
 
-  rm -f "${TMPDIR:-/tmp}/devide-refresh-workspaces.$$"
+  rm -f "${TMPDIR:-/tmp}/casein-refresh-workspaces.$$"
 }
 
 TIDEWAVE_MCP_URL=""
 if [[ -x "${ROOT}/scripts/tidewave-resolve-url.sh" ]]; then
   TIDEWAVE_MCP_URL="$(
-    DEVIDE_WORKSPACE_NAME="${WORKSPACE_NAME}" \
-      DEVIDE_WORKSPACE_ID="${WORKSPACE_ID}" \
+    CASEIN_WORKSPACE_NAME="${WORKSPACE_NAME}" \
+      CASEIN_WORKSPACE_ID="${WORKSPACE_ID}" \
       bash "${ROOT}/scripts/tidewave-resolve-url.sh" 2>/dev/null || true
   )"
 fi
@@ -220,20 +220,20 @@ cat >"$AGENT_ENV" <<EOF
 # Casein devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
 # CASEIN_API_TOKEN is workspace-scoped. The global admin token stays only in
-# /etc/casein/devide.env; never copy it into an agent-readable checkout.
+# /etc/casein/casein.env; never copy it into an agent-readable checkout.
 
 export CASEIN_API_TOKEN='${AGENT_TOKEN}'
-export DEVIDE_URL='${LOCAL_URL}'
-export DEVIDE_PUBLIC_URL='${PUBLIC_URL}'
-export DEVIDE_WORKSPACE_ID='${WORKSPACE_ID}'
-export DEVIDE_WORKSPACE_NAME='${WORKSPACE_NAME}'
-export DEVIDE_TERMINAL_MCP_URL='${LOCAL_URL}/api/terminals/mcp?workspace_id=${WORKSPACE_ID}'
-export DEVIDE_PREVIEW_MCP_URL='${LOCAL_URL}/api/preview/mcp?workspace_id=${WORKSPACE_ID}'
-export DEVIDE_ARTIFACT_MCP_URL='${LOCAL_URL}/api/artifacts/mcp?workspace_id=${WORKSPACE_ID}'
-$( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export DEVIDE_TIDEWAVE_MCP_URL='%s'\n" "$TIDEWAVE_MCP_URL" )
-export DEVIDE_CHECKOUT='${ROOT}'
-export DEVIDE_SCRIPTS='${ROOT}/scripts'
-export DEVIDE_AGENT_MCP_HOME="\${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
+export CASEIN_URL='${LOCAL_URL}'
+export CASEIN_PUBLIC_URL='${PUBLIC_URL}'
+export CASEIN_WORKSPACE_ID='${WORKSPACE_ID}'
+export CASEIN_WORKSPACE_NAME='${WORKSPACE_NAME}'
+export CASEIN_TERMINAL_MCP_URL='${LOCAL_URL}/api/terminals/mcp?workspace_id=${WORKSPACE_ID}'
+export CASEIN_PREVIEW_MCP_URL='${LOCAL_URL}/api/preview/mcp?workspace_id=${WORKSPACE_ID}'
+export CASEIN_ARTIFACT_MCP_URL='${LOCAL_URL}/api/artifacts/mcp?workspace_id=${WORKSPACE_ID}'
+$( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export CASEIN_TIDEWAVE_MCP_URL='%s'\n" "$TIDEWAVE_MCP_URL" )
+export CASEIN_CHECKOUT='${ROOT}'
+export CASEIN_SCRIPTS='${ROOT}/scripts'
+export CASEIN_AGENT_MCP_HOME="\${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
 export CASEIN_NPM_PREFIX="\${CASEIN_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
 export CASEIN_AGENT_BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}"
 case ":\${PATH:-}:" in *":\${HOME}/.local/bin:"*) ;; *) export PATH="\${HOME}/.local/bin:\${PATH:-}" ;; esac
@@ -258,8 +258,8 @@ bash scripts/refresh-tmux-pane-env.sh --workspace-prefix dalexandre
 
 relaunch_current_release_if_needed
 
-DEVIDE_URL="$LOCAL_URL" CASEIN_API_TOKEN="$AGENT_TOKEN" \
-  WORKSPACE_ID="$WORKSPACE_ID" DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME" \
+CASEIN_URL="$LOCAL_URL" CASEIN_API_TOKEN="$AGENT_TOKEN" \
+  WORKSPACE_ID="$WORKSPACE_ID" CASEIN_WORKSPACE_NAME="$WORKSPACE_NAME" \
   bash scripts/verify_agent_pairing.sh
 
 log "done"

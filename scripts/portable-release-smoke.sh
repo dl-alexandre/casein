@@ -7,19 +7,19 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT="${DEVIDE_PORTABLE_SMOKE_PROJECT:-devide-portable-smoke-$$}"
-TIMEOUT_SECONDS="${DEVIDE_PORTABLE_SMOKE_TIMEOUT_SECONDS:-120}"
+PROJECT="${CASEIN_PORTABLE_SMOKE_PROJECT:-casein-portable-smoke-$$}"
+TIMEOUT_SECONDS="${CASEIN_PORTABLE_SMOKE_TIMEOUT_SECONDS:-120}"
 
-CASEIN_IMAGE="${DEVIDE_PORTABLE_SMOKE_IMAGE:-${PROJECT}:latest}"
-CHANNEL_SMOKE_IMAGE="${DEVIDE_PORTABLE_CHANNEL_SMOKE_IMAGE:-${PROJECT}-channel:latest}"
-remove_dev_ide_image=1
+CASEIN_IMAGE="${CASEIN_PORTABLE_SMOKE_IMAGE:-${PROJECT}:latest}"
+CHANNEL_SMOKE_IMAGE="${CASEIN_PORTABLE_CHANNEL_SMOKE_IMAGE:-${PROJECT}-channel:latest}"
+remove_casein_image=1
 remove_channel_smoke_image=1
 
-if [ -n "${DEVIDE_PORTABLE_SMOKE_IMAGE+x}" ]; then
-  remove_dev_ide_image=0
+if [ -n "${CASEIN_PORTABLE_SMOKE_IMAGE+x}" ]; then
+  remove_casein_image=0
 fi
 
-if [ -n "${DEVIDE_PORTABLE_CHANNEL_SMOKE_IMAGE+x}" ]; then
+if [ -n "${CASEIN_PORTABLE_CHANNEL_SMOKE_IMAGE+x}" ]; then
   remove_channel_smoke_image=0
 fi
 
@@ -36,8 +36,8 @@ cleanup() {
 
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1
 
-  if [ "${DEVIDE_PORTABLE_SMOKE_KEEP_IMAGES:-0}" != "1" ]; then
-    if [ "$remove_dev_ide_image" -eq 1 ]; then
+  if [ "${CASEIN_PORTABLE_SMOKE_KEEP_IMAGES:-0}" != "1" ]; then
+    if [ "$remove_casein_image" -eq 1 ]; then
       docker image rm -f "$CASEIN_IMAGE" >/dev/null 2>&1
     fi
 
@@ -64,16 +64,16 @@ fi
 
 case "$TIMEOUT_SECONDS" in
   ''|*[!0-9]*)
-    echo "error: DEVIDE_PORTABLE_SMOKE_TIMEOUT_SECONDS must be a positive integer" >&2
+    echo "error: CASEIN_PORTABLE_SMOKE_TIMEOUT_SECONDS must be a positive integer" >&2
     exit 1
     ;;
   0)
-    echo "error: DEVIDE_PORTABLE_SMOKE_TIMEOUT_SECONDS must be greater than zero" >&2
+    echo "error: CASEIN_PORTABLE_SMOKE_TIMEOUT_SECONDS must be greater than zero" >&2
     exit 1
     ;;
 esac
 
-TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/devide-portable-smoke-XXXXXX")"
+TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/casein-portable-smoke-XXXXXX")"
 compose=(docker compose --project-name "$PROJECT" --file "$ROOT/docker-compose.yml")
 
 mkdir -p "$TMP_ROOT/workspaces/alpha"
@@ -87,12 +87,12 @@ export CASEIN_API_TOKEN="portable-smoke-api-token"
 export CASEIN_RUNNER_TOKEN="portable-smoke-runner-token"
 export PHX_HOST="localhost"
 export PORT="4000"
-export POSTGRES_USER="dev_ide"
+export POSTGRES_USER="casein"
 export POSTGRES_PASSWORD="portable_smoke_postgres"
-export POSTGRES_DB="dev_ide_portable_smoke"
+export POSTGRES_DB="casein_portable_smoke"
 export CASEIN_HOST_PORT="0"
 export CASEIN_PROFILE="portable"
-export DEVIDE_RELEASE_PROFILE="portable"
+export CASEIN_RELEASE_PROFILE="portable"
 export CASEIN_IMAGE
 export CASEIN_WORKSPACES_ROOT="/workspaces"
 export CASEIN_WORKSPACES_HOST="$TMP_ROOT/workspaces"
@@ -102,7 +102,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 log "building portable production image"
-"${compose[@]}" build dev_ide
+"${compose[@]}" build casein
 
 log "building disposable Phoenix Channel client"
 docker build \
@@ -111,12 +111,12 @@ docker build \
   "$ROOT/docker/smoke"
 
 log "running database migrations"
-"${compose[@]}" run --rm dev_ide /app/bin/migrate
+"${compose[@]}" run --rm casein /app/bin/migrate
 
 log "starting portable stack"
-"${compose[@]}" up --detach dev_ide
+"${compose[@]}" up --detach casein
 
-published="$("${compose[@]}" port dev_ide 4000)"
+published="$("${compose[@]}" port casein 4000)"
 host_port="${published##*:}"
 base_url="http://127.0.0.1:${host_port}"
 
@@ -157,10 +157,10 @@ terminal_json="$(
 
 log "checking Phoenix Channel keystroke round-trip"
 user_token="$(
-  "${compose[@]}" exec --no-TTY dev_ide /app/bin/casein rpc \
+  "${compose[@]}" exec --no-TTY casein /app/bin/casein rpc \
     'IO.write(CaseinWeb.ChannelAuth.sign_user_token("portable-smoke-user"))'
 )"
-app_container="$("${compose[@]}" ps --quiet dev_ide)"
+app_container="$("${compose[@]}" ps --quiet casein)"
 
 docker run --rm \
   --network "container:${app_container}" \

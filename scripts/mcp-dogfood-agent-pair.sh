@@ -19,13 +19,13 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
-DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
+CASEIN_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
 TOKEN="${CASEIN_API_TOKEN:-}"
-WS_ID="${DEVIDE_WORKSPACE_ID:-}"
+WS_ID="${CASEIN_WORKSPACE_ID:-}"
 ADMIN_TOKEN="${CASEIN_ADMIN_API_TOKEN:-$TOKEN}"
 
 if [[ -z "$TOKEN" || -z "$WS_ID" ]]; then
-  echo "ERROR: CASEIN_API_TOKEN and DEVIDE_WORKSPACE_ID required" >&2
+  echo "ERROR: CASEIN_API_TOKEN and CASEIN_WORKSPACE_ID required" >&2
   exit 1
 fi
 
@@ -38,7 +38,7 @@ admin_header=( -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: applica
 rpc_raw() {
   local id="$1"
   local params="$2"
-  devide_curl -fsS -X POST "$DEVIDE_URL/api/terminals/mcp" \
+  casein_curl -fsS -X POST "$CASEIN_URL/api/terminals/mcp" \
     "${auth_header[@]}" \
     -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"tools/call\",\"params\":${params}}"
 }
@@ -81,8 +81,8 @@ echo "==> session: $SESSION"
 
 echo "==> apply agent_pair template (REST)"
 apply_out="$(
-  devide_curl -fsS -X POST \
-    "${DEVIDE_URL}/api/workspaces/${WS_ID}/templates/agent_pair/apply?session=${SESSION}" \
+  casein_curl -fsS -X POST \
+    "${CASEIN_URL}/api/workspaces/${WS_ID}/templates/agent_pair/apply?session=${SESSION}" \
     "${admin_header[@]}"
 )"
 printf '%s\n' "$apply_out" | python3 -c "

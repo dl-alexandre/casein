@@ -74,7 +74,7 @@ defmodule CaseinWeb.PreviewProxy.WebSocketTunnelE2ETest do
     # Upstream "dev server": a real WebSocket echo on the first free allowed port.
     upstream_port = start_upstream_echo!(@candidate_ports)
 
-    session = "devide_ws_e2e"
+    session = "casein_ws_e2e"
     pane_id = "%9"
     seed_session!(session, pane_id)
 
@@ -87,14 +87,14 @@ defmodule CaseinWeb.PreviewProxy.WebSocketTunnelE2ETest do
              })
 
     # Real HTTP listener for the Casein endpoint on a free port.
-    devide_port = free_port()
+    casein_port = free_port()
 
     start_supervised!(
-      {Bandit, plug: CaseinWeb.Endpoint, scheme: :http, ip: {127, 0, 0, 1}, port: devide_port}
+      {Bandit, plug: CaseinWeb.Endpoint, scheme: :http, ip: {127, 0, 0, 1}, port: casein_port}
     )
 
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    {:ok, devide_port: devide_port, upstream_port: upstream_port, workspace_id: workspace_id}
+    {:ok, casein_port: casein_port, upstream_port: upstream_port, workspace_id: workspace_id}
   end
 
   defp restore(key, nil), do: Application.delete_env(:casein, key)
@@ -143,10 +143,10 @@ defmodule CaseinWeb.PreviewProxy.WebSocketTunnelE2ETest do
   end
 
   test "a frame round-trips browser -> Casein -> upstream -> browser through the tunnel",
-       %{devide_port: devide_port, upstream_port: upstream_port, workspace_id: workspace_id} do
+       %{casein_port: casein_port, upstream_port: upstream_port, workspace_id: workspace_id} do
     path = "/preview-proxy/#{workspace_id}/#{upstream_port}/socket"
 
-    {:ok, conn} = Mint.HTTP.connect(:http, "127.0.0.1", devide_port, protocols: [:http1])
+    {:ok, conn} = Mint.HTTP.connect(:http, "127.0.0.1", casein_port, protocols: [:http1])
 
     {:ok, conn, ref} =
       Mint.WebSocket.upgrade(:ws, conn, path, [

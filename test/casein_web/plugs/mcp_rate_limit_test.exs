@@ -137,7 +137,7 @@ defmodule CaseinWeb.Plugs.McpRateLimitTest do
         "method" => "tools/call",
         "params" => %{
           "name" => "terminal_topology",
-          "arguments" => %{"workspace_id" => "alpha", "session" => "devide_alpha_default"}
+          "arguments" => %{"workspace_id" => "alpha", "session" => "casein_alpha_default"}
         }
       })
 

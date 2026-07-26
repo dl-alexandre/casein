@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${DEVIDE_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${DEVIDE_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
+            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${CASEIN_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${CASEIN_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
             "timeout": 5
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${DEVIDE_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${DEVIDE_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
+            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${CASEIN_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${CASEIN_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
             "timeout": 5
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${DEVIDE_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${DEVIDE_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
+            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${CASEIN_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${CASEIN_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
             "timeout": 5
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${DEVIDE_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${DEVIDE_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
+            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${CASEIN_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${CASEIN_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
             "timeout": 5
           }
         ]
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${DEVIDE_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${DEVIDE_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
+            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${CASEIN_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${CASEIN_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
             "timeout": 5
           }
         ]
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${DEVIDE_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${DEVIDE_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
+            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${CASEIN_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${CASEIN_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
             "timeout": 5
           }
         ]
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${DEVIDE_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${DEVIDE_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
+            "command": "sh -c 'if [ -n \"${GROK_PLUGIN_ROOT:-}\" ] && [ -x \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${GROK_PLUGIN_ROOT}/hooks/casein-agent-state.sh\"; fi; [ -n \"${CASEIN_AGENT_MCP_HOME:-}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${CASEIN_AGENT_MCP_HOME}/casein-agent-state.sh\"'",
             "timeout": 5
           }
         ]

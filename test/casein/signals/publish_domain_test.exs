@@ -8,7 +8,7 @@ defmodule Casein.Signals.PublishDomainTest do
   alias Casein.Test.RuntimeSeed
   alias Jido.Signal.Bus
 
-  test "from_domain_event builds a devide.* CloudEvents envelope" do
+  test "from_domain_event builds a casein.* CloudEvents envelope" do
     signal =
       Signals.from_domain_event(
         "deploy.failed",
@@ -16,8 +16,8 @@ defmodule Casein.Signals.PublishDomainTest do
         workspace_id: "ws-1"
       )
 
-    assert signal.type == "devide.deploy.failed"
-    assert signal.source == "/devide/domain/ws-1"
+    assert signal.type == "casein.deploy.failed"
+    assert signal.source == "/casein/domain/ws-1"
     assert signal.data.event == "deploy.failed"
     assert signal.data.workspace_id == "ws-1"
     assert signal.data.phase == "gate"
@@ -40,7 +40,7 @@ defmodule Casein.Signals.PublishDomainTest do
              )
 
     assert_receive {:signal, signal}
-    assert signal.type == "devide.runtime.preview_failed"
+    assert signal.type == "casein.runtime.preview_failed"
     assert signal.subject == "rt-1"
     assert signal.data.runtime_id == "rt-1"
   end
@@ -77,7 +77,7 @@ defmodule Casein.Signals.PublishDomainTest do
     assert {:ok, _updated} = Runtimes.mark_preview_server(runtime, "failed", "port closed")
 
     assert_receive {:signal,
-                    %{type: "devide.runtime.preview_failed", subject: subject, data: data}}
+                    %{type: "casein.runtime.preview_failed", subject: subject, data: data}}
 
     assert subject == runtime.id
     assert data.failure_reason == "port closed"

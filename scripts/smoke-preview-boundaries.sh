@@ -4,11 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-MAIN_SOCKET="${DEVIDE_CURRENT_SOCK:-/run/casein/current.sock}"
-DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
+MAIN_SOCKET="${CASEIN_CURRENT_SOCK:-/run/casein/current.sock}"
+CASEIN_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
 TOKEN="${CASEIN_API_TOKEN:-}"
-WORKSPACE_ID="${WORKSPACE_ID:-${DEVIDE_WORKSPACE_ID:-}}"
-TMUX_SESSION="${TMUX_SESSION:-${DEVIDE_TMUX_SESSION:-}}"
+WORKSPACE_ID="${WORKSPACE_ID:-${CASEIN_WORKSPACE_ID:-}}"
+TMUX_SESSION="${TMUX_SESSION:-${CASEIN_TMUX_SESSION:-}}"
 PREVIEW_OPEN="${VERIFY_PREVIEW_OPEN:-0}"
 
 log() { printf '==> %s\n' "$*"; }
@@ -65,7 +65,7 @@ preview_rpc() {
   if [[ -z "$params" ]]; then
     params="{}"
   fi
-  devide_curl -fsS -X POST "$DEVIDE_URL/api/preview/mcp" \
+  casein_curl -fsS -X POST "$CASEIN_URL/api/preview/mcp" \
     -H "authorization: Bearer $TOKEN" \
     -H "content-type: application/json" \
     -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\",\"params\":${params}}"
@@ -103,7 +103,7 @@ if [[ "$PREVIEW_OPEN" != "1" ]]; then
 fi
 
 if [[ -z "$TMUX_SESSION" ]]; then
-  echo "ERROR: VERIFY_PREVIEW_OPEN=1 requires TMUX_SESSION or DEVIDE_TMUX_SESSION" >&2
+  echo "ERROR: VERIFY_PREVIEW_OPEN=1 requires TMUX_SESSION or CASEIN_TMUX_SESSION" >&2
   exit 1
 fi
 

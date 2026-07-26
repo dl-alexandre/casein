@@ -50,7 +50,7 @@ defmodule Casein.Agents.AgentEvents do
     append(%{
       workspace_id: workspace_id,
       stream_id: stream_id("mcp", agent_session_id, tmux_session_id, pane_id, workspace_id),
-      producer: "devide",
+      producer: "casein",
       ingress: ingress,
       source_event_id: source_event_id,
       event_type: "mcp.completed",

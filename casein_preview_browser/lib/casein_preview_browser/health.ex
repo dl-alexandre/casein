@@ -121,25 +121,25 @@ defmodule CaseinPreviewBrowser.Health do
       |> Map.put(:last_event_at, integer_or_nil(value(payload, :timestamp)))
 
     case type do
-      "devide:preview:bridge_ready" ->
+      "casein:preview:bridge_ready" ->
         derive_state(%{health | bridge_ready: true})
 
-      "devide:preview:dom_loaded" ->
+      "casein:preview:dom_loaded" ->
         derive_state(%{health | dom_loaded: true})
 
-      "devide:preview:live_socket_connected" ->
+      "casein:preview:live_socket_connected" ->
         derive_state(%{health | live_socket_connected: true})
 
-      "devide:preview:live_socket_disconnected" ->
+      "casein:preview:live_socket_disconnected" ->
         %{health | live_socket_connected: false, state: :degraded}
 
-      "devide:preview:page_loading_start" ->
+      "casein:preview:page_loading_start" ->
         %{health | state: :navigation_started, dom_loaded: false, live_socket_connected: nil}
 
-      "devide:preview:page_loading_stop" ->
+      "casein:preview:page_loading_stop" ->
         derive_state(health)
 
-      "devide:preview:client_error" ->
+      "casein:preview:client_error" ->
         %{
           health
           | state: :degraded,

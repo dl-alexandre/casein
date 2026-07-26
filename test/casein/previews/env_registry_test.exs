@@ -7,15 +7,15 @@ defmodule Casein.Previews.EnvRegistryTest do
     home =
       Path.join(
         System.tmp_dir!(),
-        "devide-env-registry-#{System.unique_integer([:positive])}"
+        "casein-env-registry-#{System.unique_integer([:positive])}"
       )
 
     inst_dir = Path.join(home, "instances")
     File.mkdir_p!(inst_dir)
 
     prev_home = Application.get_env(:casein, :preview_env_home)
-    prev_env = System.get_env("DEVIDE_PREVIEW_HOME")
-    System.delete_env("DEVIDE_PREVIEW_HOME")
+    prev_env = System.get_env("CASEIN_PREVIEW_HOME")
+    System.delete_env("CASEIN_PREVIEW_HOME")
     Application.put_env(:casein, :preview_env_home, home)
 
     on_exit(fn ->
@@ -23,8 +23,8 @@ defmodule Casein.Previews.EnvRegistryTest do
       restore_preview_home(prev_home)
 
       if prev_env,
-        do: System.put_env("DEVIDE_PREVIEW_HOME", prev_env),
-        else: System.delete_env("DEVIDE_PREVIEW_HOME")
+        do: System.put_env("CASEIN_PREVIEW_HOME", prev_env),
+        else: System.delete_env("CASEIN_PREVIEW_HOME")
     end)
 
     %{home: home, inst_dir: inst_dir}

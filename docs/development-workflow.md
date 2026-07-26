@@ -9,7 +9,7 @@
 ## Core principles
 
 1. **Primary checkout is deploy infrastructure, not the default edit surface.**
-   `/data/workspaces/dalexandre/dev_ide` (and equivalents) exists to fetch remotes,
+   `/data/workspaces/dalexandre/casein` (and equivalents) exists to fetch remotes,
    run the deploy poller (`/opt/casein/deploy-build`), and materialize MCP configs.
    **Rule**: no uncommitted edits; no agent or human should use it as `$PWD` during
    active work.
@@ -22,7 +22,7 @@
 
 3. **Isolation is enforced at launch, not opt-in discipline.**
    `launch-casein-agent.sh` creates a worktree when the agent would otherwise start
-   in the primary checkout. Set `DEVIDE_AGENT_SKIP_WORKTREE=1` only for deliberate
+   in the primary checkout. Set `CASEIN_AGENT_SKIP_WORKTREE=1` only for deliberate
    exceptions. `Runtimes.observe_worktree/2` rejects the main checkout
    (`:main_checkout_not_allowed`).
 
@@ -48,7 +48,7 @@
 
 | Location | Role | Allowed edits? | Agent default `$PWD`? |
 |----------|------|----------------|----------------------|
-| `/data/workspaces/.../dev_ide` | Fetch, poller base, MCP materialization | No | Never |
+| `/data/workspaces/.../casein` | Fetch, poller base, MCP materialization | No | Never |
 | `$TMPDIR/casein-agent-worktrees/` | All development, tests, commits | Yes | Always |
 
 ### Enforcement at launch
@@ -56,8 +56,8 @@
 `scripts/launch-casein-agent.sh` calls `scripts/lib/agent-worktree.sh` after
 resolving agent env:
 
-1. Skip when `DEVIDE_AGENT_SKIP_WORKTREE=1`.
-2. Reuse `DEVIDE_AGENT_WORKTREE_PATH` when set.
+1. Skip when `CASEIN_AGENT_SKIP_WORKTREE=1`.
+2. Reuse `CASEIN_AGENT_WORKTREE_PATH` when set.
 3. Reuse the current directory when already inside a linked worktree.
 4. Otherwise create `agent/<runtime>/<task>-<timestamp>` under the worktree root,
    `cd` there, and call `terminal_report_worktree` over the session-scoped MCP URL.
@@ -66,10 +66,10 @@ Environment knobs:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `DEVIDE_AGENT_WORKTREE_ROOT` | `$TMPDIR/casein-agent-worktrees` | Worktree parent directory |
-| `DEVIDE_AGENT_WORKTREE_BASE` | `origin/master` | Base ref for new worktrees |
-| `DEVIDE_AGENT_TASK` | `adhoc` | Task slug in branch name |
-| `DEVIDE_AGENT_SKIP_WORKTREE` | `0` | Set `1` to opt out (escape hatch) |
+| `CASEIN_AGENT_WORKTREE_ROOT` | `$TMPDIR/casein-agent-worktrees` | Worktree parent directory |
+| `CASEIN_AGENT_WORKTREE_BASE` | `origin/master` | Base ref for new worktrees |
+| `CASEIN_AGENT_TASK` | `adhoc` | Task slug in branch name |
+| `CASEIN_AGENT_SKIP_WORKTREE` | `0` | Set `1` to opt out (escape hatch) |
 
 ### Worktree janitor
 
@@ -88,7 +88,7 @@ Also run `git worktree prune` on the primary repo (the script does this automati
 
 ### Read-only `master` in the primary checkout
 
-Local `master` in `/data/workspaces/.../dev_ide` is a **read-only mirror** of
+Local `master` in `/data/workspaces/.../casein` is a **read-only mirror** of
 `origin/master`. Land work on agent-worktree branches, then integrate via PR or
 fast-forward push. `.githooks/pre-commit` refuses `git commit` on `master` in
 the primary checkout (linked agent worktrees are exempt). Enable with
@@ -146,7 +146,7 @@ master (protected; green pre-push gate)
 
 | Tier | Trigger | Serves | Gate |
 |------|---------|--------|------|
-| **Stable** | Push to `master` (poller) | Production `devide` socket | Clean detached worktree + `pre-push-check.sh` |
+| **Stable** | Push to `master` (poller) | Production `casein` socket | Clean detached worktree + `pre-push-check.sh` |
 | **Agent dev** | `deploy-local.sh` from worktree | Ephemeral release | Full `git rev-parse HEAD` pinned; drift banner until pushed |
 | **Canary** (future) | Push to `master` | Second socket / instance | Same gate + soak before promote |
 
@@ -158,7 +158,7 @@ master (protected; green pre-push gate)
 - `deploy-local.sh` deploys the **current checkout** immediately; the poller
   replaces it within ~2 min when `origin/master` advances. Use only for dogfooding;
   commit + push for durable deploys.
-- Non-SHA `DEVIDE_GIT_REVISION` values (manual labels) trigger the drift banner via
+- Non-SHA `CASEIN_GIT_REVISION` values (manual labels) trigger the drift banner via
   `Casein.Deployment.Drift`.
 
 **Future**

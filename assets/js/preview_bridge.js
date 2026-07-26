@@ -126,7 +126,7 @@ function previewBridgeEnabled() {
     const params = new URLSearchParams(window.location.search)
 
     explicitPreview =
-      params.get("devide_preview") === "1" || params.get("preview_superadmin") === "1"
+      params.get("casein_preview") === "1" || params.get("preview_superadmin") === "1"
   } catch (_) {
     /* constrained test contexts can reject URLSearchParams */
   }

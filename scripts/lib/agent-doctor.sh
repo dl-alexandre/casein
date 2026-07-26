@@ -20,11 +20,11 @@ pass() { printf 'OK   %s\n' "$*"; PASS=$((PASS + 1)); }
 warn() { printf 'WARN %s\n' "$*" >&2; WARN=$((WARN + 1)); }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAIL=$((FAIL + 1)); }
 
-devide_shims_expected() {
+casein_shims_expected() {
   # Agent processes launched through launch-casein-agent.sh carry one of these
   # markers. The worktree marker covers the normal path; the explicit launch
-  # marker covers deliberate DEVIDE_AGENT_SKIP_WORKTREE launches.
-  if [[ -n "${DEVIDE_AGENT_LAUNCH_CONTEXT:-}" || "${DEVIDE_WORKTREE:-0}" == "1" ]]; then
+  # marker covers deliberate CASEIN_AGENT_SKIP_WORKTREE launches.
+  if [[ -n "${CASEIN_AGENT_LAUNCH_CONTEXT:-}" || "${CASEIN_WORKTREE:-0}" == "1" ]]; then
     return 0
   fi
 
@@ -34,8 +34,8 @@ devide_shims_expected() {
   if [[ -n "${TMUX:-}" ]]; then
     local session
     session="$(tmux display-message -p '#{session_name}' 2>/dev/null || true)"
-    [[ -n "$session" ]] || session="${DEVIDE_TMUX_SESSION:-}"
-    [[ "$session" == devide_* ]]
+    [[ -n "$session" ]] || session="${CASEIN_TMUX_SESSION:-}"
+    [[ "$session" == casein_* ]]
     return
   fi
 
@@ -46,11 +46,11 @@ check_shims() {
   local shim_dir="${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
   local runtime bin resolved bin_target resolved_target missing_runtimes=()
   local shims_expected=0
-  if devide_shims_expected; then
+  if casein_shims_expected; then
     shims_expected=1
   fi
 
-  for runtime in grok claude codex opencode agent devide; do
+  for runtime in grok claude codex opencode agent casein; do
     bin="${shim_dir}/${runtime}"
     if [[ ! -x "$bin" ]]; then
       missing_runtimes+=("$runtime")
@@ -68,7 +68,7 @@ check_shims() {
     fi
   fi
 
-  for runtime in grok claude codex opencode agent devide; do
+  for runtime in grok claude codex opencode agent casein; do
     bin="${shim_dir}/${runtime}"
     if [[ ! -x "$bin" ]]; then
       fail "shim missing: ${runtime} (run scripts/install-agent-shims.sh)"
@@ -128,7 +128,7 @@ check_shims() {
   esac
 }
 
-# Each shim embeds the absolute path of scripts/devide at install time; if the
+# Each shim embeds the absolute path of scripts/casein at install time; if the
 # checkout moves or a deploy worktree is cleaned up, every agent command dies
 # at once. The sed pattern must match the install-agent-shims.sh template
 # (pinned by scripts/test-agent-shims.sh).
@@ -148,7 +148,7 @@ check_shim_targets() {
   done
 
   if [[ "$checked" -gt 0 && "$target_missing" -eq 0 ]]; then
-    pass "shim targets executable (embedded devide CLI paths resolve)"
+    pass "shim targets executable (embedded casein CLI paths resolve)"
   fi
 }
 
@@ -201,7 +201,7 @@ check_provider_home() {
   local var="$1"
   local runtime="$2"
   local value="${!var:-}"
-  local workspace="${DEVIDE_WORKSPACE_NAME:-}"
+  local workspace="${CASEIN_WORKSPACE_NAME:-}"
   local expected=""
   local credential=""
 
@@ -226,7 +226,7 @@ check_provider_home() {
     if [[ -n "$credential" && -f "$credential" ]]; then
       pass "${runtime} profile credentials present"
     else
-      warn "${runtime} profile is active but not signed in — next launch falls back to global auth (run devide agent auth signin ${runtime})"
+      warn "${runtime} profile is active but not signed in — next launch falls back to global auth (run casein agent auth signin ${runtime})"
     fi
   elif agent_auth_profile_under_root "$value"; then
     fail "${var} points at the wrong Casein auth profile (${value}; expected ${expected:-unknown})"
@@ -236,7 +236,7 @@ check_provider_home() {
 }
 
 check_tidewave_mcp() {
-  local tidewave_url="${DEVIDE_TIDEWAVE_MCP_URL:-}"
+  local tidewave_url="${CASEIN_TIDEWAVE_MCP_URL:-}"
   [[ -n "$tidewave_url" ]] || return 0
 
   local status
@@ -254,9 +254,9 @@ check_tidewave_mcp() {
 
 check_mcp_endpoints() {
   local token="${CASEIN_API_TOKEN:-}"
-  local terminal_url="${DEVIDE_TERMINAL_MCP_URL:-}"
-  local preview_url="${DEVIDE_PREVIEW_MCP_URL:-}"
-  local artifact_url="${DEVIDE_ARTIFACT_MCP_URL:-}"
+  local terminal_url="${CASEIN_TERMINAL_MCP_URL:-}"
+  local preview_url="${CASEIN_PREVIEW_MCP_URL:-}"
+  local artifact_url="${CASEIN_ARTIFACT_MCP_URL:-}"
 
   if [[ -z "$token" || -z "$terminal_url" || -z "$preview_url" || -z "$artifact_url" ]]; then
     warn "skipping MCP HTTP checks (env incomplete)"
@@ -300,7 +300,7 @@ check_mcp_endpoints() {
     fail "artifact MCP initialize → ${status}"
   fi
 
-  local tidewave_url="${DEVIDE_TIDEWAVE_MCP_URL:-}"
+  local tidewave_url="${CASEIN_TIDEWAVE_MCP_URL:-}"
   if [[ -z "$tidewave_url" ]]; then
     return
   fi
@@ -322,7 +322,7 @@ grok_inspect_rows() {
   shift
 
   EXPECTED_CWD="${PWD}" \
-    EXPECTED_WORKSPACE_ID="${DEVIDE_WORKSPACE_ID:-}" \
+    EXPECTED_WORKSPACE_ID="${CASEIN_WORKSPACE_ID:-}" \
     python3 - "$inspect_file" "$@" <<'PY'
 import json
 import os
@@ -380,12 +380,12 @@ PY
 
 grok_bundle_contract() {
   local managed="$1"
-  local bundle="${DEVIDE_GROK_BUNDLE_DIR:-}"
-  local digest="${DEVIDE_GROK_BUNDLE_DIGEST:-}"
+  local bundle="${CASEIN_GROK_BUNDLE_DIR:-}"
+  local digest="${CASEIN_GROK_BUNDLE_DIGEST:-}"
 
   if [[ -z "$bundle" && -z "$digest" ]]; then
     if [[ "$managed" == "1" ]]; then
-      fail "Grok managed launch is missing DEVIDE_GROK_BUNDLE_DIR and DEVIDE_GROK_BUNDLE_DIGEST"
+      fail "Grok managed launch is missing CASEIN_GROK_BUNDLE_DIR and CASEIN_GROK_BUNDLE_DIGEST"
     else
       warn "no session-scoped Grok capability bundle is active in this shell"
     fi
@@ -404,7 +404,7 @@ grok_bundle_contract() {
 
   local bundle_real bundle_root bundle_root_real
   bundle_real="$(realpath -m "$bundle")"
-  bundle_root="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME}/.casein/grok-bundles}"
+  bundle_root="${CASEIN_GROK_BUNDLE_ROOT:-${HOME}/.casein/grok-bundles}"
   bundle_root_real="$(realpath -m "$bundle_root")"
 
   if [[ "$(dirname "$bundle_real")" != "$bundle_root_real" ]] ||
@@ -467,12 +467,12 @@ PY
 grok_leader_contract() {
   local managed="$1"
   local _grok_bin="$2"
-  local socket="${DEVIDE_GROK_LEADER_SOCKET:-}"
-  local leader_root="${DEVIDE_GROK_LEADER_ROOT:-${HOME}/.casein/grok-leaders}"
+  local socket="${CASEIN_GROK_LEADER_SOCKET:-}"
+  local leader_root="${CASEIN_GROK_LEADER_ROOT:-${HOME}/.casein/grok-leaders}"
 
   if [[ -z "$socket" ]]; then
     if [[ "$managed" == "1" ]]; then
-      fail "Grok managed launch is missing DEVIDE_GROK_LEADER_SOCKET"
+      fail "Grok managed launch is missing CASEIN_GROK_LEADER_SOCKET"
     else
       warn "no private Grok leader socket is active in this shell"
     fi
@@ -513,10 +513,10 @@ PY
     return 1
   fi
 
-  local leader_pid timeout_seconds="${DEVIDE_GROK_DOCTOR_TIMEOUT_SECONDS:-15}"
+  local leader_pid timeout_seconds="${CASEIN_GROK_DOCTOR_TIMEOUT_SECONDS:-15}"
   [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || timeout_seconds=15
   if leader_pid="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity \
-      "${leader_root_real}/.devide-launcher" 2>/dev/null)" &&
+      "${leader_root_real}/.casein-launcher" 2>/dev/null)" &&
      python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" probe \
        "$socket_real" "$leader_pid" "$timeout_seconds" >/dev/null 2>&1; then
     pass "Grok private leader socket is active and healthy"
@@ -532,10 +532,10 @@ PY
 }
 
 check_grok_runtime() {
-  local workspace_name="${DEVIDE_WORKSPACE_NAME:-}"
-  local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
+  local workspace_name="${CASEIN_WORKSPACE_NAME:-}"
+  local workspace_id="${CASEIN_WORKSPACE_ID:-}"
   local managed=0
-  [[ "${DEVIDE_AGENT_LAUNCH_CONTEXT:-}" == "grok" ]] && managed=1
+  [[ "${CASEIN_AGENT_LAUNCH_CONTEXT:-}" == "grok" ]] && managed=1
 
   grok_bundle_contract "$managed" || true
 
@@ -549,7 +549,7 @@ check_grok_runtime() {
   grok_leader_contract "$managed" "$grok_bin" || true
 
   if [[ "$managed" == "1" ]]; then
-    case "${DEVIDE_GROK_PROVIDER_AUTH_MODE:-unknown}" in
+    case "${CASEIN_GROK_PROVIDER_AUTH_MODE:-unknown}" in
       api-key)
         pass "Grok managed provider auth is durable (dedicated API key)"
         ;;
@@ -571,9 +571,9 @@ check_grok_runtime() {
   if [[ -n "$workspace_name" && -n "$workspace_id" ]]; then
     local slug
     slug="$(
-      DEVIDE_WORKSPACE_NAME="$workspace_name" python3 -c "
+      CASEIN_WORKSPACE_NAME="$workspace_name" python3 -c "
 import os, re
-slug = re.sub(r'[^a-zA-Z0-9]+', '-', os.environ['DEVIDE_WORKSPACE_NAME']).strip('-').lower()
+slug = re.sub(r'[^a-zA-Z0-9]+', '-', os.environ['CASEIN_WORKSPACE_NAME']).strip('-').lower()
 print(slug or 'workspace')
 "
     )"
@@ -631,7 +631,7 @@ print(slug or 'workspace')
     return 0
   fi
 
-  local timeout_seconds="${DEVIDE_GROK_DOCTOR_TIMEOUT_SECONDS:-15}"
+  local timeout_seconds="${CASEIN_GROK_DOCTOR_TIMEOUT_SECONDS:-15}"
   [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || timeout_seconds=15
 
   local server command_status
@@ -719,7 +719,7 @@ check_codex_capabilities() {
     warn "Codex plugin commands unavailable"
   fi
 
-  hook_script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
+  hook_script="${CASEIN_AGENT_MCP_HOME:-${CASEIN_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
   if [[ -x "$hook_script" ]]; then
     pass "Casein Codex hook receiver staged"
   else

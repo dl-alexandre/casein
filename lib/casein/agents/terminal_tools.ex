@@ -8,7 +8,7 @@ defmodule Casein.Agents.TerminalTools do
   pane's scrollback to debug a server, and send keys/commands — without
   arbitrary shell access on the host.
 
-  Every session-scoped tool is guarded to `devide_`-prefixed sessions
+  Every session-scoped tool is guarded to `casein_`-prefixed sessions
   (`Casein.Terminals.Tmux.session_name/2`'s shape), so agents can only see and
   touch Casein-managed sessions, never unrelated tmux sessions that happen to
   share the host's tmux server.

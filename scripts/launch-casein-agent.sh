@@ -24,7 +24,7 @@ usage() {
 Usage: launch-casein-agent.sh <runtime> [runtime args...]
 
 Creates a dedicated git worktree when launched from the primary checkout (see
-docs/development-workflow.md). Set DEVIDE_AGENT_SKIP_WORKTREE=1 to opt out.
+docs/development-workflow.md). Set CASEIN_AGENT_SKIP_WORKTREE=1 to opt out.
 
 Runtimes:
   grok      injects an immutable capability bundle into a private leader session
@@ -51,7 +51,7 @@ shift
 
 # Child processes spawned by the managed agent can use this to distinguish a
 # real Casein launch from an ordinary shell that merely sourced pairing env.
-export DEVIDE_AGENT_LAUNCH_CONTEXT="$RUNTIME"
+export CASEIN_AGENT_LAUNCH_CONTEXT="$RUNTIME"
 
 agent_env_resolve
 
@@ -63,14 +63,14 @@ if [[ "$RUNTIME" == "grok" ]]; then
   fi
 fi
 
-agent_worktree_ensure "$RUNTIME" "${DEVIDE_AGENT_TASK:-adhoc}"
+agent_worktree_ensure "$RUNTIME" "${CASEIN_AGENT_TASK:-adhoc}"
 
 # Token-bearing launcher scratch files live under a path every managed Grok
 # sandbox denies wholesale. Same-UID mode bits alone do not isolate concurrent
 # agent processes from secrets staged in the system temp directory.
-DEVIDE_LAUNCHER_SECRET_DIR="${HOME}/.casein/agent-mcp/.launcher-tmp"
-mkdir -p "$DEVIDE_LAUNCHER_SECRET_DIR"
-chmod 700 "$DEVIDE_LAUNCHER_SECRET_DIR"
+CASEIN_LAUNCHER_SECRET_DIR="${HOME}/.casein/agent-mcp/.launcher-tmp"
+mkdir -p "$CASEIN_LAUNCHER_SECRET_DIR"
+chmod 700 "$CASEIN_LAUNCHER_SECRET_DIR"
 
 # Anchor MCP calls to this pane: tmux sets TMUX_PANE per pane, and the
 # materialized MCP configs send it as the X-Casein-Caller-Pane header
@@ -78,7 +78,7 @@ chmod 700 "$DEVIDE_LAUNCHER_SECRET_DIR"
 # to resolve "the agent pane" / "the pane beside me" relative to the caller
 # instead of the operator-focused active pane. Always exported (possibly
 # empty) so header templates never leak an unexpanded placeholder.
-export DEVIDE_CALLER_PANE="${TMUX_PANE:-}"
+export CASEIN_CALLER_PANE="${TMUX_PANE:-}"
 
 warn_degraded_step() {
   local label="$1"
@@ -91,15 +91,15 @@ warn_degraded_step() {
 }
 
 grok_debug() {
-  if [[ "${DEVIDE_GROK_DEBUG:-0}" == "1" ]]; then
-    printf 'devide-grok-debug: %s\n' "$*" >&2
+  if [[ "${CASEIN_GROK_DEBUG:-0}" == "1" ]]; then
+    printf 'casein-grok-debug: %s\n' "$*" >&2
   fi
 }
 
 run_materialize_export() {
   local out err exports detail
-  out="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/materialize.out.XXXXXX")"
-  err="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/materialize.err.XXXXXX")"
+  out="$(mktemp "${CASEIN_LAUNCHER_SECRET_DIR}/materialize.out.XXXXXX")"
+  err="$(mktemp "${CASEIN_LAUNCHER_SECRET_DIR}/materialize.err.XXXXXX")"
 
   if bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export >"$out" 2>"$err"; then
     exports="$(<"$out")"
@@ -135,8 +135,8 @@ run_repair_tmux_env() {
   local out err detail
   local args=()
 
-  if [[ -n "${DEVIDE_TMUX_SESSION:-}" ]]; then
-    args+=("${DEVIDE_TMUX_SESSION}")
+  if [[ -n "${CASEIN_TMUX_SESSION:-}" ]]; then
+    args+=("${CASEIN_TMUX_SESSION}")
   elif [[ -z "${TMUX:-}" ]]; then
     return 0
   fi
@@ -156,8 +156,8 @@ run_repair_tmux_env() {
 }
 
 if [[ "$RUNTIME" == "grok" ]]; then
-  unset DEVIDE_GROK_BUNDLE_DIR DEVIDE_GROK_BUNDLE_DIGEST
-  unset DEVIDE_GROK_LEADER_ROOT DEVIDE_GROK_LEADER_SOCKET
+  unset CASEIN_GROK_BUNDLE_DIR CASEIN_GROK_BUNDLE_DIGEST
+  unset CASEIN_GROK_LEADER_ROOT CASEIN_GROK_LEADER_SOCKET
 fi
 run_materialize_export
 agent_env_export_runtime_paths
@@ -183,11 +183,11 @@ enforce_owner_auth() {
   # The workspace-derived profile is canonical when this launch belongs to a
   # workspace; agent_auth_profile_active_dir already applies the registered
   # owner fail-closed rule.
-  if [[ -n "${DEVIDE_WORKSPACE_NAME:-}" ]]; then
-    if dir="$(agent_auth_profile_active_dir "$DEVIDE_WORKSPACE_NAME" "$runtime")"; then
+  if [[ -n "${CASEIN_WORKSPACE_NAME:-}" ]]; then
+    if dir="$(agent_auth_profile_active_dir "$CASEIN_WORKSPACE_NAME" "$runtime")"; then
       export "$key=$dir"
       if ! agent_auth_profile_signed_in "$dir" "$runtime"; then
-        echo "devide: owner auth is fail-closed for this workspace; ${runtime} uses ${dir} — complete the sign-in it prompts for (the host global login is not shared)" >&2
+        echo "casein: owner auth is fail-closed for this workspace; ${runtime} uses ${dir} — complete the sign-in it prompts for (the host global login is not shared)" >&2
       fi
       return 0
     fi
@@ -204,22 +204,22 @@ enforce_owner_auth claude
 
 sync_project_mcp_config() {
   local runtime="$1"
-  local checkout="${DEVIDE_CHECKOUT:-}"
-  local staging="${DEVIDE_AGENT_MCP_HOME:-}"
+  local checkout="${CASEIN_CHECKOUT:-}"
+  local staging="${CASEIN_AGENT_MCP_HOME:-}"
 
   [[ -n "$checkout" && -d "$checkout" && -n "$staging" ]] || return 0
 
   # OpenCode has no per-launch MCP flag alternative (unlike Codex/Claude/Grok),
   # so inject whenever this launch is paired to a workspace staging tree.
-  if [[ "${DEVIDE_WORKTREE:-0}" != "1" ]]; then
+  if [[ "${CASEIN_WORKTREE:-0}" != "1" ]]; then
     case "$runtime" in
       agent)
         echo "warn: skipping project MCP injection for ${runtime} outside an agent worktree" >&2
         return 0
         ;;
       opencode)
-        if [[ -z "${DEVIDE_WORKSPACE_NAME:-}" || -z "${DEVIDE_WORKSPACE_ID:-}" ]]; then
-          echo "warn: skipping OpenCode MCP injection — workspace not paired (no DEVIDE_WORKSPACE_*)" >&2
+        if [[ -z "${CASEIN_WORKSPACE_NAME:-}" || -z "${CASEIN_WORKSPACE_ID:-}" ]]; then
+          echo "warn: skipping OpenCode MCP injection — workspace not paired (no CASEIN_WORKSPACE_*)" >&2
           return 0
         fi
         ;;
@@ -247,7 +247,7 @@ sync_project_mcp_config() {
 # ~/.claude/skills, but project .opencode/skills and ~/.config/opencode/skills
 # are the first-class paths (and project skills are often gitignored).
 opencode_install_skills() {
-  local checkout="${DEVIDE_CHECKOUT:-}"
+  local checkout="${CASEIN_CHECKOUT:-}"
   local src="${ROOT}/.claude/skills"
 
   agent_skills_install "$src" "${HOME}/.config/opencode"
@@ -262,8 +262,8 @@ if [[ "$RUNTIME" == "opencode" ]]; then
   opencode_install_skills
 fi
 
-if [[ -n "${DEVIDE_CHECKOUT:-}" && -d "${DEVIDE_CHECKOUT}" ]]; then
-  cd "${DEVIDE_CHECKOUT}"
+if [[ -n "${CASEIN_CHECKOUT:-}" && -d "${CASEIN_CHECKOUT}" ]]; then
+  cd "${CASEIN_CHECKOUT}"
 fi
 
 runtime_bin() {
@@ -278,9 +278,9 @@ runtime_bin() {
 }
 
 workspace_slug() {
-  DEVIDE_WORKSPACE_NAME="${DEVIDE_WORKSPACE_NAME:-workspace}" python3 -c "
+  CASEIN_WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-workspace}" python3 -c "
 import os, re
-slug = re.sub(r'[^a-zA-Z0-9]+', '-', os.environ.get('DEVIDE_WORKSPACE_NAME', 'workspace')).strip('-').lower()
+slug = re.sub(r'[^a-zA-Z0-9]+', '-', os.environ.get('CASEIN_WORKSPACE_NAME', 'workspace')).strip('-').lower()
 print(slug or 'workspace')
 "
 }
@@ -289,10 +289,10 @@ print(slug or 'workspace')
 # a query param with the real value (percent-encoded: %3 -> %253). Header
 # env-expansion is not needed for this runtime.
 codex_terminal_mcp_url() {
-  local url="${DEVIDE_TERMINAL_MCP_URL}"
+  local url="${CASEIN_TERMINAL_MCP_URL}"
 
-  if [[ -n "${DEVIDE_CALLER_PANE:-}" ]]; then
-    local pane="${DEVIDE_CALLER_PANE/\%/%25}"
+  if [[ -n "${CASEIN_CALLER_PANE:-}" ]]; then
+    local pane="${CASEIN_CALLER_PANE/\%/%25}"
     if [[ "$url" == *\?* ]]; then
       url="${url}&caller_pane=${pane}"
     else
@@ -315,16 +315,16 @@ codex_mcp_config_args() {
     -c "mcp_servers.${terminal_key}.url=\"$(codex_terminal_mcp_url)\"" \
     -c "mcp_servers.${terminal_key}.enabled=true" \
     -c "mcp_servers.${terminal_key}.bearer_token_env_var=\"CASEIN_API_TOKEN\"" \
-    -c "mcp_servers.${preview_key}.url=\"${DEVIDE_PREVIEW_MCP_URL}\"" \
+    -c "mcp_servers.${preview_key}.url=\"${CASEIN_PREVIEW_MCP_URL}\"" \
     -c "mcp_servers.${preview_key}.enabled=true" \
     -c "mcp_servers.${preview_key}.bearer_token_env_var=\"CASEIN_API_TOKEN\"" \
-    -c "mcp_servers.${artifact_key}.url=\"${DEVIDE_ARTIFACT_MCP_URL}\"" \
+    -c "mcp_servers.${artifact_key}.url=\"${CASEIN_ARTIFACT_MCP_URL}\"" \
     -c "mcp_servers.${artifact_key}.enabled=true" \
     -c "mcp_servers.${artifact_key}.bearer_token_env_var=\"CASEIN_API_TOKEN\""
 
-  if [[ -n "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
+  if [[ -n "${CASEIN_TIDEWAVE_MCP_URL:-}" ]]; then
     printf '%s\0' \
-      -c "mcp_servers.${tidewave_key}.url=\"${DEVIDE_TIDEWAVE_MCP_URL}\"" \
+      -c "mcp_servers.${tidewave_key}.url=\"${CASEIN_TIDEWAVE_MCP_URL}\"" \
       -c "mcp_servers.${tidewave_key}.enabled=true"
   fi
 }
@@ -354,10 +354,10 @@ codex_arg_sets_execution_policy() {
 # can attach ACP with the session-scoped capability bundle. The bundle owns the
 # remaining lifecycle hooks. Codex receives per-launch hook tables plus the
 # legacy completion-only notify fallback. Both honor the same opt-out as
-# Claude: DEVIDE_AGENT_STATE_HOOKS=0.
+# Claude: CASEIN_AGENT_STATE_HOOKS=0.
 
 grok_install_state_hook() {
-  [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
+  [[ "${CASEIN_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
   local src="${ROOT}/scripts/agent-hooks/grok-casein-agent-bootstrap.json"
   local hooks_dir="${GROK_HOME:-${HOME}/.grok}/hooks"
   local dst="${hooks_dir}/casein-agent-state.json"
@@ -378,21 +378,21 @@ grok_install_state_hook() {
     chmod 500 "$tmp"
     mv -f "$tmp" "$script_dst"
   fi
-  export DEVIDE_GROK_BOOTSTRAP_HOOK="$script_dst"
+  export CASEIN_GROK_BOOTSTRAP_HOOK="$script_dst"
 }
 
 grok_bind_state_hook_path() {
   local trusted_dir="${HOME}/.casein/grok-bootstrap-hooks"
   mkdir -p "$trusted_dir"
   chmod 700 "$trusted_dir"
-  export DEVIDE_GROK_BOOTSTRAP_HOOK="${trusted_dir}/casein-agent-state.sh"
+  export CASEIN_GROK_BOOTSTRAP_HOOK="${trusted_dir}/casein-agent-state.sh"
 }
 
 grok_validate_managed_context() {
-  local socket="${DEVIDE_GROK_LEADER_SOCKET:-}"
-  local root="${DEVIDE_GROK_LEADER_ROOT:-}"
-  local bundle="${DEVIDE_GROK_BUNDLE_DIR:-}"
-  local digest="${DEVIDE_GROK_BUNDLE_DIGEST:-}"
+  local socket="${CASEIN_GROK_LEADER_SOCKET:-}"
+  local root="${CASEIN_GROK_LEADER_ROOT:-}"
+  local bundle="${CASEIN_GROK_BUNDLE_DIR:-}"
+  local digest="${CASEIN_GROK_BUNDLE_DIGEST:-}"
   local socket_real root_real
 
   if [[ -z "$socket" || -z "$root" || -z "$bundle" || ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
@@ -423,9 +423,9 @@ grok_validate_managed_context() {
 }
 
 grok_capability_api_base() {
-  local base="${DEVIDE_API_BASE_URL:-${DEVIDE_URL:-}}"
+  local base="${CASEIN_API_BASE_URL:-${CASEIN_URL:-}}"
   if [[ -z "$base" ]]; then
-    base="${DEVIDE_TERMINAL_MCP_URL%%/api/terminals/mcp*}"
+    base="${CASEIN_TERMINAL_MCP_URL%%/api/terminals/mcp*}"
   fi
   [[ -n "$base" ]] || return 1
   printf '%s\n' "${base%/}"
@@ -455,7 +455,7 @@ PY
 
 grok_current_capability() {
   local token="$1" base="$2" response parsed
-  response="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/capability-current.XXXXXX")"
+  response="$(mktemp "${CASEIN_LAUNCHER_SECRET_DIR}/capability-current.XXXXXX")"
   if ! curl --max-time 5 -fsS -o "$response" \
       -H "authorization: Bearer ${token}" \
       "${base}/api/agent-capabilities/current" 2>/dev/null; then
@@ -474,14 +474,14 @@ except Exception:
 capability_id = data.get("capability_id")
 if not isinstance(capability_id, str) or not capability_id:
     raise SystemExit(1)
-checkout = os.path.realpath(os.environ["DEVIDE_CHECKOUT"])
+checkout = os.path.realpath(os.environ["CASEIN_CHECKOUT"])
 expected = {
-    "workspace_id": os.environ["DEVIDE_WORKSPACE_ID"],
+    "workspace_id": os.environ["CASEIN_WORKSPACE_ID"],
     "runtime": "grok",
-    "tmux_session_id": os.environ["DEVIDE_TMUX_SESSION"],
+    "tmux_session_id": os.environ["CASEIN_TMUX_SESSION"],
     "pane_id": os.environ["TMUX_PANE"],
-    "leader_id": os.path.basename(os.path.dirname(os.environ["DEVIDE_GROK_LEADER_SOCKET"])),
-    "bundle_digest": os.environ["DEVIDE_GROK_BUNDLE_DIGEST"],
+    "leader_id": os.path.basename(os.path.dirname(os.environ["CASEIN_GROK_LEADER_SOCKET"])),
+    "bundle_digest": os.environ["CASEIN_GROK_BUNDLE_DIGEST"],
     "checkout_digest": hashlib.sha256(checkout.encode()).hexdigest(),
 }
 if any(data.get(key) != value for key, value in expected.items()):
@@ -498,29 +498,29 @@ PY
 
 grok_issue_capability() {
   local bootstrap_token="$1" base="$2" response request parsed
-  response="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/capability-issue.XXXXXX")"
+  response="$(mktemp "${CASEIN_LAUNCHER_SECRET_DIR}/capability-issue.XXXXXX")"
   request="$(
-    DEVIDE_WORKSPACE_ID="$DEVIDE_WORKSPACE_ID" \
-      DEVIDE_TMUX_SESSION="$DEVIDE_TMUX_SESSION" \
+    CASEIN_WORKSPACE_ID="$CASEIN_WORKSPACE_ID" \
+      CASEIN_TMUX_SESSION="$CASEIN_TMUX_SESSION" \
       TMUX_PANE="$TMUX_PANE" \
-      DEVIDE_GROK_LEADER_SOCKET="$DEVIDE_GROK_LEADER_SOCKET" \
-      DEVIDE_GROK_BUNDLE_DIGEST="$DEVIDE_GROK_BUNDLE_DIGEST" \
-      DEVIDE_CHECKOUT="$DEVIDE_CHECKOUT" \
+      CASEIN_GROK_LEADER_SOCKET="$CASEIN_GROK_LEADER_SOCKET" \
+      CASEIN_GROK_BUNDLE_DIGEST="$CASEIN_GROK_BUNDLE_DIGEST" \
+      CASEIN_CHECKOUT="$CASEIN_CHECKOUT" \
       python3 - <<'PY'
 import hashlib, json, os
-checkout = os.path.realpath(os.environ["DEVIDE_CHECKOUT"])
+checkout = os.path.realpath(os.environ["CASEIN_CHECKOUT"])
 print(json.dumps({
-    "tmux_session_id": os.environ["DEVIDE_TMUX_SESSION"],
+    "tmux_session_id": os.environ["CASEIN_TMUX_SESSION"],
     "pane_id": os.environ["TMUX_PANE"],
-    "leader_id": os.path.basename(os.path.dirname(os.environ["DEVIDE_GROK_LEADER_SOCKET"])),
-    "bundle_digest": os.environ["DEVIDE_GROK_BUNDLE_DIGEST"],
+    "leader_id": os.path.basename(os.path.dirname(os.environ["CASEIN_GROK_LEADER_SOCKET"])),
+    "bundle_digest": os.environ["CASEIN_GROK_BUNDLE_DIGEST"],
     "checkout_digest": hashlib.sha256(checkout.encode()).hexdigest(),
 }))
 PY
   )"
 
   if ! curl --max-time 8 -fsS -o "$response" -X POST \
-      "${base}/api/workspaces/${DEVIDE_WORKSPACE_ID}/grok-agent-capabilities" \
+      "${base}/api/workspaces/${CASEIN_WORKSPACE_ID}/grok-agent-capabilities" \
       -H "authorization: Bearer ${bootstrap_token}" \
       -H "content-type: application/json" \
       -d "$request" 2>/dev/null; then
@@ -536,7 +536,7 @@ grok_prepare_managed_home() {
   local socket="$1" grok_bin="$2" reuse="${3:-false}"
   local leader_id managed_root managed_home provider_auth home_action
   leader_id="$(basename "$(dirname "$socket")")"
-  managed_root="${DEVIDE_GROK_HOME_ROOT:-${HOME}/.casein/grok-homes}"
+  managed_root="${CASEIN_GROK_HOME_ROOT:-${HOME}/.casein/grok-homes}"
   home_action="prepare"
   [[ "$reuse" == "true" ]] && home_action="resolve"
 
@@ -545,10 +545,10 @@ grok_prepare_managed_home() {
     echo "error: failed to prepare the isolated managed Grok home" >&2
     return 1
   }
-  if [[ -n "${DEVIDE_GROK_XAI_API_KEY:-}" ]]; then
-    export XAI_API_KEY="$DEVIDE_GROK_XAI_API_KEY"
+  if [[ -n "${CASEIN_GROK_XAI_API_KEY:-}" ]]; then
+    export XAI_API_KEY="$CASEIN_GROK_XAI_API_KEY"
     unset GROK_AUTH GROK_AUTH_PATH GROK_AUTH_PROVIDER_COMMAND
-    export DEVIDE_GROK_PROVIDER_AUTH_MODE="api-key"
+    export CASEIN_GROK_PROVIDER_AUTH_MODE="api-key"
   elif ! provider_auth="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" auth-json \
       2>/dev/null)"; then
     # Refresh persistent OAuth only in this trusted launcher process when the
@@ -564,27 +564,27 @@ grok_prepare_managed_home() {
         >/dev/null 2>&1 || true
     fi
     provider_auth="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" auth-json)" || {
-      echo "error: managed Grok could not obtain refreshable OAuth with at least ten minutes remaining; set DEVIDE_GROK_XAI_API_KEY for dedicated API-key auth" >&2
+      echo "error: managed Grok could not obtain refreshable OAuth with at least ten minutes remaining; set CASEIN_GROK_XAI_API_KEY for dedicated API-key auth" >&2
       return 1
     }
     export GROK_AUTH="$provider_auth"
     unset XAI_API_KEY GROK_CODE_XAI_API_KEY
-    export DEVIDE_GROK_PROVIDER_AUTH_MODE="oauth-inline-refresh"
+    export CASEIN_GROK_PROVIDER_AUTH_MODE="oauth-inline-refresh"
   else
     export GROK_AUTH="$provider_auth"
     unset XAI_API_KEY GROK_CODE_XAI_API_KEY
-    export DEVIDE_GROK_PROVIDER_AUTH_MODE="oauth-inline-refresh"
+    export CASEIN_GROK_PROVIDER_AUTH_MODE="oauth-inline-refresh"
   fi
 
   export GROK_HOME="$managed_home"
   export GROK_SUBAGENTS=0
-  unset DEVIDE_GROK_XAI_API_KEY
+  unset CASEIN_GROK_XAI_API_KEY
 }
 
 grok_reset_managed_home() {
   local socket="$1" leader_id managed_root reset_home
   leader_id="$(basename "$(dirname "$socket")")"
-  managed_root="${DEVIDE_GROK_HOME_ROOT:-${HOME}/.casein/grok-homes}"
+  managed_root="${CASEIN_GROK_HOME_ROOT:-${HOME}/.casein/grok-homes}"
   reset_home="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" prepare \
     "$managed_root" "$leader_id")" || return 1
   [[ "$(realpath -m "$reset_home")" == "$(realpath -m "$GROK_HOME")" ]]
@@ -593,16 +593,16 @@ grok_reset_managed_home() {
 grok_install_sandbox_profile() {
   local profile="$1" base="$2" capability_file="$3"
   local tmux_dir="${TMUX%%,*}"
-  local bootstrap_file="${DEVIDE_AGENT_BOOTSTRAP_FILE:-}"
+  local bootstrap_file="${CASEIN_AGENT_BOOTSTRAP_FILE:-}"
   local sensitive_env
   local -a sensitive_agent_envs=()
 
-  # /etc/casein is a compatibility symlink to /etc/devide on renamed hosts.
+  # /etc/casein is a compatibility symlink to /etc/casein on renamed hosts.
   # bwrap cannot create a deny mountpoint through a symlinked parent, so the
   # sandbox must receive the physical path; symlinked opens still resolve onto
   # the same denied inode inside the sandbox.
   local host_env_file
-  host_env_file="$(realpath -m "${CASEIN_ENV_FILE:-/etc/casein/devide.env}")"
+  host_env_file="$(realpath -m "${CASEIN_ENV_FILE:-/etc/casein/casein.env}")"
 
   # Grok expands deny globs by walking from their static prefix. Broad globs
   # rooted at /data/workspaces can exceed its 200k-entry safety limit before
@@ -621,13 +621,13 @@ grok_install_sandbox_profile() {
   # environment. Persistent OAuth/refresh credentials remain outside the
   # managed home and are kernel-denied to Grok and every model-authored tool.
   python3 "${ROOT}/scripts/lib/grok-sandbox-profile.py" install "$profile" "$base" \
-    "--read-only=${DEVIDE_GROK_BUNDLE_DIR}" \
-    "--read-only=$(dirname "$DEVIDE_GROK_BOOTSTRAP_HOOK")" \
-    "--read-write=${DEVIDE_GROK_LEADER_ROOT}" \
+    "--read-only=${CASEIN_GROK_BUNDLE_DIR}" \
+    "--read-only=$(dirname "$CASEIN_GROK_BOOTSTRAP_HOOK")" \
+    "--read-write=${CASEIN_GROK_LEADER_ROOT}" \
     "$capability_file" \
-    "${DEVIDE_GROK_LEADER_ROOT}/.devide-launcher" \
-    "${DEVIDE_GROK_LEADER_ROOT}/.devide-runtime" \
-    "${DEVIDE_GROK_LEADER_LOG}" \
+    "${CASEIN_GROK_LEADER_ROOT}/.casein-launcher" \
+    "${CASEIN_GROK_LEADER_ROOT}/.casein-runtime" \
+    "${CASEIN_GROK_LEADER_LOG}" \
     "$bootstrap_file" \
     "${HOME}/.casein/agent-mcp" \
     "${HOME}/.casein/grok-launcher-secrets" \
@@ -663,7 +663,7 @@ grok_install_sandbox_profile() {
 
 grok_private_leader_ready() {
   local socket="$1" timeout_seconds="${2:-2}" metadata leader_pid
-  metadata="$(dirname "$socket")/.devide-launcher"
+  metadata="$(dirname "$socket")/.casein-launcher"
   [[ -S "$socket" ]] || return 1
   leader_pid="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity "$metadata" \
     2>/dev/null)" || return 1
@@ -676,8 +676,8 @@ grok_stop_private_leader() {
   local socket="$1" leader_dir metadata runtime_file native_lock leader_pid
   local _attempt
   leader_dir="$(dirname "$socket")"
-  metadata="${leader_dir}/.devide-launcher"
-  runtime_file="${leader_dir}/.devide-runtime"
+  metadata="${leader_dir}/.casein-launcher"
+  runtime_file="${leader_dir}/.casein-runtime"
   native_lock="${leader_dir}/leader.lock"
 
   if [[ ! -e "$metadata" ]]; then
@@ -737,10 +737,10 @@ grok_configure_capability() {
     return 1
   }
   bootstrap_token="${CASEIN_API_TOKEN:-}"
-  socket="$(realpath -m "$DEVIDE_GROK_LEADER_SOCKET")"
+  socket="$(realpath -m "$CASEIN_GROK_LEADER_SOCKET")"
   leader_id="$(basename "$(dirname "$socket")")"
   capability_file="$(dirname "$socket")/capability"
-  export DEVIDE_GROK_CAPABILITY_REUSED=false
+  export CASEIN_GROK_CAPABILITY_REUSED=false
 
   if [[ -r "$capability_file" ]] && grok_private_leader_ready "$socket"; then
     token="$(<"$capability_file")"
@@ -749,13 +749,13 @@ grok_configure_capability() {
       token="${fields[0]:-}"
       capability_id="${fields[1]:-}"
       write_enabled="${fields[2]:-false}"
-      export DEVIDE_GROK_CAPABILITY_REUSED=true
+      export CASEIN_GROK_CAPABILITY_REUSED=true
       grok_debug "capability=reused"
     fi
   fi
 
   if [[ -z "${capability_id:-}" ]]; then
-    if [[ -S "$socket" || -e "$(dirname "$socket")/.devide-launcher" ]]; then
+    if [[ -S "$socket" || -e "$(dirname "$socket")/.casein-launcher" ]]; then
       grok_stop_private_leader "$socket"
     fi
     parsed="$(grok_issue_capability "$bootstrap_token" "$base")" || {
@@ -766,7 +766,7 @@ grok_configure_capability() {
     token="${fields[0]:-}"
     capability_id="${fields[1]:-}"
     write_enabled="${fields[2]:-false}"
-    tmp="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/capability-token.XXXXXX")"
+    tmp="$(mktemp "${CASEIN_LAUNCHER_SECRET_DIR}/capability-token.XXXXXX")"
     printf '%s' "$token" >"$tmp"
     chmod 600 "$tmp"
     mv -f "$tmp" "$capability_file"
@@ -777,14 +777,14 @@ grok_configure_capability() {
   else
     sandbox_base="read-only"
   fi
-  profile="devide-${leader_id}-${capability_id//-/}-${sandbox_base}"
+  profile="casein-${leader_id}-${capability_id//-/}-${sandbox_base}"
   profile="${profile:0:95}"
-  if [[ "$DEVIDE_GROK_CAPABILITY_REUSED" != "true" ]]; then
+  if [[ "$CASEIN_GROK_CAPABILITY_REUSED" != "true" ]]; then
     # Deny entries must exist when a new Grok leader resolves the custom
     # profile. Publish empty sentinels from trusted scratch; never replace the
     # live leader's identity/runtime files during an attach.
-    for target in "$(dirname "$socket")/.devide-launcher" "$(dirname "$socket")/.devide-runtime"; do
-      tmp="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/leader-sentinel.XXXXXX")"
+    for target in "$(dirname "$socket")/.casein-launcher" "$(dirname "$socket")/.casein-runtime"; do
+      tmp="$(mktemp "${CASEIN_LAUNCHER_SECRET_DIR}/leader-sentinel.XXXXXX")"
       chmod 600 "$tmp"
       mv -f "$tmp" "$target"
     done
@@ -795,20 +795,20 @@ grok_configure_capability() {
   }
 
   export CASEIN_API_TOKEN="$token"
-  export DEVIDE_GROK_SANDBOX_PROFILE="$profile"
-  export DEVIDE_GROK_SANDBOX_BASE="$sandbox_base"
-  export DEVIDE_GROK_CAPABILITY_FILE="$capability_file"
-  export DEVIDE_GROK_PERMISSION_MODE="default"
+  export CASEIN_GROK_SANDBOX_PROFILE="$profile"
+  export CASEIN_GROK_SANDBOX_BASE="$sandbox_base"
+  export CASEIN_GROK_CAPABILITY_FILE="$capability_file"
+  export CASEIN_GROK_PERMISSION_MODE="default"
   unset CASEIN_ADMIN_API_TOKEN CASEIN_WORKSPACE_API_TOKENS
-  unset DEVIDE_AGENT_ENV_FILE DEVIDE_AGENT_BOOTSTRAP_FILE DEVIDE_AGENT_MCP_HOME
+  unset CASEIN_AGENT_ENV_FILE CASEIN_AGENT_BOOTSTRAP_FILE CASEIN_AGENT_MCP_HOME
 }
 
 grok_prepare_private_leader() {
   local grok_bin="$1" sandbox_profile="$2" permission_mode="$3"
-  local socket="${DEVIDE_GROK_LEADER_SOCKET:-}"
-  local root="${DEVIDE_GROK_LEADER_ROOT:-}"
-  local bundle="${DEVIDE_GROK_BUNDLE_DIR:-}"
-  local digest="${DEVIDE_GROK_BUNDLE_DIGEST:-}"
+  local socket="${CASEIN_GROK_LEADER_SOCKET:-}"
+  local root="${CASEIN_GROK_LEADER_ROOT:-}"
+  local bundle="${CASEIN_GROK_BUNDLE_DIR:-}"
+  local digest="${CASEIN_GROK_BUNDLE_DIGEST:-}"
   local socket_real root_real log leader_pid="" runtime_file metadata native_lock
   local expected_signature current_signature tmp detail
 
@@ -817,21 +817,21 @@ grok_prepare_private_leader() {
 
   mkdir -p "$root_real"
   chmod 700 "$root_real"
-  runtime_file="${root_real}/.devide-runtime"
-  metadata="${root_real}/.devide-launcher"
+  runtime_file="${root_real}/.casein-runtime"
+  metadata="${root_real}/.casein-launcher"
   native_lock="${root_real}/leader.lock"
   expected_signature="v2:${sandbox_profile}:${permission_mode}"
-  export DEVIDE_GROK_LEADER_REUSED=false
-  grok_debug "prepare reuse_verified=${DEVIDE_GROK_REUSE_VERIFIED:-false} runtime_expected=${expected_signature} runtime_current=$(if [[ -f "$runtime_file" ]]; then cat "$runtime_file"; else printf missing; fi)"
+  export CASEIN_GROK_LEADER_REUSED=false
+  grok_debug "prepare reuse_verified=${CASEIN_GROK_REUSE_VERIFIED:-false} runtime_expected=${expected_signature} runtime_current=$(if [[ -f "$runtime_file" ]]; then cat "$runtime_file"; else printf missing; fi)"
 
-  if [[ "${DEVIDE_GROK_REUSE_VERIFIED:-false}" == "true" ]] &&
+  if [[ "${CASEIN_GROK_REUSE_VERIFIED:-false}" == "true" ]] &&
      [[ -S "$socket_real" ]] &&
      python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity "$metadata" \
        >/dev/null 2>&1; then
     current_signature=""
     [[ -f "$runtime_file" ]] && current_signature="$(<"$runtime_file")"
     if [[ "$current_signature" == "$expected_signature" ]]; then
-      export DEVIDE_GROK_LEADER_REUSED=true
+      export CASEIN_GROK_LEADER_REUSED=true
       grok_debug "leader=reused verified-fast-path"
       return 0
     fi
@@ -841,7 +841,7 @@ grok_prepare_private_leader() {
       current_signature="$(<"$runtime_file")"
     fi
     if [[ "$current_signature" == "$expected_signature" ]]; then
-      export DEVIDE_GROK_LEADER_REUSED=true
+      export CASEIN_GROK_LEADER_REUSED=true
       grok_debug "leader=reused probed-path"
       return 0
     fi
@@ -860,11 +860,11 @@ grok_prepare_private_leader() {
   grok_reset_managed_home "$socket_real"
   grok_install_state_hook
   grok_install_sandbox_profile \
-    "$DEVIDE_GROK_SANDBOX_PROFILE" \
-    "$DEVIDE_GROK_SANDBOX_BASE" \
-    "$DEVIDE_GROK_CAPABILITY_FILE"
+    "$CASEIN_GROK_SANDBOX_PROFILE" \
+    "$CASEIN_GROK_SANDBOX_BASE" \
+    "$CASEIN_GROK_CAPABILITY_FILE"
   rm -f "$socket_real" "$native_lock"
-  log="${DEVIDE_GROK_LEADER_LOG:?managed Grok leader log is missing}"
+  log="${CASEIN_GROK_LEADER_LOG:?managed Grok leader log is missing}"
   rm -f "$log"
   leader_pid="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" spawn \
     "$metadata" "$log" "$grok_bin" \
@@ -877,7 +877,7 @@ grok_prepare_private_leader() {
 
   for _attempt in $(seq 1 600); do
     if [[ -S "$socket_real" ]] && grok_private_leader_ready "$socket_real" 60; then
-      tmp="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/leader-runtime.XXXXXX")"
+      tmp="$(mktemp "${CASEIN_LAUNCHER_SECRET_DIR}/leader-runtime.XXXXXX")"
       printf '%s' "$expected_signature" >"$tmp"
       chmod 600 "$tmp"
       mv -f "$tmp" "$runtime_file"
@@ -900,7 +900,7 @@ grok_prepare_private_leader() {
 }
 
 grok_resume_quiesced_on_exit() {
-  local leader_pid="${DEVIDE_GROK_QUIESCED_PID:-}"
+  local leader_pid="${CASEIN_GROK_QUIESCED_PID:-}"
   if [[ "$leader_pid" =~ ^[0-9]+$ ]]; then
     kill -CONT -- "-${leader_pid}" 2>/dev/null || true
   fi
@@ -908,13 +908,13 @@ grok_resume_quiesced_on_exit() {
 
 grok_quiesce_for_reattach() {
   local socket="$1" metadata leader_pid tui_starttime
-  metadata="$(dirname "$socket")/.devide-launcher"
+  metadata="$(dirname "$socket")/.casein-launcher"
   leader_pid="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity "$metadata")" || {
     echo "error: cannot quiesce a Grok leader without trusted identity" >&2
     return 1
   }
 
-  export DEVIDE_GROK_QUIESCED_PID="$leader_pid"
+  export CASEIN_GROK_QUIESCED_PID="$leader_pid"
   trap grok_resume_quiesced_on_exit EXIT INT TERM
   kill -STOP -- "-${leader_pid}"
 
@@ -924,19 +924,19 @@ grok_quiesce_for_reattach() {
   grok_reset_managed_home "$socket"
   grok_install_state_hook
   grok_install_sandbox_profile \
-    "$DEVIDE_GROK_SANDBOX_PROFILE" \
-    "$DEVIDE_GROK_SANDBOX_BASE" \
-    "$DEVIDE_GROK_CAPABILITY_FILE"
+    "$CASEIN_GROK_SANDBOX_PROFILE" \
+    "$CASEIN_GROK_SANDBOX_BASE" \
+    "$CASEIN_GROK_CAPABILITY_FILE"
 
   tui_starttime="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" \
     process-starttime "$$")"
   env -i PATH="$PATH" python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" \
     resume-after-sandbox "$metadata" "$$" "$tui_starttime" 20 \
-    >/dev/null 2>>"$DEVIDE_GROK_LEADER_LOG" &
+    >/dev/null 2>>"$CASEIN_GROK_LEADER_LOG" &
 
   # The watcher now owns the fail-safe SIGCONT. Clearing this value prevents
   # the shell's EXIT trap from resuming early if exec succeeds.
-  export DEVIDE_GROK_QUIESCED_PID=""
+  export CASEIN_GROK_QUIESCED_PID=""
 }
 
 codex_arg_sets_notify() {
@@ -953,13 +953,13 @@ codex_arg_sets_notify() {
 }
 
 codex_state_notify_args() {
-  [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
+  [[ "${CASEIN_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
 
   if codex_arg_sets_notify "$@"; then
     return 0
   fi
 
-  local script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
+  local script="${CASEIN_AGENT_MCP_HOME:-${CASEIN_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
   if [[ ! -x "$script" ]]; then
     warn_degraded_step "Codex notify integration" "missing executable: ${script}"
     return 0
@@ -981,11 +981,11 @@ codex_arg_sets_hooks() {
 }
 
 codex_state_hook_args() {
-  [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
+  [[ "${CASEIN_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
   codex_arg_sets_hooks "$@" && return 0
 
   local script quoted event config
-  script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
+  script="${CASEIN_AGENT_MCP_HOME:-${CASEIN_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
   if [[ ! -x "$script" ]]; then
     warn_degraded_step "Codex lifecycle hooks" "missing executable: ${script}"
     return 0
@@ -1019,7 +1019,7 @@ codex_arg_sets_model() {
 codex_model_args() {
   codex_arg_sets_model "$@" && return 0
 
-  local model="${DEVIDE_CODEX_DEFAULT_MODEL:-}"
+  local model="${CASEIN_CODEX_DEFAULT_MODEL:-}"
 
   # Owner auth profiles deliberately isolate CODEX_HOME. Keep that isolation
   # for credentials while inheriting the operator's normal model preference
@@ -1068,9 +1068,9 @@ codex_terminal_title_args() {
 }
 
 codex_workspace_mode() {
-  local fallback="${DEVIDE_WORKSPACE_MODE:-manual}"
-  local base="${DEVIDE_API_BASE_URL:-${DEVIDE_URL:-}}"
-  local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
+  local fallback="${CASEIN_WORKSPACE_MODE:-manual}"
+  local base="${CASEIN_API_BASE_URL:-${CASEIN_URL:-}}"
+  local workspace_id="${CASEIN_WORKSPACE_ID:-}"
   local token="${CASEIN_API_TOKEN:-}"
   local payload mode
 
@@ -1110,7 +1110,7 @@ codex_default_args() {
   # Paired Codex sessions are operator-owned raw terminals, so match the
   # interactive Full Access choice unless the caller supplies an execution
   # policy or explicitly opts back into the workspace-mode defaults with 0.
-  case "${DEVIDE_CODEX_DEFAULT_YOLO:-1}" in
+  case "${CASEIN_CODEX_DEFAULT_YOLO:-1}" in
     1 | true | TRUE | yes | YES | on | ON)
       printf '%s\0' --dangerously-bypass-approvals-and-sandbox
       return 0
@@ -1144,7 +1144,7 @@ claude_arg_sets_permission_policy() {
 }
 
 claude_default_args() {
-  case "${DEVIDE_CLAUDE_DEFAULT_YOLO:-1}" in
+  case "${CASEIN_CLAUDE_DEFAULT_YOLO:-1}" in
     0 | false | FALSE | no | NO | off | OFF)
       return 0
       ;;
@@ -1163,7 +1163,7 @@ case "$RUNTIME" in
     export GROK_CLAUDE_MCPS_ENABLED=false
     grok_bin="$(runtime_bin grok)"
     grok_validate_managed_context
-    grok_socket="$(realpath -m "${DEVIDE_GROK_LEADER_SOCKET:-}")"
+    grok_socket="$(realpath -m "${CASEIN_GROK_LEADER_SOCKET:-}")"
     grok_leader_dir="$(dirname "$grok_socket")"
     grok_leader_id="$(basename "$grok_leader_dir")"
     grok_leader_base="$(dirname "$grok_leader_dir")"
@@ -1174,7 +1174,7 @@ case "$RUNTIME" in
     fi
     mkdir -p "$grok_log_dir"
     chmod 700 "$grok_leader_base" "$grok_log_dir"
-    export DEVIDE_GROK_LEADER_LOG="${grok_log_dir}/${grok_leader_id}.log"
+    export CASEIN_GROK_LEADER_LOG="${grok_log_dir}/${grok_leader_id}.log"
     exec {grok_launch_fd}>>"${grok_leader_base}/.launch-${grok_leader_id}.flock"
     if ! flock -w 15 "$grok_launch_fd"; then
       echo "error: timed out waiting for the managed Grok leader launch lock" >&2
@@ -1182,13 +1182,13 @@ case "$RUNTIME" in
     fi
     grok_reuse_candidate=false
     if grok_private_leader_ready "$grok_socket"; then
-      if [[ -f "${grok_leader_dir}/.devide-runtime" ]] &&
-         [[ "$(<"${grok_leader_dir}/.devide-runtime")" == v2:* ]]; then
+      if [[ -f "${grok_leader_dir}/.casein-runtime" ]] &&
+         [[ "$(<"${grok_leader_dir}/.casein-runtime")" == v2:* ]]; then
         grok_reuse_candidate=true
       else
         grok_stop_private_leader "$grok_socket"
       fi
-    elif [[ -e "${grok_leader_dir}/.devide-launcher" || -S "$grok_socket" ]]; then
+    elif [[ -e "${grok_leader_dir}/.casein-launcher" || -S "$grok_socket" ]]; then
       grok_stop_private_leader "$grok_socket"
     fi
     grok_debug "reuse_candidate=${grok_reuse_candidate}"
@@ -1228,14 +1228,14 @@ case "$RUNTIME" in
     done
     grok_configure_capability
     if [[ "$grok_reuse_candidate" == "true" ]] &&
-       [[ "$DEVIDE_GROK_CAPABILITY_REUSED" == "true" ]]; then
-      export DEVIDE_GROK_REUSE_VERIFIED=true
+       [[ "$CASEIN_GROK_CAPABILITY_REUSED" == "true" ]]; then
+      export CASEIN_GROK_REUSE_VERIFIED=true
     else
-      export DEVIDE_GROK_REUSE_VERIFIED=false
+      export CASEIN_GROK_REUSE_VERIFIED=false
     fi
-    grok_debug "capability_reused=${DEVIDE_GROK_CAPABILITY_REUSED} reuse_verified=${DEVIDE_GROK_REUSE_VERIFIED}"
-    grok_prepare_private_leader "$grok_bin" "$DEVIDE_GROK_SANDBOX_PROFILE" "$DEVIDE_GROK_PERMISSION_MODE"
-    if [[ "$DEVIDE_GROK_LEADER_REUSED" == "true" ]]; then
+    grok_debug "capability_reused=${CASEIN_GROK_CAPABILITY_REUSED} reuse_verified=${CASEIN_GROK_REUSE_VERIFIED}"
+    grok_prepare_private_leader "$grok_bin" "$CASEIN_GROK_SANDBOX_PROFILE" "$CASEIN_GROK_PERMISSION_MODE"
+    if [[ "$CASEIN_GROK_LEADER_REUSED" == "true" ]]; then
       grok_quiesce_for_reattach "$grok_socket"
       # The background handoff watcher inherited the locked fd and holds it
       # until SIGCONT. Close only this shell's copy so the TUI does not retain
@@ -1245,8 +1245,8 @@ case "$RUNTIME" in
       flock -u "$grok_launch_fd"
       exec {grok_launch_fd}>&-
     fi
-    exec "$grok_bin" --sandbox "$DEVIDE_GROK_SANDBOX_PROFILE" \
-      --permission-mode "$DEVIDE_GROK_PERMISSION_MODE" \
+    exec "$grok_bin" --sandbox "$CASEIN_GROK_SANDBOX_PROFILE" \
+      --permission-mode "$CASEIN_GROK_PERMISSION_MODE" \
       --leader-socket "$grok_socket" --no-subagents "${grok_user_args[@]}"
     ;;
   codex)
@@ -1290,7 +1290,7 @@ case "$RUNTIME" in
     done < <(codex_state_notify_args "$@")
     if [[ -n "$codex_sidechat_target" ]]; then
       sidechat_resolve_target "$codex_sidechat_target"
-      sidechat_prompt="${DEVIDE_AGENT_MCP_HOME}/codex-sidechat-prompt.txt"
+      sidechat_prompt="${CASEIN_AGENT_MCP_HOME}/codex-sidechat-prompt.txt"
       sidechat_write_prompt "$sidechat_prompt" "Codex"
       codex_sidechat_instructions="$(python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$sidechat_prompt")"
       codex_args+=(-c "developer_instructions=${codex_sidechat_instructions}")
@@ -1323,25 +1323,25 @@ case "$RUNTIME" in
     set -- "${claude_user_args[@]}"
 
     # Stage Casein-infra skills (e.g. delegate-to-grok) into this launch's Claude
-    # config home so agents in non-dev_ide workspaces still have them. enforce_owner_auth
+    # config home so agents in non-casein workspaces still have them. enforce_owner_auth
     # above sets CLAUDE_CONFIG_DIR when the workspace uses an owner profile; otherwise
-    # Claude reads the host global ~/.claude. Opt out with DEVIDE_AGENT_SKILLS=0.
+    # Claude reads the host global ~/.claude. Opt out with CASEIN_AGENT_SKILLS=0.
     agent_skills_install "${ROOT}/.claude/skills" "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
 
     # Source MCP from this workspace's isolated staging tree (one per workspace),
     # like GROK_HOME/CODEX_HOME do — never from a shared-checkout project file,
     # which collides/accumulates across workspaces. Prefer staging; fall back to
     # the checkout only if staging is missing.
-    mcp_json="${DEVIDE_AGENT_MCP_HOME}/.mcp.json"
-    if [[ ! -f "$mcp_json" && -f "${DEVIDE_CHECKOUT}/.mcp.json" ]]; then
-      mcp_json="${DEVIDE_CHECKOUT}/.mcp.json"
+    mcp_json="${CASEIN_AGENT_MCP_HOME}/.mcp.json"
+    if [[ ! -f "$mcp_json" && -f "${CASEIN_CHECKOUT}/.mcp.json" ]]; then
+      mcp_json="${CASEIN_CHECKOUT}/.mcp.json"
     fi
     if [[ ! -f "$mcp_json" ]]; then
-      echo "error: missing .mcp.json in ${DEVIDE_AGENT_MCP_HOME} or ${DEVIDE_CHECKOUT}" >&2
+      echo "error: missing .mcp.json in ${CASEIN_AGENT_MCP_HOME} or ${CASEIN_CHECKOUT}" >&2
       exit 1
     fi
-    if [[ -d "${DEVIDE_CHECKOUT}" ]]; then
-      cd "${DEVIDE_CHECKOUT}"
+    if [[ -d "${CASEIN_CHECKOUT}" ]]; then
+      cd "${CASEIN_CHECKOUT}"
     else
       cd "$(dirname "$mcp_json")"
     fi
@@ -1353,9 +1353,9 @@ case "$RUNTIME" in
 
     if [[ -n "$sidechat_target" ]]; then
       sidechat_resolve_target "$sidechat_target"
-      sidechat_prompt="${DEVIDE_AGENT_MCP_HOME}/claude-sidechat-prompt.txt"
+      sidechat_prompt="${CASEIN_AGENT_MCP_HOME}/claude-sidechat-prompt.txt"
       sidechat_write_prompt "$sidechat_prompt"
-      sidechat_settings="${DEVIDE_AGENT_MCP_HOME}/claude-sidechat-settings.json"
+      sidechat_settings="${CASEIN_AGENT_MCP_HOME}/claude-sidechat-settings.json"
       if [[ ! -f "$sidechat_settings" ]]; then
         echo "error: missing ${sidechat_settings} — run scripts/materialize-agent-mcp.sh" >&2
         exit 1
@@ -1363,11 +1363,11 @@ case "$RUNTIME" in
       claude_args+=(--settings "$sidechat_settings")
       claude_args+=(--append-system-prompt "$(<"$sidechat_prompt")")
     else
-      # Semantic agent-state hooks (opt out with DEVIDE_AGENT_STATE_HOOKS=0). The
+      # Semantic agent-state hooks (opt out with CASEIN_AGENT_STATE_HOOKS=0). The
       # settings file is materialized next to .mcp.json and, like --mcp-config, is
       # additive with the operator's global settings.
-      hooks_settings="${DEVIDE_AGENT_MCP_HOME}/claude-hooks-settings.json"
-      if [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" && -f "$hooks_settings" ]]; then
+      hooks_settings="${CASEIN_AGENT_MCP_HOME}/claude-hooks-settings.json"
+      if [[ "${CASEIN_AGENT_STATE_HOOKS:-1}" != "0" && -f "$hooks_settings" ]]; then
         claude_args+=(--settings "$hooks_settings")
       fi
       while IFS= read -r -d '' arg; do
@@ -1378,7 +1378,7 @@ case "$RUNTIME" in
     exec "$(runtime_bin claude)" "${claude_args[@]}" "$@"
     ;;
   agent)
-    if [[ "${DEVIDE_WORKTREE:-0}" != "1" ]]; then
+    if [[ "${CASEIN_WORKTREE:-0}" != "1" ]]; then
       export GROK_CURSOR_MCPS_ENABLED=false
       export GROK_CLAUDE_MCPS_ENABLED=false
     fi

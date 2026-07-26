@@ -121,7 +121,7 @@ are converted into explicit Elixir errors/events by `ExternalBackend.Worker`.
 Install the sidecar dependency and run the opt-in browser smoke test with:
 
 ```bash
-cd dev_ide_preview_browser/priv/sidecars
+cd casein_preview_browser/priv/sidecars
 npm install
 cd ../..
 mix test --include playwright

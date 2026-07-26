@@ -14,7 +14,7 @@ defmodule CaseinWeb.TerminalChannelTest do
   @endpoint CaseinWeb.Endpoint
 
   setup do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-terminal-channel")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-terminal-channel")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 

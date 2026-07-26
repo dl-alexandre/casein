@@ -11,7 +11,7 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
   alias TmuxCtl.Events.ControlListener
   alias Casein.Test.Eventually
 
-  @label "devide_test"
+  @label "casein_test"
   @anchor "__casein_keepalive"
   @topic "tmux_events:" <> @label
 

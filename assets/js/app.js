@@ -187,7 +187,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 // survives refresh. sessionStorage is unique per tab and persists across
 // reloads (cleared when the tab closes), so the same tab keeps its session
 // while separate windows stay independent instead of converging.
-function devideTabId() {
+function caseinTabId() {
   try {
     let id = window.sessionStorage.getItem("casein:tab")
     if (!id) {
@@ -200,7 +200,7 @@ function devideTabId() {
   }
 }
 
-function devideLongPollFallbackMs() {
+function caseinLongPollFallbackMs() {
   // The trusted-LAN HTTP shortcut is served through a raw systemd socket proxy.
   // WebSocket works there, but Phoenix long-poll fallback can fail LiveView
   // session verification and look like a page refresh loop. Keep fallback for
@@ -228,10 +228,10 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // Casein runs behind OAuth/Caddy on a shared host. A short fallback window
   // causes loaded websocket handshakes to spawn long-poll joins, which looks
   // like a page refresh loop. Give the websocket path time to settle first.
-  longPollFallbackMs: devideLongPollFallbackMs(),
+  longPollFallbackMs: caseinLongPollFallbackMs(),
   reconnectAfterMs: jitteredBackoff([50, 150, 350, 750, 1500, 3000], 5000),
   rejoinAfterMs: jitteredBackoff([400, 900, 1800], 5000),
-  params: {_csrf_token: csrfToken, tab_id: devideTabId()},
+  params: {_csrf_token: csrfToken, tab_id: caseinTabId()},
   hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow},
 })
 
@@ -494,7 +494,7 @@ document.addEventListener("click", (e) => {
 const quietAgentNotifications = new Map()
 
 function quietAgentTag(detail = {}) {
-  return `devide-quiet-${detail.session_id || ""}-${detail.window_id || ""}`
+  return `casein-quiet-${detail.session_id || ""}-${detail.window_id || ""}`
 }
 
 function closeQuietAgentNotifications() {
@@ -509,7 +509,7 @@ function closeQuietAgentNotifications() {
 
       registration.getNotifications().then((notifications) => {
         notifications.forEach((notification) => {
-          if (`${notification.tag || ""}`.startsWith("devide-quiet-")) notification.close()
+          if (`${notification.tag || ""}`.startsWith("casein-quiet-")) notification.close()
         })
       })
     }).catch(() => {})
@@ -627,7 +627,7 @@ const renderNotificationPermission = (permission) => {
   if (permission === "granted") {
     showClipboardToast("Browser alerts enabled")
     // Let the WebPush hook subscribe now that permission is granted.
-    window.dispatchEvent(new CustomEvent("devide:notification-permission-granted"))
+    window.dispatchEvent(new CustomEvent("casein:notification-permission-granted"))
   } else if (permission === "denied") {
     showClipboardToast("Browser alerts are blocked in this browser", {kind: "pending", duration: 5000})
   } else if (permission === "unsupported") {
@@ -654,7 +654,7 @@ if (document.readyState === "loading") {
 
 if (navigator.serviceWorker) {
   navigator.serviceWorker.addEventListener("message", (event) => {
-    if (event.data?.type !== "DEVIDE_AGENT_QUIET_OPEN") return
+    if (event.data?.type !== "CASEIN_AGENT_QUIET_OPEN") return
     openAgentQuietConversation(event.data.detail || {})
   })
 }

@@ -366,7 +366,7 @@ defmodule Casein.Runtimes.ReaperTest do
 
   defp tmp_dir!(name) do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    path = Path.join(root, "devide-reaper-#{System.unique_integer([:positive])}-#{name}")
+    path = Path.join(root, "casein-reaper-#{System.unique_integer([:positive])}-#{name}")
     File.rm_rf!(path)
     File.mkdir_p!(path)
     on_exit(fn -> File.rm_rf!(path) end)

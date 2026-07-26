@@ -1,6 +1,6 @@
 # CLI & Keys — external surface reference
 
-> The operator-facing entrypoints into Casein: the `devide` operator CLI, the
+> The operator-facing entrypoints into Casein: the `casein` operator CLI, the
 > mix tasks, the static command allowlist that gates palette/agent runs, and
 > the `C-b` leader-key bindings the cockpit hands to the keyboard.
 
@@ -16,7 +16,7 @@ cross-links it.
 Expose and gate the small set of named, argv-style entrypoints Casein offers to
 operators and agents — and nothing more. Three concerns live here:
 
-1. **Operator CLI** — the `devide` bash launcher (`agent` / `mcp` / `tools`
+1. **Operator CLI** — the `casein` bash launcher (`agent` / `mcp` / `tools`
    subcommands) for agent bring-up and supported terminal tool provisioning.
 2. **Command allowlist** — a static `id → argv` map. The palette, run panel, and
    review-agent runner may only invoke an id that exists in it; there is no
@@ -31,10 +31,10 @@ operators and agents — and nothing more. Three concerns live here:
 | --- | --- | --- |
 | `Casein.Commands` | `lib/casein/commands.ex` | Re-exports allowlist enumeration; owns the only remaining executor — a local erlexec `spawn/3` used by `Casein.Agents.Run`. (Sibling of the assigned `commands/` dir.) |
 | `Casein.Commands.Allowlist` | `lib/casein/commands/allowlist.ex` | Thin `defdelegate` facade to `ExecCtl.Allowlist` so palette/read-only callers enumerate ids without the execution graph. |
-| `ExecCtl.Allowlist` | `dev_ide_core/lib/exec_ctl/allowlist.ex` | The canonical static `id → argv` map (`all/0`, `allowed?/1`, `argv_for/1`). Lives in the core boundary. |
+| `ExecCtl.Allowlist` | `casein_core/lib/exec_ctl/allowlist.ex` | The canonical static `id → argv` map (`all/0`, `allowed?/1`, `argv_for/1`). Lives in the core boundary. |
 | `WorkspaceLeader` (JS hook) | `assets/js/workspace_leader.js` | `C-b` leader system + `Space`→focus-terminal; captures keydown before the terminal, dispatches to `[data-leader-action]`. |
 
-The `scripts/devide` bash launcher (`agent launch\|env\|doctor`,
+The `scripts/casein` bash launcher (`agent launch\|env\|doctor`,
 `agent auth signin\|status\|list`, `mcp ensure`,
 `tools ensure <tool>`, `ensure-installed <tool>`) is the operator's PATH
 entrypoint for agent bring-up, owner agent auth profile
@@ -72,25 +72,25 @@ Functions and entrypoints other code (or operators) call:
 - **`Casein.Commands.spawn/3`, `kill/1`** — the only local executor; argv must
   come from a resolved allowlist id.
 - **`ExecCtl.Allowlist.all/0` / `allowed?/1` / `argv_for/1`** — canonical map.
-- **`scripts/devide tools ensure <tool>` / `ensure-installed <tool>`** —
+- **`scripts/casein tools ensure <tool>` / `ensure-installed <tool>`** —
   non-interactively ensure a supported Casein terminal tool is installed.
   Current tool: `elio`, installed into `~/.casein/tools/` via Cargo when no real
   binary is already available. `scripts/ensure-terminal-tool.sh --check <tool>`
   reports availability without installing, and `--yes` is accepted as a no-op
   compatibility flag for agent callers because installs are already
   non-interactive.
-- **`scripts/devide agent auth signin <claude|codex>`** — detect the current
+- **`scripts/casein agent auth signin <claude|codex>`** — detect the current
   workspace owner, create or use its provider auth home under
   `~/.casein/agent-auth/profiles/<owner>/<runtime>`, and run the provider login
   flow there. Profiles without a completed sign-in keep workspaces on the host
   global provider login; after sign-in, workspaces named `<owner>-...`
   automatically use this profile. Outside a Casein workspace, use
-  `scripts/devide agent auth signin <owner> <claude|codex>`.
-- **`scripts/devide agent auth status [workspace] [claude|codex]`** — report
+  `scripts/casein agent auth signin <owner> <claude|codex>`.
+- **`scripts/casein agent auth status [workspace] [claude|codex]`** — report
   whether a workspace currently uses global auth or a signed-in owner profile.
   Without a workspace arg, it reports the current Casein agent environment when
   one is resolvable.
-- **`scripts/devide agent auth list`** — list owner profiles configured under
+- **`scripts/casein agent auth list`** — list owner profiles configured under
   the auth-profile root.
 - **`WorkspaceLeader` hook** (`phx-hook="WorkspaceLeader"`) — the keyboard
   surface; pushes events like `mobile_nav:open`, `tmux:select_pane`,
@@ -116,7 +116,7 @@ first; full descriptions and tmux mapping live in
 | `n` / `p` / `l` | `next-window` / `prev-window` / `last-window` |
 | `1`–`9` | select window (`[data-tmux-window-index]`) |
 | `,` / `&` | `rename-window` / `kill-window` |
-| `$` | `rename-session` (non-default sessions; tmux user option `@devide_session_alias`) |
+| `$` | `rename-session` (non-default sessions; tmux user option `@casein_session_alias`) |
 | `d` | `detach` |
 | `%` `\|` / `"` `-` | `split-right` / `split-down` |
 | `z` / `x` / `o` / `;` | `zoom` / `close-pane` / `pane-next` / `last-pane` |

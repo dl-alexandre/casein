@@ -7,11 +7,11 @@ defmodule Scripts.SpawnAgentWorkerTest do
     assert {_, 0} = System.cmd("bash", ["-n", @script])
   end
 
-  # A worker must branch off the *primary* repo. When DEVIDE_CHECKOUT points at
+  # A worker must branch off the *primary* repo. When CASEIN_CHECKOUT points at
   # the orchestrator's own linked worktree, the resolver has to redirect to the
   # main working tree — otherwise launch-casein-agent.sh adopts the linked
   # worktree in place and the worker silently shares the orchestrator's branch.
-  test "dry run resolves a linked-worktree DEVIDE_CHECKOUT to the primary repo" do
+  test "dry run resolves a linked-worktree CASEIN_CHECKOUT to the primary repo" do
     tmp = Path.join(System.tmp_dir!(), "spawn-worker-#{System.unique_integer([:positive])}")
     primary = Path.join(tmp, "primary")
     linked = Path.join(tmp, "linked")
@@ -30,22 +30,22 @@ defmodule Scripts.SpawnAgentWorkerTest do
     File.chmod!(Path.join(fakebin, "tmux"), 0o755)
 
     {out, 0} =
-      System.cmd("bash", [@script, "grok", "iso", "devide_test_u-x"],
+      System.cmd("bash", [@script, "grok", "iso", "casein_test_u-x"],
         env: [
-          {"DEVIDE_SPAWN_DRY_RUN", "1"},
-          {"DEVIDE_CHECKOUT", linked},
+          {"CASEIN_SPAWN_DRY_RUN", "1"},
+          {"CASEIN_CHECKOUT", linked},
           {"PATH", fakebin <> ":" <> System.get_env("PATH")},
           # Satisfy agent_env_resolve's first branch (already-exported creds) so
           # the script doesn't abort looking for a Casein tmux pane / env file.
           {"CASEIN_API_TOKEN", "test-token"},
-          {"DEVIDE_WORKSPACE_ID", "test-ws"}
+          {"CASEIN_WORKSPACE_ID", "test-ws"}
         ]
       )
 
     # Tolerant of git/realpath normalization: the resolved checkout must be the
     # primary working tree, never the linked worktree it was invoked from.
     assert out =~ ~r{^checkout=\S*/primary$}m
-    assert out =~ ~r{export DEVIDE_CHECKOUT=\S*/primary\b}
+    assert out =~ ~r{export CASEIN_CHECKOUT=\S*/primary\b}
     refute out =~ ~r{^checkout=\S*/linked$}m
   end
 

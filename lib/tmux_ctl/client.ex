@@ -13,7 +13,7 @@ defmodule TmuxCtl.Client do
   @pane_role_option "@casein_pane_role"
 
   defp session_prefix do
-    Application.get_env(:tmux_ctl, :session_prefix, "devide")
+    Application.get_env(:tmux_ctl, :session_prefix, "casein")
   end
 
   defp managed_session?(session) when is_binary(session) do
@@ -83,7 +83,7 @@ defmodule TmuxCtl.Client do
   @spec inject(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def inject(target, text, opts \\ []) when is_binary(target) and is_binary(text) do
     enter? = Keyword.get(opts, :enter, true)
-    buffer = "devide_#{System.unique_integer([:positive])}"
+    buffer = "casein_#{System.unique_integer([:positive])}"
 
     result =
       with :ok <- run_ok(["set-buffer", "-b", buffer, "--", text], opts),
@@ -822,10 +822,10 @@ defmodule TmuxCtl.Client do
 
     cond do
       not managed_session?(target_session) ->
-        {:error, :refused_non_devide_session}
+        {:error, :refused_non_casein_session}
 
       Enum.any?(sources, &(not managed_session?(&1))) ->
-        {:error, :refused_non_devide_session}
+        {:error, :refused_non_casein_session}
 
       sources == [] ->
         {:ok, %{moved_windows: 0, source_sessions: 0}}
@@ -937,7 +937,7 @@ defmodule TmuxCtl.Client do
         {out, code} -> {:error, {code, out}}
       end
     else
-      {:error, :refused_non_devide_session}
+      {:error, :refused_non_casein_session}
     end
   end
 
@@ -951,7 +951,7 @@ defmodule TmuxCtl.Client do
         {out, code} -> {:error, {code, out}}
       end
     else
-      {:error, :refused_non_devide_session}
+      {:error, :refused_non_casein_session}
     end
   end
 
@@ -991,7 +991,7 @@ defmodule TmuxCtl.Client do
         {out, code} -> {:error, {code, out}}
       end
     else
-      {:error, :refused_non_devide_session}
+      {:error, :refused_non_casein_session}
     end
   end
 
@@ -1026,7 +1026,7 @@ defmodule TmuxCtl.Client do
         {out, code} -> {:error, {code, out}}
       end
     else
-      {:error, :refused_non_devide_session}
+      {:error, :refused_non_casein_session}
     end
   end
 
@@ -1053,7 +1053,7 @@ defmodule TmuxCtl.Client do
         {out, code} -> {:error, {code, out}}
       end
     else
-      {:error, :refused_non_devide_session}
+      {:error, :refused_non_casein_session}
     end
   end
 
@@ -1100,7 +1100,7 @@ defmodule TmuxCtl.Client do
           {out, code} -> {:error, {code, out}}
         end
       else
-        {:error, :refused_non_devide_session}
+        {:error, :refused_non_casein_session}
       end
     end
   end
@@ -1163,7 +1163,7 @@ defmodule TmuxCtl.Client do
 
   Stored as the per-session tmux user option `@casein_session_alias` so the name
   lives with the tmux session itself — it survives app restarts and leaves the
-  load-bearing `devide_<workspace>_<sid>` session name (and MCP scoping) untouched.
+  load-bearing `casein_<workspace>_<sid>` session name (and MCP scoping) untouched.
   A blank name unsets the option. The scan in `list_sessions/0` reads it back via
   the `@casein_session_alias` tmux format field.
   """
@@ -1208,7 +1208,7 @@ defmodule TmuxCtl.Client do
           end
       end
     else
-      {:error, :refused_non_devide_session}
+      {:error, :refused_non_casein_session}
     end
   end
 
@@ -1217,7 +1217,7 @@ defmodule TmuxCtl.Client do
 
   defp valid_role?(role), do: String.match?(role, ~r/^[a-z][a-z0-9_-]{0,31}$/)
 
-  # Pipe-delimited (devide_* names are sanitized to [A-Za-z0-9_-], so `|` never
+  # Pipe-delimited (casein_* names are sanitized to [A-Za-z0-9_-], so `|` never
   # collides) window listing across every session on the server. Each field maps
   # to TmuxWindowJanitor's kill policy. `automatic-rename` is the load-bearing
   # one: tmux flips it off the instant a user renames a window, so it cleanly
@@ -1334,7 +1334,7 @@ defmodule TmuxCtl.Client do
 
   @doc """
   Kill a single window, addressed as `"session:window_id"`. Refuses anything
-  whose session is not a `devide_*` session — the janitor must never reach
+  whose session is not a `casein_*` session — the janitor must never reach
   outside our namespace, mirroring `kill/1`'s safety.
   """
   @spec kill_window(String.t(), String.t()) :: :ok | {:error, term()}
@@ -1345,7 +1345,7 @@ defmodule TmuxCtl.Client do
         {out, code} -> {:error, {code, out}}
       end
     else
-      {:error, :refused_non_devide_session}
+      {:error, :refused_non_casein_session}
     end
   end
 
@@ -1353,7 +1353,7 @@ defmodule TmuxCtl.Client do
     if managed_session?(session) do
       kill(session, 10)
     else
-      {:error, :refused_non_devide_session}
+      {:error, :refused_non_casein_session}
     end
   end
 
@@ -1374,7 +1374,7 @@ defmodule TmuxCtl.Client do
   def session_alive?(session), do: session_exists?(session)
 
   @doc """
-  Apply dev_ide's standard tmux options to the named session.
+  Apply casein's standard tmux options to the named session.
 
   Bundles the set of `set-option` calls that give operators a sane
   default UX without depending on a host-side `~/.tmux.conf`:
@@ -1644,7 +1644,7 @@ defmodule TmuxCtl.Client do
   """
   def paste_text(session, text, opts \\ []) when is_binary(session) and is_binary(text) do
     target = Keyword.get(opts, :target, session)
-    buffer = "devide-paste-#{System.unique_integer([:positive])}"
+    buffer = "casein-paste-#{System.unique_integer([:positive])}"
 
     with {_, 0} <- run_with_input(["load-buffer", "-b", buffer, "-"], text, opts),
          {_, 0} <- run(["paste-buffer", "-d", "-b", buffer, "-t", target]) do
@@ -1689,7 +1689,7 @@ defmodule TmuxCtl.Client do
   """
   def resize_window(session, cols, rows)
       when is_binary(session) and is_integer(cols) and is_integer(rows) do
-    # Sessions named `devide_*` live wherever PaneWorker / Terminals.Session
+    # Sessions named `casein_*` live wherever PaneWorker / Terminals.Session
     # spawned tmux. In container-tmux mode that's inside the workspace
     # container; in host-tmux fallback mode (current devbox state — workspace
     # images don't ship tmux) it's on the host. We can't reliably know which
@@ -1985,7 +1985,7 @@ defmodule TmuxCtl.Client do
             [
               "-c",
               ~S/input_path=$1; shift; cat "$input_path" | "$@"/,
-              "devide-run-with-input",
+              "casein-run-with-input",
               input_path,
               executable | args
             ],

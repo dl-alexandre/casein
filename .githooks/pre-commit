@@ -11,11 +11,11 @@
 #   git config core.hooksPath .githooks
 #
 # Deliberate bypass (use sparingly):  git commit --no-verify
-# Operator override:                  DEVIDE_ALLOW_MASTER_COMMIT=1 git commit ...
+# Operator override:                  CASEIN_ALLOW_MASTER_COMMIT=1 git commit ...
 #
 set -euo pipefail
 
-if [ "${DEVIDE_ALLOW_MASTER_COMMIT:-0}" = "1" ]; then
+if [ "${CASEIN_ALLOW_MASTER_COMMIT:-0}" = "1" ]; then
   exit 0
 fi
 
@@ -41,7 +41,7 @@ cat >&2 <<EOF
 
 >>> Integrate via branch push + PR (or a fast-forward push after rebase).
 >>> Override once:  git commit --no-verify
->>> Operator bypass: DEVIDE_ALLOW_MASTER_COMMIT=1 git commit ...
+>>> Operator bypass: CASEIN_ALLOW_MASTER_COMMIT=1 git commit ...
 EOF
 
 exit 1

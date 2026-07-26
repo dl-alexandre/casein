@@ -186,7 +186,7 @@ defmodule Casein.Push.APNSProvider do
       "id" => notification[:card_id] || "push:#{notification[:workspace_id]}",
       "workspace_id" => to_string(notification[:workspace_id]),
       "action" => to_string(notification[:action]),
-      "deep_link" => notification[:deep_link] || "devide://session/#{notification[:workspace_id]}"
+      "deep_link" => notification[:deep_link] || "casein://session/#{notification[:workspace_id]}"
     }
     |> maybe_put_string("session_id", notification[:session_id])
     |> maybe_put_string("card_id", notification[:card_id])

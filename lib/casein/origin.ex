@@ -8,8 +8,8 @@ defmodule Casein.Origin do
   by managed installations.
   """
 
-  @id_prefix "devide_"
-  @id_context "devide-mobile-origin-v1"
+  @id_prefix "casein_"
+  @id_context "casein-mobile-origin-v1"
 
   @spec id() :: String.t()
   def id do
@@ -52,7 +52,7 @@ defmodule Casein.Origin do
       base_url: base_url,
       socket_url: base_url <> "/socket/websocket",
       token_exchange_url: base_url <> "/api/device-links/exchange",
-      audience: "dev_ide"
+      audience: "casein"
     })
   end
 

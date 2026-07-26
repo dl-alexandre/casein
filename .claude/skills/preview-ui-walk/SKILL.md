@@ -8,7 +8,7 @@ description: >
   Artifact report with a durable login-gated public URL. Use for any app surface
   (superadmin, facility, feed, login, kiosk, …) — not only one panel. Create or
   improve workflows by editing manifests under .casein/. NOT for driving
-  dev_ide's own UI (use `verify`). Pair product agents first with
+  casein's own UI (use `verify`). Pair product agents first with
   workspace-agent-pair when MCP/skills are missing.
 ---
 
@@ -110,19 +110,19 @@ is throwaway**. The app's own walk manifest documents that risk under `safety`. 
 
 ## 1. Resolve the target's scoped preview MCP
 
-The Casein MCP tools are workspace-scoped, so to drive a *non-dev_ide* app you use
+The Casein MCP tools are workspace-scoped, so to drive a *non-casein* app you use
 that workspace's own credentials. From the box:
 
 ```bash
 source /home/devbox/.casein/agent-mcp/<workspace-name>/env.sh
-# → DEVIDE_PREVIEW_MCP_URL (workspace-scoped, includes ?workspace_id&tmux_session)
+# → CASEIN_PREVIEW_MCP_URL (workspace-scoped, includes ?workspace_id&tmux_session)
 # → CASEIN_API_TOKEN (64-char, workspace-scoped)
 ```
 
 Drive tools over plain JSON-RPC (never echo the token):
 
 ```bash
-curl -sS "$DEVIDE_PREVIEW_MCP_URL" \
+curl -sS "$CASEIN_PREVIEW_MCP_URL" \
   -H "Authorization: Bearer $CASEIN_API_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
@@ -209,7 +209,7 @@ not the ephemeral walk pane.
    ```
 2. **Read `public_url` from the response** — the artifact tools return the full
    payload, so `public_url` (durable, login-gated; e.g.
-   `https://devide.devbox…/artifact-projects/<ws>/<id>/`) is right there, alongside
+   `https://casein.devbox…/artifact-projects/<ws>/<id>/`) is right there, alongside
    `commit` (the report's git sha) and `retired` (false while live). **That URL is
    what you hand back** — paste it in the PR. The viewer hits devbox oauth2-proxy →
    Google login → the report. It survives workspace restarts and port churn.
@@ -233,7 +233,7 @@ an already-created artifact serves its files from a plain `http.server` on the
 artifact worktree, and that server keeps running independent of the MCP token. So:
 
 1. Find the artifact's worktree (returned as `worktree_path` when it was created,
-   e.g. `/tmp/devide-agent-worktrees/artifacts/<ws>/<name>-<id>`).
+   e.g. `/tmp/casein-agent-worktrees/artifacts/<ws>/<name>-<id>`).
 2. Copy the report(s) into it and `git commit` — the running server picks up disk
    files immediately. Verify against the local preview port (`curl :PORT/…` → 200).
 3. For a multi-surface sweep, write one `index.html` landing page that links each
@@ -267,7 +267,7 @@ the page-sharding, not a redesign.
   `references/manifest-schema.md` (`strict_errors`, `noise_patterns`).
 - **Runtime evidence (Tidewave, wired in `playwright_walk.mjs`)** — when the
   manifest sets `runtime.tidewave: true`, the driver:
-  1. Probes `<base>/tidewave/mcp` (or `DEVIDE_TIDEWAVE_MCP_URL` / `--tidewave-url`)
+  1. Probes `<base>/tidewave/mcp` (or `CASEIN_TIDEWAVE_MCP_URL` / `--tidewave-url`)
   2. Surfaces an **env_check** strip via `project_eval` (app env, not agent host)
   3. Runs walk-level **`probes`** (`project_eval` + optional `expect`)
   4. After each page: `get_logs` **delta**, page probes, SELECT-only **sql**,

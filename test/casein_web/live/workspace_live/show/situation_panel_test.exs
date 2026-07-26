@@ -60,14 +60,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.SituationPanelTest do
         render_component(&SituationPanel.situation_drawer/1,
           enabled: true,
           open: true,
-          risks: [risk(:blocked_too_long, :critical, "devide_a_agent %1")],
+          risks: [risk(:blocked_too_long, :critical, "casein_a_agent %1")],
           workspace: %{name: "ws-panel"}
         )
 
       assert html =~ "Situation risks"
       assert html =~ "1 active"
       assert html =~ "blocked_too_long"
-      assert html =~ "devide_a_agent %1"
+      assert html =~ "casein_a_agent %1"
       assert html =~ "do the thing"
     end
   end

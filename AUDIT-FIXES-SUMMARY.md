@@ -45,7 +45,7 @@ Grep before removal:
 Also unlocked unused transitives (`rebus`, `typedstruct`). `mix deps.unlock --unused` + `mix deps.get` + compile clean.
 
 ### 7. Remove stale boundary deps — **skipped**
-Brief claimed `GitCtl` / `ExecCtl` / `McpCtl` do not exist. Grep shows they are **real modules** under `dev_ide_core/lib/` and are heavily used (`GitCtl.Inspector`, `ExecCtl.Allowlist`, `McpCtl.Tool`, etc.). Removing them from `lib/casein_domain.ex` would surface real cross-boundary needs incorrectly. **Left the deps list unchanged.**
+Brief claimed `GitCtl` / `ExecCtl` / `McpCtl` do not exist. Grep shows they are **real modules** under `casein_core/lib/` and are heavily used (`GitCtl.Inspector`, `ExecCtl.Allowlist`, `McpCtl.Tool`, etc.). Removing them from `lib/casein_domain.ex` would surface real cross-boundary needs incorrectly. **Left the deps list unchanged.**
 
 ### 8. Patch-level dependency bumps — **done** (with one skip)
 | Package | Change | Notes |

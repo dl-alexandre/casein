@@ -1791,7 +1791,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
     terminal_sid_label || tmux_sid_label || shorten(tmux_session)
   end
 
-  defp tmux_sid("devide_" <> rest) do
+  defp tmux_sid("casein_" <> rest) do
     case String.split(rest, "_") do
       [_, _ | _] = parts -> List.last(parts)
       _ -> nil

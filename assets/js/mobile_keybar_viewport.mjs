@@ -1,7 +1,7 @@
 // Pure helpers for the MobileKeyBar visual-viewport tracker.
 //
 // The bar pins itself to the bottom of the *visual* viewport (riding above the
-// soft keyboard) and publishes --devide-mobile-terminal-inset so the terminal
+// soft keyboard) and publishes --casein-mobile-terminal-inset so the terminal
 // shell shortens by keyboard + bar. Failure modes that shaped this module:
 //
 // - Load flicker: committing a new inset triggers a terminal refit + tmux
@@ -93,7 +93,7 @@ export function shouldCommitViewportInset({
  *
  * Returns:
  *   { pinBar: true,
- *     commitInset: boolean,   // write --devide-mobile-terminal-inset now
+ *     commitInset: boolean,   // write --casein-mobile-terminal-inset now
  *     settle: boolean,        // schedule a settle pass for the exact size
  *     openChanged: boolean }
  */

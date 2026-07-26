@@ -116,7 +116,7 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
     mismatch =
       build_conn()
       |> post_json(
-        "/api/terminals/mcp?workspace_id=#{@workspace_id}&tmux_session=devide_other",
+        "/api/terminals/mcp?workspace_id=#{@workspace_id}&tmux_session=casein_other",
         %{jsonrpc: "2.0", id: 3, method: "tools/list"},
         token
       )

@@ -37,7 +37,7 @@ defmodule Casein.Terminals.TemplatesTest do
                name: "saved_layout",
                description: "A saved export",
                body: body,
-               source_session: "devide_ws",
+               source_session: "casein_ws",
                schema_version: 2
              })
 
@@ -46,7 +46,7 @@ defmodule Casein.Terminals.TemplatesTest do
     assert saved.name == "saved_layout"
     assert saved.description == "A saved export"
     assert saved.body == body
-    assert saved.source_session == "devide_ws"
+    assert saved.source_session == "casein_ws"
     assert saved.schema_version == 2
     assert %DateTime{} = saved.inserted_at
 
@@ -163,7 +163,7 @@ defmodule Casein.Terminals.TemplatesTest do
           name: "saved_layout",
           description: "A saved export",
           body: saved_template_body(),
-          source_session: "devide_ws",
+          source_session: "casein_ws",
           schema_version: 2
         },
         attrs
@@ -216,7 +216,7 @@ defmodule Casein.Terminals.TemplatesTest do
     root =
       Path.join(
         System.tmp_dir!(),
-        "devide-saved-template-root-#{System.unique_integer([:positive])}"
+        "casein-saved-template-root-#{System.unique_integer([:positive])}"
       )
 
     File.mkdir_p!(root)

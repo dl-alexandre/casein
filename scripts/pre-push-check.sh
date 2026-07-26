@@ -24,11 +24,11 @@ GATE_STARTED_AT="$(date +%s)"
 
 report_gate_result() {
   local exit_code="$1"
-  [[ -n "${CASEIN_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]] || return 0
+  [[ -n "${CASEIN_API_TOKEN:-}" && -n "${CASEIN_WORKSPACE_ID:-}" ]] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
   command -v curl >/dev/null 2>&1 || return 0
 
-  local mcp_url="${DEVIDE_TERMINAL_MCP_URL:-${DEVIDE_URL:-http://127.0.0.1:4000}/api/terminals/mcp}"
+  local mcp_url="${CASEIN_TERMINAL_MCP_URL:-${CASEIN_URL:-http://127.0.0.1:4000}/api/terminals/mcp}"
   local branch sha duration passed failed_step
   branch="$(git -C "${ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   sha="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
@@ -48,7 +48,7 @@ report_gate_result() {
     python3 -c '
 import json, os
 print(json.dumps({
-    "workspace_id": os.environ["DEVIDE_WORKSPACE_ID"],
+    "workspace_id": os.environ["CASEIN_WORKSPACE_ID"],
     "branch": os.environ.get("GATE_BRANCH") or None,
     "sha": os.environ.get("GATE_SHA") or None,
     "passed": os.environ.get("GATE_PASSED") == "true",
@@ -117,7 +117,7 @@ bash scripts/test-caddy-upstream.sh
 log "shellcheck (warning+) on agent shim/launch scripts"
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck --severity=warning -x \
-    scripts/devide \
+    scripts/casein \
     scripts/install-agent-shims.sh \
     scripts/launch-casein-agent.sh \
     scripts/lib/real-agent-bin.sh \
