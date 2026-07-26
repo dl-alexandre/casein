@@ -157,9 +157,14 @@ the required schema. Project payloads include `preview_open_arguments` plus
 | `artifact_serve` | Ensure the artifact preview server is starting/running | `workspace_id`\*, `artifact_id`\* | `ArtifactProjects.serve/1` after ownership check |
 | `artifact_snapshot` | Create an explicit Git version-marker commit | `workspace_id`\*, `artifact_id`\*, `label`, `message` | `ArtifactProjects.snapshot/2` |
 
-`files` accepts either `{relative_path: content}` or a list of
-`{"path": "...", "content": "..."}` objects. Paths are normalized by
-`ArtifactProjects` and cannot escape the artifact worktree or target `.git`.
+`files` accepts either `{relative_path: content}` or a list of file objects.
+File objects may provide UTF-8/base64 `content`, or `source_path` for a
+server-local file beneath the workspace checkout root recorded by Casein.
+Agent scratch paths and artifact worktrees outside that checkout are rejected.
+Destination paths are normalized by `ArtifactProjects` and cannot escape the
+artifact worktree or target `.git`. Publish all HTML dependencies through
+`artifact_create`/`artifact_update`; direct worktree copies are intentionally
+absent from the durable generated-file allowlist.
 
 ## Tool catalog — Tidewave (dev only, external)
 

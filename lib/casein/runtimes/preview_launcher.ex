@@ -35,10 +35,10 @@ defmodule Casein.Runtimes.PreviewLauncher do
     server = PreviewServer.for_metadata(runtime.metadata)
 
     cond do
-      port_reachable?(server["port"]) ->
+      PreviewServer.owns_live_port?(server) ->
         mark(runtime, "running")
 
-      server["status"] in ["starting", "running"] ->
+      server["status"] == "starting" ->
         :ok
 
       true ->
@@ -139,7 +139,7 @@ defmodule Casein.Runtimes.PreviewLauncher do
   defp handle_start_result(%Runtime{} = runtime, :ok) do
     server = PreviewServer.for_metadata(runtime.metadata)
 
-    if port_reachable?(server && server["port"]) do
+    if PreviewServer.owns_live_port?(server) do
       mark(runtime, "running")
     else
       mark(runtime, "starting")
@@ -157,19 +157,6 @@ defmodule Casein.Runtimes.PreviewLauncher do
       {:error, reason} -> {:error, reason}
     end
   end
-
-  defp port_reachable?(port) when is_integer(port) and port > 0 and port < 65_536 do
-    case :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false], 250) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        true
-
-      {:error, _} ->
-        false
-    end
-  end
-
-  defp port_reachable?(_), do: false
 
   defp enabled?, do: Application.get_env(:casein, :runtime_preview_launcher_enabled, true)
 

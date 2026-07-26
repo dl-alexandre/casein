@@ -5,6 +5,7 @@ defmodule Casein.RuntimesTest do
   alias Casein.Workspace
   alias Casein.Previews.EnvPorts
   alias Casein.Runtimes
+  alias Casein.Runtimes.PreviewLauncher
   alias Casein.Runtimes.WorktreeReconciler
   alias Casein.Test.RuntimeSeed
   alias Casein.Workspaces.DbIsolation
@@ -352,6 +353,48 @@ defmodule Casein.RuntimesTest do
 
     assert {:ok, launched} = Runtimes.get_runtime(runtime.id)
     assert Runtimes.runtime_preview_server(launched)["status"] == "starting"
+  end
+
+  test "preview launcher does not trust an unrelated listener on a stale running port" do
+    root = tmp_repo!("preview-owned-port-parent")
+    worktree = Path.join(root, "agent-worktree")
+
+    git!(root, ["worktree", "add", "-b", "agent-preview-owned-port", worktree, "main"])
+    seed_workspace("ws-preview-owned-port", root)
+
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-preview-owned-port", %{
+               "worktree_path" => worktree,
+               "agent" => "codex"
+             })
+
+    server = Runtimes.runtime_preview_server(runtime)
+
+    {:ok, listener} =
+      :gen_tcp.listen(server["port"], [
+        :binary,
+        active: false,
+        reuseaddr: true,
+        ip: {127, 0, 0, 1}
+      ])
+
+    on_exit(fn -> :gen_tcp.close(listener) end)
+
+    assert {:ok, stale} = Runtimes.mark_preview_server(runtime, "running")
+
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:casein, :runtime_preview_runner, __MODULE__.PreviewRunner)
+    Application.put_env(:casein, :runtime_preview_runner_test_pid, self())
+
+    assert :ok = PreviewLauncher.ensure_started(stale)
+    assert_receive {:preview_start, spec}, 1_000
+    assert spec["runtime_id"] == stale.id
+
+    _ = :sys.get_state(Casein.TaskSupervisor)
+    assert {:ok, refreshed} = Runtimes.get_runtime(stale.id)
+    assert Runtimes.runtime_preview_server(refreshed)["status"] == "starting"
   end
 
   test "observe_worktree reports a safe error status when a configured launcher is missing" do

@@ -45,8 +45,14 @@ review checkpoint without file changes.
 use the runtime preview launcher with `DEVIDE_RUNTIME_PREVIEW_COMMAND` set to:
 
 ```bash
-python3 -m http.server "$PORT" --bind 127.0.0.1
+python3 -m http.server "$PORT" --bind 127.0.0.1 --directory .casein/public
 ```
+
+The launcher is considered healthy only when its registry entry matches the
+runtime, workspace, checkout, port, and live launcher PID and the port is
+reachable. A listener owned by a manual or unrelated process does not satisfy
+`artifact_serve`; a stale `running` record is relaunched through the managed
+launcher.
 
 ## Retirement and restoration
 
@@ -160,6 +166,13 @@ Successful project payloads also include:
 - Supported kinds are `static` and `html`.
 - Paths must be relative, must not escape the artifact root, and may not target
   `.git`.
+- `source_path` inputs are server-local paths confined to the workspace checkout
+  recorded by Casein. Stage files under that checkout before publishing; agent
+  scratch directories and artifact worktrees outside it are rejected.
+- Files copied directly into an artifact worktree are not durable generated
+  files. Publish every HTML dependency through `artifact_create` or
+  `artifact_update`, then verify the durable `public_url` rather than only the
+  raw preview port.
 - The generated Elixir code path is intentionally not implemented yet. LiveView
   artifacts need a stricter sandbox story before dynamically compiling code into
   the running Casein VM.

@@ -109,7 +109,9 @@ defmodule Casein.Agents.ArtifactToolsTest do
                              source_path: %{
                                type: "string",
                                description:
-                                 "Server-local file inside the workspace checkout. Mutually exclusive with content."
+                                 "Server-local file confined to the workspace checkout root recorded by Casein. " <>
+                                   "Agent scratch directories and artifact worktrees outside that checkout are rejected. " <>
+                                   "Mutually exclusive with content."
                              }
                            },
                            required: ["path"]
