@@ -2239,7 +2239,34 @@ function applyLayoutResult(hook, result) {
   }
 
   reportLayoutChange(hook, result)
+  scheduleShrinkConfirm(hook, result)
   syncDisplayZoomBadge(hook)
+}
+
+// How long a drastic shrink is held before it is re-measured. Long enough to
+// outlast the transient that produced it — the two prod occurrences corrected
+// themselves 130ms and 460ms after the spike — and short enough that a real
+// shrink (a rail opening, a window dragged narrow) still lands as one beat of
+// letterboxing rather than a visible stall.
+const SHRINK_CONFIRM_MS = 600
+
+// The model refuses to push a drastic column shrink on the pass that first sees
+// it (see shrinkNeedsConfirmation). Something has to ask again, or a genuine
+// shrink would sit letterboxed until the next unrelated event: that is this.
+function scheduleShrinkConfirm(hook, result) {
+  if (!result.confirmShrink) return
+  if (hook.__shrinkConfirmTimer !== null && hook.__shrinkConfirmTimer !== undefined) return
+
+  hook.__shrinkConfirmTimer = setTimeout(() => {
+    hook.__shrinkConfirmTimer = null
+    reconcileLayout(hook, "shrink_confirm", {trigger: "confirm", immediate: true})
+  }, SHRINK_CONFIRM_MS)
+}
+
+function cancelShrinkConfirm(hook) {
+  if (hook.__shrinkConfirmTimer === null || hook.__shrinkConfirmTimer === undefined) return
+  clearTimeout(hook.__shrinkConfirmTimer)
+  hook.__shrinkConfirmTimer = null
 }
 
 /**
@@ -2438,6 +2465,7 @@ function installScaleFitLayout(hook) {
   }
 
   hook.__layoutTimer = null
+  hook.__shrinkConfirmTimer = null
   hook.onWindowResize = () => reconcileLayout(hook, "window_resize")
 
   if (typeof ResizeObserver !== "undefined") {
@@ -3399,6 +3427,7 @@ const GhosttyTerminal = {
       clearInterval(this.__fitRehealTimer)
       this.__fitRehealTimer = null
     }
+    cancelShrinkConfirm(this)
     if (this.__paintRaf != null) {
       cancelAnimationFrame(this.__paintRaf)
       this.__paintRaf = null
