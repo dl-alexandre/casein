@@ -57,15 +57,16 @@ defmodule Casein.Alerts do
     },
     # Platform/operator signal from `Casein.Signals.DegradationWatch`: an audit
     # signal is storming with an identical degraded payload (e.g. a detector
-    # stuck reporting unknown/none). Loud on push too — a stuck detector is a
-    # latent bug, and this is the pattern the db_isolation issue hid behind.
+    # stuck reporting unknown/none). Keep it in the operator drawer instead of
+    # OS push: repeated detector episodes are diagnostic noise on the companion,
+    # not a user task that can be resumed or safely acted on from mobile.
     # DegradationWatch already dedupes per episode, so a short window here is
     # just belt-and-suspenders against a re-arm flap.
     "signal.degradation_storm" => %{
       type: "degradation_storm",
       severity: "warning",
       title: "Signal degradation storm",
-      channels: ["in_app", "push"],
+      channels: ["in_app"],
       ttl_seconds: 3_600,
       dedupe_window_seconds: 300
     },
