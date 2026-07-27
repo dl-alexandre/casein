@@ -19,7 +19,15 @@ if command -v mise >/dev/null 2>&1; then
 else
   MIX=(mix)
 fi
-version="$("${MIX[@]}" run --no-start -e 'IO.write(Mix.Project.config()[:version])')"
+version_output="$("${MIX[@]}" run --no-start -e \
+  'IO.puts("CASEIN_PROJECT_VERSION=" <> Mix.Project.config()[:version])')"
+printf '%s\n' "$version_output" >&2
+version="$(printf '%s\n' "$version_output" |
+  sed -n 's/^CASEIN_PROJECT_VERSION=//p')"
+if [[ -z "$version" || "$version" == *$'\n'* ]]; then
+  echo "could not determine one Casein project version" >&2
+  exit 1
+fi
 build_number="${CASEIN_BUILD_NUMBER:-$(git rev-list --count HEAD)}"
 release_root="$(pwd)/_build/prod/rel/casein"
 tmux_runtime="$(pwd)/native/casein_menubar/build/tmux-runtime"
