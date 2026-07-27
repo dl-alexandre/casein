@@ -15,6 +15,7 @@ defmodule Casein.Supervision.Agents do
       Casein.AgentSessions.GrokACP.Attachments,
       {Registry, keys: :unique, name: Casein.Codex.Registry},
       Casein.Codex.EventHub,
+      Casein.Codex.SessionTitles,
       Casein.Codex.RuntimeSupervisor,
       Casein.Agents.MCPSessions,
       Casein.Agents.Activity

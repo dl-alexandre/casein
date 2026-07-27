@@ -289,6 +289,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
           window_display_name(
             manual_name?,
             task_summary,
+            nil,
             name,
             Map.get(window, :current_command) || Map.get(window, "current_command")
           ),
@@ -1428,6 +1429,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     attention = quiet_attention(quiet?, unseen_quiet?)
     name = window.name
     manual_name? = Map.get(window, :manual_name) == true
+    conversation_label = window_conversation_label(window, opts)
 
     {activity_class, activity_label} =
       apply_agent_state(
@@ -1442,7 +1444,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       dom_frag: dom_fragment(window.id),
       index: window.index,
       name: name,
-      display_name: window_display_name(manual_name?, task_summary, name, window.current_command),
+      display_name:
+        window_display_name(
+          manual_name?,
+          task_summary,
+          conversation_label,
+          name,
+          window.current_command
+        ),
       active?: window.active,
       quiet?: quiet?,
       unseen_quiet?: unseen_quiet?,
@@ -1482,13 +1491,34 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   # it, or it was created with an explicit name) keeps that name as its label.
   # Agent UUIDs emitted through OSC are machine metadata rather than deliberate
   # labels, so those fall back to the running command.
-  defp window_display_name(manual_name?, task_summary, name, current_command) do
+  defp window_display_name(
+         manual_name?,
+         task_summary,
+         conversation_label,
+         name,
+         current_command
+       ) do
     cond do
       manual_name? and not machine_identifier?(name) -> name
       present?(task_summary) and not machine_identifier?(task_summary) -> task_summary
+      present?(conversation_label) -> conversation_label
       machine_identifier?(name) -> command_label(current_command) || "Terminal"
       true -> name
     end
+  end
+
+  defp window_conversation_label(window, opts) do
+    pane = PaneState.agent_or_active_pane(window)
+    pane_id = pane && (Map.get(pane, :id) || Map.get(pane, "id"))
+    pane_title = pane && (Map.get(pane, :pane_title) || Map.get(pane, "pane_title"))
+
+    overlay =
+      opts
+      |> Keyword.get(:pane_labels, %{})
+      |> pane_label_entry(Keyword.get(opts, :tmux_session), pane_id)
+      |> overlay_text()
+
+    overlay || Map.get(Keyword.get(opts, :codex_titles, %{}), pane_title)
   end
 
   defp machine_identifier?(value) when is_binary(value) do

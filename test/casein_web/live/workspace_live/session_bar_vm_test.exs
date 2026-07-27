@@ -1,6 +1,7 @@
 defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
   use ExUnit.Case, async: true
 
+  alias Casein.Labels
   alias Casein.Terminals.Session.Info, as: SessionInfo
   alias Casein.Workspaces.Scratch
   alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
@@ -468,6 +469,83 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
         ])
 
       assert tab.display_name == "Codex"
+    end
+
+    test "uses each agent pane's conversation label instead of its node process name" do
+      session = "casein_alpha_u-dev"
+
+      labels = %{
+        Labels.key(session, "%2") => %{
+          label: "Fix workspace deletion flow",
+          source: :agent,
+          frozen?: false,
+          tool: "terminal_send_agent_command",
+          updated_at: ~U[2026-07-27 18:00:00Z]
+        }
+      }
+
+      [tab] =
+        SessionBarVM.window_tabs(
+          [
+            %{
+              id: "@2",
+              index: 1,
+              name: "node",
+              active: true,
+              current_command: "node",
+              pane_list: [
+                %{
+                  id: "%2",
+                  index: 0,
+                  role: "agent",
+                  active: true,
+                  current_command: "node",
+                  current_path: "/workspace",
+                  pane_title: ""
+                }
+              ]
+            }
+          ],
+          nil,
+          %{},
+          tmux_session: session,
+          pane_labels: labels
+        )
+
+      assert tab.display_name == "Fix workspace deletion flow"
+    end
+
+    test "uses a persisted Codex conversation title instead of its node process name" do
+      codex_id = "019f9cae-1033-7a22-8c54-7ff3a0f2f92c"
+
+      [tab] =
+        SessionBarVM.window_tabs(
+          [
+            %{
+              id: "@3",
+              index: 2,
+              name: "node",
+              active: true,
+              current_command: "node",
+              pane_list: [
+                %{
+                  id: "%3",
+                  index: 0,
+                  role: "agent",
+                  active: true,
+                  current_command: "node",
+                  current_path: "/workspace",
+                  pane_title: codex_id
+                }
+              ]
+            }
+          ],
+          nil,
+          %{},
+          codex_titles: %{codex_id => "Connect Anthropic remote MCP"}
+        )
+
+      assert tab.display_name == "Connect Anthropic remote MCP"
     end
   end
 

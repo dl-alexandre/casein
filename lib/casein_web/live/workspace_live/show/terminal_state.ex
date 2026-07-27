@@ -9,6 +9,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   import Phoenix.LiveView
 
   alias Casein.Attention.Policy, as: AttentionPolicy
+  alias Casein.Codex.SessionTitles
   alias Casein.Terminals
   alias Casein.Labels
   alias CaseinWeb.WorkspaceLive.Show
@@ -221,6 +222,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
 
   def assign_tmux_window_tabs(socket) do
     socket = assign_pane_labels(socket)
+    codex_titles = SessionTitles.titles(pane_session_ids(socket.assigns.tmux_windows))
 
     tabs =
       SessionBarVM.window_tabs(
@@ -230,12 +232,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         tmux_session: socket.assigns[:tmux_session],
         session_id: socket.assigns[:terminal_sid],
         unseen_quiet_window_ids: socket.assigns[:unseen_quiet_window_ids],
-        pane_labels: socket.assigns[:pane_labels] || %{}
+        pane_labels: socket.assigns[:pane_labels] || %{},
+        codex_titles: codex_titles
       )
 
     socket
     |> assign(:tmux_window_tabs, tabs)
     |> Sidebar.assign_windows_sidebar_tree()
+  end
+
+  defp pane_session_ids(windows) when is_list(windows) do
+    windows
+    |> Enum.flat_map(&(Map.get(&1, :pane_list) || []))
+    |> Enum.map(&(Map.get(&1, :pane_title) || Map.get(&1, "pane_title")))
   end
 
   defp sync_ui_highlight_pane_id(
