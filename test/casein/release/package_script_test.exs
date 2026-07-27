@@ -2,6 +2,7 @@ defmodule Casein.Release.PackageScriptTest do
   use ExUnit.Case, async: true
 
   @script Path.expand("../../../scripts/package-release.sh", __DIR__)
+  @macos_script Path.expand("../../../scripts/package-macos-desktop.sh", __DIR__)
 
   test "package script has valid shell syntax" do
     assert {_, 0} = System.cmd("bash", ["-n", @script])
@@ -21,5 +22,15 @@ defmodule Casein.Release.PackageScriptTest do
 
     assert text =~ "sha256sum \"$(basename \""
     assert text =~ "sha256sum -c $(basename \"${SHA_FILE}\")"
+  end
+
+  test "macOS package script isolates the project version from compilation output" do
+    assert {_, 0} = System.cmd("bash", ["-n", @macos_script])
+
+    text = File.read!(@macos_script)
+
+    assert text =~ ~s(IO.puts("CASEIN_PROJECT_VERSION=")
+    assert text =~ ~s(sed -n 's/^CASEIN_PROJECT_VERSION=//p')
+    assert text =~ ~s([[ -z "$version" || "$version" == *$'\\n'* ]])
   end
 end
