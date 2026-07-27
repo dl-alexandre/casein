@@ -15,6 +15,8 @@ defmodule CaseinMob.HomeScreenTest do
     view = mount_screen(HomeScreen)
     # Asserts every node the screen emits is a type Compose / SwiftUI renders.
     assert_renderable(view)
+    assert text(view) =~ "Casein"
+    refute text(view) =~ "CaseinMob"
     assert find(view, :button, text: "Sessions")
   end
 

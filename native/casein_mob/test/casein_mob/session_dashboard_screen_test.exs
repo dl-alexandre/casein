@@ -220,8 +220,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
       |> render_info({:tap, :open_notification_settings})
 
     assert assigns(view).push_status == :permission_denied
-    assert assigns(view).notice == "Open system settings for CaseinMob and enable notifications"
-    assert text(view) =~ "Open system settings for CaseinMob and enable notifications"
+    assert assigns(view).notice == "Open system settings for Casein and enable notifications"
+    assert text(view) =~ "Open system settings for Casein and enable notifications"
   end
 
   test "push token errors leave registering state with Firebase failure copy" do

@@ -1962,7 +1962,7 @@ defmodule CaseinMob.SessionDashboardScreen do
       Mob.Socket.assign(
         socket,
         :notice,
-        "Open system settings for CaseinMob and enable notifications"
+        "Open system settings for Casein and enable notifications"
       )
     end
   end
