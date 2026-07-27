@@ -399,14 +399,16 @@ defmodule CaseinMob.SessionDashboardScreen do
         :pair_device
       )
     ]
+    |> Enum.reject(&is_nil/1)
   end
 
   defp dashboard_body(%{pinned: [], paired?: true} = assigns) do
-    [paired_summary(assigns), saved_hosts_section(assigns.host_profiles)] ++
-      mobile_cards_status_banner(assigns) ++
-      push_status_banner(assigns) ++
-      observer_section(assigns) ++
-      empty_workspace_state(mobile_cards(assigns))
+    ([paired_summary(assigns), saved_hosts_section(assigns.host_profiles)] ++
+       mobile_cards_status_banner(assigns) ++
+       push_status_banner(assigns) ++
+       observer_section(assigns) ++
+       empty_workspace_state(mobile_cards(assigns)))
+    |> Enum.reject(&is_nil/1)
   end
 
   defp dashboard_body(assigns) do
