@@ -20,7 +20,9 @@ defmodule Casein.Workspaces.ReconcilerTest do
     :ok
   end
 
-  # Long enough ago to clear the grace window in every test below.
+  # Long enough ago to clear the grace window in every test below. host_path
+  # defaults to a guaranteed-absent directory so the real `File.dir?/1` disk
+  # guard reads "deleted"; on-disk tests pass an existing dir explicitly.
   defp seed(external_id, opts) do
     {:ok, _} =
       MemoryAdapter.upsert(%WorkspaceRecord{
@@ -28,6 +30,7 @@ defmodule Casein.Workspaces.ReconcilerTest do
         name: external_id,
         user: Keyword.get(opts, :user, "dalexandre"),
         status: Keyword.get(opts, :status, "running"),
+        host_path: Keyword.get(opts, :host_path, "/nonexistent/casein-test/#{external_id}"),
         last_seen_at: Keyword.get(opts, :last_seen_at, DateTime.add(DateTime.utc_now(), -1, :day))
       })
   end
@@ -230,6 +233,21 @@ defmodule Casein.Workspaces.ReconcilerTest do
                  event.workspace_id == "deleted" and
                  event.reason == :absent_from_source
              end)
+    end
+
+    @tag :tmp_dir
+    test "a workspace still on disk is NOT retired though absent from the listing", %{
+      tmp_dir: tmp_dir
+    } do
+      # The end-to-end form of the dry-run regression: a real directory that the
+      # manager does not list must survive against the real File.dir?/1 guard.
+      seed("on-disk", host_path: tmp_dir)
+      stub_manager([workspace("alive", "dalexandre")], admin())
+
+      assert %{status: :ok, retired: [], skipped: %{on_disk: 1}} =
+               Reconciler.sweep(dry_run: false)
+
+      assert status_of("on-disk") == "running"
     end
   end
 end
