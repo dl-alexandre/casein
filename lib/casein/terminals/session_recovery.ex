@@ -17,6 +17,24 @@ defmodule Casein.Terminals.SessionRecovery do
   # Collapse double notifies from drift + term_exit recover within this window.
   @dedupe_ms 5_000
 
+  # Flap cap. A session whose tmux cwd is gone (deleted worktree) is recreated
+  # by the owner's drift check, dies again immediately, and is "recreated"
+  # again on the next tick — forever, once every @tmux_drift_check_interval_ms.
+  # Each notice re-banners viewers and re-drives template recovery, so cap how
+  # many notices one {workspace, sid} may emit per window. The counter resets
+  # once a full window passes without a notice, so a genuine tmux wipe an hour
+  # later still notifies.
+  @flap_window_ms 300_000
+  @max_notices_per_window 3
+
+  defp dedupe_ms, do: Application.get_env(:casein, :session_recovery_dedupe_ms, @dedupe_ms)
+
+  defp flap_window_ms,
+    do: Application.get_env(:casein, :session_recovery_flap_window_ms, @flap_window_ms)
+
+  defp max_notices_per_window,
+    do: Application.get_env(:casein, :session_recovery_max_notices, @max_notices_per_window)
+
   @doc "Ensure the dedupe ETS table exists (idempotent)."
   def ensure_table! do
     case :ets.whereis(@dedupe_table) do
@@ -58,9 +76,11 @@ defmodule Casein.Terminals.SessionRecovery do
   `subscribe_workspace/1` — not the tmux workspace name key.
 
   Dedupes identical `{workspace_id, sid}` notifies within #{@dedupe_ms}ms so
-  drift + term_exit recover cannot double-flash or double-apply templates.
+  drift + term_exit recover cannot double-flash or double-apply templates, and
+  caps a flapping session at #{@max_notices_per_window} notices per
+  #{@flap_window_ms}ms window (returns `:flapping` once capped).
   """
-  @spec notify_session_recreated(keyword()) :: notice() | :deduped
+  @spec notify_session_recreated(keyword()) :: notice() | :deduped | :flapping
   def notify_session_recreated(opts) when is_list(opts) do
     tmux_session = Keyword.fetch!(opts, :tmux_session)
     workspace_id = Keyword.get(opts, :workspace_id)
@@ -83,16 +103,35 @@ defmodule Casein.Terminals.SessionRecovery do
       template_id: template_id
     }
 
-    if deduped?(workspace_id, sid) do
-      Logger.debug(
-        "tmux session recreated notify deduped session=#{tmux_session} reason=#{inspect(reason)}"
-      )
+    case admit(workspace_id, sid) do
+      :ok ->
+        emit_notice(notice)
+        notice
 
-      :deduped
-    else
-      mark_notified(workspace_id, sid)
-      emit_notice(notice)
-      notice
+      :deduped ->
+        Logger.debug(
+          "tmux session recreated notify deduped session=#{tmux_session} reason=#{inspect(reason)}"
+        )
+
+        :deduped
+
+      {:flapping, :first} ->
+        Logger.warning(
+          "tmux session keeps being recreated; suppressing recovery notices " <>
+            "session=#{tmux_session} reason=#{inspect(reason)} " <>
+            "max=#{max_notices_per_window()} window_ms=#{flap_window_ms()}"
+        )
+
+        :telemetry.execute(
+          [:casein, :terminals, :session, :recreate_flap],
+          %{count: 1},
+          %{reason: reason}
+        )
+
+        :flapping
+
+      {:flapping, :again} ->
+        :flapping
     end
   end
 
@@ -151,32 +190,53 @@ defmodule Casein.Terminals.SessionRecovery do
     :ok
   end
 
-  defp deduped?(workspace_id, sid)
+  # Decide whether this notify may be emitted, recording it when it may.
+  # Fails open (`:ok`) for unkeyed notifies and for any ETS trouble — losing a
+  # recovery banner is worse than emitting a duplicate one.
+  defp admit(workspace_id, sid)
        when is_binary(workspace_id) and is_binary(sid) do
     ensure_table!()
     key = {workspace_id, sid}
     now = System.monotonic_time(:millisecond)
 
-    case :ets.lookup(@dedupe_table, key) do
-      [{^key, at}] when is_integer(at) and now - at < @dedupe_ms -> true
-      _ -> false
+    case window_for(key, now) do
+      :deduped ->
+        :deduped
+
+      {count, window_started_at} ->
+        count = count + 1
+        max = max_notices_per_window()
+        true = :ets.insert(@dedupe_table, {key, now, count, window_started_at})
+
+        cond do
+          count <= max -> :ok
+          count == max + 1 -> {:flapping, :first}
+          true -> {:flapping, :again}
+        end
     end
-  rescue
-    _ -> false
-  end
-
-  defp deduped?(_, _), do: false
-
-  defp mark_notified(workspace_id, sid)
-       when is_binary(workspace_id) and is_binary(sid) do
-    ensure_table!()
-    true = :ets.insert(@dedupe_table, {{workspace_id, sid}, System.monotonic_time(:millisecond)})
-    :ok
   rescue
     _ -> :ok
   end
 
-  defp mark_notified(_, _), do: :ok
+  defp admit(_, _), do: :ok
+
+  # `:deduped` while the previous notice is still inside the collapse window,
+  # otherwise `{notices_so_far, window_start}` — with the counter restarted once
+  # a full flap window has elapsed since it opened.
+  defp window_for(key, now) do
+    case :ets.lookup(@dedupe_table, key) do
+      [{^key, last_at, count, window_started_at}]
+      when is_integer(last_at) and is_integer(count) and is_integer(window_started_at) ->
+        cond do
+          now - last_at < dedupe_ms() -> :deduped
+          now - window_started_at >= flap_window_ms() -> {0, now}
+          true -> {count, window_started_at}
+        end
+
+      _ ->
+        {0, now}
+    end
+  end
 
   @doc """
   Seed bytes for a brand-new session from the archive (if any).

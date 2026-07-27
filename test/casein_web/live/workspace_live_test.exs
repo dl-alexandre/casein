@@ -1749,6 +1749,119 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     assert event.metadata.refs["pane:shell:root"] == "%2"
   end
 
+  test "session recovery only re-applies the template to its own empty session", %{
+    conn: conn
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "casein-workspace-recovery-template")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
+
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    workspace_name = "alpha-#{System.unique_integer([:positive])}"
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
+
+    empty_window = %{
+      id: "@1",
+      index: 0,
+      name: "main",
+      active: true,
+      panes: 1,
+      activity: DateTime.utc_now() |> DateTime.to_unix(),
+      current_command: "bash"
+    }
+
+    root_pane = %{
+      id: "%1",
+      window_id: "@1",
+      index: 0,
+      active: true,
+      left: 0,
+      top: 0,
+      width: 120,
+      height: 40,
+      current_command: "bash",
+      current_path: workspace_path
+    }
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{tmux_session => [empty_window]})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{tmux_session => [root_pane]})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{tmux_session => "@2"})
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
+    end)
+
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
+
+    notice = fn session ->
+      {:terminal_recovery,
+       %{
+         type: :session_recreated,
+         workspace_id: "ws-1",
+         sid: "u-dev",
+         tmux_session: session,
+         reason: :session_missing_on_recover,
+         history_restored?: false,
+         template_id: "agent_pair"
+       }}
+    end
+
+    # A notice about some *other* session in this workspace must not mutate the
+    # session this viewer is driving. A session whose worktree is gone recreates
+    # and dies on every drift tick, and each notice used to append an
+    # `agent_pair` "work" window here — forever.
+    send(view.pid, notice.("casein_#{workspace_name}_wt-gone-elsewhere"))
+    refute_receive {:fake_tmux_new_window, ^tmux_session, _}, 800
+
+    # Our own session, but it already carries a layout: applying is purely
+    # additive, so leave it alone rather than duplicating the template windows.
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      tmux_session => [empty_window, %{empty_window | id: "@2", index: 1, name: "work"}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [root_pane, %{root_pane | id: "%2", window_id: "@2", index: 1}]
+    })
+
+    send(view.pid, notice.(tmux_session))
+    refute_receive {:fake_tmux_new_window, ^tmux_session, _}, 800
+
+    # Our own session, recreated empty: restore the layout.
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{tmux_session => [empty_window]})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{tmux_session => [root_pane]})
+
+    send(view.pid, notice.(tmux_session))
+    assert_receive {:fake_tmux_new_window, ^tmux_session, new_window_opts}, 2_000
+    assert new_window_opts[:name] == "work"
+  end
+
   test "template library saves previews applies and deletes exported layouts", %{
     conn: conn
   } do

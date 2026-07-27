@@ -1190,36 +1190,51 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # tmux server/session wipe: Session/SessionOwner emitted a recovery notice.
   # Banner the operator and best-effort re-apply the last session template so
   # agent_pair layout comes back without a manual template click.
+  #
+  # The notice is broadcast workspace-wide, but the template is only ever
+  # applied to *this* LiveView's primary session. Ignore notices about any
+  # other session: re-applying then appends layout to a healthy session that
+  # was never wiped, and a session that flaps (e.g. one whose worktree is gone
+  # recreates-and-dies every drift tick) would grow a `work` window on every
+  # tick, forever.
   def handle_info({:terminal_recovery, %{type: :session_recreated} = notice}, socket) do
-    history =
-      if notice.history_restored?,
-        do: " Recent scrollback was restored from archive.",
-        else: " Pane history may be empty."
+    if recovery_notice_for_current_session?(socket, notice) do
+      history =
+        if notice.history_restored?,
+          do: " Recent scrollback was restored from archive.",
+          else: " Pane history may be empty."
 
-    socket =
-      put_flash(
-        socket,
-        :error,
-        "Terminal session was recreated after a tmux reset.#{history}"
-      )
+      socket =
+        put_flash(
+          socket,
+          :error,
+          "Terminal session was recreated after a tmux reset.#{history}"
+        )
 
-    socket =
-      case notice.template_id do
-        id when is_binary(id) and id != "" ->
-          # Fire-and-forget best effort; don't block UI on template failure.
-          Process.send_after(self(), {:auto_apply_recovery_template, id}, 500)
-          socket
+      socket =
+        case notice.template_id do
+          id when is_binary(id) and id != "" ->
+            # Fire-and-forget best effort; don't block UI on template failure.
+            Process.send_after(self(), {:auto_apply_recovery_template, id}, 500)
+            socket
 
-        _ ->
-          socket
-      end
+          _ ->
+            socket
+        end
 
-    {:noreply, socket}
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({:auto_apply_recovery_template, template_id}, socket)
       when is_binary(template_id) do
-    if TerminalState.tmux_mutations_allowed?(socket) do
+    # Applying a template is purely additive (every window step is `new_window`),
+    # so only auto-apply onto a session that really came back empty. A session
+    # that already carries layout keeps it instead of gaining a duplicate set of
+    # template windows.
+    if TerminalState.tmux_mutations_allowed?(socket) and recovered_session_empty?(socket) do
       apply_session_template(socket, template_id, recovery?: true)
     else
       {:noreply, socket}
@@ -2670,6 +2685,30 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       end
     else
       TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  # A recovery notice concerns this LiveView only when it names the session the
+  # template would be applied to.
+  defp recovery_notice_for_current_session?(socket, notice) do
+    session = socket.assigns[:tmux_session]
+
+    is_binary(session) and session != "" and Map.get(notice, :tmux_session) == session
+  end
+
+  # A freshly recreated tmux session (`new-session -A`) holds a single window
+  # with a single pane. Anything richer already has a layout worth keeping.
+  defp recovered_session_empty?(socket) do
+    case socket.assigns[:tmux_session] do
+      session when is_binary(session) and session != "" ->
+        case Terminals.tmux_topology_snapshot(session, tmux: TerminalState.tmux_adapter()) do
+          %{windows: [window]} -> length(Map.get(window, :pane_list, [])) <= 1
+          %{windows: []} -> true
+          _ -> false
+        end
+
+      _ ->
+        false
     end
   end
 
