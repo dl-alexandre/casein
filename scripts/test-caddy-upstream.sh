@@ -49,12 +49,17 @@ casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
 casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
 [ "$patch_count" -eq 0 ]
 
+current_dial="unix//run/devide/current.sock"
+casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
+[ "$current_dial" = "unix//run/casein/current.sock" ]
+[ "$patch_count" -eq 1 ]
+
 current_dial="unix//unexpected/current.sock"
 if casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair; then
   echo "repair unexpectedly rewrote an unknown upstream" >&2
   exit 1
 fi
 [ "$current_dial" = "unix//unexpected/current.sock" ]
-[ "$patch_count" -eq 0 ]
+[ "$patch_count" -eq 1 ]
 
 echo "caddy upstream repair tests passed"
