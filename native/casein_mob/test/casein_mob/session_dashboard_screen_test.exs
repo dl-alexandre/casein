@@ -32,6 +32,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     view = mount_screen(SessionDashboardScreen)
 
     assert_renderable(view)
+    assert_no_nil_children(tree(view))
     assert text(view) =~ "Not paired yet"
     assert text(view) =~ "Pair this phone with a workspace"
     assert find(view, :button, text: "+ Pair workspace")
@@ -1311,4 +1312,11 @@ defmodule CaseinMob.SessionDashboardScreenTest do
 
   defp restore_env(name, nil), do: System.delete_env(name)
   defp restore_env(name, value), do: System.put_env(name, value)
+
+  defp assert_no_nil_children(%{children: children}) do
+    refute Enum.any?(children, &is_nil/1)
+    Enum.each(children, &assert_no_nil_children/1)
+  end
+
+  defp assert_no_nil_children(_node), do: :ok
 end
