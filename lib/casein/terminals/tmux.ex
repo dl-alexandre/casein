@@ -74,6 +74,7 @@ defmodule Casein.Terminals.Tmux do
   def kill(session), do: TmuxCtl.Client.kill(session)
 
   defdelegate session_exists?(session), to: TmuxCtl.Client
+  defdelegate session_exists?(session, opts), to: TmuxCtl.Client
   defdelegate session_alive?(session), to: TmuxCtl.Client
   defdelegate apply_defaults(session), to: TmuxCtl.Client
   defdelegate set_environment(session, key, value), to: TmuxCtl.Client

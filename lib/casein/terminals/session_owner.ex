@@ -889,7 +889,7 @@ defmodule Casein.Terminals.SessionOwner do
 
     task =
       Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
-        tmux.session_exists?(session)
+        session_exists?(tmux, session, state.loc)
       end)
 
     timer =
@@ -910,6 +910,17 @@ defmodule Casein.Terminals.SessionOwner do
         }
     }
   end
+
+  defp session_exists?(tmux, session, {:local, cwd})
+       when is_binary(cwd) and cwd != "" do
+    if function_exported?(tmux, :session_exists?, 2) do
+      tmux.session_exists?(session, cwd: cwd)
+    else
+      tmux.session_exists?(session)
+    end
+  end
+
+  defp session_exists?(tmux, session, _loc), do: tmux.session_exists?(session)
 
   defp cancel_session_exists_probe(
          %{tmux_session_exists_probe: %{ref: ref, pid: pid, timer: timer}} = state

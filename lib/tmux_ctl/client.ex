@@ -1364,8 +1364,10 @@ defmodule TmuxCtl.Client do
   the tmux server. Used by Session.init to decide whether to capture
   scrollback before attaching.
   """
-  def session_exists?(session) do
-    case run(["has-session", "-t", session]) do
+  def session_exists?(session), do: session_exists?(session, [])
+
+  def session_exists?(session, opts) when is_list(opts) do
+    case run(["has-session", "-t", session], opts) do
       {_, 0} -> true
       _ -> false
     end

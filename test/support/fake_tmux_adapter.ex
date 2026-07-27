@@ -214,6 +214,11 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
   def session_exists?(session), do: session_alive?(session)
 
+  def session_exists?(session, opts) do
+    send_to_test({:fake_tmux_session_exists, session, opts})
+    session_alive?(session)
+  end
+
   def new_window(session, opts \\ []) do
     id = Map.get(fake_next_window(), session, "@2")
     name = Keyword.get(opts, :name, "bash")
@@ -1025,6 +1030,7 @@ defmodule Casein.Test.FakeTmuxAdapter do
   defdelegate capture_scrollback(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate capture_scrollback(session, opts), to: TmuxCtl.Test.FakeAdapter
   defdelegate session_exists?(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate session_exists?(session, opts), to: TmuxCtl.Test.FakeAdapter
   defdelegate new_window(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate new_window(session, opts), to: TmuxCtl.Test.FakeAdapter
   defdelegate select_window(session, window_id), to: TmuxCtl.Test.FakeAdapter
