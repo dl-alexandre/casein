@@ -452,6 +452,25 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
     end
   end
 
+  describe "window_tabs/4 labels" do
+    test "replaces UUID-shaped agent titles with the running command" do
+      [tab] =
+        SessionBarVM.window_tabs([
+          %{
+            id: "@1",
+            index: 0,
+            name: "019f9c65-25cc-7353-b7a0-ffe0d65e7952",
+            manual_name: true,
+            active: true,
+            current_command: "codex",
+            pane_list: []
+          }
+        ])
+
+      assert tab.display_name == "Codex"
+    end
+  end
+
   describe "session_tab attention classification" do
     defp shell_info_with_windows(sid, windows) do
       SessionInfo.new_shell("ws-a", sid, metadata: %{windows: windows})

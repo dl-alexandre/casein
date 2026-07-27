@@ -11,6 +11,7 @@ defmodule Casein.Terminals.PaneState do
   @type state :: :working | :ready | :unknown
 
   @ready_codepoint 0x2733
+  @uuid_pattern ~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
 
   @doc "Returns the state signalled by a pane title, or `:unknown`."
   @spec from_title(term()) :: state()
@@ -159,7 +160,11 @@ defmodule Casein.Terminals.PaneState do
   defp reject_default_title(nil), do: nil
 
   defp reject_default_title(summary) do
-    if summary == local_hostname(), do: nil, else: summary
+    if summary == local_hostname() or machine_identifier?(summary), do: nil, else: summary
+  end
+
+  defp machine_identifier?(value) do
+    Regex.match?(@uuid_pattern, value)
   end
 
   defp local_hostname do

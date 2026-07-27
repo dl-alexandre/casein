@@ -50,6 +50,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
 
   import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
+  @uuid_pattern ~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
+
   @type session_window :: %{
           id: String.t() | nil,
           index: integer() | nil,
@@ -283,7 +285,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
         id: id,
         index: Map.get(window, :index) || Map.get(window, "index"),
         name: name,
-        display_name: window_display_name(manual_name?, task_summary, name),
+        display_name:
+          window_display_name(
+            manual_name?,
+            task_summary,
+            name,
+            Map.get(window, :current_command) || Map.get(window, "current_command")
+          ),
         active?: (Map.get(window, :active) || Map.get(window, "active")) == true,
         quiet?: quiet?,
         unseen_quiet?: unseen_quiet?,
@@ -1434,7 +1442,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       dom_frag: dom_fragment(window.id),
       index: window.index,
       name: name,
-      display_name: window_display_name(manual_name?, task_summary, name),
+      display_name: window_display_name(manual_name?, task_summary, name, window.current_command),
       active?: window.active,
       quiet?: quiet?,
       unseen_quiet?: unseen_quiet?,
@@ -1471,11 +1479,37 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   defp normalize_unseen_quiet_window_ids(_ids), do: MapSet.new()
 
   # A deliberately named window (tmux automatic-rename off — the user renamed
-  # it, or it was created with an explicit name) keeps that name as its label;
-  # live pane-title task summaries only label auto-named windows. The summary
-  # still reaches the hover title via full_window_title/3.
-  defp window_display_name(true = _manual_name?, _task_summary, name), do: name
-  defp window_display_name(_manual_name?, task_summary, name), do: task_summary || name
+  # it, or it was created with an explicit name) keeps that name as its label.
+  # Agent UUIDs emitted through OSC are machine metadata rather than deliberate
+  # labels, so those fall back to the running command.
+  defp window_display_name(manual_name?, task_summary, name, current_command) do
+    cond do
+      manual_name? and not machine_identifier?(name) -> name
+      present?(task_summary) and not machine_identifier?(task_summary) -> task_summary
+      machine_identifier?(name) -> command_label(current_command) || "Terminal"
+      true -> name
+    end
+  end
+
+  defp machine_identifier?(value) when is_binary(value) do
+    Regex.match?(@uuid_pattern, String.trim(value))
+  end
+
+  defp machine_identifier?(_value), do: false
+
+  defp present?(value), do: is_binary(value) and String.trim(value) != ""
+
+  defp command_label(command) when is_binary(command) do
+    command
+    |> String.trim()
+    |> blank_to_nil()
+    |> case do
+      nil -> nil
+      value -> value |> String.replace(["-", "_"], " ") |> String.capitalize()
+    end
+  end
+
+  defp command_label(_command), do: nil
 
   defp full_window_title(window, highlight_pane_id, task_summary) do
     title = window_full_title(window, highlight_pane_id)

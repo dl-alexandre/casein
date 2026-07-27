@@ -54,6 +54,10 @@ defmodule Casein.Terminals.PaneStateTest do
     assert PaneState.task_summary("Review project health audit") == "Review project health audit"
   end
 
+  test "task summary rejects UUID agent session titles" do
+    assert PaneState.task_summary("019f9c65-25cc-7353-b7a0-ffe0d65e7952") == nil
+  end
+
   test "enriches topology panes and windows with derived state" do
     topology = %{
       session: "tmux",
