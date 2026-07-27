@@ -375,6 +375,7 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
         let environment = try await controller.releaseEnvironment()
         #expect(environment["SHELL"] == "/bin/zsh")
         #expect(environment["PATH"]?.hasPrefix("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin") == true)
+        #expect(environment["CASEIN_RELEASE_ROOT"] == dataDir.path)
         #expect(environment["RELEASE_TMP"] == dataDir.appending(path: "runtime").path)
         #expect(environment["CASEIN_DESKTOP_LAN"] == nil)
         #expect(environment["PHX_IP"] == nil)

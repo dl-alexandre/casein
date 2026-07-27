@@ -111,7 +111,14 @@ for _ in $(seq 1 30); do
   curl -fsS "http://127.0.0.1:$port/desktop/health" >/dev/null && break
   sleep 1
 done
-curl -fsS "http://127.0.0.1:$port/desktop/health" >/dev/null
+health_file="$smoke_dir/health.json"
+curl -fsS "http://127.0.0.1:$port/desktop/health" > "$health_file"
+expected_version="$(plutil -extract version raw "$metadata")"
+expected_revision="$(plutil -extract revision raw "$metadata")"
+[[ "$(plutil -extract version raw "$runtime_file")" == "$expected_version" ]]
+[[ "$(plutil -extract revision raw "$runtime_file")" == "$expected_revision" ]]
+[[ "$(plutil -extract version raw "$health_file")" == "$expected_version" ]]
+[[ "$(plutil -extract revision raw "$health_file")" == "$expected_revision" ]]
 
 unauthenticated="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/")"
 [[ "$unauthenticated" == "401" ]]
