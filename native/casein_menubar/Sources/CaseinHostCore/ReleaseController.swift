@@ -197,6 +197,7 @@ public actor ReleaseController {
         environment["LANG"] = inherited["LANG"] ?? "en_US.UTF-8"
         environment["LC_ALL"] = inherited["LC_ALL"] ?? "en_US.UTF-8"
         environment["CASEIN_PROFILE"] = "desktop"
+        environment["CASEIN_RELEASE_ROOT"] = paths.releaseRoot.path
         environment["CASEIN_DESKTOP_DATA_DIR"] = paths.dataDir.path
         environment["RELEASE_TMP"] = paths.runtimeDir.path
         environment["SECRET_KEY_BASE"] = secrets.secretKeyBase
