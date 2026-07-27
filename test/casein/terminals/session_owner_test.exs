@@ -1046,6 +1046,33 @@ defmodule Casein.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "tmux drift guard probes a local workspace session in its bound cwd" do
+    swap_in_fake_tmux_adapter()
+
+    unique = "drift-scope-#{System.unique_integer([:positive])}"
+    workspace_key = "ws-drift-scope"
+    cwd = "/data/workspaces/dalexandre/scoped"
+    info = Terminals.new_shell(workspace_key, "sid-#{unique}")
+    session = "casein_#{workspace_key}_sid-#{unique}"
+
+    owner_pid = start_shell_owner(workspace_key, info)
+    seed_stub_attachment(owner_pid)
+    register_subscriber(owner_pid, self(), :raw)
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{state | workspace_key: workspace_key, loc: {:local, cwd}}
+    end)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{session => []})
+
+    send(owner_pid, :tmux_drift_check)
+
+    assert_receive {:fake_tmux_session_exists, ^session, [cwd: ^cwd]}
+    assert %{attachment: %Casein.Terminals.Attachment{}} = :sys.get_state(owner_pid)
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "a superseded instance (current.sock points elsewhere) stops re-asserting" do
     # Defense in depth behind the deploy's drain/stop of old instances: a
     # canary that lost its drain signal must not keep fighting the live owner
