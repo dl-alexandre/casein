@@ -38,8 +38,8 @@ defmodule CaseinMob.StorageScreen do
   end
 
   def handle_info({:tap, :write}, socket) do
-    path = Path.join(Mob.Storage.dir(:documents), "casein_mob_test.txt")
-    case Mob.Storage.write(path, "CaseinMob storage test\n#{DateTime.utc_now()}") do
+    path = Path.join(Mob.Storage.dir(:documents), "casein_storage_test.txt")
+    case Mob.Storage.write(path, "Casein storage test\n#{DateTime.utc_now()}") do
       {:ok, _}        -> {:noreply, Mob.Socket.assign(socket, status: "written: #{Path.basename(path)}")}
       {:error, posix} -> {:noreply, Mob.Socket.assign(socket, status: "write error: #{posix}")}
     end
@@ -53,7 +53,7 @@ defmodule CaseinMob.StorageScreen do
   end
 
   def handle_info({:tap, :delete}, socket) do
-    path = Path.join(Mob.Storage.dir(:documents), "casein_mob_test.txt")
+    path = Path.join(Mob.Storage.dir(:documents), "casein_storage_test.txt")
     case Mob.Storage.delete(path) do
       :ok             -> {:noreply, Mob.Socket.assign(socket, status: "deleted")}
       {:error, posix} -> {:noreply, Mob.Socket.assign(socket, status: "delete error: #{posix}")}

@@ -16,7 +16,7 @@ defmodule CaseinMob.HomeScreen do
       <Column background={:background} padding={:space_lg}>
         <Image src={logo_src(assigns.theme)} width={120} height={120} content_mode="fit" />
         <Spacer size={16} />
-        <Text text="CaseinMob" text_size={:xl} text_color={:on_surface} padding={:space_sm} />
+        <Text text="Casein" text_size={:xl} text_color={:on_surface} padding={:space_sm} />
         <Text text="BEAM running on device" text_size={:sm} text_color={:primary} padding={4} />
         <Spacer size={40} />
         {nav_button("Sessions",            :open_sessions)}
