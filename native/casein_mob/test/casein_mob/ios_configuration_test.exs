@@ -25,6 +25,20 @@ defmodule CaseinMob.IOSConfigurationTest do
     end
   end
 
+  test "uses the canonical Casein display name without changing app routing identity" do
+    plist = File.read!(@info_plist)
+
+    assert plist =~ "<key>CFBundleDisplayName</key>\n    <string>Casein</string>"
+    assert plist =~ "<string>com.alexandrefamilyfarm.casein-mob</string>"
+    assert plist =~ "<string>com.alexandrefamilyfarm.casein-mob.review</string>"
+    assert plist =~ "<string>casein</string>"
+    assert plist =~ "Casein uses the camera"
+    assert plist =~ "Casein connects to Casein hosts"
+    assert plist =~ "Casein uses the microphone"
+    refute plist =~ "CaseinMob uses"
+    refute plist =~ "CaseinMob connects"
+  end
+
   test "routes pair and review deep links through the native notification bridge" do
     app_delegate = File.read!(@app_delegate)
 

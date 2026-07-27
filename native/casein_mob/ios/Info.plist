@@ -9,6 +9,8 @@
     <string>CaseinMob</string>
     <key>CFBundleExecutable</key>
     <string>CaseinMob</string>
+    <key>CFBundleDisplayName</key>
+    <string>Casein</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
@@ -51,7 +53,7 @@
         <integer>2</integer>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>CaseinMob connects to Casein hosts you explicitly pair on your trusted local network.</string>
+    <string>Casein connects to Casein hosts you explicitly pair on your trusted local network.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>
@@ -62,9 +64,9 @@
         <string>audio</string>
     </array>
     <key>NSCameraUsageDescription</key>
-    <string>CaseinMob uses the camera to scan workspace pairing QR codes.</string>
+    <string>Casein uses the camera to scan workspace pairing QR codes.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>CaseinMob uses the microphone for audio recording.</string>
+    <string>Casein uses the microphone for audio recording.</string>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIApplicationSceneManifest</key>
