@@ -40,4 +40,14 @@ defmodule Casein.AlertsTest do
       assert attrs.dedupe_key == "user-1:terminal_size_fight:ws-abc:sid-1"
     end
   end
+
+  describe "signal.degradation_storm alert" do
+    test "stays in the operator drawer instead of becoming companion push noise" do
+      %{channels: channels, severity: severity} =
+        Alerts.definition_for("signal.degradation_storm")
+
+      assert channels == ["in_app"]
+      assert severity == "warning"
+    end
+  end
 end
