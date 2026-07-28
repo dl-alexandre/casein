@@ -1024,6 +1024,77 @@ assert(
   assert(viewportProven(undefined) === false, "viewport NOT proven without a probe");
 }
 
+// ── Batch 3a: browser + server resource metrics ─────────────────────────────
+{
+  const rm = await import("./resource_metrics.mjs");
+  const { resourceMetricsProven } = await import("./preflight_run.mjs");
+
+  // CDP metric normalization: known names mapped, unknown dropped.
+  {
+    const n = rm.normalizeCdpMetrics([
+      { name: "Nodes", value: 120 },
+      { name: "JSHeapUsedSize", value: 2048 },
+      { name: "TotallyUnknown", value: 1 },
+      { name: "Nodes2", value: 5 },
+    ]);
+    assert(n.domNodes === 120 && n.jsHeapUsedBytes === 2048, "known CDP metrics mapped to stable keys");
+    assert(!("TotallyUnknown" in n) && Object.keys(n).length === 2, "unknown metrics dropped, not passed through");
+  }
+  assert(rm.normalizeCdpMetrics([]) === null, "no metrics -> null (not an empty object)");
+  assert(rm.normalizeCdpMetrics(undefined) === null, "non-array input -> null");
+  assert(
+    rm.normalizeCdpMetrics([{ name: "Nodes", value: NaN }]) === null,
+    "non-finite values are not metrics",
+  );
+
+  // Deltas are what attribute a leak to the page that caused it.
+  {
+    const d = rm.deltaMetrics({ domNodes: 100, jsHeapUsedBytes: 1000 }, { domNodes: 340, jsHeapUsedBytes: 1500 });
+    assert(d.domNodes === 240 && d.jsHeapUsedBytes === 500, "delta subtracts the before snapshot");
+  }
+  assert(rm.deltaMetrics(null, { domNodes: 7 }).domNodes === 7, "no before -> first observation reported as-is");
+  assert(rm.deltaMetrics({ domNodes: 1 }, null) === null, "no after -> null delta");
+  {
+    // A key missing from `before` must not be treated as zero.
+    const d = rm.deltaMetrics({ domNodes: 5 }, { domNodes: 9, layoutCount: 3 });
+    assert(d.layoutCount === 3, "key absent from before is reported as-is, never invented as a delta");
+    assert(!("frames" in d), "keys absent from after are dropped, never invented as zero");
+  }
+
+  // Attribution: the point of correlating server and browser cost.
+  {
+    const server = rm.correlate({
+      nav: { ttfbMs: 100 },
+      browserDelta: { scriptDurationSec: 0.01 },
+      serverTiming: { metrics: [{ name: "db", dur: 80 }] },
+    });
+    assert(server.attribution === "server", "server-dominated TTFB attributes to server");
+    assert(server.serverTotalMs === 80 && server.ttfbMs === 100, "correlation reports both sides");
+
+    const browser = rm.correlate({
+      nav: { ttfbMs: 10 },
+      browserDelta: { scriptDurationSec: 0.5 },
+      serverTiming: { metrics: [{ name: "db", dur: 1 }] },
+    });
+    assert(browser.attribution === "browser", "script-dominated time attributes to browser");
+
+    const unknown = rm.correlate({ nav: null, browserDelta: null, serverTiming: null });
+    assert(unknown.attribution === "unknown", "no signals -> unknown, never a guessed attribution");
+  }
+
+  // Fail closed: nothing measurable -> null, not a zeroed report.
+  {
+    const page = { evaluate: async () => null };
+    assert((await rm.collectResourceMetrics(page, { session: null })) === null, "nothing measurable -> null");
+    const page2 = { evaluate: async () => ({ ttfbMs: 5, loadMs: 20 }) };
+    const ev = await rm.collectResourceMetrics(page2, { session: null });
+    assert(ev.observable === true && ev.browser === null, "nav-only still observable, browser side honestly null");
+  }
+  assert(resourceMetricsProven({ resource_metrics: { observable: true } }) === true, "rm proven when observable");
+  assert(resourceMetricsProven({ resource_metrics: { observable: false } }) === false, "rm NOT proven when unobservable");
+  assert(resourceMetricsProven(undefined) === false, "rm NOT proven without a probe");
+}
+
 if (failed) {
   console.error(`\n${failed} check(s) failed`);
   process.exit(1);

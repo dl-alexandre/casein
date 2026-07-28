@@ -210,7 +210,7 @@ export async function startScratchLiveSocket({ dropFirstJoin = true } = {}) {
 }
 
 export async function probeCollectors(browserFactory) {
-  const result = { har: null, dom: null, server_timing: null, ws: null, a11y: null, viewport: null, errors: [] };
+  const result = { har: null, dom: null, server_timing: null, ws: null, a11y: null, viewport: null, resource_metrics: null, errors: [] };
   let browser = null;
   try {
     browser = await browserFactory();
@@ -247,6 +247,19 @@ export async function probeCollectors(browserFactory) {
         result.viewport = result.a11y ? { proven: true, count: viewports.length } : null;
       } catch (err) {
         result.errors.push(`a11y: ${String(err?.message || err)}`);
+      }
+
+      // Resource metrics proof: measure a page that does real DOM work so the
+      // delta is non-trivial and the collector is proven, not merely present.
+      try {
+        const rm = await import("./resource_metrics.mjs");
+        const { session, before } = await rm.beginResourceMetrics(page);
+        await page.setContent(
+          "<html><body><div id=a></div><script>for(let i=0;i<500;i++){const d=document.createElement('div');d.textContent=i;document.getElementById('a').appendChild(d)}</script></body></html>",
+        );
+        result.resource_metrics = await rm.collectResourceMetrics(page, { session, before });
+      } catch (err) {
+        result.errors.push(`resource_metrics: ${String(err?.message || err)}`);
       }
 
       const sock = await startScratchLiveSocket();
