@@ -210,7 +210,7 @@ export async function startScratchLiveSocket({ dropFirstJoin = true } = {}) {
 }
 
 export async function probeCollectors(browserFactory) {
-  const result = { har: null, dom: null, server_timing: null, ws: null, errors: [] };
+  const result = { har: null, dom: null, server_timing: null, ws: null, a11y: null, viewport: null, errors: [] };
   let browser = null;
   try {
     browser = await browserFactory();
@@ -235,6 +235,20 @@ export async function probeCollectors(browserFactory) {
     // no-navigation-to-product guarantee.
     try {
       const { attachWs } = await import("./ws_collector.mjs");
+      // a11y + viewport proof: audit a fixture with one planted violation per
+      // rule, across two viewports, so preflight reports proven capability.
+      try {
+        const a11y = await import("./a11y_collector.mjs");
+        const { viewports } = a11y.normalizeViewports(a11y.DEFAULT_VIEWPORTS);
+        await page.setContent(
+          "<html><body><main><h1>a</h1><h3>b</h3><img src='data:image/gif;base64,R0lGODlhAQABAAAAACw=' width=20 height=20></main></body></html>",
+        );
+        result.a11y = await a11y.collectAcrossViewports(page, viewports);
+        result.viewport = result.a11y ? { proven: true, count: viewports.length } : null;
+      } catch (err) {
+        result.errors.push(`a11y: ${String(err?.message || err)}`);
+      }
+
       const sock = await startScratchLiveSocket();
       const origin = sock ? await startScratchOrigin() : null;
       if (sock && origin) {
