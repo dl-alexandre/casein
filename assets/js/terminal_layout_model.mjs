@@ -71,12 +71,13 @@ const NOOP = Object.freeze({noop: true, reason: "unmeasurable"})
  * @param {boolean} input.rowPinAllowed       the ?rowpin= flag
  * @param {"normal"|"alternate"} [input.screenMode]  from Casein.Terminals.ScreenMode
  * @param {number} input.userZoom
- * @param {"event"|"periodic"} [input.trigger]
+ * @param {"event"|"periodic"|"confirm"} [input.trigger]
  * @returns {{
  *   noop?: true,
  *   mode?: string,
  *   reason: string,
  *   requestedGrid?: {cols: number, rows: number}|null,
+ *   confirmShrink?: {cols: number, rows: number}|null,
  *   fitAnchor?: {cols: number, rows: number}|null,
  *   pinnedRows?: number|null,
  *   appliedUserZoom?: number|null,
@@ -189,17 +190,25 @@ function authoritativeLayout(input, grid) {
   // the size-fight every previous fix in this area guarded against.
   const shrinking =
     !!lastFit && (grid.cols < lastFit.cols || grid.rows < lastFit.rows)
-  const mayPush = !fitUnchanged && !(trigger === "periodic" && shrinking)
+  const needsShrinkConfirm = shrinkNeedsConfirmation(grid, lastFit, trigger)
+  const mayPush =
+    !fitUnchanged && !(trigger === "periodic" && shrinking) && !needsShrinkConfirm
 
   const anchor = mayPush ? {cols: grid.cols, rows: grid.rows} : lastFit
   const requestedGrid = mayPush ? {cols: grid.cols, rows: grid.rows} : null
+  const confirmShrink = needsShrinkConfirm ? {cols: grid.cols, rows: grid.rows} : null
 
   const rendered = {
     cols: renderedGrid?.cols ?? 0,
     rows: renderedGrid?.rows ?? 0
   }
+  // While a drastic shrink is held for confirmation the anchor still describes
+  // the wide grid, which no longer fits the container we just measured. Borrow
+  // the observer's letterbox for that beat so the held grid stays visible
+  // instead of being clipped by the <pre>'s overflow:hidden.
   const overflows =
-    !!anchor && (rendered.cols > anchor.cols || rendered.rows > anchor.rows)
+    !!anchor &&
+    (rendered.cols > anchor.cols || rendered.rows > anchor.rows || needsShrinkConfirm)
 
   if (overflows) {
     const contentW = rendered.cols * cell.w + cell.padX
@@ -208,8 +217,9 @@ function authoritativeLayout(input, grid) {
 
     return {
       mode: DisplayMode.SCALE,
-      reason: "grid_overflows_fit",
+      reason: needsShrinkConfirm ? "shrink_unconfirmed" : "grid_overflows_fit",
       requestedGrid,
+      confirmShrink,
       fitAnchor: anchor,
       pinnedRows: grid.rows,
       appliedUserZoom: userZoom,
@@ -246,6 +256,7 @@ function authoritativeLayout(input, grid) {
       mode: DisplayMode.FIT,
       reason: mayPush ? "fit" : "fit_held",
       requestedGrid,
+      confirmShrink,
       fitAnchor: anchor,
       pinnedRows: grid.rows,
       appliedUserZoom: 1,
@@ -262,6 +273,7 @@ function authoritativeLayout(input, grid) {
     mode: DisplayMode.ZOOM,
     reason: mayPush ? "zoom" : "zoom_held",
     requestedGrid,
+    confirmShrink,
     fitAnchor: anchor,
     pinnedRows: grid.rows,
     appliedUserZoom: userZoom,
@@ -271,6 +283,36 @@ function authoritativeLayout(input, grid) {
     canvasSafe: false,
     rowPinWindow: null
   }
+}
+
+// A width that lost a third or more of its columns in a single step.
+//
+// Prod keeps catching this as a spike, not a resize: `226x116 -> 81x116 ->
+// 226x116` inside half a second, from one viewer, with the rows never moving
+// (2026-07-27 16:38:57 and 19:06:19, reason `keyboard_toggle` both times — an
+// `immediate` reconcile that measures the pane mid-transition). Every size on
+// record afterwards is correct, which is why this class has only ever been
+// reported from screenshots.
+//
+// The damage is done in that half second and is not undone by re-widening: the
+// program inside tmux reflows its output to 81 columns, and growing the PTY
+// back does not un-wrap text already written. The operator is left reading a
+// narrow column of text in a wide pane — the "misshapen view".
+//
+// So a drastic shrink does not go out on the measurement that first saw it. The
+// hook re-measures once the transition has settled and asks again with trigger
+// `confirm`; a real shrink still reads small and lands a beat later, a spike
+// has already corrected itself and never reaches the shared PTY.
+//
+// Columns only. Rows shrink drastically and legitimately every time a soft
+// keyboard opens, and a short grid costs nothing permanent — no reflow, no
+// re-wrap — so holding those back would buy delay without buying safety.
+const SHRINK_CONFIRM_RATIO = 2 / 3
+
+function shrinkNeedsConfirmation(grid, lastFit, trigger) {
+  if (trigger === "confirm") return false
+  if (!lastFit) return false
+  return grid.cols < Math.floor(lastFit.cols * SHRINK_CONFIRM_RATIO)
 }
 
 /**

@@ -469,6 +469,114 @@ test("triggers: the keyboard event alone engages row-pinning", async (t) => {
   assert.equal(displayMode(hook), DisplayMode.ROWPIN, "the keyboard event alone must reach the layout")
 })
 
+// ---------------------------------------------------------------------------
+// Drastic column shrinks are confirmed before they reach the shared PTY
+// ---------------------------------------------------------------------------
+//
+// Prod, 2026-07-27: `226x116 -> 81x116 -> 226x116` from a single viewer inside
+// 400ms, reason `keyboard_toggle` — a measurement taken mid-transition. Every
+// size on record afterwards is correct, but the program inside tmux had already
+// re-wrapped its output to 81 columns, and widening back does not un-wrap it.
+// The operator is left reading a narrow column of text in a wide pane.
+
+const wideModelInput = (overrides = {}) => ({
+  // 2260 / 10 = 226 cols, 1972 / 17 = 116 rows.
+  container: { availableW: 2260, availableH: 1972, padL: 0, padT: 0 },
+  cell: { w: 10, h: 17, padX: 0, padY: 0 },
+  renderedGrid: { cols: 226, rows: 116 },
+  lastFit: { cols: 226, rows: 116 },
+  lastAppliedUserZoom: 1,
+  pinnedRows: null,
+  cursor: null,
+  rowsData: null,
+  authority: true,
+  mobile: false,
+  keyboardOpen: false,
+  rowPinAllowed: true,
+  userZoom: 1,
+  trigger: "event",
+  ...overrides,
+})
+
+test("shrink confirm: a drastic column shrink is not pushed on first sight", () => {
+  const result = computeTerminalLayout(
+    wideModelInput({ container: { availableW: 810, availableH: 1972, padL: 0, padT: 0 } })
+  )
+
+  assert.equal(result.requestedGrid, null, "81 columns must not reach the PTY unconfirmed")
+  assert.deepEqual(result.confirmShrink, { cols: 81, rows: 116 })
+  assert.deepEqual(result.fitAnchor, { cols: 226, rows: 116 }, "the wide grid stays anchored")
+})
+
+test("shrink confirm: the confirming pass pushes the same shrink", () => {
+  const result = computeTerminalLayout(
+    wideModelInput({
+      container: { availableW: 810, availableH: 1972, padL: 0, padT: 0 },
+      trigger: "confirm",
+    })
+  )
+
+  assert.deepEqual(result.requestedGrid, { cols: 81, rows: 116 })
+  assert.equal(result.confirmShrink, null)
+})
+
+test("shrink confirm: an ordinary shrink still goes out immediately", () => {
+  const result = computeTerminalLayout(
+    wideModelInput({ container: { availableW: 2000, availableH: 1972, padL: 0, padT: 0 } })
+  )
+
+  assert.deepEqual(result.requestedGrid, { cols: 200, rows: 116 })
+  assert.ok(!result.confirmShrink)
+})
+
+test("shrink confirm: rows may collapse without confirmation", () => {
+  // The soft keyboard does exactly this, and a short grid costs nothing
+  // permanent — no reflow, no re-wrap. Only width is held back.
+  const result = computeTerminalLayout(
+    wideModelInput({ container: { availableW: 2260, availableH: 680, padL: 0, padT: 0 } })
+  )
+
+  assert.deepEqual(result.requestedGrid, { cols: 226, rows: 40 })
+  assert.ok(!result.confirmShrink)
+})
+
+test("shrink confirm: a transient narrow measurement never reaches the PTY", async (t) => {
+  const { hook, el } = await mountTerminal({ t, width: 1600, height: 900 })
+  const wide = expectedFit(1600, 900)
+  assert.deepEqual(lastSizeReport(hook).payload, wide, "the wide fit landed")
+
+  const narrow = expectedFit(560, 900)
+  setViewport(el, { width: 560, height: 900 })
+  hook.onWindowResize()
+  await wait(150)
+
+  // ...and the container is back before the confirmation is due.
+  setViewport(el, { width: 1600, height: 900 })
+  hook.onWindowResize()
+  await wait(800)
+
+  assert.ok(
+    !sizeReports(hook).some((r) => r.payload.cols === narrow.cols),
+    `the spike was pushed to the PTY: ${JSON.stringify(sizeReports(hook).map((r) => r.payload))}`
+  )
+  assert.deepEqual(lastSizeReport(hook).payload, wide)
+})
+
+test("shrink confirm: a real narrow container still lands, one beat later", async (t) => {
+  const { hook, el } = await mountTerminal({ t, width: 1600, height: 900 })
+  const narrow = expectedFit(560, 900)
+
+  setViewport(el, { width: 560, height: 900 })
+  hook.onWindowResize()
+  await wait(800)
+
+  assert.deepEqual(
+    lastSizeReport(hook).payload,
+    narrow,
+    "a shrink that is still there when re-measured must be honoured"
+  )
+})
+
 test("triggers: a burst of resizes collapses into one layout pass", async (t) => {
   const { hook } = await mountTerminal({ t, width: 1600, height: 900 })
   const before = sizeReports(hook).length
