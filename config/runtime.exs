@@ -481,6 +481,11 @@ if config_env() == :prod and not release_cli? do
 
   if on_devbox? do
     config :casein, :canonical_public_origin, "https://#{canonical_devbox_host}"
+
+    # Retired hosts that the edge proxy still answers for. Browser navigations
+    # are redirected to the canonical origin; credential-bearing requests keep
+    # failing closed above.
+    config :casein, :deprecated_public_hosts, ["devide.devbox.milcgroup.com"]
   end
 
   # Allow WebSocket connections from localhost (Preview MCP browser) when
