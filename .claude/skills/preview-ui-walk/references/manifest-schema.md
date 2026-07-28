@@ -370,3 +370,24 @@ Determinism is explicit: gzip level 9, `mtime=0`, and the OS byte normalised to
 `0xFF`, so identical source always yields byte-identical shards and a rebuild is
 never a spurious diff. `verify` asserts the committed shards both decode and
 repack identically.
+
+### `--preflight-only` CLI
+
+```bash
+node playwright_walk.mjs --manifest a.json --manifest b.json --base URL --preflight-only
+node playwright_walk.mjs --manifest a.json --base URL --out ./run --preflight-only --json
+```
+
+Loads **every** selected manifest and emits ONE merged matrix: role prefixes,
+required evidence and mutation intent fan in across all of them, so a sweep is
+assessed as the sweep it is. `--out` is optional here (matrix goes to stdout);
+when given, `preflight.json` and `preflight.txt` are written there. `--json`
+switches stdout to the machine matrix.
+
+**No-navigation is structural, not a promise.** The driver branches into
+preflight *before* `chromium.launch` and before the walk loop, so nothing below
+it can run. The only network preflight performs is a single `GET` of `--base`
+for health — never a manifest page path, never a non-GET. Both properties are
+asserted: a recording-fetch fixture pins request count/method/URL, and a
+selftest reads the packed driver to confirm the preflight branch precedes the
+browser launch (so a bad repack that drops the wiring fails the suite).

@@ -19,6 +19,13 @@ import {
   verdictName,
 } from "./preflight.mjs";
 import { parseServerTiming, sanitizeDomHtml } from "./collectors.mjs";
+import {
+  buildMatrix,
+  isMutating,
+  requiredEvidence,
+  roleEnvPrefixes,
+  runPreflight,
+} from "./preflight_run.mjs";
 import { verify as verifyPayload } from "./payload_pack.mjs";
 import { classifyRisk as classifyRiskRuntime } from "./runtime_evidence.mjs";
 import {
@@ -666,6 +673,146 @@ assert(
   const v = verifyPayload();
   assert(v.roundTrips, "committed driver payload decodes and round-trips");
   assert(v.deterministic, "repacking the driver reproduces byte-identical shards");
+}
+
+// ── --preflight-only: manifest fan-in, no-navigation, exact exits ───────────
+{
+  const { mkdtempSync, writeFileSync, readFileSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "preflight-selftest-"));
+
+  const manifest = (extra = {}) => ({
+    version: 1,
+    login: { kind: "none" },
+    pages: [{ name: "Dash", path: "/one/dashboard" }],
+    safety: { read_only: true },
+    report: { name: "t" },
+    ...extra,
+  });
+  const write = (name, doc) => {
+    const p = join(dir, name);
+    writeFileSync(p, JSON.stringify(doc));
+    return p;
+  };
+
+  // Manifest fan-in: role prefixes, evidence and mutation intent merge across
+  // ALL selected manifests, not just the first.
+  const a = manifest({ login: { kind: "click", params_from_env: ["WALK_A_EMAIL", "WALK_A_PASSWORD"] } });
+  const b = manifest({
+    login: { kind: "click", params_from_env: ["WALK_B_EMAIL"] },
+    require_evidence: ["har"],
+    pages: [{ name: "P", path: "/p", require_evidence: ["dom"] }],
+  });
+  assert(
+    roleEnvPrefixes([a, b]).join(",") === "WALK_A,WALK_B",
+    "role prefixes merge across manifests and drop _EMAIL/_PASSWORD suffixes",
+  );
+  assert(
+    requiredEvidence([a, b]).join(",") === "dom,har",
+    "required evidence merges walk-level and per-page across manifests",
+  );
+  assert(!isMutating([a, b]), "read_only manifests are not mutating");
+  assert(isMutating([manifest({ safety: { read_only: false } })]), "read_only:false is mutating");
+
+  // A recording fetch proves preflight performs exactly one safe GET of --base
+  // and never touches a manifest page path.
+  const seen = [];
+  const fetchImpl = async (url, init = {}) => {
+    seen.push({ url: String(url), method: init.method || "GET" });
+    return { status: 200 };
+  };
+  const deps = {
+    fetchImpl,
+    // Credentials for the manifest's declared role, so the READY case exercises
+    // resolution rather than accidentally asserting the BLOCKED path.
+    env: { MIX_ENV: "dev", WALK_A_EMAIL: "a@example.test", WALK_A_PASSWORD: "x" },
+    resolveChromium: () => ({}),
+    chromiumPath: () => null,
+    freeBytes: 4 * 1024 ** 3,
+    leakedSessions: 0,
+    now: "2026-01-01T00:00:00.000Z",
+    stdout: () => {},
+  };
+  const args = { manifests: [write("a.json", a)], base: "http://127.0.0.1:1", out: join(dir, "out") };
+  const res = await runPreflight(args, deps);
+
+  assert(seen.length === 1, "preflight performs exactly one network request");
+  assert(seen[0].method === "GET", "that request is a GET (no mutation verb)");
+  assert(seen[0].url === "http://127.0.0.1:1", "it targets --base only");
+  assert(
+    !seen.some((r) => r.url.includes("/one/dashboard")),
+    "preflight never navigates to a manifest page path",
+  );
+  assert(res.json.mutationsPerformed === 0, "preflight reports zero mutations");
+  assert(existsSync(join(dir, "out", "preflight.json")), "preflight.json written");
+  assert(existsSync(join(dir, "out", "preflight.txt")), "human preflight.txt written");
+  {
+    const onDisk = JSON.parse(readFileSync(join(dir, "out", "preflight.json"), "utf8"));
+    assert(onDisk.schema === "preview-ui-walk/preflight@1", "preflight.json is the versioned matrix");
+    assert(onDisk.rows.length === CATEGORIES.length, "preflight.json covers every category");
+  }
+
+  // Exit codes, exactly.
+  assert(res.code === EXIT.READY, "healthy read-only walk -> 0 READY");
+
+  // Missing role credentials must fail closed (required category).
+  const noCreds = await runPreflight(args, { ...deps, env: { MIX_ENV: "dev" } });
+  assert(noCreds.code === EXIT.BLOCKED, "unresolved role credentials -> 2 BLOCKED (fail closed)");
+
+  const unsafe = await runPreflight(args, { ...deps, env: { MIX_ENV: "prod", WALK_A_EMAIL: "a", WALK_A_PASSWORD: "x" } });
+  assert(unsafe.code === EXIT.UNSAFE, "production-like env -> 3 UNSAFE");
+
+  const mutating = await runPreflight(
+    { ...args, manifests: [write("mut.json", manifest({ safety: { read_only: false } }))] },
+    { ...deps, env: {} },
+  );
+  assert(mutating.code === EXIT.UNSAFE, "mutating walk + unproven env -> 3 UNSAFE");
+
+  const degraded = await runPreflight(
+    { ...args, manifests: [write("ws.json", manifest({ require_evidence: ["ws"] }))] },
+    deps,
+  );
+  assert(degraded.code === EXIT.DEGRADED, "unprovable OPTIONAL evidence -> 1 DEGRADED");
+
+  const blockedHealth = await runPreflight(args, {
+    ...deps,
+    fetchImpl: async () => {
+      throw new Error("ECONNREFUSED");
+    },
+  });
+  assert(blockedHealth.code === EXIT.BLOCKED, "unreachable base -> 2 BLOCKED");
+
+  const blockedBrowser = await runPreflight(args, {
+    ...deps,
+    resolveChromium: () => {
+      throw new Error("cannot resolve playwright-core");
+    },
+  });
+  assert(blockedBrowser.code === EXIT.BLOCKED, "required browser missing -> 2 BLOCKED (fail closed)");
+
+  const blockedDisk = await runPreflight(args, { ...deps, freeBytes: 1024 });
+  assert(blockedDisk.code === EXIT.BLOCKED, "insufficient disk -> 2 BLOCKED");
+
+  // A bad manifest must block, never be walked past.
+  writeFileSync(join(dir, "broken.json"), "{ not json");
+  const blockedSchema = await runPreflight(
+    { ...args, manifests: [join(dir, "broken.json")] },
+    deps,
+  );
+  assert(blockedSchema.code === EXIT.BLOCKED, "unparseable manifest -> 2 BLOCKED");
+
+  // The packed driver must actually expose the flag (guards against a repack
+  // that silently drops the wiring).
+  {
+    const { unpack } = await import("./payload_pack.mjs");
+    const src = unpack();
+    assert(src.includes("--preflight-only"), "packed driver parses --preflight-only");
+    assert(
+      src.indexOf("if (a.preflightOnly)") < src.indexOf("chromium.launch"),
+      "preflight branch precedes the browser launch (no-navigation is structural)",
+    );
+  }
 }
 
 if (failed) {
