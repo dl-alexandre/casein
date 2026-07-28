@@ -19,6 +19,12 @@ defmodule Casein.Mobile.Intervention do
   # output, then trim those rows before taking the compact excerpt.
   @capture_lines 120
   @excerpt_max_chars 1_200
+  @intent_messages %{
+    "continue_task" => "Continue with the current task.",
+    "address_review" => "Address the current review feedback, then report what changed.",
+    "summarize_blocker" => "Summarize the blocker and the decision you need from me."
+  }
+  @delivery_action_ids ["follow_up" | Map.keys(@intent_messages)]
 
   @spec describe(map()) :: map() | nil
   def describe(card) when is_map(card) do
@@ -30,6 +36,7 @@ defmodule Casein.Mobile.Intervention do
         captured_at: DateTime.utc_now(),
         target: %{role: "agent"},
         action: action_spec(),
+        actions: action_specs(card),
         pwa_path: pwa_path(card)
       }
     else
@@ -56,15 +63,83 @@ defmodule Casein.Mobile.Intervention do
     }
   end
 
+  @doc """
+  Server-declared work intents for a fresh, exact agent target.
+
+  The fixed messages never come from the client. The revision binds the button
+  rendered on a device to the authoritative card locator that is reloaded at
+  dispatch time.
+  """
+  @spec action_specs(map()) :: [map()]
+  def action_specs(card) when is_map(card) do
+    revision = action_revision(card)
+
+    [
+      intent_spec(
+        "continue_task",
+        "Continue task",
+        "The exact agent will continue the current task.",
+        revision
+      ),
+      intent_spec(
+        "address_review",
+        "Address review",
+        "The exact agent will address the current review and report the result.",
+        revision
+      ),
+      intent_spec(
+        "summarize_blocker",
+        "Summarize blocker",
+        "The exact agent will state the blocker and decision it needs.",
+        revision
+      ),
+      action_spec()
+    ]
+  end
+
   @spec available_action(map(), String.t()) :: {:ok, map()} | {:error, atom()}
-  def available_action(card, "follow_up") do
-    case describe(card) do
-      %{action: action} -> {:ok, action}
-      nil -> {:error, :intervention_unavailable}
+  def available_action(card, action_id) when action_id in @delivery_action_ids do
+    with %{actions: actions} <- describe(card),
+         action when not is_nil(action) <- Enum.find(actions, &(&1.id == action_id)) do
+      {:ok, action}
+    else
+      _ -> {:error, :intervention_unavailable}
     end
   end
 
   def available_action(_card, _action_id), do: {:error, :unsupported_action}
+
+  @spec delivery_action?(map()) :: boolean()
+  def delivery_action?(%{id: action_id}) when is_binary(action_id),
+    do: delivery_action_id?(action_id)
+
+  def delivery_action?(_spec), do: false
+
+  @spec delivery_action_id?(String.t()) :: boolean()
+  def delivery_action_id?(action_id) when is_binary(action_id),
+    do: action_id in @delivery_action_ids
+
+  def delivery_action_id?(_action_id), do: false
+
+  @spec requires_revision?(map()) :: boolean()
+  def requires_revision?(%{id: action_id}) when is_binary(action_id),
+    do: Map.has_key?(@intent_messages, action_id)
+
+  def requires_revision?(_spec), do: false
+
+  @spec deliver(map(), map(), map()) :: {:ok, map()} | {:error, atom()}
+  def deliver(card, %{id: "follow_up"}, %{message: message}), do: send_follow_up(card, message)
+
+  def deliver(card, %{id: action_id}, _validated) when is_map_key(@intent_messages, action_id) do
+    with {:ok, result} <- send_follow_up(card, Map.fetch!(@intent_messages, action_id)) do
+      {:ok,
+       result
+       |> Map.put("action", action_id)
+       |> Map.put("confirmation", confirmation(action_id))}
+    end
+  end
+
+  def deliver(_card, _spec, _validated), do: {:error, :unsupported_action}
 
   @spec send_follow_up(map(), String.t()) :: {:ok, map()} | {:error, atom()}
   def send_follow_up(card, message) when is_binary(message) do
@@ -81,6 +156,24 @@ defmodule Casein.Mobile.Intervention do
   end
 
   def send_follow_up(_card, _message), do: {:error, :invalid_payload}
+
+  @spec action_revision(map()) :: String.t()
+  def action_revision(card) when is_map(card) do
+    locator = locator(card)
+
+    [
+      map_value(card, :id),
+      map_value(card, :workspace_id),
+      map_value(card, :session_id),
+      map_value(locator, :tmux_session),
+      map_value(locator, :window),
+      map_value(locator, :pane),
+      map_value(card, :updated_at)
+    ]
+    |> :erlang.term_to_binary()
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.url_encode64(padding: false)
+  end
 
   @doc """
   Reject terminal control bytes and multiline payloads before they reach tmux.
@@ -211,6 +304,25 @@ defmodule Casein.Mobile.Intervention do
   catch
     :exit, _ -> {:error, :intervention_delivery_failed}
   end
+
+  defp intent_spec(id, label, description, revision) do
+    %{
+      id: id,
+      label: label,
+      description: description,
+      revision: revision,
+      style: "primary",
+      destructive?: false,
+      confirmation: nil,
+      input: []
+    }
+  end
+
+  defp confirmation("continue_task"), do: "Continue request delivered to the exact agent."
+  defp confirmation("address_review"), do: "Review request delivered to the exact agent."
+
+  defp confirmation("summarize_blocker"),
+    do: "Blocker-summary request delivered to the exact agent."
 
   defp redact_structured_secrets(text) do
     text

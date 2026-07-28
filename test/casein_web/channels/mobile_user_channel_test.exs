@@ -404,6 +404,130 @@ defmodule CaseinWeb.MobileUserChannelTest do
     refute Map.has_key?(audit.metadata, "output")
   end
 
+  test "typed work intent is revision-bound, exact-targeted, idempotent, and privacy-safe", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+    FakeState.put(:fake_tmux_scrollback, %{{tmux_session, pane_id} => "Waiting for guidance"})
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local", mobile_platform: "android"}
+             )
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      review_count: 1,
+      locator: %{tmux_session: tmux_session, pane: pane_id}
+    })
+
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
+
+    intent = Enum.find(card.actions, &(&1["id"] == "continue_task"))
+    assert intent["description"] == "The exact agent will continue the current task."
+    assert is_binary(intent["revision"])
+
+    stale_payload = %{
+      "card_id" => card.id,
+      "action" => "continue_task",
+      "origin_id" => "origin-local",
+      "request_id" => "typed-stale",
+      "payload" => %{"revision" => "forged"}
+    }
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", stale_payload)
+    assert_reply ref, :error, %{reason: "action_revision_stale"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    payload = %{
+      stale_payload
+      | "request_id" => "typed-once",
+        "payload" => %{"revision" => intent["revision"]}
+    }
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
+
+    assert_reply ref,
+                 :ok,
+                 %{
+                   status: "accepted",
+                   idempotent: false,
+                   result: %{
+                     "action" => "continue_task",
+                     "confirmation" => "Continue request delivered to the exact agent.",
+                     "target_role" => "agent"
+                   }
+                 },
+                 1_000
+
+    assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id,
+                    "Continue with the current task.", [target: ^pane_id, submit: true]}
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    ref =
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        %{payload | "action" => "address_review"}
+      )
+
+    assert_reply ref, :error, %{reason: "idempotency_key_reused"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    ref =
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        %{payload | "card_id" => "in_progress:forged:card"}
+      )
+
+    assert_reply ref, :error, %{reason: "idempotency_key_reused"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    ref =
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        Map.put(payload, "origin_id", "tampered-origin")
+      )
+
+    assert_reply ref, :error, %{reason: "origin_mismatch"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    outcome =
+      Repo.get_by!(ActionOutcome,
+        user_id: user_id,
+        request_id: "typed-once",
+        status: "accepted"
+      )
+
+    assert outcome.action_id == "follow_up"
+    assert outcome.result["requested_action_id"] == "continue_task"
+    refute Jason.encode!(outcome.result) =~ "Continue with the current task"
+
+    audit =
+      workspace_id
+      |> Audit.recent_for(20)
+      |> Enum.find(
+        &(&1.action == "mobile.intervention" and
+            &1.metadata["action_id"] == "continue_task")
+      )
+
+    assert audit.metadata["outcome"] == "succeeded"
+    assert audit.metadata["target_role"] == "agent"
+    refute Jason.encode!(audit.metadata) =~ "Continue with the current task"
+  end
+
   test "tampered origin and replaced or non-agent pane cannot mutate", %{
     workspace_root: workspace_root
   } do

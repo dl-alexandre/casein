@@ -24,6 +24,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
       |> Mob.Socket.assign(:card, card)
       |> Mob.Socket.assign(:note, "")
       |> Mob.Socket.assign(:submitted_action, nil)
+      |> Mob.Socket.assign(:intervention_completed, false)
       |> Mob.Socket.assign(:card_expired, false)
       |> Mob.Socket.assign(:message, nil)
 
@@ -501,9 +502,13 @@ defmodule CaseinMob.ReviewDecisionScreen do
 
         {false, specs} ->
           Enum.map(specs, fn spec ->
-            disabled? = submitted? or invalid_card? or action_disabled?(spec, assigns.note)
-            action_button(spec, disabled?)
+            disabled? =
+              submitted? or invalid_card? or action_disabled?(spec, assigns.note) or
+                (assigns.intervention_completed and intervention_action?(spec))
+
+            action_control(spec, disabled?)
           end)
+          |> List.flatten()
       end
 
     %{
@@ -528,6 +533,20 @@ defmodule CaseinMob.ReviewDecisionScreen do
       },
       children: []
     }
+  end
+
+  defp action_control(spec, disabled?) do
+    [
+      case get(spec, "description") do
+        description when is_binary(description) and description != "" ->
+          body_text(description)
+
+        _ ->
+          nil
+      end,
+      action_button(spec, disabled?)
+    ]
+    |> Enum.reject(&is_nil/1)
   end
 
   defp submit_action(%{assigns: %{card_expired: true}} = socket, _action_id) do
@@ -573,13 +592,22 @@ defmodule CaseinMob.ReviewDecisionScreen do
   defp action_payload(spec, note) do
     value = String.trim(note)
 
-    input_fields(spec)
-    |> Enum.reduce(%{}, fn field, acc ->
-      case get(field, "name") do
-        name when name in ["note", "message"] and value != "" -> Map.put(acc, name, value)
-        _ -> acc
-      end
-    end)
+    payload =
+      input_fields(spec)
+      |> Enum.reduce(%{}, fn field, acc ->
+        case get(field, "name") do
+          name when name in ["note", "message"] and value != "" -> Map.put(acc, name, value)
+          _ -> acc
+        end
+      end)
+
+    case get(spec, "revision") do
+      revision when is_binary(revision) and revision != "" ->
+        Map.put(payload, "revision", revision)
+
+      _ ->
+        payload
+    end
   end
 
   defp card_actions(card) do
@@ -644,21 +672,56 @@ defmodule CaseinMob.ReviewDecisionScreen do
     get(get(card, "intervention", %{}), "pwa_url") || get(card, "pwa_url")
   end
 
+  defp handle_action_result(socket, {:ok, _result}) do
+    if intervention_action_id?(socket.assigns.submitted_action) do
+      socket
+      |> Mob.Socket.assign(:submitted_action, nil)
+      |> Mob.Socket.assign(:intervention_completed, true)
+    else
+      socket
+    end
+  end
+
   defp handle_action_result(socket, {:error, reason}) do
     socket
     |> Mob.Socket.assign(:submitted_action, nil)
     |> maybe_expire_card(reason)
   end
 
-  defp handle_action_result(socket, _result), do: socket
-
-  defp maybe_expire_card(socket, reason) when reason in ["card_not_found", :card_not_found],
-    do: Mob.Socket.assign(socket, :card_expired, true)
+  defp maybe_expire_card(socket, reason)
+       when reason in [
+              "card_not_found",
+              :card_not_found,
+              "action_revision_stale",
+              :action_revision_stale,
+              "intervention_target_missing",
+              :intervention_target_missing,
+              "intervention_target_stale",
+              :intervention_target_stale,
+              "intervention_target_role_mismatch",
+              :intervention_target_role_mismatch,
+              "intervention_unavailable",
+              :intervention_unavailable,
+              "card_already_intervened",
+              :card_already_intervened
+            ],
+       do: Mob.Socket.assign(socket, :card_expired, true)
 
   defp maybe_expire_card(socket, _reason), do: socket
 
+  defp intervention_action?(spec), do: intervention_action_id?(get(spec, "id"))
+
+  defp intervention_action_id?(action_id) do
+    action_id in ["follow_up", "continue_task", "address_review", "summarize_blocker"]
+  end
+
   defp observe_intervention(socket, result) do
-    if socket.assigns.submitted_action == "follow_up" do
+    if socket.assigns.submitted_action in [
+         "follow_up",
+         "continue_task",
+         "address_review",
+         "summarize_blocker"
+       ] do
       SessionClient.mobile_observation(%{
         "event" => "intervention",
         "outcome" => if(match?({:ok, _}, result), do: "succeeded", else: "failed"),
@@ -683,6 +746,16 @@ defmodule CaseinMob.ReviewDecisionScreen do
 
   defp style_text_color("primary"), do: :on_primary
   defp style_text_color(_style), do: :on_surface
+
+  defp result_message({:ok, result}) when is_map(result) do
+    case get(result, "result", %{}) |> get("confirmation") do
+      confirmation when is_binary(confirmation) and confirmation != "" ->
+        confirmation <> " Waiting for an authoritative update."
+
+      _ ->
+        "Action accepted"
+    end
+  end
 
   defp result_message({:ok, _result}), do: "Action accepted"
 

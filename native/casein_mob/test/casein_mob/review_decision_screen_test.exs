@@ -134,7 +134,64 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert find(view, :button, text: "Open full terminal in PWA")
   end
 
-  test "follow-up is required, bounded, and becomes retryable after stale failure" do
+  test "renders typed work intents and an authoritative delivery confirmation" do
+    card =
+      update_in(intervention_card(), ["actions"], fn actions ->
+        [
+          %{
+            "id" => "continue_task",
+            "label" => "Continue task",
+            "description" => "The exact agent will continue the current task.",
+            "revision" => "revision-1",
+            "style" => "primary",
+            "destructive?" => false,
+            "confirmation" => nil,
+            "input" => []
+          },
+          %{
+            "id" => "approve",
+            "label" => "Approve",
+            "style" => "default",
+            "destructive?" => false,
+            "confirmation" => nil,
+            "input" => []
+          }
+          | actions
+        ]
+      end)
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> render_info({:tap, {:action, "continue_task"}})
+
+    assert text(view) =~ "The exact agent will continue the current task."
+    assert find(view, :button, text: "Continue task")
+    assert assigns(view).submitted_action == "continue_task"
+
+    view =
+      render_info(
+        view,
+        {:card_action_result, "in_progress:ws-1:run-1",
+         {:ok,
+          %{
+            "result" => %{
+              "confirmation" => "Continue request delivered to the exact agent."
+            }
+          }}}
+      )
+
+    assert text(view) =~
+             "Continue request delivered to the exact agent. Waiting for an authoritative update."
+
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).intervention_completed == true
+    assert find(view, :button, text: "Continue task").props.disabled == true
+    assert find(view, :button, text: "Send follow-up").props.disabled == true
+    assert find(view, :button, text: "Approve").props.disabled == false
+  end
+
+  test "follow-up is required, bounded, and forces refresh after stale target failure" do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: intervention_card()})
@@ -158,7 +215,60 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
       )
 
     assert assigns(view).submitted_action == nil
+    assert assigns(view).card_expired == true
     assert text(view) =~ "Action failed: intervention target stale"
+    refute find(view, :button, text: "Send follow-up")
+    assert find(view, :button, text: "Return to Action Center")
+  end
+
+  test "a stale action revision forces authoritative Action Center refresh" do
+    card =
+      update_in(intervention_card(), ["actions"], fn actions ->
+        [
+          %{
+            "id" => "continue_task",
+            "label" => "Continue task",
+            "description" => "The exact agent will continue the current task.",
+            "revision" => "revision-1",
+            "style" => "primary",
+            "destructive?" => false,
+            "confirmation" => nil,
+            "input" => []
+          }
+          | actions
+        ]
+      end)
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> render_info({:tap, {:action, "continue_task"}})
+      |> render_info(
+        {:card_action_result, "in_progress:ws-1:run-1", {:error, "action_revision_stale"}}
+      )
+
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).card_expired == true
+    assert text(view) =~ "Action failed: action revision stale"
+    refute find(view, :button, text: "Continue task")
+    assert find(view, :button, text: "Return to Action Center")
+  end
+
+  test "an intervention completed on another device forces authoritative refresh" do
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: intervention_card()})
+      |> render_info({:change, :note, "Continue."})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info(
+        {:card_action_result, "in_progress:ws-1:run-1", {:error, "card_already_intervened"}}
+      )
+
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).card_expired == true
+    assert text(view) =~ "Action failed: card already intervened"
+    refute find(view, :button, text: "Send follow-up")
+    assert find(view, :button, text: "Return to Action Center")
   end
 
   test "PWA escalation opens the exact server-issued URL" do

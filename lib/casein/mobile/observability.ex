@@ -20,7 +20,7 @@ defmodule Casein.Mobile.Observability do
   @fallback_levels ~w(exact task_session workspace action_center none)
   @stale_age_buckets ~w(live under_5m under_1h under_24h over_24h unknown)
   @duration_buckets ~w(under_10s under_1m under_5m under_1h over_1h unknown)
-  @action_kinds ~w(viewed handled dismissed escalated review follow_up pwa)
+  @action_kinds ~w(viewed handled dismissed escalated review follow_up intent pwa)
   @max_id_length 240
 
   @spec record(map(), map()) :: :ok | {:error, atom()}
