@@ -101,6 +101,26 @@ defmodule Scripts.AgentStateScriptsTest do
     assert body =~ ~s("state": "done")
   end
 
+  test "long-lived legacy pane reports through rematerialized hook" do
+    body =
+      run_state_script(
+        %{
+          "CASEIN_WORKSPACE_ID" => nil,
+          "CASEIN_TERMINAL_MCP_URL" => nil,
+          "CASEIN_AGENT_MCP_HOME" => nil,
+          "CASEIN_AGENT_LAUNCH_CONTEXT" => nil,
+          "DEVIDE_WORKSPACE_ID" => "ws-legacy",
+          "DEVIDE_TERMINAL_MCP_URL" => "http://127.0.0.1:1/api/terminals/mcp",
+          "DEVIDE_AGENT_MCP_HOME" => System.tmp_dir!(),
+          "DEVIDE_AGENT_LAUNCH_CONTEXT" => "claude"
+        },
+        ~s({"hook_event_name": "Stop"})
+      )
+
+    assert body =~ ~s("workspace_id": "ws-legacy")
+    assert body =~ ~s("agent_runtime": "claude")
+  end
+
   test "unmapped events report nothing" do
     refute run_state_script(%{"GROK_HOOK_EVENT" => "post_tool_use"})
   end

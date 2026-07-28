@@ -322,13 +322,14 @@ defmodule Casein.Agents.MCPMaterializer do
   end
 
   # Claude Code hooks settings, injected by the launcher via `claude --settings`.
-  # The hook command runs through a shell, so $CASEIN_AGENT_MCP_HOME (the staging
-  # home, exported by env.sh) resolves at hook time and holds the staged copy.
+  # Use the staged script's absolute path. A long-lived pane can retain legacy
+  # DEVIDE_* environment names while its MCP files are rematerialized, so the
+  # hook must not depend on a newly exported staging-home variable.
   # Mirrors scripts/materialize-agent-mcp.sh.
   # staging is the workspace MCP staging directory; the written filename is fixed.
   # sobelow_skip ["Traversal.FileModule"]
   defp write_claude_hooks_settings(staging) do
-    command = ~s("$CASEIN_AGENT_MCP_HOME"/casein-agent-state.sh)
+    command = ~s("#{Path.join(staging, "casein-agent-state.sh")}")
     entry = [%{"hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]}]
 
     pretooluse = [

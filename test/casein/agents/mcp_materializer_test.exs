@@ -94,9 +94,9 @@ defmodule Casein.Agents.MCPMaterializerTest do
     stop_command = hooks["hooks"]["Stop"] |> hd() |> get_in(["hooks", Access.at(0), "command"])
     assert stop_command =~ "casein-agent-state.sh"
 
-    # The hook must resolve from the workspace staging home (checkout-independent),
-    # and the script must actually be staged there — not left in <checkout>/scripts.
-    assert stop_command =~ "CASEIN_AGENT_MCP_HOME"
+    # The hook uses the staged script's absolute path so a rematerialized
+    # long-lived pane does not depend on receiving a new environment variable.
+    assert stop_command == ~s("#{Path.join(staging, "casein-agent-state.sh")}")
     assert File.regular?(Path.join(staging, "casein-agent-state.sh"))
     assert File.regular?(Path.join(staging, "casein-codex-notify.sh"))
 
