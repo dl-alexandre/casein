@@ -769,11 +769,24 @@ assert(
   );
   assert(mutating.code === EXIT.UNSAFE, "mutating walk + unproven env -> 3 UNSAFE");
 
-  const degraded = await runPreflight(
+  // Batch 4: REQUIRED evidence that cannot be proven is BLOCKED (exit 2),
+  // never merely DEGRADED — running anyway would publish a report that
+  // silently lacks evidence the manifest promised.
+  const requiredGap = await runPreflight(
     { ...args, manifests: [write("ws.json", manifest({ require_evidence: ["ws"] }))] },
     deps,
   );
-  assert(degraded.code === EXIT.DEGRADED, "unprovable OPTIONAL evidence -> 1 DEGRADED");
+  assert(requiredGap.code === EXIT.BLOCKED, "required-but-unproven evidence -> 2 BLOCKED (fail closed)");
+  assert(
+    requiredGap.json.rows.find((r) => r.id === "ws")?.state === "BLOCKED",
+    "the unproven required collector row itself is BLOCKED",
+  );
+  // …and the same walk with a probe that PROVES ws is READY again.
+  const provenWs = await runPreflight(
+    { ...args, manifests: [write("ws.json", manifest({ require_evidence: ["ws"] }))] },
+    { ...deps, collectorProbe: { ws: { frames: { observable: true } } } },
+  );
+  assert(provenWs.code === EXIT.READY, "required evidence proven by the probe -> READY");
 
   const blockedHealth = await runPreflight(args, {
     ...deps,
@@ -1515,6 +1528,342 @@ assert(
       await browser.close();
     }
   }
+}
+
+// ── Batch 4: shared dep resolution ───────────────────────────────────────────
+{
+  const r = await import("./resolve_dep.mjs");
+  assert(Boolean(r.resolvePlaywrightCore()?.chromium), "shared resolver finds playwright-core (no NODE_PATH needed)");
+  assert(Boolean(r.resolveWs()?.WebSocketServer), "shared resolver finds ws");
+  assert(Boolean(r.resolveDiffEngine()), "shared resolver finds pixelmatch+pngjs");
+  assert(r.resolveDep("definitely-not-a-real-pkg-xyz") === null, "unknown dep -> null, never a throw");
+}
+
+// ── Batch 4: bounded retries + flakiness ─────────────────────────────────────
+{
+  const rp = await import("./retry_policy.mjs");
+  const readOnlyPage = { name: "P", path: "/p", steps: [{ action: "assert_text", text: "x" }] };
+  const mutatingPage = { name: "M", path: "/m", steps: [{ action: "click", selector: "#b" }] };
+  const cleanupPage = { name: "C", path: "/c", cleanup_steps: [{ action: "click", selector: "#del" }] };
+
+  {
+    const p = rp.retryPolicy({ retries: { max_attempts: 3 } }, readOnlyPage);
+    assert(p.maxAttempts === 3, "read-only page honors max_attempts");
+    assert(p.retryOn.has("TIMEOUT") && p.retryOn.has("RUNTIME_ERROR"), "default retryable set is TIMEOUT+RUNTIME_ERROR");
+    assert(rp.shouldRetry("TIMEOUT", 1, p) === true, "TIMEOUT on attempt 1 retries");
+    assert(rp.shouldRetry("TIMEOUT", 3, p) === false, "attempts are bounded at max_attempts");
+    assert(rp.shouldRetry("PASS", 1, p) === false, "a pass never retries");
+    assert(rp.shouldRetry("ASSERT_FAILED", 1, p) === false, "ASSERT_FAILED never retries");
+  }
+  {
+    const p = rp.retryPolicy({ retries: { max_attempts: 4, retry_on: ["TIMEOUT", "ASSERT_FAILED", "BOUNCED"] } }, readOnlyPage);
+    assert(p.retryOn.has("TIMEOUT") && !p.retryOn.has("ASSERT_FAILED") && !p.retryOn.has("BOUNCED"), "unsafe retry_on statuses are dropped, never honored");
+    assert(p.droppedStatuses.join(",") === "ASSERT_FAILED,BOUNCED", "dropped statuses are recorded, not silently ignored");
+  }
+  {
+    const p = rp.retryPolicy({ retries: { max_attempts: 5, retry_on: ["TIMEOUT"] } }, mutatingPage);
+    assert(p.maxAttempts === 1, "mutating page pinned to ONE attempt regardless of manifest");
+    assert(/never replayed/.test(p.reason), "the pin is explained, not silent");
+    assert(rp.shouldRetry("TIMEOUT", 1, p) === false, "a mutating page NEVER replays");
+  }
+  assert(
+    rp.retryPolicy({ retries: { max_attempts: 5 } }, cleanupPage).maxAttempts === 1,
+    "mutating cleanup_steps also pin the page to one attempt",
+  );
+  assert(rp.pageHasMutatingSteps(mutatingPage) && rp.pageHasMutatingSteps(cleanupPage), "mutation detection covers steps and cleanup_steps");
+  assert(rp.pageHasMutatingSteps(readOnlyPage) === false, "assert-only steps stay read-only");
+
+  {
+    const p = rp.retryPolicy({ retries: { max_attempts: 3 } }, readOnlyPage);
+    assert(rp.flakinessEvidence([{ status: "PASS", ms: 100 }], p) === null, "single clean attempt -> no flakiness record");
+    const f = rp.flakinessEvidence([{ status: "TIMEOUT", ms: 900 }, { status: "PASS", ms: 200 }], p);
+    assert(f.flaky === true && f.attemptCount === 2 && f.finalStatus === "PASS", "disagreeing attempts mark the page flaky even when it ends green");
+    const same = rp.flakinessEvidence([{ status: "TIMEOUT", ms: 1 }, { status: "TIMEOUT", ms: 2 }], p);
+    assert(same.flaky === false, "agreeing attempts are not flaky — just consistently failing");
+  }
+
+  // Verdict integration.
+  assert(
+    verdictFixture({ evidenceBlocked: { reason: "required evidence unavailable: api", missingEvidence: ["api"] } }).status === "BLOCKED",
+    "required api/downloads/cleanup evidence missing -> BLOCKED page",
+  );
+  assert(
+    verdictFixture({ evidenceBlocked: { reason: "x" }, actionableConsole: ["e"] }).status === "BLOCKED",
+    "missing evidence is decided BEFORE browser-error assertions",
+  );
+  assert(
+    verdictFixture({ mainStatus: 500, evidenceBlocked: { reason: "x" } }).status === "CRASHED",
+    "a crash outranks missing evidence",
+  );
+  assert(
+    verdictFixture({ cleanupFailed: { reason: "cleanup failed: 1 step(s) did not pass" } }).status === "ASSERT_FAILED",
+    "failed cleanup -> ASSERT_FAILED (fixtures may be left behind)",
+  );
+}
+
+// ── Batch 4: API-request + download + cleanup evidence ───────────────────────
+{
+  const api = await import("./api_evidence.mjs");
+  assert(api.sanitizeUrl("http://h:81/api/x?token=SECRET#f") === "http://h:81/api/x", "API URLs lose query+fragment");
+
+  const fakePage = () => {
+    const handlers = {};
+    return {
+      on: (ev, fn) => { handlers[ev] = fn; },
+      off: (ev) => { delete handlers[ev]; },
+      emit: (ev, arg) => handlers[ev] && handlers[ev](arg),
+    };
+  };
+  const fakeResponse = ({ url, status = 200, type = "fetch", ms = 12.3 }) => ({
+    url: () => url,
+    status: () => status,
+    request: () => ({
+      resourceType: () => type,
+      method: () => "GET",
+      timing: () => ({ responseEnd: ms }),
+    }),
+  });
+
+  {
+    const page = fakePage();
+    const tap = api.attachApi(page);
+    page.emit("response", fakeResponse({ url: "http://h/api/a?tok=S" }));
+    page.emit("response", fakeResponse({ url: "http://h/api/b", status: 500 }));
+    page.emit("response", fakeResponse({ url: "http://h/img.png", type: "image" }));
+    const ev = tap.stop();
+    assert(ev.entryCount === 2, "only xhr/fetch traffic is captured");
+    assert(ev.failedCount === 1, "≥400 responses are counted as failed");
+    assert(ev.entries.every((e) => !e.url.includes("?") && !e.url.includes("S" + "ECRET")), "captured URLs are sanitized");
+    assert(ev.entries[0].ms === 12.3, "timing is recorded");
+  }
+  {
+    const page = fakePage();
+    const tap = api.attachApi(page, { maxEntries: 1 });
+    page.emit("response", fakeResponse({ url: "http://h/api/a" }));
+    page.emit("response", fakeResponse({ url: "http://h/api/b" }));
+    const ev = tap.stop();
+    assert(ev.entryCount === 1 && ev.truncated === true && ev.dropped === 1, "entry cap reports what it dropped");
+  }
+  assert(api.attachApi(fakePage()).stop() === null, "no API traffic -> null evidence (fails closed when required)");
+
+  {
+    const page = fakePage();
+    const tap = api.attachDownloads(page);
+    page.emit("download", { url: () => "http://h/export.csv?sid=S", suggestedFilename: () => "export.csv" });
+    const ev = tap.stop();
+    assert(ev.entryCount === 1 && ev.entries[0].filename === "export.csv", "download metadata captured");
+    assert(!ev.entries[0].url.includes("?"), "download source URL sanitized");
+  }
+  assert(api.attachDownloads(fakePage()).stop() === null, "no downloads -> null evidence");
+
+  assert(api.cleanupEvidence(null) === null, "no cleanup ran -> null evidence");
+  assert(api.cleanupEvidence({ ran: 0, failed: 0, steps: [] }) === null, "zero steps ran -> null (gate blocked or nothing declared)");
+  {
+    const ok = api.cleanupEvidence({ ran: 2, failed: 0, steps: [{ name: "del", action: "click", status: "PASS" }] });
+    assert(ok.passed === true, "clean cleanup passes");
+    const bad = api.cleanupEvidence({ ran: 2, failed: 1, steps: [{ name: "del", action: "click", status: "FAIL" }] });
+    assert(bad.passed === false && bad.failed === 1, "failed cleanup is failed evidence, not absence");
+  }
+
+  // evidenceGuard fail-closed wiring for the new keys.
+  assert(
+    evidenceGuard(["api"], { api: null })?.status === "BLOCKED",
+    "required api evidence null -> BLOCKED via evidenceGuard",
+  );
+  assert(evidenceGuard(["cleanup"], { cleanup: { passed: true, ran: 1 } }) === null, "present cleanup evidence satisfies the guard");
+}
+
+// ── Batch 4: presweep health attestation + real probes ──────────────────────
+{
+  const pf = await import("./preflight_run.mjs");
+
+  // Deployment identity parsing: exact env + 40-char revision or refusal.
+  const sha40 = "a".repeat(40);
+  {
+    const id = pf.parseDeploymentIdentity({ environment: "dev", git_sha: sha40 });
+    assert(id.environment === "dev" && id.revision === sha40, "env + 40-char sha parsed exactly");
+  }
+  assert(pf.parseDeploymentIdentity({ environment: "dev", git_sha: "d3888dd5" }).revision === null, "short sha refused");
+  assert(/40-char/.test(pf.parseDeploymentIdentity({ environment: "dev", git_sha: "v1.2.3" }).reason), "version labels refused with a named reason");
+  assert(/environment/.test(pf.parseDeploymentIdentity({ git_sha: sha40 }).reason), "missing environment named");
+  assert(pf.parseDeploymentIdentity("nope").revision === null, "non-object deployment data refused");
+
+  {
+    const okFetch = async () => ({ status: 200, json: async () => ({ environment: "dev", revision: sha40 }) });
+    const r = await pf.checkDeploymentIdentity("http://127.0.0.1:1/health?probe=S", { fetchImpl: okFetch });
+    assert(r.state === "OK" && r.detail.includes(`rev=${sha40}`) && r.detail.includes("env=dev"), "identity row attests exact env + revision");
+    assert(!r.detail.includes("probe=S"), "health URL in the matrix is sanitized (query dropped)");
+    const bad = await pf.checkDeploymentIdentity("http://127.0.0.1:1/health", {
+      fetchImpl: async () => ({ status: 200, json: async () => ({ environment: "dev", sha: "short" }) }),
+    });
+    assert(bad.state === "MISSING", "unparseable identity is MISSING, never invented");
+    const down = await pf.checkDeploymentIdentity("http://127.0.0.1:1/health", {
+      fetchImpl: async () => { throw new Error("ECONNREFUSED"); },
+    });
+    assert(down.state === "MISSING" && /unreachable/.test(down.detail), "unreachable health url reported honestly");
+    const none = await pf.checkDeploymentIdentity(null, { base: "http://b", manifestCount: 1 });
+    assert(none.state === "OK" && /unattested/.test(none.detail), "no health url -> honest unattested placeholder");
+  }
+
+  // Operator expectation verification: exact equality or BLOCKED, and the
+  // health check stays GET-only.
+  {
+    const deployed = { environment: "dev", revision: sha40 };
+    const seen = [];
+    const okFetch = async (url, init = {}) => {
+      seen.push({ url: String(url), method: init.method || "GET" });
+      return { status: 200, json: async () => deployed };
+    };
+    const verify = (over = {}) =>
+      pf.checkDeploymentIdentity("http://127.0.0.1:1/health", {
+        fetchImpl: okFetch,
+        expectEnvironment: "dev",
+        expectRevision: sha40,
+        ...over,
+      });
+
+    const match = await verify();
+    assert(match.state === "OK" && /matches operator expectation/.test(match.detail), "exact env + revision match -> OK, marked verified");
+    assert(seen.every((r) => r.method === "GET"), "identity verification traffic is GET-only");
+
+    const wrongEnv = await verify({ expectEnvironment: "staging" });
+    assert(wrongEnv.state === "BLOCKED" && /environment mismatch/.test(wrongEnv.detail), "wrong environment -> BLOCKED");
+
+    const wrongRev = await verify({ expectRevision: "b".repeat(40) });
+    assert(wrongRev.state === "BLOCKED" && /revision mismatch/.test(wrongRev.detail), "wrong revision -> BLOCKED");
+
+    const before = seen.length;
+    const malformed = await verify({ expectRevision: "d3888dd5" });
+    assert(malformed.state === "BLOCKED" && /40-char/.test(malformed.detail), "malformed expected revision -> BLOCKED");
+    assert(seen.length === before, "malformed expectation fails closed BEFORE any network");
+
+    const upper = await verify({ expectRevision: sha40.toUpperCase() });
+    assert(upper.state === "OK", "revision comparison is case-insensitive hex");
+
+    const noUrl = await pf.checkDeploymentIdentity(null, { expectEnvironment: "dev" });
+    assert(noUrl.state === "BLOCKED" && /no --health-url/.test(noUrl.detail), "expectations without a health url -> BLOCKED");
+
+    const unreachable = await pf.checkDeploymentIdentity("http://127.0.0.1:1/health", {
+      fetchImpl: async () => { throw new Error("down"); },
+      expectEnvironment: "dev",
+    });
+    assert(unreachable.state === "BLOCKED", "expectations + unreachable health url -> BLOCKED (was MISSING in record mode)");
+
+    const unparseable = await pf.checkDeploymentIdentity("http://127.0.0.1:1/health", {
+      fetchImpl: async () => ({ status: 200, json: async () => ({ environment: "dev", sha: "short" }) }),
+      expectEnvironment: "dev",
+    });
+    assert(unparseable.state === "BLOCKED", "expectations + malformed deployed identity -> BLOCKED");
+  }
+
+  // End-to-end: a mismatch drives the preflight exit code to 2.
+  {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "identity-preflight-"));
+    const manifestPath = join(dir, "walk.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        version: 1,
+        login: { kind: "none" },
+        pages: [{ name: "P", path: "/p" }],
+        safety: { read_only: true },
+        report: { name: "t" },
+      }),
+    );
+    const okFetch = async (url) =>
+      String(url).includes("/health")
+        ? { status: 200, json: async () => ({ environment: "dev", revision: sha40 }) }
+        : { status: 200 };
+    const base = {
+      env: { MIX_ENV: "dev" },
+      fetchImpl: okFetch,
+      resolveChromium: () => ({}),
+      chromiumPath: () => null,
+      freeBytes: 4 * 1024 ** 3,
+      leakedSessions: 0,
+      now: "2026-01-01T00:00:00.000Z",
+      stdout: () => {},
+    };
+    const argsBase = {
+      manifests: [manifestPath],
+      base: "http://127.0.0.1:1",
+      healthUrl: "http://127.0.0.1:1/health",
+      expectEnvironment: "dev",
+      expectRevision: sha40,
+    };
+    const good = await runPreflight(argsBase, base);
+    assert(good.code === EXIT.READY, "verified identity -> READY");
+    const bad = await runPreflight({ ...argsBase, expectRevision: "c".repeat(40) }, base);
+    assert(bad.code === EXIT.BLOCKED, "identity mismatch -> preflight exit 2 BLOCKED");
+    // Env-var path: WALK_EXPECT_* behaves identically to the flags.
+    const viaEnv = await runPreflight(
+      { manifests: [manifestPath], base: "http://127.0.0.1:1", healthUrl: "http://127.0.0.1:1/health" },
+      { ...base, env: { MIX_ENV: "dev", WALK_EXPECT_ENVIRONMENT: "staging" } },
+    );
+    assert(viaEnv.code === EXIT.BLOCKED, "WALK_EXPECT_ENVIRONMENT mismatch -> BLOCKED via env vars");
+  }
+
+  // Tidewave: a REAL initialize round-trip, required gaps BLOCKED.
+  {
+    const ok = await pf.checkTidewave("http://127.0.0.1:1/tidewave/mcp?x=S", { fetchImpl: async () => ({ status: 200 }) });
+    assert(ok.state === "OK" && !ok.detail.includes("x=S"), "tidewave initialize 200 -> OK, url sanitized");
+    const reqDown = await pf.checkTidewave("http://127.0.0.1:1/tidewave/mcp", {
+      fetchImpl: async () => { throw new Error("down"); },
+      required: true,
+    });
+    assert(reqDown.state === "BLOCKED", "required tidewave unreachable -> BLOCKED");
+    const optNone = await pf.checkTidewave(null, {});
+    assert(optNone.state === "SKIP", "no tidewave url and not required -> SKIP");
+    const reqNone = await pf.checkTidewave(null, { required: true });
+    assert(reqNone.state === "BLOCKED", "required tidewave with no url -> BLOCKED");
+  }
+
+  // Artifact store: read-only artifact_list round-trip; token never leaks.
+  {
+    const store = { url: "http://127.0.0.1:1/api/artifacts/mcp", token: "TOKEN-NEVER-SHOWN", workspaceId: "ws" };
+    const ok = await pf.checkArtifactStore({
+      store,
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ result: { content: [{ text: JSON.stringify({ count: 2, artifacts: [] }) }] } }) }),
+    });
+    assert(ok.state === "OK" && !ok.detail.includes("TOKEN"), "artifact_list ok -> OK, token never in detail");
+    const reqDown = await pf.checkArtifactStore({ store, required: true, fetchImpl: async () => { throw new Error("down"); } });
+    assert(reqDown.state === "BLOCKED", "required artifact store unreachable -> BLOCKED");
+    const none = await pf.checkArtifactStore({ store: null, required: true });
+    assert(none.state === "BLOCKED" && /not configured/.test(none.detail), "required artifact store unconfigured -> BLOCKED");
+  }
+
+  assert(pf.previewCookieProven({ preview_cookie: { observable: true } }) === true, "preview cookie proven from probe");
+  assert(pf.previewCookieProven(undefined) === false, "preview cookie NOT proven without a probe");
+  assert(pf.apiProven({ api: { observable: true } }) === true && pf.apiProven(undefined) === false, "api proven only via probe");
+  assert(pf.downloadsProven({ downloads: { observable: true } }) === true && pf.downloadsProven(undefined) === false, "downloads proven only via probe");
+}
+
+// ── Batch 4: packed-driver wiring markers ────────────────────────────────────
+{
+  const { unpack } = await import("./payload_pack.mjs");
+  const src = unpack();
+  assert(src.includes("class LoginFailure"), "packed driver has the typed login failure");
+  assert(src.includes("writeLoginFailureArtifacts"), "packed driver writes matrix+screenshot+results+report on login failure");
+  assert(src.includes("login-failure.png"), "login-failure screenshot is part of the evidence set");
+  assert(src.includes("retryPolicy") && src.includes("shouldRetry") && src.includes("flakinessEvidence"), "packed driver wires bounded retries");
+  assert(src.includes("attachApi") && src.includes("attachDownloads") && src.includes("cleanupEvidence"), "packed driver wires api/download/cleanup evidence");
+  assert(src.includes("cleanup_steps"), "packed driver runs finally-style cleanup steps");
+  assert(src.includes("acceptDownloads: true"), "browser context accepts downloads for download evidence");
+  assert(src.includes("evidenceBlocked:"), "packed driver folds required-evidence gaps fail-closed");
+  assert(src.includes("--health-url"), "packed driver exposes the health attestation flag");
+  assert(
+    src.includes("--expect-environment") && src.includes("--expect-revision"),
+    "packed driver exposes operator identity expectations",
+  );
+  assert(src.includes("collectorProbe"), "packed --preflight-only runs the scratch collector probe");
+  assert(!src.includes("acceptBaseline"), "driver still has NO baseline acceptance path");
+  assert(
+    src.indexOf("if (a.preflightOnly)") < src.indexOf("const browser = await chromium.launch"),
+    "preflight branch still precedes the walk's browser launch",
+  );
 }
 
 if (failed) {

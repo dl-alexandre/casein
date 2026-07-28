@@ -18,6 +18,9 @@ import {
 } from "./page_steps.mjs";
 import { beginRuntime, pageRuntimeEvidence } from "./runtime_evidence.mjs";
 import { collectVisualBaseline, storeFromEnv, visualVerdict } from "./visual_baseline.mjs";
+import { resolvePlaywrightCore } from "./resolve_dep.mjs";
+import { attachApi, attachDownloads, cleanupEvidence } from "./api_evidence.mjs";
+import { flakinessEvidence, retryPolicy, shouldRetry } from "./retry_policy.mjs";
 import { gunzipSync } from "node:zlib";
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -41,6 +44,13 @@ void pageRuntimeEvidence;
 void collectVisualBaseline;
 void storeFromEnv;
 void visualVerdict;
+void resolvePlaywrightCore;
+void attachApi;
+void attachDownloads;
+void cleanupEvidence;
+void flakinessEvidence;
+void retryPolicy;
+void shouldRetry;
 
 const here = dirname(fileURLToPath(import.meta.url));
 let b64 = "";

@@ -82,6 +82,194 @@ export async function checkAppHealth(base, { fetchImpl = fetch, timeoutMs = 8000
   }
 }
 
+/** Strip query/fragment/userinfo before a URL reaches a report line. */
+function sanitizedUrl(url) {
+  try {
+    const u = new URL(String(url));
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return String(url || "").split("?")[0].split("#")[0];
+  }
+}
+
+/**
+ * Parse deployment data into an EXACT attestation: the environment string and
+ * a full 40-char hex revision. Anything less is refused, not approximated — a
+ * 12-char prefix or a "vX.Y" label is not an identity a regression can be
+ * pinned to.
+ */
+export function parseDeploymentIdentity(data) {
+  if (!data || typeof data !== "object") {
+    return { environment: null, revision: null, reason: "deployment data is not an object" };
+  }
+  const env =
+    [data.environment, data.env, data.mix_env, data.MIX_ENV].find(
+      (v) => typeof v === "string" && v.trim(),
+    ) || null;
+  const revRaw =
+    [data.revision, data.git_sha, data.sha, data.commit, data.git_revision].find(
+      (v) => typeof v === "string" && v.trim(),
+    ) || null;
+  const revision = revRaw && /^[0-9a-f]{40}$/i.test(revRaw.trim()) ? revRaw.trim().toLowerCase() : null;
+  let reason = null;
+  if (!env) reason = "deployment data lacks an environment field";
+  else if (!revRaw) reason = "deployment data lacks a revision field";
+  else if (!revision) reason = `revision is not a 40-char hex sha (got ${revRaw.trim().slice(0, 12)}…)`;
+  return { environment: env, revision, reason };
+}
+
+/**
+ * Health attestation: one GET of the configured health URL, deployment data
+ * parsed into env + 40-char revision. GET-only, never a manifest page path.
+ *
+ * Two modes:
+ *   RECORD  — no expectations supplied: the row records what the deployment
+ *             reports (or MISSING when it cannot be parsed). No health URL →
+ *             an honest "unattested" placeholder.
+ *   VERIFY  — `expectEnvironment` / `expectRevision` supplied (operator input
+ *             via --expect-environment / --expect-revision or
+ *             WALK_EXPECT_ENVIRONMENT / WALK_EXPECT_REVISION): the deployed
+ *             identity must match EXACTLY. A missing health URL, unreachable
+ *             endpoint, unparseable identity, malformed expectation, or ANY
+ *             mismatch is BLOCKED (exit 2) — a walk pointed at the wrong
+ *             environment or the wrong build must not produce a report at
+ *             all. Environment comparison is exact string equality; revisions
+ *             are full 40-char hex compared case-insensitively.
+ */
+export async function checkDeploymentIdentity(
+  healthUrl,
+  { fetchImpl = fetch, timeoutMs = 8000, base, manifestCount, expectEnvironment, expectRevision } = {},
+) {
+  const verifying = Boolean(expectEnvironment || expectRevision);
+  const failState = verifying ? STATE.BLOCKED : STATE.MISSING;
+
+  // Malformed operator input fails closed BEFORE any network: a 12-char
+  // expectation could never verify anything and must not look like it did.
+  if (expectRevision && !/^[0-9a-f]{40}$/i.test(String(expectRevision).trim())) {
+    return row(
+      "identity",
+      STATE.BLOCKED,
+      `expected revision is not a full 40-char hex sha (got ${String(expectRevision).trim().slice(0, 12)}…)`,
+    );
+  }
+
+  if (!healthUrl) {
+    if (verifying) {
+      return row("identity", STATE.BLOCKED, "expected environment/revision supplied but no --health-url to verify against");
+    }
+    return row("identity", STATE.OK, `base=${base || "?"} manifests=${manifestCount ?? "?"} (no --health-url; deployment identity unattested)`);
+  }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(healthUrl, { method: "GET", redirect: "manual", signal: ctl.signal });
+    if (res.status >= 400) {
+      return row("identity", failState, `health url returned ${res.status} (${sanitizedUrl(healthUrl)})`);
+    }
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      return row("identity", failState, `health response is not JSON (${sanitizedUrl(healthUrl)})`);
+    }
+    const id = parseDeploymentIdentity(data);
+    if (!id.environment || !id.revision) {
+      return row("identity", failState, `${id.reason} (${sanitizedUrl(healthUrl)})`);
+    }
+    if (expectEnvironment && id.environment !== String(expectEnvironment)) {
+      return row(
+        "identity",
+        STATE.BLOCKED,
+        `environment mismatch: expected "${expectEnvironment}", deployed "${id.environment}" (${sanitizedUrl(healthUrl)})`,
+      );
+    }
+    if (expectRevision && id.revision !== String(expectRevision).trim().toLowerCase()) {
+      return row(
+        "identity",
+        STATE.BLOCKED,
+        `revision mismatch: expected ${String(expectRevision).trim().toLowerCase()}, deployed ${id.revision} (${sanitizedUrl(healthUrl)})`,
+      );
+    }
+    const verified = verifying ? " — matches operator expectation" : "";
+    return row(
+      "identity",
+      STATE.OK,
+      `env=${id.environment} rev=${id.revision}${verified} (${sanitizedUrl(healthUrl)})`,
+      { evidence: { environment: id.environment, revision: id.revision, verified: verifying } },
+    );
+  } catch (err) {
+    return row("identity", failState, `health url unreachable: ${String(err?.message || err)}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * REAL Tidewave probe — an MCP initialize round-trip, not a "url is set" nod.
+ * The initialize call is a read-only RPC; product pages still only ever see
+ * GETs. Required-but-unavailable is BLOCKED: a walk told to collect runtime
+ * evidence cannot silently produce a report without it.
+ */
+export async function checkTidewave(url, { fetchImpl = fetch, timeoutMs = 8000, required = false } = {}) {
+  if (!url) {
+    return row(
+      "tidewave",
+      required ? STATE.BLOCKED : STATE.SKIP,
+      required ? "runtime evidence required but no --tidewave-url" : "no --tidewave-url",
+    );
+  }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+      signal: ctl.signal,
+    });
+    if (res.status === 200) {
+      return row("tidewave", STATE.OK, `initialize → 200 (${sanitizedUrl(url)})`);
+    }
+    return row(
+      "tidewave",
+      required ? STATE.BLOCKED : STATE.MISSING,
+      `initialize → ${res.status} (${sanitizedUrl(url)})`,
+    );
+  } catch (err) {
+    return row(
+      "tidewave",
+      required ? STATE.BLOCKED : STATE.MISSING,
+      `unreachable: ${String(err?.message || err)} (${sanitizedUrl(url)})`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * REAL artifact-store probe: a read-only artifact_list round-trip using the
+ * env-provided store. Required-but-unavailable is BLOCKED. The bearer token
+ * never appears in any detail string.
+ */
+export async function checkArtifactStore({ store, fetchImpl = fetch, required = false } = {}) {
+  if (!store) {
+    return row(
+      "artifact",
+      required ? STATE.BLOCKED : STATE.SKIP,
+      required
+        ? "required but artifact store not configured (CASEIN_ARTIFACT_MCP_URL / CASEIN_API_TOKEN / CASEIN_WORKSPACE_ID)"
+        : "artifact store not configured",
+    );
+  }
+  const { mcpCall } = await import("./visual_baseline.mjs");
+  const listed = await mcpCall(store, "artifact_list", {}, { fetchImpl });
+  if (listed.error) {
+    return row("artifact", required ? STATE.BLOCKED : STATE.MISSING, listed.error);
+  }
+  const count = listed.ok?.count ?? (listed.ok?.artifacts || []).length;
+  return row("artifact", STATE.OK, `artifact_list ok (${count} project(s)) at ${sanitizedUrl(store.url)}`);
+}
+
 export function checkBrowser({ resolveChromium, chromiumPath } = {}) {
   try {
     if (typeof resolveChromium === "function") resolveChromium();
@@ -98,19 +286,21 @@ export function checkBrowser({ resolveChromium, chromiumPath } = {}) {
 }
 
 /**
- * An optional collector is OK when the walk requires it AND we can prove it, or
- * when the walk does not require it at all (nothing to prove). It is MISSING
- * only when the manifest requires evidence we cannot produce — which is what
- * turns into a BLOCKED page at walk time.
+ * A collector row is OK when the walk requires it AND we can prove it, or SKIP
+ * when the walk does not require it at all (nothing to prove). A collector the
+ * manifest REQUIRES but we cannot prove is BLOCKED (exit 2) — running anyway
+ * would produce a report that silently lacks evidence it promised, which is
+ * the false green this suite exists to kill. (Until batch 4 this was MISSING/
+ * DEGRADED; required gaps now fail closed.)
  */
 export function checkCollector(id, { required, proven }) {
   if (!required) return row(id, STATE.SKIP, "not required by manifest");
   return proven
     ? row(id, STATE.OK, "collector proven")
-    : row(id, STATE.MISSING, "required by manifest but not proven available");
+    : row(id, STATE.BLOCKED, "required by manifest but not proven available");
 }
 
-const PROVEN_COLLECTORS = new Set(["har", "dom", "server_timing", "screenshot"]);
+const PROVEN_COLLECTORS = new Set(["har", "dom", "server_timing", "screenshot", "cleanup"]);
 
 /**
  * `ws` is proven only when the driver can actually observe FRAMES. Socket-level
@@ -127,6 +317,18 @@ export function resourceMetricsProven(probe) {
 
 export function visualBaselineProven(probe) {
   return Boolean(probe && probe.visual_baseline && probe.visual_baseline.observable);
+}
+
+export function apiProven(probe) {
+  return Boolean(probe && probe.api && probe.api.observable);
+}
+
+export function downloadsProven(probe) {
+  return Boolean(probe && probe.downloads && probe.downloads.observable);
+}
+
+export function previewCookieProven(probe) {
+  return Boolean(probe && probe.preview_cookie && probe.preview_cookie.observable);
 }
 
 export function a11yProven(probe) {
@@ -166,17 +368,34 @@ export async function buildMatrix(args, deps = {}) {
   const rows = [];
   rows.push(checkSchema(loaded));
   rows.push(checkEnvSafety(env, { mutating }));
+  // Credentials are demanded ONLY for the manifests actually selected on the
+  // command line — a repo full of other walks must not block this one.
   rows.push(checkCredentials(roleEnvPrefixes(manifests), env));
   rows.push(await checkAppHealth(args.base, { fetchImpl }));
-  rows.push(row("identity", STATE.OK, `base=${args.base || "?"} manifests=${manifests.length}`));
-  rows.push(checkBrowser({ resolveChromium, chromiumPath }));
-  rows.push(row("preview_mcp", STATE.SKIP, "not exercised by --preflight-only"));
   rows.push(
-    args.tidewaveUrl
-      ? row("tidewave", STATE.OK, "tidewave url configured")
-      : row("tidewave", required.has("audit_actor") || required.has("db_before_after")
-          ? STATE.MISSING
-          : STATE.SKIP, "no --tidewave-url"),
+    await checkDeploymentIdentity(args.healthUrl || env.WALK_HEALTH_URL, {
+      fetchImpl,
+      base: args.base,
+      manifestCount: manifests.length,
+      expectEnvironment: args.expectEnvironment || env.WALK_EXPECT_ENVIRONMENT,
+      expectRevision: args.expectRevision || env.WALK_EXPECT_REVISION,
+    }),
+  );
+  rows.push(checkBrowser({ resolveChromium, chromiumPath }));
+  rows.push(
+    previewCookieProven(deps.collectorProbe)
+      ? row("preview_mcp", STATE.OK, "cookie + storage injection proven in a scratch browser context")
+      : row("preview_mcp", STATE.SKIP, "not exercised (no browser probe)"),
+  );
+  const tidewaveRequired =
+    required.has("audit_actor") ||
+    required.has("db_before_after") ||
+    manifests.some((m) => m?.runtime?.require_tidewave === true);
+  rows.push(
+    await checkTidewave(args.tidewaveUrl || env.CASEIN_TIDEWAVE_MCP_URL, {
+      fetchImpl,
+      required: tidewaveRequired,
+    }),
   );
   // Visual baseline is stricter than the generic collector check: when
   // required, missing Artifact connectivity or a missing accepted baseline is
@@ -198,28 +417,41 @@ export async function buildMatrix(args, deps = {}) {
     );
   }
 
+  // Artifact store: a REAL read-only artifact_list round-trip. Required when
+  // any manifest depends on the store (visual baselines live there).
+  const artifactStore = "artifactStore" in deps ? deps.artifactStore : storeFromEnv(env);
+  const artifactRow = await checkArtifactStore({
+    store: artifactStore,
+    fetchImpl,
+    required: required.has("visual_baseline"),
+  });
+
+  const PROBED = {
+    ws: wsProven,
+    a11y: a11yProven,
+    resource_metrics: resourceMetricsProven,
+    viewport: viewportProven,
+    api: apiProven,
+    downloads: downloadsProven,
+  };
   for (const id of [
     "har", "ws", "dom", "screenshot", "a11y", "viewport", "visual_baseline",
-    "resource_metrics", "db_read", "audit_actor", "artifact", "cleanup",
+    "resource_metrics", "api", "downloads", "db_read", "audit_actor",
+    "artifact", "cleanup",
   ]) {
     if (id === "visual_baseline" && visualRow) {
       rows.push(visualRow);
+      continue;
+    }
+    if (id === "artifact") {
+      rows.push(artifactRow);
       continue;
     }
     const key = id === "db_read" ? "db_before_after" : id;
     rows.push(
       checkCollector(id, {
         required: required.has(key) || id === "screenshot",
-        proven:
-          id === "ws"
-            ? wsProven(deps.collectorProbe)
-            : id === "a11y"
-              ? a11yProven(deps.collectorProbe)
-              : id === "resource_metrics"
-                ? resourceMetricsProven(deps.collectorProbe)
-                : id === "viewport"
-                ? viewportProven(deps.collectorProbe)
-                : PROVEN_COLLECTORS.has(id),
+        proven: PROBED[id] ? PROBED[id](deps.collectorProbe) : PROVEN_COLLECTORS.has(id),
       }),
     );
   }

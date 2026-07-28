@@ -286,6 +286,16 @@ the page-sharding, not a redesign.
   width/height/DPR required; >0.1% changed pixels fails; missing
   store/baseline is BLOCKED, at preflight and per page. See
   `references/manifest-schema.md` § Visual baseline.
+- **Presweep attestation (batch 4):** `--preflight-only --health-url <url>`
+  GETs a deployment endpoint and attests the exact environment + full 40-char
+  revision in the readiness matrix; Tidewave / preview-cookie / artifact-store
+  probes are real round-trips; required collector gaps exit **2 BLOCKED**; a
+  failed login still writes matrix + screenshot + results + report. Bounded
+  retries (`retries.max_attempts`) re-attempt only read-only TIMEOUT /
+  RUNTIME_ERROR pages and record per-attempt flakiness; mutating pages are
+  never replayed. `require_evidence` also covers `api` (sanitized XHR/fetch
+  capture), `downloads`, and `cleanup` (finally-steps for gated mutations).
+  See `references/manifest-schema.md`.
 - **Boundary:** product routes, login, safety, and runtime probes stay in the
   target repo under `.casein/preview-walk.json` and/or `.casein/preview-walks/*.json`.
   This skill must stay app-agnostic — new product scenarios are new manifests, not

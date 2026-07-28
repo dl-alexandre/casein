@@ -168,19 +168,8 @@ export async function startScratchOrigin() {
 }
 
 export async function startScratchLiveSocket({ dropFirstJoin = true } = {}) {
-  // ESM import() ignores NODE_PATH, so resolve like the driver resolves
-  // playwright-core: createRequire + a global-root fallback.
-  const { createRequire } = await import("node:module");
-  const req = createRequire(import.meta.url);
-  let WebSocketServer = null;
-  for (const spec of ["ws", `${process.env.NODE_PATH || ""}/ws`.replace(/^\//, "/")]) {
-    try {
-      ({ WebSocketServer } = req(spec));
-      if (WebSocketServer) break;
-    } catch {
-      /* try next */
-    }
-  }
+  const { resolveWs } = await import("./resolve_dep.mjs");
+  const WebSocketServer = resolveWs()?.WebSocketServer || null;
   if (!WebSocketServer) return null; // ws unavailable -> caller reports MISSING
   let joins = 0;
   const wss = new WebSocketServer({ port: 0 });
@@ -210,7 +199,7 @@ export async function startScratchLiveSocket({ dropFirstJoin = true } = {}) {
 }
 
 export async function probeCollectors(browserFactory) {
-  const result = { har: null, dom: null, server_timing: null, ws: null, a11y: null, viewport: null, resource_metrics: null, visual_baseline: null, errors: [] };
+  const result = { har: null, dom: null, server_timing: null, ws: null, a11y: null, viewport: null, resource_metrics: null, visual_baseline: null, api: null, downloads: null, preview_cookie: null, errors: [] };
   let browser = null;
   try {
     browser = await browserFactory();
@@ -298,8 +287,70 @@ export async function probeCollectors(browserFactory) {
         result.errors.push(`visual_baseline: ${String(err?.message || err)}`);
       }
 
+      // API + download proof, scratch-only: one fetch against a fulfilled
+      // route, one data-URL download — no product traffic.
+      try {
+        const api = await import("./api_evidence.mjs");
+        await page.route("**/preflight-api*", (route) =>
+          route.fulfill({ status: 200, headers: { "content-type": "application/json" }, body: "{\"ok\":true}" }),
+        );
+        const apiTap = api.attachApi(page);
+        const dlTap = api.attachDownloads(page);
+        // setContent leaves the page on about:blank, where a RELATIVE fetch
+        // has no base URL — the probe must fetch an absolute routed URL.
+        await page.goto("http://preflight.invalid/preflight-scratch");
+        await page.evaluate(() =>
+          fetch("http://preflight.invalid/preflight-api?token=SECRET").then((r) => r.json()),
+        );
+        const dlWait = page.waitForEvent("download", { timeout: 3000 }).catch(() => null);
+        await page.evaluate(() => {
+          const a = document.createElement("a");
+          a.href = "data:text/plain,preflight";
+          a.download = "preflight-probe.txt";
+          document.body.appendChild(a);
+          a.click();
+        });
+        await dlWait;
+        const apiEv = apiTap.stop();
+        const dlEv = dlTap.stop();
+        const apiClean =
+          Boolean(apiEv) && apiEv.entries.every((e) => !String(e.url).includes("SECRET") && !String(e.url).includes("?"));
+        result.api = { observable: Boolean(apiEv) && apiClean, entryCount: apiEv?.entryCount ?? 0 };
+        result.downloads = { observable: Boolean(dlEv), entryCount: dlEv?.entryCount ?? 0 };
+      } catch (err) {
+        result.errors.push(`api/downloads: ${String(err?.message || err)}`);
+      }
+
       const sock = await startScratchLiveSocket();
-      const origin = sock ? await startScratchOrigin() : null;
+      const origin = await startScratchOrigin();
+
+      // Preview cookie/storage proof: inject a cookie into the browser
+      // context, navigate the SCRATCH origin, and read both the cookie and a
+      // localStorage round-trip back. Proves the session-injection mechanics
+      // the cookie-login path depends on — without any product page.
+      try {
+        if (origin) {
+          const ctx = page.context();
+          await ctx.addCookies([
+            { name: "preflight_probe", value: "1", url: origin.url },
+          ]);
+          await page.goto(origin.url);
+          const cookies = await ctx.cookies(origin.url);
+          const cookieBack = cookies.some((c) => c.name === "preflight_probe" && c.value === "1");
+          const storageBack = await page.evaluate(() => {
+            try {
+              localStorage.setItem("preflight_probe", "1");
+              return localStorage.getItem("preflight_probe") === "1";
+            } catch {
+              return false;
+            }
+          });
+          result.preview_cookie = { observable: cookieBack && storageBack, cookie: cookieBack, storage: storageBack };
+        }
+      } catch (err) {
+        result.errors.push(`preview_cookie: ${String(err?.message || err)}`);
+      }
+
       if (sock && origin) {
         // A WebSocket needs a real page origin; a fulfilled fake origin cannot
         // complete the upgrade, which yields zero frames and looks like missing
@@ -322,9 +373,9 @@ export async function probeCollectors(browserFactory) {
         await new Promise((r) => setTimeout(r, 400));
         result.ws = await ws.stop();
         result.ws_transport = ws.transport;
-        origin.close();
-        sock.close();
       }
+      if (origin) origin.close();
+      if (sock) sock.close();
     } catch (err) {
       result.errors.push(`ws: ${String(err?.message || err)}`);
     }

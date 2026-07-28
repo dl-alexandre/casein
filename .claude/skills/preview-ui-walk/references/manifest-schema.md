@@ -315,16 +315,67 @@ in screenshot filenames. Keep `device_scale_factor` at `1` unless capturing for
 visual diffing — screenshot pixels and DOM bounds only align at DPR 1. Omitting
 `viewports` keeps the single default viewport (v1).
 
-## Retries and flakiness
+## Retries and flakiness (wired in the driver since batch 4)
 
 ```json
 { "retries": { "max_attempts": 2, "retry_on": ["TIMEOUT"], "record_flakiness": true } }
 ```
 
-`max_attempts: 1` (the default) is v1 behaviour. `retry_on` is deliberately
-opt-in per status: retrying a genuine `ASSERT_FAILED` hides defects, so nothing
-is retried unless you name it. With `record_flakiness`, a page whose attempts
-disagree is marked flaky in the report while still reporting its final class.
+`max_attempts: 1` (the default) is v1 behaviour. Hard rules the manifest cannot
+override:
+
+* Only **read-only** pages retry. A page whose `steps` or `cleanup_steps`
+  contain mutating actions is pinned to one attempt and **never replayed** —
+  replaying a half-applied mutation manufactures fixtures and corrupts the
+  evidence the walk exists to collect.
+* Only **`TIMEOUT` and `RUNTIME_ERROR`** are honored. Other statuses listed in
+  `retry_on` are dropped (and recorded as dropped): retrying `ASSERT_FAILED`
+  hides defects, `BOUNCED` hides access regressions, `BLOCKED` hides missing
+  evidence.
+* Every attempt's status and duration is recorded
+  (`results.json → pages[].flakiness.attempts`); attempts that disagree mark
+  the page **⚑ FLAKY** in the report even when the final attempt passes —
+  absorbed timeouts are still observations. `record_flakiness: false` opts out
+  of the report note (the retry bounds still apply).
+
+## API-request and download evidence (batch 4)
+
+```json
+{ "require_evidence": ["api", "downloads"] }
+```
+
+With `api` required, every XHR/fetch response the page issues is captured —
+**sanitized URL (origin+path only, query dropped), method, status, timing** —
+into `results.json → pages[].api` and the report's Browser column (≥400s
+listed). No request/response bodies, ever. A page that issues no API traffic
+yields `api: null`, which fails closed (BLOCKED) when the evidence is required.
+
+With `downloads` required, `page.download` events are recorded (suggested
+filename + sanitized source URL; never file contents). Trigger the download via
+gated `steps` (e.g. clicking an export button).
+
+## Cleanup / finally evidence for gated mutations (batch 4)
+
+```json
+{
+  "pages": [{
+    "name": "Create pen",
+    "path": "/pens/new",
+    "steps": [{ "action": "fill", "selector": "#name", "text": "walk-fixture" },
+              { "action": "click", "selector": "#save", "event": "save" }],
+    "cleanup_steps": [{ "action": "click", "selector": "[data-role=delete-walk-fixture]", "event": "delete" }],
+    "require_evidence": ["cleanup"]
+  }]
+}
+```
+
+`cleanup_steps` run **after** the page's steps, screenshot, and evidence
+capture, regardless of the page's outcome — teardown for the fixtures the gated
+steps created. They pass through the same interactions gate
+(`safety.allow_interactions` + non-prod `env_check`). A cleanup step that ran
+and failed turns the page `ASSERT_FAILED` (fixtures may be left behind);
+`require_evidence: ["cleanup"]` additionally BLOCKS the page when cleanup never
+ran at all. Cleanup evidence (`pages[].cleanup`) records each step's status.
 
 ## Schema ⟷ driver drift policy
 
@@ -348,7 +399,65 @@ asserts `mutationsPerformed: 0`.
 ```bash
 node playwright_walk.mjs --manifest m.json --base http://127.0.0.1:PORT --preflight-only
 node playwright_walk.mjs --manifest m.json --base … --preflight-only --json > readiness.json
+node playwright_walk.mjs --manifest m.json --base … --health-url http://127.0.0.1:PORT/health --preflight-only
 ```
+
+### Presweep health attestation (batch 4)
+
+`--health-url <url>` (or `WALK_HEALTH_URL`) points at a **GET-only** deployment
+endpoint. The identity row then attests the **exact environment string and full
+40-char revision** parsed from the response (fields: `environment`/`env`/
+`mix_env` + `revision`/`git_sha`/`sha`/`commit`). A short sha, a version label,
+or non-JSON is refused with a named reason — an identity a regression can't be
+pinned to is not attested. URLs in the matrix are sanitized (query dropped).
+
+To **verify** (not merely record) the deployment, supply the operator's
+expectations — the exact invocation:
+
+```bash
+node playwright_walk.mjs --manifest m.json --base http://127.0.0.1:PORT \
+  --preflight-only \
+  --health-url http://127.0.0.1:PORT/health \
+  --expect-environment dev \
+  --expect-revision 0123456789abcdef0123456789abcdef01234567
+# or via env: WALK_EXPECT_ENVIRONMENT=dev WALK_EXPECT_REVISION=<40-char sha>
+```
+
+With either expectation supplied the check **fails closed**: exact string
+equality for the environment, full 40-char hex equality (case-insensitive) for
+the revision, and **BLOCKED (exit 2)** for any mismatch, a missing/unreachable
+health URL, an unparseable deployed identity, or a malformed expectation (a
+short expected sha is refused before any network I/O). Health traffic remains
+GET-only in both modes.
+
+Batch 4 also made preflight's probes REAL instead of configuration nods:
+
+* **Tidewave** — an actual MCP initialize round-trip (read-only RPC), not
+  "url is set". Required-but-unreachable → **BLOCKED**.
+* **Preview cookie/storage** — a cookie + localStorage round-trip in a scratch
+  browser context, proving the session-injection mechanics cookie login relies
+  on. No product page involved.
+* **Artifact store** — a read-only `artifact_list` round-trip with the
+  env-provided store. Required-but-unavailable → **BLOCKED**.
+* **Collector probe** — `--preflight-only` now runs the scratch collector probe
+  (HAR/DOM/Server-Timing/ws/a11y/resource-metrics/visual/api/downloads) so
+  required evidence is PROVEN, not assumed. Scratch fixtures only: preflight
+  still never navigates a product page, never mutates, never touches a
+  baseline.
+* **Required collector gaps are BLOCKED (exit 2)** — a manifest that requires
+  evidence preflight cannot prove no longer degrades to exit 1; running anyway
+  would produce a report that silently lacks promised evidence.
+* Credentials are demanded only for the manifests **selected on the command
+  line**, never for other walks that happen to live in the repo.
+
+### Login failure always leaves evidence (batch 4)
+
+When login fails (bad selector, wrong credentials, gate blocked, cookie mint
+failed), the driver no longer dies with a bare stderr line: it writes the
+readiness **matrix** (`preflight.json`/`.txt`), a **screenshot** of where the
+browser actually was (`login-failure.png`), **results.json** with every page
+`BLOCKED` (`login failed: …`), and the **report.html** — then exits 2. Failure
+messages never contain credential values.
 
 ### Exit codes
 
@@ -370,8 +479,12 @@ Required: schema/manifests, environment safety, role credentials, app health &
 assets, Chromium/playwright-core, screenshot collector, disk space.
 Optional: deployed/source/workflow identity, Preview MCP & cookie injection,
 Tidewave/logs/correlation/LiveView, HAR, WebSocket, DOM, accessibility,
-viewport, visual baseline, resource metrics, DB read, audit actor, artifact
-publishing/durable URL, fixture cleanup, leaked sessions.
+viewport, visual baseline, resource metrics, API requests, downloads, DB read,
+audit actor, artifact publishing/durable URL, fixture cleanup, leaked sessions.
+
+"Optional" describes the category, not required evidence: any collector a
+selected manifest lists in `require_evidence` that cannot be proven is
+**BLOCKED (exit 2)**, not DEGRADED.
 
 `SKIP` (not applicable — e.g. no roles configured) never worsens the verdict.
 

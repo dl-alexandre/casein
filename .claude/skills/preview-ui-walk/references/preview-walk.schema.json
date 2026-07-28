@@ -295,6 +295,19 @@
           },
           "description": "Ordered interactions/assertions after navigate+settle. Read-only actions always run; click/fill/type/press require safety.allow_interactions and non-prod env_check."
         },
+        "cleanup_steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          },
+          "description": "Finally-style steps run AFTER the page's steps, screenshot and evidence capture, regardless of the page's outcome — put fixture teardown here. Gated exactly like mutating steps (safety.allow_interactions + non-prod env_check). A cleanup step that fails turns the page ASSERT_FAILED; require_evidence: [\"cleanup\"] additionally BLOCKS the page when cleanup did not run at all. A page whose steps or cleanup_steps contain mutating actions is pinned to one attempt and never retried."
+        },
+        "cleanup_budget_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 120000,
+          "description": "Time budget for cleanup_steps (default 20000)."
+        },
         "asset": {
           "type": "string",
           "minLength": 1,
@@ -783,7 +796,7 @@
               "BLOCKED"
             ]
           },
-          "description": "Diagnostic statuses eligible for a retry. Deliberately opt-in: retrying a real ASSERT_FAILED hides defects."
+          "description": "Diagnostic statuses eligible for a retry. The driver honors ONLY TIMEOUT and RUNTIME_ERROR — anything else listed here is dropped and recorded as dropped, never retried: replaying ASSERT_FAILED hides defects, BOUNCED hides access regressions, BLOCKED hides missing evidence. Pages with mutating steps never retry regardless."
         },
         "record_flakiness": {
           "type": "boolean",

@@ -46,6 +46,8 @@ export function pageVerdict({
   navOutcome,
   visualBlocked,
   visualFailed,
+  evidenceBlocked,
+  cleanupFailed,
 }) {
   // Interactions gate blocked required mutating steps (e.g. login fill/click).
   if (stepsBlockedOnly && stepsBlocked) {
@@ -88,6 +90,17 @@ export function pageVerdict({
     }
   }
 
+  // Required evidence that could not be collected (api/downloads/cleanup via
+  // evidenceGuard): BLOCKED before any assertion outcome, so "collector
+  // produced nothing" can never read as green.
+  if (evidenceBlocked) {
+    return {
+      status: "BLOCKED",
+      reason: evidenceBlocked.reason || "required evidence unavailable",
+      missingEvidence: evidenceBlocked.missingEvidence || [],
+    };
+  }
+
   // Required visual evidence that could not be compared: BLOCKED before any
   // assertion outcome, so "no baseline / store down" can never read as green.
   if (visualBlocked) {
@@ -124,6 +137,14 @@ export function pageVerdict({
     return {
       status: "ASSERT_FAILED",
       reason: visualFailed.reason || "visual baseline mismatch",
+    };
+  }
+  // A cleanup step that ran and lost means fixtures may be left behind — an
+  // assertion loss even when the page itself rendered fine.
+  if (cleanupFailed) {
+    return {
+      status: "ASSERT_FAILED",
+      reason: cleanupFailed.reason || "cleanup failed",
     };
   }
   if ((actionableConsole && actionableConsole.length) || (actionableNetwork && actionableNetwork.length)) {
