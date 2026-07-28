@@ -815,6 +815,132 @@ assert(
   }
 }
 
+// ── Batch 1: WebSocket / LiveView reconnect evidence ────────────────────────
+{
+  const { parsePhoenixFrame, sanitizeSocketUrl, summarize, attachWs } = await import(
+    "./ws_collector.mjs"
+  );
+  const { wsProven } = await import("./preflight_run.mjs");
+
+  // URL redaction: LiveView carries its signed token in the query string.
+  assert(
+    sanitizeSocketUrl("wss://h/live/websocket?vsn=2.0&token=SECRET") ===
+      "wss://h/live/websocket?vsn=[redacted]&token=[redacted]",
+    "socket URL query values are dropped, not masked",
+  );
+  assert(
+    !sanitizeSocketUrl("wss://h/live/websocket?token=SECRET").includes("SECRET"),
+    "socket URL never retains a token value",
+  );
+  assert(sanitizeSocketUrl("wss://h/live/websocket") === "wss://h/live/websocket", "no query is untouched");
+
+  // Phoenix wire format.
+  const join = parsePhoenixFrame(JSON.stringify(["1", "1", "lv:x", "phx_join", { url: "/x" }]));
+  assert(join.event === "phx_join" && join.topic === "lv:x", "phx_join parsed");
+  const ok = parsePhoenixFrame(JSON.stringify([null, "1", "lv:x", "phx_reply", { status: "ok", response: { rendered: "SECRET" } }]));
+  assert(ok.status === "ok", "phx_reply status parsed");
+  assert(!("response" in ok) && !JSON.stringify(ok).includes("SECRET"), "reply body never parsed out");
+  assert(parsePhoenixFrame("not json") === null, "non-JSON frame ignored");
+  assert(parsePhoenixFrame(JSON.stringify({ a: 1 })) === null, "non-array frame ignored");
+
+  const sock = (over = {}) => ({
+    url: "wss://h/live/websocket",
+    openedAtMs: 0,
+    closedAtMs: null,
+    error: null,
+    frames: [],
+    counts: { sent: 0, received: 0 },
+    liveview: { joins: 0, joinOk: 0, joinError: 0, topics: [] },
+    ...over,
+  });
+
+  // Reconnect + recovery latency measured to the successful RE-JOIN.
+  {
+    const r = summarize({
+      sockets: [
+        sock({ openedAtMs: 0, closedAtMs: 100, liveview: { joins: 1, joinOk: 1, joinError: 0, topics: ["lv:x"] } }),
+        sock({ openedAtMs: 250, liveview: { joins: 1, joinOk: 1, joinError: 0, topics: ["lv:x"] } }),
+      ],
+      opens: 2, closes: 1, errors: 0, framesDropped: 0, maxFrames: 200, frameEventsSeen: 4,
+    });
+    assert(r.reconnect.attempts === 1, "reconnect attempt detected");
+    assert(r.reconnect.recovered === 1, "recovery detected");
+    assert(r.reconnect.recoveryLatencyMs === 150, "recovery latency = close -> reopen");
+    assert(r.liveview.joined === true && r.liveview.healthy === true, "healthy LiveView");
+  }
+  // A socket that reopens but never re-joins has NOT recovered.
+  {
+    const r = summarize({
+      sockets: [
+        sock({ openedAtMs: 0, closedAtMs: 100, liveview: { joins: 1, joinOk: 1, joinError: 0, topics: [] } }),
+        sock({ openedAtMs: 200 }),
+      ],
+      opens: 2, closes: 1, errors: 0, framesDropped: 0, maxFrames: 200, frameEventsSeen: 3,
+    });
+    assert(r.reconnect.attempts === 1 && r.reconnect.recovered === 0, "reopen without re-join is not recovery");
+    assert(r.reconnect.recoveryLatencyMs === null, "no recovery latency without a re-join");
+  }
+  // Join error is unhealthy but observable.
+  {
+    const r = summarize({
+      sockets: [sock({ liveview: { joins: 1, joinOk: 0, joinError: 1, topics: ["lv:x"] } })],
+      opens: 1, closes: 0, errors: 0, framesDropped: 0, maxFrames: 200, frameEventsSeen: 2,
+    });
+    assert(r.liveview.joined === false && r.liveview.healthy === false, "join error is unhealthy");
+  }
+  // Frame evidence UNAVAILABLE must not masquerade as a quiet-but-fine socket.
+  {
+    const r = summarize({
+      sockets: [sock({ closedAtMs: 50 })],
+      opens: 1, closes: 1, errors: 0, framesDropped: 0, maxFrames: 200, frameEventsSeen: 0,
+    });
+    assert(r.frames.observable === false, "no frame events -> frames.observable false");
+    assert(r.liveview.observable === false, "LiveView state unobservable without frames");
+    assert(
+      r.liveview.joined === null && r.liveview.healthy === null,
+      "unobservable LiveView is null, never false (we cannot claim it did not join)",
+    );
+    assert(r.counts.sockets === 1 && r.reconnect.disconnects === 1, "socket-level evidence still collected");
+  }
+  // Memory bound + payload non-retention.
+  {
+    const r = summarize({
+      sockets: [sock({ frames: Array.from({ length: 5 }, () => ({ direction: "sent", size: 3 })) })],
+      opens: 1, closes: 0, errors: 0, framesDropped: 7, maxFrames: 5, frameEventsSeen: 12,
+    });
+    assert(r.frames.truncated === true && r.frames.dropped === 7, "frame cap reports what it dropped");
+    assert(r.frames.payloadsRetained === false, "collector declares payloads are never retained");
+    // No frame may carry a body: assert on KEYS, not the "payloadsRetained"
+    // flag's substring.
+    const frameKeys = new Set(r.sockets.flatMap((s) => s.frames.flatMap((f) => Object.keys(f))));
+    assert(
+      !frameKeys.has("payload") && !frameKeys.has("body") && !frameKeys.has("text"),
+      "no frame retains a payload/body/text key",
+    );
+  }
+  assert(attachWs({ on() {}, off() {} }).stop() === null, "no socket -> null evidence, not an empty shell");
+
+  // require_evidence:["ws"] must fail closed when frames are unobservable.
+  assert(wsProven({ ws: { frames: { observable: true } } }) === true, "ws proven when frames observable");
+  assert(wsProven({ ws: { frames: { observable: false } } }) === false, "ws NOT proven when frames unobservable");
+  assert(wsProven(undefined) === false, "ws NOT proven without a probe (never assume capability)");
+
+  // Regression pin for the root cause: a WebSocket cannot complete its upgrade
+  // from a route-fulfilled fake origin, which yields zero frames and looks
+  // exactly like "the driver does not support frame events". The scratch probe
+  // must therefore stand up a REAL loopback HTTP origin for the page.
+  {
+    const c = await import("./collectors.mjs");
+    assert(
+      typeof c.startScratchOrigin === "function",
+      "probe ships a real loopback origin (fake fulfilled origins cannot host a WebSocket)",
+    );
+    const origin = await c.startScratchOrigin();
+    assert(/^http:\/\/127\.0\.0\.1:\d+\//.test(origin.url), "scratch origin is real loopback http");
+    origin.close();
+  }
+}
+
 if (failed) {
   console.error(`\n${failed} check(s) failed`);
   process.exit(1);

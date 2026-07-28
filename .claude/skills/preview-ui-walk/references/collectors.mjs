@@ -150,8 +150,67 @@ export async function collectDomSnapshot(page, { maxBytes = 512 * 1024 } = {}) {
  * lets preflight report capability instead of intent. No product URL is
  * touched: the page is fed inline content plus one same-document request.
  */
+/**
+ * Minimal Phoenix-protocol WS fixture. Speaks enough of the LiveView wire format
+ * ([join_ref, ref, topic, event, payload]) to exercise join success and a
+ * server-forced disconnect, so reconnect + recovery latency are proved rather
+ * than assumed. Returns { url, close }.
+ */
+export async function startScratchOrigin() {
+  const http = await import("node:http");
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/html" });
+    res.end("<h1>preflight scratch</h1>");
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const { port } = server.address();
+  return { url: `http://127.0.0.1:${port}/`, close: () => server.close() };
+}
+
+export async function startScratchLiveSocket({ dropFirstJoin = true } = {}) {
+  // ESM import() ignores NODE_PATH, so resolve like the driver resolves
+  // playwright-core: createRequire + a global-root fallback.
+  const { createRequire } = await import("node:module");
+  const req = createRequire(import.meta.url);
+  let WebSocketServer = null;
+  for (const spec of ["ws", `${process.env.NODE_PATH || ""}/ws`.replace(/^\//, "/")]) {
+    try {
+      ({ WebSocketServer } = req(spec));
+      if (WebSocketServer) break;
+    } catch {
+      /* try next */
+    }
+  }
+  if (!WebSocketServer) return null; // ws unavailable -> caller reports MISSING
+  let joins = 0;
+  const wss = new WebSocketServer({ port: 0 });
+  wss.on("connection", (socket) => {
+    socket.on("message", (raw) => {
+      let msg = null;
+      try {
+        msg = JSON.parse(String(raw));
+      } catch {
+        return;
+      }
+      const [joinRef, ref, topic, event] = msg;
+      if (event !== "phx_join") return;
+      joins += 1;
+      // First join is accepted then dropped, forcing the client to reconnect;
+      // the second join is accepted and stays up, so recovery is observable.
+      socket.send(JSON.stringify([joinRef, ref, topic, "phx_reply", { status: "ok", response: {} }]));
+      // terminate(), not close(1006): 1006 is a RESERVED code the ws library
+      // refuses to send, and an abrupt termination is a truer simulation of the
+      // network drop a LiveView reconnect actually has to survive.
+      if (dropFirstJoin && joins === 1) setTimeout(() => socket.terminate(), 60);
+    });
+  });
+  await new Promise((r) => wss.on("listening", r));
+  const { port } = wss.address();
+  return { url: `ws://127.0.0.1:${port}/live/websocket`, close: () => wss.close() };
+}
+
 export async function probeCollectors(browserFactory) {
-  const result = { har: null, dom: null, server_timing: null, errors: [] };
+  const result = { har: null, dom: null, server_timing: null, ws: null, errors: [] };
   let browser = null;
   try {
     browser = await browserFactory();
@@ -170,6 +229,43 @@ export async function probeCollectors(browserFactory) {
     result.server_timing = await collectServerTiming(response);
     result.dom = await collectDomSnapshot(page);
     result.har = har.stop();
+
+    // WebSocket / LiveView reconnect proof, still scratch-only: the page drives
+    // a local socket, never a product URL, so preflight keeps its
+    // no-navigation-to-product guarantee.
+    try {
+      const { attachWs } = await import("./ws_collector.mjs");
+      const sock = await startScratchLiveSocket();
+      const origin = sock ? await startScratchOrigin() : null;
+      if (sock && origin) {
+        // A WebSocket needs a real page origin; a fulfilled fake origin cannot
+        // complete the upgrade, which yields zero frames and looks like missing
+        // driver support.
+        await page.goto(origin.url);
+        const { attachWsBest } = await import("./ws_collector.mjs");
+        const ws = await attachWsBest(page);
+        await page.evaluate(async (url) => {
+          // Connect, join, expect a server-forced close, then reconnect+rejoin.
+          const connect = () =>
+            new Promise((resolve) => {
+              const s = new WebSocket(url);
+              s.onopen = () => s.send(JSON.stringify(["1", "1", "lv:scratch", "phx_join", {}]));
+              s.onclose = () => resolve("closed");
+              setTimeout(() => resolve("open"), 400);
+            });
+          await connect();
+          await connect();
+        }, sock.url);
+        await new Promise((r) => setTimeout(r, 400));
+        result.ws = await ws.stop();
+        result.ws_transport = ws.transport;
+        origin.close();
+        sock.close();
+      }
+    } catch (err) {
+      result.errors.push(`ws: ${String(err?.message || err)}`);
+    }
+
     await browser.close();
     browser = null;
   } catch (err) {

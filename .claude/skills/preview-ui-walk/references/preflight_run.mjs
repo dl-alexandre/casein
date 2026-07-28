@@ -111,6 +111,19 @@ export function checkCollector(id, { required, proven }) {
 
 const PROVEN_COLLECTORS = new Set(["har", "dom", "server_timing", "screenshot"]);
 
+/**
+ * `ws` is proven only when the driver can actually observe FRAMES. Socket-level
+ * evidence (open/close/reconnect) works everywhere, but LiveView join status is
+ * derived from frames, and some Playwright/Chromium builds emit the `websocket`
+ * event while never emitting framesent/framereceived. Reporting ws as available
+ * in that case would let a manifest requiring `ws` pass with no join evidence —
+ * exactly the false green this suite exists to prevent. Callers pass the probe
+ * result; absent a probe we refuse to claim the capability.
+ */
+export function wsProven(probe) {
+  return Boolean(probe && probe.ws && probe.ws.frames && probe.ws.frames.observable);
+}
+
 export async function buildMatrix(args, deps = {}) {
   const {
     env = process.env,
@@ -156,7 +169,7 @@ export async function buildMatrix(args, deps = {}) {
     rows.push(
       checkCollector(id, {
         required: required.has(key) || id === "screenshot",
-        proven: PROVEN_COLLECTORS.has(id),
+        proven: id === "ws" ? wsProven(deps.collectorProbe) : PROVEN_COLLECTORS.has(id),
       }),
     );
   }
