@@ -42,6 +42,7 @@ import {PaneHistoryDrawer} from "./pane_history_drawer"
 import {TerminalSurface} from "./terminal_surface_hook"
 import {TmuxPaneResize} from "./tmux_pane_resize_hook"
 import {CopyText} from "./copy_text_hook"
+import {ShareText} from "./share_text_hook"
 import {ContextMenu} from "./context_menu_hook"
 import {WindowPickerSidebar} from "./window_picker_sidebar"
 import {SessionsPickerSidebar} from "./sessions_picker_sidebar"
@@ -239,7 +240,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   reconnectAfterMs: jitteredBackoff([50, 150, 350, 750, 1500, 3000], 5000),
   rejoinAfterMs: jitteredBackoff([400, 900, 1800], 5000),
   params: {_csrf_token: csrfToken, tab_id: caseinTabId()},
-  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow},
+  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ShareText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow},
 })
 
 installPickerLinkCopy()

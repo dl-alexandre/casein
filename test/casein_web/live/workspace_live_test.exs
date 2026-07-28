@@ -1602,6 +1602,18 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     send(view.pid, {:pty_data, "pane-1", binary_part(b64, 5, byte_size(b64) - 5) <> "\x07"})
 
     assert_push_event(view, "clipboard:write", %{"text" => ^text})
+
+    # The copy is also retained, so it stays recoverable when the browser
+    # refuses the unattended write — which is the normal case on iOS.
+    assert Enum.any?(
+             Casein.Terminals.ClipboardHistory.recent("ws-1"),
+             &(&1.text == text and &1.pane_id == "pane-1")
+           )
+
+    # ...and the drawer surfaces it.
+    html = render_click(view, "clipboard:toggle", %{})
+    assert html =~ ~s(id="clipboard-drawer")
+    assert html =~ text
   end
 
   test "terminal palette previews and applies a built-in tmux session template", %{

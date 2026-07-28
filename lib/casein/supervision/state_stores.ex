@@ -12,6 +12,7 @@ defmodule Casein.Supervision.StateStores do
     children = [
       Casein.Labels.Server,
       Casein.Terminals.AgentState.Server,
+      Casein.Terminals.ClipboardHistory,
       Casein.Audit.MemoryAdapter,
       Casein.Agents.AgentEvents.MemoryAdapter,
       Casein.Codex.Store.MemoryAdapter,

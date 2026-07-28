@@ -351,6 +351,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           >
             select
           </button>
+          <%!-- Not a keybar key: opens the LiveView drawer of what agents have
+               copied, so a refused clipboard write stays recoverable. --%>
+          <button
+            type="button"
+            phx-click="clipboard:toggle"
+            class={mobile_key_class()}
+            aria-label="Recent copies from agents"
+          >
+            clip
+          </button>
         </div>
         <%!-- LiveView-updated pane/window action buttons. Current-window actions
              lead; window prev/next trail since swiping already cycles focus. --%>

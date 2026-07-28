@@ -29,6 +29,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   import CaseinWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
   alias CaseinWeb.NotificationsDrawer
+  alias CaseinWeb.WorkspaceLive.Show.ClipboardDrawer
   alias CaseinWeb.WorkspaceLive.Show.ContextMenu
   alias CaseinWeb.WorkspaceLive.Show.SessionBar
 
@@ -571,6 +572,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       update_commits_behind={@update_commits_behind}
       codex_approvals={@codex_approvals}
       grok_permission_requests={@grok_permission_requests}
+    />
+    <ClipboardDrawer.clipboard_drawer
+      open={@clipboard_drawer_open}
+      entries={@clipboard_entries}
+      count={@clipboard_count}
     />
     <.leader_help_overlay
       connect_new_token={@connect_new_token}
