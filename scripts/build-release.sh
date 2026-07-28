@@ -24,13 +24,18 @@ OUTPUT_DIR="${OUTPUT_DIR:-${REPO_DIR}/release-out}"
 
 cd "${REPO_DIR}"
 
-if ! command -v docker >/dev/null 2>&1; then
+DOCKER_BIN="${CASEIN_DOCKER_BIN:-docker}"
+CLEANUP_TIMEOUT_SECONDS="${CASEIN_DOCKER_CLEANUP_TIMEOUT_SECONDS:-30}"
+
+if ! command -v "${DOCKER_BIN}" >/dev/null 2>&1; then
   echo "error: docker is required (toolchain runs in a container)" >&2
   exit 1
 fi
 
 BUILDER_TAG="casein:builder-$(date +%s)-$$"
 BUILDER_CACHE_TAG="${CASEIN_BUILDER_CACHE_TAG:-casein:builder}"
+EXTRACT_CONTAINER="casein-release-extract-$(date +%s)-$$"
+EXTRACT_CONTAINER_CREATED=0
 
 build_args=(--target builder -t "${BUILDER_TAG}" -t "${BUILDER_CACHE_TAG}")
 
@@ -54,18 +59,50 @@ add_build_arg CASEIN_RELEASE_TARGET "${CASEIN_RELEASE_TARGET:-}"
 add_build_arg CASEIN_RELEASE_CHANNEL "${CASEIN_RELEASE_CHANNEL:-}"
 add_build_arg CASEIN_UPDATE_MANIFEST_URL "${CASEIN_UPDATE_MANIFEST_URL:-}"
 
-if docker image inspect "${BUILDER_CACHE_TAG}" >/dev/null 2>&1; then
+if "${DOCKER_BIN}" image inspect "${BUILDER_CACHE_TAG}" >/dev/null 2>&1; then
   build_args+=(--cache-from "${BUILDER_CACHE_TAG}")
 fi
 
 echo ">>> building '${BUILDER_TAG}' (builder stage of Dockerfile; cache tag '${BUILDER_CACHE_TAG}')"
-docker build "${build_args[@]}" .
+"${DOCKER_BIN}" build "${build_args[@]}" .
 
 cleanup() {
+  if [ "${EXTRACT_CONTAINER_CREATED}" -eq 1 ]; then
+    if ! run_bounded_cleanup \
+      "${DOCKER_BIN}" rm -f "${EXTRACT_CONTAINER}"; then
+      echo "warning: failed or timed out removing extraction container ${EXTRACT_CONTAINER}; release validation is unaffected" >&2
+    fi
+  fi
+
   if [ "${BUILDER_TAG}" != "${BUILDER_CACHE_TAG}" ]; then
-    docker rmi -f "${BUILDER_TAG}" >/dev/null 2>&1 || true
+    run_bounded_cleanup "${DOCKER_BIN}" rmi -f "${BUILDER_TAG}" || true
   fi
 }
+
+run_bounded_cleanup() {
+  "$@" >/dev/null 2>&1 &
+  local command_pid=$!
+
+  (
+    sleep "${CLEANUP_TIMEOUT_SECONDS}"
+    kill -TERM "${command_pid}" >/dev/null 2>&1 || exit 0
+    sleep 1
+    kill -KILL "${command_pid}" >/dev/null 2>&1 || true
+  ) &
+  local watchdog_pid=$!
+  local status
+
+  if wait "${command_pid}" 2>/dev/null; then
+    status=0
+  else
+    status=$?
+  fi
+
+  kill "${watchdog_pid}" >/dev/null 2>&1 || true
+  wait "${watchdog_pid}" >/dev/null 2>&1 || true
+  return "${status}"
+}
+
 trap cleanup EXIT
 
 if [ -e "${OUTPUT_DIR}" ]; then
@@ -75,9 +112,11 @@ fi
 
 echo ">>> extracting release tree to ${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
-docker run --rm "${BUILDER_TAG}" \
-  sh -c 'cd /app/_build/prod/rel/casein && tar -cf - .' |
-  tar -C "${OUTPUT_DIR}" -xf -
+"${DOCKER_BIN}" create --name "${EXTRACT_CONTAINER}" "${BUILDER_TAG}" >/dev/null
+EXTRACT_CONTAINER_CREATED=1
+"${DOCKER_BIN}" cp \
+  "${EXTRACT_CONTAINER}:/app/_build/prod/rel/casein/." \
+  "${OUTPUT_DIR}"
 
 # Sanity-check the release looks right.
 if [ ! -x "${OUTPUT_DIR}/bin/casein" ]; then
