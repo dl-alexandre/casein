@@ -3,6 +3,23 @@
 //   node selftest.mjs
 
 import { classifyRisk } from "./classify_risk.mjs";
+import {
+  CATEGORIES,
+  EXIT,
+  STATE,
+  checkCredentials,
+  checkDisk,
+  checkEnvSafety,
+  checkLeakedSessions,
+  redact,
+  row,
+  toJson,
+  toText,
+  verdict,
+  verdictName,
+} from "./preflight.mjs";
+import { parseServerTiming, sanitizeDomHtml } from "./collectors.mjs";
+import { verify as verifyPayload } from "./payload_pack.mjs";
 import { classifyRisk as classifyRiskRuntime } from "./runtime_evidence.mjs";
 import {
   expandEnvText,
@@ -524,6 +541,131 @@ assert(
     const doc = JSON.parse(readFileSync(join(here, name), "utf8"));
     assert(doc && typeof doc === "object", `${name} parses (v1 example retained)`);
   }
+}
+
+// ── Preflight: one fixture per exit state ───────────────────────────────────
+const okRows = () => CATEGORIES.map((c) => row(c.id, STATE.OK, "ok"));
+
+assert(verdict(okRows()) === EXIT.READY, "all OK -> READY(0)");
+assert(verdictName(EXIT.READY) === "READY", "verdict names round-trip");
+
+{
+  // Optional missing -> DEGRADED(1): read-only walks may proceed.
+  const rows = okRows().map((r) => (r.id === "har" ? row("har", STATE.MISSING, "no har") : r));
+  assert(verdict(rows) === EXIT.DEGRADED, "optional MISSING -> DEGRADED(1)");
+  assert(/READ-ONLY OK/.test(toText(rows)), "DEGRADED text tells the operator read-only is allowed");
+  assert(/BLOCKED, not PASS/.test(toText(rows)), "DEGRADED text warns pages will report BLOCKED");
+}
+{
+  // Required missing -> BLOCKED(2): fail closed, do not run.
+  const rows = okRows().map((r) =>
+    r.id === "screenshot" ? row("screenshot", STATE.MISSING, "no screenshot") : r,
+  );
+  assert(verdict(rows) === EXIT.BLOCKED, "required MISSING -> BLOCKED(2) (fail closed)");
+  assert(/DO NOT RUN/.test(toText(rows)), "BLOCKED text says do not run");
+}
+{
+  const rows = okRows().map((r) => (r.id === "disk" ? row("disk", STATE.BLOCKED, "full") : r));
+  assert(verdict(rows) === EXIT.BLOCKED, "explicit BLOCKED state -> BLOCKED(2)");
+}
+{
+  // UNSAFE outranks everything, including a simultaneous required-missing row.
+  const rows = okRows().map((r) => {
+    if (r.id === "env_safety") return row("env_safety", STATE.UNSAFE, "prod-like");
+    if (r.id === "screenshot") return row("screenshot", STATE.MISSING, "none");
+    return r;
+  });
+  assert(verdict(rows) === EXIT.UNSAFE, "UNSAFE outranks BLOCKED -> UNSAFE(3)");
+}
+{
+  // A mutating walk demands affirmatively-safe env, even if nothing is missing.
+  const rows = okRows().map((r) =>
+    r.id === "env_safety" ? row("env_safety", STATE.MISSING, "MIX_ENV unset") : r,
+  );
+  assert(verdict(rows, { mutating: true }) === EXIT.UNSAFE, "mutating + unproven env -> UNSAFE(3)");
+  assert(verdict(rows, { mutating: false }) === EXIT.BLOCKED, "same rows read-only -> BLOCKED(2)");
+}
+assert(
+  verdict(okRows().map((r) => (r.id === "har" ? row("har", STATE.SKIP, "n/a") : r))) === EXIT.READY,
+  "SKIP never worsens the verdict",
+);
+
+// Environment safety fixtures.
+assert(checkEnvSafety({ MIX_ENV: "dev" }).state === STATE.OK, "MIX_ENV=dev is safe");
+assert(checkEnvSafety({ MIX_ENV: "test" }).state === STATE.OK, "MIX_ENV=test is safe");
+assert(checkEnvSafety({ MIX_ENV: "prod" }).state === STATE.UNSAFE, "MIX_ENV=prod is UNSAFE");
+assert(
+  checkEnvSafety({ MIX_ENV: "dev", PHX_HOST: "app.production.example" }).state === STATE.UNSAFE,
+  "production-looking host is UNSAFE even with MIX_ENV=dev",
+);
+assert(checkEnvSafety({}).state === STATE.MISSING, "unset MIX_ENV is unproven, not assumed safe");
+assert(
+  checkEnvSafety({}, { mutating: true }).state === STATE.UNSAFE,
+  "unproven env + mutating -> UNSAFE (never guess before mutating)",
+);
+
+// Credentials: resolution only, never the secret.
+{
+  const env = { WALK_A_EMAIL: "a@example.com", WALK_A_PASSWORD: "s3cret", WALK_B_EMAIL: "b@x.io" };
+  const r = checkCredentials(["WALK_A", "WALK_B"], env);
+  assert(r.state === STATE.MISSING, "a role missing its password is MISSING");
+  const blob = JSON.stringify(r);
+  assert(!blob.includes("s3cret") && !blob.includes("a@example.com"), "credential row leaks no secret");
+  assert(r.evidence.unresolved === 1, "credential row counts unresolved roles");
+  assert(checkCredentials([], env).state === STATE.SKIP, "no roles configured -> SKIP");
+  assert(
+    checkCredentials(["WALK_A"], env).state === STATE.OK,
+    "fully-resolved role set is OK",
+  );
+}
+assert(redact("anything").hint === "set" && redact("").hint === "unset", "redact reports only set/unset");
+assert(!("length" in redact("abcdef")), "redact never exposes secret length");
+
+assert(checkDisk(2 * 1024 ** 3).state === STATE.OK, "ample disk is OK");
+assert(checkDisk(1024).state === STATE.BLOCKED, "tiny disk is BLOCKED");
+assert(checkDisk(NaN).state === STATE.MISSING, "unknown disk is MISSING");
+assert(checkLeakedSessions(0).state === STATE.OK, "no leaked sessions is OK");
+assert(checkLeakedSessions(3).state === STATE.MISSING, "leaked sessions flagged");
+
+// JSON matrix shape + the no-mutation invariant.
+{
+  const j = toJson(okRows(), { now: "2026-01-01T00:00:00.000Z" });
+  assert(j.schema === "preview-ui-walk/preflight@1", "JSON matrix is versioned");
+  assert(j.verdict === "READY" && j.exitCode === 0, "JSON carries verdict + exit code");
+  assert(j.mutationsPerformed === 0, "preflight reports zero mutations performed");
+  assert(j.rows.length === CATEGORIES.length, "JSON matrix covers every category");
+  for (const id of [
+    "schema", "env_safety", "credentials", "app_health", "identity", "browser",
+    "preview_mcp", "tidewave", "har", "ws", "dom", "screenshot", "a11y", "viewport",
+    "visual_baseline", "resource_metrics", "db_read", "audit_actor", "artifact",
+    "cleanup", "disk", "leaked_sessions",
+  ]) {
+    assert(j.rows.some((r) => r.id === id), `matrix covers ${id}`);
+  }
+}
+
+// ── Collector batch (pure parts; the browser parts are proved by preflight) ──
+assert(parseServerTiming(null) === null, "absent Server-Timing header -> null, not empty evidence");
+assert(parseServerTiming("app;dur=1.5").metrics[0].dur === 1.5, "Server-Timing dur parsed");
+assert(
+  parseServerTiming('db;dur=2;desc="query"').metrics[0].desc === "query",
+  "Server-Timing quoted desc parsed",
+);
+assert(parseServerTiming("a, b;dur=3").metrics.length === 2, "multiple Server-Timing metrics");
+assert(
+  !sanitizeDomHtml('<input name="x" value="hunter2">').includes("hunter2"),
+  "DOM snapshot redacts input values",
+);
+assert(
+  !sanitizeDomHtml('<meta name="csrf-token" content="abc123">').includes("abc123"),
+  "DOM snapshot redacts the CSRF meta token",
+);
+
+// Payload pack determinism: committed shards must decode AND repack identically.
+{
+  const v = verifyPayload();
+  assert(v.roundTrips, "committed driver payload decodes and round-trips");
+  assert(v.deterministic, "repacking the driver reproduces byte-identical shards");
 }
 
 if (failed) {

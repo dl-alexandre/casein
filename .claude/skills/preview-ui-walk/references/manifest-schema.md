@@ -288,3 +288,85 @@ this contract, because drift is a real defect in both directions:
   `deprecated` so v1 manifests validate, and must be migrated to `login.steps`.
 * `login.path`/`login.lands_on` are required for every kind **except `"none"`**
   (a public walk has no login route to assert).
+
+## Preflight (`--preflight-only`)
+
+Answers *"can this walk run, and will its evidence mean anything?"* **without
+touching product data**. Preflight performs no product mutations — checks are
+reads, probes, or capability tests against a scratch page — and the JSON matrix
+asserts `mutationsPerformed: 0`.
+
+```bash
+node playwright_walk.mjs --manifest m.json --base http://127.0.0.1:PORT --preflight-only
+node playwright_walk.mjs --manifest m.json --base … --preflight-only --json > readiness.json
+```
+
+### Exit codes
+
+| Code | Verdict | Meaning |
+|------|---------|---------|
+| `0` | `READY` | Everything required and optional is present |
+| `1` | `DEGRADED` | Required present, **optional** evidence missing — read-only walks may proceed; affected pages report `BLOCKED`, never a false `PASS` |
+| `2` | `BLOCKED` | A **required** capability is missing, or an explicit blocker (e.g. disk full). Do not run |
+| `3` | `UNSAFE` | Target looks production-like, or a mutating walk was requested where mutation is prohibited. Never run |
+
+Severity is strictly ordered: **UNSAFE > BLOCKED > DEGRADED > READY**, so a
+prod-looking target can never be downgraded to "just missing evidence". A
+mutating walk additionally requires an affirmatively safe environment — an
+*unproven* env (no `MIX_ENV`) is `UNSAFE` for mutation, never assumed safe.
+
+### Matrix categories
+
+Required: schema/manifests, environment safety, role credentials, app health &
+assets, Chromium/playwright-core, screenshot collector, disk space.
+Optional: deployed/source/workflow identity, Preview MCP & cookie injection,
+Tidewave/logs/correlation/LiveView, HAR, WebSocket, DOM, accessibility,
+viewport, visual baseline, resource metrics, DB read, audit actor, artifact
+publishing/durable URL, fixture cleanup, leaked sessions.
+
+`SKIP` (not applicable — e.g. no roles configured) never worsens the verdict.
+
+### Secret hygiene
+
+Credential checks report **resolution only**: `set` / `unset` and which env
+prefix it came from. Never the value, never a prefix of it, and never its
+length — a length leaks entropy for short secrets. `redact/1` is the single
+funnel and is fixture-tested to expose no `length` key.
+
+## Collector batch 1: HAR, DOM, Server-Timing
+
+Real collectors, proved by preflight rather than merely declared:
+
+* **HAR** (`attachHar`) — accumulates from response events (Playwright's own
+  `recordHar` only writes at context close, too late for per-page evidence).
+  Captures url/method/status/resourceType/timing. **Bodies are deliberately not
+  captured** — walk reports are shareable and bodies routinely carry PII and
+  session material.
+* **Server-Timing** (`collectServerTiming`) — parsed from the main document
+  response header. An absent header yields `null`, i.e. honest "no evidence",
+  not an empty object that would read as "collected, nothing interesting".
+* **DOM snapshot** (`collectDomSnapshot`) — trimmed, sanitized serialized DOM.
+  Input `value=` attributes and the CSRF meta/token are redacted before the
+  snapshot ever reaches an artifact.
+
+Contract for every collector: return evidence or `null`, **never throw into the
+walk** (a collector defect must not fail an otherwise-passing page), and perform
+no mutation. Turning "required but `null`" into `BLOCKED` is `evidenceGuard`'s
+job, so fail-closed behaviour lives in exactly one place.
+
+## Payload pack tool
+
+The driver body ships gzip+base64 sharded across `playwright_walk_payload.pl*`.
+`payload_pack.mjs` is the committed, **deterministic** unpack/repack tool
+(previously the generator lived in `/tmp` and was lost):
+
+```bash
+node payload_pack.mjs unpack --out /tmp/driver.mjs
+node payload_pack.mjs repack /tmp/driver.mjs
+node payload_pack.mjs verify     # selftest calls this
+```
+
+Determinism is explicit: gzip level 9, `mtime=0`, and the OS byte normalised to
+`0xFF`, so identical source always yields byte-identical shards and a rebuild is
+never a spurious diff. `verify` asserts the committed shards both decode and
+repack identically.
