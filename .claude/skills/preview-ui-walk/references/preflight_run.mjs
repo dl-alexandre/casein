@@ -120,6 +120,10 @@ const PROVEN_COLLECTORS = new Set(["har", "dom", "server_timing", "screenshot"])
  * exactly the false green this suite exists to prevent. Callers pass the probe
  * result; absent a probe we refuse to claim the capability.
  */
+export function resourceMetricsProven(probe) {
+  return Boolean(probe && probe.resource_metrics && probe.resource_metrics.observable);
+}
+
 export function a11yProven(probe) {
   return Boolean(probe && probe.a11y && probe.a11y.observable);
 }
@@ -182,7 +186,9 @@ export async function buildMatrix(args, deps = {}) {
             ? wsProven(deps.collectorProbe)
             : id === "a11y"
               ? a11yProven(deps.collectorProbe)
-              : id === "viewport"
+              : id === "resource_metrics"
+                ? resourceMetricsProven(deps.collectorProbe)
+                : id === "viewport"
                 ? viewportProven(deps.collectorProbe)
                 : PROVEN_COLLECTORS.has(id),
       }),
