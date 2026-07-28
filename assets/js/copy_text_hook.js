@@ -13,7 +13,13 @@ export const CopyText = {
       const text = this.el.dataset.copyText || ""
       if (!text) return
 
-      const ok = copyTextWithFallback(text)
+      // The async branch can still fail after we've reported success, so
+      // correct the toast if it does rather than leaving a false "Copied".
+      const ok = copyTextWithFallback(text, undefined, {
+        onAsyncResult: (settled) => {
+          if (!settled) showClipboardToast("Copy failed", {kind: "error"})
+        }
+      })
       showClipboardToast(ok ? `Copied ${text}` : "Copy failed", {
         kind: ok ? "info" : "error"
       })
