@@ -12,12 +12,17 @@ import {
 import {
   countRuntimeErrors,
   defaultAppFramePrefixes,
+  evidenceGuard,
   extractBounceReason,
   extractExceptionFromLogs,
+  isBlockedStatus,
   isHardFailStatus,
   isSignificantErrorLine,
   normalizeAppFramePrefixes,
+  RESULT_CLASSES,
+  resultClass,
   runtimeErrorEvidence,
+  statusColor,
   verdictFixture,
 } from "./walk_verdict.mjs";
 
@@ -393,6 +398,132 @@ assert(
   }
   assert(decodeOk, "packed driver gunzips cleanly (CRC-valid)");
   assert(/preview-ui-walk/.test(src) && src.length > 10000, "decoded driver looks like the walk body");
+}
+
+// ── Normalized result classes ───────────────────────────────────────────────
+// The four consumer-facing classes must never lose the richer diagnostic
+// status, and must never report missing evidence as green.
+assert(
+  RESULT_CLASSES.join(",") === "PASS,FAILED,BLOCKED,NOT_TESTED",
+  "result classes are exactly PASS/FAILED/BLOCKED/NOT_TESTED",
+);
+assert(resultClass("PASS") === "PASS", "PASS -> PASS");
+assert(resultClass("PASS_SLOW") === "PASS", "PASS_SLOW keeps its status but classes as PASS");
+assert(resultClass("SKIPPED") === "NOT_TESTED", "SKIPPED (interactions gate) -> NOT_TESTED");
+assert(resultClass("BLOCKED") === "BLOCKED", "BLOCKED -> BLOCKED");
+for (const s of ["FAIL", "ASSERT_FAILED", "CRASHED", "RUNTIME_ERROR", "TIMEOUT"]) {
+  assert(resultClass(s) === "FAILED", `${s} -> FAILED`);
+}
+// An access-gated bounce never landed, so its assertions were not exercised:
+// NOT_TESTED, not a false green and not a flattened red.
+assert(
+  resultClass("BOUNCED", { bounce: "/dashboard" }) === "NOT_TESTED",
+  "tolerated access BOUNCED -> NOT_TESTED",
+);
+// An auth bounce (→ /login) is a real failure and must stay FAILED.
+assert(
+  resultClass("BOUNCED", { bounce: "/login" }) === "FAILED",
+  "auth BOUNCED -> FAILED",
+);
+assert(
+  resultClass("BOUNCED", { bounce: "/dashboard" }, { strictAccess: true }) === "FAILED",
+  "--strict-access promotes any BOUNCED to FAILED",
+);
+
+// ── Fail-closed: BLOCKED hard-fails by default ──────────────────────────────
+assert(isBlockedStatus("BLOCKED") && !isBlockedStatus("FAIL"), "isBlockedStatus discriminates");
+assert(
+  isHardFailStatus("BLOCKED", {}) === true,
+  "BLOCKED hard-fails by default (fail closed on missing evidence)",
+);
+assert(
+  isHardFailStatus("BLOCKED", {}, { failBlocked: false }) === false,
+  "--soft-blocked downgrades BLOCKED to informational",
+);
+assert(
+  statusColor("BLOCKED") !== statusColor("PASS") && statusColor("BLOCKED") !== statusColor("FAIL"),
+  "BLOCKED is visually distinct from both PASS and FAIL",
+);
+
+// ── Evidence guard (fail closed when a required collector produced nothing) ──
+assert(evidenceGuard([], {}) === null, "no required evidence -> no guard verdict");
+assert(evidenceGuard(undefined, {}) === null, "absent requirement list -> no guard verdict");
+assert(
+  evidenceGuard(["har"], { har: { entries: 1 } }) === null,
+  "present evidence -> no guard verdict",
+);
+{
+  const g = evidenceGuard(["har", "a11y"], { har: { entries: 1 }, a11y: null });
+  assert(g && g.status === "BLOCKED", "missing evidence yields BLOCKED");
+  assert(
+    g.missingEvidence.join(",") === "a11y" && /a11y/.test(g.reason),
+    "BLOCKED names exactly which evidence was missing",
+  );
+}
+// Empty containers count as "collected nothing", not as evidence.
+assert(
+  evidenceGuard(["har"], { har: {} })?.status === "BLOCKED",
+  "empty object is not evidence",
+);
+assert(
+  evidenceGuard(["dom"], { dom: [] })?.status === "BLOCKED",
+  "empty array is not evidence",
+);
+assert(
+  evidenceGuard(["cleanup"], { cleanup: false })?.status === "BLOCKED",
+  "false is not evidence",
+);
+// v1 compatibility: manifests that declare no requirements behave exactly as before.
+assert(
+  resultClass(verdictFixture().status) === "PASS",
+  "v1 fixture with no evidence requirements still classes PASS",
+);
+
+// ── Schema ⟷ driver contract (drift is a real defect, not cosmetics) ─────────
+// Fields the driver actually reads MUST exist in the schema, or product repos
+// get validation failures for manifests that work (and, worse, silently keep
+// fields the driver ignores — see `login.form`).
+{
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, join } = await import("node:path");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const schema = JSON.parse(readFileSync(join(here, "preview-walk.schema.json"), "utf8"));
+  const loginProps = schema.definitions.login.properties;
+  const pageProps = schema.definitions.page.properties;
+
+  for (const key of ["steps", "budget_ms", "params_from_env", "kind", "path", "lands_on"]) {
+    assert(key in loginProps, `schema login.${key} exists (driver reads it)`);
+  }
+  assert(
+    loginProps.form?.deprecated === true,
+    "schema marks login.form deprecated (driver never reads it)",
+  );
+  // kind:"none" public walks must not be forced to declare a login route.
+  assert(
+    !Array.isArray(schema.definitions.login.required),
+    "login has no unconditional required list (kind:none needs neither path nor lands_on)",
+  );
+  assert(
+    JSON.stringify(schema.definitions.login.allOf || []).includes("lands_on"),
+    "login conditionally requires path/lands_on for non-none kinds",
+  );
+  assert("asset" in pageProps, "schema page.asset exists (product tooling publishes it)");
+
+  // New collector contract.
+  assert("viewports" in schema.properties, "schema declares named viewports");
+  assert("require_evidence" in schema.properties, "schema declares require_evidence");
+  assert("retries" in schema.properties, "schema declares retries/flakiness");
+  assert("viewport" in schema.definitions, "viewport definition present");
+  const ev = schema.properties.require_evidence.items.enum;
+  for (const key of ["har", "a11y", "dom", "server_timing", "ws", "cleanup", "audit_actor"]) {
+    assert(ev.includes(key), `require_evidence enum covers ${key}`);
+  }
+  // v1 compatibility: the shipped examples must still validate unchanged.
+  for (const name of ["authed-admin-example.json", "login-click-example.json"]) {
+    const doc = JSON.parse(readFileSync(join(here, name), "utf8"));
+    assert(doc && typeof doc === "object", `${name} parses (v1 example retained)`);
+  }
 }
 
 if (failed) {

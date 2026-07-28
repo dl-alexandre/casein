@@ -123,6 +123,83 @@ export function isPassingStatus(status) {
 }
 
 /**
+ * Normalized result classes — the four states a *consumer* (report, gate,
+ * dashboard, product README) is allowed to reason about.
+ *
+ * The richer diagnostic statuses above are NOT replaced: every row keeps its
+ * `status` (BOUNCED / RUNTIME_ERROR / ASSERT_FAILED / …) for triage, and gains
+ * a `resultClass` for reporting. Collapsing straight to red/green was the old
+ * failure mode — a missing precondition looked identical to a real defect, and
+ * a page that was never exercised looked identical to a pass.
+ */
+export const RESULT_CLASSES = ["PASS", "FAILED", "BLOCKED", "NOT_TESTED"];
+
+/**
+ * BLOCKED is a first-class *diagnostic* status too: it means a precondition or
+ * required evidence was unavailable, so the assertion never got to run. It is
+ * distinct from FAILED (the assertion ran and lost) and from NOT_TESTED (we
+ * deliberately did not run it).
+ */
+export function isBlockedStatus(status) {
+  return status === "BLOCKED";
+}
+
+/**
+ * Map a diagnostic status to its normalized class.
+ *
+ *   PASS, PASS_SLOW                      -> PASS
+ *   BLOCKED                              -> BLOCKED
+ *   SKIPPED (interactions gate)          -> NOT_TESTED
+ *   BOUNCED that is *not* a hard fail    -> NOT_TESTED
+ *   everything else                      -> FAILED
+ *
+ * The tolerated-BOUNCED case is why NOT_TESTED exists rather than folding into
+ * PASS or FAILED: an access-gated page never landed, so its assertions were
+ * never exercised. Calling that PASS would be a false green; calling it FAILED
+ * would flatten the taxonomy that `isHardFailStatus` deliberately preserves for
+ * role sweeps. The diagnostic status stays BOUNCED either way.
+ */
+export function resultClass(status, row = {}, opts = {}) {
+  if (isBlockedStatus(status)) return "BLOCKED";
+  if (isPassingStatus(status)) return "PASS";
+  if (status === "SKIPPED") return "NOT_TESTED";
+  if (status === "BOUNCED" && !isHardFailStatus(status, row, opts)) return "NOT_TESTED";
+  return "FAILED";
+}
+
+/**
+ * Fail-closed evidence guard. When a manifest *requires* a collector (HAR,
+ * a11y, DB before/after, audit actor, cleanup verification, …) and the
+ * collector could not produce evidence, the page must not silently pass.
+ *
+ * Returns a BLOCKED verdict naming the missing evidence, or null when
+ * everything required is present. Callers fold the result into `pageVerdict`
+ * BEFORE any assertion runs, so "evidence unavailable" can never be reported
+ * as green.
+ *
+ *   requiredEvidence: ["har", "a11y"]  (from the manifest)
+ *   collected:        { har: {...}, a11y: null }
+ *   -> { status: "BLOCKED", reason: "required evidence unavailable: a11y" }
+ */
+export function evidenceGuard(requiredEvidence, collected = {}) {
+  const required = Array.isArray(requiredEvidence) ? requiredEvidence : [];
+  if (required.length === 0) return null;
+  const missing = required.filter((key) => {
+    const value = collected?.[key];
+    if (value == null || value === false) return true;
+    if (Array.isArray(value)) return value.length === 0;
+    if (typeof value === "object") return Object.keys(value).length === 0;
+    return false;
+  });
+  if (missing.length === 0) return null;
+  return {
+    status: "BLOCKED",
+    reason: `required evidence unavailable: ${missing.join(", ")}`,
+    missingEvidence: missing,
+  };
+}
+
+/**
  * Exit-code hard-fail set.
  *
  * Access-gating bounces (e.g. resource → /dashboard) are often expected on
@@ -138,9 +215,14 @@ export function isPassingStatus(status) {
 export function isHardFailStatus(
   status,
   row = {},
-  { strictAccess = false, failRuntimeError = true } = {},
+  { strictAccess = false, failRuntimeError = true, failBlocked = true } = {},
 ) {
   if (isPassingStatus(status)) return false;
+  // FAIL CLOSED: missing required evidence hard-fails by default. A walk that
+  // could not collect what it was told to collect has not proved anything, so
+  // it must not exit green. `failBlocked:false` (--soft-blocked) downgrades it
+  // to informational for exploratory runs only.
+  if (isBlockedStatus(status)) return failBlocked;
   if (status === "BOUNCED") {
     if (strictAccess) return true;
     if (isAuthBounce(row)) return true;
@@ -444,6 +526,10 @@ export function statusColor(status) {
     case "BOUNCED":
     case "TIMEOUT":
       return "#d29922";
+    // BLOCKED reads as "could not prove", visually distinct from both green and
+    // red so a reader never mistakes missing evidence for either.
+    case "BLOCKED":
+      return "#8957e5";
     case "CRASHED":
     case "RUNTIME_ERROR":
     case "ASSERT_FAILED":

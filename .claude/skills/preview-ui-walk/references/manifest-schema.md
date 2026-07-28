@@ -206,3 +206,85 @@ Or any draft-07 validator. Drivers should fail closed on schema-invalid manifest
 3. Keep `safety.read_only: true` until env_check is proven non-prod.
 4. Unique `report.name`; document intent in `_note` or `preview-walks/README.md`.
 5. Schema-validate; run once; tighten asserts/probes from real failures.
+
+## Normalized result classes (v1.1)
+
+Every page keeps its **diagnostic status** (`PASS`, `PASS_SLOW`, `BOUNCED`,
+`CRASHED`, `RUNTIME_ERROR`, `ASSERT_FAILED`, `TIMEOUT`, `SKIPPED`, `BLOCKED`)
+and additionally reports a **normalized class** that consumers may reason about:
+
+| Class | Meaning | Sources |
+|-------|---------|---------|
+| `PASS` | Assertions ran and held | `PASS`, `PASS_SLOW` |
+| `FAILED` | Assertions ran and lost | `FAIL`, `ASSERT_FAILED`, `CRASHED`, `RUNTIME_ERROR`, `TIMEOUT`, auth `BOUNCED` |
+| `BLOCKED` | A precondition or **required evidence** was unavailable, so nothing was proved | `BLOCKED` |
+| `NOT_TESTED` | Deliberately not exercised | `SKIPPED` (interactions gate), tolerated access `BOUNCED` |
+
+`resultClass/3` and `RESULT_CLASSES` live in `walk_verdict.mjs` and are
+fixture-tested in `selftest.mjs`. Two rules worth internalising:
+
+* A **tolerated access bounce is `NOT_TESTED`, not `PASS`.** The page never
+  landed, so its assertions never ran — reporting it green is the false-green
+  failure mode this taxonomy exists to prevent. It is not `FAILED` either,
+  because `isHardFailStatus` intentionally tolerates access gating on role
+  sweeps. An **auth** bounce (→ `/login`) is always `FAILED`.
+* **`BLOCKED` fails the run by default** (`isHardFailStatus("BLOCKED") === true`).
+  That is the fail-closed contract: a walk that could not collect what it was
+  told to collect must not exit green. `--soft-blocked` downgrades it for
+  exploratory runs only.
+
+## Required evidence (fail closed)
+
+```json
+{ "require_evidence": ["har", "a11y", "cleanup"] }
+```
+
+Declare collectors that MUST produce evidence, walk-level and/or per page
+(`pages[].require_evidence`, merged). `evidenceGuard/2` returns a `BLOCKED`
+verdict naming exactly what was missing, evaluated **before** any assertion, so
+"collector produced nothing" can never be reported as a pass. Empty objects,
+empty arrays and `false` all count as *no evidence*.
+
+Enum: `har`, `a11y`, `dom`, `server_timing`, `ws`, `resource_metrics`,
+`db_before_after`, `audit_actor`, `cleanup`, `downloads`, `api`,
+`visual_baseline`.
+
+Omitting `require_evidence` preserves v1 behaviour exactly: nothing is required.
+
+## Named viewports (responsive coverage)
+
+```json
+{ "viewports": [
+    { "name": "mobile",  "width": 390,  "height": 844 },
+    { "name": "desktop", "width": 1280, "height": 720 }
+  ] }
+```
+
+Pages walk every declared viewport unless they narrow it with
+`pages[].viewports: ["desktop"]`. Names are stable labels used in the report and
+in screenshot filenames. Keep `device_scale_factor` at `1` unless capturing for
+visual diffing — screenshot pixels and DOM bounds only align at DPR 1. Omitting
+`viewports` keeps the single default viewport (v1).
+
+## Retries and flakiness
+
+```json
+{ "retries": { "max_attempts": 2, "retry_on": ["TIMEOUT"], "record_flakiness": true } }
+```
+
+`max_attempts: 1` (the default) is v1 behaviour. `retry_on` is deliberately
+opt-in per status: retrying a genuine `ASSERT_FAILED` hides defects, so nothing
+is retried unless you name it. With `record_flakiness`, a page whose attempts
+disagree is marked flaky in the report while still reporting its final class.
+
+## Schema ⟷ driver drift policy
+
+The schema must describe what the driver actually reads. `selftest.mjs` asserts
+this contract, because drift is a real defect in both directions:
+
+* `login.steps`, `login.budget_ms`, `page.asset` were **driver/tooling features
+  missing from the schema** — product manifests that worked failed validation.
+* `login.form` is **inert**: the driver never reads it. It is retained as
+  `deprecated` so v1 manifests validate, and must be migrated to `login.steps`.
+* `login.path`/`login.lands_on` are required for every kind **except `"none"`**
+  (a public walk has no login route to assert).
