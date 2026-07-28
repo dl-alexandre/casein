@@ -1,6 +1,8 @@
 defmodule CaseinMob.OriginIdentity do
   @moduledoc false
 
+  @deprecated_devbox_origin "https://devide.devbox.milcgroup.com"
+
   @spec legacy_id(String.t()) :: String.t()
   def legacy_id(url) when is_binary(url) do
     digest =
@@ -25,11 +27,38 @@ defmodule CaseinMob.OriginIdentity do
   end
 
   @spec normalize_url(String.t()) :: String.t()
-  def normalize_url(url) do
-    url
-    |> String.trim()
+  def normalize_url(url) when is_binary(url) do
+    uri = URI.parse(String.trim(url))
+
+    port =
+      case {uri.scheme, uri.port} do
+        {"https", 443} -> nil
+        {"http", 80} -> nil
+        {_scheme, value} -> value
+      end
+
+    %URI{
+      uri
+      | scheme: downcase(uri.scheme),
+        host: downcase(uri.host),
+        port: port,
+        path: nil,
+        query: nil,
+        fragment: nil
+    }
+    |> URI.to_string()
     |> String.trim_trailing("/")
   end
+
+  @spec deprecated_origin?(String.t()) :: boolean()
+  def deprecated_origin?(url) when is_binary(url) do
+    normalize_url(url) == @deprecated_devbox_origin
+  end
+
+  def deprecated_origin?(_url), do: false
+
+  defp downcase(value) when is_binary(value), do: String.downcase(value)
+  defp downcase(value), do: value
 
   defp local_host?(host) do
     host in ["localhost", "127.0.0.1", "::1"] or

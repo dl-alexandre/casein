@@ -12,9 +12,14 @@ defmodule CaseinWeb.API.DeviceLinkControllerTest do
 
   setup do
     prev_source = Application.get_env(:casein, :workspace_source)
+    prev_canonical = Application.get_env(:casein, :canonical_public_origin)
     Application.put_env(:casein, :workspace_source, OwnedSource)
+    Application.delete_env(:casein, :canonical_public_origin)
 
-    on_exit(fn -> restore(:workspace_source, prev_source) end)
+    on_exit(fn ->
+      restore(:workspace_source, prev_source)
+      restore(:canonical_public_origin, prev_canonical)
+    end)
 
     :ok
   end
@@ -57,6 +62,41 @@ defmodule CaseinWeb.API.DeviceLinkControllerTest do
     conn = post(conn, ~p"/api/device-links/exchange", %{token: "bad-token"})
 
     assert json_response(conn, 401) == %{"error" => "invalid_pairing_token"}
+  end
+
+  test "managed origin rejects exchange, rotation, and revocation on a legacy host", %{
+    conn: conn
+  } do
+    Application.put_env(
+      :casein,
+      :canonical_public_origin,
+      "https://casein.devbox.milcgroup.com"
+    )
+
+    pairing_token =
+      ChannelAuth.sign_pairing_token(%{id: "owner", email: "owner@example.com"}, "ws-1")
+
+    legacy_conn = fn ->
+      build_conn()
+      |> Map.put(:scheme, :https)
+      |> Map.put(:host, "devide.devbox.milcgroup.com")
+      |> Map.put(:port, 443)
+    end
+
+    assert legacy_conn.()
+           |> post(~p"/api/device-links/exchange", %{token: pairing_token})
+           |> json_response(409) == %{"error" => "origin_mismatch"}
+
+    assert legacy_conn.()
+           |> post(~p"/api/device-links/rotate", %{token: "credential"})
+           |> json_response(409) == %{"error" => "origin_mismatch"}
+
+    assert conn
+           |> Map.put(:scheme, :https)
+           |> Map.put(:host, "devide.devbox.milcgroup.com")
+           |> Map.put(:port, 443)
+           |> post(~p"/api/device-links/revoke", %{token: "credential"})
+           |> json_response(409) == %{"error" => "origin_mismatch"}
   end
 
   test "issues a token for any authenticated peer (flat peer model)", %{conn: conn} do

@@ -13,8 +13,10 @@ defmodule Casein.Mobile.UserObserver do
   alias Casein.Audit.Event
   alias Casein.Mobile.AttentionInbox
   alias Casein.Mobile.Card
+  alias Casein.Mobile.LiveWork
   alias Casein.Notifications
   alias Casein.Push
+  alias Casein.Terminals.SessionDirectory
   alias Casein.Workspaces.State
 
   @registry Casein.Mobile.UserObserverRegistry
@@ -90,6 +92,14 @@ defmodule Casein.Mobile.UserObserver do
     GenServer.call(via(user_id), {:watch_workspace, workspace_id})
   end
 
+  @doc false
+  @spec reconcile_live_work(String.t(), String.t(), list()) :: snapshot()
+  def reconcile_live_work(user_id, workspace_id, tabs)
+      when is_binary(user_id) and is_binary(workspace_id) and is_list(tabs) do
+    {:ok, _pid} = ensure_started(user_id)
+    GenServer.call(via(user_id), {:reconcile_live_work, workspace_id, tabs})
+  end
+
   @spec needs_review_changed(String.t(), map()) :: :ok
   def needs_review_changed(user_id, attrs) when is_binary(user_id) and is_map(attrs) do
     cast_card_event(user_id, {:needs_review_changed, attrs})
@@ -150,14 +160,29 @@ defmodule Casein.Mobile.UserObserver do
   @spec stop(String.t()) :: :ok
   def stop(user_id) when is_binary(user_id) do
     case Registry.lookup(@registry, user_id) do
-      [{pid, _value}] -> GenServer.call(pid, :stop)
-      [] -> :ok
+      [{pid, _value}] ->
+        try do
+          GenServer.call(pid, :stop)
+        catch
+          :exit, {:noproc, _call} -> :ok
+        end
+
+      [] ->
+        :ok
     end
   end
 
   @impl true
   def init(user_id) do
-    state = %{user_id: user_id, version: 0, cards: %{}, watched_workspaces: MapSet.new()}
+    state = %{
+      user_id: user_id,
+      version: 0,
+      cards: %{},
+      watched_workspaces: MapSet.new(),
+      live_work_seen: MapSet.new(),
+      live_work_hydrations: %{}
+    }
+
     emit([:user_observer, :start], %{count: 1}, %{user_id: user_id, observer_pid: self()})
     {:ok, state}
   end
@@ -180,7 +205,13 @@ defmodule Casein.Mobile.UserObserver do
     state =
       state
       |> unsubscribe_all()
-      |> Map.merge(%{version: state.version + 1, cards: %{}, watched_workspaces: MapSet.new()})
+      |> Map.merge(%{
+        version: state.version + 1,
+        cards: %{},
+        watched_workspaces: MapSet.new(),
+        live_work_seen: MapSet.new(),
+        live_work_hydrations: %{}
+      })
 
     broadcast(state)
     {:reply, :ok, state}
@@ -195,10 +226,22 @@ defmodule Casein.Mobile.UserObserver do
       {:reply, :ok, state}
     else
       :ok = Audit.subscribe(workspace_id)
+      :ok = SessionDirectory.subscribe(workspace_id, workspace_name: workspace_name(workspace_id))
+      hydration_ref = make_ref()
+      hydrate_live_work_async(self(), workspace_id, hydration_ref)
 
       {:reply, :ok,
-       %{state | watched_workspaces: MapSet.put(state.watched_workspaces, workspace_id)}}
+       %{
+         state
+         | watched_workspaces: MapSet.put(state.watched_workspaces, workspace_id),
+           live_work_hydrations: Map.put(state.live_work_hydrations, workspace_id, hydration_ref)
+       }}
     end
+  end
+
+  def handle_call({:reconcile_live_work, workspace_id, tabs}, _from, state) do
+    state = reconcile_live_work_state(state, workspace_id, tabs)
+    {:reply, snapshot_payload(state), state}
   end
 
   @impl true
@@ -253,6 +296,46 @@ defmodule Casein.Mobile.UserObserver do
     state = handle_audit_event(state, event)
     state = apply_lifecycle_transition(state, record_lifecycle_event(state, event))
     {:noreply, state}
+  end
+
+  def handle_info(
+        {SessionDirectory, {:sessions_updated, workspace_id, tabs}},
+        state
+      ) do
+    if MapSet.member?(state.watched_workspaces, workspace_id) do
+      was_hydrating = Map.has_key?(state.live_work_hydrations, workspace_id)
+
+      state = %{
+        state
+        | live_work_seen: MapSet.put(state.live_work_seen, workspace_id),
+          live_work_hydrations: Map.delete(state.live_work_hydrations, workspace_id)
+      }
+
+      next_state = reconcile_live_work_state(state, workspace_id, tabs)
+      if was_hydrating and next_state.version == state.version, do: broadcast(next_state)
+      {:noreply, next_state}
+    else
+      {:noreply, state}
+    end
+  end
+
+  def handle_info({:live_work_hydrated, workspace_id, hydration_ref, tabs}, state) do
+    current_ref = Map.get(state.live_work_hydrations, workspace_id)
+
+    if MapSet.member?(state.watched_workspaces, workspace_id) and
+         current_ref == hydration_ref and
+         not MapSet.member?(state.live_work_seen, workspace_id) do
+      state = %{
+        state
+        | live_work_hydrations: Map.delete(state.live_work_hydrations, workspace_id)
+      }
+
+      next_state = reconcile_live_work_state(state, workspace_id, tabs)
+      if next_state.version == state.version, do: broadcast(next_state)
+      {:noreply, next_state}
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_info(_message, state), do: {:noreply, state}
@@ -354,9 +437,89 @@ defmodule Casein.Mobile.UserObserver do
   defp unsubscribe_all(state) do
     Enum.each(state.watched_workspaces, fn workspace_id ->
       Phoenix.PubSub.unsubscribe(Casein.PubSub, Audit.topic(workspace_id))
+      SessionDirectory.unsubscribe(workspace_id)
     end)
 
     %{state | watched_workspaces: MapSet.new()}
+  end
+
+  defp hydrate_live_work_async(observer, workspace_id, hydration_ref) do
+    Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
+      tabs = SessionDirectory.tabs(workspace_id, workspace_name: workspace_name(workspace_id))
+      send(observer, {:live_work_hydrated, workspace_id, hydration_ref, tabs})
+    end)
+
+    :ok
+  end
+
+  defp reconcile_live_work_state(state, workspace_id, tabs) do
+    projected =
+      LiveWork.project(
+        state.user_id,
+        workspace_id,
+        workspace_name(workspace_id),
+        tabs,
+        now()
+      )
+
+    existing_live =
+      state.cards
+      |> Enum.filter(fn {_key, card} ->
+        card.workspace_id == workspace_id and card.source == "live_work"
+      end)
+      |> Map.new()
+
+    projected_by_key =
+      projected
+      |> Enum.reject(fn card ->
+        case Map.get(state.cards, Card.key(card)) do
+          %{source: source} when source != "live_work" -> true
+          _card -> false
+        end
+      end)
+      |> Map.new(&{Card.key(&1), &1})
+
+    next_cards =
+      state.cards
+      |> Map.drop(Map.keys(existing_live))
+      |> Map.merge(projected_by_key)
+
+    if live_fingerprint(existing_live) == live_fingerprint(projected_by_key) do
+      state
+    else
+      next_cards =
+        Enum.reduce(projected_by_key, next_cards, fn {key, card}, cards ->
+          case Map.get(existing_live, key) do
+            %{created_at: created_at} ->
+              Map.put(cards, key, %{card | created_at: created_at})
+
+            _missing ->
+              cards
+          end
+        end)
+
+      state = %{state | version: state.version + 1, cards: next_cards}
+      broadcast(state)
+      state
+    end
+  end
+
+  defp live_fingerprint(cards) do
+    cards
+    |> Enum.map(fn {key, card} ->
+      {key,
+       Map.take(card, [
+         :source,
+         :kind,
+         :status,
+         :title,
+         :body,
+         :context,
+         :meta,
+         :expires_at
+       ])}
+    end)
+    |> Enum.sort()
   end
 
   defp cast_card_event(user_id, event) do
@@ -369,6 +532,7 @@ defmodule Casein.Mobile.UserObserver do
     %{
       user_id: state.user_id,
       version: state.version,
+      hydrating_workspaces: Map.keys(state.live_work_hydrations),
       cards:
         state.cards
         |> Map.values()

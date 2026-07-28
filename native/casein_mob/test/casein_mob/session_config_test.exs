@@ -68,6 +68,7 @@ defmodule CaseinMob.SessionConfigTest do
                display_name: "Devbox",
                url: "https://casein.devbox.test",
                active?: true,
+               read_only?: false,
                last_workspace_id: "devbox-ws"
              },
              %{
@@ -75,6 +76,7 @@ defmodule CaseinMob.SessionConfigTest do
                display_name: "Local Mac",
                url: "http://192.168.1.72:57585",
                active?: false,
+               read_only?: false,
                last_workspace_id: "mac-ws"
              }
            ]
@@ -111,6 +113,7 @@ defmodule CaseinMob.SessionConfigTest do
                display_name: "mac.test",
                url: "https://mac.test",
                active?: false,
+               read_only?: false,
                last_workspace_id: nil
              }
            ]
@@ -197,6 +200,125 @@ defmodule CaseinMob.SessionConfigTest do
                "id" => "tampered-origin",
                "display_name" => "Other"
              })
+  end
+
+  test "deprecated Devbox profile stays distinct, credential-free, and read-only" do
+    old_url = "https://devide.devbox.milcgroup.com"
+    canonical_url = "https://casein.devbox.milcgroup.com"
+
+    SessionConfig.put_pairing(%{
+      origin_id: "installation-1",
+      display_name: "Devbox",
+      url: old_url,
+      token: "old-token"
+    })
+
+    assert SessionConfig.connection() == :error
+
+    SessionConfig.put_pairing(%{
+      origin_id: "installation-1",
+      display_name: "Devbox",
+      url: canonical_url,
+      token: "canonical-token"
+    })
+
+    old_id = OriginIdentity.legacy_id(old_url)
+
+    assert SessionConfig.host_profiles() == [
+             %{
+               origin_id: "installation-1",
+               display_name: "Devbox",
+               url: canonical_url,
+               active?: true,
+               read_only?: false,
+               last_workspace_id: nil
+             },
+             %{
+               origin_id: old_id,
+               display_name: "Devbox (legacy)",
+               url: old_url,
+               active?: false,
+               read_only?: true,
+               last_workspace_id: nil
+             }
+           ]
+
+    assert SessionConfig.pairing() == {:ok, canonical_url, "canonical-token"}
+    assert SessionConfig.activate_origin(old_id) == :error
+    assert SessionConfig.activate_host(old_url) == :error
+  end
+
+  test "stored deprecated stable profile migrates without leaking token or resume state" do
+    old_url = "https://devide.devbox.milcgroup.com"
+
+    Mob.State.put(:session_host_profiles, %{
+      "installation-1" => %{
+        origin_id: "installation-1",
+        display_name: "Devbox",
+        url: old_url,
+        token: "must-be-dropped",
+        pinned_workspaces: ["old-ws"],
+        resume_context: %{workspace_id: "old-ws"}
+      }
+    })
+
+    Mob.State.put(:session_active_host, "installation-1")
+
+    assert SessionConfig.connection() == :error
+    assert SessionConfig.pairing() == :error
+
+    assert [
+             %{
+               origin_id: old_id,
+               read_only?: true,
+               active?: false,
+               last_workspace_id: "old-ws"
+             }
+           ] = SessionConfig.host_profiles()
+
+    assert old_id == OriginIdentity.legacy_id(old_url)
+  end
+
+  test "deprecated durable pairing fallback is ignored after profile migration" do
+    old_url = "https://devide.devbox.milcgroup.com"
+
+    Mob.State.put(:session_host_profiles, %{
+      "installation-1" => %{
+        origin_id: "installation-1",
+        display_name: "Devbox",
+        url: old_url,
+        token: "must-never-reconnect"
+      }
+    })
+
+    Mob.State.put(:session_active_host, "installation-1")
+
+    Mob.State.put(:session_pairing, %{
+      origin_id: "installation-1",
+      display_name: "Devbox",
+      url: old_url,
+      token: "must-never-reconnect"
+    })
+
+    assert SessionConfig.pairing() == :error
+    assert SessionConfig.connection() == :error
+  end
+
+  test "equivalent deprecated origin spellings are credential-free and cannot activate" do
+    for url <- [
+          "https://DEVIDE.devbox.milcgroup.com",
+          "https://devide.devbox.milcgroup.com:443/",
+          "https://devide.devbox.milcgroup.com/pair/ws?source=old"
+        ] do
+      SessionConfig.clear_all()
+      SessionConfig.put_pairing(%{origin_id: "stable", url: url, token: "must-drop"})
+
+      assert SessionConfig.pairing() == :error
+      assert SessionConfig.connection() == :error
+      assert [%{read_only?: true, url: normalized}] = SessionConfig.host_profiles()
+      assert normalized == "https://devide.devbox.milcgroup.com"
+      assert SessionConfig.activate_host(url) == :error
+    end
   end
 
   test "URL-keyed profile storage migrates without losing credentials or resume context" do

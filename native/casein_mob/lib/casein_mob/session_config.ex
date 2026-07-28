@@ -29,7 +29,7 @@ defmodule CaseinMob.SessionConfig do
   @doc "Returns `{:ok, url, token}` if a pairing exists, else `:error`."
   @spec pairing() :: {:ok, String.t(), String.t()} | :error
   def pairing do
-    case runtime_default_pairing() || active_profile() || legacy_pairing() do
+    case runtime_default_pairing() || active_profile() do
       %{url: url, token: token} when is_binary(url) and is_binary(token) -> {:ok, url, token}
       _ -> :error
     end
@@ -38,7 +38,7 @@ defmodule CaseinMob.SessionConfig do
   @doc "Active connection details including the stable origin descriptor."
   @spec connection() :: {:ok, map()} | :error
   def connection do
-    case runtime_default_pairing() || active_profile() || legacy_pairing() do
+    case runtime_default_pairing() || active_profile() do
       %{url: url, token: token} = profile when is_binary(url) and is_binary(token) ->
         {:ok, normalize_profile(profile)}
 
@@ -54,6 +54,7 @@ defmodule CaseinMob.SessionConfig do
             display_name: String.t(),
             url: String.t(),
             active?: boolean(),
+            read_only?: boolean(),
             last_workspace_id: String.t() | nil
           }
         ]
@@ -68,6 +69,7 @@ defmodule CaseinMob.SessionConfig do
         display_name: profile.display_name,
         url: profile.url,
         active?: profile.origin_id == active_id,
+        read_only?: profile.read_only,
         last_workspace_id: last_workspace_id(profile)
       }
     end)
@@ -91,7 +93,11 @@ defmodule CaseinMob.SessionConfig do
       |> Map.merge(Map.take(incoming, [:origin_id, :display_name, :url, :token]))
 
     Mob.State.put(@profiles_key, Map.put(profiles(), profile.origin_id, profile))
-    activate_profile(profile)
+
+    unless profile.read_only do
+      activate_profile(profile)
+    end
+
     :ok
   end
 
@@ -99,7 +105,8 @@ defmodule CaseinMob.SessionConfig do
   @spec activate_host(String.t()) :: {:ok, String.t(), String.t()} | :error
   def activate_host(id_or_url) when is_binary(id_or_url) do
     case find_profile(id_or_url) do
-      %{url: active_url, token: token} = profile ->
+      %{url: active_url, token: token, read_only: false} = profile
+      when is_binary(token) ->
         activate_profile(profile)
         {:ok, active_url, token}
 
@@ -112,7 +119,8 @@ defmodule CaseinMob.SessionConfig do
   @spec activate_origin(String.t()) :: {:ok, map()} | :error
   def activate_origin(origin_id) when is_binary(origin_id) do
     case Map.get(profiles(), origin_id) do
-      %{url: url, token: token} = profile when is_binary(url) and is_binary(token) ->
+      %{url: url, token: token, read_only: false} = profile
+      when is_binary(url) and is_binary(token) ->
         activate_profile(profile)
         {:ok, profile}
 
@@ -412,20 +420,31 @@ defmodule CaseinMob.SessionConfig do
 
   defp normalize_profile(profile) when is_map(profile) do
     url = normalize_url(map_value(profile, :url, ""))
+    deprecated? = OriginIdentity.deprecated_origin?(url)
+    read_only? = deprecated? or map_value(profile, :read_only, false) == true
 
     origin_id =
-      present(map_value(profile, :origin_id)) ||
+      if deprecated? do
         OriginIdentity.legacy_id(url)
+      else
+        present(map_value(profile, :origin_id)) ||
+          OriginIdentity.legacy_id(url)
+      end
 
     display_name =
-      present(map_value(profile, :display_name)) ||
-        OriginIdentity.display_name(url)
+      if deprecated? do
+        "Devbox (legacy)"
+      else
+        present(map_value(profile, :display_name)) ||
+          OriginIdentity.display_name(url)
+      end
 
     %{
       origin_id: origin_id,
       display_name: display_name,
       url: url,
-      token: map_value(profile, :token),
+      token: if(read_only?, do: nil, else: map_value(profile, :token)),
+      read_only: read_only?,
       pinned_workspaces: map_value(profile, :pinned_workspaces, []),
       resume_context: map_value(profile, :resume_context),
       cached_cards: map_value(profile, :cached_cards, []),
@@ -434,7 +453,13 @@ defmodule CaseinMob.SessionConfig do
   end
 
   defp default_profile do
-    %{pinned_workspaces: [], resume_context: nil, cached_cards: [], cards_cached_at: nil}
+    %{
+      read_only: false,
+      pinned_workspaces: [],
+      resume_context: nil,
+      cached_cards: [],
+      cards_cached_at: nil
+    }
   end
 
   defp cache_card(card, origin_id, display_name, cached_at) do

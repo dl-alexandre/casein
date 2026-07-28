@@ -27,7 +27,7 @@ defmodule CaseinMob.DeviceLink do
     with {:ok, legacy} <- legacy_pairing(payload) do
       case exchange_url(payload) do
         nil -> {:ok, legacy}
-        url -> exchange_or_fallback(url, legacy)
+        url -> exchange_or_fallback(url, legacy, stable_descriptor?(payload))
       end
     end
   end
@@ -58,20 +58,25 @@ defmodule CaseinMob.DeviceLink do
     end
   end
 
-  defp exchange_or_fallback(url, legacy) do
-    if allowed_transport?(url) do
-      do_exchange_or_fallback(url, legacy)
+  defp exchange_or_fallback(url, legacy, stable_descriptor?) do
+    with true <- allowed_transport?(url),
+         true <- same_origin?(url, legacy.url) do
+      do_exchange_or_fallback(url, legacy, stable_descriptor?)
     else
-      {:error, :insecure_transport}
+      false ->
+        if allowed_transport?(url),
+          do: {:error, :origin_mismatch},
+          else: {:error, :insecure_transport}
     end
   end
 
-  defp do_exchange_or_fallback(url, legacy) do
+  defp do_exchange_or_fallback(url, legacy, stable_descriptor?) do
     case exchange_client().(url, exchange_request(legacy)) do
       {:ok, pairing} ->
-        {:ok, pairing}
+        validate_exchange_pairing(pairing, legacy)
 
-      {:error, reason} when reason in [:not_found, :unavailable, :request_failed] ->
+      {:error, reason}
+      when not stable_descriptor? and reason in [:not_found, :unavailable, :request_failed] ->
         {:ok, legacy}
 
       {:error, reason} ->
@@ -124,6 +129,7 @@ defmodule CaseinMob.DeviceLink do
 
   defp legacy_pairing(payload) do
     url = first_text([value(payload, :url), nested_value(payload, [:origin, :base_url])])
+    declared_base_url = first_text([nested_value(payload, [:origin, :base_url])])
 
     pairing = %{
       url: url,
@@ -147,9 +153,16 @@ defmodule CaseinMob.DeviceLink do
         ]) || origin_display_name(url)
     }
 
-    if usable_pairing?(pairing) and allowed_transport?(pairing.url),
-      do: {:ok, pairing},
-      else: {:error, :invalid_payload}
+    cond do
+      not usable_pairing?(pairing) or not allowed_transport?(pairing.url) ->
+        {:error, :invalid_payload}
+
+      is_binary(declared_base_url) and not same_origin?(declared_base_url, pairing.url) ->
+        {:error, :origin_mismatch}
+
+      true ->
+        {:ok, pairing}
+    end
   end
 
   defp exchange_request(legacy) do
@@ -205,6 +218,34 @@ defmodule CaseinMob.DeviceLink do
       value(payload, :token_exchange_url),
       nested_value(payload, [:origin, :token_exchange_url])
     ])
+  end
+
+  defp stable_descriptor?(payload) do
+    usable_text?(nested_value(payload, [:origin, :id])) or
+      usable_text?(value(payload, :origin_id))
+  end
+
+  defp validate_exchange_pairing(pairing, expected) do
+    pairing_origin_id = value(pairing, :origin_id)
+    pairing_url = value(pairing, :url)
+    pairing_workspace_id = value(pairing, :workspace_id)
+
+    cond do
+      not is_map(pairing) ->
+        {:error, :invalid_response}
+
+      pairing_origin_id != expected.origin_id ->
+        {:error, :origin_mismatch}
+
+      not same_origin?(pairing_url, expected.url) ->
+        {:error, :origin_mismatch}
+
+      pairing_workspace_id != expected.workspace_id ->
+        {:error, :resource_mismatch}
+
+      true ->
+        {:ok, pairing}
+    end
   end
 
   defp first_resource_id(payload, kind) do
@@ -276,6 +317,27 @@ defmodule CaseinMob.DeviceLink do
   end
 
   defp allowed_transport?(_url), do: false
+
+  defp same_origin?(left, right) when is_binary(left) and is_binary(right) do
+    origin_tuple(left) == origin_tuple(right)
+  end
+
+  defp same_origin?(_left, _right), do: false
+
+  defp origin_tuple(url) do
+    case URI.parse(url) do
+      %URI{scheme: scheme, host: host, port: port}
+      when is_binary(scheme) and is_binary(host) ->
+        {String.downcase(scheme), String.downcase(host), effective_port(scheme, port)}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp effective_port("https", nil), do: 443
+  defp effective_port("http", nil), do: 80
+  defp effective_port(_scheme, port), do: port
 
   defp local_host?(host) when host in ["localhost", "127.0.0.1", "::1"], do: true
   defp local_host?(host), do: String.ends_with?(host, ".local") or private_ipv4?(host)

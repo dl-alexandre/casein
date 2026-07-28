@@ -182,7 +182,11 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
     assert reply.user_id == user_id
     assert reply.cards == []
-    assert_push "cards_snapshot", %{cards: []}, 1_000
+    assert reply.live_work.status == "hydrating"
+
+    assert_push "cards_snapshot",
+                %{cards: [], live_work: %{status: "authoritative"}},
+                1_000
 
     Ledger.approval_requested(%{
       workspace_id: workspace_id,
@@ -191,7 +195,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
       command_id: "compile"
     })
 
-    assert_push "cards_snapshot", payload, 1_000
+    payload = await_card_snapshot()
     assert Jason.encode!(payload)
     assert [card] = payload.cards
     assert card.type == "needs_review"
@@ -240,7 +244,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
     assert_reply ref, :error, %{reason: "workspace_scope_mismatch"}, 1_000
 
-    assert_push "cards_snapshot", payload, 1_000
+    payload = await_card_snapshot()
     assert [card] = payload.cards
     assert card.type == "connection_issue"
     assert card.workspace_id == "other-workspace"
@@ -1390,6 +1394,11 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
   defp configure_ready_push_provider do
     Application.put_env(:casein, :push_provider, Casein.Push.TestProvider)
+  end
+
+  defp await_card_snapshot do
+    assert_push "cards_snapshot", payload, 1_000
+    if payload.cards == [], do: await_card_snapshot(), else: payload
   end
 
   defp restore_env(key, nil), do: Application.delete_env(:casein, key)

@@ -44,8 +44,44 @@ defmodule Casein.Origin do
     %{id: id(), display_name: display_name(base_url)}
   end
 
+  @doc """
+  Returns the configured public origin for a managed installation.
+
+  Desktop and LAN installations intentionally leave this unset because their
+  reachable address is selected by the operator at pairing time.
+  """
+  @spec canonical_base_url() :: String.t() | nil
+  def canonical_base_url do
+    case configured_string(:canonical_public_origin) do
+      nil -> nil
+      url -> normalize_base_url(url)
+    end
+  end
+
+  @doc "Selects the managed canonical origin, or the normalized request origin."
+  @spec public_base_url(String.t()) :: String.t()
+  def public_base_url(request_base_url) when is_binary(request_base_url) do
+    canonical_base_url() || normalize_base_url(request_base_url)
+  end
+
+  @doc "Fail-closed request-origin check for credential-bearing device routes."
+  @spec authorize_request_base(String.t()) :: :ok | {:error, :origin_mismatch}
+  def authorize_request_base(request_base_url) when is_binary(request_base_url) do
+    case canonical_base_url() do
+      nil ->
+        :ok
+
+      canonical ->
+        if normalize_base_url(request_base_url) == canonical,
+          do: :ok,
+          else: {:error, :origin_mismatch}
+    end
+  end
+
   @spec pairing_descriptor(String.t()) :: map()
   def pairing_descriptor(base_url) when is_binary(base_url) do
+    base_url = public_base_url(base_url)
+
     public_descriptor(base_url)
     |> Map.merge(%{
       name: display_name(base_url),
@@ -68,6 +104,24 @@ defmodule Casein.Origin do
         nil
     end
   end
+
+  defp normalize_base_url(url) do
+    uri = URI.parse(String.trim(url))
+
+    port =
+      case {uri.scheme, uri.port} do
+        {"https", 443} -> nil
+        {"http", 80} -> nil
+        {_scheme, value} -> value
+      end
+
+    %URI{uri | host: downcase(uri.host), port: port, path: nil, query: nil, fragment: nil}
+    |> URI.to_string()
+    |> String.trim_trailing("/")
+  end
+
+  defp downcase(host) when is_binary(host), do: String.downcase(host)
+  defp downcase(host), do: host
 
   defp endpoint_base_url do
     case Application.get_env(:casein, CaseinWeb.Endpoint, []) |> Keyword.get(:url, []) do

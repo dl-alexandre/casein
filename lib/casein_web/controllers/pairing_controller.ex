@@ -14,11 +14,24 @@ defmodule CaseinWeb.PairingController do
   alias Casein.Origin
   alias Casein.Workspaces
 
+  def show(conn, %{"workspace_id" => workspace_id}) do
+    request_base = base_url(conn)
+
+    with :ok <- Origin.authorize_request_base(request_base) do
+      show_pairing(conn, workspace_id, Origin.public_base_url(request_base))
+    else
+      {:error, :origin_mismatch} ->
+        redirect(conn,
+          external: Origin.canonical_base_url() <> ~p"/pair/#{workspace_id}"
+        )
+    end
+  end
+
   # Every interpolation in page/4 is Plug.HTML.html_escape'd (workspace_id, base,
   # code); qr_svg is derived from a Base64url string (safe charset) rendered as
   # the intended SVG markup. Sobelow can't see through the string-built HTML.
   # sobelow_skip ["XSS.HTML"]
-  def show(conn, %{"workspace_id" => workspace_id}) do
+  defp show_pairing(conn, workspace_id, base) do
     user = conn.assigns[:current_user] || %{}
     user_id = user[:id]
 
@@ -26,8 +39,6 @@ defmodule CaseinWeb.PairingController do
          {:ok, workspace} <- Workspaces.get(workspace_id),
          true <- Workspaces.viewer_terminal_owner?(workspace, user) do
       token = ChannelAuth.sign_pairing_token(user, workspace_id)
-      base = base_url(conn)
-
       # One opaque pairing code carries everything the device needs. The QR
       # encodes it (scan path) and it's shown as copyable text (paste path), so
       # both device-input methods consume the same string.

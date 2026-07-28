@@ -412,7 +412,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
       )
 
     assert find(view, :button, text: "Needs Me")
-    assert find(view, :button, text: "Working")
+    assert find(view, :button, text: "Live")
 
     # Default segment surfaces the actionable card and hides the running one.
     assert text(view) =~ "Needs review now"
@@ -490,6 +490,20 @@ defmodule CaseinMob.SessionDashboardScreenTest do
       |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
 
     assert text(view) =~ "Nothing needs you"
+  end
+
+  test "hydrating live work never presents an authoritative empty state" do
+    SessionConfig.put_pairing("https://casein.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot, %{"cards" => [], "live_work" => %{"status" => "hydrating"}}}
+      )
+
+    assert text(view) =~ "Syncing live work"
+    refute text(view) =~ "Nothing needs you"
   end
 
   test "attention projection explains priority, required decision, and changes since viewed" do

@@ -19,6 +19,7 @@ REVISION="${2:-manual}"
 APP_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/casein}"
 SERVICE="${CASEIN_SYSTEMD_SERVICE:-casein}"
 ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
+CANONICAL_DEVBOX_HOST="casein.devbox.milcgroup.com"
 OPERATOR_CONFIG_FILE="${CASEIN_OPERATOR_CONFIG_FILE:-/etc/casein/operator.json}"
 USER_NAME="${CASEIN_DEPLOY_USER:-devbox}"
 GROUP_NAME="${CASEIN_DEPLOY_GROUP:-devbox}"
@@ -360,6 +361,16 @@ for key in PHX_HOST SECRET_KEY_BASE DATABASE_URL CASEIN_FORWARD_AUTH_EMAIL_DOMAI
   fi
 done
 
+configured_phx_host="$(
+  sudo awk -F= '/^PHX_HOST=/{print $2}' "${ENV_FILE}" |
+    tail -n 1
+)"
+
+if [ "${configured_phx_host}" != "${CANONICAL_DEVBOX_HOST}" ]; then
+  echo "error: PHX_HOST must be ${CANONICAL_DEVBOX_HOST} for a devbox deploy; got ${configured_phx_host:-<missing>}" >&2
+  exit 1
+fi
+
 sudo mkdir -p "${INST_DIR}"
 sudo chown "${USER_NAME}:${GROUP_NAME}" "${INST_DIR}"
 
@@ -522,7 +533,7 @@ CURRENT_SYMLINK_SWAPPED=1
 # repairs the exact legacy /run/casein/current.sock route because the external
 # manager may regenerate Caddy after a successful activation.
 CADDY_HOST="$(sudo awk -F= '/^PHX_HOST=/{print $2}' "${ENV_FILE}" | tail -n 1)"
-CADDY_HOST="${CADDY_HOST:-casein.devbox.milcgroup.com}"
+CADDY_HOST="${CADDY_HOST:-${CANONICAL_DEVBOX_HOST}}"
 casein_reconcile_caddy_upstream "${CADDY_HOST}" migration || true
 
 log "verifying deploy handoff health"

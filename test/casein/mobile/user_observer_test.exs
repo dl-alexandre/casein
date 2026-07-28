@@ -4,6 +4,7 @@ defmodule Casein.Mobile.UserObserverTest do
   alias Casein.Audit
   alias Casein.Mobile.{AttentionInbox, UserObserver}
   alias Casein.Runs.Ledger
+  alias Casein.Terminals.Session.Info
   alias Casein.Workspace
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.MemoryAdapter
@@ -165,6 +166,79 @@ defmodule Casein.Mobile.UserObserverTest do
     assert_receive {:mobile_cards_snapshot, %{cards: []}}, 1_000
   end
 
+  test "live work reconciliation hydrates, dedupes, and removes only its own cards" do
+    user_id = unique_user()
+    prepare_user(user_id)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, UserObserver.card_events_topic())
+
+    tab = %Info{
+      id: "agent-runtime-1",
+      kind: :agent,
+      workspace_id: "ws-1",
+      runner_id: "runtime-1",
+      status: :active,
+      metadata: %{
+        agent: "codex",
+        windows: [%{conversation_title: "Fix visibility", agent_state: :working}]
+      }
+    }
+
+    first = UserObserver.reconcile_live_work(user_id, "ws-1", [tab])
+    assert [live] = first.cards
+    assert live.source == "live_work"
+    assert live.title == "Fix visibility"
+    refute_receive {:mobile_card_created, _card}, 50
+
+    duplicate = UserObserver.reconcile_live_work(user_id, "ws-1", [tab])
+    assert duplicate.version == first.version
+    assert duplicate.cards == first.cards
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: "ws-1",
+      session_id: "review-1",
+      review_count: 1
+    })
+
+    [{observer_pid, _}] = Registry.lookup(Casein.Mobile.UserObserverRegistry, user_id)
+    _ = :sys.get_state(observer_pid)
+    cards = UserObserver.snapshot(user_id).cards
+    assert Enum.any?(cards, &(&1.type == :needs_review))
+
+    cleared = UserObserver.reconcile_live_work(user_id, "ws-1", [])
+    refute Enum.any?(cleared.cards, &(&1.source == "live_work"))
+    assert Enum.any?(cleared.cards, &(&1.type == :needs_review))
+  end
+
+  test "late directory and hydration messages cannot repopulate a cleared workspace" do
+    user_id = unique_user()
+    prepare_user(user_id)
+    :ok = UserObserver.watch_workspace(user_id, "ws-late")
+
+    [{observer_pid, _}] = Registry.lookup(Casein.Mobile.UserObserverRegistry, user_id)
+    state = :sys.get_state(observer_pid)
+    hydration_ref = Map.fetch!(state.live_work_hydrations, "ws-late")
+
+    :ok = UserObserver.clear(user_id)
+
+    tab = %Info{
+      id: "agent-late",
+      kind: :agent,
+      workspace_id: "ws-late",
+      status: :active,
+      metadata: %{agent: "codex", windows: [%{agent_state: :working}]}
+    }
+
+    send(observer_pid, {:live_work_hydrated, "ws-late", hydration_ref, [tab]})
+
+    send(
+      observer_pid,
+      {Casein.Terminals.SessionDirectory, {:sessions_updated, "ws-late", [tab]}}
+    )
+
+    _ = :sys.get_state(observer_pid)
+    assert UserObserver.snapshot(user_id).cards == []
+  end
+
   test "watched audit approval events produce needs_review cards" do
     user_id = unique_user()
     prepare_user(user_id)
@@ -219,6 +293,7 @@ defmodule Casein.Mobile.UserObserverTest do
     State.sync(%Workspace{id: "ws-1", name: "alpha", user: "dev", path: System.tmp_dir!()})
 
     :ok = UserObserver.watch_workspace(user_id, "ws-1")
+    assert_receive {:mobile_cards_snapshot, %{hydrating_workspaces: []}}, 1_000
 
     for status <- [:succeeded, :failed, :timed_out] do
       run_id = "run-#{status}"
@@ -263,6 +338,7 @@ defmodule Casein.Mobile.UserObserverTest do
     prepare_user(user_id)
     State.sync(%Workspace{id: "ws-1", name: "alpha", user: "dev", path: System.tmp_dir!()})
     :ok = UserObserver.watch_workspace(user_id, "ws-1")
+    assert_receive {:mobile_cards_snapshot, %{hydrating_workspaces: []}}, 1_000
 
     UserObserver.in_progress_changed(user_id, %{
       workspace_id: "ws-1",
@@ -302,6 +378,7 @@ defmodule Casein.Mobile.UserObserverTest do
       prepare_user(user_id)
       State.sync(%Workspace{id: "ws-1", name: "alpha", user: "dev", path: System.tmp_dir!()})
       :ok = UserObserver.watch_workspace(user_id, "ws-1")
+      assert_receive {:mobile_cards_snapshot, %{hydrating_workspaces: []}}, 1_000
 
       UserObserver.in_progress_changed(user_id, %{
         workspace_id: "ws-1",
@@ -350,6 +427,7 @@ defmodule Casein.Mobile.UserObserverTest do
       prepare_user(user_id)
       State.sync(%Workspace{id: "ws-1", name: "alpha", user: "dev", path: System.tmp_dir!()})
       :ok = UserObserver.watch_workspace(user_id, "ws-1")
+      assert_receive {:mobile_cards_snapshot, %{hydrating_workspaces: []}}, 1_000
 
       UserObserver.in_progress_changed(user_id, %{
         workspace_id: "ws-1",

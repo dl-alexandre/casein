@@ -36,6 +36,7 @@ ACTIVE_RELEASE="${DEPLOY_ROOT}/release"
 CURRENT_SOCK="${CASEIN_CURRENT_SOCK:-/run/casein/current.sock}"
 CACHE_ROOT="${CASEIN_DEPLOY_CACHE_ROOT:-${DEPLOY_ROOT}/cache}"
 LAST_DEPLOY_FILE="${CASEIN_LAST_DEPLOY_FILE:-/run/casein/last-deploy.json}"
+CANONICAL_DEVBOX_HOST="casein.devbox.milcgroup.com"
 
 log() { printf '>>> [deploy-poller] %s\n' "$*"; }
 
@@ -283,7 +284,12 @@ ensure_caddy_upstream() {
       sudo awk -F= '/^PHX_HOST=/{print $2}' "$ENV_FILE" | tail -n 1
     fi
   )"
-  host="${host:-casein.devbox.milcgroup.com}"
+  host="${host:-${CANONICAL_DEVBOX_HOST}}"
+
+  if [ "$host" != "$CANONICAL_DEVBOX_HOST" ]; then
+    log "refusing Caddy reconciliation for non-canonical PHX_HOST=${host}"
+    return 1
+  fi
 
   casein_reconcile_caddy_upstream "$host" repair
 }

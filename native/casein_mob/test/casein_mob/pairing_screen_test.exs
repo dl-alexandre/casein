@@ -61,6 +61,7 @@ defmodule CaseinMob.PairingScreenTest do
                display_name: "casein.test",
                url: "https://casein.test",
                active?: true,
+               read_only?: false,
                last_workspace_id: "ws-1"
              },
              %{
@@ -68,6 +69,7 @@ defmodule CaseinMob.PairingScreenTest do
                display_name: "old.test",
                url: "https://old.test",
                active?: false,
+               read_only?: false,
                last_workspace_id: "old-ws"
              }
            ]
@@ -92,7 +94,9 @@ defmodule CaseinMob.PairingScreenTest do
        %{
          url: "https://casein.test",
          token: "device-link-token",
-         workspace_id: "ws-1"
+         workspace_id: "ws-1",
+         origin_id: CaseinMob.OriginIdentity.legacy_id("https://casein.test"),
+         display_name: "casein.test"
        }}
     end)
 
