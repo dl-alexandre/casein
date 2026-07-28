@@ -17,6 +17,7 @@ defmodule Casein.Push.Dispatcher do
   require Logger
 
   alias Casein.Audit.Event
+  alias Casein.Mobile.{AttentionInbox, Observability}
   alias Casein.Mobile.UserObserver
   alias Casein.Mobile.ResumeCard
   alias Casein.Origin
@@ -68,9 +69,22 @@ defmodule Casein.Push.Dispatcher do
   defp dispatch(event, notification) do
     provider = Push.provider()
 
-    for entry <- Push.tokens_for(event.workspace_id) do
+    event.workspace_id
+    |> Push.tokens_for()
+    |> Enum.group_by(&alert_recipient_group/1)
+    |> Enum.each(fn
+      {{:user, user_id}, entries} ->
+        dispatch_user_alert(provider, event, user_id, entries, notification)
+
+      {{:token, _platform, _token}, entries} ->
+        dispatch_entries(provider, entries, notification)
+    end)
+  end
+
+  defp dispatch_entries(provider, entries, notification) do
+    Enum.each(entries, fn entry ->
       case Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
-             deliver_alert(provider, event, entry, notification)
+             deliver(provider, entry, notification)
            end) do
         {:ok, _pid} ->
           :ok
@@ -78,7 +92,7 @@ defmodule Casein.Push.Dispatcher do
         {:error, reason} ->
           Logger.warning("failed to start push delivery task: #{inspect(reason)}")
       end
-    end
+    end)
   end
 
   defp dispatch_mobile_card(card, notification) do
@@ -104,27 +118,41 @@ defmodule Casein.Push.Dispatcher do
     end
   end
 
-  defp mobile_card_notification(%{type: :needs_review, priority: :high} = card) do
+  defp mobile_card_notification(card) do
+    attention = AttentionInbox.project(card)
     resume = ResumeCard.project(card)
 
-    %{
-      workspace_id: card.workspace_id,
-      user_id: card.user_id,
-      session_id: card.session_id,
-      card_id: card.id,
-      card_type: Atom.to_string(card.type),
-      action: "mobile.needs_review",
-      title: card.title,
-      reason: card.body,
-      at: card.created_at,
-      locator: resume.locator,
-      resume_state: resume.state,
-      resume_phase: resume.phase,
-      deep_link: ResumeCard.deep_link(card)
-    }
+    if attention.notify do
+      %{
+        workspace_id: card.workspace_id,
+        user_id: card.user_id,
+        session_id: card.session_id,
+        card_id: card.id,
+        attention_key: attention.key,
+        card_type: Atom.to_string(card.type),
+        action: mobile_push_action(card),
+        title: card.title,
+        reason: mobile_push_reason(card, attention),
+        reason_code: attention.reason_code,
+        required_decision: attention.required_decision,
+        notification_group: attention.notification_group,
+        at: card.created_at,
+        locator: resume.locator,
+        resume_state: resume.state,
+        resume_phase: resume.phase,
+        deep_link: ResumeCard.deep_link(card)
+      }
+    end
   end
 
-  defp mobile_card_notification(_card), do: nil
+  defp mobile_push_action(%{type: :needs_review}), do: "mobile.needs_review"
+  defp mobile_push_action(_card), do: "mobile.attention"
+
+  defp mobile_push_reason(%{type: :needs_review, body: body}, _attention)
+       when is_binary(body),
+       do: body
+
+  defp mobile_push_reason(_card, attention), do: attention.explanation
 
   defp mobile_card_recipient?(%{user_id: user_id}, %{user_id: card_user_id})
        when is_binary(user_id) and is_binary(card_user_id) do
@@ -133,13 +161,17 @@ defmodule Casein.Push.Dispatcher do
 
   defp mobile_card_recipient?(_entry, _card), do: false
 
-  defp deliver_alert(provider, event, %{user_id: user_id} = entry, notification)
-       when is_binary(user_id) do
+  defp dispatch_user_alert(provider, event, user_id, entries, notification) do
     case Notifications.deliver_alert_event(event, user_id) do
-      {:ok, durable, _status} ->
-        if Notifications.channel_enabled?(durable, "push") do
-          deliver(provider, entry, Map.put(notification, :notification_id, durable.id))
+      {:ok, durable, status} ->
+        if alert_push_allowed?(durable, status, event) do
+          dispatch_entries(
+            provider,
+            entries,
+            Map.put(notification, :notification_id, durable.id)
+          )
         else
+          maybe_observe_alert_dedupe(durable, status, event, List.first(entries))
           :ok
         end
 
@@ -148,13 +180,40 @@ defmodule Casein.Push.Dispatcher do
 
       {:error, changeset} ->
         Logger.warning("failed to persist alert notification: #{inspect(changeset.errors)}")
-        deliver(provider, entry, notification)
+        dispatch_entries(provider, entries, notification)
     end
   end
 
-  defp deliver_alert(provider, _event, entry, notification) do
-    deliver(provider, entry, notification)
+  defp alert_recipient_group(%{user_id: user_id}) when is_binary(user_id),
+    do: {:user, user_id}
+
+  defp alert_recipient_group(entry), do: {:token, entry.platform, entry.token}
+
+  # The user observer may persist the exact audit event before the push
+  # dispatcher sees it. That row is reported as deduped, but it is still the
+  # first delivery of this source event. A later event grouped into the same
+  # row has a different source id and must not produce another OS push.
+  defp alert_push_allowed?(durable, status, event) do
+    Notifications.channel_enabled?(durable, "push") and
+      (status == :created or
+         (is_binary(event.id) and durable.source_id == event.id))
   end
+
+  defp maybe_observe_alert_dedupe(durable, :deduped, event, entry) when is_map(entry) do
+    if is_binary(event.id) and durable.source_id != event.id do
+      Observability.record(
+        %{
+          user_id: entry.user_id,
+          workspace_id: event.workspace_id,
+          origin_id: Origin.id(),
+          platform: entry.platform
+        },
+        %{"event" => "notification", "outcome" => "deduped"}
+      )
+    end
+  end
+
+  defp maybe_observe_alert_dedupe(_durable, _status, _event, _entry), do: :ok
 
   defp deliver_mobile_card(provider, entry, notification, card) do
     if card_push_allowed?(card) do

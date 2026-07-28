@@ -2,7 +2,7 @@ defmodule Casein.Mobile.UserObserverTest do
   use Casein.DataCase, async: false
 
   alias Casein.Audit
-  alias Casein.Mobile.UserObserver
+  alias Casein.Mobile.{AttentionInbox, UserObserver}
   alias Casein.Runs.Ledger
   alias Casein.Workspace
   alias Casein.Workspaces.State
@@ -212,7 +212,7 @@ defmodule Casein.Mobile.UserObserverTest do
     assert_receive {:mobile_cards_snapshot, %{cards: []}}, 1_000
   end
 
-  test "watched audit run lifecycle events produce and clear in_progress cards" do
+  test "watched audit run lifecycle events produce bounded terminal outcome cards" do
     user_id = unique_user()
     prepare_user(user_id)
 
@@ -231,7 +231,8 @@ defmodule Casein.Mobile.UserObserverTest do
         command_line: "mix test"
       })
 
-      assert_receive {:mobile_cards_snapshot, %{cards: [card]}}, 1_000
+      assert_receive {:mobile_cards_snapshot, %{cards: cards}}, 1_000
+      card = Enum.find(cards, &(&1.session_id == run_id))
       assert card.type == :in_progress
       assert card.workspace_id == "ws-1"
       assert card.workspace_name == "alpha"
@@ -243,10 +244,163 @@ defmodule Casein.Mobile.UserObserverTest do
         workspace_id: "ws-1",
         actor_id: "agent",
         run_id: run_id,
-        command_id: "compile"
+        command_id: "compile",
+        metadata: %{commit_sha: "source-not-merge"}
       })
 
-      assert_receive {:mobile_cards_snapshot, %{cards: []}}, 1_000
+      assert_receive {:mobile_cards_snapshot, %{cards: cards}}, 1_000
+      outcome = Enum.find(cards, &(&1.session_id == run_id))
+      assert outcome.type == :outcome
+      assert outcome.status == Atom.to_string(status)
+      assert outcome.id == card.id
+      assert %DateTime{} = outcome.expires_at
+      assert Map.get(outcome.meta, :merge_sha) == nil
+    end
+  end
+
+  test "unrelated and mismatched lifecycle audits are never guessed onto the sole card" do
+    user_id = unique_user()
+    prepare_user(user_id)
+    State.sync(%Workspace{id: "ws-1", name: "alpha", user: "dev", path: System.tmp_dir!()})
+    :ok = UserObserver.watch_workspace(user_id, "ws-1")
+
+    UserObserver.in_progress_changed(user_id, %{
+      workspace_id: "ws-1",
+      session_id: "run-1"
+    })
+
+    assert_receive {:mobile_cards_snapshot, %{version: version, cards: [_card]}}, 1_000
+
+    Audit.emit!(%{
+      workspace_id: "ws-1",
+      actor_id: "agent",
+      action: "preview.opened",
+      target_ref: "run-1"
+    })
+
+    refute_receive {:mobile_cards_snapshot, _payload}, 100
+
+    Audit.emit!(%{
+      workspace_id: "ws-1",
+      actor_id: "agent",
+      action: "gate.failed",
+      target_type: "git_sha",
+      target_ref: "run-1",
+      metadata: %{session_id: "run-1"}
+    })
+
+    refute_receive {:mobile_cards_snapshot, _payload}, 100
+    assert UserObserver.snapshot(user_id).version == version
+  end
+
+  test "typed agent blocked event updates the exact tmux card attention projection" do
+    previous = Application.get_env(:casein, :mobile_attention_store_enabled)
+    Application.put_env(:casein, :mobile_attention_store_enabled, true)
+    user_id = unique_user()
+
+    try do
+      prepare_user(user_id)
+      State.sync(%Workspace{id: "ws-1", name: "alpha", user: "dev", path: System.tmp_dir!()})
+      :ok = UserObserver.watch_workspace(user_id, "ws-1")
+
+      UserObserver.in_progress_changed(user_id, %{
+        workspace_id: "ws-1",
+        session_id: "run-1",
+        locator: %{tmux_session: "casein_alpha_agent", pane: "%3"}
+      })
+
+      assert_receive {:mobile_cards_snapshot, %{cards: [_card]}}, 1_000
+
+      Audit.emit!(%{
+        workspace_id: "ws-1",
+        actor_id: "agent",
+        action: "agent.blocked",
+        target_type: "tmux_pane",
+        target_ref: "%3",
+        metadata: %{
+          session: "casein_alpha_agent",
+          pane: "%3",
+          message: "must not enter attention projection"
+        }
+      })
+
+      assert_receive {:mobile_cards_snapshot, %{cards: [card]}}, 1_000
+      projection = AttentionInbox.project(card)
+      assert projection.priority == "critical"
+      assert projection.required_decision == "Respond"
+      assert projection.lifecycle.status == "waiting"
+      refute inspect(card.meta.attention_transition) =~ "must not enter"
+    after
+      UserObserver.stop(user_id)
+
+      if is_nil(previous) do
+        Application.delete_env(:casein, :mobile_attention_store_enabled)
+      else
+        Application.put_env(:casein, :mobile_attention_store_enabled, previous)
+      end
+    end
+  end
+
+  test "agent lifecycle correlation requires one exact pane and fails closed when ambiguous" do
+    previous = Application.get_env(:casein, :mobile_attention_store_enabled)
+    Application.put_env(:casein, :mobile_attention_store_enabled, true)
+    user_id = unique_user()
+
+    try do
+      prepare_user(user_id)
+      State.sync(%Workspace{id: "ws-1", name: "alpha", user: "dev", path: System.tmp_dir!()})
+      :ok = UserObserver.watch_workspace(user_id, "ws-1")
+
+      UserObserver.in_progress_changed(user_id, %{
+        workspace_id: "ws-1",
+        session_id: "run-1",
+        locator: %{tmux_session: "casein_alpha_agent", pane: "%3"}
+      })
+
+      UserObserver.in_progress_changed(user_id, %{
+        workspace_id: "ws-1",
+        session_id: "run-2",
+        locator: %{tmux_session: "casein_alpha_agent", pane: "%4"}
+      })
+
+      assert_receive {:mobile_cards_snapshot, _payload}, 1_000
+      assert_receive {:mobile_cards_snapshot, _payload}, 1_000
+      version = UserObserver.snapshot(user_id).version
+
+      Audit.emit!(%{
+        workspace_id: "ws-1",
+        actor_id: "agent",
+        action: "agent.blocked",
+        target_type: "tmux_pane",
+        target_ref: "%4",
+        metadata: %{session: "casein_alpha_agent", pane: "%4"}
+      })
+
+      assert_receive {:mobile_cards_snapshot, %{cards: cards}}, 1_000
+      blocked = Enum.find(cards, &(&1.session_id == "run-2"))
+      working = Enum.find(cards, &(&1.session_id == "run-1"))
+      assert AttentionInbox.project(blocked).reason_code == "human_blocked"
+      assert AttentionInbox.project(working).reason_code == "working"
+
+      Audit.emit!(%{
+        workspace_id: "ws-1",
+        actor_id: "agent",
+        action: "agent.blocked",
+        target_type: "tmux_pane",
+        target_ref: nil,
+        metadata: %{session: "casein_alpha_agent"}
+      })
+
+      refute_receive {:mobile_cards_snapshot, _payload}, 100
+      assert UserObserver.snapshot(user_id).version == version + 1
+    after
+      UserObserver.stop(user_id)
+
+      if is_nil(previous) do
+        Application.delete_env(:casein, :mobile_attention_store_enabled)
+      else
+        Application.put_env(:casein, :mobile_attention_store_enabled, previous)
+      end
     end
   end
 
@@ -321,6 +475,20 @@ defmodule Casein.Mobile.UserObserverTest do
                       source: "needs_review_changed"
                     }},
                    1_000
+  end
+
+  test "refresh broadcasts the same authoritative version for shared cursor updates" do
+    user_id = unique_user()
+    prepare_user(user_id)
+
+    UserObserver.in_progress_changed(user_id, %{
+      workspace_id: "ws-refresh",
+      session_id: "run-refresh"
+    })
+
+    assert_receive {:mobile_cards_snapshot, %{version: version, cards: [_card]}}, 1_000
+    :ok = UserObserver.refresh(user_id)
+    assert_receive {:mobile_cards_snapshot, %{version: ^version, cards: [_card]}}, 1_000
   end
 
   defp prepare_user(user_id) do

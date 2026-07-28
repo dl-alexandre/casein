@@ -11,8 +11,10 @@ defmodule Casein.Mobile.UserObserver do
 
   alias Casein.Audit
   alias Casein.Audit.Event
+  alias Casein.Mobile.AttentionInbox
   alias Casein.Mobile.Card
   alias Casein.Notifications
+  alias Casein.Push
   alias Casein.Workspaces.State
 
   @registry Casein.Mobile.UserObserverRegistry
@@ -133,6 +135,18 @@ defmodule Casein.Mobile.UserObserver do
     GenServer.call(via(user_id), :clear)
   end
 
+  @doc """
+  Re-broadcast the current authoritative cards without changing their version.
+
+  Cursor updates use this to refresh all connected devices after a shared
+  viewed-through marker advances.
+  """
+  @spec refresh(String.t()) :: :ok
+  def refresh(user_id) when is_binary(user_id) do
+    {:ok, _pid} = ensure_started(user_id)
+    GenServer.cast(via(user_id), :refresh)
+  end
+
   @spec stop(String.t()) :: :ok
   def stop(user_id) when is_binary(user_id) do
     case Registry.lookup(@registry, user_id) do
@@ -188,6 +202,11 @@ defmodule Casein.Mobile.UserObserver do
   end
 
   @impl true
+  def handle_cast(:refresh, state) do
+    broadcast(state)
+    {:noreply, state}
+  end
+
   def handle_cast({:needs_review_changed, attrs}, state) do
     attrs = Map.put(attrs, :user_id, state.user_id)
 
@@ -230,8 +249,10 @@ defmodule Casein.Mobile.UserObserver do
 
   @impl true
   def handle_info({:audit_event, %Event{} = event}, state) do
-    _ = Notifications.deliver_alert_event(event, state.user_id)
-    {:noreply, handle_audit_event(state, event)}
+    _ = maybe_deliver_alert_event(event, state.user_id)
+    state = handle_audit_event(state, event)
+    state = apply_lifecycle_transition(state, record_lifecycle_event(state, event))
+    {:noreply, state}
   end
 
   def handle_info(_message, state), do: {:noreply, state}
@@ -240,13 +261,19 @@ defmodule Casein.Mobile.UserObserver do
     attrs = event_card_attrs(state.user_id, event) |> Map.put(:review_count, review_count(event))
 
     case Card.needs_review(attrs, event.inserted_at) do
-      nil -> state
-      card -> upsert_card(state, card, event.action)
+      nil ->
+        state
+
+      card ->
+        state
+        |> delete_card_without_broadcast(:in_progress, attrs)
+        |> upsert_card(card, event.action, event: event)
     end
   end
 
   defp handle_audit_event(state, %Event{} = event)
        when event.action in ["run.approval_granted", "run.approval_denied"] do
+    _ = record_resolution_transition(state, event)
     remove_card(state, :needs_review, event_card_attrs(state.user_id, event), event.action)
   end
 
@@ -265,18 +292,34 @@ defmodule Casein.Mobile.UserObserver do
 
   defp handle_audit_event(state, %Event{} = event)
        when event.action in ["run.succeeded", "run.failed", "run.timed_out"] do
-    remove_card(state, :in_progress, event_card_attrs(state.user_id, event), event.action)
+    attrs =
+      state.user_id
+      |> event_card_attrs(event)
+      |> Map.merge(%{
+        outcome: String.replace_prefix(event.action, "run.", ""),
+        source: event.action,
+        last_activity_at: event.inserted_at,
+        merge_sha: meta(event, "merge_sha"),
+        deploy_sha: first_meta(event, ["deploy_sha", "deployed_sha"]),
+        verification: first_meta(event, ["verification", "checks"])
+      })
+
+    state
+    |> delete_card_without_broadcast(:in_progress, attrs)
+    |> delete_card_without_broadcast(:needs_review, attrs)
+    |> upsert_card(Card.outcome(attrs, event.inserted_at), event.action, event: event)
   end
 
   defp handle_audit_event(state, _event), do: state
 
-  defp upsert_card(state, card, source) do
+  defp upsert_card(state, card, source, opts \\ []) do
     key = Card.key(card)
     existing = Map.get(state.cards, key)
     operation = if(existing, do: :update, else: :create)
     now = now()
     card = Card.merge_update(existing, card, now)
     card = maybe_persist_card_created(card, operation)
+    _ = record_card_transition(card, source, opts)
     state = %{state | version: state.version + 1, cards: Map.put(state.cards, key, card)}
     emit_card(:upsert, card, source, operation: operation)
     maybe_broadcast_card_created(card, operation)
@@ -301,6 +344,13 @@ defmodule Casein.Mobile.UserObserver do
     end
   end
 
+  defp delete_card_without_broadcast(state, type, attrs) do
+    workspace_id = attrs[:workspace_id] || attrs["workspace_id"]
+    session_id = attrs[:session_id] || attrs["session_id"]
+    key = {state.user_id, workspace_id, session_id, type}
+    %{state | cards: Map.delete(state.cards, key)}
+  end
+
   defp unsubscribe_all(state) do
     Enum.each(state.watched_workspaces, fn workspace_id ->
       Phoenix.PubSub.unsubscribe(Casein.PubSub, Audit.topic(workspace_id))
@@ -319,7 +369,11 @@ defmodule Casein.Mobile.UserObserver do
     %{
       user_id: state.user_id,
       version: state.version,
-      cards: state.cards |> Map.values() |> Card.order()
+      cards:
+        state.cards
+        |> Map.values()
+        |> Enum.reject(&expired?/1)
+        |> Card.order()
     }
   end
 
@@ -352,11 +406,14 @@ defmodule Casein.Mobile.UserObserver do
 
   defp maybe_persist_card_created(card, :create) do
     case Notifications.deliver_mobile_card(card) do
-      {:ok, notification, _status} ->
+      {:ok, notification, status} ->
         meta =
           card.meta
           |> Map.put(:notification_id, notification.id)
-          |> Map.put(:push_allowed, Notifications.channel_enabled?(notification, "push"))
+          |> Map.put(
+            :push_allowed,
+            status == :created and Notifications.channel_enabled?(notification, "push")
+          )
 
         %{card | meta: meta}
 
@@ -435,6 +492,181 @@ defmodule Casein.Mobile.UserObserver do
   defp first_meta(event, keys) do
     Enum.find_value(keys, &meta(event, &1))
   end
+
+  defp record_card_transition(card, source, opts) do
+    case Keyword.get(opts, :event) do
+      %Event{} = event ->
+        AttentionInbox.record_card(card, source,
+          event_id: event.id,
+          occurred_at: event.inserted_at
+        )
+
+      _ ->
+        AttentionInbox.record_card(card, source)
+    end
+  end
+
+  # A registered user-scoped workspace token means Push.Dispatcher owns the
+  # durable alert row and OS-delivery decision. Keeping one owner prevents the
+  # observer and dispatcher from racing two identical notification inserts.
+  defp maybe_deliver_alert_event(event, user_id) do
+    if Enum.any?(Push.tokens_for(event.workspace_id), &(&1.user_id == user_id)) do
+      :ok
+    else
+      Notifications.deliver_alert_event(event, user_id)
+    end
+  end
+
+  defp record_lifecycle_event(state, %Event{} = event) do
+    card = correlated_lifecycle_card(state, event)
+
+    if is_map(card) do
+      case AttentionInbox.record_card(
+             card,
+             event.action,
+             [
+               event_id: event.id,
+               occurred_at: event.inserted_at
+             ] ++ event_transition_opts(event)
+           ) do
+        {:ok, %Casein.Mobile.AttentionTransition{} = transition} ->
+          {:ok, transition, Card.key(card)}
+
+        result ->
+          result
+      end
+    else
+      {:ok, :unmatched}
+    end
+  end
+
+  defp apply_lifecycle_transition(
+         state,
+         {:ok, %Casein.Mobile.AttentionTransition{} = transition, card_key}
+       ) do
+    card = Map.fetch!(state.cards, card_key)
+
+    card =
+      %{card | updated_at: latest_datetime(card.updated_at, transition.occurred_at)}
+      |> Map.update!(:meta, fn meta ->
+        Map.put(meta, :attention_transition, AttentionInbox.transition_payload(transition))
+      end)
+
+    state = %{
+      state
+      | version: state.version + 1,
+        cards: Map.put(state.cards, card_key, card)
+    }
+
+    broadcast(state)
+    state
+  end
+
+  defp apply_lifecycle_transition(state, _result), do: state
+
+  defp record_resolution_transition(state, event) do
+    case correlated_lifecycle_card(state, event) do
+      card when is_map(card) ->
+        AttentionInbox.record_card(card, event.action,
+          event_id: event.id,
+          occurred_at: event.inserted_at
+        )
+
+      _card ->
+        {:ok, :unmatched}
+    end
+  end
+
+  defp correlated_lifecycle_card(state, %Event{} = event) do
+    with true <- AttentionInbox.lifecycle_action?(event.action),
+         {:ok, correlation} <- lifecycle_correlation(event) do
+      case Enum.filter(
+             Map.values(state.cards),
+             &lifecycle_card_match?(&1, event.workspace_id, correlation)
+           ) do
+        [card] -> card
+        _missing_or_ambiguous -> nil
+      end
+    else
+      _result -> nil
+    end
+  end
+
+  defp lifecycle_correlation(%Event{action: "run." <> _action, target_type: "run"} = event) do
+    case meta(event, "run_id") || meta(event, "session_id") || event.target_ref do
+      session_id when is_binary(session_id) -> {:ok, {:run, session_id}}
+      _session_id -> :error
+    end
+  end
+
+  defp lifecycle_correlation(%Event{action: action, target_type: "tmux_pane"} = event)
+       when action in ["agent.blocked", "agent.state_changed"] do
+    tmux_session = meta(event, "tmux_session") || meta(event, "session")
+    pane = meta(event, "pane") || event.target_ref
+
+    case {tmux_session, pane} do
+      {tmux_session, pane} when is_binary(tmux_session) and is_binary(pane) ->
+        {:ok, {:tmux_pane, tmux_session, pane}}
+
+      _missing_exact_target ->
+        :error
+    end
+  end
+
+  defp lifecycle_correlation(%Event{action: action, target_type: target_type} = event)
+       when action in ["proposal.applied", "proposal.apply_failed"] and
+              target_type in ["run", "command_run"] do
+    case meta(event, "run_id") || meta(event, "session_id") do
+      session_id when is_binary(session_id) -> {:ok, {:run, session_id}}
+      _session_id -> :error
+    end
+  end
+
+  defp lifecycle_correlation(_event), do: :error
+
+  defp lifecycle_card_match?(card, workspace_id, {:run, session_id}) do
+    card.workspace_id == workspace_id and card.session_id == session_id
+  end
+
+  defp lifecycle_card_match?(card, workspace_id, {:tmux_pane, tmux_session, pane}) do
+    locator = Map.get(card.context, :locator) || Map.get(card.context, "locator") || %{}
+
+    card_tmux_session =
+      Map.get(locator, :tmux_session) || Map.get(locator, "tmux_session")
+
+    card_pane = Map.get(locator, :pane) || Map.get(locator, "pane")
+
+    card.workspace_id == workspace_id and
+      card_tmux_session == tmux_session and card_pane == pane
+  end
+
+  defp event_transition_opts(%Event{action: "agent.state_changed"} = event) do
+    case meta(event, "to") |> normalize_event_state() do
+      "blocked" -> [state: "needs_attention", phase: "waiting", reason_code: "human_blocked"]
+      "working" -> [state: "working", phase: "executing", reason_code: "working"]
+      _state -> []
+    end
+  end
+
+  defp event_transition_opts(_event), do: []
+
+  defp normalize_event_state(value) when is_atom(value), do: Atom.to_string(value)
+  defp normalize_event_state(value) when is_binary(value), do: String.downcase(value)
+  defp normalize_event_state(_value), do: nil
+
+  defp expired?(%{expires_at: %DateTime{} = expires_at}) do
+    DateTime.compare(expires_at, now()) == :lt
+  end
+
+  defp expired?(_card), do: false
+
+  defp latest_datetime(%DateTime{} = current, %DateTime{} = candidate) do
+    if DateTime.compare(candidate, current) == :gt, do: candidate, else: current
+  end
+
+  defp latest_datetime(%DateTime{} = current, _candidate), do: current
+  defp latest_datetime(_current, %DateTime{} = candidate), do: candidate
+  defp latest_datetime(_current, _candidate), do: now()
 
   defp now, do: DateTime.utc_now()
 

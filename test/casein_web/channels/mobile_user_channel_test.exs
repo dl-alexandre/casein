@@ -177,7 +177,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
     assert {:ok, socket} = Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{"token" => token})
 
-    assert {:ok, reply, _socket} =
+    assert {:ok, reply, joined_socket} =
              subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:me")
 
     assert reply.user_id == user_id
@@ -197,12 +197,26 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert card.type == "needs_review"
     assert card.workspace_id == workspace_id
     assert card.workspace_name == "alpha"
+    assert card.attention["priority"] == "critical"
+    assert card.attention["reason_code"] == "review_requested"
+    assert card.attention["required_decision"] == "Review"
+    assert card.attention["identity"] =~ reply.origin.id
 
     assert card.action.route == %{
              type: "session_detail",
              workspace_id: workspace_id,
              session_id: "run-1"
            }
+
+    ref =
+      Phoenix.ChannelTest.push(joined_socket, "attention_viewed", %{
+        "origin_id" => "tampered-origin",
+        "card_id" => card.id,
+        "attention_key" => card.attention["key"],
+        "through_marker" => 1
+      })
+
+    assert_reply ref, :error, %{reason: "attention_scope_mismatch"}, 1_000
   end
 
   test "workspace-scoped pairing token cannot ask to watch another workspace" do
@@ -573,6 +587,33 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
     ref =
       Phoenix.ChannelTest.push(socket, "mobile_observation", %{
+        "event" => "attention_action",
+        "outcome" => "desktop_required",
+        "awareness_latency_bucket" => "under_1m",
+        "time_to_action_bucket" => "under_5m",
+        "action_kind" => "pwa",
+        "stale_age_bucket" => "under_1h",
+        "workspace_id" => workspace_id,
+        "card_id" => "card-1",
+        "message" => "must also be discarded",
+        "terminal_output" => "must also be discarded"
+      })
+
+    assert_reply ref, :ok, %{}, 1_000
+
+    event =
+      workspace_id
+      |> Audit.recent_for(10)
+      |> Enum.find(&(&1.action == "mobile.attention_action"))
+
+    assert event.metadata["awareness_latency_bucket"] == "under_1m"
+    assert event.metadata["time_to_action_bucket"] == "under_5m"
+    assert event.metadata["action_kind"] == "pwa"
+    refute Map.has_key?(event.metadata, "message")
+    refute Map.has_key?(event.metadata, "terminal_output")
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "mobile_observation", %{
         "event" => "raw_terminal_output",
         "outcome" => "succeeded"
       })
@@ -923,6 +964,18 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert outcome.device_link_id == "dl-42"
     assert outcome.platform == "ios"
     assert outcome.action_id == "approve"
+
+    observation =
+      workspace_id
+      |> Audit.recent_for(20)
+      |> Enum.find(&(&1.action == "mobile.attention_action"))
+
+    assert observation.metadata["outcome"] == "succeeded"
+    assert observation.metadata["action_kind"] == "review"
+
+    assert observation.metadata["time_to_action_bucket"] in ~w(under_10s under_1m under_5m under_1h over_1h)
+
+    refute Map.has_key?(observation.metadata, "note")
   end
 
   test "card_action allows a peer on another user's workspace (flat peer model)", %{

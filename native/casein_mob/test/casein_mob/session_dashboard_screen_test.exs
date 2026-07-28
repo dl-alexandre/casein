@@ -20,7 +20,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     view = mount_screen(SessionDashboardScreen)
 
     assert_renderable(view)
-    assert text(view) =~ "Action Center"
+    assert text(view) =~ "Attention Inbox"
     assert find(view, :button, text: "+ Pair").props.fill_width == false
     assert find(view, :button, text: "...").props.fill_width == false
     assert find(view, :button, text: "...")
@@ -411,8 +411,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
          }}
       )
 
-    assert find(view, :button, text: "Needs Action")
-    assert find(view, :button, text: "Running")
+    assert find(view, :button, text: "Needs Me")
+    assert find(view, :button, text: "Working")
 
     # Default segment surfaces the actionable card and hides the running one.
     assert text(view) =~ "Needs review now"
@@ -489,7 +489,123 @@ defmodule CaseinMob.SessionDashboardScreenTest do
       |> mount_screen()
       |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
 
-    assert text(view) =~ "Nothing needs your action"
+    assert text(view) =~ "Nothing needs you"
+  end
+
+  test "attention projection explains priority, required decision, and changes since viewed" do
+    SessionConfig.put_pairing("https://casein.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "Agent needs review",
+               "attention" => %{
+                 "identity" => "origin-local:ws-1:session:run-1",
+                 "key" => "ws-1:session:run-1",
+                 "priority" => "critical",
+                 "rank" => 680,
+                 "explanation" => "A review decision is waiting",
+                 "required_decision" => "Review",
+                 "since_viewed" => %{
+                   "count" => 2,
+                   "through_marker" => 42,
+                   "changes" => [%{"label" => "Decision requested"}]
+                 }
+               }
+             }
+           ]
+         }}
+      )
+
+    assert text(view) =~ "Why now: A review decision is waiting"
+    assert text(view) =~ "2 changes since you looked · Decision requested"
+    assert text(view) =~ "Review"
+  end
+
+  test "Needs Me includes failed and completed cards with a declared decision" do
+    SessionConfig.put_pairing("https://casein.test", "token")
+
+    cards =
+      for {id, state, title, decision} <- [
+            {"failed", "failed", "Failed work needs inspection", "Inspect failure"},
+            {"completed", "completed", "Completed work needs review", "Review outcome"}
+          ] do
+        %{
+          "id" => id,
+          "type" => "outcome",
+          "kind" => "run_" <> state,
+          "status" => state,
+          "workspace_id" => "ws-1",
+          "title" => title,
+          "resume" => %{"state" => state},
+          "attention" => %{
+            "identity" => "origin-local:#{id}",
+            "priority" => "high",
+            "rank" => 500,
+            "required_decision" => decision
+          }
+        }
+      end
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_snapshot, %{"cards" => cards}})
+
+    rendered = text(view)
+    assert rendered =~ "Failed work needs inspection"
+    assert rendered =~ "Completed work needs review"
+    refute rendered =~ "Nothing needs you"
+  end
+
+  test "same-priority cards order by newest meaningful change before identity" do
+    SessionConfig.put_pairing("https://casein.test", "token")
+
+    card = fn id, title, occurred_at ->
+      %{
+        "id" => id,
+        "type" => "needs_review",
+        "workspace_id" => "ws-1",
+        "title" => title,
+        "attention" => %{
+          "identity" => "origin-local:#{id}",
+          "priority" => "critical",
+          "rank" => 680,
+          "required_decision" => "Review",
+          "since_viewed" => %{
+            "count" => 1,
+            "changes" => [%{"label" => "Decision requested", "occurred_at" => occurred_at}]
+          }
+        }
+      }
+    end
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             card.("a", "Older decision", "2026-07-28T08:00:00Z"),
+             card.("z", "Newer decision", "2026-07-28T09:00:00Z")
+           ]
+         }}
+      )
+
+    rendered = text(view)
+    {newer_offset, _} = :binary.match(rendered, "Newer decision")
+    {older_offset, _} = :binary.match(rendered, "Older decision")
+    assert newer_offset < older_offset
   end
 
   test "mobile cards can render without pinned workspaces" do

@@ -12,7 +12,9 @@ defmodule Casein.Notifications do
 
   alias Casein.Audit.Event
   alias Casein.Alerts
+  alias Casein.Mobile.{AttentionInbox, ResumeCard}
   alias Casein.Notifications.Notification
+  alias Casein.Origin
   alias Casein.Notifications.Preference
   alias Casein.Repo
 
@@ -383,49 +385,52 @@ defmodule Casein.Notifications do
   defp ttl_seconds(_value), do: nil
 
   defp mobile_card_attrs(card) do
-    type = card_field(card, :type)
-    priority = card_field(card, :priority)
+    attention = AttentionInbox.project(card)
 
-    case {type, priority} do
-      {:needs_review, :high} ->
-        mobile_needs_review_attrs(card)
-
-      {"needs_review", "high"} ->
-        mobile_needs_review_attrs(card)
-
-      _ ->
-        nil
-    end
+    if attention.notify, do: mobile_attention_attrs(card, attention)
   end
 
-  defp mobile_needs_review_attrs(card) do
+  defp mobile_attention_attrs(card, attention) do
     user_id = card_field(card, :user_id)
     workspace_id = card_field(card, :workspace_id)
     session_id = card_field(card, :session_id)
     id = card_field(card, :id)
+    origin = Origin.public_descriptor()
 
     %{
       user_id: user_id,
       workspace_id: workspace_id,
       session_id: session_id,
-      type: "needs_review",
-      severity: "warning",
-      title: card_field(card, :title) || "Review needed",
+      type: mobile_notification_type(card),
+      severity: if(attention.priority in ~w(critical high), do: "warning", else: "info"),
+      title: card_field(card, :title) || "Casein needs your attention",
       body: card_field(card, :body),
       metadata: %{
         "card_id" => id,
+        "attention_key" => attention.key,
         "card_type" => string_value(card_field(card, :type)),
-        "priority" => string_value(card_field(card, :priority))
+        "priority" => attention.priority,
+        "reason_code" => attention.reason_code,
+        "required_decision" => attention.required_decision,
+        "origin_id" => origin.id,
+        "origin_name" => origin.display_name
       },
-      dedupe_key: "#{user_id}:needs_review:#{workspace_id}:#{session_id || id}",
+      dedupe_key: "#{user_id}:#{attention.notification_group}",
       ttl_seconds: 86_400,
       dedupe_window_seconds: 600,
-      deep_link: "casein://review/#{URI.encode_www_form(to_string(id))}",
+      deep_link: ResumeCard.deep_link(card),
       channels: ["in_app", "push", "mobile"],
       default_delivery: %{"in_app" => true, "push" => true, "mobile" => true},
       source_type: "mobile_card",
       source_id: id
     }
+  end
+
+  defp mobile_notification_type(card) do
+    case card_field(card, :type) do
+      type when type in [:needs_review, "needs_review"] -> "needs_review"
+      _type -> "mobile_attention"
+    end
   end
 
   defp card_field(card, key) when is_atom(key) do
