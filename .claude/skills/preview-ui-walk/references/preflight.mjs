@@ -50,6 +50,8 @@ export const CATEGORIES = [
   { id: "viewport", label: "Viewport support", required: false },
   { id: "visual_baseline", label: "Visual baseline", required: false },
   { id: "resource_metrics", label: "Resource metrics", required: false },
+  { id: "api", label: "API request collector", required: false },
+  { id: "downloads", label: "Download collector", required: false },
   { id: "db_read", label: "DB read visibility", required: false },
   { id: "audit_actor", label: "Audit actor visibility", required: false },
   { id: "artifact", label: "Artifact publish / durable URL", required: false },

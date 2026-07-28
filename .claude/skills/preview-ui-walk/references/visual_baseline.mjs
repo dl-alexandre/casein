@@ -33,45 +33,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { createRequire } from "node:module";
+import { resolveDiffEngine } from "./resolve_dep.mjs";
 
 export const COLLECTOR_VERSION = "visual-baseline@1";
 /** Fail when changedPixels / totalPixels EXCEEDS this (0.1%). Equal passes. */
 export const MAX_CHANGED_RATIO = 0.001;
 
-// ── deps ─────────────────────────────────────────────────────────────────────
-
-const req = createRequire(import.meta.url);
-
-function resolveDep(name) {
-  try {
-    return req(name);
-  } catch {
-    /* try global root */
-  }
-  const root = process.env.NODE_PATH;
-  if (root) {
-    try {
-      return createRequire(path.join(root, "x.js"))(name);
-    } catch {
-      /* fall through */
-    }
-  }
-  try {
-    const { execFileSync } = req("node:child_process");
-    const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-    return createRequire(path.join(globalRoot, "x.js"))(name);
-  } catch {
-    return null;
-  }
-}
-
-/** pixelmatch + pngjs, or null when unavailable (preflight reports MISSING). */
+/** pixelmatch + pngjs via the shared resolver; null when unavailable. */
 export function loadDiffEngine() {
-  const pixelmatch = resolveDep("pixelmatch");
-  const pngjs = resolveDep("pngjs");
-  if (!pixelmatch || !pngjs?.PNG) return null;
-  return { pixelmatch, PNG: pngjs.PNG };
+  return resolveDiffEngine();
 }
 
 // ── identity ─────────────────────────────────────────────────────────────────
