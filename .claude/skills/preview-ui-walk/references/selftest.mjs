@@ -941,6 +941,89 @@ assert(
   }
 }
 
+// ── Batch 2: responsive named viewports + accessibility ─────────────────────
+{
+  const a11y = await import("./a11y_collector.mjs");
+  const { a11yProven, viewportProven } = await import("./preflight_run.mjs");
+
+  // Viewport normalization rejects junk loudly rather than walking a bad size.
+  {
+    const { viewports, invalid } = a11y.normalizeViewports([
+      { name: "mobile", width: 390, height: 844 },
+      { name: "", width: 100, height: 100 },
+      { name: "bad", width: 0, height: 10 },
+      { name: "nan", width: "x", height: 10 },
+    ]);
+    assert(viewports.length === 1 && viewports[0].name === "mobile", "valid viewport kept");
+    assert(invalid.length === 3, "unnamed/zero/NaN viewports rejected, not silently coerced");
+    assert(viewports[0].deviceScaleFactor === 1, "DPR defaults to 1 (screenshot px == DOM bounds)");
+  }
+  assert(a11y.normalizeViewports([]).viewports.length === 0, "empty list -> no viewports (v1 default)");
+  assert(a11y.normalizeViewports(undefined).viewports.length === 0, "absent list -> no viewports");
+
+  // Per-page narrowing of the walk-level viewport list.
+  {
+    const all = a11y.normalizeViewports(a11y.DEFAULT_VIEWPORTS).viewports;
+    assert(a11y.viewportsForPage(all, []).length === all.length, "no page list -> all viewports");
+    assert(a11y.viewportsForPage(all, ["desktop"]).map((v) => v.name).join() === "desktop", "page narrows to its subset");
+    assert(a11y.viewportsForPage(all, ["nope"]).length === 0, "unknown viewport name selects nothing");
+  }
+
+  // Audit shape, with a fake page so the taxonomy is fixture-tested without a browser.
+  {
+    const fakePage = {
+      setViewportSize: async () => {},
+      evaluate: async () => ({
+        violations: [
+          { rule: "img-alt", wcag: "1.1.1", selector: "img", role: "img", name: "x", detail: "d" },
+        ],
+        counts: { "img-alt": 1 },
+        elementsAudited: 3,
+      }),
+    };
+    const one = await a11y.collectA11y(fakePage);
+    assert(one.violationCount === 1 && one.counts["img-alt"] === 1, "audit summarizes violations");
+    assert(one.engine === "structural-rules@1", "engine is versioned (rules can evolve deliberately)");
+
+    const across = await a11y.collectAcrossViewports(
+      fakePage,
+      a11y.normalizeViewports(a11y.DEFAULT_VIEWPORTS).viewports,
+    );
+    assert(across.viewports.length === 2, "audited at every declared viewport");
+    assert(across.totalViolations === 2, "violations summed across viewports");
+    assert(across.observable === true, "observable when at least one audit succeeded");
+  }
+
+  // Fail-closed: an audit that never succeeds is unavailable, not "clean".
+  {
+    const brokenPage = { setViewportSize: async () => {}, evaluate: async () => { throw new Error("no"); } };
+    assert((await a11y.collectA11y(brokenPage)) === null, "audit failure -> null, never a fake pass");
+    const across = await a11y.collectAcrossViewports(
+      brokenPage,
+      a11y.normalizeViewports(a11y.DEFAULT_VIEWPORTS).viewports,
+    );
+    assert(across.observable === false, "no successful audit -> observable false");
+    assert(
+      across.totalViolations === 0 && across.observable === false,
+      "zero violations with observable:false must not read as a clean page",
+    );
+  }
+  assert(
+    (await a11y.collectAcrossViewports({}, [])) === null,
+    "no viewports -> null evidence (v1 walks unaffected)",
+  );
+
+  // Privacy: accessible names are truncated (they can echo user data).
+  assert(a11y.MAX_NAME <= 60, "accessible-name cap is small enough to avoid leaking record text");
+
+  // require_evidence gating.
+  assert(a11yProven({ a11y: { observable: true } }) === true, "a11y proven when audits observable");
+  assert(a11yProven({ a11y: { observable: false } }) === false, "a11y NOT proven when audits failed");
+  assert(a11yProven(undefined) === false, "a11y NOT proven without a probe");
+  assert(viewportProven({ viewport: { proven: true } }) === true, "viewport proven from probe");
+  assert(viewportProven(undefined) === false, "viewport NOT proven without a probe");
+}
+
 if (failed) {
   console.error(`\n${failed} check(s) failed`);
   process.exit(1);
