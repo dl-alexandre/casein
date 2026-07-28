@@ -14,9 +14,12 @@
  *   2. CRASHED — HTTP 5xx from main document (independent of Tidewave)
  *   3. BOUNCED — wrong known route
  *   4. 4xx / TIMEOUT
- *   5. RUNTIME_ERROR — server error logs / probes / SQL (real bug signal)
- *   6. ASSERT_FAILED — content steps or browser console/network
- *   7. PASS_SLOW / PASS
+ *   5. BLOCKED — required visual evidence could not be compared (fail closed,
+ *      BEFORE assertions: missing evidence must never be outrun by a green)
+ *   6. RUNTIME_ERROR — server error logs / probes / SQL (real bug signal)
+ *   7. ASSERT_FAILED — content steps, browser console/network, or a visual
+ *      baseline mismatch (changed pixels / dimensions / DPR)
+ *   8. PASS_SLOW / PASS
  *
  * Tidewave only *enriches* CRASHED with exception frames; it never decides
  * the status. A 500 with tidewave down is still CRASHED (no frame).
@@ -41,6 +44,8 @@ export function pageVerdict({
   stepsBlockedOnly,
   stepsBlocked,
   navOutcome,
+  visualBlocked,
+  visualFailed,
 }) {
   // Interactions gate blocked required mutating steps (e.g. login fill/click).
   if (stepsBlockedOnly && stepsBlocked) {
@@ -83,6 +88,16 @@ export function pageVerdict({
     }
   }
 
+  // Required visual evidence that could not be compared: BLOCKED before any
+  // assertion outcome, so "no baseline / store down" can never read as green.
+  if (visualBlocked) {
+    return {
+      status: "BLOCKED",
+      reason: visualBlocked.reason || "required evidence unavailable: visual_baseline",
+      missingEvidence: ["visual_baseline"],
+    };
+  }
+
   // Server-side evidence (error logs / probes / SQL) — not content asserts.
   const rtN =
     runtimeErrors != null
@@ -102,6 +117,14 @@ export function pageVerdict({
 
   if (stepsFailed > 0) {
     return { status: "ASSERT_FAILED", reason: `${stepsFailed} step(s) failed` };
+  }
+  // Visual baseline mismatch (pixels beyond threshold, or dimension/DPR drift)
+  // is an assertion loss, same family as a failed content step.
+  if (visualFailed) {
+    return {
+      status: "ASSERT_FAILED",
+      reason: visualFailed.reason || "visual baseline mismatch",
+    };
   }
   if ((actionableConsole && actionableConsole.length) || (actionableNetwork && actionableNetwork.length)) {
     return {

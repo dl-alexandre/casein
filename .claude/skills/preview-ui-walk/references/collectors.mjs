@@ -210,7 +210,7 @@ export async function startScratchLiveSocket({ dropFirstJoin = true } = {}) {
 }
 
 export async function probeCollectors(browserFactory) {
-  const result = { har: null, dom: null, server_timing: null, ws: null, a11y: null, viewport: null, resource_metrics: null, errors: [] };
+  const result = { har: null, dom: null, server_timing: null, ws: null, a11y: null, viewport: null, resource_metrics: null, visual_baseline: null, errors: [] };
   let browser = null;
   try {
     browser = await browserFactory();
@@ -260,6 +260,42 @@ export async function probeCollectors(browserFactory) {
         result.resource_metrics = await rm.collectResourceMetrics(page, { session, before });
       } catch (err) {
         result.errors.push(`resource_metrics: ${String(err?.message || err)}`);
+      }
+
+      // Visual-baseline proof against REAL Chromium pixels, still scratch-only:
+      // two captures of the same fixture must compare identical, and a visible
+      // mutation must exceed the 0.1% gate — proving screenshot bytes, decoder
+      // and diff engine end-to-end without any product page or stored baseline.
+      try {
+        const vb = await import("./visual_baseline.mjs");
+        const engineProof = vb.proveDiffEngine();
+        if (!engineProof.observable) {
+          result.errors.push(`visual_baseline: ${engineProof.reason}`);
+        } else {
+          await page.setContent(
+            "<html><body style='margin:0;background:#123456'><div style='width:200px;height:200px;background:#abcdef'>stable</div></body></html>",
+          );
+          const first = await page.screenshot({ type: "png" });
+          const second = await page.screenshot({ type: "png" });
+          const identical = vb.comparePng(second, first);
+          await page.setContent(
+            "<html><body style='margin:0;background:#123456'><div style='width:200px;height:200px;background:#ff0000'>changed</div></body></html>",
+          );
+          const mutated = await page.screenshot({ type: "png" });
+          const changed = vb.comparePng(mutated, first);
+          const proven =
+            identical.comparable === true &&
+            identical.pass === true &&
+            changed.comparable === true &&
+            changed.pass === false;
+          result.visual_baseline = {
+            observable: proven,
+            identicalChangedPixels: identical.changedPixels ?? null,
+            mutationChangedRatio: changed.changedRatio ?? null,
+          };
+        }
+      } catch (err) {
+        result.errors.push(`visual_baseline: ${String(err?.message || err)}`);
       }
 
       const sock = await startScratchLiveSocket();

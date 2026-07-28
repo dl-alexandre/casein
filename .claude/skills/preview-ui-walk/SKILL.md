@@ -277,9 +277,15 @@ the page-sharding, not a redesign.
   `skipped: tidewave_unavailable` (unless `require_tidewave: true`).
   See `references/runtime_evidence.mjs`, `page_steps.mjs`, and schema `runtime` /
   `pages[].steps`.
-- Re-runnable: same workflow manifest → same walk. Use `preview_compare_snapshots`
-  against a prior run's screenshots for visual-diff regression once a baseline
-  exists (only meaningful for pages with stable content).
+- Re-runnable: same workflow manifest → same walk. For pixel-level regression,
+  require **visual baseline** evidence (`require_evidence: ["visual_baseline"]`
+  + a `visual_baseline.source_identity`): the driver compares each page
+  screenshot against an **explicitly accepted** baseline in the durable Casein
+  Artifact store (never a local cache). Walks only compare — accepting new
+  pixels is the explicit `visual_baseline.mjs accept` action. Exact
+  width/height/DPR required; >0.1% changed pixels fails; missing
+  store/baseline is BLOCKED, at preflight and per page. See
+  `references/manifest-schema.md` § Visual baseline.
 - **Boundary:** product routes, login, safety, and runtime probes stay in the
   target repo under `.casein/preview-walk.json` and/or `.casein/preview-walks/*.json`.
   This skill must stay app-agnostic — new product scenarios are new manifests, not
