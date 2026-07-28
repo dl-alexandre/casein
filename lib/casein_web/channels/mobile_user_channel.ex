@@ -11,6 +11,7 @@ defmodule CaseinWeb.MobileUserChannel do
   use Phoenix.Channel
 
   alias Casein.Mobile.Actions
+  alias Casein.Mobile.AttentionInbox
   alias Casein.Mobile.Evidence
   alias Casein.Mobile.Intervention
   alias Casein.Mobile.Observability
@@ -58,9 +59,12 @@ defmodule CaseinWeb.MobileUserChannel do
   def handle_in("card_action", %{"card_id" => card_id, "action" => action} = params, socket)
       when is_binary(card_id) and is_binary(action) do
     user_id = socket.assigns.mobile_user_id
+    card = Enum.find(UserObserver.snapshot(user_id).cards, &(&1.id == card_id))
 
     case Actions.dispatch(action_context(socket, user_id), params) do
       {:ok, result} ->
+        observe_attention_action(socket, user_id, card, action, "succeeded")
+
         {:reply,
          {:ok,
           %{
@@ -71,11 +75,62 @@ defmodule CaseinWeb.MobileUserChannel do
           }}, socket}
 
       {:error, reason} ->
+        observe_attention_action(socket, user_id, card, action, "rejected")
         {:reply, {:error, %{reason: Atom.to_string(reason)}}, socket}
     end
   end
 
   def handle_in("card_action", _params, socket) do
+    {:reply, {:error, %{reason: "invalid_payload"}}, socket}
+  end
+
+  def handle_in(
+        "attention_viewed",
+        %{
+          "origin_id" => origin_id,
+          "card_id" => card_id,
+          "attention_key" => attention_key,
+          "through_marker" => marker
+        },
+        socket
+      )
+      when is_binary(origin_id) and is_binary(card_id) and is_binary(attention_key) and
+             is_integer(marker) do
+    user_id = socket.assigns.mobile_user_id
+    active_origin_id = socket.assigns[:mobile_origin_id] || Origin.id()
+    snapshot = UserObserver.snapshot(user_id)
+
+    with true <- origin_id == active_origin_id,
+         card when not is_nil(card) <- Enum.find(snapshot.cards, &(&1.id == card_id)),
+         true <- AttentionInbox.key(card) == attention_key,
+         :ok <-
+           authorize_workspace(socket, socket.assigns[:current_user] || %{}, card.workspace_id),
+         {:ok, _cursor} <-
+           AttentionInbox.mark_viewed(user_id, active_origin_id, attention_key, marker) do
+      :ok = UserObserver.refresh(user_id)
+
+      _ =
+        Observability.record(
+          Map.put(action_context(socket, user_id), :workspace_id, card.workspace_id),
+          %{
+            "event" => "attention_view",
+            "outcome" => "handled",
+            "action_kind" => "viewed",
+            "card_id" => card.id,
+            "awareness_latency_bucket" => duration_bucket(card.updated_at),
+            "time_to_action_bucket" => duration_bucket(card.updated_at)
+          }
+        )
+
+      {:reply, {:ok, render_snapshot(UserObserver.snapshot(user_id), socket)}, socket}
+    else
+      false -> {:reply, {:error, %{reason: "attention_scope_mismatch"}}, socket}
+      nil -> {:reply, {:error, %{reason: "stale_card"}}, socket}
+      {:error, reason} -> {:reply, {:error, error_payload(reason)}, socket}
+    end
+  end
+
+  def handle_in("attention_viewed", _params, socket) do
     {:reply, {:error, %{reason: "invalid_payload"}}, socket}
   end
 
@@ -264,18 +319,33 @@ defmodule CaseinWeb.MobileUserChannel do
   end
 
   defp render_snapshot(%{user_id: user_id, version: version, cards: cards}, socket) do
+    origin_id = socket.assigns[:mobile_origin_id] || Origin.id()
+    attention_by_card = AttentionInbox.project_many(user_id, origin_id, cards)
+
+    cards =
+      Enum.sort_by(cards, fn card ->
+        attention = Map.fetch!(attention_by_card, card.id)
+
+        {
+          attention_rank_band(attention.priority),
+          attention.rank * -1,
+          attention_sort_time(attention.changed_at || card.updated_at),
+          attention.identity
+        }
+      end)
+
     %{
       user_id: user_id,
       version: version,
       origin: %{
-        id: socket.assigns[:mobile_origin_id] || Origin.id(),
+        id: origin_id,
         display_name: socket.assigns[:mobile_origin_name] || Origin.display_name()
       },
-      cards: Enum.map(cards, &render_card(&1, socket))
+      cards: Enum.map(cards, &render_card(&1, Map.fetch!(attention_by_card, &1.id), socket))
     }
   end
 
-  defp render_card(card, socket) do
+  defp render_card(card, attention, socket) do
     resume = ResumeCard.project(card)
     intervention = Intervention.describe(card)
     evidence = Evidence.project(card, socket.assigns[:current_user] || %{})
@@ -283,6 +353,7 @@ defmodule CaseinWeb.MobileUserChannel do
 
     %{
       id: card.id,
+      attention: render_value(attention),
       origin: render_value(resume.origin),
       resume: render_value(resume),
       type: Atom.to_string(card.type),
@@ -319,6 +390,50 @@ defmodule CaseinWeb.MobileUserChannel do
       expires_at: render_value(card.expires_at)
     }
   end
+
+  defp attention_rank_band("critical"), do: 0
+  defp attention_rank_band("high"), do: 1
+  defp attention_rank_band("normal"), do: 2
+  defp attention_rank_band(_priority), do: 3
+
+  defp attention_sort_time(%DateTime{} = value),
+    do: DateTime.to_unix(value, :microsecond) * -1
+
+  defp attention_sort_time(_value), do: 0
+
+  defp observe_attention_action(_socket, _user_id, nil, _action, _outcome), do: :ok
+
+  defp observe_attention_action(socket, user_id, card, action, outcome) do
+    Observability.record(
+      Map.put(action_context(socket, user_id), :workspace_id, card.workspace_id),
+      %{
+        "event" => "attention_action",
+        "outcome" => outcome,
+        "action_kind" => observation_action_kind(action),
+        "time_to_action_bucket" => duration_bucket(card.updated_at),
+        "card_id" => card.id
+      }
+    )
+  end
+
+  defp observation_action_kind(action)
+       when action in ["approve", "deny", "request_changes"],
+       do: "review"
+
+  defp observation_action_kind("follow_up"), do: "follow_up"
+  defp observation_action_kind(_action), do: nil
+
+  defp duration_bucket(%DateTime{} = occurred_at) do
+    case max(DateTime.diff(DateTime.utc_now(), occurred_at, :second), 0) do
+      seconds when seconds < 10 -> "under_10s"
+      seconds when seconds < 60 -> "under_1m"
+      seconds when seconds < 300 -> "under_5m"
+      seconds when seconds < 3_600 -> "under_1h"
+      _seconds -> "over_1h"
+    end
+  end
+
+  defp duration_bucket(_occurred_at), do: "unknown"
 
   defp intervention_actions(card, nil), do: Map.get(card, :actions, [])
 
@@ -399,6 +514,8 @@ defmodule CaseinWeb.MobileUserChannel do
   defp render_route(route), do: render_value(route)
 
   defp render_value(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp render_value(nil), do: nil
+  defp render_value(value) when is_boolean(value), do: value
   defp render_value(value) when is_atom(value), do: Atom.to_string(value)
   defp render_value(value) when is_list(value), do: Enum.map(value, &render_value/1)
 

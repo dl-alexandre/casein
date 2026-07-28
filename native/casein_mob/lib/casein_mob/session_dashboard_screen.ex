@@ -21,8 +21,8 @@ defmodule CaseinMob.SessionDashboardScreen do
   @transition_notice_ms 1_600
 
   @card_segments [
-    {:needs_action, "Needs Action"},
-    {:running, "Running"},
+    {:needs_action, "Needs Me"},
+    {:running, "Working"},
     {:failed, "Failed"},
     {:done, "Done"}
   ]
@@ -351,7 +351,7 @@ defmodule CaseinMob.SessionDashboardScreen do
         %{
           type: :text,
           props: %{
-            text: "Action Center",
+            text: "Attention Inbox",
             text_size: :xl,
             text_color: :on_primary,
             weight: 1,
@@ -928,7 +928,7 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp filter_empty_state(:needs_action),
-    do: empty_notice("Nothing needs your action", "Approvals and blocked runs land here.")
+    do: empty_notice("Nothing needs you", "Decisions and human blockers land here.")
 
   defp filter_empty_state(:running),
     do: empty_notice("No running work", "Active runs and agents appear here while they work.")
@@ -957,13 +957,18 @@ defmodule CaseinMob.SessionDashboardScreen do
   # Segment classification reads the normalized `kind`/`status`, falling back to
   # the legacy `type` for compatibility.
   defp card_segment(card) do
+    required_decision = card |> get("attention", %{}) |> get("required_decision")
     resume_state = card |> get("resume", %{}) |> get("state") |> to_string()
     kind = to_string(get(card, "kind") || get(card, "type") || "")
     status = to_string(get(card, "status") || "")
 
-    case resume_segment(resume_state) do
-      nil -> legacy_card_segment(kind, status)
-      segment -> segment
+    if is_binary(required_decision) and required_decision != "" do
+      :needs_action
+    else
+      case resume_segment(resume_state) do
+        nil -> legacy_card_segment(kind, status)
+        segment -> segment
+      end
     end
   end
 
@@ -986,13 +991,49 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp priority_rank(card) do
-    case to_string(get(card, "priority") || "") do
-      "high" -> 0
-      "normal" -> 1
-      "low" -> 2
-      _ -> 3
+    attention = get(card, "attention", %{})
+    rank = get(attention, "rank", 0)
+
+    {
+      attention_priority_rank(get(attention, "priority") || get(card, "priority")),
+      if(is_integer(rank), do: rank * -1, else: 0),
+      attention_recency_rank(card),
+      to_string(get(attention, "identity") || get(card, "qualified_id") || get(card, "id"))
+    }
+  end
+
+  defp attention_recency_rank(card) do
+    attention_changed = card |> get("attention", %{}) |> get("changed_at")
+
+    latest_change =
+      card
+      |> get("attention", %{})
+      |> get("since_viewed", %{})
+      |> get("changes", [])
+      |> List.wrap()
+      |> List.first()
+      |> then(fn
+        change when is_map(change) -> get(change, "occurred_at")
+        _change -> nil
+      end)
+
+    attention_changed
+    |> Kernel.||(latest_change)
+    |> Kernel.||(get(card, "updated_at"))
+    |> Kernel.||(get(card, "_cached_at"))
+    |> timestamp_rank()
+  end
+
+  defp timestamp_rank(%DateTime{} = value), do: -DateTime.to_unix(value, :microsecond)
+
+  defp timestamp_rank(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, parsed, _offset} -> -DateTime.to_unix(parsed, :microsecond)
+      _error -> 0
     end
   end
+
+  defp timestamp_rank(_value), do: 0
 
   defp card_action_notice({:ok, _result}), do: "Action accepted"
   defp card_action_notice({:error, reason}), do: "Action failed: #{humanize_reason(reason)}"
@@ -1032,9 +1073,16 @@ defmodule CaseinMob.SessionDashboardScreen do
                 },
                 children: []
               },
-              chip(card_type_label(get(card, "type")), card_priority_color(get(card, "priority")))
+              chip(
+                attention_priority_label(card),
+                card_priority_color(
+                  get(get(card, "attention", %{}), "priority") || get(card, "priority")
+                )
+              )
             ]
           },
+          attention_reason_line(card),
+          since_viewed_line(card),
           card_body(card),
           workspace_id &&
             muted_line(card_context_line(origin_name, workspace_id, card, authoritative?)),
@@ -1117,7 +1165,64 @@ defmodule CaseinMob.SessionDashboardScreen do
 
   defp card_priority_color("high"), do: :amber_400
   defp card_priority_color(:high), do: :amber_400
+  defp card_priority_color("critical"), do: :amber_400
   defp card_priority_color(_priority), do: :surface_raised
+
+  defp attention_priority_rank("critical"), do: 0
+  defp attention_priority_rank("high"), do: 1
+  defp attention_priority_rank("normal"), do: 2
+  defp attention_priority_rank("low"), do: 3
+  defp attention_priority_rank(:high), do: 1
+  defp attention_priority_rank(_priority), do: 4
+
+  defp attention_priority_label(card) do
+    attention = get(card, "attention", %{})
+
+    case get(attention, "required_decision") do
+      decision when is_binary(decision) and decision != "" -> decision
+      _ -> card_type_label(get(card, "type"))
+    end
+  end
+
+  defp attention_reason_line(card) do
+    case get(get(card, "attention", %{}), "explanation") do
+      explanation when is_binary(explanation) and explanation != "" ->
+        %{
+          type: :text,
+          props: %{
+            text: "Why now: " <> explanation,
+            text_color: :on_surface,
+            text_size: :sm,
+            font_weight: "bold"
+          },
+          children: []
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp since_viewed_line(card) do
+    since = card |> get("attention", %{}) |> get("since_viewed", %{})
+    count = get(since, "count", 0)
+    changes = get(since, "changes", []) |> List.wrap()
+    latest = List.first(changes)
+
+    cond do
+      not is_integer(count) or count <= 0 ->
+        nil
+
+      is_map(latest) ->
+        muted_line(
+          "#{count} #{if(count == 1, do: "change", else: "changes")} since you looked · " <>
+            to_string(get(latest, "label", "Status changed"))
+        )
+
+      true ->
+        muted_line("#{count} changes since you looked")
+    end
+  end
 
   defp card_header(wid, status) do
     %{
@@ -1580,6 +1685,8 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp handle_live_mobile_card_action(socket, card) do
+    mark_attention_viewed(card)
+
     if needs_review_card?(card) or intervention_card?(card) do
       socket
       |> remember_card_context(card)
@@ -1598,6 +1705,25 @@ defmodule CaseinMob.SessionDashboardScreen do
         nil ->
           socket
       end
+    end
+  end
+
+  defp mark_attention_viewed(card) do
+    attention = get(card, "attention", %{})
+    since = get(attention, "since_viewed", %{})
+    origin_id = card |> get("origin", %{}) |> get("id")
+    marker = get(since, "through_marker")
+    attention_key = get(attention, "key")
+    card_id = get(card, "id")
+
+    if is_binary(origin_id) and is_binary(attention_key) and is_binary(card_id) and
+         is_integer(marker) do
+      SessionClient.attention_viewed(%{
+        "origin_id" => origin_id,
+        "card_id" => card_id,
+        "attention_key" => attention_key,
+        "through_marker" => marker
+      })
     end
   end
 
@@ -2129,6 +2255,13 @@ defmodule CaseinMob.SessionDashboardScreen do
         Mob.Socket.push_screen(socket, PairingScreen, %{code: pairing_code})
 
       mobile_review_notification?(data) and present?(card_id) ->
+        SessionClient.mobile_observation(%{
+          "event" => "notification",
+          "outcome" => "opened",
+          "workspace_id" => get(data, "workspace_id"),
+          "card_id" => card_id
+        })
+
         handle_review_notification(socket, data, card_id, origin_id)
 
       true ->

@@ -7,7 +7,7 @@ defmodule Casein.PushTest do
   use Casein.DataCase, async: false
 
   alias Casein.{Audit, Push}
-  alias Casein.Mobile.UserObserver
+  alias Casein.Mobile.{Card, UserObserver}
   alias Casein.Notifications
 
   setup do
@@ -149,6 +149,98 @@ defmodule Casein.PushTest do
     })
 
     refute_receive {:pushed, _, _, _}, 300
+
+    :ok = UserObserver.stop(user_id)
+    {:ok, _pid} = UserObserver.ensure_started(user_id)
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: "pw-1",
+      workspace_name: "Push Workspace",
+      session_id: "run-1",
+      review_count: 3
+    })
+
+    refute_receive {:pushed, _, _, _}, 300
+  end
+
+  test "attention push sends actionable outcomes but not working churn" do
+    user_id = unique_user("push-attention")
+    :ok = UserObserver.clear(user_id)
+    :ok = Push.register_user(%{user_id: user_id, token: "tok-attention", platform: "android"})
+
+    working =
+      Card.in_progress(%{user_id: user_id, workspace_id: "pw-attention", session_id: "run-1"})
+
+    Phoenix.PubSub.broadcast(
+      Casein.PubSub,
+      UserObserver.card_events_topic(),
+      {:mobile_card_created, working}
+    )
+
+    refute_receive {:pushed, "tok-attention", _, _}, 300
+
+    outcome =
+      Card.outcome(%{
+        user_id: user_id,
+        workspace_id: "pw-attention",
+        session_id: "run-1",
+        outcome: :failed
+      })
+
+    Phoenix.PubSub.broadcast(
+      Casein.PubSub,
+      UserObserver.card_events_topic(),
+      {:mobile_card_created, outcome}
+    )
+
+    assert_receive {:pushed, "tok-attention", "android", notification}, 1_000
+    assert notification.action == "mobile.attention"
+    assert notification.reason_code == "failure"
+    assert notification.required_decision == "Inspect failure"
+    assert notification.attention_key =~ "pw-attention"
+    assert notification.notification_group =~ Casein.Origin.id()
+    refute Map.has_key?(notification, :message)
+    refute Map.has_key?(notification, :output)
+  end
+
+  test "repeated agent blocker alerts are durably grouped and pushed only once" do
+    user_id = unique_user("push-blocker-dedupe")
+    workspace_id = "pw-blocker-dedupe"
+    :ok = UserObserver.clear(user_id)
+    :ok = UserObserver.watch_workspace(user_id, workspace_id)
+
+    :ok =
+      Push.register(%{
+        workspace_id: workspace_id,
+        token: "tok-blocker-dedupe",
+        platform: "android",
+        user_id: user_id
+      })
+
+    for event_id <- ["blocked-event-1", "blocked-event-2"] do
+      Audit.emit!(%{
+        id: event_id,
+        workspace_id: workspace_id,
+        actor_id: "agent",
+        action: "agent.blocked",
+        target_type: "tmux_pane",
+        target_ref: "%3",
+        metadata: %{session: "casein_alpha_agent", pane: "%3"}
+      })
+    end
+
+    assert_receive {:pushed, "tok-blocker-dedupe", "android", notification}, 1_000
+    assert notification.action == "agent.blocked"
+    refute_receive {:pushed, "tok-blocker-dedupe", "android", _notification}, 500
+
+    assert [%{occurrence_count: 2, source_id: "blocked-event-1"}] =
+             Notifications.list_for_user(user_id)
+             |> Enum.filter(&(&1.type == "agent_blocked"))
+
+    assert eventually(fn ->
+             Audit.recent_for(workspace_id, 20)
+             |> Enum.any?(&(&1.action == "mobile.notification"))
+           end) == :ok
   end
 
   test "user-scoped tokens receive new needs_review cards without workspace registration" do

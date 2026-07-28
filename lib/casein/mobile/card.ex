@@ -6,7 +6,8 @@ defmodule Casein.Mobile.Card do
   shaping, ids, dedupe keys, timestamps, and ordering.
   """
 
-  @type card_type :: :needs_review | :in_progress | :connection_issue | :workspace_idle
+  @type card_type ::
+          :needs_review | :in_progress | :outcome | :connection_issue | :workspace_idle
   @type priority :: :high | :normal | :low
 
   @type action :: %{
@@ -162,6 +163,7 @@ defmodule Casein.Mobile.Card do
         status: "running",
         context: %{
           session_id: session_id,
+          command_id: attrs[:command_id] || attrs["command_id"],
           locator: attr(attrs, [:locator, "locator"])
         },
         actions: [
@@ -171,10 +173,62 @@ defmodule Casein.Mobile.Card do
         body: in_progress_body(agent_count, attrs[:started_at] || attrs["started_at"]),
         action: %{label: "View", route: {:session_detail, workspace_id, session_id}},
         meta: %{
+          command_id: attrs[:command_id] || attrs["command_id"],
           run_phase: attrs[:run_phase] || attrs["run_phase"] || "executing",
           agent_count: agent_count,
           last_activity_at: attrs[:last_activity_at] || attrs["last_activity_at"]
         },
+        now: now
+      }
+    )
+  end
+
+  @doc """
+  Build a bounded terminal outcome card while preserving the in-progress card
+  id. The stable id keeps lifecycle transitions and read cursors coherent; a
+  tmux session is still only a locator, never promoted to durable task identity.
+  """
+  @spec outcome(map(), DateTime.t()) :: t()
+  def outcome(attrs, now \\ DateTime.utc_now()) when is_map(attrs) do
+    user_id = require_string!(attrs, :user_id)
+    workspace_id = require_string!(attrs, :workspace_id)
+    session_id = optional_string(attrs[:session_id] || attrs["session_id"])
+    outcome = outcome_status(attrs[:outcome] || attrs["outcome"])
+    failed? = outcome in ~w(failed timed_out)
+    route = {:session_detail, workspace_id, session_id}
+
+    base(
+      :outcome,
+      %{
+        id: id(:in_progress, workspace_id, session_id),
+        user_id: user_id,
+        workspace_id: workspace_id,
+        workspace_name: workspace_name(attrs, workspace_id),
+        session_id: session_id,
+        priority: if(failed?, do: :high, else: :normal),
+        status: outcome,
+        kind: if(failed?, do: "run_failed", else: "run_completed"),
+        context: %{
+          session_id: session_id,
+          command_id: attrs[:command_id] || attrs["command_id"],
+          locator: attr(attrs, [:locator, "locator"])
+        },
+        actions: [navigation_action_spec("review_outcome", "Review outcome", route)],
+        title: outcome_title(outcome),
+        body: outcome_body(outcome),
+        action: %{label: "Review", route: route},
+        meta: %{
+          command_id: attrs[:command_id] || attrs["command_id"],
+          run_phase: if(failed?, do: "failed", else: "complete"),
+          outcome: outcome,
+          source: attrs[:source] || attrs["source"],
+          reason: attrs[:reason] || attrs["reason"],
+          last_activity_at: attrs[:last_activity_at] || attrs["last_activity_at"],
+          merge_sha: bounded_ref(attrs[:merge_sha] || attrs["merge_sha"]),
+          deploy_sha: bounded_ref(attrs[:deploy_sha] || attrs["deploy_sha"]),
+          verification: bounded_ref(attrs[:verification] || attrs["verification"])
+        },
+        expires_at: DateTime.add(now, 86_400, :second),
         now: now
       }
     )
@@ -393,7 +447,7 @@ defmodule Casein.Mobile.Card do
     now = attrs.now
 
     %{
-      id: id(type, workspace_id, session_id),
+      id: Map.get(attrs, :id, id(type, workspace_id, session_id)),
       type: type,
       source: Map.get(attrs, :source, "casein"),
       kind: Map.get(attrs, :kind, default_kind(type)),
@@ -427,6 +481,7 @@ defmodule Casein.Mobile.Card do
   # verb so later producers (CI, incidents, deploys) can reuse the vocabulary.
   defp default_kind(:needs_review), do: "approval_required"
   defp default_kind(:in_progress), do: "in_progress"
+  defp default_kind(:outcome), do: "run_completed"
   defp default_kind(:connection_issue), do: "connection_issue"
   defp default_kind(:workspace_idle), do: "workspace_idle"
 
@@ -538,6 +593,29 @@ defmodule Casein.Mobile.Card do
   defp in_progress_body(agent_count, started_at),
     do:
       "#{agent_count} #{plural(agent_count, "agent")} active - Started #{format_time(started_at)}"
+
+  defp outcome_status(value) when value in [:failed, :timed_out, :succeeded],
+    do: Atom.to_string(value)
+
+  defp outcome_status(value) when value in ~w(failed timed_out succeeded), do: value
+  defp outcome_status(_value), do: "completed"
+
+  defp outcome_title("failed"), do: "Work failed"
+  defp outcome_title("timed_out"), do: "Work timed out"
+  defp outcome_title(_outcome), do: "Work completed"
+
+  defp outcome_body("failed"), do: "The run reported a failure"
+  defp outcome_body("timed_out"), do: "The run did not finish in time"
+  defp outcome_body(_outcome), do: "The run reported completion"
+
+  defp bounded_ref(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      text -> String.slice(text, 0, 240)
+    end
+  end
+
+  defp bounded_ref(_value), do: nil
 
   defp reason(value) when is_atom(value), do: value
 

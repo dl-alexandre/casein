@@ -56,6 +56,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
   def handle_info({:tap, :open_pwa}, socket) do
     case pwa_url(socket.assigns.card) do
       url when is_binary(url) and url != "" ->
+        observe_escalation(socket.assigns.card, "desktop_required")
         {:noreply, Mob.Socket.push_screen(socket, CaseinMob.WebViewScreen, %{url: url})}
 
       _ ->
@@ -65,6 +66,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
 
   def handle_info({:tap, {:open_evidence, url}}, socket)
       when is_binary(url) and url != "" do
+    observe_escalation(socket.assigns.card, "escalated")
     {:noreply, Mob.Socket.push_screen(socket, CaseinMob.WebViewScreen, %{url: url})}
   end
 
@@ -664,6 +666,16 @@ defmodule CaseinMob.ReviewDecisionScreen do
         "card_id" => get(socket.assigns.card, "id")
       })
     end
+  end
+
+  defp observe_escalation(card, outcome) do
+    SessionClient.mobile_observation(%{
+      "event" => "attention_action",
+      "outcome" => outcome,
+      "action_kind" => "pwa",
+      "workspace_id" => get(card, "workspace_id"),
+      "card_id" => get(card, "id")
+    })
   end
 
   defp style_background("primary"), do: :primary

@@ -2,11 +2,47 @@ defmodule Casein.NotificationsTest do
   use Casein.DataCase, async: true
 
   alias Casein.Audit.Event
+  alias Casein.Mobile.Card
   alias Casein.Notifications
   alias Casein.Notifications.Notification
 
   @now ~U[2026-07-04 20:30:00.000000Z]
   @later ~U[2026-07-04 20:35:00.000000Z]
+
+  test "mobile attention policy ignores churn and dedupes origin-qualified outcomes" do
+    working =
+      Card.in_progress(
+        %{user_id: "dev", workspace_id: "ws-1", session_id: "run-1"},
+        @now
+      )
+
+    assert :ignored = Notifications.deliver_mobile_card(working, now: @now)
+
+    outcome =
+      Card.outcome(
+        %{
+          user_id: "dev",
+          workspace_id: "ws-1",
+          session_id: "run-1",
+          outcome: :failed
+        },
+        @now
+      )
+
+    assert {:ok, first, :created} = Notifications.deliver_mobile_card(outcome, now: @now)
+    assert first.type == "mobile_attention"
+    assert first.metadata["reason_code"] == "failure"
+    assert first.metadata["required_decision"] == "Inspect failure"
+    assert first.metadata["origin_id"] == Casein.Origin.id()
+    refute Map.has_key?(first.metadata, "body")
+    refute Map.has_key?(first.metadata, "output")
+
+    assert {:ok, duplicate, :deduped} =
+             Notifications.deliver_mobile_card(outcome, now: DateTime.add(@now, 1, :second))
+
+    assert duplicate.id == first.id
+    assert duplicate.occurrence_count == 2
+  end
 
   test "deliver persists and broadcasts a durable notification" do
     :ok = Notifications.subscribe("dev")

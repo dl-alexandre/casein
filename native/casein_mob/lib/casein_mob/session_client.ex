@@ -138,6 +138,16 @@ defmodule CaseinMob.SessionClient do
   end
 
   @doc """
+  Advance a server-issued Attention Inbox marker on the one active origin.
+  The server revalidates origin, card, workspace authorization, and marker
+  scope; this client method never acts on cached cards.
+  """
+  @spec attention_viewed(map()) :: :ok
+  def attention_viewed(params) when is_map(params) do
+    cast({:attention_viewed, params})
+  end
+
+  @doc """
   Register this device's OS push token for a workspace. Prefer the user-level
   mobile card stream when joined, with the workspace session channel retained as
   a fallback for older flows. The server stores it and pushes alerts even when
@@ -376,6 +386,14 @@ defmodule CaseinMob.SessionClient do
   def handle_cast({:mobile_observation, params}, socket) do
     if connected?(socket) and joined?(socket, @mobile_cards_topic) do
       _ = push(socket, @mobile_cards_topic, "mobile_observation", params)
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_cast({:attention_viewed, params}, socket) do
+    if connected?(socket) and joined?(socket, @mobile_cards_topic) do
+      _ = push(socket, @mobile_cards_topic, "attention_viewed", params)
     end
 
     {:noreply, socket}

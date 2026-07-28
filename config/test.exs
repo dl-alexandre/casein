@@ -162,6 +162,11 @@ config :casein,
   runtime_reaper_dry_run: true,
   workspace_reconciler_enabled: false,
   workspace_reconciler_dry_run: true,
+  # UserObserver/channel processes outlive individual SQL sandbox clients. The
+  # persistence contract is enabled explicitly by its non-async DataCase tests;
+  # ordinary channel tests exercise the same pure projection without letting a
+  # long-lived process retain a sandbox checkout.
+  mobile_attention_store_enabled: false,
   # The integration source is used in the test suite because the existing
   # workspace flow tests assert on its HTTP-backed shape via HTTPStub servers.
   # Tests that want the Local source override this.
