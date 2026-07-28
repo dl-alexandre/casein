@@ -218,3 +218,123 @@ export function summarize({ sockets, opens, closes, errors, framesDropped, maxFr
     sockets: ordered,
   };
 }
+
+/**
+ * CDP fallback: capture frames via Network.webSocketFrame{Sent,Received}.
+ *
+ * Playwright's own framesent/framereceived events do not fire on every
+ * Playwright/Chromium pair (they do not on playwright-core 1.62 + chromium
+ * 1234), which leaves LiveView join status unobservable — the single most
+ * valuable WS signal, since a page can render perfectly while its socket never
+ * joins. CDP delivers the same frames one layer down and is not subject to that
+ * gap.
+ *
+ * Payload handling is identical to the Playwright path: the raw
+ * `response.payloadData` is parsed ONLY for the Phoenix envelope
+ * (topic/event/status) and is never stored. We keep direction, opcode-derived
+ * type, byte size and timing.
+ */
+export async function attachWsCdp(page, opts = {}) {
+  const { maxFrames = DEFAULTS.maxFrames, maxSockets = DEFAULTS.maxSockets } = opts;
+  const now = opts.now || (() => Date.now());
+  const t0 = now();
+
+  const context = page.context?.();
+  const session = opts.session || (context?.newCDPSession ? await context.newCDPSession(page) : null);
+  if (!session) return null;
+  await session.send("Network.enable").catch(() => {});
+
+  const byRequest = new Map(); // requestId -> socket record
+  const sockets = [];
+  let opens = 0;
+  let closes = 0;
+  let errors = 0;
+  let framesDropped = 0;
+  let frameEventsSeen = 0;
+
+  session.on("Network.webSocketCreated", ({ requestId, url }) => {
+    opens += 1;
+    if (sockets.length >= maxSockets) return;
+    const rec = {
+      url: sanitizeSocketUrl(url),
+      openedAtMs: now() - t0,
+      closedAtMs: null,
+      error: null,
+      frames: [],
+      counts: { sent: 0, received: 0 },
+      liveview: { joins: 0, joinOk: 0, joinError: 0, topics: [] },
+    };
+    byRequest.set(requestId, rec);
+    sockets.push(rec);
+  });
+
+  const onFrame = (direction) => ({ requestId, response }) => {
+    const rec = byRequest.get(requestId);
+    if (!rec) return;
+    frameEventsSeen += 1;
+    // opcode 1 = text, 2 = binary (RFC 6455). Only text can be a Phoenix frame.
+    const isText = response?.opcode === 1;
+    const raw = typeof response?.payloadData === "string" ? response.payloadData : "";
+    const size = Buffer.byteLength(raw);
+    rec.counts[direction] += 1;
+
+    const phx = isText ? parsePhoenixFrame(raw) : null;
+    if (phx) {
+      if (phx.event === "phx_join") {
+        rec.liveview.joins += 1;
+        if (phx.topic && !rec.liveview.topics.includes(phx.topic)) rec.liveview.topics.push(phx.topic);
+      }
+      if (phx.event === "phx_reply" && phx.status === "ok") rec.liveview.joinOk += 1;
+      if (phx.event === "phx_reply" && phx.status === "error") rec.liveview.joinError += 1;
+    }
+    if (rec.frames.length >= maxFrames) {
+      framesDropped += 1;
+      return;
+    }
+    // Envelope only — payloadData is deliberately dropped here and never stored.
+    rec.frames.push({
+      direction: direction === "sent" ? "sent" : "received",
+      atMs: now() - t0,
+      type: isText ? "text" : "binary",
+      size,
+      ...(phx ? { phx: { topic: phx.topic, event: phx.event, ...(phx.status ? { status: phx.status } : {}) } } : {}),
+    });
+  };
+
+  session.on("Network.webSocketFrameSent", onFrame("sent"));
+  session.on("Network.webSocketFrameReceived", onFrame("received"));
+  session.on("Network.webSocketFrameError", ({ requestId, errorMessage }) => {
+    errors += 1;
+    const rec = byRequest.get(requestId);
+    if (rec) rec.error = String(errorMessage || "frame error");
+  });
+  session.on("Network.webSocketClosed", ({ requestId }) => {
+    closes += 1;
+    const rec = byRequest.get(requestId);
+    if (rec && rec.closedAtMs == null) rec.closedAtMs = now() - t0;
+  });
+
+  return {
+    async stop() {
+      try {
+        await session.detach?.();
+      } catch {
+        /* session may already be gone */
+      }
+      if (sockets.length === 0 && opens === 0) return null;
+      return summarize({ sockets, opens, closes, errors, framesDropped, maxFrames, frameEventsSeen });
+    },
+  };
+}
+
+/**
+ * Preferred entry point: use CDP when available (it observes frames on builds
+ * where Playwright's events do not), else fall back to the Playwright listener.
+ * Both produce the identical evidence shape.
+ */
+export async function attachWsBest(page, opts = {}) {
+  const cdp = await attachWsCdp(page, opts).catch(() => null);
+  if (cdp) return { ...cdp, transport: "cdp" };
+  const pw = attachWs(page, opts);
+  return { stop: async () => pw.stop(), transport: "playwright" };
+}

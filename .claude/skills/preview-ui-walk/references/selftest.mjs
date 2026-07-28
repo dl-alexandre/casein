@@ -924,6 +924,21 @@ assert(
   assert(wsProven({ ws: { frames: { observable: true } } }) === true, "ws proven when frames observable");
   assert(wsProven({ ws: { frames: { observable: false } } }) === false, "ws NOT proven when frames unobservable");
   assert(wsProven(undefined) === false, "ws NOT proven without a probe (never assume capability)");
+
+  // Regression pin for the root cause: a WebSocket cannot complete its upgrade
+  // from a route-fulfilled fake origin, which yields zero frames and looks
+  // exactly like "the driver does not support frame events". The scratch probe
+  // must therefore stand up a REAL loopback HTTP origin for the page.
+  {
+    const c = await import("./collectors.mjs");
+    assert(
+      typeof c.startScratchOrigin === "function",
+      "probe ships a real loopback origin (fake fulfilled origins cannot host a WebSocket)",
+    );
+    const origin = await c.startScratchOrigin();
+    assert(/^http:\/\/127\.0\.0\.1:\d+\//.test(origin.url), "scratch origin is real loopback http");
+    origin.close();
+  }
 }
 
 if (failed) {

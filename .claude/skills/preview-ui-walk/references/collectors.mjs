@@ -156,6 +156,17 @@ export async function collectDomSnapshot(page, { maxBytes = 512 * 1024 } = {}) {
  * server-forced disconnect, so reconnect + recovery latency are proved rather
  * than assumed. Returns { url, close }.
  */
+export async function startScratchOrigin() {
+  const http = await import("node:http");
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/html" });
+    res.end("<h1>preflight scratch</h1>");
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const { port } = server.address();
+  return { url: `http://127.0.0.1:${port}/`, close: () => server.close() };
+}
+
 export async function startScratchLiveSocket({ dropFirstJoin = true } = {}) {
   // ESM import() ignores NODE_PATH, so resolve like the driver resolves
   // playwright-core: createRequire + a global-root fallback.
@@ -187,7 +198,10 @@ export async function startScratchLiveSocket({ dropFirstJoin = true } = {}) {
       // First join is accepted then dropped, forcing the client to reconnect;
       // the second join is accepted and stays up, so recovery is observable.
       socket.send(JSON.stringify([joinRef, ref, topic, "phx_reply", { status: "ok", response: {} }]));
-      if (dropFirstJoin && joins === 1) setTimeout(() => socket.close(1006), 60);
+      // terminate(), not close(1006): 1006 is a RESERVED code the ws library
+      // refuses to send, and an abrupt termination is a truer simulation of the
+      // network drop a LiveView reconnect actually has to survive.
+      if (dropFirstJoin && joins === 1) setTimeout(() => socket.terminate(), 60);
     });
   });
   await new Promise((r) => wss.on("listening", r));
@@ -222,8 +236,14 @@ export async function probeCollectors(browserFactory) {
     try {
       const { attachWs } = await import("./ws_collector.mjs");
       const sock = await startScratchLiveSocket();
-      if (sock) {
-        const ws = attachWs(page);
+      const origin = sock ? await startScratchOrigin() : null;
+      if (sock && origin) {
+        // A WebSocket needs a real page origin; a fulfilled fake origin cannot
+        // complete the upgrade, which yields zero frames and looks like missing
+        // driver support.
+        await page.goto(origin.url);
+        const { attachWsBest } = await import("./ws_collector.mjs");
+        const ws = await attachWsBest(page);
         await page.evaluate(async (url) => {
           // Connect, join, expect a server-forced close, then reconnect+rejoin.
           const connect = () =>
@@ -236,8 +256,10 @@ export async function probeCollectors(browserFactory) {
           await connect();
           await connect();
         }, sock.url);
-        await new Promise((r) => setTimeout(r, 300));
-        result.ws = ws.stop();
+        await new Promise((r) => setTimeout(r, 400));
+        result.ws = await ws.stop();
+        result.ws_transport = ws.transport;
+        origin.close();
         sock.close();
       }
     } catch (err) {
