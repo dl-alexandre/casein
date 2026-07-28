@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Sanitized contract extracted from the dedicated Casein development profile. -->
+    <key>ApplicationIdentifierPrefix</key>
+    <array>
+        <string>2MP8QWK7R6</string>
+    </array>
+    <key>TeamIdentifier</key>
+    <array>
+        <string>2MP8QWK7R6</string>
+    </array>
+    <key>Entitlements</key>
+    <dict>
+        <key>application-identifier</key>
+        <string>2MP8QWK7R6.com.alexandrefamilyfarm.casein-mob</string>
+        <key>com.apple.developer.team-identifier</key>
+        <string>2MP8QWK7R6</string>
+        <key>keychain-access-groups</key>
+        <array>
+            <string>2MP8QWK7R6.*</string>
+        </array>
+        <key>get-task-allow</key>
+        <true/>
+        <key>aps-environment</key>
+        <string>development</string>
+    </dict>
+</dict>
+</plist>

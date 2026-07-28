@@ -2,6 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Mob passes this plist directly to codesign, so Xcode build variables are not expanded. -->
     <key>application-identifier</key>
     <string>2MP8QWK7R6.com.alexandrefamilyfarm.casein-mob</string>
     <key>com.apple.developer.team-identifier</key>
