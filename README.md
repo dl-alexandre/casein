@@ -12,12 +12,14 @@ of what happened instead of rebuilding context from chat logs and screenshots.
 
 > **Naming:** Casein is both the public product name and the implementation
 > identity — modules are `Casein.*`, the OTP app is `:casein`, environment
-> variables are `CASEIN_*`, and the release binary is `casein`. A few externally
-> registered identifiers still carry the former Casein name pending coordination
-> (public host name, Apple bundle id, and the workspace slug plus the tmux
-> session prefix and MCP server slugs derived from it). The `CASEIN_*` env
-> namespace and the `X-Casein-Caller-Pane` header are deliberate, frozen
-> exceptions. See [`docs/naming-gate.md`](docs/naming-gate.md).
+> variables are `CASEIN_*`, the calling-pane header is `X-Casein-Caller-Pane`,
+> and the release binary is `casein`. Two things still carry the former DevIDE
+> name pending coordination: the legacy public host
+> `devide.devbox.milcgroup.com` and the `/run/devide/current.sock` deploy socket
+> — `casein.devbox.milcgroup.com` is canonical, and the legacy origin is
+> normalized for display but rejected for request authorization — and existing
+> workspace slugs, plus the tmux session and MCP server slugs derived from them.
+> See [`docs/naming-gate.md`](docs/naming-gate.md).
 
 ### Why it exists
 

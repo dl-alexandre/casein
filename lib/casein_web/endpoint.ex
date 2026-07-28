@@ -20,6 +20,11 @@ defmodule CaseinWeb.Endpoint do
 
   plug CaseinWeb.RuntimeSSLPlug
 
+  # Retired public hosts are still served by the edge proxy; send browser
+  # navigations to the canonical origin before anything tries to open a socket
+  # the origin check would reject.
+  plug CaseinWeb.LegacyHostRedirect
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),
