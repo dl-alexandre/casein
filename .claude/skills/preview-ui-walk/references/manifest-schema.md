@@ -251,6 +251,55 @@ Enum: `har`, `a11y`, `dom`, `server_timing`, `ws`, `resource_metrics`,
 
 Omitting `require_evidence` preserves v1 behaviour exactly: nothing is required.
 
+## Visual baseline (pixel regression against an accepted baseline)
+
+```json
+{
+  "require_evidence": ["visual_baseline"],
+  "visual_baseline": {
+    "source_identity": "one@fdfd5d45b",
+    "store": "visual-baselines-admin-smoke",
+    "viewport": "desktop"
+  }
+}
+```
+
+Compares every required page's screenshot against an **explicitly accepted**
+baseline stored in the **durable Casein Artifact store** (a git-committed
+artifact worktree written via the artifact MCP — never a local-only cache).
+The stable baseline key is
+`workflow (report.name) + page path + named viewport + accepted source identity`;
+baselines accepted under a different workflow, viewport, or source identity are
+never compared. Page paths in keys and stored metadata are **redacted to the
+path only** — query strings, fragments and session material are dropped.
+
+Rules (all fail closed):
+
+* **Walks never bless pixels.** A walk only compares. Creating or updating a
+  baseline is the explicit acceptance action:
+  `node visual_baseline.mjs accept --run <outdir> --manifest <m.json> --source-identity <id>`
+  (only PASS/PASS_SLOW pages — or pages BLOCKED solely on the missing baseline
+  itself — are acceptable as baselines).
+* **Exact geometry.** Width, height **and DPR** must match the accepted
+  baseline exactly; any mismatch is a hard visual failure (`ASSERT_FAILED`),
+  not a fuzzy comparison.
+* **0.1% threshold.** Changed pixels **exceeding** 0.1% of the image fail;
+  exactly 0.1% passes. Engine: pinned `pixelmatch` + `pngjs`
+  (`scripts/ensure-preview-walk-deps.sh`).
+* **Missing store / missing baseline / unreachable artifact MCP → `BLOCKED`**,
+  at preflight (when visual evidence is required) and per page at walk time.
+  Preflight proves the diff engine on a scratch fixture and checks accepted
+  baselines read-only — it never touches product pages and never creates or
+  updates a baseline.
+
+Evidence persisted per page: candidate + accepted baseline + diff PNGs
+(`shot-NN.png`, `visual-NN-baseline.png`, `visual-NN-diff.png`), changed-pixel
+count and ratio, dimensions, DPR, the stable key, the accepted source identity,
+and the collector version — in `results.json` and the report.
+
+Store env (same trio the artifact MCP pairing already provides):
+`CASEIN_ARTIFACT_MCP_URL`, `CASEIN_API_TOKEN`, `CASEIN_WORKSPACE_ID`.
+
 ## Named viewports (responsive coverage)
 
 ```json

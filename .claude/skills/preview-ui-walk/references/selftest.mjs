@@ -1095,6 +1095,428 @@ assert(
   assert(resourceMetricsProven(undefined) === false, "rm NOT proven without a probe");
 }
 
+// ── Batch 3b: visual baseline evidence ──────────────────────────────────────
+{
+  const vb = await import("./visual_baseline.mjs");
+  const { visualBaselineProven } = await import("./preflight_run.mjs");
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join, dirname } = await import("node:path");
+
+  // Stable key: all four components, session material dropped, isolation real.
+  const keyOf = (over = {}) =>
+    vb.baselineKey({
+      workflow: "admin-smoke",
+      pagePath: "/admin/pens?token=SECRET#frag",
+      viewport: "desktop",
+      sourceIdentity: "one@abc123",
+      ...over,
+    });
+  assert(keyOf() === "admin-smoke/one-abc123/desktop/admin-pens", "key is the four-part slug");
+  assert(!keyOf().toLowerCase().includes("secret"), "key never carries query/session material");
+  assert(keyOf({ sourceIdentity: "one@def456" }) !== keyOf(), "different source identity -> different key (isolation)");
+  assert(keyOf({ viewport: "mobile" }) !== keyOf(), "different viewport -> different key");
+  assert(keyOf({ workflow: "other-walk" }) !== keyOf(), "different workflow -> different key");
+  assert(keyOf({ pagePath: "/admin/pens" }) === keyOf(), "query/fragment never changes the key");
+  for (const missing of ["workflow", "viewport", "sourceIdentity"]) {
+    let threw = false;
+    try {
+      keyOf({ [missing]: "" });
+    } catch {
+      threw = true;
+    }
+    assert(threw, `missing ${missing} component throws — no defaulted keys, no merged populations`);
+  }
+  assert(keyOf({ pagePath: "/" }) === "admin-smoke/one-abc123/desktop/root", "root path keys as root, not empty");
+
+  // Redaction: query, fragment, userinfo are DROPPED, never masked.
+  assert(vb.redactPagePath("/x?session=S#f") === "/x", "relative path loses query+fragment");
+  assert(vb.redactPagePath("https://u:pw@h:81/x?t=S") === "https://h:81/x", "absolute URL loses userinfo+query");
+
+  // Pixel comparison against the pinned engine.
+  const engine = vb.loadDiffEngine();
+  assert(Boolean(engine), "pinned pixelmatch+pngjs resolve (scripts/ensure-preview-walk-deps.sh)");
+  const basePng = vb.makePng(100, 100, [10, 20, 30, 255], { engine });
+  const perturbed = (n) =>
+    vb.makePng(100, 100, [10, 20, 30, 255], {
+      engine,
+      paint: (png) => {
+        for (let i = 0; i < n; i++) png.data[i * 4] = 250;
+      },
+    });
+  {
+    const r = vb.comparePng(vb.makePng(100, 100, [10, 20, 30, 255], { engine }), basePng, { engine });
+    assert(r.comparable === true && r.pass === true && r.changedPixels === 0, "identical pixels PASS with zero changed");
+    assert(r.collectorVersion === vb.COLLECTOR_VERSION, "evidence carries the collector version");
+  }
+  {
+    const r = vb.comparePng(perturbed(10), basePng, { engine });
+    assert(r.pass === true && r.changedRatio === 0.001, "EXACTLY 0.1% changed passes (the contract is 'exceeds')");
+  }
+  assert(vb.comparePng(perturbed(9), basePng, { engine }).pass === true, "below 0.1% passes");
+  {
+    const r = vb.comparePng(perturbed(11), basePng, { engine });
+    assert(r.pass === false && r.mismatch === "pixels", "above 0.1% fails as a pixel mismatch");
+    assert(r.changedPixels === 11 && r.totalPixels === 10000, "changed-pixel count and total are reported exactly");
+    assert(Boolean(r.diffPng), "a diff image is produced for the report");
+    assert(/0\.1/.test(r.reason), "failure reason names the threshold");
+  }
+  {
+    const r = vb.comparePng(vb.makePng(100, 90, [10, 20, 30, 255], { engine }), basePng, { engine });
+    assert(r.comparable === true && r.pass === false && r.mismatch === "dimensions", "dimension mismatch is a HARD visual failure");
+    assert(r.changedPixels === null, "no pixel count is invented for a dimension mismatch");
+  }
+  {
+    const r = vb.comparePng(basePng, basePng, { engine, candidateDpr: 2, baselineDpr: 1 });
+    assert(r.pass === false && r.mismatch === "dpr", "DPR mismatch is a HARD visual failure");
+  }
+  assert(
+    vb.comparePng(Buffer.from("not a png"), basePng, { engine }).comparable === false,
+    "undecodable candidate -> not comparable (missing evidence, not a fake verdict)",
+  );
+
+  // Fake durable store: a real on-disk artifact worktree + a recording JSON-RPC
+  // stub, so read/accept are exercised against the actual wire+disk shapes.
+  const storeDir = mkdtempSync(join(tmpdir(), "visual-store-"));
+  const calls = [];
+  const rpcOk = (payload) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ result: { content: [{ text: JSON.stringify(payload) }] } }),
+  });
+  const fakeFetch = (worktree) =>
+    async (url, init = {}) => {
+      const body = JSON.parse(init.body || "{}");
+      calls.push({ tool: body?.params?.name, args: body?.params?.arguments });
+      if (body?.params?.name === "artifact_list") {
+        return rpcOk({
+          artifacts: worktree
+            ? [{ id: "art-1", name: "visual-baselines-admin-smoke", retired: false, worktree_path: worktree }]
+            : [],
+        });
+      }
+      return rpcOk({ id: "art-1" });
+    };
+  const store = { url: "http://127.0.0.1:1/api/artifacts/mcp", token: "TOKEN-VALUE-NEVER-LOGGED", workspaceId: "ws-1" };
+  const manifest = {
+    report: { name: "admin-smoke" },
+    require_evidence: ["visual_baseline"],
+    visual_baseline: { source_identity: "one@abc123" },
+    pages: [{ name: "Pens", path: "/admin/pens" }],
+  };
+  const goodKey = vb.baselineKey({
+    workflow: "admin-smoke",
+    pagePath: "/admin/pens",
+    viewport: "default",
+    sourceIdentity: "one@abc123",
+  });
+  const plant = (png, meta) => {
+    const p = join(storeDir, "baselines", goodKey, "baseline.png");
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, png);
+    writeFileSync(join(dirname(p), "baseline.json"), JSON.stringify(meta ?? { sourceIdentity: "one@abc123", dpr: 1, sha256: "x" }));
+  };
+
+  // Missing baseline (store exists, slot empty) -> unavailable -> BLOCKED.
+  {
+    calls.length = 0;
+    const ev = await vb.collectVisualBaseline({
+      shotBytes: basePng,
+      manifest,
+      pagePath: "/admin/pens",
+      viewportName: "default",
+      store,
+      deps: { fetchImpl: fakeFetch(storeDir) },
+    });
+    assert(ev.comparable === false && ev.status === "missing_baseline", "missing baseline -> not comparable");
+    const v = vb.visualVerdict(true, ev);
+    assert(v?.blocked && /visual_baseline/.test(v.blocked.reason), "required + missing baseline -> BLOCKED verdict");
+    assert(vb.visualVerdict(false, ev) === null, "not required -> no verdict influence");
+  }
+
+  // Accepted baseline present -> compared; the compare path NEVER writes.
+  plant(basePng);
+  {
+    calls.length = 0;
+    const ev = await vb.collectVisualBaseline({
+      shotBytes: perturbed(11),
+      manifest,
+      pagePath: "/admin/pens?tok=S",
+      viewportName: "default",
+      dpr: 1,
+      store,
+      deps: { fetchImpl: fakeFetch(storeDir) },
+    });
+    assert(ev.comparable === true && ev.pass === false, "candidate vs accepted baseline compared");
+    assert(ev.key === goodKey, "walk key matches the accepted slot despite the query string");
+    assert(ev.acceptedSourceIdentity === "one@abc123", "accepted source identity is reported");
+    assert(
+      calls.every((c) => c.tool === "artifact_list"),
+      "walk compare path performs READS only — a walk can never bless new pixels",
+    );
+    const vf = vb.visualVerdict(true, ev);
+    assert(vf?.failed && !vf.blocked, "comparable mismatch -> hard visual failure, not BLOCKED");
+    // Secret hygiene: serialized evidence never carries the bearer token.
+    const { baselinePng: _b, diffPng: _d, ...pub } = ev;
+    assert(!JSON.stringify(pub).includes(store.token), "evidence never contains the store token");
+  }
+
+  // Store unreachable / read failure -> BLOCKED, never a silent pass.
+  {
+    const ev = await vb.collectVisualBaseline({
+      shotBytes: basePng,
+      manifest,
+      pagePath: "/admin/pens",
+      viewportName: "default",
+      store,
+      deps: {
+        fetchImpl: async () => {
+          throw new Error("ECONNREFUSED");
+        },
+      },
+    });
+    assert(ev.comparable === false && ev.status === "store_unreachable", "artifact MCP down -> store_unreachable");
+    assert(Boolean(vb.visualVerdict(true, ev)?.blocked), "store failure fails closed as BLOCKED");
+  }
+  {
+    const evNoStore = await vb.collectVisualBaseline({
+      shotBytes: basePng,
+      manifest,
+      pagePath: "/admin/pens",
+      viewportName: "default",
+      store: null,
+    });
+    assert(evNoStore.comparable === false && /not configured/.test(evNoStore.reason), "unconfigured store is explicit");
+    const evNoSrc = await vb.collectVisualBaseline({
+      shotBytes: basePng,
+      manifest: { report: { name: "x" }, visual_baseline: {} },
+      pagePath: "/p",
+      viewportName: "default",
+      store,
+    });
+    assert(/source_identity/.test(evNoSrc.reason), "missing explicit source identity refuses to compare");
+  }
+
+  // Explicit acceptance is the ONLY write path, and it writes durable bytes.
+  {
+    calls.length = 0;
+    const res = await vb.acceptBaseline(
+      store,
+      "visual-baselines-admin-smoke",
+      goodKey,
+      { png: basePng, meta: { sourceIdentity: "one@abc123", dpr: 1, pagePath: vb.redactPagePath("/admin/pens?t=S") } },
+      { fetchImpl: fakeFetch(storeDir), now: () => "2026-01-01T00:00:00.000Z" },
+    );
+    assert(Boolean(res.ok) && res.ok.artifact_id === "art-1", "explicit accept writes via artifact_update");
+    const update = calls.find((c) => c.tool === "artifact_update");
+    assert(Boolean(update), "accept targets the existing store artifact");
+    const pngFile = update.args.files.find((f) => f.path.endsWith("baseline.png"));
+    assert(pngFile.encoding === "base64" && Buffer.from(pngFile.content, "base64").equals(Buffer.from(basePng)), "baseline PNG round-trips as base64 bytes");
+    const metaFile = update.args.files.find((f) => f.path.endsWith("baseline.json"));
+    const record = JSON.parse(metaFile.content);
+    assert(record.sha256 && record.collectorVersion === vb.COLLECTOR_VERSION && record.acceptedAt === "2026-01-01T00:00:00.000Z", "accepted record carries sha256 + collector version + acceptance time");
+    assert(!metaFile.content.includes("t=S"), "accepted metadata never retains query material");
+
+    calls.length = 0;
+    const created = await vb.acceptBaseline(
+      store,
+      "visual-baselines-admin-smoke",
+      goodKey,
+      { png: basePng, meta: {} },
+      { fetchImpl: fakeFetch(null), now: () => "2026-01-01T00:00:00.000Z" },
+    );
+    assert(calls.some((c) => c.tool === "artifact_create") && Boolean(created.ok), "first accept creates the durable store artifact");
+
+    const failed_ = await vb.acceptBaseline(
+      store,
+      "visual-baselines-admin-smoke",
+      goodKey,
+      { png: basePng, meta: {} },
+      {
+        fetchImpl: async (url, init = {}) => {
+          const body = JSON.parse(init.body || "{}");
+          if (body?.params?.name === "artifact_list") {
+            return rpcOk({ artifacts: [{ id: "art-1", name: "visual-baselines-admin-smoke", retired: false }] });
+          }
+          return { ok: true, status: 200, json: async () => ({ result: { isError: true, content: [{ text: "disk full" }] } }) };
+        },
+      },
+    );
+    assert(Boolean(failed_.error) && /disk full/.test(failed_.error), "artifact write failure surfaces loudly, never a silent accept");
+  }
+
+  // Verdict taxonomy integration.
+  assert(
+    verdictFixture({ visualBlocked: { reason: "required evidence unavailable: visual_baseline (missing_baseline)" } }).status === "BLOCKED",
+    "visual evidence unavailable -> BLOCKED page",
+  );
+  assert(
+    verdictFixture({ visualFailed: { reason: "visual baseline: changed pixels 0.2% > 0.1%" } }).status === "ASSERT_FAILED",
+    "visual mismatch -> ASSERT_FAILED page",
+  );
+  assert(
+    verdictFixture({ mainStatus: 500, visualBlocked: { reason: "x" } }).status === "CRASHED",
+    "a crash outranks missing visual evidence",
+  );
+  assert(
+    verdictFixture({ visualBlocked: { reason: "x" }, actionableConsole: ["e"] }).status === "BLOCKED",
+    "missing visual evidence is decided BEFORE browser-error assertions (fail closed)",
+  );
+
+  // Preflight readiness: required visual evidence classifies missing artifact
+  // connectivity / baselines as BLOCKED — read-only, no baseline created.
+  {
+    const proof = { observable: true };
+    const none = await vb.checkVisualBaselineReadiness([manifest], { store: null, deps: { engineProof: proof } });
+    assert(none.state === "BLOCKED" && /not configured/.test(none.detail), "no artifact store -> BLOCKED");
+    const unreachable = await vb.checkVisualBaselineReadiness([manifest], {
+      store,
+      deps: { engineProof: proof, fetchImpl: async () => { throw new Error("down"); } },
+    });
+    assert(unreachable.state === "BLOCKED" && /unavailable/.test(unreachable.detail), "unreachable store -> BLOCKED");
+    calls.length = 0;
+    const present = await vb.checkVisualBaselineReadiness([manifest], {
+      store,
+      deps: { engineProof: proof, fetchImpl: fakeFetch(storeDir) },
+    });
+    assert(present.state === "OK", "accepted baseline present -> OK");
+    assert(calls.every((c) => c.tool === "artifact_list"), "preflight readiness performs READS only");
+    const missingBl = await vb.checkVisualBaselineReadiness(
+      [{ ...manifest, pages: [{ name: "Other", path: "/admin/other" }] }],
+      { store, deps: { engineProof: proof, fetchImpl: fakeFetch(storeDir) } },
+    );
+    assert(missingBl.state === "BLOCKED" && /accept explicitly/.test(missingBl.detail), "missing accepted baseline -> BLOCKED with the accept hint");
+    const noIdentity = await vb.checkVisualBaselineReadiness(
+      [{ ...manifest, visual_baseline: {} }],
+      { store, deps: { engineProof: proof, fetchImpl: fakeFetch(storeDir) } },
+    );
+    assert(noIdentity.state === "BLOCKED" && /source_identity/.test(noIdentity.detail), "undeclared source identity -> BLOCKED");
+    const badEngine = await vb.checkVisualBaselineReadiness([manifest], {
+      store,
+      deps: { engineProof: { observable: false, reason: "no pixelmatch" } },
+    });
+    assert(badEngine.state === "BLOCKED" && /ensure-preview-walk-deps/.test(badEngine.detail), "unproven diff engine -> BLOCKED with the provisioning hint");
+  }
+  // End-to-end --preflight-only: required visual evidence drives the exit code.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "visual-preflight-"));
+    const manifestPath = join(dir, "walk.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        version: 1,
+        login: { kind: "none" },
+        pages: [{ name: "Pens", path: "/admin/pens" }],
+        safety: { read_only: true },
+        report: { name: "admin-smoke" },
+        require_evidence: ["visual_baseline"],
+        visual_baseline: { source_identity: "one@abc123" },
+      }),
+    );
+    const pfDeps = {
+      env: { MIX_ENV: "dev" },
+      resolveChromium: () => ({}),
+      chromiumPath: () => null,
+      freeBytes: 4 * 1024 ** 3,
+      leakedSessions: 0,
+      now: "2026-01-01T00:00:00.000Z",
+      stdout: () => {},
+      visualEngineProof: { observable: true },
+    };
+    const pfArgs = { manifests: [manifestPath], base: "http://127.0.0.1:1" };
+    const noStore = await runPreflight(pfArgs, { ...pfDeps, fetchImpl: async () => ({ status: 200 }), artifactStore: null });
+    assert(noStore.code === EXIT.BLOCKED, "required visual evidence + no artifact store -> preflight BLOCKED (exit 2)");
+    assert(
+      noStore.json.rows.find((r) => r.id === "visual_baseline")?.state === "BLOCKED",
+      "the visual_baseline row itself is BLOCKED, not merely MISSING",
+    );
+    const withStore = await runPreflight(pfArgs, {
+      ...pfDeps,
+      fetchImpl: fakeFetch(storeDir),
+      artifactStore: store,
+    });
+    assert(withStore.code === EXIT.READY, "engine proven + store reachable + baseline accepted -> READY");
+  }
+
+  assert(visualBaselineProven({ visual_baseline: { observable: true } }) === true, "vb proven when probe observable");
+  assert(visualBaselineProven({ visual_baseline: { observable: false } }) === false, "vb NOT proven when probe failed");
+  assert(visualBaselineProven(undefined) === false, "vb NOT proven without a probe");
+
+  // The engine self-proof used by preflight.
+  assert(vb.proveDiffEngine().observable === true, "scratch-fixture diff-engine proof passes end-to-end");
+
+  // Packed-driver wiring markers (guards against a repack dropping the wiring),
+  // and the structural guarantee that the driver cannot accept baselines.
+  {
+    const { unpack } = await import("./payload_pack.mjs");
+    const src = unpack();
+    assert(src.includes("collectVisualBaseline"), "packed driver collects visual evidence");
+    assert(src.includes("visualBlocked:") && src.includes("visualFailed:"), "packed driver folds visual verdicts fail-closed");
+    assert(src.includes("require_evidence") && src.includes("visual_baseline"), "packed driver gates on require_evidence visual_baseline");
+    assert(!src.includes("acceptBaseline"), "packed driver has NO acceptance path — walks structurally cannot bless pixels");
+  }
+}
+
+// ── Batch 3b: real-Chromium visual fixture (skipped only when no browser) ────
+{
+  let chromium = null;
+  let exe = null;
+  try {
+    const { createRequire } = await import("node:module");
+    const { execFileSync } = await import("node:child_process");
+    const os = await import("node:os");
+    const fsx = await import("node:fs");
+    const pathx = await import("node:path");
+    const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
+    const req = createRequire(pathx.join(globalRoot, "x.js"));
+    chromium = req("playwright-core").chromium;
+    const root = pathx.join(os.homedir(), ".cache", "ms-playwright");
+    const dirs = fsx.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort();
+    for (const d of dirs.reverse()) {
+      for (const [sub, bin] of [["chrome-linux64", "chrome"], ["chrome-linux", "chrome"]]) {
+        const cand = pathx.join(root, d, sub, bin);
+        if (fsx.existsSync(cand)) {
+          exe = cand;
+          break;
+        }
+      }
+      if (exe) break;
+    }
+  } catch {
+    /* unresolvable -> skip below */
+  }
+  if (!chromium || !exe || process.env.PREVIEW_WALK_SELFTEST_NO_BROWSER === "1") {
+    console.log("skip: real-Chromium visual fixture (playwright-core/chromium unavailable)");
+  } else {
+    const vb = await import("./visual_baseline.mjs");
+    const browser = await chromium.launch({ executablePath: exe, headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width: 320, height: 240 } });
+      await page.setContent(
+        "<html><body style='margin:0;background:#123456'><div style='width:120px;height:120px;background:#abcdef'>stable</div></body></html>",
+      );
+      const first = await page.screenshot({ type: "png" });
+      const second = await page.screenshot({ type: "png" });
+      const identical = vb.comparePng(second, first);
+      assert(
+        identical.comparable === true && identical.pass === true && identical.changedPixels === 0,
+        "real Chromium: identical captures compare with zero changed pixels",
+      );
+      await page.setContent(
+        "<html><body style='margin:0;background:#123456'><div style='width:120px;height:120px;background:#ff0000'>changed</div></body></html>",
+      );
+      const mutated = await page.screenshot({ type: "png" });
+      const changed = vb.comparePng(mutated, first);
+      assert(
+        changed.comparable === true && changed.pass === false && changed.changedRatio > 0.001,
+        "real Chromium: a visible mutation exceeds the 0.1% gate",
+      );
+    } finally {
+      await browser.close();
+    }
+  }
+}
+
 if (failed) {
   console.error(`\n${failed} check(s) failed`);
   process.exit(1);

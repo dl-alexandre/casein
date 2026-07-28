@@ -101,6 +101,31 @@
       "uniqueItems": true,
       "description": "Collectors that MUST produce evidence. A page whose required collector yields nothing is BLOCKED (not PASS, not FAILED) and the run fails closed. Omit for v1 behaviour: nothing is required."
     },
+    "visual_baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_identity"
+      ],
+      "properties": {
+        "source_identity": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The EXPLICITLY accepted source identity whose baselines this walk compares against (e.g. a git sha or release label recorded at accept time). Part of the stable baseline key: baselines accepted under a different identity are never compared. Required whenever require_evidence includes visual_baseline."
+        },
+        "store": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Artifact-project name of the durable baseline store. Defaults to visual-baselines-<report.name>. Baselines always live in the Casein Artifact store (git-committed artifact worktree), never a local cache."
+        },
+        "viewport": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Named viewport recorded in the baseline key. Defaults to the first declared top-level viewport name, else \"default\"."
+        }
+      },
+      "description": "Visual-baseline comparison config (batch 3b). Comparison is compare-only during a walk: baselines are created/updated exclusively by the explicit visual_baseline.mjs accept action. Width, height and DPR must match the baseline exactly; changed pixels beyond 0.1% fail the page."
+    },
     "retries": {
       "$ref": "#/definitions/retries"
     }
@@ -696,7 +721,7 @@
         "baseline": {
           "type": "boolean",
           "default": false,
-          "description": "Reserved for visual-diff against a prior run (not wired in v1 drivers)."
+          "description": "Legacy placeholder; superseded by the top-level visual_baseline config + require_evidence: [\"visual_baseline\"]. Ignored by drivers."
         }
       }
     },

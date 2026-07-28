@@ -10,6 +10,9 @@
 #   playwright-core  drives the cached Chromium (the walk browser)
 #   ws               the scratch Phoenix-protocol server used to PROVE the
 #                    WebSocket/LiveView collector during --preflight-only
+#   pixelmatch       the proven PNG pixel-diff engine for the visual-baseline
+#   pngjs            collector (batch 3b) — pinned EXACTLY so identical inputs
+#                    yield identical diffs across boxes and reruns
 #
 # Chromium itself is NOT downloaded here: the devbox already ships a cached
 # build under ~/.cache/ms-playwright, and the pinned playwright-core version
@@ -27,6 +30,10 @@ set -euo pipefail
 # ~/.cache/ms-playwright/chromium-<revision>, or the walk launches nothing.
 PLAYWRIGHT_VERSION="${PREVIEW_WALK_PLAYWRIGHT_VERSION:-1.62.0}"
 WS_VERSION="${PREVIEW_WALK_WS_VERSION:-8}"
+# Exact pins (no ranges): a floating diff engine could change what "0.1% changed"
+# means between runs, which would silently move the visual-baseline gate.
+PIXELMATCH_VERSION="${PREVIEW_WALK_PIXELMATCH_VERSION:-5.3.0}"
+PNGJS_VERSION="${PREVIEW_WALK_PNGJS_VERSION:-7.0.0}"
 
 CHECK_ONLY=0
 [[ "${1:-}" == "--check" ]] && CHECK_ONLY=1
@@ -42,6 +49,8 @@ have() { [[ -d "$npm_root/$1" ]]; }
 missing=()
 have playwright-core || missing+=("playwright-core@${PLAYWRIGHT_VERSION}")
 have ws || missing+=("ws@${WS_VERSION}")
+have pixelmatch || missing+=("pixelmatch@${PIXELMATCH_VERSION}")
+have pngjs || missing+=("pngjs@${PNGJS_VERSION}")
 
 if [[ ${#missing[@]} -gt 0 ]]; then
   if [[ "$CHECK_ONLY" == "1" ]]; then
@@ -81,7 +90,9 @@ node -e "
   const req = createRequire('$npm_root/x.js');
   req('playwright-core');
   req('ws');
-  console.log('✓ playwright-core and ws resolve from the global root');
+  req('pixelmatch');
+  req('pngjs');
+  console.log('✓ playwright-core, ws, pixelmatch and pngjs resolve from the global root');
 " || {
   echo "✗ deps present on disk but not resolvable from $npm_root" >&2
   exit 1

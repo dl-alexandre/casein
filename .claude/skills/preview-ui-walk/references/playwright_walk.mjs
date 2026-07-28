@@ -17,6 +17,7 @@ import {
   walkNeedsRequiredInteractions,
 } from "./page_steps.mjs";
 import { beginRuntime, pageRuntimeEvidence } from "./runtime_evidence.mjs";
+import { collectVisualBaseline, storeFromEnv, visualVerdict } from "./visual_baseline.mjs";
 import { gunzipSync } from "node:zlib";
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -37,6 +38,9 @@ void runPageSteps;
 void walkNeedsRequiredInteractions;
 void beginRuntime;
 void pageRuntimeEvidence;
+void collectVisualBaseline;
+void storeFromEnv;
+void visualVerdict;
 
 const here = dirname(fileURLToPath(import.meta.url));
 let b64 = "";

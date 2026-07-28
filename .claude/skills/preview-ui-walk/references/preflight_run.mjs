@@ -23,6 +23,7 @@ import {
   toText,
   verdict,
 } from "./preflight.mjs";
+import { checkVisualBaselineReadiness, storeFromEnv } from "./visual_baseline.mjs";
 
 /** Role env prefixes a manifest needs, derived from login.params_from_env. */
 export function roleEnvPrefixes(manifests) {
@@ -124,6 +125,10 @@ export function resourceMetricsProven(probe) {
   return Boolean(probe && probe.resource_metrics && probe.resource_metrics.observable);
 }
 
+export function visualBaselineProven(probe) {
+  return Boolean(probe && probe.visual_baseline && probe.visual_baseline.observable);
+}
+
 export function a11yProven(probe) {
   return Boolean(probe && probe.a11y && probe.a11y.observable);
 }
@@ -173,10 +178,34 @@ export async function buildMatrix(args, deps = {}) {
           ? STATE.MISSING
           : STATE.SKIP, "no --tidewave-url"),
   );
+  // Visual baseline is stricter than the generic collector check: when
+  // required, missing Artifact connectivity or a missing accepted baseline is
+  // BLOCKED outright (a walk that cannot compare cannot prove anything), and
+  // the diff engine must prove itself on a scratch fixture — all read-only,
+  // no product page, no baseline created.
+  let visualRow = null;
+  if (required.has("visual_baseline")) {
+    const store =
+      "artifactStore" in deps ? deps.artifactStore : storeFromEnv(env);
+    const readiness = await checkVisualBaselineReadiness(manifests, {
+      store,
+      deps: { fetchImpl, fsImpl: deps.fsImpl, engineProof: deps.visualEngineProof },
+    });
+    visualRow = row(
+      "visual_baseline",
+      readiness.state === "OK" ? STATE.OK : STATE.BLOCKED,
+      readiness.detail,
+    );
+  }
+
   for (const id of [
     "har", "ws", "dom", "screenshot", "a11y", "viewport", "visual_baseline",
     "resource_metrics", "db_read", "audit_actor", "artifact", "cleanup",
   ]) {
+    if (id === "visual_baseline" && visualRow) {
+      rows.push(visualRow);
+      continue;
+    }
     const key = id === "db_read" ? "db_before_after" : id;
     rows.push(
       checkCollector(id, {
