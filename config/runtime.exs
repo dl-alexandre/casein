@@ -470,6 +470,18 @@ if config_env() == :prod and not release_cli? do
   end
 
   on_devbox? = System.get_env("CASEIN_ON_DEVBOX") in ~w(1 true yes)
+  canonical_devbox_host = "casein.devbox.milcgroup.com"
+
+  if on_devbox? and host != canonical_devbox_host do
+    raise """
+    CASEIN_ON_DEVBOX requires PHX_HOST=#{canonical_devbox_host}; got #{inspect(host)}.
+    Legacy public hosts must not mint, exchange, rotate, or revoke mobile credentials.
+    """
+  end
+
+  if on_devbox? do
+    config :casein, :canonical_public_origin, "https://#{canonical_devbox_host}"
+  end
 
   # Allow WebSocket connections from localhost (Preview MCP browser) when
   # running on-devbox. The loopback preview browser sends Origin:

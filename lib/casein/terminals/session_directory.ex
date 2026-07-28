@@ -32,6 +32,7 @@ defmodule Casein.Terminals.SessionDirectory do
   require Logger
 
   alias Casein.Agents.Transcripts
+  alias Casein.Codex.SessionTitles
   alias Casein.Terminals.Activity
   alias Casein.Terminals.AgentState
   alias Casein.Terminals.PaneState
@@ -803,6 +804,11 @@ defmodule Casein.Terminals.SessionDirectory do
     reports = AgentState.for_session(tmux_session)
     now = DateTime.utc_now()
 
+    codex_titles =
+      panes
+      |> Enum.map(&(Map.get(&1, :pane_title) || Map.get(&1, "pane_title")))
+      |> SessionTitles.titles()
+
     {windows, agent_state_messages} =
       Enum.map_reduce(windows, %{}, fn window, messages ->
         id = Map.get(window, :id) || Map.get(window, "id")
@@ -823,6 +829,7 @@ defmodule Casein.Terminals.SessionDirectory do
           }
           |> put_known_pane_state(pane_state)
           |> put_known_agent_state(agent_state)
+          |> put_present(:conversation_title, conversation_title(window, codex_titles))
           |> put_present(:task_summary, task_summary)
           |> put_manual_name(window)
 
@@ -839,6 +846,15 @@ defmodule Casein.Terminals.SessionDirectory do
   end
 
   defp put_session_windows(tab, _windows, _panes), do: tab
+
+  defp conversation_title(window, titles) do
+    window
+    |> Map.get(:pane_list, [])
+    |> Enum.find_value(fn pane ->
+      pane_title = Map.get(pane, :pane_title) || Map.get(pane, "pane_title")
+      Map.get(titles, pane_title)
+    end)
+  end
 
   defp resolve_window_agent_state(window, pane_state, reports, now) do
     entry =

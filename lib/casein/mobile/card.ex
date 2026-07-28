@@ -186,6 +186,53 @@ defmodule Casein.Mobile.Card do
   end
 
   @doc """
+  Build a privacy-bounded, navigation-only projection of authoritative live
+  work. Live-work cards are awareness surfaces: they never declare a runtime
+  mutation and are never notification-producing on their own.
+  """
+  @spec live_work(map(), DateTime.t()) :: t()
+  def live_work(attrs, now \\ DateTime.utc_now()) when is_map(attrs) do
+    user_id = require_string!(attrs, :user_id)
+    workspace_id = require_string!(attrs, :workspace_id)
+    session_id = require_string!(attrs, :session_id)
+    route = {:session_detail, workspace_id, session_id}
+
+    base(
+      :in_progress,
+      %{
+        user_id: user_id,
+        workspace_id: workspace_id,
+        workspace_name: workspace_name(attrs, workspace_id),
+        session_id: session_id,
+        source: "live_work",
+        kind: "live_work",
+        priority: :low,
+        status: attrs[:status] || attrs["status"] || "running",
+        title: require_string!(attrs, :title),
+        body: optional_string(attrs[:body] || attrs["body"]),
+        action: %{label: "Open", route: route},
+        actions: [navigation_action_spec("open", "Open", route)],
+        context: %{
+          session_id: session_id,
+          locator: attr(attrs, [:locator, "locator"])
+        },
+        meta: %{
+          run_phase: attrs[:phase] || attrs["phase"] || "unknown",
+          activity: attrs[:activity] || attrs["activity"],
+          reason: attrs[:reason] || attrs["reason"],
+          agent: attrs[:agent] || attrs["agent"],
+          branch: bounded_ref(attrs[:branch] || attrs["branch"]),
+          head_sha: bounded_ref(attrs[:head_sha] || attrs["head_sha"]),
+          progress: attrs[:progress] || attrs["progress"],
+          partial: attrs[:partial] || attrs["partial"] || false,
+          last_activity_at: attrs[:last_activity_at] || attrs["last_activity_at"]
+        },
+        now: now
+      }
+    )
+  end
+
+  @doc """
   Build a bounded terminal outcome card while preserving the in-progress card
   id. The stable id keeps lifecycle transitions and read cursors coherent; a
   tmux session is still only a locator, never promoted to durable task identity.

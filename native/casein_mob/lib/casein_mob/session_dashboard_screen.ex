@@ -22,7 +22,7 @@ defmodule CaseinMob.SessionDashboardScreen do
 
   @card_segments [
     {:needs_action, "Needs Me"},
-    {:running, "Working"},
+    {:running, "Live"},
     {:failed, "Failed"},
     {:done, "Done"}
   ]
@@ -506,26 +506,45 @@ defmodule CaseinMob.SessionDashboardScreen do
          display_name: display_name,
          url: url,
          active?: active?,
+         read_only?: read_only?,
          last_workspace_id: last_workspace_id
        }) do
     %{
       type: :column,
       props: %{fill_width: true, gap: 2},
       children: [
-        %{
-          type: :button,
-          props: %{
-            text: "#{if(active?, do: "Connected", else: "Switch to")} · #{display_name}",
-            fill_width: true,
-            background: if(active?, do: :surface_raised, else: :primary),
-            text_color: if(active?, do: :on_surface, else: :on_primary),
-            padding: :space_sm,
-            on_tap: {self(), {:switch_host, origin_id}}
-          },
-          children: []
-        },
+        saved_host_control(origin_id, display_name, active?, read_only?),
         muted_line(host_context_line(url, last_workspace_id))
       ]
+    }
+  end
+
+  defp saved_host_control(_origin_id, display_name, _active?, true) do
+    %{
+      type: :text,
+      props: %{
+        text: "Legacy · #{display_name} · Re-pair required",
+        fill_width: true,
+        background: :surface_raised,
+        text_color: :muted,
+        padding: :space_sm
+      },
+      children: []
+    }
+  end
+
+  defp saved_host_control(origin_id, display_name, active?, false) do
+    %{
+      type: :button,
+      props: %{
+        text: "#{if(active?, do: "Connected", else: "Switch to")} · #{display_name}",
+        fill_width: true,
+        background: if(active?, do: :surface_raised, else: :primary),
+        text_color: if(active?, do: :on_surface, else: :on_primary),
+        padding: :space_sm,
+        on_tap: {self(), {:switch_host, origin_id}}
+      },
+      children: []
     }
   end
 
@@ -881,7 +900,7 @@ defmodule CaseinMob.SessionDashboardScreen do
 
     body =
       case filtered_sorted_cards(assigns, active) do
-        [] -> [filter_empty_state(active)]
+        [] -> [filter_empty_state(active, assigns)]
         cards -> Enum.map(cards, &observer_card(&1, assigns))
       end
 
@@ -927,16 +946,38 @@ defmodule CaseinMob.SessionDashboardScreen do
     }
   end
 
-  defp filter_empty_state(:needs_action),
-    do: empty_notice("Nothing needs you", "Decisions and human blockers land here.")
+  defp filter_empty_state(active, assigns)
+       when active in [:needs_action, :running] do
+    if live_work_hydrating?(assigns) do
+      empty_notice(
+        "Syncing live work",
+        "Casein is loading the authoritative state for this origin."
+      )
+    else
+      settled_filter_empty_state(active)
+    end
+  end
 
-  defp filter_empty_state(:running),
-    do: empty_notice("No running work", "Active runs and agents appear here while they work.")
+  defp filter_empty_state(active, _assigns), do: settled_filter_empty_state(active)
 
-  defp filter_empty_state(:failed),
+  defp settled_filter_empty_state(:needs_action),
+    do:
+      empty_notice(
+        "Nothing needs you",
+        "Decisions and human blockers land here. Open Live to follow active work."
+      )
+
+  defp settled_filter_empty_state(:running),
+    do:
+      empty_notice(
+        "No live work observed",
+        "Active agent work appears here after an authoritative refresh."
+      )
+
+  defp settled_filter_empty_state(:failed),
     do: empty_notice("No failures", "Connection issues and failed runs surface here.")
 
-  defp filter_empty_state(:done),
+  defp settled_filter_empty_state(:done),
     do: empty_notice("Nothing here yet", "Idle workspaces and finished work land here.")
 
   defp empty_notice(title, body) do
@@ -1113,6 +1154,14 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp empty_workspace_state(_cards), do: []
+
+  defp live_work_hydrating?(assigns) do
+    assigns
+    |> Map.get(:mobile_cards_snapshot, %{})
+    |> get("live_work", %{})
+    |> get("status")
+    |> Kernel.==("hydrating")
+  end
 
   defp card_body(card) do
     case get(card, "body") do

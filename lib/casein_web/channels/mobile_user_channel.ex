@@ -318,9 +318,11 @@ defmodule CaseinWeb.MobileUserChannel do
     }
   end
 
-  defp render_snapshot(%{user_id: user_id, version: version, cards: cards}, socket) do
+  defp render_snapshot(%{user_id: user_id, version: version, cards: cards} = snapshot, socket) do
     origin_id = socket.assigns[:mobile_origin_id] || Origin.id()
     attention_by_card = AttentionInbox.project_many(user_id, origin_id, cards)
+    pairing_workspace_id = socket.assigns[:pairing_workspace_id]
+    hydrating_workspaces = Map.get(snapshot, :hydrating_workspaces, [])
 
     cards =
       Enum.sort_by(cards, fn card ->
@@ -340,6 +342,13 @@ defmodule CaseinWeb.MobileUserChannel do
       origin: %{
         id: origin_id,
         display_name: socket.assigns[:mobile_origin_name] || Origin.display_name()
+      },
+      live_work: %{
+        status:
+          if(pairing_workspace_id in hydrating_workspaces,
+            do: "hydrating",
+            else: "authoritative"
+          )
       },
       cards: Enum.map(cards, &render_card(&1, Map.fetch!(attention_by_card, &1.id), socket))
     }

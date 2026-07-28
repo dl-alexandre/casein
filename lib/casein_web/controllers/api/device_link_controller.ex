@@ -11,12 +11,15 @@ defmodule CaseinWeb.API.DeviceLinkController do
 
   def exchange(conn, params) do
     token = params["token"] || params["pairing_token"]
-    params = Map.put(params, "origin_name", Origin.display_name(base_url(conn)))
+    request_base = base_url(conn)
+    params = Map.put(params, "origin_name", Origin.display_name(request_base))
 
-    with {:ok, claims} <- ChannelAuth.verify_pairing_token(token),
+    with :ok <- Origin.authorize_request_base(request_base),
+         {:ok, claims} <- ChannelAuth.verify_pairing_token(token),
          {:ok, result} <- DeviceLinks.create_from_pairing_claims(claims, params) do
-      json(conn, exchange_payload(conn, result))
+      json(conn, exchange_payload(request_base, result))
     else
+      {:error, :origin_mismatch} -> error(conn, :conflict, "origin_mismatch")
       {:error, :missing} -> error(conn, :unprocessable_entity, "missing_token")
       {:error, :invalid_pairing_claims} -> error(conn, :unprocessable_entity, "invalid_claims")
       {:error, :invalid_pairing_token} -> error(conn, :unauthorized, "invalid_pairing_token")
@@ -29,31 +32,50 @@ defmodule CaseinWeb.API.DeviceLinkController do
   end
 
   def rotate(conn, params) do
-    case device_link_token(params) do
-      token when is_binary(token) ->
-        case DeviceLinks.rotate_token(token) do
-          {:ok, result} -> json(conn, exchange_payload(conn, result))
-          {:error, reason} -> rotate_error(conn, reason)
-        end
+    request_base = base_url(conn)
 
-      _ ->
-        error(conn, :unprocessable_entity, "missing_token")
+    with :ok <- Origin.authorize_request_base(request_base) do
+      case device_link_token(params) do
+        token when is_binary(token) ->
+          case DeviceLinks.rotate_token(token) do
+            {:ok, result} -> json(conn, exchange_payload(request_base, result))
+            {:error, reason} -> rotate_error(conn, reason)
+          end
+
+        _ ->
+          error(conn, :unprocessable_entity, "missing_token")
+      end
+    else
+      {:error, :origin_mismatch} -> error(conn, :conflict, "origin_mismatch")
     end
   end
 
   def revoke(conn, params) do
-    case device_link_token(params) do
-      token when is_binary(token) ->
-        case DeviceLinks.revoke_token(token) do
-          {:ok, _link} -> json(conn, %{status: "revoked"})
-          {:error, :not_found} -> error(conn, :not_found, "resource_not_found")
-          {:error, :missing} -> error(conn, :unprocessable_entity, "missing_token")
-          {:error, %Ecto.Changeset{}} -> error(conn, :unprocessable_entity, "invalid_device_link")
-          {:error, _reason} -> error(conn, :unauthorized, "invalid_token")
-        end
+    with :ok <- Origin.authorize_request_base(base_url(conn)) do
+      case device_link_token(params) do
+        token when is_binary(token) ->
+          case DeviceLinks.revoke_token(token) do
+            {:ok, _link} ->
+              json(conn, %{status: "revoked"})
 
-      _ ->
-        error(conn, :unprocessable_entity, "missing_token")
+            {:error, :not_found} ->
+              error(conn, :not_found, "resource_not_found")
+
+            {:error, :missing} ->
+              error(conn, :unprocessable_entity, "missing_token")
+
+            {:error, %Ecto.Changeset{}} ->
+              error(conn, :unprocessable_entity, "invalid_device_link")
+
+            {:error, _reason} ->
+              error(conn, :unauthorized, "invalid_token")
+          end
+
+        _ ->
+          error(conn, :unprocessable_entity, "missing_token")
+      end
+    else
+      {:error, :origin_mismatch} -> error(conn, :conflict, "origin_mismatch")
     end
   end
 
@@ -72,13 +94,13 @@ defmodule CaseinWeb.API.DeviceLinkController do
 
   defp rotate_error(conn, _reason), do: error(conn, :unauthorized, "invalid_token")
 
-  defp exchange_payload(conn, %{
+  defp exchange_payload(request_base, %{
          token: token,
          link: link,
          workspace: workspace,
          capabilities: caps
        }) do
-    base = base_url(conn)
+    base = Origin.public_base_url(request_base)
     workspace_id = workspace_id(workspace, link)
     workspace_label = workspace_label(workspace, link)
 
