@@ -109,4 +109,18 @@ defmodule Casein.Previews.Deps.Test.Fakes do
     @impl true
     def broadcast(_event), do: :ok
   end
+
+  defmodule Urls do
+    @moduledoc false
+    @behaviour Casein.Previews.Deps.Urls
+
+    @impl true
+    def base_url, do: "http://127.0.0.1:4000"
+
+    @impl true
+    def api_base_url, do: "http://127.0.0.1:4000"
+
+    @impl true
+    def preview_url, do: "http://127.0.0.1:4000/api/preview/mcp"
+  end
 end

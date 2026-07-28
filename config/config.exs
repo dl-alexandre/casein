@@ -67,7 +67,8 @@ config :casein,
     workspaces: Casein.Workspaces.PreviewDeps,
     terminals: Casein.Terminals.PreviewDeps,
     runtimes: Casein.Runtimes.PreviewDeps,
-    pane_sink: Casein.Panes.PreviewDeps
+    pane_sink: Casein.Panes.PreviewDeps,
+    urls: Casein.Agents.MCPUrls
   ],
   git_ctl: [
     cache_table: :casein_git_inspector_cache,

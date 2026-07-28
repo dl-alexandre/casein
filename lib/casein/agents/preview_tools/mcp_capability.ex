@@ -7,11 +7,12 @@ defmodule Casein.Agents.PreviewTools.MCPCapability do
   dependency inverted.
   """
 
-  alias Casein.Agents.{Capability, MCPUrls, PreviewTools}
+  alias Casein.Agents.{Capability, PreviewTools}
+  alias Casein.Previews.Deps
 
   @spec detect() :: Capability.t()
   def detect do
-    case MCPUrls.preview_url() do
+    case Deps.impl(:urls).preview_url() do
       url when is_binary(url) and url != "" ->
         %Capability{
           kind: :preview_mcp,

@@ -948,13 +948,13 @@ if config_env() == :prod and not release_cli? do
 
     config :casein, :preview_loopback_port, String.to_integer(System.get_env("PORT") || "4000")
 
-    preview_app_url =
-      case System.get_env("CASEIN_URL") do
-        url when is_binary(url) and url != "" -> url
-        _ -> "https://#{host}"
-      end
-
-    config :casein, :preview_app_url, preview_app_url
+    # Managed Devbox links follow the already-enforced canonical PHX_HOST.
+    # CASEIN_URL historically described a workspace preview origin, so it must
+    # not drive credential-bearing API/MCP URLs or cockpit deep links.
+    canonical_devbox_url = "https://#{host}"
+    config :casein, :preview_app_url, canonical_devbox_url
+    config :casein, :agent_mcp_base_url, canonical_devbox_url
+    config :casein, :api_base_url, canonical_devbox_url
 
     # Optional dedicated, isolated origin for PR-shareable artifacts. Serving
     # workspace-authored (untrusted) HTML from its own origin — rather than the

@@ -62,6 +62,15 @@ defmodule Casein.OriginTest do
 
     assert {:error, :origin_mismatch} =
              Origin.authorize_request_base("https://devide.devbox.milcgroup.com")
+
+    assert Origin.canonicalize_known_base_url("https://devide.devbox.milcgroup.com/path") ==
+             "https://casein.devbox.milcgroup.com"
+
+    assert Origin.canonicalize_known_base_url("http://127.0.0.1:4000/path") ==
+             "http://127.0.0.1:4000"
+
+    assert Origin.canonicalize_known_base_url("https://other.example.test/path") ==
+             "https://other.example.test"
   end
 
   defp restore(key, nil), do: Application.delete_env(:casein, key)
