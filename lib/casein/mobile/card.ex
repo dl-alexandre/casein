@@ -41,6 +41,8 @@ defmodule Casein.Mobile.Card do
           required(:destructive?) => boolean(),
           required(:confirmation) => String.t() | nil,
           required(:input) => [input_field()],
+          optional(:description) => String.t(),
+          optional(:revision) => String.t(),
           # Navigation actions carry a client route and are dispatched without any
           # runtime mutation (the server records the intent for audit only).
           optional(:route) => tuple()

@@ -421,6 +421,11 @@ defmodule CaseinWeb.MobileUserChannel do
        do: "review"
 
   defp observation_action_kind("follow_up"), do: "follow_up"
+
+  defp observation_action_kind(action)
+       when action in ["continue_task", "address_review", "summarize_blocker"],
+       do: "intent"
+
   defp observation_action_kind(_action), do: nil
 
   defp duration_bucket(%DateTime{} = occurred_at) do
@@ -437,12 +442,12 @@ defmodule CaseinWeb.MobileUserChannel do
 
   defp intervention_actions(card, nil), do: Map.get(card, :actions, [])
 
-  defp intervention_actions(card, %{action: action}) do
+  defp intervention_actions(card, %{actions: intervention_actions}) do
     actions = Map.get(card, :actions, [])
 
-    if Enum.any?(actions, &(Map.get(&1, :id) == action.id)),
-      do: actions,
-      else: actions ++ [action]
+    Enum.reduce(intervention_actions, actions, fn action, acc ->
+      if Enum.any?(acc, &(Map.get(&1, :id) == action.id)), do: acc, else: acc ++ [action]
+    end)
   end
 
   defp render_intervention(nil), do: nil

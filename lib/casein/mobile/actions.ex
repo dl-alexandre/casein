@@ -53,14 +53,27 @@ defmodule Casein.Mobile.Actions do
       when is_binary(card_id) and is_binary(action_id) do
     request_id = request_id(params, context, card_id, action_id)
 
-    # Early idempotency check: a retried submission (e.g. the client never saw the
-    # first reply) replays the recorded outcome even though the card may already
-    # have been cleared from the transient observer. Scoped to the authenticated
-    # user, and only successes replay — a recorded rejection is audit-only and
-    # must never block (or be readable by) another attempt.
-    case fetch_active_outcome(context.user_id, request_id) do
-      %ActionOutcome{} = existing -> replay_existing(existing)
-      nil -> dispatch_new(context, params, card_id, action_id, request_id)
+    # Origin validation precedes replay. A client that tampers with the active
+    # origin must not turn a guessed request id into an apparent accepted action,
+    # even though replay itself would not repeat the side effect.
+    case ensure_request_origin(context, params, action_id) do
+      :ok ->
+        # Early idempotency check: a retried submission (e.g. the client never saw
+        # the first reply) replays the recorded outcome even though the card may
+        # already have been cleared from the transient observer. Scoped to the
+        # authenticated user, and only successes replay — a recorded rejection is
+        # audit-only and must never block (or be readable by) another attempt.
+        case fetch_active_outcome(context.user_id, request_id) do
+          %ActionOutcome{} = existing ->
+            replay_existing_request(existing, card_id, action_id)
+
+          nil ->
+            dispatch_new(context, params, card_id, action_id, request_id)
+        end
+
+      {:error, reason} ->
+        record_rejection(context, card_id, action_id, request_id, reason)
+        {:error, reason}
     end
   end
 
@@ -73,6 +86,7 @@ defmodule Casein.Mobile.Actions do
          {:ok, spec} <- fetch_declared_action(card, action_id),
          :ok <- ensure_origin(context, params, spec),
          :ok <- ensure_dispatchable(card),
+         :ok <- ensure_action_revision(spec, action_params),
          {:ok, validated} <- validate_params(spec, action_params),
          :ok <- authorize(context, card) do
       commit(context, card, spec, validated, request_id)
@@ -103,7 +117,39 @@ defmodule Casein.Mobile.Actions do
     end
   end
 
-  defp ensure_origin(context, params, %{id: "follow_up"}) do
+  defp ensure_origin(context, params, spec) do
+    if Intervention.delivery_action?(spec) do
+      ensure_exact_origin(context, params)
+    else
+      ensure_optional_origin(context, params)
+    end
+  end
+
+  defp ensure_request_origin(context, params, action_id) do
+    origin_id = Map.get(params, "origin_id")
+    trusted_origin_id = Map.get(context, :origin_id)
+
+    cond do
+      Intervention.delivery_action_id?(action_id) ->
+        if(
+          is_binary(trusted_origin_id) and trusted_origin_id != "" and
+            origin_id == trusted_origin_id,
+          do: :ok,
+          else: {:error, :origin_mismatch}
+        )
+
+      is_nil(origin_id) ->
+        :ok
+
+      origin_id == trusted_origin_id ->
+        :ok
+
+      true ->
+        {:error, :origin_mismatch}
+    end
+  end
+
+  defp ensure_exact_origin(context, params) do
     trusted_origin_id = Map.get(context, :origin_id)
 
     case Map.get(params, "origin_id") do
@@ -112,13 +158,26 @@ defmodule Casein.Mobile.Actions do
     end
   end
 
-  defp ensure_origin(context, params, _spec) do
+  defp ensure_optional_origin(context, params) do
     case Map.get(params, "origin_id") do
       nil ->
         :ok
 
       origin_id ->
         if(origin_id == Map.get(context, :origin_id), do: :ok, else: {:error, :origin_mismatch})
+    end
+  end
+
+  defp ensure_action_revision(spec, params) do
+    if Intervention.requires_revision?(spec) do
+      expected_revision = Map.get(spec, :revision)
+
+      case Map.get(params, "revision") do
+        ^expected_revision when is_binary(expected_revision) -> :ok
+        _ -> {:error, :action_revision_stale}
+      end
+    else
+      :ok
     end
   end
 
@@ -204,7 +263,7 @@ defmodule Casein.Mobile.Actions do
 
   defp commit(context, card, spec, validated, request_id) do
     cond do
-      spec.id == "follow_up" ->
+      Intervention.delivery_action?(spec) ->
         commit_intervention(context, card, spec, validated, request_id)
 
       Card.navigation_action?(spec) ->
@@ -223,33 +282,38 @@ defmodule Casein.Mobile.Actions do
       request_id: request_id,
       user_id: context.user_id,
       card_id: card.id,
-      action_id: spec.id,
+      # Keep the canonical follow-up family id so the existing partial unique
+      # index guarantees at-most-one agent delivery for a card across free-text
+      # and typed intents.
+      action_id: "follow_up",
       resource_type: resource_field(card, :type),
       resource_id: resource_field(card, :id),
       device_link_id: Map.get(context, :device_link_id),
       platform: Map.get(context, :platform),
       status: "processing",
-      result: %{}
+      result: %{"requested_action_id" => spec.id}
     }
 
     case %ActionOutcome{} |> ActionOutcome.changeset(outcome_attrs) |> Repo.insert() do
       {:ok, outcome} ->
-        deliver_intervention(context, card, outcome, Map.fetch!(validated, :message))
+        deliver_intervention(context, card, outcome, spec, validated)
 
       {:error, changeset} ->
-        handle_conflict(changeset, context.user_id, request_id)
+        handle_conflict(changeset, context.user_id, request_id, card.id, spec.id)
     end
   end
 
-  defp deliver_intervention(context, card, outcome, message) do
-    case Intervention.send_follow_up(card, message) do
+  defp deliver_intervention(context, card, outcome, spec, validated) do
+    case Intervention.deliver(card, spec, validated) do
       {:ok, result} ->
+        result = Map.put(result, "requested_action_id", spec.id)
+
         {:ok, outcome} =
           outcome
           |> ActionOutcome.changeset(%{status: "accepted", result: result})
           |> Repo.update()
 
-        record_intervention_audit(context, card, "succeeded", nil)
+        record_intervention_audit(context, card, spec.id, "succeeded", nil)
 
         {:ok,
          %{
@@ -266,12 +330,12 @@ defmodule Casein.Mobile.Actions do
           |> ActionOutcome.changeset(%{status: "failed", reason: to_string(reason)})
           |> Repo.update()
 
-        record_intervention_audit(context, card, "failed", reason)
+        record_intervention_audit(context, card, spec.id, "failed", reason)
         {:error, reason}
     end
   end
 
-  defp record_intervention_audit(context, card, outcome, reason) do
+  defp record_intervention_audit(context, card, action_id, outcome, reason) do
     Audit.emit!(%{
       action: "mobile.intervention",
       workspace_id: card.workspace_id,
@@ -281,7 +345,7 @@ defmodule Casein.Mobile.Actions do
       metadata:
         %{
           "source" => "mobile",
-          "action_id" => "follow_up",
+          "action_id" => action_id,
           "card_id" => card.id,
           "outcome" => outcome,
           "reason" => reason && to_string(reason),
@@ -327,7 +391,7 @@ defmodule Casein.Mobile.Actions do
 
       {:error, changeset} ->
         if constraint_violation?(changeset, :mobile_action_outcomes_user_request_active_index),
-          do: replay(context.user_id, request_id),
+          do: replay(context.user_id, request_id, card.id, spec.id),
           else: {:error, :conflict}
     end
   end
@@ -370,7 +434,7 @@ defmodule Casein.Mobile.Actions do
          }}
 
       {:error, :outcome, changeset, _changes} ->
-        handle_conflict(changeset, context.user_id, request_id)
+        handle_conflict(changeset, context.user_id, request_id, card.id, spec.id)
 
       {:error, :effect, reason, _changes} ->
         {:error, reason}
@@ -424,7 +488,7 @@ defmodule Casein.Mobile.Actions do
 
   # --- Idempotency conflict handling --------------------------------------
 
-  defp handle_conflict(changeset, user_id, request_id) do
+  defp handle_conflict(changeset, user_id, request_id, card_id, action_id) do
     cond do
       constraint_violation?(changeset, :mobile_action_outcomes_follow_up_card_id_index) ->
         {:error, :card_already_intervened}
@@ -433,13 +497,13 @@ defmodule Casein.Mobile.Actions do
         {:error, :card_already_resolved}
 
       true ->
-        replay(user_id, request_id)
+        replay(user_id, request_id, card_id, action_id)
     end
   end
 
-  defp replay(user_id, request_id) do
+  defp replay(user_id, request_id, card_id, action_id) do
     case fetch_active_outcome(user_id, request_id) do
-      %ActionOutcome{} = outcome -> replay_existing(outcome)
+      %ActionOutcome{} = outcome -> replay_existing_request(outcome, card_id, action_id)
       nil -> {:error, :conflict}
     end
   end
@@ -453,6 +517,20 @@ defmodule Casein.Mobile.Actions do
         where: o.user_id == ^user_id and o.request_id == ^request_id and o.status != "rejected"
       )
     )
+  end
+
+  defp replay_existing_request(%ActionOutcome{} = outcome, card_id, action_id) do
+    requested_action_id =
+      case outcome.result do
+        %{"requested_action_id" => requested} when is_binary(requested) -> requested
+        _ -> outcome.action_id
+      end
+
+    if outcome.card_id == card_id and requested_action_id == action_id do
+      replay_existing(outcome)
+    else
+      {:error, :idempotency_key_reused}
+    end
   end
 
   defp replay_existing(%ActionOutcome{status: status} = outcome)
