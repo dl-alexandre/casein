@@ -26,6 +26,7 @@ cd "${REPO_DIR}"
 
 DOCKER_BIN="${CASEIN_DOCKER_BIN:-docker}"
 CLEANUP_TIMEOUT_SECONDS="${CASEIN_DOCKER_CLEANUP_TIMEOUT_SECONDS:-30}"
+OPERATION_TIMEOUT_SECONDS="${CASEIN_DOCKER_OPERATION_TIMEOUT_SECONDS:-600}"
 
 if ! command -v "${DOCKER_BIN}" >/dev/null 2>&1; then
   echo "error: docker is required (toolchain runs in a container)" >&2
@@ -36,6 +37,15 @@ BUILDER_TAG="casein:builder-$(date +%s)-$$"
 BUILDER_CACHE_TAG="${CASEIN_BUILDER_CACHE_TAG:-casein:builder}"
 EXTRACT_CONTAINER="casein-release-extract-$(date +%s)-$$"
 EXTRACT_CONTAINER_CREATED=0
+
+if ! [[ "${CLEANUP_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "error: CASEIN_DOCKER_CLEANUP_TIMEOUT_SECONDS must be a positive integer" >&2
+  exit 2
+fi
+if ! [[ "${OPERATION_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "error: CASEIN_DOCKER_OPERATION_TIMEOUT_SECONDS must be a positive integer" >&2
+  exit 2
+fi
 
 build_args=(--target builder -t "${BUILDER_TAG}" -t "${BUILDER_CACHE_TAG}")
 
@@ -79,12 +89,15 @@ cleanup() {
   fi
 }
 
-run_bounded_cleanup() {
-  "$@" >/dev/null 2>&1 &
+run_bounded() {
+  local timeout_seconds="$1"
+  shift
+
+  "$@" &
   local command_pid=$!
 
   (
-    sleep "${CLEANUP_TIMEOUT_SECONDS}"
+    sleep "${timeout_seconds}"
     kill -TERM "${command_pid}" >/dev/null 2>&1 || exit 0
     sleep 1
     kill -KILL "${command_pid}" >/dev/null 2>&1 || true
@@ -103,6 +116,14 @@ run_bounded_cleanup() {
   return "${status}"
 }
 
+run_bounded_cleanup() {
+  run_bounded "${CLEANUP_TIMEOUT_SECONDS}" "$@" >/dev/null 2>&1
+}
+
+run_bounded_operation() {
+  run_bounded "${OPERATION_TIMEOUT_SECONDS}" "$@"
+}
+
 trap cleanup EXIT
 
 if [ -e "${OUTPUT_DIR}" ]; then
@@ -112,11 +133,23 @@ fi
 
 echo ">>> extracting release tree to ${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
-"${DOCKER_BIN}" create --name "${EXTRACT_CONTAINER}" "${BUILDER_TAG}" >/dev/null
+if ! run_bounded_operation \
+  "${DOCKER_BIN}" create --name "${EXTRACT_CONTAINER}" "${BUILDER_TAG}" >/dev/null; then
+  echo "error: timed out or failed creating extraction container ${EXTRACT_CONTAINER}" >&2
+  exit 1
+fi
 EXTRACT_CONTAINER_CREATED=1
-"${DOCKER_BIN}" cp \
-  "${EXTRACT_CONTAINER}:/app/_build/prod/rel/casein/." \
-  "${OUTPUT_DIR}"
+# `docker run --rm | tar` can leave the Docker client waiting indefinitely
+# after the short-lived container is removed, even when the pipe consumer has
+# already extracted every byte. Copy from a named, stopped container instead so
+# cleanup is explicit and the operation has a hard upper bound.
+if ! run_bounded_operation \
+  "${DOCKER_BIN}" cp \
+    "${EXTRACT_CONTAINER}:/app/_build/prod/rel/casein/." \
+    "${OUTPUT_DIR}"; then
+  echo "error: timed out or failed copying the release from ${EXTRACT_CONTAINER}" >&2
+  exit 1
+fi
 
 # Sanity-check the release looks right.
 if [ ! -x "${OUTPUT_DIR}/bin/casein" ]; then

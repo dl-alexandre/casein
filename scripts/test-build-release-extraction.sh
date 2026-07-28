@@ -28,6 +28,9 @@ case "${1:-}" in
     if [ "${FAKE_DOCKER_CP_FAIL:-0}" = "1" ]; then
       exit 42
     fi
+    if [ "${FAKE_DOCKER_CP_HANG:-0}" = "1" ]; then
+      while :; do :; done
+    fi
     output="${3:?missing output directory}"
     mkdir -p \
       "${output}/bin" \
@@ -80,6 +83,7 @@ run_case() {
     PATH="${case_root}/bin:${PATH}" \
     CASEIN_DOCKER_BIN="${case_root}/bin/docker" \
     CASEIN_DOCKER_CLEANUP_TIMEOUT_SECONDS=1 \
+    CASEIN_DOCKER_OPERATION_TIMEOUT_SECONDS=1 \
     CASEIN_BUILDER_CACHE_TAG="casein:test-cache" \
     FAKE_DOCKER_LOG="${case_root}/docker.log" \
     OUTPUT_DIR="${case_root}/release-out" \
@@ -100,5 +104,12 @@ if run_case copy-failure FAKE_DOCKER_CP_FAIL=1; then
   exit 1
 fi
 grep -q '^rm -f casein-release-extract-' "${TMP_ROOT}/copy-failure/docker.log"
+
+echo "== hung copy is bounded and still attempts exact-container cleanup =="
+if run_case copy-hang FAKE_DOCKER_CP_HANG=1; then
+  echo "expected hung docker cp to fail the release build" >&2
+  exit 1
+fi
+grep -q '^rm -f casein-release-extract-' "${TMP_ROOT}/copy-hang/docker.log"
 
 echo "release extraction cleanup tests passed"
