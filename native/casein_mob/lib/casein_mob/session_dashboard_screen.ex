@@ -1186,7 +1186,7 @@ defmodule CaseinMob.SessionDashboardScreen do
             if(cached?, do: "Switch & refresh", else: action_label(card)),
             {:mobile_card_action, tap_id},
             :primary,
-            weight: 1,
+            fill_width: true,
             text_color: :on_primary,
             disabled: not tappable?
           )
@@ -1596,18 +1596,33 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp action_button(label, tap, background, opts) do
+    props = %{
+      text: label,
+      background: background,
+      text_color: Keyword.get(opts, :text_color, :on_surface),
+      padding: :space_sm,
+      height: 44.0,
+      disabled: Keyword.get(opts, :disabled, false),
+      on_tap: {self(), tap}
+    }
+
+    props =
+      if Keyword.has_key?(opts, :weight) do
+        Map.put(props, :weight, Keyword.fetch!(opts, :weight))
+      else
+        props
+      end
+
+    props =
+      if Keyword.has_key?(opts, :fill_width) do
+        Map.put(props, :fill_width, Keyword.fetch!(opts, :fill_width))
+      else
+        props
+      end
+
     %{
       type: :button,
-      props: %{
-        text: label,
-        weight: Keyword.get(opts, :weight, 1),
-        background: background,
-        text_color: Keyword.get(opts, :text_color, :on_surface),
-        padding: :space_sm,
-        height: 44.0,
-        disabled: Keyword.get(opts, :disabled, false),
-        on_tap: {self(), tap}
-      },
+      props: props,
       children: []
     }
   end

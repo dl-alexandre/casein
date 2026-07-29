@@ -922,6 +922,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     view =
       SessionDashboardScreen
       |> mount_screen()
+      |> render_info({:mobile_cards_status, :joined})
       |> render_info(
         {:mobile_cards_snapshot,
          %{
@@ -929,8 +930,14 @@ defmodule CaseinMob.SessionDashboardScreenTest do
            "cards" => [card]
          }}
       )
-      |> render_info({:tap, {:mobile_card_action, card["id"]}})
+      |> render_info({:tap, {:filter, :running}})
 
+    primary_action = find(view, :button, text: "Open")
+    assert primary_action.props.fill_width == true
+    refute Map.has_key?(primary_action.props, :weight)
+    assert primary_action.props.disabled == false
+
+    view = render_info(view, {:tap, {:mobile_card_action, card["id"]}})
     assert navigated_to(view) == CaseinMob.ReviewDecisionScreen
   end
 
