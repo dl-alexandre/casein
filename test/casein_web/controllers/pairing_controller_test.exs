@@ -39,6 +39,8 @@ defmodule CaseinWeb.PairingControllerTest do
     html = html_response(conn, 200)
 
     code = pairing_code(html)
+    assert html =~ ~s(<meta http-equiv="refresh" content="285" />)
+    assert html =~ "This page replaces it automatically before it expires."
     assert byte_size(code) <= 220
     [_, modules] = Regex.run(~r/viewBox="0 0 ([0-9]+) \1"/, html)
     assert String.to_integer(modules) <= 49
@@ -67,6 +69,27 @@ defmodule CaseinWeb.PairingControllerTest do
     assert pending.origin_base_url == "http://www.example.com"
     assert "casein.session" in pending.capabilities
     refute inspect(pending) =~ payload["h"]
+  end
+
+  test "refresh replaces and revokes the previous unconsumed handle", %{conn: conn} do
+    first_html = conn |> as("owner@example.com") |> get(~p"/pair/ws-1") |> html_response(200)
+    first_payload = decode_pairing_code(first_html)
+    first_hash = DeviceLinks.token_hash(first_payload["h"])
+
+    second_html = conn |> as("owner@example.com") |> get(~p"/pair/ws-1") |> html_response(200)
+    second_payload = decode_pairing_code(second_html)
+
+    refute second_payload["h"] == first_payload["h"]
+    assert Repo.get_by!(PairingHandle, handle_hash: first_hash).revoked_at
+
+    second =
+      Repo.get_by!(
+        PairingHandle,
+        handle_hash: DeviceLinks.token_hash(second_payload["h"])
+      )
+
+    assert is_nil(second.consumed_at)
+    assert is_nil(second.revoked_at)
   end
 
   test "any authenticated peer can mint a pairing handle (flat peer model)", %{conn: conn} do

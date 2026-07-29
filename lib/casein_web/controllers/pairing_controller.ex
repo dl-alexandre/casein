@@ -15,6 +15,7 @@ defmodule CaseinWeb.PairingController do
   alias Casein.Workspaces
 
   @max_pairing_code_bytes 220
+  @pairing_refresh_margin_seconds 15
 
   def show(conn, %{"workspace_id" => workspace_id}) do
     request_base = base_url(conn)
@@ -47,7 +48,16 @@ defmodule CaseinWeb.PairingController do
         conn
         |> put_resp_header("cache-control", "no-store, max-age=0")
         |> put_resp_header("pragma", "no-cache")
-        |> html(page(workspace_id, base, code, qr_svg, pending.expires_in))
+        |> html(
+          page(
+            workspace_id,
+            base,
+            code,
+            qr_svg,
+            pending.expires_in,
+            refresh_in(pending.expires_in)
+          )
+        )
       else
         {:error, %Ecto.Changeset{}} ->
           conn
@@ -102,13 +112,18 @@ defmodule CaseinWeb.PairingController do
       else: {:error, :pairing_code_too_large}
   end
 
-  defp page(workspace_id, base, code, qr_svg, expires_in) do
+  defp refresh_in(expires_in) when is_integer(expires_in) do
+    max(expires_in - @pairing_refresh_margin_seconds, 1)
+  end
+
+  defp page(workspace_id, base, code, qr_svg, expires_in, refresh_in) do
     """
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <meta http-equiv="refresh" content="#{refresh_in}" />
       <title>Pair mobile companion — #{Plug.HTML.html_escape(workspace_id)}</title>
       <style>
         body { font-family: system-ui, sans-serif; background:#0f1115; color:#e6e6e6;
@@ -135,6 +150,7 @@ defmodule CaseinWeb.PairingController do
         <div class="field"><label>Compact pairing code</label><code>#{Plug.HTML.html_escape(code)}</code></div>
         <p class="hint">In the Casein app, open <strong>Sessions → Pair</strong> and scan this code,
         or paste the pairing code above. It expires in #{expires_in} seconds and works once.
+        This page replaces it automatically before it expires.
         The device will join this workspace's live session feed.</p>
       </div>
     </body>
