@@ -14,6 +14,7 @@ defmodule CaseinMob.PairingScreen do
   use Mob.Screen
 
   alias CaseinMob.DeviceLink
+  alias CaseinMob.PairingCode
   alias CaseinMob.SessionClient
   alias CaseinMob.SessionConfig
   alias CaseinMob.SessionDashboardScreen
@@ -153,7 +154,7 @@ defmodule CaseinMob.PairingScreen do
       |> Mob.Socket.assign(:state, :pairing)
       |> Mob.Socket.assign(:message, nil)
 
-    with {:ok, payload} <- decode_pairing_payload(code),
+    with {:ok, payload} <- PairingCode.decode(code),
          {:ok, %{workspace_id: wid} = pairing} <- DeviceLink.pair(payload) do
       refreshed? =
         Enum.any?(
@@ -194,10 +195,28 @@ defmodule CaseinMob.PairingScreen do
           "That pairing code was already used. Refresh the cockpit QR to pair another device."
         )
 
-      _ ->
+      {:error, reason}
+      when reason in [
+             :empty,
+             :invalid_structure,
+             :invalid_encoding,
+             :invalid_json,
+             :invalid_payload,
+             :unsupported_pairing_version,
+             :origin_mismatch,
+             :insecure_transport
+           ] ->
         socket
         |> Mob.Socket.assign(:state, :error)
         |> Mob.Socket.assign(:message, invalid_code_message())
+
+      _ ->
+        socket
+        |> Mob.Socket.assign(:state, :error)
+        |> Mob.Socket.assign(
+          :message,
+          "Casein couldn't verify that pairing code. Refresh the cockpit QR and scan again."
+        )
     end
   end
 
@@ -245,43 +264,6 @@ defmodule CaseinMob.PairingScreen do
 
   defp scanner_unavailable_message do
     "Camera scanner isn't available in this build. Paste the pairing code below instead."
-  end
-
-  defp decode_pairing_payload(code) when is_binary(code) do
-    code = code |> extract_pairing_code() |> String.trim()
-
-    cond do
-      code == "" ->
-        {:error, :empty}
-
-      String.starts_with?(code, "{") ->
-        Jason.decode(code)
-
-      true ->
-        encoded = String.replace(code, ~r/\s+/, "")
-
-        with {:ok, json} <- Base.url_decode64(encoded, padding: false) do
-          Jason.decode(json)
-        end
-    end
-  end
-
-  defp decode_pairing_payload(_), do: {:error, :invalid}
-
-  defp extract_pairing_code(input) do
-    trimmed = String.trim(input)
-
-    case URI.parse(trimmed) do
-      %URI{query: query} when is_binary(query) ->
-        params = URI.decode_query(query)
-        params["code"] || params["pairing_code"] || trimmed
-
-      %URI{scheme: "casein", host: "pair", path: "/" <> code} when code != "" ->
-        URI.decode(code)
-
-      _ ->
-        trimmed
-    end
   end
 
   def render(assigns) do

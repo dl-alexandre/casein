@@ -155,6 +155,37 @@ defmodule CaseinMob.PairingScreenTest do
     assert text(view) =~ "Paired successfully"
   end
 
+  test "structural and server exchange failures have distinct recovery messages" do
+    structurally_invalid =
+      PairingScreen
+      |> mount_screen()
+      |> render_info({:scan, :result, %{type: :qr, value: "casein://pair/not+base64url"}})
+
+    assert text(structurally_invalid) =~ "doesn't look valid"
+
+    Application.put_env(:casein_mob, :device_link_exchange_client, fn _url, _request ->
+      {:error, :rejected}
+    end)
+
+    server_rejected =
+      PairingScreen
+      |> mount_screen()
+      |> render_info(
+        {:scan, :result,
+         %{
+           type: :qr,
+           value:
+             compact_pairing_code(
+               "https://casein.test",
+               Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+             )
+         }}
+      )
+
+    assert text(server_rejected) =~ "couldn't verify"
+    refute text(server_rejected) =~ "doesn't look valid"
+  end
+
   test "explicit re-pair refreshes the same canonical profile without deleting its context" do
     SessionConfig.put_pairing(%{
       url: "https://casein.test",
@@ -227,7 +258,7 @@ defmodule CaseinMob.PairingScreenTest do
       )
 
     assert assigns(view).state == :error
-    assert text(view) =~ "That code doesn't look valid"
+    assert text(view) =~ "couldn't verify"
     refute text(view) =~ "Paired successfully"
     refute text(view) =~ "Connection refreshed"
     assert SessionConfig.pairing() == {:ok, "https://casein.test", "existing-token"}

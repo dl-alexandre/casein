@@ -1,0 +1,21 @@
+[
+  {
+    "name": "canonical_compact_v1",
+    "uri": "casein://pair/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9",
+    "handle": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "origin": "https://casein.devbox.milcgroup.com",
+    "version": 1,
+    "reject_uris": [
+      "casein://pair/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9/extra",
+      "casein://pair/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9?code=other",
+      "casein://pair/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9#fragment",
+      "casein://review/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9",
+      "casein://pair?code=one&code=two",
+      "casein://pair?code=one&extra=two",
+      "casein://pair/?code=one",
+      "casein://pair/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9?",
+      "casein://pair/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9#",
+      "casein://@pair/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9"
+    ]
+  }
+]
