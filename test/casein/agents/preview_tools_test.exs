@@ -498,6 +498,56 @@ defmodule Casein.Agents.PreviewToolsTest do
     refute PreviewPanes.get_by_pane(pane_id)
   end
 
+  test "split_preview_pane canonicalizes only the known legacy API origin" do
+    previous_url = System.get_env("CASEIN_URL")
+    previous_canonical = Application.get_env(:casein, :canonical_public_origin)
+    previous_api_base = Application.get_env(:casein, :api_base_url)
+    previous_mcp_base = Application.get_env(:casein, :agent_mcp_base_url)
+
+    on_exit(fn ->
+      restore_system_env("CASEIN_URL", previous_url)
+      restore_env(:canonical_public_origin, previous_canonical)
+      restore_env(:api_base_url, previous_api_base)
+      restore_env(:agent_mcp_base_url, previous_mcp_base)
+    end)
+
+    Application.put_env(
+      :casein,
+      :canonical_public_origin,
+      "https://casein.devbox.milcgroup.com"
+    )
+
+    Application.put_env(
+      :casein,
+      :api_base_url,
+      "https://casein.devbox.milcgroup.com"
+    )
+
+    Application.put_env(
+      :casein,
+      :agent_mcp_base_url,
+      "https://casein.devbox.milcgroup.com"
+    )
+
+    System.put_env("CASEIN_URL", "https://local.dalexandre-devide.devbox.milcgroup.com")
+
+    assert {:ok, %{pane_id: canonical_pane_id}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    canonical_command = preview_pane_command(canonical_pane_id)
+    assert canonical_command =~ "CASEIN_URL=https://casein.devbox.milcgroup.com"
+    refute canonical_command =~ "local.dalexandre-devide.devbox.milcgroup.com"
+
+    Application.delete_env(:casein, :api_base_url)
+    Application.delete_env(:casein, :agent_mcp_base_url)
+    System.put_env("CASEIN_URL", "http://127.0.0.1:4000")
+
+    assert {:ok, %{pane_id: loopback_pane_id}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert preview_pane_command(loopback_pane_id) =~ "CASEIN_URL=http://127.0.0.1:4000"
+  end
+
   test "preview_close can close by registered pane id" do
     assert {:ok, %{pane_id: pane_id, session: session}} =
              PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
@@ -2047,6 +2097,19 @@ defmodule Casein.Agents.PreviewToolsTest do
     if is_nil(value),
       do: Application.delete_env(:casein, key),
       else: Application.put_env(:casein, key, value)
+  end
+
+  defp restore_system_env(key, nil), do: System.delete_env(key)
+  defp restore_system_env(key, value), do: System.put_env(key, value)
+
+  defp preview_pane_command(pane_id) do
+    FakeState.get(:fake_tmux_panes, %{})
+    |> Map.values()
+    |> List.flatten()
+    |> Enum.find_value(fn
+      %{id: ^pane_id, current_command: command} -> command
+      _pane -> nil
+    end)
   end
 
   defp restore_fake_state(key, nil), do: FakeState.delete(key)

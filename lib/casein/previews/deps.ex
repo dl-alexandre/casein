@@ -8,11 +8,11 @@ defmodule Casein.Previews.Deps do
   xref edge this seam exists to remove.
   """
 
-  @type key :: :workspaces | :terminals | :runtimes | :pane_sink
+  @type key :: :workspaces | :terminals | :runtimes | :pane_sink | :urls
 
   @doc "Resolve the configured impl module for a preview dependency seam."
   @spec impl(key()) :: module()
-  def impl(key) when key in [:workspaces, :terminals, :runtimes, :pane_sink] do
+  def impl(key) when key in [:workspaces, :terminals, :runtimes, :pane_sink, :urls] do
     :casein
     |> Application.fetch_env!(:preview_deps)
     |> Keyword.fetch!(key)

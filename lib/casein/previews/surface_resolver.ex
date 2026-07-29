@@ -10,7 +10,6 @@ defmodule Casein.Previews.SurfaceResolver do
   (v2), matching how the manager routes each type.
   """
 
-  alias Casein.Agents.MCPUrls
   alias Casein.HostMode
   alias Casein.Previews.Deps
   alias Casein.Previews.Surface
@@ -581,7 +580,7 @@ defmodule Casein.Previews.SurfaceResolver do
   end
 
   defp host_app_url do
-    Application.get_env(:casein, :preview_app_url) || MCPUrls.base_url()
+    Application.get_env(:casein, :preview_app_url) || Deps.impl(:urls).base_url()
   end
 
   # v3 serves its app at the apex (https://<domain_base>); legacy (v2) serves its

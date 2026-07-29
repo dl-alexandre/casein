@@ -53,16 +53,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Shared do
   end
 
   def preview_api_base_url do
-    cond do
-      url = System.get_env("CASEIN_URL") ->
-        url
-
-      host = System.get_env("PHX_HOST") ->
-        "https://#{host}"
-
-      true ->
-        nil
-    end
+    Deps.impl(:urls).api_base_url()
   end
 
   def workspace_host_path(workspace) do

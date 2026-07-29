@@ -7,9 +7,10 @@ defmodule Casein.Previews.DepsContractTest do
 
   use ExUnit.Case, async: true
 
+  alias Casein.Agents.MCPUrls, as: UrlsImpl
   alias Casein.Panes.PreviewDeps, as: PaneSinkImpl
   alias Casein.Previews.Deps
-  alias Casein.Previews.Deps.{PaneSink, Runtimes, Terminals, Workspaces}
+  alias Casein.Previews.Deps.{PaneSink, Runtimes, Terminals, Urls, Workspaces}
   alias Casein.Runtimes.PreviewDeps, as: RuntimesImpl
   alias Casein.Terminals.PreviewDeps, as: TerminalsImpl
   alias Casein.Workspaces.PreviewDeps, as: WorkspacesImpl
@@ -30,6 +31,10 @@ defmodule Casein.Previews.DepsContractTest do
     test "Panes.PreviewDeps implements Deps.PaneSink" do
       assert_implements(PaneSinkImpl, PaneSink)
     end
+
+    test "Agents.MCPUrls implements Deps.Urls" do
+      assert_implements(UrlsImpl, Urls)
+    end
   end
 
   describe "config resolution" do
@@ -38,6 +43,7 @@ defmodule Casein.Previews.DepsContractTest do
       assert Deps.impl(:terminals) == TerminalsImpl
       assert Deps.impl(:runtimes) == RuntimesImpl
       assert Deps.impl(:pane_sink) == PaneSinkImpl
+      assert Deps.impl(:urls) == UrlsImpl
     end
 
     test "impl/1 is overridable via Application env (test seam)" do
@@ -48,13 +54,15 @@ defmodule Casein.Previews.DepsContractTest do
           workspaces: Deps.Test.Fakes.Workspaces,
           terminals: Deps.Test.Fakes.Terminals,
           runtimes: Deps.Test.Fakes.Runtimes,
-          pane_sink: Deps.Test.Fakes.PaneSink
+          pane_sink: Deps.Test.Fakes.PaneSink,
+          urls: Deps.Test.Fakes.Urls
         )
 
         assert Deps.impl(:workspaces) == Deps.Test.Fakes.Workspaces
         assert Deps.impl(:terminals) == Deps.Test.Fakes.Terminals
         assert Deps.impl(:runtimes) == Deps.Test.Fakes.Runtimes
         assert Deps.impl(:pane_sink) == Deps.Test.Fakes.PaneSink
+        assert Deps.impl(:urls) == Deps.Test.Fakes.Urls
       after
         restore_preview_deps(previous)
       end
@@ -65,6 +73,7 @@ defmodule Casein.Previews.DepsContractTest do
       assert_implements(Deps.Test.Fakes.Terminals, Terminals)
       assert_implements(Deps.Test.Fakes.Runtimes, Runtimes)
       assert_implements(Deps.Test.Fakes.PaneSink, PaneSink)
+      assert_implements(Deps.Test.Fakes.Urls, Urls)
     end
   end
 
