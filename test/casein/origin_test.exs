@@ -66,6 +66,14 @@ defmodule Casein.OriginTest do
     assert Origin.canonicalize_known_base_url("https://devide.devbox.milcgroup.com/path") ==
              "https://casein.devbox.milcgroup.com"
 
+    assert Origin.canonicalize_known_base_url(
+             "https://local.dalexandre-devide.devbox.milcgroup.com/path"
+           ) == "https://casein.devbox.milcgroup.com"
+
+    assert Origin.canonicalize_known_base_url(
+             "https://local.other-workspace.devbox.milcgroup.com/path"
+           ) == "https://local.other-workspace.devbox.milcgroup.com"
+
     assert Origin.canonicalize_known_base_url("http://127.0.0.1:4000/path") ==
              "http://127.0.0.1:4000"
 

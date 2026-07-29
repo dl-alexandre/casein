@@ -44,6 +44,10 @@ defmodule Casein.Agents.MCPUrls do
       |> endpoint_url("/api/artifacts/mcp")
       |> with_query_param("workspace_id", workspace_id)
 
+  @doc "Canonicalizes only recognized retired managed origins."
+  def canonicalize_known_base_url(base_url) when is_binary(base_url),
+    do: Origin.canonicalize_known_base_url(base_url)
+
   defp endpoint_url(base_url, path), do: String.trim_trailing(base_url, "/") <> path
 
   defp with_query_param(url, _key, value) when value in [nil, ""], do: url

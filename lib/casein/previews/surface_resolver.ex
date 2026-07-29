@@ -588,7 +588,9 @@ defmodule Casein.Previews.SurfaceResolver do
   # Caddy wildcard). Every other surface is a plain <name>.<domain_base> subdomain.
   defp surface_url(type, "app", domain_base) do
     host = if v3_workspace?(type), do: domain_base, else: "local.#{domain_base}"
+
     "https://#{host}"
+    |> Deps.impl(:urls).canonicalize_known_base_url()
   end
 
   defp surface_url(_type, name, domain_base), do: "https://#{name}.#{domain_base}"

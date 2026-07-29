@@ -10,7 +10,10 @@ defmodule Casein.Origin do
 
   @id_prefix "casein_"
   @id_context "casein-mobile-origin-v1"
-  @legacy_devbox_origin "https://devide.devbox.milcgroup.com"
+  @legacy_devbox_origins [
+    "https://devide.devbox.milcgroup.com",
+    "https://local.dalexandre-devide.devbox.milcgroup.com"
+  ]
 
   @spec id() :: String.t()
   def id do
@@ -66,19 +69,19 @@ defmodule Casein.Origin do
   end
 
   @doc """
-  Rewrites only the known legacy Devbox public origin to the configured
+  Rewrites only known retired Devbox-owned Casein origins to the configured
   canonical origin.
 
-  Loopback, LAN, preview, and unrelated public origins remain distinct. This
-  is navigation/config migration only; it never carries credentials between
-  origins.
+  Loopback, LAN, unrelated workspace previews, and unrelated public origins
+  remain distinct. This is navigation/config migration only; it never carries
+  credentials between origins.
   """
   @spec canonicalize_known_base_url(String.t()) :: String.t()
   def canonicalize_known_base_url(base_url) when is_binary(base_url) do
     normalized = normalize_base_url(base_url)
 
     case canonical_base_url() do
-      canonical when is_binary(canonical) and normalized == @legacy_devbox_origin -> canonical
+      canonical when is_binary(canonical) and normalized in @legacy_devbox_origins -> canonical
       _canonical -> normalized
     end
   end
