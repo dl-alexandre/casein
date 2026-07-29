@@ -1683,6 +1683,16 @@ assert(
     const id = pf.parseDeploymentIdentity({ environment: "dev", git_sha: sha40 });
     assert(id.environment === "dev" && id.revision === sha40, "env + 40-char sha parsed exactly");
   }
+  {
+    const id = pf.parseDeploymentIdentity({
+      status: "ok",
+      deployment: { environment: "dev", revision: sha40 },
+    });
+    assert(
+      id.environment === "dev" && id.revision === sha40,
+      "nested health deployment envelope parsed exactly",
+    );
+  }
   assert(pf.parseDeploymentIdentity({ environment: "dev", git_sha: "d3888dd5" }).revision === null, "short sha refused");
   assert(/40-char/.test(pf.parseDeploymentIdentity({ environment: "dev", git_sha: "v1.2.3" }).reason), "version labels refused with a named reason");
   assert(/environment/.test(pf.parseDeploymentIdentity({ git_sha: sha40 }).reason), "missing environment named");
