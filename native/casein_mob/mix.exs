@@ -26,7 +26,10 @@ defmodule CaseinMob.MixProject do
        git: "https://github.com/dl-alexandre/zigler.git",
        ref: "50724d53cca71f1f45124b554d53c6f438973b04",
        override: true},
-      {:mob, "~> 0.7"},
+      {:mob,
+       github: "dl-alexandre/mob",
+       ref: "764887035330f08805cc36338910182ac0442937",
+       override: true},
       # GenericJam/mob_dev#24 supplies per-ABI external static archives for
       # project NIFs that resolve extern symbols at the native app link.
       {:mob_dev, "~> 0.6.23", only: :dev, runtime: false, override: true},
