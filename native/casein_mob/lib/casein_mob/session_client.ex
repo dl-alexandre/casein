@@ -176,7 +176,7 @@ defmodule CaseinMob.SessionClient do
   # ── Slipstream lifecycle ────────────────────────────────────────────────────
 
   @impl Slipstream
-  def init(_opts) do
+  def init(opts) do
     # Start disconnected. Creds arrive via configure/2, or from a persisted
     # pairing on boot. `subscribers` is topic => MapSet of pids.
     socket =
@@ -185,12 +185,17 @@ defmodule CaseinMob.SessionClient do
       |> assign(:url, nil)
       |> assign(:token, nil)
       |> assign(:connecting?, false)
+      |> assign(:test_mode?, Keyword.get(opts, :test_mode?, false))
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
 
     socket =
       case SessionConfig.pairing() do
-        {:ok, url, token} -> do_configure(socket, url, token)
+        # Restore credentials without opening the transport yet. The dashboard
+        # registers its workspace/card watchers immediately after boot; letting
+        # the first watcher request the connection ensures an early disconnect
+        # always has a subscriber and can use the normal reconnect path.
+        {:ok, url, token} -> restore_configuration(socket, url, token)
         :error -> socket
       end
 
@@ -490,6 +495,11 @@ defmodule CaseinMob.SessionClient do
     if changed?, do: request_connect(socket), else: ensure_connection_requested(socket)
   end
 
+  defp restore_configuration(socket, url, token) do
+    _ = resolve_host(url)
+    socket |> assign(:url, url) |> assign(:token, token)
+  end
+
   # Pairing a second host can happen while the previous dashboard is still
   # mounted behind the pairing screen. Drop every origin-owned in-memory
   # reference before the new socket connects so old workspace topics, push
@@ -689,10 +699,18 @@ defmodule CaseinMob.SessionClient do
   defp connect_opts(socket) do
     uri = ws_uri(socket.assigns.url, socket.assigns.token)
 
-    [
+    opts = [
       uri: uri,
       mint_opts: mint_opts(uri)
     ]
+
+    if Map.get(socket.assigns, :test_mode?, false) do
+      opts
+      |> Keyword.put(:test_mode?, true)
+      |> Keyword.put(:reconnect_after_msec, [0])
+    else
+      opts
+    end
   end
 
   defp mint_opts(uri) do
