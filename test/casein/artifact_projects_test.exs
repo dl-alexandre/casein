@@ -6,6 +6,7 @@ defmodule Casein.ArtifactProjectsTest do
   alias Casein.ArtifactProjects
   alias Casein.Runtimes
   alias Casein.Runtimes.MemoryAdapter, as: RuntimeAdapter
+  alias Casein.Test.PreviewPortProbe
   alias Casein.Workspace
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.MemoryAdapter
@@ -437,6 +438,11 @@ defmodule Casein.ArtifactProjectsTest do
   end
 
   test "restore reuses a verified live preview owned by the expired artifact" do
+    previous_range = Application.get_env(:casein, :runtime_preview_port_range)
+    preview_port = PreviewPortProbe.unused_loopback_port!()
+    Application.put_env(:casein, :runtime_preview_port_range, {preview_port, preview_port})
+    on_exit(fn -> restore_env(:runtime_preview_port_range, previous_range) end)
+
     assert {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Live Preview"})
     server = project.preview_server
 

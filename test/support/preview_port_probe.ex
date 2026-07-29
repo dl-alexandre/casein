@@ -21,4 +21,11 @@ defmodule Casein.Test.PreviewPortProbe do
     Process.put(@unavailable_key, unavailable)
     :ok
   end
+
+  def unused_loopback_port! do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}])
+    {:ok, {{127, 0, 0, 1}, port}} = :inet.sockname(listener)
+    :ok = :gen_tcp.close(listener)
+    port
+  end
 end
