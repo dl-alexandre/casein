@@ -21,6 +21,19 @@
  * deliberately NOT captured: a walk report is shareable, and response bodies
  * routinely contain PII and session material.
  */
+export function sanitizeEvidenceUrl(value) {
+  try {
+    const url = new URL(String(value));
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return String(value || "").split("?")[0].split("#")[0];
+  }
+}
+
 export function attachHar(page, { maxEntries = 500 } = {}) {
   const entries = [];
   const startedAt = Date.now();
@@ -34,7 +47,7 @@ export function attachHar(page, { maxEntries = 500 } = {}) {
       /* request may already be gone */
     }
     entries.push({
-      url: response.url(),
+      url: sanitizeEvidenceUrl(response.url()),
       method: request.method(),
       status: response.status(),
       resourceType: request.resourceType(),

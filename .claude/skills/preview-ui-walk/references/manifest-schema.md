@@ -245,6 +245,11 @@ verdict naming exactly what was missing, evaluated **before** any assertion, so
 "collector produced nothing" can never be reported as a pass. Empty objects,
 empty arrays and `false` all count as *no evidence*.
 
+The browser driver attaches required collectors to each physical page visit;
+preflight proving a collector on a scratch fixture is not a substitute for
+capturing its per-page output. HAR and other recorded URLs omit userinfo,
+queries and fragments before they reach evidence.
+
 Enum: `har`, `a11y`, `dom`, `server_timing`, `ws`, `resource_metrics`,
 `db_before_after`, `audit_actor`, `cleanup`, `downloads`, `api`,
 `visual_baseline`.
@@ -314,6 +319,13 @@ Pages walk every declared viewport unless they narrow it with
 in screenshot filenames. Keep `device_scale_factor` at `1` unless capturing for
 visual diffing — screenshot pixels and DOM bounds only align at DPR 1. Omitting
 `viewports` keeps the single default viewport (v1).
+
+Preflight expands logical pages into physical viewport visits and reports both
+counts. Any declared viewport makes viewport application a required capability;
+the walk records requested and observed width, height and DPR per visit, and
+blocks a visit when they do not match. The driver pools authenticated browser
+contexts by DPR because Playwright fixes DPR at context creation; widths and
+heights can still vary per visit without repeating login.
 
 ## Retries and flakiness (wired in the driver since batch 4)
 

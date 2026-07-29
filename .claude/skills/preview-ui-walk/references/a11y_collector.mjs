@@ -27,6 +27,13 @@ export const DEFAULT_VIEWPORTS = [
   { name: "mobile", width: 390, height: 844 },
   { name: "desktop", width: 1280, height: 720 },
 ];
+export const DEFAULT_WALK_VIEWPORT = {
+  name: "default",
+  width: 1280,
+  height: 900,
+  deviceScaleFactor: 1,
+  implicit: true,
+};
 
 /** Normalize a manifest viewport list; invalid entries are dropped loudly. */
 export function normalizeViewports(list) {
@@ -60,6 +67,35 @@ export function viewportsForPage(all, pageNames) {
   if (!Array.isArray(pageNames) || pageNames.length === 0) return all;
   const wanted = new Set(pageNames);
   return all.filter((v) => wanted.has(v.name));
+}
+
+/**
+ * Expand logical manifest pages into the physical viewport visits the driver
+ * must perform. An omitted viewport list retains the v1 single default visit.
+ */
+export function expandWalkCases(pages, declaredViewports) {
+  const logicalPages = Array.isArray(pages) ? pages : [];
+  const { viewports, invalid } = normalizeViewports(declaredViewports);
+  if (invalid.length > 0) {
+    return { cases: [], invalid, unknown: [] };
+  }
+
+  const activeViewports = viewports.length > 0 ? viewports : [DEFAULT_WALK_VIEWPORT];
+  const knownNames = new Set(activeViewports.map((viewport) => viewport.name));
+  const unknown = [];
+  const cases = [];
+
+  for (const page of logicalPages) {
+    const requested = Array.isArray(page?.viewports) ? page.viewports : [];
+    for (const name of requested) {
+      if (!knownNames.has(name)) unknown.push({ page: page?.name || page?.path || "?", name });
+    }
+    for (const viewport of viewportsForPage(activeViewports, requested)) {
+      cases.push({ page, viewport });
+    }
+  }
+
+  return { cases, invalid, unknown };
 }
 
 /**

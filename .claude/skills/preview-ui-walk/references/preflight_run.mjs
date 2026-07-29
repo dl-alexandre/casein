@@ -24,6 +24,7 @@ import {
   verdict,
 } from "./preflight.mjs";
 import { checkVisualBaselineReadiness, storeFromEnv } from "./visual_baseline.mjs";
+import { expandWalkCases, normalizeViewports } from "./a11y_collector.mjs";
 
 /** Role env prefixes a manifest needs, derived from login.params_from_env. */
 export function roleEnvPrefixes(manifests) {
@@ -61,8 +62,38 @@ export function checkSchema(loaded) {
   if (missing.length) {
     return row("schema", STATE.BLOCKED, `${missing.length} manifest(s) missing pages/report.name`);
   }
-  const pages = loaded.reduce((n, l) => n + (l.manifest.pages?.length || 0), 0);
-  return row("schema", STATE.OK, `${loaded.length} manifest(s), ${pages} page(s)`);
+  let logicalPages = 0;
+  let viewportVisits = 0;
+  for (const { manifest } of loaded) {
+    const normalized = normalizeViewports(manifest.viewports);
+    if (normalized.invalid.length > 0) {
+      return row(
+        "schema",
+        STATE.BLOCKED,
+        `${manifest.report.name} has ${normalized.invalid.length} invalid viewport declaration(s)`,
+      );
+    }
+    const names = normalized.viewports.map((viewport) => viewport.name);
+    if (new Set(names).size !== names.length) {
+      return row("schema", STATE.BLOCKED, `${manifest.report.name} has duplicate viewport names`);
+    }
+    const expanded = expandWalkCases(manifest.pages, manifest.viewports);
+    if (expanded.unknown.length > 0) {
+      const first = expanded.unknown[0];
+      return row(
+        "schema",
+        STATE.BLOCKED,
+        `${manifest.report.name} page ${first.page} references unknown viewport ${first.name}`,
+      );
+    }
+    logicalPages += manifest.pages.length;
+    viewportVisits += expanded.cases.length;
+  }
+  return row(
+    "schema",
+    STATE.OK,
+    `${loaded.length} manifest(s), ${logicalPages} logical page(s), ${viewportVisits} viewport visit(s)`,
+  );
 }
 
 /** Single GET of the base URL. A read — never a page path, never a non-GET. */
@@ -172,12 +203,18 @@ export async function checkDeploymentIdentity(
       "identity",
       STATE.BLOCKED,
       `expected revision is not a full 40-char hex sha (got ${String(expectRevision).trim().slice(0, 12)}…)`,
+      { required: true },
     );
   }
 
   if (!healthUrl) {
     if (verifying) {
-      return row("identity", STATE.BLOCKED, "expected environment/revision supplied but no --health-url to verify against");
+      return row(
+        "identity",
+        STATE.BLOCKED,
+        "expected environment/revision supplied but no --health-url to verify against",
+        { required: true },
+      );
     }
     return row("identity", STATE.OK, `base=${base || "?"} manifests=${manifestCount ?? "?"} (no --health-url; deployment identity unattested)`);
   }
@@ -186,23 +223,39 @@ export async function checkDeploymentIdentity(
   try {
     const res = await fetchImpl(healthUrl, { method: "GET", redirect: "manual", signal: ctl.signal });
     if (res.status >= 400) {
-      return row("identity", failState, `health url returned ${res.status} (${sanitizedUrl(healthUrl)})`);
+      return row(
+        "identity",
+        failState,
+        `health url returned ${res.status} (${sanitizedUrl(healthUrl)})`,
+        { required: verifying },
+      );
     }
     let data = null;
     try {
       data = await res.json();
     } catch {
-      return row("identity", failState, `health response is not JSON (${sanitizedUrl(healthUrl)})`);
+      return row(
+        "identity",
+        failState,
+        `health response is not JSON (${sanitizedUrl(healthUrl)})`,
+        { required: verifying },
+      );
     }
     const id = parseDeploymentIdentity(data);
     if (!id.environment || !id.revision) {
-      return row("identity", failState, `${id.reason} (${sanitizedUrl(healthUrl)})`);
+      return row(
+        "identity",
+        failState,
+        `${id.reason} (${sanitizedUrl(healthUrl)})`,
+        { required: verifying },
+      );
     }
     if (expectEnvironment && id.environment !== String(expectEnvironment)) {
       return row(
         "identity",
         STATE.BLOCKED,
         `environment mismatch: expected "${expectEnvironment}", deployed "${id.environment}" (${sanitizedUrl(healthUrl)})`,
+        { required: true },
       );
     }
     if (expectRevision && id.revision !== String(expectRevision).trim().toLowerCase()) {
@@ -210,6 +263,7 @@ export async function checkDeploymentIdentity(
         "identity",
         STATE.BLOCKED,
         `revision mismatch: expected ${String(expectRevision).trim().toLowerCase()}, deployed ${id.revision} (${sanitizedUrl(healthUrl)})`,
+        { required: true },
       );
     }
     const verified = verifying ? " — matches operator expectation" : "";
@@ -217,10 +271,18 @@ export async function checkDeploymentIdentity(
       "identity",
       STATE.OK,
       `env=${id.environment} rev=${id.revision}${verified} (${sanitizedUrl(healthUrl)})`,
-      { evidence: { environment: id.environment, revision: id.revision, verified: verifying } },
+      {
+        required: verifying,
+        evidence: { environment: id.environment, revision: id.revision, verified: verifying },
+      },
     );
   } catch (err) {
-    return row("identity", failState, `health url unreachable: ${String(err?.message || err)}`);
+    return row(
+      "identity",
+      failState,
+      `health url unreachable: ${String(err?.message || err)}`,
+      { required: verifying },
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -238,6 +300,7 @@ export async function checkTidewave(url, { fetchImpl = fetch, timeoutMs = 8000, 
       "tidewave",
       required ? STATE.BLOCKED : STATE.SKIP,
       required ? "runtime evidence required but no --tidewave-url" : "no --tidewave-url",
+      { required },
     );
   }
   const ctl = new AbortController();
@@ -250,18 +313,25 @@ export async function checkTidewave(url, { fetchImpl = fetch, timeoutMs = 8000, 
       signal: ctl.signal,
     });
     if (res.status === 200) {
-      return row("tidewave", STATE.OK, `initialize → 200 (${sanitizedUrl(url)})`);
+      return row(
+        "tidewave",
+        STATE.OK,
+        `initialize → 200 (${sanitizedUrl(url)})`,
+        { required },
+      );
     }
     return row(
       "tidewave",
       required ? STATE.BLOCKED : STATE.MISSING,
       `initialize → ${res.status} (${sanitizedUrl(url)})`,
+      { required },
     );
   } catch (err) {
     return row(
       "tidewave",
       required ? STATE.BLOCKED : STATE.MISSING,
       `unreachable: ${String(err?.message || err)} (${sanitizedUrl(url)})`,
+      { required },
     );
   } finally {
     clearTimeout(timer);
@@ -281,15 +351,26 @@ export async function checkArtifactStore({ store, fetchImpl = fetch, required = 
       required
         ? "required but artifact store not configured (CASEIN_ARTIFACT_MCP_URL / CASEIN_API_TOKEN / CASEIN_WORKSPACE_ID)"
         : "artifact store not configured",
+      { required },
     );
   }
   const { mcpCall } = await import("./visual_baseline.mjs");
   const listed = await mcpCall(store, "artifact_list", {}, { fetchImpl });
   if (listed.error) {
-    return row("artifact", required ? STATE.BLOCKED : STATE.MISSING, listed.error);
+    return row(
+      "artifact",
+      required ? STATE.BLOCKED : STATE.MISSING,
+      listed.error,
+      { required },
+    );
   }
   const count = listed.ok?.count ?? (listed.ok?.artifacts || []).length;
-  return row("artifact", STATE.OK, `artifact_list ok (${count} project(s)) at ${sanitizedUrl(store.url)}`);
+  return row(
+    "artifact",
+    STATE.OK,
+    `artifact_list ok (${count} project(s)) at ${sanitizedUrl(store.url)}`,
+    { required },
+  );
 }
 
 export function checkBrowser({ resolveChromium, chromiumPath } = {}) {
@@ -316,10 +397,10 @@ export function checkBrowser({ resolveChromium, chromiumPath } = {}) {
  * DEGRADED; required gaps now fail closed.)
  */
 export function checkCollector(id, { required, proven }) {
-  if (!required) return row(id, STATE.SKIP, "not required by manifest");
+  if (!required) return row(id, STATE.SKIP, "not required by manifest", { required: false });
   return proven
-    ? row(id, STATE.OK, "collector proven")
-    : row(id, STATE.BLOCKED, "required by manifest but not proven available");
+    ? row(id, STATE.OK, "collector proven", { required: true })
+    : row(id, STATE.BLOCKED, "required by manifest but not proven available", { required: true });
 }
 
 const PROVEN_COLLECTORS = new Set(["har", "dom", "server_timing", "screenshot", "cleanup"]);
@@ -386,6 +467,9 @@ export async function buildMatrix(args, deps = {}) {
   const manifests = loaded.filter((l) => l.manifest).map((l) => l.manifest);
   const mutating = isMutating(manifests);
   const required = new Set(requiredEvidence(manifests));
+  const viewportRequired = manifests.some(
+    (manifest) => Array.isArray(manifest?.viewports) && manifest.viewports.length > 0,
+  );
 
   const rows = [];
   rows.push(checkSchema(loaded));
@@ -436,6 +520,7 @@ export async function buildMatrix(args, deps = {}) {
       "visual_baseline",
       readiness.state === "OK" ? STATE.OK : STATE.BLOCKED,
       readiness.detail,
+      { required: true },
     );
   }
 
@@ -472,7 +557,7 @@ export async function buildMatrix(args, deps = {}) {
     const key = id === "db_read" ? "db_before_after" : id;
     rows.push(
       checkCollector(id, {
-        required: required.has(key) || id === "screenshot",
+        required: required.has(key) || id === "screenshot" || (id === "viewport" && viewportRequired),
         proven: PROBED[id] ? PROBED[id](deps.collectorProbe) : PROVEN_COLLECTORS.has(id),
       }),
     );
