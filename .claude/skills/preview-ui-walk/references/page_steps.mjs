@@ -444,11 +444,13 @@ async function executeStep(page, step, { timeout, base }) {
       const scope = resolveScope(page, step);
       if (scope === page) await page.fill(sel, String(text ?? ""), { timeout });
       else await scope.locator(sel).first().fill(String(text ?? ""), { timeout });
+      if (step.wait_ms) await page.waitForTimeout(step.wait_ms);
       return;
     }
     case "type": {
       if (!sel) throw new Error("type needs selector");
       await page.type(sel, String(text ?? ""), { timeout, delay: step.delay_ms || 0 });
+      if (step.wait_ms) await page.waitForTimeout(step.wait_ms);
       return;
     }
     case "press": {
@@ -456,6 +458,7 @@ async function executeStep(page, step, { timeout, base }) {
       if (!key) throw new Error("press needs key");
       if (sel) await page.press(sel, key, { timeout });
       else await page.keyboard.press(key);
+      if (step.wait_ms) await page.waitForTimeout(step.wait_ms);
       return;
     }
     case "select": {

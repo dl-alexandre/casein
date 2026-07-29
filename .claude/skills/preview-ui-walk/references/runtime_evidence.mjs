@@ -95,6 +95,14 @@ function httpJson(url, body, timeoutMs = 8000) {
             reject(new Error(`non-json tidewave response (${res.statusCode}): ${raw.slice(0, 200)}`));
             return;
           }
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            reject(
+              new Error(
+                `tidewave HTTP ${res.statusCode}: ${raw.slice(0, 200)}`,
+              ),
+            );
+            return;
+          }
           resolve({ status: res.statusCode, body: obj });
         });
       },
