@@ -437,13 +437,11 @@ defmodule Casein.Mobile.UserObserverTest do
         workspace_id: "ws-1",
         tmux_session: "casein_alpha_disposable",
         metadata: %{
-          runtime_id: "disposable",
-          agent: "codex",
           windows: [%{id: "@1", agent_state: :working}],
           pane_summaries: [
-            %{id: "%1", role: "operator"},
-            %{id: "%2", role: "verify"},
-            %{id: "%3", role: "agent"}
+            %{id: "%1", window_id: "@1", role: "operator"},
+            %{id: "%2", window_id: "@1", role: "verify"},
+            %{id: "%3", window_id: "@1", role: "agent"}
           ]
         }
       }

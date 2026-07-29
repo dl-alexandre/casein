@@ -31,14 +31,28 @@ defmodule Casein.Mobile.LiveWork do
   defp eligible?(%Info{metadata: metadata}) when is_map(metadata) do
     present?(value(metadata, :runtime_id)) or
       present?(value(metadata, :agent)) or
-      windows(metadata) |> Enum.any?(&present?(value(&1, :conversation_title)))
+      windows(metadata) |> Enum.any?(&present?(value(&1, :conversation_title))) or
+      explicitly_reported_agent?(metadata)
   end
 
   defp eligible?(_tab), do: false
 
+  # A scanned shell becomes agent work only when two independent authoritative
+  # signals agree in the same window: topology has an explicit role-marked
+  # agent pane and the session directory resolved a typed semantic state for
+  # that window.
+  # Neither a focused pane nor an unmarked state is enough.
+  defp explicitly_reported_agent?(metadata) do
+    metadata
+    |> reported_agent_windows()
+    |> Enum.any?(fn window ->
+      normalize(value(window, :agent_state)) in @active_states
+    end)
+  end
+
   defp card(user_id, workspace_id, workspace_name, %Info{} = tab, now) do
     metadata = tab.metadata || %{}
-    windows = windows(metadata)
+    windows = projection_windows(tab, metadata)
     state = aggregate_state(windows)
     phase = phase(state)
     agent = bounded(value(metadata, :agent), @max_agent) || inferred_agent(windows)
@@ -158,24 +172,61 @@ defmodule Casein.Mobile.LiveWork do
   # locator remains navigation data, and mutation still revalidates the role.
   defp unique_agent_pane(metadata) do
     metadata
-    |> value(:pane_summaries)
+    |> explicit_agent_panes()
     |> case do
+      [pane] -> pane
+      _none_or_ambiguous -> nil
+    end
+  end
+
+  defp explicit_agent_panes(metadata) do
+    metadata
+    |> explicit_agent_pane_summaries()
+    |> Enum.map(&value(&1, :id))
+    |> Enum.map(&bounded(&1, @max_ref))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp explicit_agent_pane_summaries(metadata) do
+    case value(metadata, :pane_summaries) do
       summaries when is_list(summaries) ->
         summaries
         |> Enum.filter(&is_map/1)
         |> Enum.filter(&(normalize(value(&1, :role)) == "agent"))
-        |> Enum.map(&(value(&1, :id) |> bounded(@max_ref)))
-        |> Enum.reject(&is_nil/1)
-        |> Enum.uniq()
-        |> case do
-          [pane] -> pane
-          _none_or_ambiguous -> nil
-        end
 
       _missing ->
-        nil
+        []
     end
   end
+
+  defp reported_agent_windows(metadata) do
+    agent_window_ids =
+      metadata
+      |> explicit_agent_pane_summaries()
+      |> Enum.map(&(value(&1, :window_id) |> bounded(@max_ref)))
+      |> Enum.reject(&is_nil/1)
+      |> MapSet.new()
+
+    metadata
+    |> windows()
+    |> Enum.filter(fn window ->
+      window_id = value(window, :id) |> bounded(@max_ref)
+      is_binary(window_id) and MapSet.member?(agent_window_ids, window_id)
+    end)
+  end
+
+  # Once a scanned shell has a correlated role-marked agent window, unrelated
+  # operator/verify windows cannot contribute state, progress, or titles to its
+  # mobile projection. Native agent sessions retain their existing aggregation.
+  defp projection_windows(%Info{kind: :shell}, metadata) do
+    case reported_agent_windows(metadata) do
+      [] -> windows(metadata)
+      agent_windows -> agent_windows
+    end
+  end
+
+  defp projection_windows(_tab, metadata), do: windows(metadata)
 
   defp stable_session_id(%Info{id: id}) when is_binary(id) and id != "", do: bounded(id, @max_ref)
 

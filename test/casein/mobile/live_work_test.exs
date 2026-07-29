@@ -71,6 +71,91 @@ defmodule Casein.Mobile.LiveWorkTest do
     assert LiveWork.project("user", "ws", "Devbox", [operator], @now) == []
   end
 
+  test "admits a scanned shell only when explicit agent role and typed state agree" do
+    exact =
+      %Info{
+        id: "shell_ws_disposable",
+        kind: :shell,
+        workspace_id: "ws",
+        sid: "disposable",
+        tmux_session: "casein_ws_disposable",
+        status: :active,
+        metadata: %{
+          windows: [%{id: "@1", agent_state: :blocked}],
+          pane_summaries: [
+            %{id: "%1", window_id: "@1", role: "operator"},
+            %{id: "%2", window_id: "@1", role: "agent"}
+          ]
+        }
+      }
+
+    state_without_role =
+      put_in(exact, [Access.key!(:metadata), :pane_summaries], [%{id: "%2", active: true}])
+
+    role_without_state =
+      put_in(exact, [Access.key!(:metadata), :windows], [%{id: "@1", pane_state: :working}])
+
+    assert [card] = LiveWork.project("user", "ws", "Devbox", [exact], @now)
+    assert card.status == "waiting"
+    assert card.context.locator.pane == "%2"
+    assert AttentionInbox.project(card).reason_code == "human_blocked"
+    assert LiveWork.project("user", "ws", "Devbox", [state_without_role], @now) == []
+    assert LiveWork.project("user", "ws", "Devbox", [role_without_state], @now) == []
+  end
+
+  test "does not correlate an operator window state with an agent pane in another window" do
+    mismatched =
+      %Info{
+        id: "shell_ws_mismatched",
+        kind: :shell,
+        workspace_id: "ws",
+        sid: "mismatched",
+        tmux_session: "casein_ws_mismatched",
+        status: :active,
+        metadata: %{
+          windows: [
+            %{id: "@1", pane_state: :idle},
+            %{id: "@2", agent_state: :blocked}
+          ],
+          pane_summaries: [
+            %{id: "%2", window_id: "@1", role: "agent"},
+            %{id: "%1", window_id: "@2", role: "operator"}
+          ]
+        }
+      }
+
+    assert LiveWork.project("user", "ws", "Devbox", [mismatched], @now) == []
+  end
+
+  test "operator window state cannot override a correlated agent window" do
+    correlated =
+      %Info{
+        id: "shell_ws_correlated",
+        kind: :shell,
+        workspace_id: "ws",
+        sid: "correlated",
+        tmux_session: "casein_ws_correlated",
+        status: :active,
+        metadata: %{
+          windows: [
+            %{id: "@1", agent_state: :working},
+            %{id: "@2", agent_state: :blocked}
+          ],
+          pane_summaries: [
+            %{id: "%2", window_id: "@1", role: "agent"},
+            %{id: "%1", window_id: "@2", role: "operator"}
+          ]
+        }
+      }
+
+    assert [card] = LiveWork.project("user", "ws", "Devbox", [correlated], @now)
+    assert card.status == "running"
+    assert card.meta.run_phase == "executing"
+    assert card.meta.activity == "Agent working"
+    assert card.meta.progress == %{windows: 1, working: 1, waiting: 0, ready: 0, unknown: 0}
+    assert card.context.locator.pane == "%2"
+  end
+
   test "conversation title is an authoritative marker but never grants mutation" do
     tab =
       %Info{
@@ -137,9 +222,9 @@ defmodule Casein.Mobile.LiveWorkTest do
       agent_tab([%{id: "@1", agent_state: :blocked}],
         tmux_session: "casein_ws_exact",
         pane_summaries: [
-          %{id: "%1", role: "operator", active: true},
-          %{id: "%2", role: "verify"},
-          %{id: "%3", role: "agent"}
+          %{id: "%1", window_id: "@1", role: "operator", active: true},
+          %{id: "%2", window_id: "@1", role: "verify"},
+          %{id: "%3", window_id: "@1", role: "agent"}
         ]
       )
 
@@ -147,8 +232,8 @@ defmodule Casein.Mobile.LiveWorkTest do
       agent_tab([%{id: "@2", agent_state: :working}],
         tmux_session: "casein_ws_ambiguous",
         pane_summaries: [
-          %{id: "%4", role: "agent"},
-          %{id: "%5", role: "agent"}
+          %{id: "%4", window_id: "@2", role: "agent"},
+          %{id: "%5", window_id: "@2", role: "agent"}
         ]
       )
 
