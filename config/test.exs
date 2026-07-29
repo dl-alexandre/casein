@@ -174,6 +174,9 @@ config :casein,
   # Tests that want the Local source override this.
   workspace_source: Casein.WorkspaceSource.Manager,
   runtime_preview_launcher_enabled: false,
+  # Metadata/allocation tests must not depend on live host preview listeners.
+  # The system probe itself has focused real-socket coverage.
+  runtime_preview_port_probe: Casein.Test.PreviewPortProbe,
   preview_control_adapter: :memory,
   preview_proxy_enabled: false,
   preview_open_preflight: false,
