@@ -160,6 +160,8 @@ config :casein,
   device_link_reaper_enabled: false,
   runtime_reaper_enabled: false,
   runtime_reaper_dry_run: true,
+  # Keep scheduled reaper tests isolated from real host agent worktrees.
+  agent_worktree_roots: [Path.join(System.tmp_dir!(), "casein-test-agent-worktrees")],
   workspace_reconciler_enabled: false,
   workspace_reconciler_dry_run: true,
   # UserObserver/channel processes outlive individual SQL sandbox clients. The
