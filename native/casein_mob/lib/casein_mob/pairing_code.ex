@@ -10,6 +10,18 @@ defmodule CaseinMob.PairingCode do
   @compact_prefix "casein://pair/"
   @query_prefix "casein://pair?"
   @max_code_bytes 4_096
+  @scanner_boundary_artifacts [
+    "\0",
+    "\uFEFF",
+    "\u200B",
+    "\u200E",
+    "\u200F",
+    "\u2060",
+    "\u2066",
+    "\u2067",
+    "\u2068",
+    "\u2069"
+  ]
 
   @type error ::
           :empty
@@ -20,23 +32,24 @@ defmodule CaseinMob.PairingCode do
 
   @spec decode(String.t()) :: {:ok, map()} | {:error, error()}
   def decode(input) when is_binary(input) do
-    code = String.trim(input)
-
     cond do
-      code == "" ->
-        {:error, :empty}
-
-      byte_size(code) > @max_code_bytes ->
+      byte_size(input) > @max_code_bytes ->
         {:error, :invalid_structure}
 
       true ->
-        with {:ok, payload} <- extract_payload(code),
-             {:ok, decoded} <- decode_payload(payload),
-             true <- is_map(decoded) do
-          {:ok, decoded}
-        else
-          false -> {:error, :invalid_payload}
-          {:error, _reason} = error -> error
+        case normalize_scanner_boundary(input) do
+          "" ->
+            {:error, :empty}
+
+          code ->
+            with {:ok, payload} <- extract_payload(code),
+                 {:ok, decoded} <- decode_payload(payload),
+                 true <- is_map(decoded) do
+              {:ok, decoded}
+            else
+              false -> {:error, :invalid_payload}
+              {:error, _reason} = error -> error
+            end
         end
     end
   end
@@ -99,5 +112,33 @@ defmodule CaseinMob.PairingCode do
     {:ok, URI.decode(encoded)}
   rescue
     ArgumentError -> {:error, :invalid_structure}
+  end
+
+  # AVCaptureMetadataOutput returns an NSString that crosses a native NIF
+  # boundary before it reaches this parser. Preserve strict URI/payload
+  # validation, but tolerate boundary-only terminators and Unicode formatting
+  # marks that are visually absent from the scanner result field. The raw input
+  # remains byte-bounded, and the same characters are still rejected anywhere
+  # inside the URI.
+  defp normalize_scanner_boundary(input) do
+    trim_scanner_boundary(input)
+  end
+
+  defp trim_scanner_boundary(input) do
+    normalized =
+      input
+      |> String.trim()
+      |> then(fn trimmed ->
+        Enum.reduce(@scanner_boundary_artifacts, trimmed, fn artifact, acc ->
+          acc
+          |> String.trim_leading(artifact)
+          |> String.trim_trailing(artifact)
+        end)
+      end)
+      |> String.trim()
+
+    if normalized == input,
+      do: normalized,
+      else: trim_scanner_boundary(normalized)
   end
 end
