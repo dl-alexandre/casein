@@ -2,6 +2,7 @@ defmodule Casein.Runtimes.PreviewServerTest do
   use Casein.TestCase, async: true
 
   alias Casein.Runtimes.PreviewServer
+  alias Casein.Test.PreviewPortProbe
   alias Casein.Workspaces.State.WorkspaceRecord
 
   # These tests exercise PreviewServer derivation/construction. Port selection
@@ -162,10 +163,8 @@ defmodule Casein.Runtimes.PreviewServerTest do
       refute server["command"] == initial["command"]
     end
 
-    test "reallocates an occupied retained port unless the active runtime owns it" do
-      {:ok, probe} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}])
-      {:ok, {{127, 0, 0, 1}, occupied_port}} = :inet.sockname(probe)
-      :ok = :gen_tcp.close(probe)
+    test "reallocates an unavailable retained port unless the active runtime owns it" do
+      occupied_port = 58_001
 
       {:ok, initial} =
         PreviewServer.build_for_worktree(
@@ -177,15 +176,7 @@ defmodule Casein.Runtimes.PreviewServerTest do
           []
         )
 
-      {:ok, listener} =
-        :gen_tcp.listen(occupied_port, [
-          :binary,
-          active: false,
-          reuseaddr: true,
-          ip: {127, 0, 0, 1}
-        ])
-
-      on_exit(fn -> :gen_tcp.close(listener) end)
+      :ok = PreviewPortProbe.mark_unavailable(occupied_port)
 
       attrs = %{"metadata" => %{"preview_server" => initial}}
 

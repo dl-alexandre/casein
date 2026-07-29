@@ -9,6 +9,7 @@ defmodule Casein.Runtimes.PreviewServer do
 
   alias Casein.Previews.EnvPorts
   alias Casein.Runtimes.Profile
+  alias Casein.Runtimes.PreviewPortProbe
   alias Casein.Workspaces.State.WorkspaceRecord
 
   @app_surface "app"
@@ -373,13 +374,13 @@ defmodule Casein.Runtimes.PreviewServer do
   end
 
   defp port_available?(port) do
-    case :gen_tcp.listen(port, [:binary, active: false, reuseaddr: true, ip: {127, 0, 0, 1}]) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        true
+    probe = Application.get_env(:casein, :runtime_preview_port_probe, PreviewPortProbe)
 
-      {:error, _} ->
-        false
+    if is_atom(probe) and Code.ensure_loaded?(probe) and
+         function_exported?(probe, :available?, 1) do
+      probe.available?(port)
+    else
+      false
     end
   end
 

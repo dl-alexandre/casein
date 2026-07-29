@@ -8,6 +8,7 @@ defmodule Casein.RuntimesTest do
   alias Casein.Runtimes.PreviewLauncher
   alias Casein.Runtimes.WorktreeReconciler
   alias Casein.Test.RuntimeSeed
+  alias Casein.Test.PreviewPortProbe
   alias Casein.Workspaces.DbIsolation
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.MemoryAdapter
@@ -356,6 +357,11 @@ defmodule Casein.RuntimesTest do
   end
 
   test "preview launcher does not trust an unrelated listener on a stale running port" do
+    previous_range = Application.get_env(:casein, :runtime_preview_port_range)
+    preview_port = PreviewPortProbe.unused_loopback_port!()
+    Application.put_env(:casein, :runtime_preview_port_range, {preview_port, preview_port})
+    on_exit(fn -> restore_env(:runtime_preview_port_range, previous_range) end)
+
     root = tmp_repo!("preview-owned-port-parent")
     worktree = Path.join(root, "agent-worktree")
 
