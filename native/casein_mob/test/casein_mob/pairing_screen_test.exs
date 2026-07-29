@@ -1,6 +1,8 @@
 defmodule CaseinMob.PairingScreenTest do
   use Mob.ScreenCase, async: false
 
+  import ExUnit.CaptureLog
+
   alias CaseinMob.PairingScreen
   alias CaseinMob.SessionConfig
   alias CaseinMob.SessionDashboardScreen
@@ -455,6 +457,97 @@ defmodule CaseinMob.PairingScreenTest do
     assert text(view) =~ "That code doesn't look valid"
     assert text(view) =~ "edit it below"
     assert find(view, :button, text: "Paste & pair")
+  end
+
+  test "local parser rejection logs only bounded structural diagnostics" do
+    code = "casein://pair/NOT_SECRET_MARKER!"
+
+    log =
+      capture_log(fn ->
+        PairingScreen
+        |> mount_screen()
+        |> render_info({:scan, :result, %{type: :qr, value: code}})
+      end)
+
+    assert log =~ "mobile_pairing_rejected"
+    assert log =~ "stage=pairing_code"
+    assert log =~ "reason=invalid_structure"
+    assert log =~ "raw_bytes=32"
+    assert log =~ "compact_prefix=true"
+    assert log =~ "base64url_segment=false"
+    refute log =~ "NOT_SECRET_MARKER"
+  end
+
+  test "device-link rejection identifies its stage without logging the handle" do
+    handle = String.duplicate("A", 43)
+    code = compact_pairing_code("https://casein.test", handle)
+
+    Application.put_env(
+      :casein_mob,
+      :device_link_exchange_client,
+      fn _url, _request -> {:error, :rejected} end
+    )
+
+    log =
+      capture_log(fn ->
+        PairingScreen
+        |> mount_screen()
+        |> render_info({:scan, :result, %{type: :qr, value: code}})
+      end)
+
+    assert log =~ "mobile_pairing_rejected"
+    assert log =~ "stage=device_link"
+    assert log =~ "reason=rejected"
+    assert log =~ "compact_prefix=true"
+    assert log =~ "base64url_segment=true"
+    refute log =~ handle
+  end
+
+  test "oversized rejected values are not scanned by diagnostics" do
+    sentinel = "DO_NOT_LOG_THIS_VALUE"
+    code = "casein://pair/" <> String.duplicate("A", 4_097) <> sentinel
+
+    log =
+      capture_log(fn ->
+        PairingScreen
+        |> mount_screen()
+        |> render_info({:scan, :result, %{type: :qr, value: code}})
+      end)
+
+    assert log =~ "stage=pairing_code"
+    assert log =~ "reason=invalid_structure"
+    assert log =~ "oversized=true"
+    assert log =~ "trimmed_bytes=0"
+    refute log =~ sentinel
+  end
+
+  test "untrusted device-link reasons are reduced to a safe label" do
+    handle = String.duplicate("A", 43)
+    code = compact_pairing_code("https://casein.test", handle)
+
+    for reason <- ["SECRET\nforged_log=true", {:secret, %{token: "NEVER_LOG"}}] do
+      Application.put_env(
+        :casein_mob,
+        :device_link_exchange_client,
+        fn _url, _request -> {:error, reason} end
+      )
+
+      log =
+        capture_log(fn ->
+          view =
+            PairingScreen
+            |> mount_screen()
+            |> render_info({:scan, :result, %{type: :qr, value: code}})
+
+          assert assigns(view).state == :error
+        end)
+
+      assert log =~ "stage=device_link"
+      assert log =~ "reason=other"
+      refute log =~ "SECRET"
+      refute log =~ "forged_log"
+      refute log =~ "NEVER_LOG"
+    end
   end
 
   defp pairing_code(url, token, workspace_id, extra \\ []) do

@@ -13,6 +13,8 @@ defmodule CaseinMob.PairingScreen do
   """
   use Mob.Screen
 
+  require Logger
+
   alias CaseinMob.DeviceLink
   alias CaseinMob.PairingCode
   alias CaseinMob.SessionClient
@@ -20,6 +22,24 @@ defmodule CaseinMob.PairingScreen do
   alias CaseinMob.SessionDashboardScreen
 
   @success_delay_ms 900
+  @max_diagnostic_bytes 4_096
+  @pairing_reason_labels %{
+    empty: "empty",
+    insecure_transport: "insecure_transport",
+    invalid_encoding: "invalid_encoding",
+    invalid_json: "invalid_json",
+    invalid_payload: "invalid_payload",
+    invalid_response: "invalid_response",
+    invalid_structure: "invalid_structure",
+    not_found: "not_found",
+    origin_mismatch: "origin_mismatch",
+    pairing_already_used: "pairing_already_used",
+    pairing_expired: "pairing_expired",
+    rejected: "rejected",
+    request_failed: "request_failed",
+    unavailable: "unavailable",
+    unsupported_pairing_version: "unsupported_pairing_version"
+  }
 
   def mount(params, _session, socket) do
     code = pairing_code_param(params)
@@ -154,8 +174,8 @@ defmodule CaseinMob.PairingScreen do
       |> Mob.Socket.assign(:state, :pairing)
       |> Mob.Socket.assign(:message, nil)
 
-    with {:ok, payload} <- PairingCode.decode(code),
-         {:ok, %{workspace_id: wid} = pairing} <- DeviceLink.pair(payload) do
+    with {:ok, payload} <- decode_pairing_code(code),
+         {:ok, %{workspace_id: wid} = pairing} <- pair_device(payload, code) do
       refreshed? =
         Enum.any?(
           SessionConfig.host_profiles(),
@@ -218,6 +238,90 @@ defmodule CaseinMob.PairingScreen do
           "Casein couldn't verify that pairing code. Refresh the cockpit QR and scan again."
         )
     end
+  end
+
+  defp decode_pairing_code(code) do
+    case PairingCode.decode(code) do
+      {:error, reason} = error ->
+        log_pairing_rejection(:pairing_code, reason, code)
+        error
+
+      result ->
+        result
+    end
+  end
+
+  defp pair_device(payload, code) do
+    case DeviceLink.pair(payload) do
+      {:error, reason} = error ->
+        log_pairing_rejection(:device_link, reason, code)
+        error
+
+      result ->
+        result
+    end
+  end
+
+  defp log_pairing_rejection(stage, reason, code) do
+    diagnostics = pairing_code_diagnostics(code)
+    reason_label = Map.get(@pairing_reason_labels, reason, "other")
+
+    Logger.warning(
+      "mobile_pairing_rejected stage=#{stage} reason=#{reason_label} " <>
+        "raw_bytes=#{diagnostics.raw_bytes} trimmed_bytes=#{diagnostics.trimmed_bytes} " <>
+        "compact_prefix=#{diagnostics.compact_prefix?} " <>
+        "segment_bytes=#{diagnostics.segment_bytes} " <>
+        "base64url_segment=#{diagnostics.base64url_segment?} " <>
+        "oversized=#{diagnostics.oversized?}"
+    )
+  end
+
+  defp pairing_code_diagnostics(code)
+       when is_binary(code) and byte_size(code) > @max_diagnostic_bytes do
+    %{
+      raw_bytes: byte_size(code),
+      trimmed_bytes: 0,
+      compact_prefix?: false,
+      segment_bytes: 0,
+      base64url_segment?: false,
+      oversized?: true
+    }
+  end
+
+  defp pairing_code_diagnostics(code) when is_binary(code) do
+    trimmed = safe_trim(code)
+    compact_prefix? = String.starts_with?(trimmed, "casein://pair/")
+
+    segment =
+      if compact_prefix?,
+        do: String.replace_prefix(trimmed, "casein://pair/", ""),
+        else: ""
+
+    %{
+      raw_bytes: byte_size(code),
+      trimmed_bytes: byte_size(trimmed),
+      compact_prefix?: compact_prefix?,
+      segment_bytes: byte_size(segment),
+      base64url_segment?: compact_prefix? and Regex.match?(~r/\A[A-Za-z0-9_-]+\z/, segment),
+      oversized?: false
+    }
+  end
+
+  defp pairing_code_diagnostics(_code) do
+    %{
+      raw_bytes: 0,
+      trimmed_bytes: 0,
+      compact_prefix?: false,
+      segment_bytes: 0,
+      base64url_segment?: false,
+      oversized?: false
+    }
+  end
+
+  defp safe_trim(code) do
+    String.trim(code)
+  rescue
+    ArgumentError -> ""
   end
 
   defp request_camera_permission(socket) do
