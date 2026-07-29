@@ -58,7 +58,7 @@ jobs:
         # this workflow had failed before starting on the account spending
         # limit — 82 for 82 — so the hosted matrix now runs only on demand,
         # for releases and explicit cross-version verification.
-        include: ${{ github.event_name == 'workflow_dispatch' && fromJSON('[{"name":"macOS 14 arm64","runner":"macos-14","cache":"macos-14-arm64"},{"name":"macOS 15 arm64","runner":"macos-15","cache":"macos-15-arm64"},{"name":"macOS 15 Intel","runner":"macos-15-intel","cache":"macos-15-x86_64"},{"name":"macOS 26 arm64","runner":"macos-26","cache":"macos-26-arm64"}]') || fromJSON('[{"name":"macOS 27 arm64 (self-hosted)","runner":["self-hosted","macOS","ARM64","testserver"],"cache":"selfhosted-macos-27-arm64","selfHosted":true}]') }}
+        include: ${{ github.event_name == 'workflow_dispatch' && fromJSON('[{"name":"macOS 14 arm64","runner":"macos-14","cache":"macos-14-arm64"},{"name":"macOS 15 arm64","runner":"macos-15","cache":"macos-15-arm64"},{"name":"macOS 15 Intel","runner":"macos-15-intel","cache":"macos-15-x86_64"},{"name":"macOS 26 arm64","runner":"macos-26","cache":"macos-26-arm64"}]') || fromJSON('[{"name":"macOS 26 arm64 (self-hosted)","runner":["self-hosted","macOS","ARM64","milcmini"],"cache":"selfhosted-macos-26-arm64","selfHosted":true}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
 
@@ -75,8 +75,12 @@ jobs:
       - name: Set up Elixir, Erlang, and Node (self-hosted)
         if: ${{ matrix.selfHosted }}
         run: |
-          "$HOME/.local/bin/mise" install
-          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+          set -euo pipefail
+          MISE="$(command -v mise || echo "$HOME/.local/bin/mise")"
+          "$MISE" install
+          # Prepended to PATH, so the pinned toolchain wins over whatever
+          # Homebrew has installed on the box.
+          "$MISE" bin-paths >> "$GITHUB_PATH"
 
       - name: Set up Elixir and Erlang
         if: ${{ !matrix.selfHosted }}
