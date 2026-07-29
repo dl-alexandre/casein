@@ -132,6 +132,40 @@ defmodule Casein.Mobile.LiveWorkTest do
     refute inspect(replacement_card.context) =~ "@9"
   end
 
+  test "includes only one explicitly role-marked agent pane in the locator" do
+    exact =
+      agent_tab([%{id: "@1", agent_state: :blocked}],
+        tmux_session: "casein_ws_exact",
+        pane_summaries: [
+          %{id: "%1", role: "operator", active: true},
+          %{id: "%2", role: "verify"},
+          %{id: "%3", role: "agent"}
+        ]
+      )
+
+    ambiguous =
+      agent_tab([%{id: "@2", agent_state: :working}],
+        tmux_session: "casein_ws_ambiguous",
+        pane_summaries: [
+          %{id: "%4", role: "agent"},
+          %{id: "%5", role: "agent"}
+        ]
+      )
+
+    active_only =
+      agent_tab([%{id: "@3", agent_state: :working}],
+        tmux_session: "casein_ws_active",
+        pane_summaries: ["malformed", %{id: "%6", active: true}]
+      )
+
+    assert [exact_card, ambiguous_card, active_card] =
+             LiveWork.project("u", "ws", "Devbox", [exact, ambiguous, active_only], @now)
+
+    assert exact_card.context.locator.pane == "%3"
+    refute Map.has_key?(ambiguous_card.context.locator, :pane)
+    refute Map.has_key?(active_card.context.locator, :pane)
+  end
+
   defp agent_tab(windows, opts \\ []) do
     id = Keyword.get(opts, :id, "runtime")
 
@@ -140,8 +174,13 @@ defmodule Casein.Mobile.LiveWorkTest do
       kind: :agent,
       workspace_id: "ws",
       runner_id: id,
+      tmux_session: Keyword.get(opts, :tmux_session),
       status: :active,
-      metadata: %{agent: "codex", windows: windows}
+      metadata: %{
+        agent: "codex",
+        windows: windows,
+        pane_summaries: Keyword.get(opts, :pane_summaries, [])
+      }
     }
   end
 end

@@ -418,6 +418,67 @@ defmodule Casein.Mobile.UserObserverTest do
     end
   end
 
+  test "hydrated live work correlates blocked events through its exact agent pane" do
+    previous = Application.get_env(:casein, :mobile_attention_store_enabled)
+    Application.put_env(:casein, :mobile_attention_store_enabled, true)
+    user_id = unique_user()
+
+    try do
+      prepare_user(user_id)
+      State.sync(%Workspace{id: "ws-1", name: "alpha", user: "dev", path: System.tmp_dir!()})
+      :ok = UserObserver.watch_workspace(user_id, "ws-1")
+      assert_receive {:mobile_cards_snapshot, %{hydrating_workspaces: []}}, 1_000
+
+      tab = %Info{
+        id: "shell_ws-1_disposable",
+        sid: "disposable",
+        kind: :shell,
+        status: :active,
+        workspace_id: "ws-1",
+        tmux_session: "casein_alpha_disposable",
+        metadata: %{
+          runtime_id: "disposable",
+          agent: "codex",
+          windows: [%{id: "@1", agent_state: :working}],
+          pane_summaries: [
+            %{id: "%1", role: "operator"},
+            %{id: "%2", role: "verify"},
+            %{id: "%3", role: "agent"}
+          ]
+        }
+      }
+
+      snapshot = UserObserver.reconcile_live_work(user_id, "ws-1", [tab])
+      assert [live] = snapshot.cards
+      assert live.source == "live_work"
+      assert live.context.locator.pane == "%3"
+      assert_receive {:mobile_cards_snapshot, %{cards: [_live]}}, 1_000
+
+      Audit.emit!(%{
+        workspace_id: "ws-1",
+        actor_id: "agent",
+        action: "agent.blocked",
+        target_type: "tmux_pane",
+        target_ref: "%3",
+        metadata: %{session: "casein_alpha_disposable", pane: "%3"}
+      })
+
+      assert_receive {:mobile_cards_snapshot, %{cards: [blocked]}}, 1_000
+      projection = AttentionInbox.project(blocked)
+      assert projection.reason_code == "human_blocked"
+      assert projection.required_decision == "Respond"
+      assert blocked.context.locator.pane == "%3"
+    after
+      UserObserver.stop(user_id)
+
+      if is_nil(previous) do
+        Application.delete_env(:casein, :mobile_attention_store_enabled)
+      else
+        Application.put_env(:casein, :mobile_attention_store_enabled, previous)
+      end
+    end
+  end
+
   test "agent lifecycle correlation requires one exact pane and fails closed when ambiguous" do
     previous = Application.get_env(:casein, :mobile_attention_store_enabled)
     Application.put_env(:casein, :mobile_attention_store_enabled, true)

@@ -141,12 +141,40 @@ defmodule Casein.Mobile.LiveWork do
   end
 
   defp locator(tab) do
+    metadata = tab.metadata || %{}
+
     %{
       tmux_session: bounded(tab.tmux_session, @max_ref),
+      pane: unique_agent_pane(metadata),
       tab: "terminal"
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
+  end
+
+  # A pane id becomes part of the navigation locator only when topology exposes
+  # exactly one explicitly role-marked agent pane for the projected session.
+  # Active/focused panes and command heuristics are deliberately ignored: the
+  # locator remains navigation data, and mutation still revalidates the role.
+  defp unique_agent_pane(metadata) do
+    metadata
+    |> value(:pane_summaries)
+    |> case do
+      summaries when is_list(summaries) ->
+        summaries
+        |> Enum.filter(&is_map/1)
+        |> Enum.filter(&(normalize(value(&1, :role)) == "agent"))
+        |> Enum.map(&(value(&1, :id) |> bounded(@max_ref)))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
+        |> case do
+          [pane] -> pane
+          _none_or_ambiguous -> nil
+        end
+
+      _missing ->
+        nil
+    end
   end
 
   defp stable_session_id(%Info{id: id}) when is_binary(id) and id != "", do: bounded(id, @max_ref)
