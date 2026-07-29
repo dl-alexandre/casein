@@ -120,6 +120,149 @@ defmodule CaseinMob.PairingScreenTest do
     assert assigns(view).state == :success
   end
 
+  test "scanned compact code exchanges an opaque handle without client-owned scope" do
+    handle = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+    test_pid = self()
+
+    Application.put_env(:casein_mob, :device_link_exchange_client, fn url, request ->
+      send(test_pid, {:exchange, url, request})
+
+      {:ok,
+       %{
+         url: "https://casein.test",
+         token: "device-link-token",
+         workspace_id: "server-owned-ws",
+         origin_id: "installation-1",
+         display_name: "Devbox"
+       }}
+    end)
+
+    code = compact_pairing_code("https://casein.test", handle)
+
+    view =
+      PairingScreen
+      |> mount_screen()
+      |> render_info({:scan, :result, %{type: :qr, value: code}})
+
+    assert_receive {:exchange, "https://casein.test/api/device-links/exchange", request}
+    assert request.handle == handle
+    assert request.origin == "https://casein.test"
+    assert request.audience == "casein_mobile"
+    refute Map.has_key?(request, :workspace_id)
+    refute Map.has_key?(request, :token)
+    assert SessionConfig.pinned_workspaces() == ["server-owned-ws"]
+    assert SessionConfig.pairing() == {:ok, "https://casein.test", "device-link-token"}
+    assert text(view) =~ "Paired successfully"
+  end
+
+  test "explicit re-pair refreshes the same canonical profile without deleting its context" do
+    SessionConfig.put_pairing(%{
+      url: "https://casein.test",
+      token: "old-token",
+      origin_id: "installation-1",
+      display_name: "Devbox"
+    })
+
+    SessionConfig.pin_workspace("existing-ws")
+    SessionConfig.put_resume_context("existing-ws", session_id: "run-1")
+
+    Application.put_env(:casein_mob, :device_link_exchange_client, fn _url, _request ->
+      {:ok,
+       %{
+         url: "https://casein.test",
+         token: "renewed-token",
+         workspace_id: "existing-ws",
+         origin_id: "installation-1",
+         display_name: "Devbox"
+       }}
+    end)
+
+    view =
+      PairingScreen
+      |> mount_screen()
+      |> render_info(
+        {:scan, :result,
+         %{
+           type: :qr,
+           value:
+             compact_pairing_code(
+               "https://casein.test",
+               Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+             )
+         }}
+      )
+
+    assert SessionConfig.pairing() == {:ok, "https://casein.test", "renewed-token"}
+    assert SessionConfig.pinned_workspaces() == ["existing-ws"]
+    assert SessionConfig.resume_context().session_id == "run-1"
+    assert length(SessionConfig.host_profiles()) == 1
+    assert text(view) =~ "Connection refreshed"
+  end
+
+  test "failed compact exchange never looks paired or replaces a saved credential" do
+    SessionConfig.put_pairing(%{
+      url: "https://casein.test",
+      token: "existing-token",
+      origin_id: "installation-1",
+      display_name: "Devbox"
+    })
+
+    Application.put_env(:casein_mob, :device_link_exchange_client, fn _url, _request ->
+      {:error, :rejected}
+    end)
+
+    view =
+      PairingScreen
+      |> mount_screen()
+      |> render_info(
+        {:scan, :result,
+         %{
+           type: :qr,
+           value:
+             compact_pairing_code(
+               "https://casein.test",
+               Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+             )
+         }}
+      )
+
+    assert assigns(view).state == :error
+    assert text(view) =~ "That code doesn't look valid"
+    refute text(view) =~ "Paired successfully"
+    refute text(view) =~ "Connection refreshed"
+    assert SessionConfig.pairing() == {:ok, "https://casein.test", "existing-token"}
+  end
+
+  test "expired and replayed compact handles explain how to recover" do
+    for {reason, expected} <- [
+          {:pairing_expired, "expired or was refreshed"},
+          {:pairing_already_used, "already used"}
+        ] do
+      Application.put_env(:casein_mob, :device_link_exchange_client, fn _url, _request ->
+        {:error, reason}
+      end)
+
+      view =
+        PairingScreen
+        |> mount_screen()
+        |> render_info(
+          {:scan, :result,
+           %{
+             type: :qr,
+             value:
+               compact_pairing_code(
+                 "https://casein.test",
+                 Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+               )
+           }}
+        )
+
+      assert assigns(view).state == :error
+      assert text(view) =~ expected
+      assert text(view) =~ "Refresh the cockpit QR"
+    end
+  end
+
   test "pairing code passed by a native deep link pairs without synthetic typing" do
     code = pairing_code("https://casein.test", "native-link-token", "ws-native")
 
@@ -293,6 +436,15 @@ defmodule CaseinMob.PairingScreenTest do
     |> Map.merge(Map.new(extra))
     |> Jason.encode!()
     |> Base.url_encode64(padding: false)
+  end
+
+  defp compact_pairing_code(origin, handle) do
+    payload =
+      %{"v" => 1, "o" => origin, "h" => handle}
+      |> Jason.encode!()
+      |> Base.url_encode64(padding: false)
+
+    "casein://pair/" <> payload
   end
 
   defp restore_exchange_client(nil),

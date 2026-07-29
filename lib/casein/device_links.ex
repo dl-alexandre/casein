@@ -9,12 +9,20 @@ defmodule Casein.DeviceLinks do
 
   import Ecto.Query
 
+  alias Casein.Audit
+  alias Casein.DeviceLinks.PairingHandle
   alias Casein.DeviceLinks.Token
   alias Casein.Origin
+  alias Casein.RateLimit
   alias Casein.Repo
   alias Casein.Workspaces
 
   @resource_kind "workspace"
+  @pairing_audience "casein_mobile"
+  @pairing_handle_bytes 32
+  @default_pairing_handle_ttl_seconds 300
+  @default_pairing_issue_scale_ms 60_000
+  @default_pairing_issue_limit 20
   @capabilities [
     "phoenix_socket",
     "casein.session",
@@ -27,6 +35,131 @@ defmodule Casein.DeviceLinks do
           workspace: map(),
           capabilities: [String.t()]
         }
+
+  @type pairing_handle_result :: %{
+          handle: String.t(),
+          expires_at: DateTime.t(),
+          expires_in: pos_integer()
+        }
+
+  @doc """
+  Issue a compact, single-use pairing handle for an authorized workspace.
+
+  Refreshing the pairing page revokes any older unconsumed handle for the same
+  user, origin, and workspace. The raw handle is returned once and is never
+  stored or emitted to audit.
+  """
+  @spec issue_pairing_handle(map(), String.t(), String.t()) ::
+          {:ok, pairing_handle_result()} | {:error, atom() | Ecto.Changeset.t()}
+  def issue_pairing_handle(user, workspace_id, origin_base_url)
+      when is_map(user) and is_binary(workspace_id) and is_binary(origin_base_url) do
+    subject_id = map_value(user, :id)
+
+    with :ok <- ensure_present(subject_id),
+         :ok <- ensure_present(workspace_id),
+         :ok <- Origin.authorize_request_base(origin_base_url),
+         {:ok, workspace} <- Workspaces.get(workspace_id),
+         :ok <- authorize_workspace(workspace, user),
+         :ok <- allow_pairing_handle_issue(subject_id, workspace_id) do
+      raw_handle = generate_pairing_handle()
+      now = DateTime.utc_now()
+      ttl = pairing_handle_ttl_seconds()
+      expires_at = DateTime.add(now, ttl, :second)
+      origin_base_url = Origin.public_base_url(origin_base_url)
+
+      attrs = %{
+        handle_hash: token_hash(raw_handle),
+        origin_id: Origin.id(),
+        origin_base_url: origin_base_url,
+        subject_id: subject_id,
+        subject_email: map_value(user, :email),
+        subject_role: role_to_string(map_value(user, :role)),
+        resource_kind: @resource_kind,
+        resource_id: workspace_id,
+        resource_label: workspace_label(workspace),
+        capabilities: @capabilities,
+        audience: @pairing_audience,
+        expires_at: expires_at
+      }
+
+      case Repo.transaction(fn ->
+             lock_pairing_handle_scope(attrs)
+             revoke_superseded_pairing_handles(attrs, now)
+
+             case %PairingHandle{} |> PairingHandle.changeset(attrs) |> Repo.insert() do
+               {:ok, pending} -> pending
+               {:error, changeset} -> Repo.rollback(changeset)
+             end
+           end) do
+        {:ok, pending} ->
+          audit_pairing_handle(pending, "mobile.pairing_handle.issued", :allow, :issued)
+          {:ok, %{handle: raw_handle, expires_at: expires_at, expires_in: ttl}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  def issue_pairing_handle(_user, _workspace_id, _origin_base_url),
+    do: {:error, :invalid_pairing_claims}
+
+  @doc """
+  Atomically exchange a compact pairing handle for a durable device link.
+
+  The pending row—not client input—owns user, workspace, capabilities, origin,
+  audience, and expiry. A row lock ensures concurrent scans have one winner.
+  """
+  @spec exchange_pairing_handle(String.t(), String.t(), map()) ::
+          {:ok, exchange_result()} | {:error, atom() | Ecto.Changeset.t()}
+  def exchange_pairing_handle(raw_handle, request_base_url, attrs)
+      when is_binary(raw_handle) and is_binary(request_base_url) and is_map(attrs) do
+    with :ok <- validate_pairing_handle_shape(raw_handle),
+         :ok <- Origin.authorize_request_base(request_base_url) do
+      result =
+        Repo.transaction(fn ->
+          pending =
+            PairingHandle
+            |> where([h], h.handle_hash == ^token_hash(raw_handle))
+            |> lock("FOR UPDATE")
+            |> Repo.one()
+
+          case pending do
+            nil ->
+              Repo.rollback(:invalid_pairing_handle)
+
+            %PairingHandle{} = handle ->
+              with :ok <- validate_pending_handle(handle, request_base_url, attrs),
+                   {:ok, workspace} <- Workspaces.get(handle.resource_id),
+                   :ok <- authorize_workspace(workspace, pairing_handle_user(handle)),
+                   {:ok, exchange} <- create_from_pairing_handle(handle, workspace, attrs),
+                   {:ok, consumed} <-
+                     handle
+                     |> Ecto.Changeset.change(consumed_at: DateTime.utc_now())
+                     |> Repo.update() do
+                {exchange, consumed}
+              else
+                {:error, reason} ->
+                  Repo.rollback({reason, pairing_handle_audit_context(handle)})
+              end
+          end
+        end)
+
+      finish_pairing_handle_exchange(result)
+    end
+  end
+
+  def exchange_pairing_handle(_raw_handle, _request_base_url, _attrs),
+    do: {:error, :invalid_pairing_handle}
+
+  @doc false
+  def pairing_handle_ttl_seconds do
+    Application.get_env(
+      :casein,
+      :device_link_pairing_handle_ttl_seconds,
+      @default_pairing_handle_ttl_seconds
+    )
+  end
 
   @doc """
   Create a persistent device credential from already-verified pairing claims.
@@ -45,34 +178,15 @@ defmodule Casein.DeviceLinks do
     with :ok <- ensure_present(workspace_id),
          {:ok, workspace} <- Workspaces.get(workspace_id),
          :ok <- authorize_workspace(workspace, user) do
-      raw_token = generate_token()
-
-      now = DateTime.utc_now()
-
-      token_attrs = %{
-        origin_id: Origin.id(),
-        origin_name: optional_string(attrs, :origin_name) || Origin.display_name(),
-        subject_id: user.id,
-        subject_email: user.email,
-        subject_role: role_to_string(user.role),
-        token_hash: token_hash(raw_token),
-        resource_kind: @resource_kind,
-        resource_id: workspace_id,
-        resource_label: workspace_label(workspace),
-        capabilities: @capabilities,
-        device_name: optional_string(attrs, :device_name),
-        platform: optional_string(attrs, :platform),
-        expires_at: DateTime.add(now, ttl_seconds(), :second)
-      }
-
-      case %Token{} |> Token.changeset(token_attrs) |> Repo.insert() do
-        {:ok, link} ->
-          {:ok,
-           %{token: raw_token, link: link, workspace: workspace, capabilities: @capabilities}}
-
-        {:error, changeset} ->
-          {:error, changeset}
-      end
+      create_persistent_link(
+        user,
+        workspace,
+        workspace_id,
+        attrs,
+        @capabilities,
+        Origin.id(),
+        optional_string(attrs, :origin_name) || Origin.display_name()
+      )
     end
   end
 
@@ -227,6 +341,12 @@ defmodule Casein.DeviceLinks do
     |> Base.url_encode64(padding: false)
   end
 
+  defp generate_pairing_handle do
+    @pairing_handle_bytes
+    |> :crypto.strong_rand_bytes()
+    |> Base.url_encode64(padding: false)
+  end
+
   defp fetch_token(hash), do: Repo.get_by(Token, token_hash: hash)
 
   defp verify_record(nil, _now), do: {:error, :invalid_token}
@@ -286,6 +406,220 @@ defmodule Casein.DeviceLinks do
     }
   end
 
+  defp revoke_superseded_pairing_handles(attrs, now) do
+    PairingHandle
+    |> where(
+      [h],
+      h.origin_id == ^attrs.origin_id and h.subject_id == ^attrs.subject_id and
+        h.resource_kind == ^attrs.resource_kind and h.resource_id == ^attrs.resource_id and
+        is_nil(h.consumed_at) and is_nil(h.revoked_at)
+    )
+    |> Repo.update_all(set: [revoked_at: now])
+  end
+
+  defp lock_pairing_handle_scope(attrs) do
+    scope =
+      Enum.join(
+        [
+          attrs.origin_id,
+          attrs.subject_id,
+          attrs.resource_kind,
+          attrs.resource_id
+        ],
+        ":"
+      )
+
+    Ecto.Adapters.SQL.query!(
+      Repo,
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [scope]
+    )
+  end
+
+  defp validate_pairing_handle_shape(raw_handle) do
+    trimmed = String.trim(raw_handle)
+
+    if byte_size(trimmed) == 43 and Regex.match?(~r/\A[A-Za-z0-9_-]{43}\z/, trimmed),
+      do: :ok,
+      else: {:error, :invalid_pairing_handle}
+  end
+
+  defp validate_pending_handle(%PairingHandle{} = handle, request_base_url, attrs) do
+    now = DateTime.utc_now()
+    supplied_origin = optional_string(attrs, :origin)
+    supplied_audience = optional_string(attrs, :audience)
+    supplied_workspace = optional_string(attrs, :workspace_id)
+    supplied_subject = optional_string(attrs, :subject_id)
+    request_origin = Origin.public_base_url(request_base_url)
+
+    cond do
+      not is_nil(handle.revoked_at) ->
+        {:error, :pairing_handle_revoked}
+
+      not is_nil(handle.consumed_at) ->
+        {:error, :pairing_handle_replayed}
+
+      DateTime.compare(handle.expires_at, now) != :gt ->
+        {:error, :pairing_handle_expired}
+
+      handle.audience != @pairing_audience or supplied_audience != @pairing_audience ->
+        {:error, :pairing_handle_audience_mismatch}
+
+      handle.origin_id != Origin.id() or handle.origin_base_url != request_origin ->
+        {:error, :origin_mismatch}
+
+      is_binary(supplied_origin) and supplied_origin != handle.origin_base_url ->
+        {:error, :origin_mismatch}
+
+      is_binary(supplied_workspace) and supplied_workspace != handle.resource_id ->
+        {:error, :resource_mismatch}
+
+      is_binary(supplied_subject) and supplied_subject != handle.subject_id ->
+        {:error, :unauthorized}
+
+      handle.resource_kind != @resource_kind ->
+        {:error, :invalid_pairing_claims}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp pairing_handle_user(%PairingHandle{} = handle) do
+    %{
+      id: handle.subject_id,
+      username: handle.subject_id,
+      email: handle.subject_email,
+      role: role_atom(handle.subject_role)
+    }
+  end
+
+  defp create_from_pairing_handle(%PairingHandle{} = handle, workspace, attrs) do
+    create_persistent_link(
+      pairing_handle_user(handle),
+      workspace,
+      handle.resource_id,
+      attrs,
+      handle.capabilities,
+      handle.origin_id,
+      optional_string(attrs, :origin_name) || Origin.display_name(handle.origin_base_url)
+    )
+  end
+
+  defp create_persistent_link(
+         user,
+         workspace,
+         workspace_id,
+         attrs,
+         capabilities,
+         origin_id,
+         origin_name
+       ) do
+    raw_token = generate_token()
+    now = DateTime.utc_now()
+
+    token_attrs = %{
+      origin_id: origin_id,
+      origin_name: origin_name,
+      subject_id: user.id,
+      subject_email: user.email,
+      subject_role: role_to_string(user.role),
+      token_hash: token_hash(raw_token),
+      resource_kind: @resource_kind,
+      resource_id: workspace_id,
+      resource_label: workspace_label(workspace),
+      capabilities: capabilities,
+      device_name: optional_string(attrs, :device_name),
+      platform: optional_string(attrs, :platform),
+      expires_at: DateTime.add(now, ttl_seconds(), :second)
+    }
+
+    case %Token{} |> Token.changeset(token_attrs) |> Repo.insert() do
+      {:ok, link} ->
+        {:ok, %{token: raw_token, link: link, workspace: workspace, capabilities: capabilities}}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  defp finish_pairing_handle_exchange({:ok, {exchange, consumed}}) do
+    audit_pairing_handle(consumed, "mobile.pairing_handle.exchanged", :allow, :consumed)
+    {:ok, exchange}
+  end
+
+  defp finish_pairing_handle_exchange({:error, {reason, context}}) do
+    audit_pairing_handle_context(
+      context,
+      "mobile.pairing_handle.rejected",
+      :deny,
+      normalize_pairing_reason(reason)
+    )
+
+    {:error, reason}
+  end
+
+  defp finish_pairing_handle_exchange({:error, reason}), do: {:error, reason}
+
+  defp pairing_handle_audit_context(%PairingHandle{} = handle) do
+    %{
+      id: handle.id,
+      workspace_id: handle.resource_id,
+      actor_id: handle.subject_id,
+      origin_id: handle.origin_id,
+      audience: handle.audience
+    }
+  end
+
+  defp audit_pairing_handle(handle, action, decision, reason) do
+    handle
+    |> pairing_handle_audit_context()
+    |> audit_pairing_handle_context(action, decision, reason)
+  end
+
+  defp audit_pairing_handle_context(context, action, decision, reason) do
+    Audit.emit!(%{
+      workspace_id: context.workspace_id,
+      actor_id: context.actor_id,
+      action: action,
+      source: "mobile_pairing",
+      target_type: "device_link_pairing_handle",
+      target_ref: context.id,
+      decision: decision,
+      reason: reason,
+      metadata: %{
+        "origin_id" => context.origin_id,
+        "audience" => context.audience
+      }
+    })
+  end
+
+  defp normalize_pairing_reason(reason) when is_atom(reason), do: reason
+  defp normalize_pairing_reason(_reason), do: :rejected
+
+  defp allow_pairing_handle_issue(subject_id, workspace_id) do
+    scale =
+      Application.get_env(
+        :casein,
+        :device_link_pairing_handle_issue_scale_ms,
+        @default_pairing_issue_scale_ms
+      )
+
+    limit =
+      Application.get_env(
+        :casein,
+        :device_link_pairing_handle_issue_limit,
+        @default_pairing_issue_limit
+      )
+
+    key = "device_link_pairing_issue:#{Origin.id()}:#{subject_id}:#{workspace_id}"
+
+    case RateLimit.hit(key, scale, limit) do
+      {:allow, _count} -> :ok
+      {:deny, _retry_after_ms} -> {:error, :rate_limited}
+    end
+  end
+
   defp authorize_workspace(workspace, user) do
     if Workspaces.viewer_terminal_owner?(workspace, user), do: :ok, else: {:error, :unauthorized}
   end
@@ -310,6 +644,10 @@ defmodule Casein.DeviceLinks do
         text -> String.slice(text, 0, 120)
       end
     end
+  end
+
+  defp map_value(map, key) when is_map(map) and is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
   end
 
   defp role_to_string(:admin), do: "admin"

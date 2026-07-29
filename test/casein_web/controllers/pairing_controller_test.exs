@@ -1,8 +1,10 @@
 defmodule CaseinWeb.PairingControllerTest do
   use CaseinWeb.ConnCase, async: false
 
+  alias Casein.DeviceLinks
+  alias Casein.DeviceLinks.PairingHandle
+  alias Casein.Repo
   alias Casein.Workspace
-  alias CaseinWeb.ChannelAuth
 
   defmodule OwnedSource do
     def get(id, _auth), do: {:ok, %Workspace{id: id, name: id, user: "owner", status: :running}}
@@ -26,38 +28,55 @@ defmodule CaseinWeb.PairingControllerTest do
     :ok
   end
 
-  test "owner receives a short-lived workspace-scoped pairing token", %{conn: conn} do
-    html =
+  test "owner receives a camera-friendly compact single-use pairing handle", %{conn: conn} do
+    conn =
       conn
       |> as("owner@example.com")
       |> get(~p"/pair/ws-1")
-      |> html_response(200)
+
+    assert get_resp_header(conn, "cache-control") == ["no-store, max-age=0"]
+    assert get_resp_header(conn, "pragma") == ["no-cache"]
+    html = html_response(conn, 200)
 
     code = pairing_code(html)
-    {:ok, json} = Base.url_decode64(code, padding: false)
+    assert byte_size(code) <= 220
+    [_, modules] = Regex.run(~r/viewBox="0 0 ([0-9]+) \1"/, html)
+    assert String.to_integer(modules) <= 49
+
+    encoded = String.replace_prefix(code, "casein://pair/", "")
+    {:ok, json} = Base.url_decode64(encoded, padding: false)
     payload = Jason.decode!(json)
 
-    assert payload["workspace_id"] == "ws-1"
-    assert payload["token_type"] == "mobile_pairing"
-    assert payload["expires_in"] == ChannelAuth.pairing_token_max_age_seconds()
-    assert payload["token_exchange_url"] == "http://www.example.com/api/device-links/exchange"
-    assert payload["origin"]["id"] == Casein.Origin.id()
-    assert payload["origin"]["base_url"] == "http://www.example.com"
-    assert payload["resources"] == [%{"kind" => "workspace", "id" => "ws-1", "label" => "ws-1"}]
-    assert "casein.session" in payload["capabilities"]
+    assert payload == %{
+             "v" => 1,
+             "o" => "http://www.example.com",
+             "h" => payload["h"]
+           }
 
-    assert {:ok, %{workspace_id: "ws-1", id: "owner"}} =
-             ChannelAuth.verify_pairing_token(payload["token"])
+    assert byte_size(payload["h"]) == 43
+    assert {:ok, entropy} = Base.url_decode64(payload["h"], padding: false)
+    assert byte_size(entropy) == 32
+    refute html =~ "mobile_pairing"
+    refute html =~ "casein.mobile_cards"
+    refute html =~ "token_exchange_url"
+
+    pending = Repo.get_by!(PairingHandle, handle_hash: DeviceLinks.token_hash(payload["h"]))
+    assert pending.resource_id == "ws-1"
+    assert pending.subject_id == "owner"
+    assert pending.audience == "casein_mobile"
+    assert pending.origin_base_url == "http://www.example.com"
+    assert "casein.session" in pending.capabilities
+    refute inspect(pending) =~ payload["h"]
   end
 
-  test "any authenticated peer can mint a pairing token (flat peer model)", %{conn: conn} do
+  test "any authenticated peer can mint a pairing handle (flat peer model)", %{conn: conn} do
     conn = conn |> as("peer@example.com") |> get(~p"/pair/ws-1")
 
     assert html = html_response(conn, 200)
-    assert html =~ "Pairing code"
+    assert html =~ "Compact pairing code"
   end
 
-  test "managed origin redirects a legacy host before minting a pairing token", %{conn: conn} do
+  test "managed origin redirects a legacy host before minting a pairing handle", %{conn: conn} do
     Application.put_env(
       :casein,
       :canonical_public_origin,
@@ -86,15 +105,19 @@ defmodule CaseinWeb.PairingControllerTest do
       |> get("https://casein.devbox.milcgroup.com/pair/ws-1")
       |> html_response(200)
 
-    payload = html |> pairing_code() |> Base.url_decode64!(padding: false) |> Jason.decode!()
-    assert payload["url"] == "https://casein.devbox.milcgroup.com"
-    assert payload["origin"]["base_url"] == "https://casein.devbox.milcgroup.com"
+    payload = decode_pairing_code(html)
+    assert payload["o"] == "https://casein.devbox.milcgroup.com"
     refute html =~ "devide.devbox"
   end
 
   defp pairing_code(html) do
-    [_, code] = Regex.run(~r/<label>Pairing code<\/label><code>([^<]+)<\/code>/, html)
+    [_, code] = Regex.run(~r/<label>Compact pairing code<\/label><code>([^<]+)<\/code>/, html)
     code
+  end
+
+  defp decode_pairing_code(html) do
+    encoded = html |> pairing_code() |> String.replace_prefix("casein://pair/", "")
+    encoded |> Base.url_decode64!(padding: false) |> Jason.decode!()
   end
 
   defp as(conn, email), do: put_req_header(conn, "x-auth-request-email", email)
