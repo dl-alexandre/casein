@@ -58,6 +58,71 @@ defmodule CaseinWeb.API.DeviceLinkControllerTest do
     assert {:ok, %{workspace_id: "ws-1", id: "owner"}} = DeviceLinks.verify_token(device_token)
   end
 
+  test "exchanges a compact handle once and rejects replay", %{conn: conn} do
+    {:ok, pending} =
+      DeviceLinks.issue_pairing_handle(
+        %{id: "owner", email: "owner@example.com", role: :owner},
+        "ws-1",
+        "http://www.example.com"
+      )
+
+    request = %{
+      handle: pending.handle,
+      origin: "http://www.example.com",
+      audience: "casein_mobile",
+      device_name: "Android tablet",
+      platform: "android"
+    }
+
+    payload =
+      conn
+      |> post(~p"/api/device-links/exchange", request)
+      |> json_response(200)
+
+    assert payload["workspace_id"] == "ws-1"
+    assert payload["origin"]["base_url"] == "http://www.example.com"
+    assert {:ok, %{workspace_id: "ws-1"}} = DeviceLinks.verify_token(payload["token"])
+
+    replay =
+      build_conn()
+      |> post(~p"/api/device-links/exchange", request)
+
+    assert json_response(replay, 409) == %{"error" => "pairing_handle_already_used"}
+  end
+
+  test "compact exchange returns generic errors for invalid or expired handles", %{conn: conn} do
+    invalid =
+      post(conn, ~p"/api/device-links/exchange", %{
+        handle: Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false),
+        origin: "http://www.example.com",
+        audience: "casein_mobile"
+      })
+
+    assert json_response(invalid, 401) == %{"error" => "invalid_pairing_handle"}
+
+    {:ok, pending} =
+      DeviceLinks.issue_pairing_handle(
+        %{id: "owner", email: "owner@example.com", role: :owner},
+        "ws-1",
+        "http://www.example.com"
+      )
+
+    Casein.DeviceLinks.PairingHandle
+    |> Casein.Repo.get_by!(handle_hash: DeviceLinks.token_hash(pending.handle))
+    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -1, :second))
+    |> Casein.Repo.update!()
+
+    expired =
+      build_conn()
+      |> post(~p"/api/device-links/exchange", %{
+        handle: pending.handle,
+        origin: "http://www.example.com",
+        audience: "casein_mobile"
+      })
+
+    assert json_response(expired, 410) == %{"error" => "pairing_handle_expired"}
+  end
+
   test "rejects an invalid pairing token without API bearer auth", %{conn: conn} do
     conn = post(conn, ~p"/api/device-links/exchange", %{token: "bad-token"})
 

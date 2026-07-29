@@ -2,9 +2,10 @@ defmodule CaseinMob.PairingScreen do
   @moduledoc """
   Pair this device to a Casein host's session feed.
 
-  The web cockpit's `/pair/<workspace_id>` page shows a QR and a copyable
-  pairing code (Base64 of `{url, token, workspace_id}`). Paste that code here to
-  connect `CaseinMob.SessionClient` and pin the workspace to the dashboard.
+  The web cockpit's `/pair/<workspace_id>` page shows a compact QR and copyable
+  pairing code containing only the canonical origin plus a short-lived opaque
+  handle. The server owns workspace scope and exchanges the handle once for a
+  durable device credential.
 
   Scanning the QR with the camera is the fast path. Paste and manual entry use
   the same parser as scanned values, so all pairing paths accept the same code
@@ -154,6 +155,12 @@ defmodule CaseinMob.PairingScreen do
 
     with {:ok, payload} <- decode_pairing_payload(code),
          {:ok, %{workspace_id: wid} = pairing} <- DeviceLink.pair(payload) do
+      refreshed? =
+        Enum.any?(
+          SessionConfig.host_profiles(),
+          &(&1.origin_id == pairing.origin_id and not &1.read_only?)
+        )
+
       SessionClient.configure(pairing)
       SessionConfig.pin_workspace(wid)
       Process.send_after(self(), :pairing_success_done, @success_delay_ms)
@@ -161,12 +168,31 @@ defmodule CaseinMob.PairingScreen do
       socket
       |> Mob.Socket.assign(:state, :success)
       |> Mob.Socket.assign(:paired_workspace, wid)
-      |> Mob.Socket.assign(:message, "Paired successfully")
+      |> Mob.Socket.assign(
+        :message,
+        if(refreshed?, do: "Connection refreshed", else: "Paired successfully")
+      )
     else
       {:error, :empty} ->
         socket
         |> Mob.Socket.assign(:state, :error)
         |> Mob.Socket.assign(:message, clipboard_empty_message())
+
+      {:error, :pairing_expired} ->
+        socket
+        |> Mob.Socket.assign(:state, :error)
+        |> Mob.Socket.assign(
+          :message,
+          "That pairing code expired or was refreshed. Refresh the cockpit QR and scan again."
+        )
+
+      {:error, :pairing_already_used} ->
+        socket
+        |> Mob.Socket.assign(:state, :error)
+        |> Mob.Socket.assign(
+          :message,
+          "That pairing code was already used. Refresh the cockpit QR to pair another device."
+        )
 
       _ ->
         socket
@@ -303,10 +329,10 @@ defmodule CaseinMob.PairingScreen do
     ]
   end
 
-  defp content(%{state: :success, paired_workspace: workspace_id}) do
+  defp content(%{state: :success, paired_workspace: workspace_id, message: message}) do
     [
       state_panel(
-        "Paired successfully",
+        message || "Pairing complete",
         "Workspace #{workspace_id || "workspace"} is ready on this phone.",
         :check,
         "Continue",

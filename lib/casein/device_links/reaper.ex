@@ -1,6 +1,7 @@
 defmodule Casein.DeviceLinks.Reaper do
   @moduledoc """
-  Periodic sweeper for expired and revoked device-link tokens.
+  Periodic sweeper for expired/revoked device-link tokens and short-lived
+  compact pairing handles.
 
   Deletes rows past a retention grace so `verify_token/1` can still return
   `:expired` or `:revoked` for recently-lapsed credentials.
@@ -10,7 +11,7 @@ defmodule Casein.DeviceLinks.Reaper do
 
   import Ecto.Query
 
-  alias Casein.DeviceLinks.Token
+  alias Casein.DeviceLinks.{PairingHandle, Token}
   alias Casein.Repo
 
   @default_sweep_interval_ms 21_600_000
@@ -47,7 +48,7 @@ defmodule Casein.DeviceLinks.Reaper do
     now = DateTime.utc_now()
     cutoff = DateTime.add(now, -retention_seconds(), :second)
 
-    {count, _} =
+    {token_count, _} =
       Repo.delete_all(
         from(t in Token,
           where:
@@ -56,7 +57,17 @@ defmodule Casein.DeviceLinks.Reaper do
         )
       )
 
-    count
+    {handle_count, _} =
+      Repo.delete_all(
+        from(h in PairingHandle,
+          where:
+            h.expires_at < ^cutoff or
+              (not is_nil(h.consumed_at) and h.consumed_at < ^cutoff) or
+              (not is_nil(h.revoked_at) and h.revoked_at < ^cutoff)
+        )
+      )
+
+    token_count + handle_count
   end
 
   defp schedule_sweep do

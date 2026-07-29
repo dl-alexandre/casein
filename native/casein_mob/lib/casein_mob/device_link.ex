@@ -1,10 +1,12 @@
 defmodule CaseinMob.DeviceLink do
   @moduledoc """
-  Normalizes pairing payloads and exchanges short-lived bootstrap tokens for
-  persistent device credentials when the origin supports it.
+  Normalizes pairing payloads and exchanges compact single-use handles (or
+  explicit legacy bootstrap tokens) for persistent device credentials.
   """
 
   @exchange_client_env :device_link_exchange_client
+  @compact_pairing_version 1
+  @compact_pairing_audience "casein_mobile"
 
   alias CaseinMob.OriginIdentity
 
@@ -19,16 +21,25 @@ defmodule CaseinMob.DeviceLink do
   @doc """
   Return the credential the session client should store.
 
-  New payloads include `token_exchange_url`; old payloads only include
-  `{url, token, workspace_id}` and continue through the legacy path.
+  Compact payloads contain only `{version, origin, handle}`. Older descriptors
+  with `token_exchange_url` remain an explicit compatibility path.
   """
   @spec pair(map()) :: {:ok, pairing()} | {:error, atom()}
   def pair(payload) when is_map(payload) do
-    with {:ok, legacy} <- legacy_pairing(payload) do
-      case exchange_url(payload) do
-        nil -> {:ok, legacy}
-        url -> exchange_or_fallback(url, legacy, stable_descriptor?(payload))
-      end
+    case compact_pairing(payload) do
+      {:ok, compact} ->
+        exchange_compact_pairing(compact)
+
+      :legacy ->
+        with {:ok, legacy} <- legacy_pairing(payload) do
+          case exchange_url(payload) do
+            nil -> {:ok, legacy}
+            url -> exchange_or_fallback(url, legacy, stable_descriptor?(payload))
+          end
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -47,8 +58,8 @@ defmodule CaseinMob.DeviceLink do
       {:ok, %{status: 404}} ->
         {:error, :not_found}
 
-      {:ok, %{status: status}} when status in [401, 403, 422] ->
-        {:error, :rejected}
+      {:ok, %{status: status, body: body}} when status in [401, 403, 409, 410, 422] ->
+        {:error, pairing_http_error(status, body)}
 
       {:ok, _response} ->
         {:error, :unavailable}
@@ -87,6 +98,94 @@ defmodule CaseinMob.DeviceLink do
   defp exchange_client do
     Application.get_env(:casein_mob, @exchange_client_env, &__MODULE__.post_exchange/2)
   end
+
+  defp compact_pairing(payload) do
+    handle = first_text([value(payload, :h), value(payload, :handle)])
+
+    if is_binary(handle) do
+      version = value(payload, :v) || value(payload, :version)
+      origin = first_text([value(payload, :o), value(payload, :origin)])
+
+      cond do
+        version != @compact_pairing_version ->
+          {:error, :unsupported_pairing_version}
+
+        not compact_handle?(handle) ->
+          {:error, :invalid_payload}
+
+        not allowed_transport?(origin) ->
+          {:error, :invalid_payload}
+
+        true ->
+          {:ok, %{origin: origin, handle: handle}}
+      end
+    else
+      :legacy
+    end
+  end
+
+  defp exchange_compact_pairing(%{origin: origin, handle: handle}) do
+    exchange_url = String.trim_trailing(origin, "/") <> "/api/device-links/exchange"
+
+    request = %{
+      handle: handle,
+      origin: origin,
+      audience: @compact_pairing_audience,
+      device_name: device_name(),
+      platform: platform()
+    }
+
+    case exchange_client().(exchange_url, request) do
+      {:ok, pairing} -> validate_compact_exchange_pairing(pairing, origin)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp validate_compact_exchange_pairing(pairing, expected_origin) when is_map(pairing) do
+    if usable_pairing?(pairing) and same_origin?(value(pairing, :url), expected_origin) and
+         usable_text?(value(pairing, :origin_id)) do
+      {:ok, pairing}
+    else
+      {:error, :invalid_response}
+    end
+  end
+
+  defp validate_compact_exchange_pairing(_pairing, _expected_origin),
+    do: {:error, :invalid_response}
+
+  defp compact_handle?(handle) when is_binary(handle) do
+    byte_size(handle) == 43 and Regex.match?(~r/\A[A-Za-z0-9_-]{43}\z/, handle)
+  end
+
+  defp pairing_http_error(409, body) do
+    case response_error(body) do
+      "pairing_handle_already_used" -> :pairing_already_used
+      _ -> :rejected
+    end
+  end
+
+  defp pairing_http_error(410, body) do
+    case response_error(body) do
+      error when error in ["pairing_handle_expired", "pairing_handle_revoked"] ->
+        :pairing_expired
+
+      _ ->
+        :rejected
+    end
+  end
+
+  defp pairing_http_error(_status, _body), do: :rejected
+
+  defp response_error(%{} = body), do: value(body, :error)
+
+  defp response_error(body) when is_binary(body) do
+    case Jason.decode(body) do
+      {:ok, decoded} -> response_error(decoded)
+      _ -> nil
+    end
+  end
+
+  defp response_error(_body), do: nil
 
   defp req_connect_options(url) do
     if URI.parse(url).scheme == "https" do

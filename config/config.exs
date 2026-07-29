@@ -185,6 +185,8 @@ config :phoenix, :filter_parameters, [
   "bearer",
   "access_token",
   "refresh_token",
+  "handle",
+  "pairing_handle",
   "workspace_api_tokens",
   "casein_api_token",
   "password",

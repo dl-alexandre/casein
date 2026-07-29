@@ -62,7 +62,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     view = mount_screen(SessionDashboardScreen)
 
     assert_renderable(view)
-    assert text(view) =~ "casein.test · Connected"
+    assert text(view) =~ "casein.test · Connecting"
+    assert text(view) =~ "Saved profile · validating live access"
     assert text(view) =~ "https://casein.test"
     assert text(view) =~ "Card stream connecting"
     assert text(view) =~ "No workspace pinned"
@@ -111,7 +112,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
 
     assert text(view) =~ "Saved hosts"
     assert find(view, :button, text: "Switch to · Local Mac")
-    assert find(view, :button, text: "Connected · casein.test")
+    assert find(view, :button, text: "Selected · casein.test")
     assert text(view) =~ "Last work: mac-ws"
 
     mac_origin_id = CaseinMob.OriginIdentity.legacy_id("http://192.168.1.72:57585")
@@ -124,7 +125,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     assert assigns(view).push_token == nil
     assert assigns(view).push_registered_workspace_ids == MapSet.new()
     assert text(view) =~ "Switched origin; refreshing authoritative state"
-    assert find(view, :button, text: "Connected · Local Mac")
+    assert find(view, :button, text: "Selected · Local Mac")
 
     view =
       render_info(
@@ -323,11 +324,33 @@ defmodule CaseinMob.SessionDashboardScreenTest do
 
     assert_renderable(view)
     assert assigns(view).mobile_cards_status == {:disconnected, :network_unavailable}
+    assert text(view) =~ "casein.test · Offline"
+    assert text(view) =~ "Saved profile · live feed offline"
+    refute text(view) =~ "casein.test · Connected"
+    refute text(view) =~ "Connected · casein.test"
     assert text(view) =~ "Card stream offline"
     assert text(view) =~ "Network unavailable"
     assert text(view) =~ "latest mobile cards may be stale"
     assert text(view) =~ "Workspace ws-1 · Last known · Offline · Read-only"
     assert find(view, :button, text: "Review").props.disabled == true
+  end
+
+  test "saved origin is called live only after authoritative card-stream authentication" do
+    SessionConfig.put_pairing("https://casein.test", "token")
+
+    connecting = mount_screen(SessionDashboardScreen)
+    assert text(connecting) =~ "casein.test · Connecting"
+    assert find(connecting, :button, text: "Selected · casein.test")
+    refute text(connecting) =~ "Connected · casein.test"
+
+    joined = render_info(connecting, {:mobile_cards_status, :joined})
+    assert text(joined) =~ "casein.test · Live"
+    assert text(joined) =~ "Authenticated live feed"
+
+    rejected = render_info(joined, {:mobile_cards_status, {:error, :unauthorized}})
+    assert text(rejected) =~ "casein.test · Pair again"
+    assert text(rejected) =~ "Saved profile · authentication failed"
+    refute text(rejected) =~ "· Connected"
   end
 
   test "mobile cards snapshot renders observer cards above workspace cards" do

@@ -49,6 +49,78 @@ defmodule CaseinMob.DeviceLinkTest do
     end
   end
 
+  test "compact pairing exchanges only origin and opaque handle for server-owned scope" do
+    handle = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+    test_pid = self()
+
+    Application.put_env(:casein_mob, :device_link_exchange_client, fn url, request ->
+      send(test_pid, {:exchange, url, request})
+
+      {:ok,
+       %{
+         url: "https://casein.devbox.milcgroup.com",
+         token: "durable-device-link",
+         workspace_id: "ws-authoritative",
+         origin_id: "installation-1",
+         display_name: "Devbox"
+       }}
+    end)
+
+    assert {:ok, pairing} =
+             DeviceLink.pair(%{
+               "v" => 1,
+               "o" => "https://casein.devbox.milcgroup.com",
+               "h" => handle
+             })
+
+    assert_receive {:exchange, "https://casein.devbox.milcgroup.com/api/device-links/exchange",
+                    request}
+
+    assert request.handle == handle
+    assert request.origin == "https://casein.devbox.milcgroup.com"
+    assert request.audience == "casein_mobile"
+    refute Map.has_key?(request, :workspace_id)
+    refute Map.has_key?(request, :token)
+    assert pairing.workspace_id == "ws-authoritative"
+    assert pairing.origin_id == "installation-1"
+  end
+
+  test "compact pairing fails closed on bad version, handle, or response origin" do
+    handle = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+
+    assert {:error, :unsupported_pairing_version} =
+             DeviceLink.pair(%{
+               "v" => 2,
+               "o" => "https://casein.devbox.milcgroup.com",
+               "h" => handle
+             })
+
+    assert {:error, :invalid_payload} =
+             DeviceLink.pair(%{
+               "v" => 1,
+               "o" => "https://casein.devbox.milcgroup.com",
+               "h" => "short"
+             })
+
+    Application.put_env(:casein_mob, :device_link_exchange_client, fn _url, _request ->
+      {:ok,
+       %{
+         url: "https://other.example",
+         token: "durable-device-link",
+         workspace_id: "ws-authoritative",
+         origin_id: "installation-1",
+         display_name: "Other"
+       }}
+    end)
+
+    assert {:error, :invalid_response} =
+             DeviceLink.pair(%{
+               "v" => 1,
+               "o" => "https://casein.devbox.milcgroup.com",
+               "h" => handle
+             })
+  end
+
   test "rejects a cleartext public token exchange endpoint" do
     assert {:error, :insecure_transport} =
              DeviceLink.pair(%{

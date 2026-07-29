@@ -1,6 +1,7 @@
 defmodule CaseinWeb.API.DeviceLinkController do
   @moduledoc """
-  Exchanges a short-lived pairing token for a persistent device credential.
+  Exchanges a compact single-use pairing handle (or an explicit legacy
+  bootstrap token) for a persistent device credential.
   """
 
   use CaseinWeb, :controller
@@ -10,24 +11,70 @@ defmodule CaseinWeb.API.DeviceLinkController do
   alias CaseinWeb.ChannelAuth
 
   def exchange(conn, params) do
-    token = params["token"] || params["pairing_token"]
     request_base = base_url(conn)
     params = Map.put(params, "origin_name", Origin.display_name(request_base))
 
     with :ok <- Origin.authorize_request_base(request_base),
-         {:ok, claims} <- ChannelAuth.verify_pairing_token(token),
-         {:ok, result} <- DeviceLinks.create_from_pairing_claims(claims, params) do
+         {:ok, result} <- exchange_pairing_credential(params, request_base) do
       json(conn, exchange_payload(request_base, result))
     else
-      {:error, :origin_mismatch} -> error(conn, :conflict, "origin_mismatch")
-      {:error, :missing} -> error(conn, :unprocessable_entity, "missing_token")
-      {:error, :invalid_pairing_claims} -> error(conn, :unprocessable_entity, "invalid_claims")
-      {:error, :invalid_pairing_token} -> error(conn, :unauthorized, "invalid_pairing_token")
-      {:error, :expired} -> error(conn, :unauthorized, "pairing_token_expired")
-      {:error, :not_found} -> error(conn, :not_found, "resource_not_found")
-      {:error, :unauthorized} -> error(conn, :forbidden, "resource_forbidden")
-      {:error, %Ecto.Changeset{}} -> error(conn, :unprocessable_entity, "invalid_device_link")
-      {:error, _reason} -> error(conn, :unauthorized, "invalid_pairing_token")
+      {:error, :origin_mismatch} ->
+        error(conn, :conflict, "origin_mismatch")
+
+      {:error, :missing} ->
+        error(conn, :unprocessable_entity, "missing_pairing_credential")
+
+      {:error, :invalid_pairing_handle} ->
+        error(conn, :unauthorized, "invalid_pairing_handle")
+
+      {:error, :pairing_handle_expired} ->
+        error(conn, :gone, "pairing_handle_expired")
+
+      {:error, :pairing_handle_replayed} ->
+        error(conn, :conflict, "pairing_handle_already_used")
+
+      {:error, :pairing_handle_revoked} ->
+        error(conn, :gone, "pairing_handle_revoked")
+
+      {:error, :pairing_handle_audience_mismatch} ->
+        error(conn, :unauthorized, "invalid_pairing_handle")
+
+      {:error, :resource_mismatch} ->
+        error(conn, :conflict, "resource_mismatch")
+
+      {:error, :invalid_pairing_claims} ->
+        error(conn, :unprocessable_entity, "invalid_claims")
+
+      {:error, :invalid_pairing_token} ->
+        error(conn, :unauthorized, "invalid_pairing_token")
+
+      {:error, :expired} ->
+        error(conn, :unauthorized, "pairing_token_expired")
+
+      {:error, :not_found} ->
+        error(conn, :not_found, "resource_not_found")
+
+      {:error, :unauthorized} ->
+        error(conn, :forbidden, "resource_forbidden")
+
+      {:error, %Ecto.Changeset{}} ->
+        error(conn, :unprocessable_entity, "invalid_device_link")
+
+      {:error, _reason} ->
+        error(conn, :unauthorized, "invalid_pairing_token")
+    end
+  end
+
+  defp exchange_pairing_credential(%{"handle" => handle} = params, request_base)
+       when is_binary(handle) do
+    DeviceLinks.exchange_pairing_handle(handle, request_base, params)
+  end
+
+  defp exchange_pairing_credential(params, _request_base) do
+    token = params["token"] || params["pairing_token"]
+
+    with {:ok, claims} <- ChannelAuth.verify_pairing_token(token) do
+      DeviceLinks.create_from_pairing_claims(claims, params)
     end
   end
 

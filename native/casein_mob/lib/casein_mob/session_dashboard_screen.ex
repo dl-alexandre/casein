@@ -391,7 +391,7 @@ defmodule CaseinMob.SessionDashboardScreen do
 
   defp dashboard_body(%{pinned: [], paired?: false}) do
     [
-      saved_hosts_section(SessionConfig.host_profiles()),
+      saved_hosts_section(SessionConfig.host_profiles(), :disconnected),
       empty_state(
         "Not paired yet",
         "Pair this phone with a workspace to watch runs, reviews, and agent activity from anywhere.",
@@ -403,7 +403,10 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp dashboard_body(%{pinned: [], paired?: true} = assigns) do
-    ([paired_summary(assigns), saved_hosts_section(assigns.host_profiles)] ++
+    ([
+       paired_summary(assigns),
+       saved_hosts_section(assigns.host_profiles, assigns.mobile_cards_status)
+     ] ++
        mobile_cards_status_banner(assigns) ++
        push_status_banner(assigns) ++
        observer_section(assigns) ++
@@ -412,7 +415,10 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp dashboard_body(assigns) do
-    ([paired_summary(assigns), saved_hosts_section(assigns.host_profiles)] ++
+    ([
+       paired_summary(assigns),
+       saved_hosts_section(assigns.host_profiles, assigns.mobile_cards_status)
+     ] ++
        mobile_cards_status_banner(assigns) ++
        push_status_banner(assigns) ++
        observer_section(assigns) ++
@@ -440,7 +446,7 @@ defmodule CaseinMob.SessionDashboardScreen do
               %{
                 type: :text,
                 props: %{
-                  text: "#{host_name} · Connected",
+                  text: "#{host_name} · #{connection_health_label(assigns.mobile_cards_status)}",
                   text_color: :on_surface,
                   text_size: :lg,
                   font_weight: "bold",
@@ -464,6 +470,7 @@ defmodule CaseinMob.SessionDashboardScreen do
             |> Enum.reject(&is_nil/1)
         },
         muted_line(host_url),
+        muted_line(connection_health_copy(assigns.mobile_cards_status)),
         %{
           type: :text,
           props: %{
@@ -479,7 +486,7 @@ defmodule CaseinMob.SessionDashboardScreen do
 
   defp paired_summary(_assigns), do: nil
 
-  defp saved_hosts_section([_ | _] = profiles) do
+  defp saved_hosts_section([_ | _] = profiles, active_status) do
     %{
       type: :column,
       props: %{fill_width: true, background: :surface, padding: :space_sm, gap: 6},
@@ -494,32 +501,35 @@ defmodule CaseinMob.SessionDashboardScreen do
           },
           children: []
         }
-        | Enum.map(profiles, &saved_host_row/1)
+        | Enum.map(profiles, &saved_host_row(&1, active_status))
       ]
     }
   end
 
-  defp saved_hosts_section(_profiles), do: nil
+  defp saved_hosts_section(_profiles, _active_status), do: nil
 
-  defp saved_host_row(%{
-         origin_id: origin_id,
-         display_name: display_name,
-         url: url,
-         active?: active?,
-         read_only?: read_only?,
-         last_workspace_id: last_workspace_id
-       }) do
+  defp saved_host_row(
+         %{
+           origin_id: origin_id,
+           display_name: display_name,
+           url: url,
+           active?: active?,
+           read_only?: read_only?,
+           last_workspace_id: last_workspace_id
+         },
+         active_status
+       ) do
     %{
       type: :column,
       props: %{fill_width: true, gap: 2},
       children: [
-        saved_host_control(origin_id, display_name, active?, read_only?),
+        saved_host_control(origin_id, display_name, active?, read_only?, active_status),
         muted_line(host_context_line(url, last_workspace_id))
       ]
     }
   end
 
-  defp saved_host_control(_origin_id, display_name, _active?, true) do
+  defp saved_host_control(_origin_id, display_name, _active?, true, _active_status) do
     %{
       type: :text,
       props: %{
@@ -533,11 +543,11 @@ defmodule CaseinMob.SessionDashboardScreen do
     }
   end
 
-  defp saved_host_control(origin_id, display_name, active?, false) do
+  defp saved_host_control(origin_id, display_name, active?, false, _active_status) do
     %{
       type: :button,
       props: %{
-        text: "#{if(active?, do: "Connected", else: "Switch to")} · #{display_name}",
+        text: "#{if(active?, do: "Selected", else: "Switch to")} · #{display_name}",
         fill_width: true,
         background: if(active?, do: :surface_raised, else: :primary),
         text_color: if(active?, do: :on_surface, else: :on_primary),
@@ -578,6 +588,50 @@ defmodule CaseinMob.SessionDashboardScreen do
       "workspaces #{workspace_count}"
     ]
     |> Enum.join(" · ")
+  end
+
+  defp connection_health_label(status) do
+    case {status_state(status), status_reason(status)} do
+      {:joined, _reason} ->
+        "Live"
+
+      {:connecting, _reason} ->
+        "Connecting"
+
+      {:disconnected, _reason} ->
+        "Offline"
+
+      {:error, reason} when reason in [:unauthorized, :auth_expired, :token_revoked] ->
+        "Pair again"
+
+      {:error, _reason} ->
+        "Unavailable"
+
+      _ ->
+        "Status unknown"
+    end
+  end
+
+  defp connection_health_copy(status) do
+    case {status_state(status), status_reason(status)} do
+      {:joined, _reason} ->
+        "Authenticated live feed"
+
+      {:connecting, _reason} ->
+        "Saved profile · validating live access"
+
+      {:disconnected, _reason} ->
+        "Saved profile · live feed offline"
+
+      {:error, reason} when reason in [:unauthorized, :auth_expired, :token_revoked] ->
+        "Saved profile · authentication failed"
+
+      {:error, _reason} ->
+        "Saved profile · live feed unavailable"
+
+      _ ->
+        "Saved profile · connection health unknown"
+    end
   end
 
   defp format_status(nil), do: "unknown"

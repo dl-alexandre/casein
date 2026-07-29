@@ -12,6 +12,8 @@ defmodule Casein.Config.FilterParametersTest do
     bearer
     access_token
     refresh_token
+    handle
+    pairing_handle
     workspace_api_tokens
     casein_api_token
     password
@@ -36,6 +38,7 @@ defmodule Casein.Config.FilterParametersTest do
     params = %{
       "id" => "42",
       "token" => "super-secret",
+      "handle" => "one-time-secret",
       "nested" => %{"api_token" => "nested-secret", "name" => "ok"}
     }
 
@@ -43,6 +46,7 @@ defmodule Casein.Config.FilterParametersTest do
 
     assert filtered["id"] == "42"
     assert filtered["token"] == "[FILTERED]"
+    assert filtered["handle"] == "[FILTERED]"
     assert filtered["nested"]["api_token"] == "[FILTERED]"
     assert filtered["nested"]["name"] == "ok"
   end

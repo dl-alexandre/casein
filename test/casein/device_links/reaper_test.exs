@@ -3,7 +3,7 @@ defmodule Casein.DeviceLinks.ReaperTest do
 
   alias Casein.DeviceLinks
   alias Casein.DeviceLinks.Reaper
-  alias Casein.DeviceLinks.Token
+  alias Casein.DeviceLinks.{PairingHandle, Token}
   alias Casein.Workspace
   alias Casein.Repo
 
@@ -42,11 +42,28 @@ defmodule Casein.DeviceLinks.ReaperTest do
         expires_at: DateTime.add(now, 60, :day)
       })
 
-    assert Reaper.sweep_now() == 2
+    pairing_handle =
+      %PairingHandle{}
+      |> PairingHandle.changeset(%{
+        handle_hash: "expired-pairing-hash",
+        origin_id: "casein",
+        origin_base_url: "https://casein.test",
+        subject_id: "owner",
+        subject_role: "owner",
+        resource_kind: "workspace",
+        resource_id: "ws-1",
+        capabilities: ["casein.session"],
+        audience: "casein_mobile",
+        expires_at: old
+      })
+      |> Repo.insert!()
+
+    assert Reaper.sweep_now() == 3
 
     assert Repo.get(Token, live.id)
     refute Repo.get(Token, expired.id)
     refute Repo.get(Token, revoked.id)
+    refute Repo.get(PairingHandle, pairing_handle.id)
   end
 
   defp insert_token(attrs) do
