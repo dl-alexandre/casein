@@ -1916,6 +1916,13 @@ assert(
       src.includes("deviceScaleFactor,"),
     "packed driver executes and attests every declared viewport in a DPR-correct context",
   );
+  assert(
+    src.includes("const page = await context.newPage()") &&
+      src.includes("await page.close()") &&
+      src.includes("await loginPage.close()") &&
+      !src.includes("session.page"),
+    "packed driver isolates every visit from stale LiveView navigation while reusing auth context",
+  );
   assert(src.includes("cleanup_steps"), "packed driver runs finally-style cleanup steps");
   assert(src.includes("acceptDownloads: true"), "browser context accepts downloads for download evidence");
   assert(src.includes("evidenceBlocked:"), "packed driver folds required-evidence gaps fail-closed");
