@@ -48,6 +48,24 @@ export function requiredEvidence(manifests) {
   return [...req].sort();
 }
 
+/** Tidewave tools needed by the selected manifests, not just by the server. */
+export function requiredTidewaveTools(manifests, evidence = new Set()) {
+  const tools = new Set(["get_logs"]);
+  const usesRuntimeEval = manifests.some((manifest) => {
+    const runtime = manifest?.runtime || {};
+    return runtime.tidewave === true;
+  });
+  const usesSql = manifests.some((manifest) => {
+    const runtime = manifest?.runtime || {};
+    if (Object.values(runtime.per_page || {}).some((page) => page?.sql)) return true;
+    return (manifest?.pages || []).some((page) => page?.runtime?.sql);
+  });
+
+  if (usesRuntimeEval || evidence.has("audit_actor")) tools.add("project_eval");
+  if (usesSql || evidence.has("db_before_after")) tools.add("execute_sql_query");
+  return [...tools].sort();
+}
+
 /** Does any manifest intend to mutate? Drives the UNSAFE rule. */
 export function isMutating(manifests) {
   return manifests.some((m) => m?.safety && m.safety.read_only === false);
@@ -289,12 +307,19 @@ export async function checkDeploymentIdentity(
 }
 
 /**
- * REAL Tidewave probe — an MCP initialize round-trip, not a "url is set" nod.
- * The initialize call is a read-only RPC; product pages still only ever see
- * GETs. Required-but-unavailable is BLOCKED: a walk told to collect runtime
- * evidence cannot silently produce a report without it.
+ * REAL Tidewave probe — a tools/list round-trip that verifies every collector
+ * the selected manifests need. Tidewave's HTTP transport does not accept the
+ * empty initialize handshake used by some generic MCP clients.
  */
-export async function checkTidewave(url, { fetchImpl = fetch, timeoutMs = 8000, required = false } = {}) {
+export async function checkTidewave(
+  url,
+  {
+    fetchImpl = fetch,
+    timeoutMs = 8000,
+    required = false,
+    requiredTools = ["get_logs"],
+  } = {},
+) {
   if (!url) {
     return row(
       "tidewave",
@@ -309,22 +334,60 @@ export async function checkTidewave(url, { fetchImpl = fetch, timeoutMs = 8000, 
     const res = await fetchImpl(url, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
       signal: ctl.signal,
     });
-    if (res.status === 200) {
+    if (res.status < 200 || res.status >= 300) {
       return row(
         "tidewave",
-        STATE.OK,
-        `initialize → 200 (${sanitizedUrl(url)})`,
+        required ? STATE.BLOCKED : STATE.MISSING,
+        `tools/list → HTTP ${res.status} (${sanitizedUrl(url)})`,
         { required },
       );
     }
+
+    const raw = await res.text();
+    let payload = null;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      for (const line of raw.split("\n")) {
+        const value = line.trim();
+        if (!value.startsWith("data:")) continue;
+        try {
+          payload = JSON.parse(value.slice(5).trim());
+        } catch {
+          // Keep scanning SSE frames for the JSON-RPC response.
+        }
+      }
+    }
+
+    if (!payload || payload.error) {
+      const message = payload?.error?.message || "unparseable response";
+      return row(
+        "tidewave",
+        required ? STATE.BLOCKED : STATE.MISSING,
+        `tools/list failed: ${message} (${sanitizedUrl(url)})`,
+        { required },
+      );
+    }
+
+    const available = (payload.result?.tools || []).map((tool) => tool?.name).filter(Boolean);
+    const missing = requiredTools.filter((name) => !available.includes(name));
+    if (missing.length > 0) {
+      return row(
+        "tidewave",
+        required ? STATE.BLOCKED : STATE.MISSING,
+        `missing required tools: ${missing.join(", ")} (${sanitizedUrl(url)})`,
+        { required, evidence: { tools: available, missing_tools: missing } },
+      );
+    }
+
     return row(
       "tidewave",
-      required ? STATE.BLOCKED : STATE.MISSING,
-      `initialize → ${res.status} (${sanitizedUrl(url)})`,
-      { required },
+      STATE.OK,
+      `tools/list → ${available.length} tools; required tools present (${sanitizedUrl(url)})`,
+      { required, evidence: { tools: available, required_tools: requiredTools } },
     );
   } catch (err) {
     return row(
@@ -501,6 +564,7 @@ export async function buildMatrix(args, deps = {}) {
     await checkTidewave(args.tidewaveUrl || env.CASEIN_TIDEWAVE_MCP_URL, {
       fetchImpl,
       required: tidewaveRequired,
+      requiredTools: requiredTidewaveTools(manifests, required),
     }),
   );
   // Visual baseline is stricter than the generic collector check: when

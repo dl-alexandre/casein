@@ -2,6 +2,7 @@
 // Pure-helper + taxonomy fixture smoke for preview-ui-walk (no browser).
 //   node selftest.mjs
 
+import { createServer } from "node:http";
 import { classifyRisk } from "./classify_risk.mjs";
 import {
   CATEGORIES,
@@ -28,14 +29,19 @@ import {
   checkCollector,
   isMutating,
   requiredEvidence,
+  requiredTidewaveTools,
   roleEnvPrefixes,
   runPreflight,
 } from "./preflight_run.mjs";
 import { verify as verifyPayload } from "./payload_pack.mjs";
-import { classifyRisk as classifyRiskRuntime } from "./runtime_evidence.mjs";
+import {
+  classifyRisk as classifyRiskRuntime,
+  probeTidewave,
+} from "./runtime_evidence.mjs";
 import {
   expandEnvText,
   interactionsAllowed,
+  runPageSteps,
   walkNeedsRequiredInteractions,
 } from "./page_steps.mjs";
 import {
@@ -122,6 +128,35 @@ assert(
     pages: [{ steps: [{ action: "assert_text", text: "hi" }] }],
   }) === false,
   "assert-only walk no interactions",
+);
+
+const interactionCalls = [];
+const fakePage = {
+  fill: async (...args) => interactionCalls.push(["fill", ...args]),
+  waitForTimeout: async (...args) => interactionCalls.push(["wait", ...args]),
+};
+const fillResult = await runPageSteps(
+  fakePage,
+  {
+    steps: [
+      {
+        action: "fill",
+        selector: "#email",
+        text: "demo@test.com",
+        wait_ms: 250,
+      },
+    ],
+  },
+  {
+    manifest: { safety: { allow_interactions: true } },
+    runtimeBag: { env_check: { items: [] } },
+    base: "http://127.0.0.1:4000",
+  },
+);
+assert(fillResult.status === "PASS", "fill with settle passes");
+assert(
+  interactionCalls.some(([kind, wait]) => kind === "wait" && wait === 250),
+  "fill honors wait_ms",
 );
 
 // ── Taxonomy fixtures (mainStatus × URL × steps) ───────────────────────────
@@ -1857,10 +1892,40 @@ assert(
     assert(viaEnv.code === EXIT.BLOCKED, "WALK_EXPECT_ENVIRONMENT mismatch -> BLOCKED via env vars");
   }
 
-  // Tidewave: a REAL initialize round-trip, required gaps BLOCKED.
+  // Tidewave: tools/list proves the exact collectors, required gaps BLOCKED.
   {
-    const ok = await pf.checkTidewave("http://127.0.0.1:1/tidewave/mcp?x=S", { fetchImpl: async () => ({ status: 200 }) });
-    assert(ok.state === "OK" && !ok.detail.includes("x=S"), "tidewave initialize 200 -> OK, url sanitized");
+    const response = (status, payload) => ({
+      status,
+      text: async () => JSON.stringify(payload),
+    });
+    const allTools = {
+      result: {
+        tools: [
+          { name: "get_logs" },
+          { name: "project_eval" },
+          { name: "execute_sql_query" },
+        ],
+      },
+    };
+    const ok = await pf.checkTidewave("http://127.0.0.1:1/tidewave/mcp?x=S", {
+      fetchImpl: async () => response(200, allTools),
+      requiredTools: ["get_logs", "project_eval"],
+    });
+    assert(ok.state === "OK" && !ok.detail.includes("x=S"), "tidewave tools/list -> OK, url sanitized");
+    const http404 = await pf.checkTidewave("http://127.0.0.1:1/tidewave/mcp", {
+      fetchImpl: async () => response(404, { error: "not found" }),
+      required: true,
+    });
+    assert(http404.state === "BLOCKED" && /HTTP 404/.test(http404.detail), "required tidewave HTTP 404 -> BLOCKED");
+    const missingTool = await pf.checkTidewave("http://127.0.0.1:1/tidewave/mcp", {
+      fetchImpl: async () => response(200, { result: { tools: [{ name: "get_logs" }] } }),
+      required: true,
+      requiredTools: ["get_logs", "project_eval"],
+    });
+    assert(
+      missingTool.state === "BLOCKED" && /project_eval/.test(missingTool.detail),
+      "required tidewave collector missing -> BLOCKED",
+    );
     const reqDown = await pf.checkTidewave("http://127.0.0.1:1/tidewave/mcp", {
       fetchImpl: async () => { throw new Error("down"); },
       required: true,
@@ -1870,6 +1935,33 @@ assert(
     assert(optNone.state === "SKIP", "no tidewave url and not required -> SKIP");
     const reqNone = await pf.checkTidewave(null, { required: true });
     assert(reqNone.state === "BLOCKED", "required tidewave with no url -> BLOCKED");
+
+    const tools = requiredTidewaveTools(
+      [{ runtime: { tidewave: true }, pages: [{ runtime: { sql: "SELECT 1" } }] }],
+      new Set(),
+    );
+    assert(
+      tools.join(",") === "execute_sql_query,get_logs,project_eval",
+      "manifest runtime needs map to exact Tidewave tools",
+    );
+
+    const server = createServer((_req, res) => {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "not found" }));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    try {
+      const probe = await probeTidewave(
+        `http://127.0.0.1:${address.port}/tidewave/mcp`,
+      );
+      assert(
+        probe.ok === false && /HTTP 404/.test(probe.error),
+        "runtime Tidewave probe rejects a JSON HTTP 404",
+      );
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   }
 
   // Artifact store: read-only artifact_list round-trip; token never leaks.

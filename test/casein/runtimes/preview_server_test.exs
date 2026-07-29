@@ -408,6 +408,34 @@ defmodule Casein.Runtimes.PreviewServerTest do
       assert env["OK"] == "5"
       assert env["CASEIN_PREVIEW_HOME"] == "/wt/only/.casein-preview"
     end
+
+    test "Phoenix worktree previews force dev and carry the observed revision" do
+      worktree =
+        Path.join(
+          System.tmp_dir!(),
+          "casein-preview-mix-env-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(worktree)
+      File.write!(Path.join(worktree, "mix.exs"), "defmodule Preview.MixProject do\nend\n")
+      on_exit(fn -> File.rm_rf!(worktree) end)
+
+      revision = String.duplicate("a", 40)
+
+      attrs = %{
+        "port" => 8002,
+        "metadata" => %{"git_head_sha" => revision},
+        "runtime_profile" => %{
+          "env" => %{"MIX_ENV" => "prod", "SOURCE_REVISION" => "stale"}
+        }
+      }
+
+      {:ok, server} =
+        PreviewServer.build_for_worktree(record(), "rt-mix", "tmux-mix", worktree, attrs, [])
+
+      assert server["env"]["MIX_ENV"] == "dev"
+      assert server["env"]["SOURCE_REVISION"] == revision
+    end
   end
 
   defp socket_name(runtime_id) do

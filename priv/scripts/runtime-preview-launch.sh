@@ -44,12 +44,14 @@ json_escape() {
 write_registry() {
   local status="$1" pid="${2:-$$}" proxy_pid="${3:-}" started
   started="$(date -u +%FT%TZ)"
-  printf '{"id":"%s","kind":"runtime","ref":"runtime","sha":"","port":"%s","socket":"%s","pid":"%s","proxy_pid":"%s","db":"","worktree":"","checkout":"%s","workspaces_root":"","log":"%s","started_at":"%s","status":"%s","workspace_id":"%s","runtime_id":"%s","tmux_session_id":"%s","url":"http://127.0.0.1:%s/"}\n' \
+  printf '{"id":"%s","kind":"runtime","ref":"runtime","sha":"%s","port":"%s","socket":"%s","pid":"%s","proxy_pid":"%s","db":"","worktree":"%s","checkout":"%s","workspaces_root":"","log":"%s","started_at":"%s","status":"%s","workspace_id":"%s","runtime_id":"%s","tmux_session_id":"%s","url":"http://127.0.0.1:%s/"}\n' \
     "$(printf '%s' "$runtime_id" | json_escape)" \
+    "$(printf '%s' "${SOURCE_REVISION:-}" | json_escape)" \
     "$(printf '%s' "$port" | json_escape)" \
     "$(printf '%s' "$socket" | json_escape)" \
     "$(printf '%s' "$pid" | json_escape)" \
     "$(printf '%s' "$proxy_pid" | json_escape)" \
+    "$(printf '%s' "$cwd" | json_escape)" \
     "$(printf '%s' "$cwd" | json_escape)" \
     "$(printf '%s' "$logf" | json_escape)" \
     "$started" \
@@ -64,6 +66,9 @@ write_registry() {
 wait_for_port() {
   local i
   for i in $(seq 1 90); do
+    if ! kill -0 "$app_pid" >/dev/null 2>&1; then
+      return 1
+    fi
     if bash -c ":</dev/tcp/127.0.0.1/${port}" >/dev/null 2>&1; then
       return 0
     fi
@@ -101,6 +106,12 @@ cleanup() {
   rm -f "$socket"
 }
 trap cleanup EXIT INT TERM
+
+if bash -c ":</dev/tcp/127.0.0.1/${port}" >/dev/null 2>&1; then
+  echo "error: runtime preview port 127.0.0.1:${port} is already in use" >> "$logf"
+  write_registry "failed" "$$" ""
+  exit 1
+fi
 
 {
   echo ">>> runtime preview cwd=$cwd port=$port socket=$socket"

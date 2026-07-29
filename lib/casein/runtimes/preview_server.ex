@@ -49,6 +49,7 @@ defmodule Casein.Runtimes.PreviewServer do
         |> value("env")
         |> env_map()
         |> Map.merge(env_from_attrs(attrs))
+        |> Map.merge(local_mix_env(cwd, attrs))
         |> Map.merge(%{
           "PORT" => Integer.to_string(port),
           "CASEIN_RUNTIME_ID" => runtime_id,
@@ -494,6 +495,24 @@ defmodule Casein.Runtimes.PreviewServer do
       _ -> %{}
     end
   end
+
+  defp local_mix_env(cwd, attrs) do
+    if File.regular?(Path.join(cwd, "mix.exs")) do
+      revision =
+        attrs
+        |> value("metadata")
+        |> value("git_head_sha")
+        |> non_empty_string()
+
+      %{"MIX_ENV" => "dev"}
+      |> maybe_put_env("SOURCE_REVISION", revision)
+    else
+      %{}
+    end
+  end
+
+  defp maybe_put_env(env, _key, nil), do: env
+  defp maybe_put_env(env, key, value), do: Map.put(env, key, value)
 
   defp maybe_add_profile_ports(ports, profile) when is_map(profile) do
     profile_ports =
