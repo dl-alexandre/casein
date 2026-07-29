@@ -11,4 +11,5 @@ defmodule Casein.Previews.Deps.Urls do
   @callback base_url() :: String.t()
   @callback api_base_url() :: String.t()
   @callback preview_url() :: String.t()
+  @callback canonicalize_known_base_url(String.t()) :: String.t()
 end

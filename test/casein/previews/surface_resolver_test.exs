@@ -30,6 +30,54 @@ defmodule Casein.Previews.SurfaceResolverTest do
     assert tidewave.url == "https://tidewave.alice-feature.devbox.example.com"
   end
 
+  test "canonicalizes only the recognized retired Casein manager app origin" do
+    previous_canonical = Application.get_env(:casein, :canonical_public_origin)
+
+    Application.put_env(
+      :casein,
+      :canonical_public_origin,
+      "https://casein.devbox.milcgroup.com"
+    )
+
+    on_exit(fn -> restore_env(:canonical_public_origin, previous_canonical) end)
+
+    retired_casein_workspace = %{
+      id: "retired-casein",
+      metadata: %{
+        type: :legacy,
+        domain_base: "dalexandre-devide.devbox.milcgroup.com",
+        ports: %{"http" => 10_105}
+      }
+    }
+
+    [casein_app | _] = SurfaceResolver.resolve(retired_casein_workspace)
+    assert casein_app.url == "https://casein.devbox.milcgroup.com"
+
+    unrelated_v3_app =
+      @v3_workspace
+      |> SurfaceResolver.resolve()
+      |> Enum.find(&(&1.name == "app" and &1.source == :manager))
+
+    assert unrelated_v3_app.url == "https://alice-feature.devbox.example.com"
+
+    unrelated_legacy = %{
+      id: "other-legacy",
+      metadata: %{
+        type: :legacy,
+        domain_base: "other-workspace.devbox.milcgroup.com",
+        ports: %{"http" => 10_106}
+      }
+    }
+
+    unrelated_legacy_app =
+      unrelated_legacy
+      |> SurfaceResolver.resolve()
+      |> Enum.find(&(&1.name == "app" and &1.source == :manager))
+
+    assert unrelated_legacy_app.url ==
+             "https://local.other-workspace.devbox.milcgroup.com"
+  end
+
   test "get/2 returns a single named surface" do
     assert %{} = surface = SurfaceResolver.get(@v3_workspace, "app")
     assert surface.name == "app"

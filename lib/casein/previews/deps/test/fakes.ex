@@ -122,5 +122,8 @@ defmodule Casein.Previews.Deps.Test.Fakes do
 
     @impl true
     def preview_url, do: "http://127.0.0.1:4000/api/preview/mcp"
+
+    @impl true
+    def canonicalize_known_base_url(base_url), do: base_url
   end
 end
