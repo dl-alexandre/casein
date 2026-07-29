@@ -102,12 +102,34 @@ export function parseDeploymentIdentity(data) {
   if (!data || typeof data !== "object") {
     return { environment: null, revision: null, reason: "deployment data is not an object" };
   }
+  const deployment =
+    data.deployment && typeof data.deployment === "object" ? data.deployment : {};
   const env =
-    [data.environment, data.env, data.mix_env, data.MIX_ENV].find(
+    [
+      deployment.environment,
+      deployment.env,
+      deployment.mix_env,
+      deployment.MIX_ENV,
+      data.environment,
+      data.env,
+      data.mix_env,
+      data.MIX_ENV,
+    ].find(
       (v) => typeof v === "string" && v.trim(),
     ) || null;
   const revRaw =
-    [data.revision, data.git_sha, data.sha, data.commit, data.git_revision].find(
+    [
+      deployment.revision,
+      deployment.git_sha,
+      deployment.sha,
+      deployment.commit,
+      deployment.git_revision,
+      data.revision,
+      data.git_sha,
+      data.sha,
+      data.commit,
+      data.git_revision,
+    ].find(
       (v) => typeof v === "string" && v.trim(),
     ) || null;
   const revision = revRaw && /^[0-9a-f]{40}$/i.test(revRaw.trim()) ? revRaw.trim().toLowerCase() : null;
