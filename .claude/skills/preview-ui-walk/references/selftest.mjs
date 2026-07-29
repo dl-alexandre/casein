@@ -18,9 +18,14 @@ import {
   verdict,
   verdictName,
 } from "./preflight.mjs";
-import { parseServerTiming, sanitizeDomHtml } from "./collectors.mjs";
+import {
+  parseServerTiming,
+  sanitizeDomHtml,
+  sanitizeEvidenceUrl,
+} from "./collectors.mjs";
 import {
   buildMatrix,
+  checkCollector,
   isMutating,
   requiredEvidence,
   roleEnvPrefixes,
@@ -974,6 +979,32 @@ assert(
   assert(a11y.normalizeViewports([]).viewports.length === 0, "empty list -> no viewports (v1 default)");
   assert(a11y.normalizeViewports(undefined).viewports.length === 0, "absent list -> no viewports");
 
+  {
+    const pages = [
+      { name: "All", path: "/all" },
+      { name: "Desktop", path: "/desktop", viewports: ["desktop"] },
+    ];
+    const expanded = a11y.expandWalkCases(pages, a11y.DEFAULT_VIEWPORTS);
+    assert(expanded.cases.length === 3, "logical pages expand into every applicable viewport visit");
+    assert(
+      expanded.cases.map(({ page, viewport }) => `${page.name}:${viewport.name}`).join(",") ===
+        "All:mobile,All:desktop,Desktop:desktop",
+      "viewport expansion is page-major and preserves per-page narrowing",
+    );
+    const implicit = a11y.expandWalkCases([{ name: "V1", path: "/" }], undefined);
+    assert(
+      implicit.cases.length === 1 &&
+        implicit.cases[0].viewport.name === "default" &&
+        implicit.cases[0].viewport.implicit === true,
+      "omitted viewports retain one explicit default visit",
+    );
+    const unknown = a11y.expandWalkCases(
+      [{ name: "Bad", path: "/", viewports: ["tablet"] }],
+      a11y.DEFAULT_VIEWPORTS,
+    );
+    assert(unknown.unknown.length === 1 && unknown.cases.length === 0, "unknown page viewport is fail-closed");
+  }
+
   // Per-page narrowing of the walk-level viewport list.
   {
     const all = a11y.normalizeViewports(a11y.DEFAULT_VIEWPORTS).viewports;
@@ -1035,7 +1066,17 @@ assert(
   assert(a11yProven(undefined) === false, "a11y NOT proven without a probe");
   assert(viewportProven({ viewport: { proven: true } }) === true, "viewport proven from probe");
   assert(viewportProven(undefined) === false, "viewport NOT proven without a probe");
+  assert(
+    checkCollector("viewport", { required: true, proven: true }).required === true,
+    "manifest-required collectors are labelled required in the readiness matrix",
+  );
 }
+
+assert(
+  sanitizeEvidenceUrl("https://user:pass@example.test/path?token=SECRET#frag") ===
+    "https://example.test/path",
+  "evidence URLs drop userinfo, query values and fragments",
+);
 
 // ── Batch 3a: browser + server resource metrics ─────────────────────────────
 {
@@ -1860,6 +1901,21 @@ assert(
   assert(src.includes("login-failure.png"), "login-failure screenshot is part of the evidence set");
   assert(src.includes("retryPolicy") && src.includes("shouldRetry") && src.includes("flakinessEvidence"), "packed driver wires bounded retries");
   assert(src.includes("attachApi") && src.includes("attachDownloads") && src.includes("cleanupEvidence"), "packed driver wires api/download/cleanup evidence");
+  assert(
+    src.includes("attachHar") &&
+      src.includes("collectDomSnapshot") &&
+      src.includes("collectA11y") &&
+      src.includes("collectResourceMetrics"),
+    "packed driver wires every collector required by the full product manifests",
+  );
+  assert(
+    src.includes("expandWalkCases") &&
+      src.includes("applyViewport") &&
+      src.includes("collectViewportEvidence") &&
+      src.includes("casesByDpr") &&
+      src.includes("deviceScaleFactor,"),
+    "packed driver executes and attests every declared viewport in a DPR-correct context",
+  );
   assert(src.includes("cleanup_steps"), "packed driver runs finally-style cleanup steps");
   assert(src.includes("acceptDownloads: true"), "browser context accepts downloads for download evidence");
   assert(src.includes("evidenceBlocked:"), "packed driver folds required-evidence gaps fail-closed");
