@@ -99,6 +99,11 @@ defmodule CaseinMob.IOSConfigurationTest do
     assert app_delegate =~ "MobNotificationJSONFromPairURL"
     assert app_delegate =~ ~s(@"action": @"mobile.pair")
     assert app_delegate =~ ~s(@"pairing_code": code)
+    assert app_delegate =~ "MOB_PAIRING_CODE_MAX_BYTES"
+    assert app_delegate =~ "components.fragment != nil"
+    assert app_delegate =~ "components.user != nil"
+    assert app_delegate =~ "BOOL hasQuery = components.percentEncodedQuery != nil;"
+    refute app_delegate =~ ~s(@"pairing_code": code,\n        @"deep_link": url.absoluteString)
     assert app_delegate =~ "MobStoreDeepLinkURL(context.URL)"
     assert app_delegate =~ "return MobStoreDeepLinkURL(url);"
   end
