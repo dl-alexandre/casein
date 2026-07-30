@@ -17,4 +17,17 @@
   <.icon name="hero-bell-alert" class="size-4 text-amber-500" />
   <span>Enable alerts</span>
 </button>
+<%!--
+  Carries client-read UI preferences for the shared toast stack. The shortcut
+  coach reads data-shortcut-hints here so the preference survives a reload
+  instead of waiting for the notifications drawer to lazy-load preferences.
+  An absent assign (LiveViews outside the cockpit) reads as enabled.
+--%>
+<div
+  id="casein-toast-root"
+  class="hidden"
+  aria-hidden="true"
+  data-shortcut-hints={to_string(assigns[:notif_shortcut_hints?] != false)}
+>
+</div>
 {@inner_content}

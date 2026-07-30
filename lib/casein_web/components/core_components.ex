@@ -68,7 +68,9 @@ defmodule CaseinWeb.CoreComponents do
         <.icon :if={@kind == :error} name="hero-exclamation-circle" class="size-5 shrink-0" />
         <div>
           <p :if={@title} class="font-semibold">{@title}</p>
-          <p>{msg}</p>
+          <%!-- data-flash-message: the contract the FlashBridge hook reads when it
+          hoists server flash into the shared toast stack. --%>
+          <p data-flash-message>{msg}</p>
         </div>
         <div class="flex-1" />
         <button type="button" class="group self-start cursor-pointer" aria-label={gettext("close")}>

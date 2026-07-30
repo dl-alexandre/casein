@@ -12,6 +12,7 @@ defmodule CaseinWeb.NotificationsDrawer do
 
   use CaseinWeb, :html
 
+  alias CaseinWeb.NotificationsDrawerEvents
   alias CaseinWeb.WorkspaceLive.Show.AgentApprovals
 
   @event_types [
@@ -408,6 +409,24 @@ defmodule CaseinWeb.NotificationsDrawer do
                     value={quiet_value(@preferences, "end", "08:00")}
                     class="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
                   />
+                </div>
+
+                <div class="border-t border-zinc-200 pt-3">
+                  <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                    Interface
+                  </p>
+                  <.input
+                    id="pref-shortcut-hints"
+                    type="checkbox"
+                    name="preferences[ui][shortcut_hints]"
+                    checked={NotificationsDrawerEvents.shortcut_hints_enabled?(@preferences)}
+                    label="Keyboard shortcut hints"
+                    class="size-4 rounded border-zinc-300 text-zinc-900"
+                  />
+                  <p class="mt-1 text-xs text-zinc-500">
+                    Shows the chord for a header button after you click it. Each hint retires on its
+                    own once you have seen it a few times; turn this off to silence them now.
+                  </p>
                 </div>
 
                 <button

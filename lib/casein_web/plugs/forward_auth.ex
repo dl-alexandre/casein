@@ -101,6 +101,20 @@ defmodule CaseinWeb.Plugs.ForwardAuth do
   end
 
   @doc """
+  Durable-storage identity for a mounted viewer.
+
+  Dev/LAN deployments without forward auth act as the single `"dev"` user. Every
+  surface that keys persisted rows by viewer must go through this one function:
+  the notifications inbox is written by `CaseinWeb.FlashJournal` and read by
+  `CaseinWeb.NotificationsDrawerEvents`, and if those two ever disagreed about
+  the fallback id, notifications would be filed where nobody can see them.
+  """
+  @spec viewer_id(map() | any()) :: String.t()
+  def viewer_id(%{id: id}) when is_binary(id), do: id
+  def viewer_id(%{"id" => id}) when is_binary(id), do: id
+  def viewer_id(_viewer), do: "dev"
+
+  @doc """
   Legacy `CASEIN_ADMINS` / `:admins` list parser.
 
   **No longer grants privileges.** Kept so existing env still loads without

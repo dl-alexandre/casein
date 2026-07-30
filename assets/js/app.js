@@ -56,6 +56,14 @@ import {
   shareText,
   showClipboardToast
 } from "./terminal_copy"
+import {FlashBridge} from "./flash_bridge"
+import {
+  STORAGE_KEY as COACH_STORAGE_KEY,
+  parseState as parseCoachState,
+  recordUse,
+  serializeState as serializeCoachState,
+  shouldShowHint
+} from "./shortcut_coach.mjs"
 import {installPickerLinkCopy} from "./picker_link_copy"
 import {installPreviewBridge} from "./preview_bridge"
 import {installAgentReferenceDragSources} from "./agent_reference_drag.mjs"
@@ -240,7 +248,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   reconnectAfterMs: jitteredBackoff([50, 150, 350, 750, 1500, 3000], 5000),
   rejoinAfterMs: jitteredBackoff([400, 900, 1800], 5000),
   params: {_csrf_token: csrfToken, tab_id: caseinTabId()},
-  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ShareText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow},
+  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ShareText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow, FlashBridge},
 })
 
 installPickerLinkCopy()
@@ -291,6 +299,7 @@ let __clipboardGestureArmed = false
 function __clipboardWriteSucceeded() {
   __pendingClipboardText = null
   __teardownClipboardGesture()
+  hideClipboardToast()
   showClipboardToast("Copied to clipboard")
 }
 
@@ -512,6 +521,35 @@ function actionLabelFromButton(button) {
   return label ? `${label}: ` : ""
 }
 
+// Shortcut coach with mastery decay. Every header click used to pop the hint,
+// forever — useful the first few times, noise for the rest of the install's
+// life. Now each chord retires after MASTERY_THRESHOLD sightings, and the
+// operator can switch hints off entirely (Notifications drawer → Interface).
+let coachState = parseCoachState(readCoachStorage())
+
+function readCoachStorage() {
+  try {
+    return localStorage.getItem(COACH_STORAGE_KEY)
+  } catch (_) {
+    return null
+  }
+}
+
+function persistCoachState(state) {
+  try {
+    localStorage.setItem(COACH_STORAGE_KEY, serializeCoachState(state))
+  } catch (_) {
+    /* localStorage unavailable — decay just resets next load, no harm */
+  }
+}
+
+// Server-side preference, rendered as a data attribute by Layouts.toast_root/1
+// so it survives a reload without waiting for the drawer to lazy-load prefs.
+function shortcutHintsEnabled() {
+  const root = document.getElementById("casein-toast-root")
+  return (root?.dataset.shortcutHints ?? "true") !== "false"
+}
+
 document.addEventListener("click", (e) => {
   if (document.body.hasAttribute("data-leader-dispatching")) return
 
@@ -523,10 +561,14 @@ document.addEventListener("click", (e) => {
   const shortcut = shortcutHintFromButton(button)
   if (!shortcut) return
 
+  if (!shouldShowHint(coachState, shortcut, {enabled: shortcutHintsEnabled()})) return
+
   showClipboardToast(`${actionLabelFromButton(button)}${humanShortcut(shortcut)}`, {
-    kind: "shortcut",
-    duration: 2600
+    kind: "shortcut"
   })
+
+  coachState = recordUse(coachState, shortcut)
+  persistCoachState(coachState)
 })
 
 const quietAgentNotifications = new Map()

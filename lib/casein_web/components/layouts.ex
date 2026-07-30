@@ -82,7 +82,9 @@ defmodule CaseinWeb.Layouts do
       </div>
     </main>
 
-    <.flash_group flash={@flash} />
+    <%!-- No LiveSocket on this layout, so no FlashBridge hook runs: the flash
+    must render itself here rather than waiting to be hoisted. --%>
+    <.flash_group flash={@flash} hoist={false} />
     """
   end
 
@@ -96,9 +98,18 @@ defmodule CaseinWeb.Layouts do
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :id, :string, default: "flash-group", doc: "the optional id of flash container"
 
+  attr :hoist, :boolean,
+    default: true,
+    doc: """
+    Route :info/:error flash into the shared toast stack via the FlashBridge
+    hook instead of rendering a second, never-auto-dismissing toast in the
+    opposite corner. Set false on surfaces with no LiveSocket, where no hook
+    runs and the flash must render itself.
+    """
+
   def flash_group(assigns) do
     ~H"""
-    <div id={@id} aria-live="polite">
+    <div id={@id} aria-live="polite" phx-hook={@hoist && "FlashBridge"}>
       <.flash kind={:info} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
 

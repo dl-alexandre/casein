@@ -42,6 +42,14 @@ defmodule CaseinWeb.NotificationsDrawerEvents do
     socket
     |> assign(:notif_user_id, user_id)
     |> assign(:notif_admin?, ForwardAuth.admin?(user))
+    # The shortcut-hint preference is read by app.js on every header click, so
+    # unlike the rest of the preference map it cannot wait for the drawer to open
+    # — a reload would silently re-enable hints the operator turned off. One
+    # indexed get_by on the connected mount, same cost class as unread_count.
+    |> assign(
+      :notif_shortcut_hints?,
+      if(connected?(socket), do: shortcut_hints_enabled?(user_id), else: true)
+    )
     |> assign(:notif_drawer_open, false)
     |> assign(:notif_loaded?, false)
     |> assign(:notif_error, nil)
@@ -133,16 +141,20 @@ defmodule CaseinWeb.NotificationsDrawerEvents do
 
   def handle_event("notifications:save_preferences", %{"preferences" => params}, socket) do
     attrs = %{
-      settings: %{"types" => normalize_types(params["types"] || %{})},
+      settings: %{
+        "types" => normalize_types(params["types"] || %{}),
+        "ui" => normalize_ui(params["ui"] || %{})
+      },
       quiet_hours: normalize_quiet_hours(params["quiet_hours"] || %{})
     }
 
     case Notifications.put_preferences(socket.assigns.notif_user_id, attrs) do
-      {:ok, _preference} ->
+      {:ok, preference} ->
         {:noreply,
          socket
          |> assign(:notif_error, nil)
          |> assign(:notif_info, "Notification preferences saved.")
+         |> assign(:notif_shortcut_hints?, shortcut_hints_enabled?(preference))
          |> load_state()}
 
       {:error, _changeset} ->
@@ -174,11 +186,31 @@ defmodule CaseinWeb.NotificationsDrawerEvents do
     socket |> assign(:notif_error, nil) |> assign(:notif_info, nil)
   end
 
-  # Same identity fallback the removed page used: dev/LAN deployments without
-  # forward auth act as the single "dev" user.
-  defp current_user_id(%{id: id}) when is_binary(id), do: id
-  defp current_user_id(%{"id" => id}) when is_binary(id), do: id
-  defp current_user_id(_user), do: "dev"
+  defp current_user_id(user), do: ForwardAuth.viewer_id(user)
+
+  @doc """
+  Is the keyboard-shortcut coach enabled for this viewer?
+
+  Defaults to true: a new operator is exactly who the hints are for. Accepts a
+  user id (queries) or an already-loaded `Preference` (no query).
+  """
+  def shortcut_hints_enabled?(user_id) when is_binary(user_id) do
+    user_id |> Notifications.get_preferences() |> shortcut_hints_enabled?()
+  end
+
+  def shortcut_hints_enabled?(%{settings: settings}) when is_map(settings) do
+    case settings |> Map.get("ui", %{}) |> Map.get("shortcut_hints") do
+      false -> false
+      "false" -> false
+      _ -> true
+    end
+  end
+
+  def shortcut_hints_enabled?(_preference), do: true
+
+  defp normalize_ui(params) do
+    %{"shortcut_hints" => Map.get(params, "shortcut_hints") in [true, "true"]}
+  end
 
   defp normalize_types(types) do
     types
