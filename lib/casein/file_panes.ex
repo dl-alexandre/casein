@@ -234,10 +234,7 @@ defmodule Casein.FilePanes do
   @doc "All file panes for a workspace, resolving aliases."
   @spec list_for_workspace(String.t()) :: [registration()]
   def list_for_workspace(workspace_id) when is_binary(workspace_id) do
-    GenServer.call(
-      __MODULE__,
-      {:list_for_workspace, WorkspaceAliases.viewer_ids(workspace_id, resolve_remote?: true)}
-    )
+    GenServer.call(__MODULE__, {:list_for_workspace, WorkspaceAliases.viewer_ids(workspace_id)})
   end
 
   @doc """
