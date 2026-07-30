@@ -108,6 +108,7 @@ defmodule CaseinWeb.Router do
   pipeline :mcp_api do
     plug :accepts, ["json"]
     plug CaseinWeb.Plugs.ApiAuth
+    plug CaseinWeb.Plugs.NormalizeLegacyTmuxSession
     plug CaseinWeb.Plugs.AgentCapabilityAuthz
     plug CaseinWeb.Plugs.McpRateLimit
   end
@@ -122,6 +123,7 @@ defmodule CaseinWeb.Router do
   # strict :accepts — SSE clients send `Accept: text/event-stream` only.
   pipeline :mcp_stream do
     plug CaseinWeb.Plugs.ApiAuth
+    plug CaseinWeb.Plugs.NormalizeLegacyTmuxSession
     plug CaseinWeb.Plugs.AgentCapabilityAuthz
     plug CaseinWeb.Plugs.McpRateLimit
   end
