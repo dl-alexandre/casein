@@ -66,6 +66,20 @@ class ControlledTextFieldStateTest {
     }
 
     @Test
+    fun `blur restores an unchanged parent after it rejects a local edit`() {
+        val state = ControlledTextFieldState("authoritative")
+        state.onFocusChanged(true)
+        state.onLocalValue("authoritative plus rejected input")
+
+        state.onExternalValue("authoritative")
+        assertEquals("authoritative plus rejected input", state.value)
+
+        state.onFocusChanged(false)
+
+        assertEquals("authoritative", state.value)
+    }
+
+    @Test
     fun `submitted field accepts reset after a delayed local echo`() {
         val state = ControlledTextFieldState("")
         state.onFocusChanged(true)

@@ -2095,17 +2095,21 @@ private fun MobButton(node: MobNode, modifier: Modifier) {
  * buffer authoritative during that window, then accept the latest parent value
  * after blur or when a submitted parent produces a new value.
  */
+private const val CONTROLLED_TEXT_PENDING_LIMIT = 1024
+
 internal class ControlledTextFieldState(initialValue: String) {
     var value by mutableStateOf(initialValue)
         private set
 
-    private var focused = false
     private var latestExternalValue = initialValue
     private val pendingLocalValues = mutableListOf<String>()
 
     fun onLocalValue(newValue: String) {
         if (pendingLocalValues.lastOrNull() != newValue) {
             pendingLocalValues += newValue
+            if (pendingLocalValues.size > CONTROLLED_TEXT_PENDING_LIMIT) {
+                pendingLocalValues.removeAt(0)
+            }
         }
         value = newValue
     }
@@ -2132,9 +2136,9 @@ internal class ControlledTextFieldState(initialValue: String) {
     }
 
     fun onFocusChanged(isFocused: Boolean) {
-        focused = isFocused
-        if (!isFocused && pendingLocalValues.isEmpty()) {
+        if (!isFocused) {
             value = latestExternalValue
+            pendingLocalValues.clear()
         }
     }
 
