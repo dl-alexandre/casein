@@ -1042,7 +1042,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       data-ctx-viewport={preview_viewport_label(@preview)}
       data-pane-rect={pane_rect_json(@pane, @bounds)}
       data-display-url={@preview.display_url}
-      data-playback-mode={preview_playback_mode?(@preview)}
+      data-playback-mode={to_string(preview_playback_mode?(@preview))}
       data-preview-tmux-session={preview_tmux_session(@preview)}
       data-active-tmux-session={@active_tmux_session}
       data-preview-session-mismatch={
