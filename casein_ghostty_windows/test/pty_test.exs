@@ -29,6 +29,34 @@ defmodule Ghostty.WindowsPTYTest do
     assert :ok = Ghostty.PTY.close(pty)
   end
 
+  test "closing the PTY terminates descendants in its Windows Job Object" do
+    {:ok, pty} = Ghostty.PTY.start_link(cwd: "C:\\")
+    _prompt = receive_until_prompt("")
+
+    command =
+      "$child = Start-Process powershell.exe " <>
+        "-ArgumentList '-NoLogo','-NoProfile','-Command','Start-Sleep -Seconds 120' " <>
+        "-PassThru; Write-Output CASEIN_CHILD_PID=$($child.Id)\r"
+
+    assert :ok = Ghostty.PTY.write(pty, command)
+    output = receive_until_prompt("")
+    [_, pid] = Regex.run(~r/CASEIN_CHILD_PID=(\d+)/, output)
+
+    assert :ok = Ghostty.PTY.close(pty)
+
+    verification =
+      "$process = Get-Process -Id #{pid} -ErrorAction SilentlyContinue; " <>
+        "if ($process) { [void]$process.WaitForExit(5000); " <>
+        "if (-not $process.HasExited) { " <>
+        "Write-Output ('still-running pid={0} name={1}' -f $process.Id, $process.ProcessName); " <>
+        "exit 1 } }; exit 0"
+
+    assert {_output, 0} =
+             System.cmd("powershell.exe", ["-NoLogo", "-NoProfile", "-Command", verification],
+               stderr_to_stdout: true
+             )
+  end
+
   test "renders PowerShell output into terminal cells" do
     {:ok, term} = Ghostty.Terminal.start_link(cols: 20, rows: 3)
     assert :ok = Ghostty.Terminal.write(term, "hello\r\nworld")
