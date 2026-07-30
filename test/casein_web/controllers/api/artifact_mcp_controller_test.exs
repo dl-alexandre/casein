@@ -70,6 +70,7 @@ defmodule CaseinWeb.API.ArtifactMCPControllerTest do
     assert %{"result" => %{"tools" => tools}} = json_response(conn, 200)
     assert Enum.any?(tools, &(&1["name"] == "artifact_create"))
     assert Enum.any?(tools, &(&1["name"] == "artifact_update"))
+    assert Enum.any?(tools, &(&1["name"] == "artifact_verify"))
     assert Enum.any?(tools, &(&1["name"] == "artifact_snapshot"))
     assert Enum.any?(tools, &(&1["name"] == "artifact_retire"))
   end

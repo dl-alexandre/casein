@@ -4,6 +4,7 @@
 
 import { createServer } from "node:http";
 import { classifyRisk } from "./classify_risk.mjs";
+import { validateReportTree } from "./artifact_publish.mjs";
 import {
   CATEGORIES,
   EXIT,
@@ -36,6 +37,7 @@ import {
 import { verify as verifyPayload } from "./payload_pack.mjs";
 import {
   classifyRisk as classifyRiskRuntime,
+  pageRuntimeLogs,
   probeTidewave,
 } from "./runtime_evidence.mjs";
 import {
@@ -158,6 +160,38 @@ assert(
   interactionCalls.some(([kind, wait]) => kind === "wait" && wait === 250),
   "fill honors wait_ms",
 );
+assert(
+  requiredTidewaveTools([
+    { runtime: { tidewave: true, required_tools: ["project_eval", "custom_probe"] } },
+  ]).includes("custom_probe"),
+  "explicit Tidewave required_tools are included in preflight",
+);
+{
+  const fsPublish = await import("node:fs");
+  const osPublish = await import("node:os");
+  const pathPublish = await import("node:path");
+  const reportDir = fsPublish.mkdtempSync(
+    pathPublish.join(osPublish.tmpdir(), "artifact-publish-selftest-"),
+  );
+  fsPublish.writeFileSync(
+    pathPublish.join(reportDir, "report.html"),
+    '<img src="shot.png"><a href="#page-dashboard">dashboard</a>',
+  );
+  fsPublish.writeFileSync(pathPublish.join(reportDir, "shot.png"), "png");
+  assert(
+    validateReportTree(reportDir).files.length === 2,
+    "artifact publisher validates a complete external-image report",
+  );
+  fsPublish.writeFileSync(pathPublish.join(reportDir, "report.html"), '<img src="missing.png">');
+  let missingReferenceFailed = false;
+  try {
+    validateReportTree(reportDir);
+  } catch {
+    missingReferenceFailed = true;
+  }
+  assert(missingReferenceFailed, "artifact publisher rejects missing local references");
+  fsPublish.rmSync(reportDir, { recursive: true, force: true });
+}
 
 // ── Taxonomy fixtures (mainStatus × URL × steps) ───────────────────────────
 assert(verdictFixture().status === "PASS", "clean page PASS");
@@ -213,6 +247,13 @@ assert(
   }).status === "RUNTIME_ERROR",
   "server error logs → RUNTIME_ERROR (not ASSERT_FAILED)",
 );
+assert(
+  countRuntimeErrors({
+    required_tidewave: true,
+    liveview: { status: "error", error: "transport lost" },
+  }) === 1,
+  "required LiveView evidence loss counts as a runtime error",
+);
 
 assert(
   verdictFixture({
@@ -253,6 +294,15 @@ assert(
     loaded: true,
   }).status === "PASS_SLOW",
   "over budget but landed → PASS_SLOW",
+);
+assert(
+  verdictFixture({
+    within: false,
+    uok: true,
+    loaded: true,
+    slowIsFailure: true,
+  }).status === "SLOW",
+  "strict over-budget landing → SLOW",
 );
 
 // Exception enrichment is optional — empty logs still leave CRASHED alone
@@ -1962,6 +2012,71 @@ assert(
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }
+
+    let attempts = 0;
+    const retryServer = createServer((_req, res) => {
+      attempts++;
+      if (attempts < 3) {
+        res.writeHead(503, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "warming" }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          result: { tools: [{ name: "get_logs" }, { name: "project_eval" }] },
+        }),
+      );
+    });
+    await new Promise((resolve) => retryServer.listen(0, "127.0.0.1", resolve));
+    const retryAddress = retryServer.address();
+    try {
+      const probe = await probeTidewave(
+        `http://127.0.0.1:${retryAddress.port}/tidewave/mcp`,
+        ["project_eval"],
+      );
+      assert(
+        probe.ok === true && probe.attempts === 3 && attempts === 3,
+        "runtime Tidewave probe retries transient 5xx with a bounded attempt count",
+      );
+      const missing = await probeTidewave(
+        `http://127.0.0.1:${retryAddress.port}/tidewave/mcp`,
+        ["execute_sql_query"],
+      );
+      assert(
+        missing.ok === false && missing.missing_tools.includes("execute_sql_query"),
+        "runtime Tidewave probe enforces explicit required tool inventory",
+      );
+    } finally {
+      await new Promise((resolve) => retryServer.close(resolve));
+    }
+
+    const downServer = createServer((_req, res) => {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "down" }));
+    });
+    await new Promise((resolve) => downServer.listen(0, "127.0.0.1", resolve));
+    const downAddress = downServer.address();
+    try {
+      const pageLogs = await pageRuntimeLogs(
+        {
+          require_tidewave: true,
+          log_levels: ["error"],
+          tidewave: {
+            status: "ok",
+            url: `http://127.0.0.1:${downAddress.port}/tidewave/mcp`,
+          },
+          _log_cursors: {},
+        },
+        "Dashboard",
+      );
+      assert(
+        pageLogs.status === "error" && pageLogs.runtime_error_count === 1,
+        "required per-page Tidewave loss becomes a runtime error, not an empty green delta",
+      );
+    } finally {
+      await new Promise((resolve) => downServer.close(resolve));
+    }
   }
 
   // Artifact store: read-only artifact_list round-trip; token never leaks.
@@ -2016,6 +2131,16 @@ assert(
     "packed driver isolates every visit from stale LiveView navigation while reusing auth context",
   );
   assert(src.includes("cleanup_steps"), "packed driver runs finally-style cleanup steps");
+  assert(
+    src.includes("settlePage(page, a.settleMs)") &&
+      !src.includes("waitForTimeout(a.settleMs)"),
+    "packed driver uses bounded adaptive readiness instead of a fixed per-page sleep",
+  );
+  assert(
+    src.includes('shot_file: shot ? shotFile : null') &&
+      !src.includes('shotBuf.toString("base64")'),
+    "packed report references external screenshots instead of embedding duplicate base64",
+  );
   assert(src.includes("acceptDownloads: true"), "browser context accepts downloads for download evidence");
   assert(src.includes("evidenceBlocked:"), "packed driver folds required-evidence gaps fail-closed");
   assert(src.includes("--health-url"), "packed driver exposes the health attestation flag");

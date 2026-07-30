@@ -43,7 +43,7 @@ collide. Superadmin smoke is **one** workflow among many — not the skill’s o
 └──────────────────────────────────────────────────────────┘
 ```
 
-**Browser baseline (wired):** screenshot, load ms, console/network counts,
+**Browser baseline (wired):** external screenshot, staged timing, console/network counts,
 `lands_on`, optional `steps` (assert always; click/fill when opted in).
 
 **Server evidence (wired when Tidewave is up):**
@@ -83,11 +83,15 @@ If Tidewave is unreachable: **still walk the browser path**, mark runtime as
   "safety": {
     "read_only": true,
     "allow_interactions": false,
+    "require_loopback_network": true,
     "env_check": ["APP_API_URL", "AUTH_API_URL"],
     "deny_events": ["delete", "confirm_delete", "save"]
   },
+  "performance": { "default_budget_ms": 6000, "fail_on_slow": true },
   "runtime": {
     "tidewave": true,
+    "require_tidewave": true,
+    "required_tools": ["get_logs", "project_eval", "execute_sql_query"],
     "log_levels": ["error", "warning"],
     "probes": [
       { "name": "admin_role", "eval": "… small read-only Elixir …", "expect": "ok" }
@@ -113,7 +117,9 @@ If Tidewave is unreachable: **still walk the browser path**, mark runtime as
   - `session` / `session_inject` → `walk.py` only when login has **no** redirect
   - `none` → public pages
 - **`pages[].path` / `lands_on`** — navigate + anti false-green (bounce to `/login` fails).
-- **`pages[].budget_ms`** — load budget (includes settle + steps).
+- **`pages[].budget_ms`** — readiness budget (navigation + settle only).
+- **`performance.fail_on_slow`** — makes an over-budget landing a hard-failing
+  `SLOW`; assertions and evidence retain separate diagnostic timings.
 - **`pages[].steps`** — ordered assertions / interactions (see below).
 - **`report.name`** — artifact slug.
 - **`strict_errors` / `noise_patterns`** — CSP noise filter controls (Playwright).
@@ -142,6 +148,8 @@ as navigate-only). Set `"required": false` to SKIP instead.
 - **`safety.allow_interactions`** — opt-in for click/fill/type/… (still fail-closed on prod_like env).
 - **`safety.env_check`** — keys for prod-write risk; surface in report; gate interactions.
 - **`safety.deny_events`** — never fire these event names.
+- **`safety.require_loopback_network`** — fail any browser HTTP(S)/WebSocket
+  request that escapes localhost/127.0.0.0/8/::1.
 
 ### Runtime / Tidewave (evidence packet)
 
@@ -155,6 +163,10 @@ Collection status in `playwright_walk.mjs` + `runtime_evidence.mjs`:
 5. LiveView assign keys / optional fields — **wired**
 
 Override Tidewave URL with `CASEIN_TIDEWAVE_MCP_URL` or `--tidewave-url`.
+`runtime.required_tools` pins the exact tool inventory needed by the workflow;
+required collection failures after startup become `RUNTIME_ERROR` rather than a
+false-green empty log delta. Transient transport/408/429/5xx failures are retried
+three times with bounded backoff.
 
 Safety for runtime:
 
@@ -174,7 +186,7 @@ Safety for runtime:
 Per page (HTML + `results.json`):
 
 ```text
-Dashboard  PASS  3120ms
+Dashboard  PASS  ready=820ms total=3120ms
   browser:  console=0/0 network=0/0 lands_on=/admin  HTTP 200
   tidewave: error_logs=0  lv=1 keys=[current_user, flash, …]
   probes:   admin_role=PASS
@@ -182,6 +194,8 @@ Dashboard  PASS  3120ms
   steps:    assert_text=PASS  assert_selector=PASS
 ```
 
+Screenshots are external files shown as compact thumbnails and expanded only on
+click. Each page/viewport row has a stable fragment URL for directing review.
 Top strip: Tidewave yes/no + MCP URL, app cwd/SHA, `env_check` results,
 walk-level probes, server log delta total.
 `actionable/raw` console counts remain for CSP noise transparency.

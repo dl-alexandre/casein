@@ -6,7 +6,7 @@
  * Classify page outcome. Auth/access failures must never look identical to
  * wrong credentials or a generic FAIL — taxonomy is the UAT signal.
  *
- *   PASS | PASS_SLOW | SKIPPED | BOUNCED | CRASHED | RUNTIME_ERROR |
+ *   PASS | PASS_SLOW | SLOW | SKIPPED | BOUNCED | CRASHED | RUNTIME_ERROR |
  *   ASSERT_FAILED | TIMEOUT | FAIL
  *
  * Order matters:
@@ -48,6 +48,7 @@ export function pageVerdict({
   visualFailed,
   evidenceBlocked,
   cleanupFailed,
+  slowIsFailure = false,
 }) {
   // Interactions gate blocked required mutating steps (e.g. login fill/click).
   if (stepsBlockedOnly && stepsBlocked) {
@@ -156,7 +157,10 @@ export function pageVerdict({
 
   // Slow but correct landing — not the same as FAIL.
   if (!within && uok !== false) {
-    return { status: "PASS_SLOW", reason: "landed correctly but exceeded budget_ms" };
+    return {
+      status: slowIsFailure ? "SLOW" : "PASS_SLOW",
+      reason: "landed correctly but exceeded readiness budget_ms",
+    };
   }
 
   return { status: "PASS", reason: null };
@@ -369,12 +373,15 @@ export function runtimeErrorEvidence(runtimePage = {}) {
 
   const probes = runtimePage.probes_failed || 0;
   const sqlFail = runtimePage.sql?.status === "FAIL" ? 1 : 0;
+  const liveviewFail =
+    runtimePage.required_tidewave === true && runtimePage.liveview?.status === "error" ? 1 : 0;
   return {
-    count: unique + probes + sqlFail, // gate/verdict signal (deduped)
+    count: unique + probes + sqlFail + liveviewFail, // gate/verdict signal (deduped)
     unique,
     total,
     probes_failed: probes,
     sql_failed: sqlFail,
+    liveview_failed: liveviewFail,
     sample,
   };
 }

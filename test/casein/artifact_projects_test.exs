@@ -216,6 +216,45 @@ defmodule Casein.ArtifactProjectsTest do
     assert File.read!(Path.join(project.worktree_path, ".casein/public/shot.png")) == "second"
   end
 
+  test "large walk reports support more than 64 registered files" do
+    files =
+      Map.new(1..65, fn index ->
+        {"shots/shot-#{index}.png", "shot #{index}"}
+      end)
+      |> Map.put("index.html", "<h1>Walk report</h1>\n")
+
+    assert {:ok, project} =
+             ArtifactProjects.create("ws-artifacts", %{
+               name: "Full Walk",
+               files: files
+             })
+
+    assert {:ok, %{status: "ok", file_count: 66}} = ArtifactProjects.verify(project.id)
+  end
+
+  test "verify detects mirror drift and snapshot repairs it before committing" do
+    assert {:ok, project} =
+             ArtifactProjects.create("ws-artifacts", %{
+               name: "Parity Contract",
+               files: %{"index.html" => "<h1>Initial</h1>\n"}
+             })
+
+    public_index = Path.join(project.worktree_path, ".casein/public/index.html")
+    File.write!(public_index, "<h1>Stale mirror</h1>\n")
+
+    assert {:error, {:artifact_public_mirror_mismatch, ["index.html"]}} =
+             ArtifactProjects.verify(project.id)
+
+    root_index = Path.join(project.worktree_path, "index.html")
+    File.write!(root_index, "<h1>Manual root update</h1>\n")
+
+    assert {:ok, %{parity: %{status: "ok", file_count: 1}}} =
+             ArtifactProjects.snapshot(project.id, %{label: "repair parity"})
+
+    assert File.read!(public_index) == File.read!(root_index)
+    assert {:ok, %{status: "ok", file_count: 1}} = ArtifactProjects.verify(project.id)
+  end
+
   test "get and payload expose MCP-ready artifact metadata" do
     assert {:ok, project} =
              ArtifactProjects.create("ws-artifacts", %{

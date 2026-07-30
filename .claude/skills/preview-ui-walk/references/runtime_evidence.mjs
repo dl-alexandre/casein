@@ -47,7 +47,7 @@ export function normalizeMcpUrl(url) {
   return `${base}/tidewave/mcp`;
 }
 
-function httpJson(url, body, timeoutMs = 8000) {
+function httpJsonOnce(url, body, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     let u;
     try {
@@ -92,29 +92,66 @@ function httpJson(url, body, timeoutMs = 8000) {
             }
           }
           if (!obj) {
-            reject(new Error(`non-json tidewave response (${res.statusCode}): ${raw.slice(0, 200)}`));
+            const error = new Error(
+              `non-json tidewave response (${res.statusCode}): ${raw.slice(0, 200)}`,
+            );
+            error.kind = "protocol";
+            error.statusCode = res.statusCode;
+            reject(error);
             return;
           }
           if (res.statusCode < 200 || res.statusCode >= 300) {
-            reject(
-              new Error(
-                `tidewave HTTP ${res.statusCode}: ${raw.slice(0, 200)}`,
-              ),
+            const error = new Error(
+              `tidewave HTTP ${res.statusCode}: ${raw.slice(0, 200)}`,
             );
+            error.kind = "http";
+            error.statusCode = res.statusCode;
+            reject(error);
             return;
           }
           resolve({ status: res.statusCode, body: obj });
         });
       },
     );
-    req.on("error", reject);
+    req.on("error", (error) => {
+      error.kind = error.kind || "transport";
+      reject(error);
+    });
     req.on("timeout", () => {
       req.destroy();
-      reject(new Error("tidewave request timeout"));
+      const error = new Error("tidewave request timeout");
+      error.kind = "transport";
+      reject(error);
     });
     req.write(data);
     req.end();
   });
+}
+
+function retryableTidewaveError(error) {
+  if (error?.kind === "transport") return true;
+  return error?.kind === "http" &&
+    (error.statusCode === 408 || error.statusCode === 429 || error.statusCode >= 500);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function httpJson(url, body, timeoutMs = 8000, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const result = await httpJsonOnce(url, body, timeoutMs);
+      return { ...result, attempts: attempt };
+    } catch (error) {
+      lastError = error;
+      error.attempts = attempt;
+      if (attempt >= attempts || !retryableTidewaveError(error)) throw error;
+      await delay(100 * 2 ** (attempt - 1));
+    }
+  }
+  throw lastError;
 }
 
 let _rpcId = 1;
@@ -223,11 +260,11 @@ function normalizeScalar(v) {
 }
 
 /** Probe Tidewave; returns { ok, url, error?, server? }. */
-export async function probeTidewave(mcpUrl) {
+export async function probeTidewave(mcpUrl, requiredTools = ["get_logs"]) {
   if (!mcpUrl) return { ok: false, url: null, error: "no_tidewave_url" };
   try {
     // tools/list is enough to prove the MCP is alive
-    const { body } = await httpJson(mcpUrl, {
+    const { body, attempts } = await httpJson(mcpUrl, {
       jsonrpc: "2.0",
       id: _rpcId++,
       method: "tools/list",
@@ -238,12 +275,16 @@ export async function probeTidewave(mcpUrl) {
     }
     const tools = body.result?.tools || [];
     const names = tools.map((t) => t.name).filter(Boolean);
-    if (!names.includes("get_logs")) {
+    const required = [...new Set(["get_logs", ...(requiredTools || [])])];
+    const missing = required.filter((name) => !names.includes(name));
+    if (missing.length) {
       return {
         ok: false,
         url: mcpUrl,
-        error: "get_logs_missing",
+        error: `required_tools_missing:${missing.join(",")}`,
+        missing_tools: missing,
         tools: names,
+        attempts,
       };
     }
     return {
@@ -251,9 +292,16 @@ export async function probeTidewave(mcpUrl) {
       url: mcpUrl,
       tools: names,
       server: body.result?.serverInfo || null,
+      attempts,
     };
   } catch (e) {
-    return { ok: false, url: mcpUrl, error: String(e.message || e) };
+    return {
+      ok: false,
+      url: mcpUrl,
+      error: String(e.message || e),
+      error_kind: e.kind || "tool",
+      attempts: e.attempts || 1,
+    };
   }
 }
 
@@ -266,7 +314,7 @@ export async function probeTidewave(mcpUrl) {
  * error does not fail every subsequent page.
  */
 export async function fetchLogs(mcpUrl, levels = ["error"], tail = 80) {
-  const out = { levels: {}, raw_count: 0 };
+  const out = { levels: {}, raw_count: 0, failed_levels: [] };
   for (const level of levels) {
     try {
       const text = await tidewaveCall(mcpUrl, "get_logs", { tail, level });
@@ -281,11 +329,14 @@ export async function fetchLogs(mcpUrl, levels = ["error"], tail = 80) {
       };
       out.raw_count += lines.length;
     } catch (e) {
+      out.failed_levels.push(level);
       out.levels[level] = {
         count: null,
         error: String(e.message || e),
         samples: [],
         lines: [],
+        error_kind: e.kind || "tool",
+        attempts: e.attempts || 1,
       };
     }
   }
@@ -805,6 +856,7 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
     error_log_total: 0,
     probes: [],
     probes_failed: 0,
+    stability_failures: [],
     // Per-level cursor: last seen log line text (for deltaLines).
     _log_cursors: {},
     _manifest: manifest,
@@ -813,13 +865,17 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
   if (!want) return bag;
 
   const url = resolveTidewaveUrl({ base, explicit: tidewaveUrl });
-  const probe = await probeTidewave(url);
+  const probe = await probeTidewave(url, rt.required_tools || []);
   if (!probe.ok) {
     bag.tidewave = {
       status: "skipped",
       reason: "tidewave_unavailable",
       url: probe.url,
       error: probe.error,
+      error_kind: probe.error_kind,
+      attempts: probe.attempts,
+      tools: probe.tools,
+      missing_tools: probe.missing_tools,
     };
     // Still try host env_check as a weak signal
     bag.env_check = await envCheckStrip(manifest.safety?.env_check, {
@@ -836,12 +892,19 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
     url: probe.url,
     tools: probe.tools,
     server: probe.server,
+    attempts: probe.attempts,
   };
   bag.env_check = await envCheckStrip(manifest.safety?.env_check, {
     mcpUrl: probe.url,
     tidewaveOk: true,
   });
   bag.app = await appIdentity(probe.url);
+  if (requireTw && bag.env_check?.source === "tidewave_failed") {
+    bag.fatal = `runtime.require_tidewave but env_check failed: ${bag.env_check.error}`;
+  }
+  if (requireTw && bag.app?.error) {
+    bag.fatal = `runtime.require_tidewave but app identity failed: ${bag.app.error}`;
+  }
 
   // Walk-level probes once at start (auth role, feature flags, …).
   const walkProbes = Array.isArray(rt.probes) ? rt.probes : [];
@@ -858,6 +921,16 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
   // Baseline cursors so pre-walk noise does not fail page 1.
   try {
     const baseline = await fetchLogs(probe.url, logLevels, 80);
+    if (baseline.failed_levels.length) {
+      bag.stability_failures.push({
+        phase: "baseline_logs",
+        failed_levels: baseline.failed_levels,
+      });
+      if (requireTw) {
+        bag.fatal =
+          `runtime.require_tidewave but baseline logs failed: ${baseline.failed_levels.join(",")}`;
+      }
+    }
     for (const [level, entry] of Object.entries(baseline.levels || {})) {
       const lines = entry.lines || [];
       bag._log_cursors[level] = lines.length ? lines[lines.length - 1] : null;
@@ -879,6 +952,28 @@ export async function pageRuntimeLogs(runtimeBag, pageName, logLevels) {
   }
   const levels = logLevels || runtimeBag.log_levels || ["error"];
   const logs = await fetchLogs(runtimeBag.tidewave.url, levels, 80);
+  if (logs.failed_levels.length) {
+    const failure = {
+      phase: "page_logs",
+      page: pageName,
+      failed_levels: logs.failed_levels,
+      errors: Object.fromEntries(
+        logs.failed_levels.map((level) => [level, logs.levels[level]?.error]),
+      ),
+    };
+    runtimeBag.stability_failures = runtimeBag.stability_failures || [];
+    runtimeBag.stability_failures.push(failure);
+    return {
+      status: "error",
+      page: pageName,
+      reason: "tidewave_log_collection_failed",
+      logs,
+      error_log_count: 0,
+      runtime_error_count: runtimeBag.require_tidewave ? 1 : 0,
+      evidence_failed: runtimeBag.require_tidewave ? 1 : 0,
+      stability_failure: failure,
+    };
+  }
   const delta = { levels: {}, raw_count: 0 };
   let errorCount = 0;
 
@@ -932,6 +1027,9 @@ export async function pageRuntimeEvidence(runtimeBag, page, manifest) {
   }
 
   const logsPart = await pageRuntimeLogs(runtimeBag, page.name, levels);
+  if (logsPart.status === "error" && runtimeBag.require_tidewave) {
+    return logsPart;
+  }
   const mcpUrl = runtimeBag.tidewave.url;
 
   // Page-level probes
@@ -953,6 +1051,8 @@ export async function pageRuntimeEvidence(runtimeBag, page, manifest) {
 
   const probesFailed = probes.filter((p) => p.status !== "PASS").length;
   const sqlFailed = sql && sql.status === "FAIL" ? 1 : 0;
+  const liveviewFailed =
+    runtimeBag.require_tidewave && lvPolicy.enabled && liveview.status === "error" ? 1 : 0;
 
   return {
     ...logsPart,
@@ -960,7 +1060,8 @@ export async function pageRuntimeEvidence(runtimeBag, page, manifest) {
     probes_failed: probesFailed,
     sql,
     liveview,
-    evidence_failed: probesFailed + sqlFailed,
+    required_tidewave: runtimeBag.require_tidewave,
+    evidence_failed: probesFailed + sqlFailed + liveviewFailed,
   };
 }
 

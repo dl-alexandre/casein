@@ -184,6 +184,9 @@ log "linting JS hooks"
   NODE_ENV=development npm test
 )
 
+log "testing preview-ui-walk driver, schema, and packed payload"
+node .claude/skills/preview-ui-walk/references/selftest.mjs
+
 log "fetching Elixir dependencies"
 "${MIX[@]}" deps.get
 

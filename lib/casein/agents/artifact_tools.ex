@@ -13,12 +13,12 @@ defmodule Casein.Agents.ArtifactTools do
   structuredContent) stay exactly as before.
   """
 
-  alias Casein.Agents.ArtifactTools.{Create, Get, List, Retire, Serve, Snapshot, Update}
+  alias Casein.Agents.ArtifactTools.{Create, Get, List, Retire, Serve, Snapshot, Update, Verify}
   alias Casein.Agents.ToolAction
 
   @type tool :: McpCtl.Tool.t()
 
-  @actions [Create, Update, List, Get, Serve, Snapshot, Retire]
+  @actions [Create, Update, List, Get, Serve, Verify, Snapshot, Retire]
   @by_name Map.new(@actions, &{&1.name(), &1})
 
   @doc "Tool definitions exposed to agent runtimes."

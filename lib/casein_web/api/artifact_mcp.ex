@@ -32,7 +32,8 @@ defmodule CaseinWeb.API.ArtifactMCP do
       "Artifact project tools for Casein workspaces. Use artifact_create to " <>
         "create an isolated Git worktree-backed static/html artifact, artifact_update " <>
         "to iterate, artifact_list/artifact_get to rediscover state, artifact_serve " <>
-        "to ensure its preview server is running, and artifact_snapshot to create " <>
+        "to ensure its preview server is running, artifact_verify to prove public-file parity, " <>
+        "and artifact_snapshot to create " <>
         "an explicit Git version marker. Tool results include preview_open_arguments; " <>
         "pass those arguments to Preview MCP preview_open to make the artifact visible.",
       MCPWorkspaceScope.default_workspace_id(opts)

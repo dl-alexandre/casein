@@ -19,8 +19,9 @@ defmodule Casein.ArtifactProjects do
   @artifact_version 1
   @default_kind "static"
   @supported_kinds ~w(static html)
-  @max_files 64
-  @max_file_bytes 2 * 1024 * 1024
+  @max_files 2048
+  @max_file_bytes 8 * 1024 * 1024
+  @max_total_file_bytes 256 * 1024 * 1024
   @static_preview_command "python3 -m http.server \"$PORT\" --bind 127.0.0.1 --directory .casein/public"
 
   @type attrs :: map() | keyword()
@@ -51,6 +52,7 @@ defmodule Casein.ArtifactProjects do
          {:ok, spec} <- create_spec(project_id, attrs, record.host_path),
          {:ok, worktree_path, branch} <- create_worktree(record, spec),
          {:ok, project_metadata} <- write_initial_project(worktree_path, spec, branch),
+         {:ok, _parity} <- verify_paths(worktree_path, project_metadata["files"]),
          {:ok, _sha} <- commit_all(worktree_path, "Create artifact project #{spec.name}"),
          {:ok, %Runtime{} = runtime} <-
            Runtimes.observe_worktree(
@@ -97,6 +99,16 @@ defmodule Casein.ArtifactProjects do
 
   def list(_workspace_id), do: []
 
+  @doc "Verify every registered generated file matches its public mirror byte-for-byte."
+  @spec verify(String.t()) :: {:ok, map()} | {:error, term()}
+  def verify(project_id) when is_binary(project_id) do
+    with {:ok, %Runtime{} = runtime} <- runtime_project(project_id) do
+      verify_paths(runtime.worktree_path, (artifact_metadata(runtime) || %{})["files"])
+    end
+  end
+
+  def verify(_project_id), do: {:error, :invalid_project_id}
+
   @doc """
   Update generated files and prompt history, committing a new Git snapshot.
 
@@ -114,6 +126,7 @@ defmodule Casein.ArtifactProjects do
          {:ok, metadata} <- updated_metadata(runtime, attrs),
          :ok <- write_files(runtime.worktree_path, files),
          :ok <- sync_public_mirror(runtime.worktree_path, metadata["files"]),
+         {:ok, _parity} <- verify_paths(runtime.worktree_path, metadata["files"]),
          :ok <- write_manifest(runtime.worktree_path, metadata),
          {:ok, _sha} <- commit_all(runtime.worktree_path, update_commit_message(metadata)),
          {:ok, runtime} <-
@@ -175,9 +188,15 @@ defmodule Casein.ArtifactProjects do
     attrs = Map.new(attrs)
 
     with {:ok, %Runtime{} = runtime} <- runtime_project(project_id),
+         paths when is_list(paths) <- (artifact_metadata(runtime) || %{})["files"],
+         :ok <- sync_public_mirror(runtime.worktree_path, paths),
+         {:ok, parity} <- verify_paths(runtime.worktree_path, paths),
          {:ok, sha} <-
            commit_all(runtime.worktree_path, snapshot_message(attrs), allow_empty?: true) do
-      {:ok, %{project_id: project_id, commit_sha: sha}}
+      {:ok, %{project_id: project_id, commit_sha: sha, parity: parity}}
+    else
+      {:error, _reason} = error -> error
+      _ -> {:error, :invalid_artifact_generated_files}
     end
   end
 
@@ -761,6 +780,7 @@ defmodule Casein.ArtifactProjects do
           end
         end)
         |> validate_file_count()
+        |> validate_total_file_bytes()
 
       is_list(files) ->
         files
@@ -775,6 +795,7 @@ defmodule Casein.ArtifactProjects do
           end
         end)
         |> validate_file_count()
+        |> validate_total_file_bytes()
 
       true ->
         {:error, :invalid_files}
@@ -784,6 +805,16 @@ defmodule Casein.ArtifactProjects do
   defp validate_file_count({:ok, files}) when map_size(files) <= @max_files, do: {:ok, files}
   defp validate_file_count({:ok, _files}), do: {:error, :too_many_artifact_files}
   defp validate_file_count(error), do: error
+
+  defp validate_total_file_bytes({:ok, files}) do
+    total = files |> Map.values() |> Enum.reduce(0, &(byte_size(&1) + &2))
+
+    if total <= @max_total_file_bytes,
+      do: {:ok, files},
+      else: {:error, :artifact_files_too_large}
+  end
+
+  defp validate_total_file_bytes(error), do: error
 
   defp normalize_file_path(path) when is_binary(path) do
     path = path |> String.trim() |> String.trim_leading("./")
@@ -929,6 +960,49 @@ defmodule Casein.ArtifactProjects do
 
   defp sync_public_mirror(_worktree_path, _paths),
     do: {:error, :invalid_artifact_generated_files}
+
+  defp verify_paths(worktree_path, paths)
+       when is_binary(worktree_path) and is_list(paths) do
+    mismatches =
+      Enum.reduce(paths, [], fn path, acc ->
+        with {:ok, path} <- normalize_file_path(path),
+             {:ok, source} <- PathSafety.resolve(worktree_path, path),
+             {:ok, public} <-
+               PathSafety.resolve(worktree_path, Path.join(".casein/public", path)),
+             true <- File.regular?(source),
+             true <- File.regular?(public),
+             {:ok, source_hash} <- file_hash(source),
+             {:ok, public_hash} <- file_hash(public),
+             true <- source_hash == public_hash do
+          acc
+        else
+          _ -> [path | acc]
+        end
+      end)
+      |> Enum.reverse()
+
+    if mismatches == [] do
+      {:ok,
+       %{
+         status: "ok",
+         file_count: length(paths),
+         checked_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+       }}
+    else
+      {:error, {:artifact_public_mirror_mismatch, mismatches}}
+    end
+  end
+
+  defp verify_paths(_worktree_path, _paths),
+    do: {:error, :invalid_artifact_generated_files}
+
+  # Callers resolve both root and mirror paths beneath the artifact worktree.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp file_hash(path) do
+    with {:ok, bytes} <- File.read(path) do
+      {:ok, :crypto.hash(:sha256, bytes)}
+    end
+  end
 
   defp write_manifest(worktree_path, metadata) do
     write_file(worktree_path, ".casein/artifact.json", Jason.encode!(metadata, pretty: true))

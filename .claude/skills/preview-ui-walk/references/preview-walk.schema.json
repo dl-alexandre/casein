@@ -37,6 +37,9 @@
     "runtime": {
       "$ref": "#/definitions/runtime"
     },
+    "performance": {
+      "$ref": "#/definitions/performance"
+    },
     "report": {
       "$ref": "#/definitions/report"
     },
@@ -263,7 +266,11 @@
           "minimum": 100,
           "maximum": 300000,
           "default": 15000,
-          "description": "Max load+settle time for PASS."
+          "description": "Readiness budget for navigation plus settle. Assertions and evidence collection are timed separately."
+        },
+        "fail_on_slow": {
+          "type": "boolean",
+          "description": "Override performance.fail_on_slow for this page."
         },
         "strict_errors": {
           "type": "boolean",
@@ -530,6 +537,11 @@
       "additionalProperties": false,
       "description": "Agent/operator policy. Default is read-only navigate+screenshot. Mutating pages[].steps require allow_interactions:true and a non-prod env_check strip.",
       "properties": {
+        "require_loopback_network": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, any browser HTTP(S)/WebSocket request to a non-loopback host is an actionable network failure."
+        },
         "read_only": {
           "type": "boolean",
           "default": true,
@@ -609,6 +621,32 @@
           "type": "boolean",
           "default": false,
           "description": "When true, fail the whole walk if Tidewave is unavailable (default: skip runtime evidence)."
+        },
+        "required_tools": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "description": "Exact Tidewave tools that must be present in addition to tools inferred from configured collectors."
+        }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default_budget_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 300000,
+          "description": "Default readiness budget used when a page has no budget_ms."
+        },
+        "fail_on_slow": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, a page that lands correctly after its readiness budget receives hard-failing SLOW instead of PASS_SLOW."
         }
       }
     },

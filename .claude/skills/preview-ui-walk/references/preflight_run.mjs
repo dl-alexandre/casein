@@ -51,6 +51,11 @@ export function requiredEvidence(manifests) {
 /** Tidewave tools needed by the selected manifests, not just by the server. */
 export function requiredTidewaveTools(manifests, evidence = new Set()) {
   const tools = new Set(["get_logs"]);
+  for (const manifest of manifests) {
+    for (const name of manifest?.runtime?.required_tools || []) {
+      if (typeof name === "string" && name.trim()) tools.add(name.trim());
+    }
+  }
   const usesRuntimeEval = manifests.some((manifest) => {
     const runtime = manifest?.runtime || {};
     return runtime.tidewave === true;

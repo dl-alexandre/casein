@@ -196,17 +196,21 @@ Get the live app surface and its session, don't spin a new one:
 
 ## 4. Publish the report → hand back a durable, PR-shareable link
 
-Both drivers write a **self-contained** `report.html` (screenshots are inlined as
-`data:` URIs). Publish it as an **artifact project** so it gets a durable,
+The Playwright driver writes a compact `report.html` plus external screenshot
+and evidence files. Publish the complete tree as an **artifact project** so it gets a durable,
 login-gated URL a teammate can open straight from a PR — this is the deliverable,
 not the ephemeral walk pane.
 
-1. **Publish** via the artifact MCP — one file map, the report is self-contained:
+1. **Publish and verify** with the bundled publisher. The output must live inside
+   the product checkout so Artifact MCP can import it without moving binary data
+   through JSON:
+   ```bash
+   node references/artifact_publish.mjs --out .casein/walk-output/<run> \
+     --name "<report.name>-<run>"
    ```
-   artifact_create(name: "<report.name>", kind: "html",
-                   files: { "index.html": <report.html contents> })
-   # iterate with artifact_update(artifact_id, files: {...}) on re-runs
-   ```
+   The publisher validates local links, imports every file with `source_path`,
+   calls `artifact_verify`, starts the artifact server, and fails unless the root
+   and public mirror are byte-identical.
 2. **Read `public_url` from the response** — the artifact tools return the full
    payload, so `public_url` (durable, login-gated; e.g.
    `https://casein.devbox…/artifact-projects/<ws>/<id>/`) is right there, alongside
@@ -225,25 +229,9 @@ not the ephemeral walk pane.
 4. Close the live walk pane. The published artifact (its `public_url`) is the single
    conclusion surface.
 
-### Fallback — publishing when the artifact MCP is down
-
-The artifact MCP token can expire mid-session (`requires re-authorization`), which
-blocks `artifact_create`/`artifact_update`. You do **not** need the MCP to publish:
-an already-created artifact serves its files from a plain `http.server` on the
-artifact worktree, and that server keeps running independent of the MCP token. So:
-
-1. Find the artifact's worktree (returned as `worktree_path` when it was created,
-   e.g. `/tmp/casein-agent-worktrees/artifacts/<ws>/<name>-<id>`).
-2. Copy the report(s) into it and `git commit` — the running server picks up disk
-   files immediately. Verify against the local preview port (`curl :PORT/…` → 200).
-3. For a multi-surface sweep, write one `index.html` landing page that links each
-   `surface.html`; that consolidated page under the existing `public_url` is the
-   deliverable. (Reuse one already-published artifact's worktree rather than minting
-   a new URL.)
-
-The `public_url` stays valid because it proxies that same server. Caveat: this is
-the workspace's local preview server, so the link lives only while that server is
-up — re-register via the MCP once it's re-authed for a durable URL.
+There is no manual-copy fallback: unregistered files are intentionally unavailable
+on the public route. If Artifact MCP is unavailable, retain the local output and
+publish after authorization/connectivity is restored.
 
 ## 5. Parallelization (optional; default sequential)
 
@@ -274,7 +262,9 @@ the page-sharding, not a redesign.
      LiveView assign **keys** (optional `fields`)
   5. Fails a page on server error-log deltas, failed probes/SQL, or failed steps
   If Tidewave is down, the browser walk still finishes and runtime is
-  `skipped: tidewave_unavailable` (unless `require_tidewave: true`).
+  `skipped: tidewave_unavailable` (unless `require_tidewave: true`). Required
+  tool inventory is checked up front; transient failures are retried, and
+  required per-page collection loss becomes `RUNTIME_ERROR`.
   See `references/runtime_evidence.mjs`, `page_steps.mjs`, and schema `runtime` /
   `pages[].steps`.
 - Re-runnable: same workflow manifest → same walk. For pixel-level regression,

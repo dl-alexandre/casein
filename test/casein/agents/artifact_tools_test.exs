@@ -153,13 +153,14 @@ defmodule Casein.Agents.ArtifactToolsTest do
              }
     end
 
-    test "exposes all seven tools in stable order" do
+    test "exposes all eight tools in stable order" do
       assert Enum.map(ArtifactTools.definitions(), & &1.name) == [
                "artifact_create",
                "artifact_update",
                "artifact_list",
                "artifact_get",
                "artifact_serve",
+               "artifact_verify",
                "artifact_snapshot",
                "artifact_retire"
              ]
@@ -240,6 +241,16 @@ defmodule Casein.Agents.ArtifactToolsTest do
                })
 
       assert fetched.id == created.id
+
+      assert {:ok, parity} =
+               ArtifactTools.invoke("artifact_verify", %{
+                 "workspace_id" => @workspace_id,
+                 "artifact_id" => created.id
+               })
+
+      assert parity.status == "ok"
+      assert parity.file_count == 1
+      assert parity.workspace_id == @workspace_id
 
       assert {:ok, snapshot} =
                ArtifactTools.invoke("artifact_snapshot", %{
