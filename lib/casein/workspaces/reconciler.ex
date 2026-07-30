@@ -30,6 +30,13 @@ defmodule Casein.Workspaces.Reconciler do
   endpoint before drawing any conclusion, and `Plan` only retires records whose
   owner that scope actually covered.
 
+  Absence from the listing is also, on its own, too weak: the manager tracks
+  only a subset of what exists as workspaces on the box (host-stage and
+  pre-Manager-era directories it never lists). So the sweep additionally
+  requires the record's `host_path` directory to be *gone from disk* — the
+  worktree a genuine manager deletion removes. See `Plan` for why this is not
+  optional.
+
   ## Rollout
 
   Gated by `:workspace_reconciler_enabled` (default `false`) and
@@ -121,7 +128,8 @@ defmodule Casein.Workspaces.Reconciler do
       Plan.build(listed, State.list(),
         now: DateTime.utc_now(),
         grace_ms: grace_ms(),
-        scope: scope
+        scope: scope,
+        host_path_present?: &File.dir?/1
       )
       |> apply_plan(dry_run)
     else

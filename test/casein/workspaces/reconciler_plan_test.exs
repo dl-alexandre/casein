@@ -23,6 +23,9 @@ defmodule Casein.Workspaces.ReconcilerPlanTest do
       name: id,
       user: Keyword.get(opts, :user, "dalexandre"),
       status: Keyword.get(opts, :status, "running"),
+      # A concrete host_path so the disk guard is exercised; tests probing the
+      # guard itself override it (or the `:host_path_present?` predicate).
+      host_path: Keyword.get(opts, :host_path, "/ws/#{id}"),
       # Default well outside the grace window: tests that care about the grace
       # guard set this explicitly.
       last_seen_at: Keyword.get(opts, :last_seen_at, DateTime.add(@now, -1, :day))
@@ -33,7 +36,10 @@ defmodule Casein.Workspaces.ReconcilerPlanTest do
     Plan.build(listed, records,
       now: @now,
       grace_ms: @grace_ms,
-      scope: Keyword.get(opts, :scope, :global)
+      scope: Keyword.get(opts, :scope, :global),
+      # Default: every host_path directory is gone — i.e. the disk guard passes,
+      # isolating the other guards. Disk-guard tests pass their own predicate.
+      host_path_present?: Keyword.get(opts, :host_path_present?, fn _ -> false end)
     )
   end
 
@@ -120,6 +126,61 @@ defmodule Casein.Workspaces.ReconcilerPlanTest do
 
       assert plan.retire == []
       assert plan.skipped == %{within_grace: 1}
+    end
+  end
+
+  describe "disk corroboration" do
+    test "a record still on disk is NOT retired even when absent from the listing" do
+      # The dry-run regression: 84 live directories were absent from the manager
+      # listing yet must not be retired. host_path present on disk ⇒ :on_disk.
+      on_disk = record("dalexandre-audit", host_path: "/data/workspaces/dalexandre-audit")
+
+      plan =
+        build([listed("alive", "dalexandre")], [on_disk],
+          host_path_present?: fn "/data/workspaces/dalexandre-audit" -> true end
+        )
+
+      assert plan.retire == []
+      assert plan.skipped == %{on_disk: 1}
+    end
+
+    test "a record whose directory is gone IS retired" do
+      gone = record("really-deleted", host_path: "/data/workspaces/really-deleted")
+
+      plan =
+        build([listed("alive", "dalexandre")], [gone],
+          host_path_present?: fn "/data/workspaces/really-deleted" -> false end
+        )
+
+      assert retired_ids(plan) == ["really-deleted"]
+    end
+
+    test "only survivors of the cheaper guards ever hit the disk" do
+      # present / synthetic / in-scope / grace all short-circuit before the
+      # predicate, so a listed workspace never triggers a File.dir? call.
+      probed = :ets.new(:probed, [:set, :public])
+
+      build(
+        [listed("alive", "dalexandre")],
+        [record("alive"), record("__scratch__"), record("deleted")],
+        host_path_present?: fn path ->
+          :ets.insert(probed, {path, true})
+          false
+        end
+      )
+
+      probed_paths = :ets.tab2list(probed) |> Enum.map(&elem(&1, 0))
+      assert probed_paths == ["/ws/deleted"]
+    end
+
+    test "a record with a blank host_path cannot be corroborated, so it is skipped" do
+      for blank <- [nil, ""] do
+        rec = record("no-path", host_path: blank)
+        plan = build([listed("alive", "dalexandre")], [rec])
+
+        assert plan.retire == []
+        assert plan.skipped == %{unverifiable: 1}
+      end
     end
   end
 
