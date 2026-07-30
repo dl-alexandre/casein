@@ -317,7 +317,8 @@ defmodule Casein.Agents.GrokCapabilityBundle do
   # root has passed ensure_root/1 and the child name is generated locally.
   # sobelow_skip ["Traversal.FileModule"]
   defp make_temp(root) do
-    temp = Path.join(root, ".grok-bundle-#{System.unique_integer([:positive, :monotonic])}")
+    nonce = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
+    temp = Path.join(root, ".grok-bundle-#{nonce}")
 
     case File.mkdir(temp) do
       :ok -> {:ok, temp}
