@@ -183,6 +183,8 @@ defmodule CaseinMob.SessionClient do
     socket =
       Socket.new()
       |> assign(:subscribers, %{})
+      |> assign(:subscriber_monitors, %{})
+      |> assign(:topic_snapshots, %{})
       |> assign(:url, nil)
       |> assign(:token, nil)
       |> assign(:connecting?, false)
@@ -237,6 +239,7 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_join(topic, reply, socket) do
+    socket = cache_topic_snapshot(socket, topic, reply)
     notify_joined(socket, topic, reply)
 
     socket =
@@ -249,6 +252,7 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_message("session:" <> _workspace_id = topic, "snapshot", payload, socket) do
+    socket = cache_topic_snapshot(socket, topic, payload)
     notify(socket, topic, {:session_snapshot, workspace_id(topic), payload})
     {:ok, socket}
   end
@@ -259,6 +263,7 @@ defmodule CaseinMob.SessionClient do
   end
 
   def handle_message(topic, "cards_snapshot", payload, socket) do
+    socket = cache_topic_snapshot(socket, topic, payload)
     if mobile_cards_topic?(topic), do: notify(socket, topic, {:mobile_cards_snapshot, payload})
     {:ok, socket}
   end
@@ -295,7 +300,7 @@ defmodule CaseinMob.SessionClient do
   @impl Slipstream
   def handle_topic_close(topic, reason, socket) do
     notify_status(socket, topic, error_status(reason))
-    {:ok, socket}
+    {:ok, drop_topic_snapshot(socket, topic)}
   end
 
   @impl Slipstream
@@ -314,6 +319,7 @@ defmodule CaseinMob.SessionClient do
 
     socket =
       socket
+      |> assign(:topic_snapshots, %{})
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
 
@@ -361,7 +367,9 @@ defmodule CaseinMob.SessionClient do
 
     {:noreply,
      socket
+     |> clear_subscriber_monitors()
      |> assign(:subscribers, %{})
+     |> assign(:topic_snapshots, %{})
      |> assign(:url, nil)
      |> assign(:token, nil)
      |> assign(:connecting?, false)
@@ -454,14 +462,25 @@ defmodule CaseinMob.SessionClient do
   end
 
   @impl Slipstream
-  def handle_info({:DOWN, _ref, :process, pid, _reason}, socket) do
-    # A screen went away — drop it from every topic, leave topics that empty out.
-    socket =
-      socket.assigns.subscribers
-      |> Map.keys()
-      |> Enum.reduce(socket, fn topic, acc -> drop_subscriber(acc, topic, pid) end)
+  def handle_info({:DOWN, ref, :process, pid, _reason}, socket) do
+    case Map.get(socket.assigns.subscriber_monitors, pid) do
+      ^ref ->
+        # A screen went away — forget its one monitor, drop it from every topic,
+        # and leave topics that empty out.
+        socket =
+          socket
+          |> assign(:subscriber_monitors, Map.delete(socket.assigns.subscriber_monitors, pid))
+          |> then(fn socket ->
+            socket.assigns.subscribers
+            |> Map.keys()
+            |> Enum.reduce(socket, fn topic, acc -> drop_subscriber(acc, topic, pid) end)
+          end)
 
-    {:noreply, socket}
+        {:noreply, socket}
+
+      _other ->
+        {:noreply, socket}
+    end
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -480,8 +499,6 @@ defmodule CaseinMob.SessionClient do
   defp maybe_put_origin_id(payload, _origin_id), do: payload
 
   defp watch_topic(socket, topic, subscriber) do
-    Process.monitor(subscriber)
-
     subscribers =
       Map.update(
         socket.assigns.subscribers,
@@ -490,11 +507,14 @@ defmodule CaseinMob.SessionClient do
         &MapSet.put(&1, subscriber)
       )
 
-    socket = assign(socket, :subscribers, subscribers)
+    socket =
+      socket
+      |> ensure_subscriber_monitor(subscriber)
+      |> assign(:subscribers, subscribers)
 
     cond do
       not connected?(socket) -> ensure_connection_requested(socket)
-      joined?(socket, topic) -> socket
+      joined?(socket, topic) -> replay_joined_topic(socket, topic, subscriber)
       true -> join(socket, topic)
     end
   end
@@ -534,9 +554,44 @@ defmodule CaseinMob.SessionClient do
     notify_pending_card_actions(socket, {:error, :host_switched})
 
     socket
+    |> clear_subscriber_monitors()
     |> assign(:subscribers, %{})
+    |> assign(:topic_snapshots, %{})
     |> assign(:push_registration_refs, %{})
     |> assign(:card_action_refs, %{})
+  end
+
+  defp cache_topic_snapshot(socket, topic, payload) do
+    snapshots = Map.put(socket.assigns[:topic_snapshots] || %{}, topic, payload)
+    assign(socket, :topic_snapshots, snapshots)
+  end
+
+  defp drop_topic_snapshot(socket, topic) do
+    snapshots = Map.delete(socket.assigns[:topic_snapshots] || %{}, topic)
+    assign(socket, :topic_snapshots, snapshots)
+  end
+
+  defp replay_joined_topic(socket, topic, subscriber) do
+    case Map.get(socket.assigns[:topic_snapshots] || %{}, topic) do
+      nil ->
+        socket
+
+      snapshot ->
+        notify_joined_subscriber(topic, subscriber, snapshot)
+        socket
+    end
+  end
+
+  defp notify_joined_subscriber("session:" <> workspace_id, subscriber, snapshot) do
+    send(subscriber, {:session_snapshot, workspace_id, snapshot})
+    send(subscriber, {:session_status, workspace_id, :joined})
+  end
+
+  defp notify_joined_subscriber(topic, subscriber, snapshot) do
+    if mobile_cards_topic?(topic) do
+      send(subscriber, {:mobile_cards_snapshot, snapshot})
+      send(subscriber, {:mobile_cards_status, :joined})
+    end
   end
 
   defp different_origin?(nil, _url), do: false
@@ -828,20 +883,69 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp drop_subscriber(socket, topic, subscriber) do
-    case Map.get(socket.assigns.subscribers, topic) do
-      nil ->
-        socket
+    socket =
+      case Map.get(socket.assigns.subscribers, topic) do
+        nil ->
+          socket
 
-      pids ->
-        remaining = MapSet.delete(pids, subscriber)
+        pids ->
+          remaining = MapSet.delete(pids, subscriber)
 
-        if MapSet.size(remaining) == 0 do
-          socket = assign(socket, :subscribers, Map.delete(socket.assigns.subscribers, topic))
-          if joined?(socket, topic), do: leave(socket, topic), else: socket
-        else
-          assign(socket, :subscribers, Map.put(socket.assigns.subscribers, topic, remaining))
-        end
+          if MapSet.size(remaining) == 0 do
+            socket =
+              socket
+              |> assign(:subscribers, Map.delete(socket.assigns.subscribers, topic))
+              |> assign(:topic_snapshots, Map.delete(socket.assigns.topic_snapshots, topic))
+
+            if joined?(socket, topic), do: leave(socket, topic), else: socket
+          else
+            assign(socket, :subscribers, Map.put(socket.assigns.subscribers, topic, remaining))
+          end
+      end
+
+    maybe_demonitor_subscriber(socket, subscriber)
+  end
+
+  defp ensure_subscriber_monitor(socket, subscriber) do
+    if Map.has_key?(socket.assigns.subscriber_monitors, subscriber) do
+      socket
+    else
+      monitor = Process.monitor(subscriber)
+
+      assign(
+        socket,
+        :subscriber_monitors,
+        Map.put(socket.assigns.subscriber_monitors, subscriber, monitor)
+      )
     end
+  end
+
+  defp maybe_demonitor_subscriber(socket, subscriber) do
+    subscribed? =
+      Enum.any?(socket.assigns.subscribers, fn {_topic, pids} ->
+        MapSet.member?(pids, subscriber)
+      end)
+
+    if subscribed? do
+      socket
+    else
+      case Map.pop(socket.assigns.subscriber_monitors, subscriber) do
+        {nil, _monitors} ->
+          socket
+
+        {monitor, monitors} ->
+          Process.demonitor(monitor, [:flush])
+          assign(socket, :subscriber_monitors, monitors)
+      end
+    end
+  end
+
+  defp clear_subscriber_monitors(socket) do
+    Enum.each(socket.assigns.subscriber_monitors, fn {_subscriber, monitor} ->
+      Process.demonitor(monitor, [:flush])
+    end)
+
+    assign(socket, :subscriber_monitors, %{})
   end
 
   defp notify(socket, topic, message) do

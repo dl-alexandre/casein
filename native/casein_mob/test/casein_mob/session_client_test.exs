@@ -8,21 +8,23 @@ defmodule CaseinMob.SessionClientTest do
     socket = socket_with_subscriber("mobile:user:me", self())
     snapshot = %{"cards" => [%{"id" => "needs_review:ws-1:run-1"}]}
 
-    assert {:ok, ^socket} = SessionClient.handle_join("mobile:user:me", snapshot, socket)
+    assert {:ok, joined_socket} = SessionClient.handle_join("mobile:user:me", snapshot, socket)
+    assert joined_socket.assigns.topic_snapshots["mobile:user:me"] == snapshot
 
     assert_receive {:mobile_cards_snapshot, ^snapshot}
     assert_receive {:mobile_cards_status, :joined}
 
     next_snapshot = %{"cards" => []}
 
-    assert {:ok, ^socket} =
+    assert {:ok, updated_socket} =
              SessionClient.handle_message(
                "mobile:user:me",
                "cards_snapshot",
                next_snapshot,
-               socket
+               joined_socket
              )
 
+    assert updated_socket.assigns.topic_snapshots["mobile:user:me"] == next_snapshot
     assert_receive {:mobile_cards_snapshot, ^next_snapshot}
   end
 
@@ -45,8 +47,12 @@ defmodule CaseinMob.SessionClientTest do
         "mobile:user:me" => MapSet.new([self()]),
         "session:ws-1" => MapSet.new([self()])
       })
+      |> Socket.assign(:topic_snapshots, %{
+        "mobile:user:me" => %{"cards" => [%{"id" => "old-card"}]}
+      })
 
-    assert {:ok, _socket} = SessionClient.handle_disconnect({:error, :econnrefused}, socket)
+    assert {:ok, socket} = SessionClient.handle_disconnect({:error, :econnrefused}, socket)
+    assert socket.assigns.topic_snapshots == %{}
 
     assert_receive {:mobile_cards_status, {:disconnected, :network_unavailable}}
     assert_receive {:session_status, "ws-1", {:disconnected, :network_unavailable}}
@@ -63,6 +69,25 @@ defmodule CaseinMob.SessionClientTest do
     assert {:ok, recovered} = SessionClient.handle_join("mobile:user:me", snapshot, socket)
     assert recovered.assigns.timing_started_at == nil
 
+    assert_receive {:mobile_cards_snapshot, ^snapshot}
+    assert_receive {:mobile_cards_status, :joined}
+  end
+
+  test "rewatching an already joined mobile card topic replays its authoritative snapshot" do
+    topic = "mobile:user:me"
+    snapshot = %{"cards" => [%{"id" => "clarification:ws-1:event-1"}]}
+
+    socket =
+      socket_with_subscriber(topic, self())
+      |> Map.put(:channel_pid, self())
+      |> Socket.assign(:topic_snapshots, %{topic => snapshot})
+      |> Socket.put_join_config(topic, %{})
+      |> put_in([Access.key(:joins), topic, Access.key(:status)], :joined)
+
+    assert {:noreply, watched_socket} =
+             SessionClient.handle_cast({:watch_mobile_cards, self()}, socket)
+
+    assert is_reference(watched_socket.assigns.subscriber_monitors[self()])
     assert_receive {:mobile_cards_snapshot, ^snapshot}
     assert_receive {:mobile_cards_status, :joined}
   end
@@ -97,19 +122,70 @@ defmodule CaseinMob.SessionClientTest do
   test "subscriber process exit removes mobile card watchers" do
     other = spawn(fn -> Process.sleep(:infinity) end)
     on_exit(fn -> Process.exit(other, :kill) end)
+    monitor = make_ref()
 
     socket =
       socket_with_subscribers(%{
         "mobile:user:me" => MapSet.new([self(), other]),
         "session:ws-1" => MapSet.new([self()])
       })
+      |> Socket.assign(:subscriber_monitors, %{self() => monitor, other => make_ref()})
+      |> Socket.assign(:topic_snapshots, %{
+        "mobile:user:me" => %{"cards" => [%{"id" => "card-1"}]},
+        "session:ws-1" => %{"sessions" => [%{"id" => "session-1"}]}
+      })
 
     assert {:noreply, socket} =
-             SessionClient.handle_info({:DOWN, make_ref(), :process, self(), :normal}, socket)
+             SessionClient.handle_info({:DOWN, monitor, :process, self(), :normal}, socket)
 
     assert socket.assigns.subscribers == %{
              "mobile:user:me" => MapSet.new([other])
            }
+
+    assert Map.keys(socket.assigns.subscriber_monitors) == [other]
+
+    assert socket.assigns.topic_snapshots == %{
+             "mobile:user:me" => %{"cards" => [%{"id" => "card-1"}]}
+           }
+  end
+
+  test "repeated watch and final unwatch own one bounded subscriber monitor" do
+    socket = socket_with_subscribers(%{})
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:watch_mobile_cards, self()}, socket)
+
+    monitor = socket.assigns.subscriber_monitors[self()]
+    assert is_reference(monitor)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:watch_mobile_cards, self()}, socket)
+
+    assert socket.assigns.subscriber_monitors == %{self() => monitor}
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:unwatch_mobile_cards, self()}, socket)
+
+    assert socket.assigns.subscribers == %{}
+    assert socket.assigns.subscriber_monitors == %{}
+    refute Process.demonitor(monitor, [:info])
+  end
+
+  test "clearing pairing flushes subscriber monitors across topics" do
+    monitor = Process.monitor(self())
+
+    socket =
+      socket_with_subscribers(%{
+        "mobile:user:me" => MapSet.new([self()]),
+        "session:ws-1" => MapSet.new([self()])
+      })
+      |> Socket.assign(:subscriber_monitors, %{self() => monitor})
+
+    assert {:noreply, socket} = SessionClient.handle_cast(:clear_pairing, socket)
+
+    assert socket.assigns.subscribers == %{}
+    assert socket.assigns.subscriber_monitors == %{}
+    refute Process.demonitor(monitor, [:info])
   end
 
   test "push registration reply notifies subscribers after server acknowledgement" do
@@ -237,6 +313,9 @@ defmodule CaseinMob.SessionClientTest do
       |> Socket.assign(:card_action_refs, %{
         "action-ref" => %{card_id: "needs_review:old-ws:run-1"}
       })
+      |> Socket.assign(:topic_snapshots, %{
+        "mobile:user:me" => %{"cards" => [%{"id" => "old-card"}]}
+      })
 
     assert {:noreply, socket} =
              SessionClient.handle_cast(
@@ -247,6 +326,7 @@ defmodule CaseinMob.SessionClientTest do
     assert socket.assigns.url == "http://127.0.0.1:1"
     assert socket.assigns.token == "new-token"
     assert socket.assigns.subscribers == %{}
+    assert socket.assigns.topic_snapshots == %{}
     assert socket.assigns.push_registration_refs == %{}
     assert socket.assigns.card_action_refs == %{}
 
@@ -312,6 +392,8 @@ defmodule CaseinMob.SessionClientTest do
   defp socket_with_subscribers(subscribers) do
     Socket.new()
     |> Socket.assign(:subscribers, subscribers)
+    |> Socket.assign(:subscriber_monitors, %{})
+    |> Socket.assign(:topic_snapshots, %{})
     |> Socket.assign(:url, nil)
     |> Socket.assign(:token, nil)
     |> Socket.assign(:connecting?, false)

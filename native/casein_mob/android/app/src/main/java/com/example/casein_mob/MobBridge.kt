@@ -2041,6 +2041,10 @@ private fun MobText(node: MobNode, modifier: Modifier) {
 private fun MobButton(node: MobNode, modifier: Modifier) {
     val label       = node.props["text"] as? String ?: ""
     val tapHandle   = intProp(node.props, "on_tap")
+    val activation  = MobButtonActivation(
+        enabled = boolProp(node.props, "disabled") != true,
+        tapHandle = tapHandle,
+    )
     val bgColor     = colorProp(node.props, "background")
     val cornerRad   = floatProp(node.props, "corner_radius") ?: 0f
 
@@ -2050,7 +2054,9 @@ private fun MobButton(node: MobNode, modifier: Modifier) {
     if (compact) {
         val compactModifier =
             (if (fillWidth) modifier.fillMaxWidth() else modifier)
-                .clickable { tapHandle?.let { MobBridge.nativeSendTap(it) } }
+                .clickable(enabled = activation.enabled) {
+                    activation.dispatch(MobBridge::nativeSendTap)
+                }
 
         Box(modifier = compactModifier, contentAlignment = Alignment.Center) {
             val textColor = colorProp(node.props, "text_color")
@@ -2074,7 +2080,8 @@ private fun MobButton(node: MobNode, modifier: Modifier) {
     // fill_width and corner_radius are driven by Elixir props (set in component
     // defaults but overridable per-node). Shape overrides M3's stadium default.
     Button(
-        onClick  = { tapHandle?.let { MobBridge.nativeSendTap(it) } },
+        onClick  = { activation.dispatch(MobBridge::nativeSendTap) },
+        enabled  = activation.enabled,
         modifier = if (fillWidth) modifier.fillMaxWidth() else modifier,
         colors   = colors,
         shape    = RoundedCornerShape(cornerRad.dp),
@@ -2083,6 +2090,17 @@ private fun MobButton(node: MobNode, modifier: Modifier) {
         val fontSize  = sizeProp(node.props, "text_size")
         Text(text = label, color = textColor, fontSize = fontSize,
              maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+internal data class MobButtonActivation(
+    val enabled: Boolean,
+    val tapHandle: Int?,
+) {
+    fun dispatch(sendTap: (Int) -> Unit) {
+        if (enabled) {
+            tapHandle?.let(sendTap)
+        }
     }
 }
 
