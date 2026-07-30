@@ -19,6 +19,7 @@ $uninstaller = Join-Path $packageRoot 'windows\Uninstall-Casein.ps1'
 $trayHost = Join-Path $packageRoot 'windows\Casein.Tray.ps1'
 $trustedLan = Join-Path $packageRoot 'windows\Casein.TrustedLan.ps1'
 $backupLibrary = Join-Path $packageRoot 'windows\Casein.Backup.ps1'
+$updateLibrary = Join-Path $packageRoot 'windows\Update-Casein.ps1'
 
 Assert-Condition (Test-Path -LiteralPath $metadataPath) "Release metadata is missing at $metadataPath"
 Assert-Condition (Test-Path -LiteralPath $installer) "Installer is missing at $installer"
@@ -26,6 +27,7 @@ Assert-Condition (Test-Path -LiteralPath $uninstaller) "Uninstaller is missing a
 Assert-Condition (Test-Path -LiteralPath $trayHost) "Tray host is missing at $trayHost"
 Assert-Condition (Test-Path -LiteralPath $trustedLan) "Trusted LAN helper is missing at $trustedLan"
 Assert-Condition (Test-Path -LiteralPath $backupLibrary) "Backup helper is missing at $backupLibrary"
+Assert-Condition (Test-Path -LiteralPath $updateLibrary) "Updater is missing at $updateLibrary"
 Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'docs'))) 'Internal docs must not be included in a public desktop package'
 
 $releaseScripts = Get-ChildItem -LiteralPath (Join-Path $packageRoot 'lib') -Directory |
@@ -80,6 +82,7 @@ try {
     . $trayHost -ReleaseRoot $packageRoot -LibraryOnly
     . $trustedLan -ReleaseRoot $packageRoot -LibraryOnly
     . $backupLibrary -LibraryOnly
+    . $updateLibrary -LibraryOnly
     Initialize-CaseinJobObjectSupport
     Assert-Condition (($null -ne ('Casein.Windows.JobObject' -as [type]))) 'Windows Job Object support did not load'
 
@@ -123,6 +126,27 @@ try {
     Restore-CaseinBackupFile -Source $backupCiphertext -Manifest $backupManifest -Destination $backupRestored
     Assert-Condition ((Get-Content -Raw -LiteralPath $backupRestored) -eq 'SQLite format 3 package-smoke') 'Encrypted backup did not round trip'
 
+    $updateManifest = Join-Path $testLocalAppData 'update-channel.json'
+    [ordered]@{
+        manifest_version = 1
+        channel = 'stable'
+        artifacts = @([ordered]@{
+            app = 'casein'; profile = 'desktop'; target = 'windows-x86_64'; repo_adapter = 'sqlite'
+            revision = ('a' * 40); url = 'https://updates.example.invalid/casein.zip'
+            sha256 = ('b' * 64); size = 123
+        })
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $updateManifest -Encoding UTF8
+    $updateCurrent = [pscustomobject]@{ app = 'casein'; profile = 'desktop'; target = 'windows-x86_64'; repo_adapter = 'sqlite'; channel = 'stable' }
+    $updatePlan = Read-CaseinUpdatePlan -ManifestPath $updateManifest -Current $updateCurrent
+    Assert-Condition ($updatePlan.Artifact.revision -eq ('a' * 40)) 'Signed channel plan selected the wrong artifact'
+    $updateCurrent.channel = 'canary'
+    try {
+        Read-CaseinUpdatePlan -ManifestPath $updateManifest -Current $updateCurrent | Out-Null
+        throw 'Channel mismatch was accepted'
+    } catch {
+        Assert-Condition ($_.Exception.Message.Contains('Refusing update channel change')) 'Channel mismatch failed for the wrong reason'
+    }
+
     $selectedAddress = Select-CaseinLanAddress @(
         [pscustomobject]@{ Address = '192.168.50.7'; InterfaceAlias = 'vEthernet (WSL)'; InterfaceIndex = 2; InterfaceMetric = 1; HasDefaultGateway = $true; VirtualOrTunnel = $true },
         [pscustomobject]@{ Address = '10.0.0.20'; InterfaceAlias = 'Ethernet'; InterfaceIndex = 8; InterfaceMetric = 15; HasDefaultGateway = $false; VirtualOrTunnel = $false },
@@ -137,9 +161,11 @@ try {
     $currentPath = Join-Path $installRoot 'current.json'
     Assert-Condition (Test-Path -LiteralPath $currentPath) 'Installer did not write current.json'
     Assert-Condition (Test-Path -LiteralPath (Join-Path $installRoot 'Casein.cmd')) 'Installer did not write the stable launcher'
+    Assert-Condition (Test-Path -LiteralPath (Join-Path $installRoot 'Update-Casein.ps1')) 'Installer did not write the signed-channel updater'
     Assert-Condition (Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein') 'Installer did not register Apps & Features metadata'
 
     $current = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
+    Assert-Condition ($null -ne $current.PSObject.Properties['signer_thumbprint']) 'Installer did not persist the release signer field'
     Assert-Condition (Test-Path -LiteralPath (Join-Path $current.release_root 'bin\casein.bat')) 'Installed release is missing casein.bat'
     Assert-Condition ($current.revision -eq $metadata.revision) 'Installed release revision differs from package metadata'
 

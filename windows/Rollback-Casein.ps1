@@ -45,6 +45,7 @@ $next = [ordered]@{
     release_root = $previous
     previous_release_root = [string]$current.release_root
     previous_data_backup = $backup
+    signer_thumbprint = if ($current.PSObject.Properties['signer_thumbprint']) { [string]$current.signer_thumbprint } else { $null }
     installed_at_utc = [DateTime]::UtcNow.ToString('o')
     rollback = $true
 } | ConvertTo-Json

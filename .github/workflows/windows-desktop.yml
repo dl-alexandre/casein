@@ -70,5 +70,5 @@ jobs:
           path: |
             dist/*.zip
             dist/*.zip.sha256
-            dist/*.manifest.json
-            dist/*.manifest.json.cat
+            dist/casein-*.json
+            dist/casein-*.json.cat
