@@ -117,37 +117,10 @@ defmodule Casein.Mobile.Actions do
     end
   end
 
-  defp ensure_origin(context, params, spec) do
-    if Intervention.delivery_action?(spec) do
-      ensure_exact_origin(context, params)
-    else
-      ensure_optional_origin(context, params)
-    end
-  end
+  defp ensure_origin(context, params, _spec), do: ensure_exact_origin(context, params)
 
-  defp ensure_request_origin(context, params, action_id) do
-    origin_id = Map.get(params, "origin_id")
-    trusted_origin_id = Map.get(context, :origin_id)
-
-    cond do
-      Intervention.delivery_action_id?(action_id) ->
-        if(
-          is_binary(trusted_origin_id) and trusted_origin_id != "" and
-            origin_id == trusted_origin_id,
-          do: :ok,
-          else: {:error, :origin_mismatch}
-        )
-
-      is_nil(origin_id) ->
-        :ok
-
-      origin_id == trusted_origin_id ->
-        :ok
-
-      true ->
-        {:error, :origin_mismatch}
-    end
-  end
+  defp ensure_request_origin(context, params, _action_id),
+    do: ensure_exact_origin(context, params)
 
   defp ensure_exact_origin(context, params) do
     trusted_origin_id = Map.get(context, :origin_id)
@@ -155,16 +128,6 @@ defmodule Casein.Mobile.Actions do
     case Map.get(params, "origin_id") do
       ^trusted_origin_id when is_binary(trusted_origin_id) and trusted_origin_id != "" -> :ok
       _ -> {:error, :origin_mismatch}
-    end
-  end
-
-  defp ensure_optional_origin(context, params) do
-    case Map.get(params, "origin_id") do
-      nil ->
-        :ok
-
-      origin_id ->
-        if(origin_id == Map.get(context, :origin_id), do: :ok, else: {:error, :origin_mismatch})
     end
   end
 

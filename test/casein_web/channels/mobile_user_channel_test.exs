@@ -4,7 +4,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
   import Phoenix.ChannelTest
 
   alias Casein.Audit
-  alias Casein.Mobile.ActionOutcome
+  alias Casein.Mobile.{ActionOutcome, Card}
   alias Casein.Mobile.UserObserver
   alias Casein.Push
   alias Casein.Runs.Ledger
@@ -353,13 +353,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
     assert_push "cards_snapshot", %{cards: [card]}, 1_000
 
-    payload = %{
-      "card_id" => card.id,
-      "action" => "follow_up",
-      "origin_id" => "origin-local",
-      "request_id" => "follow-up-once",
-      "payload" => %{"message" => "Please run the focused test."}
-    }
+    payload =
+      intervention_action_payload(card, %{
+        "card_id" => card.id,
+        "action" => "follow_up",
+        "origin_id" => "origin-local",
+        "request_id" => "follow-up-once",
+        "payload" => %{"message" => "Please run the focused test."}
+      })
 
     ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
     assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
@@ -378,17 +379,24 @@ defmodule CaseinWeb.MobileUserChannelTest do
           "payload" => %{"message" => "This second message must not be sent."}
       })
 
-    assert_reply ref, :error, %{reason: "card_already_intervened"}, 1_000
+    assert_reply ref, :error, %{reason: "action_revision_stale"}, 1_000
     refute_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id, _, _}, 100
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card.id,
-        "action" => "approve",
-        "origin_id" => "origin-local",
-        "request_id" => "approve-after-follow-up",
-        "payload" => %{}
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(
+          user_id,
+          %{
+            "card_id" => card.id,
+            "action" => "approve",
+            "request_id" => "approve-after-follow-up",
+            "payload" => %{}
+          },
+          "origin-local"
+        )
+      )
 
     assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
 
@@ -434,19 +442,34 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
     assert_push "cards_snapshot", %{cards: [card]}, 1_000
 
-    intent = Enum.find(card.actions, &(&1["id"] == "continue_task"))
-    assert intent["description"] == "The exact agent will continue the current task."
+    intent = Enum.find(card.actions, &(&1["id"] == "address_review"))
+
+    assert intent["description"] ==
+             "The exact agent will address the current review and report the result."
+
+    refute Enum.any?(card.actions, &(&1["id"] == "continue_task"))
     assert is_binary(intent["revision"])
 
     stale_payload = %{
       "card_id" => card.id,
-      "action" => "continue_task",
+      "action" => "address_review",
       "origin_id" => "origin-local",
       "request_id" => "typed-stale",
       "payload" => %{"revision" => "forged"}
     }
 
     ref = Phoenix.ChannelTest.push(socket, "card_action", stale_payload)
+    assert_reply ref, :error, %{reason: "action_revision_stale"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        stale_payload
+        | "action" => "follow_up",
+          "request_id" => "follow-up-stale",
+          "payload" => %{"message" => "Do not deliver", "revision" => "forged"}
+      })
+
     assert_reply ref, :error, %{reason: "action_revision_stale"}, 1_000
     refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
 
@@ -464,15 +487,16 @@ defmodule CaseinWeb.MobileUserChannelTest do
                    status: "accepted",
                    idempotent: false,
                    result: %{
-                     "action" => "continue_task",
-                     "confirmation" => "Continue request delivered to the exact agent.",
+                     "action" => "address_review",
+                     "confirmation" => "Review request delivered to the exact agent.",
                      "target_role" => "agent"
                    }
                  },
                  1_000
 
     assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id,
-                    "Continue with the current task.", [target: ^pane_id, submit: true]}
+                    "Address the current review feedback, then report what changed.",
+                    [target: ^pane_id, submit: true]}
 
     ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
     assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
@@ -482,7 +506,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
       Phoenix.ChannelTest.push(
         socket,
         "card_action",
-        %{payload | "action" => "address_review"}
+        %{payload | "action" => "continue_task"}
       )
 
     assert_reply ref, :error, %{reason: "idempotency_key_reused"}, 1_000
@@ -516,7 +540,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
       )
 
     assert outcome.action_id == "follow_up"
-    assert outcome.result["requested_action_id"] == "continue_task"
+    assert outcome.result["requested_action_id"] == "address_review"
     refute Jason.encode!(outcome.result) =~ "Continue with the current task"
 
     audit =
@@ -524,7 +548,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
       |> Audit.recent_for(20)
       |> Enum.find(
         &(&1.action == "mobile.intervention" and
-            &1.metadata["action_id"] == "continue_task")
+            &1.metadata["action_id"] == "address_review")
       )
 
     assert audit.metadata["outcome"] == "succeeded"
@@ -611,16 +635,17 @@ defmodule CaseinWeb.MobileUserChannelTest do
              )
 
     card_id = seed_intervention_card(user_id, workspace_id, tmux_session, pane_id)
-    assert_push "cards_snapshot", %{cards: [_card]}, 1_000
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
     FakeState.put(:fake_tmux_paste_error, :disconnected)
 
-    failed = %{
-      "card_id" => card_id,
-      "action" => "follow_up",
-      "origin_id" => "origin-local",
-      "request_id" => "failed-delivery",
-      "payload" => %{"message" => "Please continue."}
-    }
+    failed =
+      intervention_action_payload(card, %{
+        "card_id" => card_id,
+        "action" => "follow_up",
+        "origin_id" => "origin-local",
+        "request_id" => "failed-delivery",
+        "payload" => %{"message" => "Please continue."}
+      })
 
     ref = Phoenix.ChannelTest.push(socket, "card_action", failed)
     assert_reply ref, :error, %{reason: "intervention_delivery_failed"}, 1_000
@@ -648,28 +673,36 @@ defmodule CaseinWeb.MobileUserChannelTest do
              join_mobile(user_id, role: :admin, assigns: %{mobile_origin_id: "origin-local"})
 
     card_id = seed_intervention_card(user_id, workspace_id, tmux_session, pane_id)
-    assert_push "cards_snapshot", %{cards: [_card]}, 1_000
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card_id,
-        "action" => "follow_up",
-        "origin_id" => "origin-local",
-        "request_id" => "too-long",
-        "payload" => %{"message" => String.duplicate("x", 281)}
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        intervention_action_payload(card, %{
+          "card_id" => card_id,
+          "action" => "follow_up",
+          "origin_id" => "origin-local",
+          "request_id" => "too-long",
+          "payload" => %{"message" => String.duplicate("x", 281)}
+        })
+      )
 
     assert_reply ref, :error, %{reason: "message_too_long"}, 1_000
     refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card_id,
-        "action" => "follow_up",
-        "origin_id" => "origin-local",
-        "request_id" => "terminal-control",
-        "payload" => %{"message" => "continue\e[31m"}
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        intervention_action_payload(card, %{
+          "card_id" => card_id,
+          "action" => "follow_up",
+          "origin_id" => "origin-local",
+          "request_id" => "terminal-control",
+          "payload" => %{"message" => "continue\e[31m"}
+        })
+      )
 
     assert_reply ref, :error, %{reason: "message_invalid_characters"}, 1_000
     refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
@@ -777,10 +810,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert card.meta["command_id"] == "compile"
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card.id,
-        "action" => "approve"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(user_id, %{
+          "card_id" => card.id,
+          "action" => "approve"
+        })
+      )
 
     assert_reply ref, :ok, %{status: "accepted", snapshot: %{cards: []}}, 1_000
     assert_push "cards_snapshot", %{cards: []}, 1_000
@@ -898,11 +935,15 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert [%{id: ^card_id, type: :needs_review}] = UserObserver.snapshot(user_id).cards
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card_id,
-        "action" => "request_changes",
-        "payload" => %{"note" => "Please add the missing test."}
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(user_id, %{
+          "card_id" => card_id,
+          "action" => "request_changes",
+          "payload" => %{"note" => "Please add the missing test."}
+        })
+      )
 
     assert_reply ref, :ok, %{status: "accepted", snapshot: %{cards: []}}, 1_000
 
@@ -921,10 +962,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert [%{id: ^deny_card_id, type: :needs_review}] = UserObserver.snapshot(user_id).cards
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => deny_card_id,
-        "action" => "deny"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(user_id, %{
+          "card_id" => deny_card_id,
+          "action" => "deny"
+        })
+      )
 
     assert_reply ref, :ok, %{status: "accepted", snapshot: %{cards: []}}, 1_000
 
@@ -953,10 +998,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert [%{type: :in_progress}] = UserObserver.snapshot(user_id).cards
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => "in_progress:#{workspace_id}:run-1",
-        "action" => "approve"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        origin_action(%{
+          "card_id" => "in_progress:#{workspace_id}:run-1",
+          "action" => "approve"
+        })
+      )
 
     # A non-review card simply does not declare the `approve` action, so the
     # generic dispatcher reports it as unsupported rather than a special-cased
@@ -964,10 +1013,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert_reply ref, :error, %{reason: "unsupported_action"}, 1_000
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => "in_progress:#{workspace_id}:run-1",
-        "action" => "archive"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        origin_action(%{
+          "card_id" => "in_progress:#{workspace_id}:run-1",
+          "action" => "archive"
+        })
+      )
 
     assert_reply ref, :error, %{reason: "unsupported_action"}, 1_000
   end
@@ -1002,10 +1055,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
              subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:me")
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => "needs_review:#{other_workspace_id}:run-1",
-        "action" => "approve"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(user_id, %{
+          "card_id" => "needs_review:#{other_workspace_id}:run-1",
+          "action" => "approve"
+        })
+      )
 
     assert_reply ref, :error, %{reason: "workspace_scope_mismatch"}, 1_000
   end
@@ -1023,10 +1080,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
     card_id = seed_review_card(user_id, workspace_id, run_id)
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card_id,
-        "action" => "request_changes"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(user_id, %{
+          "card_id" => card_id,
+          "action" => "request_changes"
+        })
+      )
 
     assert_reply ref, :error, %{reason: "note_required"}, 1_000
     assert [%{id: ^card_id}] = UserObserver.snapshot(user_id).cards
@@ -1045,7 +1106,12 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
     card_id = seed_review_card(user_id, workspace_id, run_id)
 
-    action = %{"card_id" => card_id, "action" => "approve", "request_id" => "req-1"}
+    action =
+      review_action_payload(user_id, %{
+        "card_id" => card_id,
+        "action" => "approve",
+        "request_id" => "req-1"
+      })
 
     ref = Phoenix.ChannelTest.push(socket, "card_action", action)
     assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
@@ -1075,10 +1141,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
     card_id = seed_review_card(user_id, workspace_id, run_id)
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card_id,
-        "action" => "approve"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(user_id, %{
+          "card_id" => card_id,
+          "action" => "approve"
+        })
+      )
 
     assert_reply ref, :ok, %{status: "accepted"}, 1_000
 
@@ -1121,10 +1191,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
     card_id = seed_review_card(viewer_id, workspace_id, run_id)
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card_id,
-        "action" => "approve"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(viewer_id, %{
+          "card_id" => card_id,
+          "action" => "approve"
+        })
+      )
 
     assert_reply ref, :ok, %{}, 1_000
     assert Ledger.timeline_for(workspace_id, run_id) != []
@@ -1157,11 +1231,15 @@ defmodule CaseinWeb.MobileUserChannelTest do
       |> Repo.insert()
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card_id,
-        "action" => "approve",
-        "request_id" => "device-b"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(user_id, %{
+          "card_id" => card_id,
+          "action" => "approve",
+          "request_id" => "device-b"
+        })
+      )
 
     assert_reply ref, :error, %{reason: "card_already_resolved"}, 1_000
   end
@@ -1189,11 +1267,15 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert route.session_id == run_id
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card.id,
-        "action" => "resume",
-        "request_id" => "nav-1"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        origin_action(%{
+          "card_id" => card.id,
+          "action" => "resume",
+          "request_id" => "nav-1"
+        })
+      )
 
     assert_reply ref, :ok, %{status: "accepted", idempotent: false, result: result}, 1_000
     assert result["session_id"] == run_id
@@ -1210,11 +1292,15 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
     # Retried navigation with the same request_id replays idempotently.
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card.id,
-        "action" => "resume",
-        "request_id" => "nav-1"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        origin_action(%{
+          "card_id" => card.id,
+          "action" => "resume",
+          "request_id" => "nav-1"
+        })
+      )
 
     assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
   end
@@ -1231,10 +1317,14 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
     # First attempt fails validation → a rejected outcome is recorded.
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card_id,
-        "action" => "request_changes"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(user_id, %{
+          "card_id" => card_id,
+          "action" => "request_changes"
+        })
+      )
 
     assert_reply ref, :error, %{reason: "note_required"}, 1_000
     assert Repo.get_by(ActionOutcome, card_id: card_id, status: "rejected")
@@ -1242,11 +1332,15 @@ defmodule CaseinWeb.MobileUserChannelTest do
     # The corrected retry uses the SAME derived request_id and must NOT replay
     # the rejection — it re-evaluates and succeeds.
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => card_id,
-        "action" => "request_changes",
-        "payload" => %{"note" => "add the missing test"}
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        review_action_payload(user_id, %{
+          "card_id" => card_id,
+          "action" => "request_changes",
+          "payload" => %{"note" => "add the missing test"}
+        })
+      )
 
     assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
     assert [%{action: "run.approval_denied"}] = Ledger.timeline_for(workspace_id, run_id)
@@ -1273,22 +1367,30 @@ defmodule CaseinWeb.MobileUserChannelTest do
     shared = "shared-request-id"
 
     ref_a =
-      Phoenix.ChannelTest.push(socket_a, "card_action", %{
-        "card_id" => card_a,
-        "action" => "approve",
-        "request_id" => shared
-      })
+      Phoenix.ChannelTest.push(
+        socket_a,
+        "card_action",
+        review_action_payload(user_a, %{
+          "card_id" => card_a,
+          "action" => "approve",
+          "request_id" => shared
+        })
+      )
 
     assert_reply ref_a, :ok, %{status: "accepted", idempotent: false}, 1_000
 
     # User B reuses A's request_id on B's own card. It must be evaluated fresh,
     # never replayed from A's outcome.
     ref_b =
-      Phoenix.ChannelTest.push(socket_b, "card_action", %{
-        "card_id" => card_b,
-        "action" => "approve",
-        "request_id" => shared
-      })
+      Phoenix.ChannelTest.push(
+        socket_b,
+        "card_action",
+        review_action_payload(user_b, %{
+          "card_id" => card_b,
+          "action" => "approve",
+          "request_id" => shared
+        })
+      )
 
     assert_reply ref_b, :ok, %{status: "accepted", idempotent: false}, 1_000
 
@@ -1310,13 +1412,48 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
 
     ref =
-      Phoenix.ChannelTest.push(socket, "card_action", %{
-        "card_id" => "needs_review:#{workspace_id}:already-gone",
-        "action" => "approve"
-      })
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        origin_action(%{
+          "card_id" => "needs_review:#{workspace_id}:already-gone",
+          "action" => "approve"
+        })
+      )
 
     assert_reply ref, :error, %{reason: "card_not_found"}, 1_000
   end
+
+  defp review_action_payload(user_id, payload, origin_id \\ Casein.Origin.id()) do
+    card_id = Map.fetch!(payload, "card_id")
+    action_id = Map.fetch!(payload, "action")
+
+    card =
+      user_id
+      |> UserObserver.snapshot()
+      |> Map.fetch!(:cards)
+      |> Enum.find(&(&1.id == card_id))
+
+    {:ok, spec} = Card.fetch_action(card, action_id)
+
+    payload
+    |> origin_action(origin_id)
+    |> Map.update("payload", %{"revision" => spec.revision}, fn params ->
+      Map.put(params, "revision", spec.revision)
+    end)
+  end
+
+  defp intervention_action_payload(card, payload) do
+    action_id = Map.fetch!(payload, "action")
+    spec = Enum.find(card.actions, &(&1["id"] == action_id))
+
+    Map.update(payload, "payload", %{"revision" => spec["revision"]}, fn params ->
+      Map.put(params, "revision", spec["revision"])
+    end)
+  end
+
+  defp origin_action(payload, origin_id \\ Casein.Origin.id()),
+    do: Map.put(payload, "origin_id", origin_id)
 
   defp prepare_user(user_id) do
     on_exit(fn -> UserObserver.stop(user_id) end)

@@ -17,22 +17,31 @@ defmodule CaseinMob.IOSConfigurationTest do
     profile = File.read!(@development_profile)
 
     assert build_setting_values(project, "DEVELOPMENT_TEAM") == ["2MP8QWK7R6"]
-    assert build_setting_occurrences(project, "DEVELOPMENT_TEAM") == 2
+    assert build_setting_occurrences(project, "DEVELOPMENT_TEAM") == 4
 
     assert build_setting_values(project, "PRODUCT_BUNDLE_IDENTIFIER") == [
-             "com.alexandrefamilyfarm.casein-mob"
+             "com.alexandrefamilyfarm.casein-mob",
+             "com.alexandrefamilyfarm.casein-mob.soak-ui-tests"
            ]
 
-    assert build_setting_occurrences(project, "PRODUCT_BUNDLE_IDENTIFIER") == 2
+    assert build_setting_occurrences(project, "PRODUCT_BUNDLE_IDENTIFIER") == 4
+
+    assert build_setting_frequency(project, "PRODUCT_BUNDLE_IDENTIFIER") == %{
+             "com.alexandrefamilyfarm.casein-mob" => 2,
+             "com.alexandrefamilyfarm.casein-mob.soak-ui-tests" => 2
+           }
+
     assert build_setting_values(project, "CODE_SIGN_ENTITLEMENTS") == ["CaseinMob.entitlements"]
     assert build_setting_occurrences(project, "CODE_SIGN_ENTITLEMENTS") == 2
 
     [application_identifier_prefix] =
       plist_array_values!(profile, "ApplicationIdentifierPrefix")
 
+    production_bundle_identifier = "com.alexandrefamilyfarm.casein-mob"
+
     expected_application_identifier =
       "#{application_identifier_prefix}." <>
-        single_build_setting!(project, "PRODUCT_BUNDLE_IDENTIFIER")
+        production_bundle_identifier
 
     # Mob signs the full application by passing this plist directly to codesign,
     # outside Xcode. Keep the resolved value here: Xcode build variables would
@@ -151,16 +160,16 @@ defmodule CaseinMob.IOSConfigurationTest do
     |> length()
   end
 
+  defp build_setting_frequency(project, setting) do
+    project
+    |> build_setting_matches(setting)
+    |> List.flatten()
+    |> Enum.frequencies()
+  end
+
   defp build_setting_matches(project, setting) do
     ~r/\b#{Regex.escape(setting)} = "?([^";]+)"?;/
     |> Regex.scan(project, capture: :all_but_first)
-  end
-
-  defp single_build_setting!(project, setting) do
-    case build_setting_values(project, setting) do
-      [value] -> value
-      values -> flunk("expected one #{setting} value, got: #{inspect(values)}")
-    end
   end
 
   defp entitlement_value!(entitlements, key) do

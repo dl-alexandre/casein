@@ -50,10 +50,11 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert find(view, :button, text: "Back").props.fill_width == false
   end
 
-  test "approve and deny submit the card-declared actions" do
+  test "approve submits immediately while destructive deny requires explicit confirmation" do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: review_card()})
+      |> authoritative_refresh(review_card())
       |> render_info({:tap, {:action, "approve"}})
 
     assert assigns(view).submitted_action == "approve"
@@ -62,16 +63,67 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: review_card()})
+      |> authoritative_refresh(review_card())
       |> render_info({:tap, {:action, "deny"}})
 
+    assert assigns(view).submitted_action == nil
+    assert text(view) =~ "Deny this run?"
+    assert find(view, :button, text: "Confirm Deny")
+    assert find(view, :button, text: "Cancel")
+
+    view = render_info(view, {:tap, {:confirm_action, "deny"}})
     assert assigns(view).submitted_action == "deny"
     assert text(view) =~ "Deny sent"
+  end
+
+  test "destructive confirmation can be cancelled without dispatch" do
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: review_card()})
+      |> authoritative_refresh(review_card())
+      |> render_info({:tap, {:action, "deny"}})
+      |> render_info({:tap, :cancel_confirmation})
+
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).pending_confirmation == nil
+    assert text(view) =~ "Action cancelled"
+    assert find(view, :button, text: "Deny")
+  end
+
+  test "disconnect disables actions until an authoritative snapshot refreshes the card" do
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: review_card()})
+      |> render_info({:mobile_cards_status, {:disconnected, :network_unavailable}})
+
+    assert assigns(view).authoritative? == false
+    assert find(view, :button, text: "Approve").props.disabled == true
+    assert text(view) =~ "Connection lost"
+
+    view = render_info(view, {:tap, {:action, "approve"}})
+    assert assigns(view).submitted_action == nil
+    assert text(view) =~ "Reconnect and refresh"
+
+    view =
+      view
+      |> render_info({:mobile_cards_snapshot, %{"cards" => [review_card()]}})
+
+    assert assigns(view).authoritative? == false
+    assert find(view, :button, text: "Approve").props.disabled == true
+
+    view =
+      view
+      |> render_info({:mobile_cards_status, :joined})
+
+    assert assigns(view).authoritative? == true
+    assert find(view, :button, text: "Approve").props.disabled == false
   end
 
   test "request changes requires and trims a short note" do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: review_card()})
+      |> authoritative_refresh(review_card())
       |> render_info({:tap, {:action, "request_changes"}})
 
     assert text(view) =~ "Add a short note first"
@@ -89,6 +141,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: review_card()})
+      |> authoritative_refresh(review_card())
       |> render_info({:tap, {:action, "approve"}})
       |> render_info(
         {:card_action_result, "needs_review:ws-1:run-1", {:error, "card_already_resolved"}}
@@ -102,6 +155,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: intervention_card()})
+      |> authoritative_refresh(intervention_card())
       |> render_info({:change, :note, "Continue."})
       |> render_info({:tap, {:action, "follow_up"}})
       |> render_info({:card_action_result, "in_progress:ws-1:run-1", {:error, "card_not_found"}})
@@ -163,6 +217,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
       |> render_info({:tap, {:action, "continue_task"}})
 
     assert text(view) =~ "The exact agent will continue the current task."
@@ -195,6 +250,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: intervention_card()})
+      |> authoritative_refresh(intervention_card())
       |> render_info({:tap, {:action, "follow_up"}})
 
     assert text(view) =~ "Add a short note first"
@@ -242,6 +298,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
       |> render_info({:tap, {:action, "continue_task"}})
       |> render_info(
         {:card_action_result, "in_progress:ws-1:run-1", {:error, "action_revision_stale"}}
@@ -258,6 +315,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: intervention_card()})
+      |> authoritative_refresh(intervention_card())
       |> render_info({:change, :note, "Continue."})
       |> render_info({:tap, {:action, "follow_up"}})
       |> render_info(
@@ -317,6 +375,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
       "id" => "needs_review:ws-1:run-1",
       "type" => "needs_review",
       "priority" => "high",
+      "origin" => %{"id" => "origin-local", "display_name" => "Local Mac"},
       "workspace_id" => "ws-1",
       "workspace_name" => "Mobile Workspace",
       "session_id" => "run-1",
@@ -329,6 +388,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
           "style" => "primary",
           "destructive?" => false,
           "confirmation" => nil,
+          "revision" => "approval-revision-1",
           "input" => []
         },
         %{
@@ -337,6 +397,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
           "style" => "default",
           "destructive?" => false,
           "confirmation" => nil,
+          "revision" => "approval-revision-1",
           "input" => [
             %{"name" => "note", "type" => "text", "required" => true, "max_length" => 280}
           ]
@@ -347,6 +408,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
           "style" => "destructive",
           "destructive?" => true,
           "confirmation" => "Deny this run?",
+          "revision" => "approval-revision-1",
           "input" => [
             %{"name" => "note", "type" => "text", "required" => false, "max_length" => 280}
           ]
@@ -391,6 +453,12 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     }
   end
 
+  defp authoritative_refresh(view, card) do
+    view
+    |> render_info({:mobile_cards_status, :joined})
+    |> render_info({:mobile_cards_snapshot, %{"cards" => [card]}})
+  end
+
   defp intervention_card do
     %{
       "id" => "in_progress:ws-1:run-1",
@@ -414,6 +482,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
           "style" => "primary",
           "destructive?" => false,
           "confirmation" => nil,
+          "revision" => "intervention-revision-1",
           "input" => [
             %{
               "name" => "message",

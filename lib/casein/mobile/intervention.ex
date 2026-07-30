@@ -9,6 +9,7 @@ defmodule Casein.Mobile.Intervention do
 
   alias Casein.Agents.TerminalOutputFormat
   alias Casein.Export.Sanitizer
+  alias Casein.Mobile.ResumeCard
   alias Casein.Terminals
   alias Casein.Workspaces
 
@@ -28,15 +29,16 @@ defmodule Casein.Mobile.Intervention do
 
   @spec describe(map()) :: map() | nil
   def describe(card) when is_map(card) do
-    with {:ok, target} <- authoritative_target(card),
+    with [_ | _] = actions <- action_specs(card),
+         {:ok, target} <- authoritative_target(card),
          {:ok, excerpt} <- capture_excerpt(target) do
       %{
         version: 1,
         recent_output: excerpt,
         captured_at: DateTime.utc_now(),
         target: %{role: "agent"},
-        action: action_spec(),
-        actions: action_specs(card),
+        action: Enum.find(actions, &(&1.id == "follow_up")),
+        actions: actions,
         pwa_path: pwa_path(card)
       }
     else
@@ -44,8 +46,8 @@ defmodule Casein.Mobile.Intervention do
     end
   end
 
-  @spec action_spec() :: map()
-  def action_spec do
+  @spec action_spec(String.t() | nil) :: map()
+  def action_spec(revision \\ nil) do
     %{
       id: "follow_up",
       label: "Send follow-up",
@@ -61,6 +63,7 @@ defmodule Casein.Mobile.Intervention do
         }
       ]
     }
+    |> maybe_put_revision(revision)
   end
 
   @doc """
@@ -73,28 +76,45 @@ defmodule Casein.Mobile.Intervention do
   @spec action_specs(map()) :: [map()]
   def action_specs(card) when is_map(card) do
     revision = action_revision(card)
+    resume = ResumeCard.project(card)
 
-    [
-      intent_spec(
-        "continue_task",
-        "Continue task",
-        "The exact agent will continue the current task.",
-        revision
-      ),
-      intent_spec(
-        "address_review",
-        "Address review",
-        "The exact agent will address the current review and report the result.",
-        revision
-      ),
-      intent_spec(
-        "summarize_blocker",
-        "Summarize blocker",
-        "The exact agent will state the blocker and decision it needs.",
-        revision
-      ),
-      action_spec()
-    ]
+    case {resume.state, resume.phase} do
+      {"needs_attention", "review"} ->
+        [
+          intent_spec(
+            "address_review",
+            "Address review",
+            "The exact agent will address the current review and report the result.",
+            revision
+          ),
+          action_spec(revision)
+        ]
+
+      {"needs_attention", "waiting"} ->
+        [
+          intent_spec(
+            "summarize_blocker",
+            "Summarize blocker",
+            "The exact agent will state the blocker and decision it needs.",
+            revision
+          ),
+          action_spec(revision)
+        ]
+
+      {"working", phase} when phase in ["executing", "testing", "deploying", "unknown"] ->
+        [
+          intent_spec(
+            "continue_task",
+            "Continue task",
+            "The exact agent will continue the current task.",
+            revision
+          ),
+          action_spec(revision)
+        ]
+
+      _terminal_or_partial ->
+        []
+    end
   end
 
   @spec available_action(map(), String.t()) :: {:ok, map()} | {:error, atom()}
@@ -122,10 +142,15 @@ defmodule Casein.Mobile.Intervention do
   def delivery_action_id?(_action_id), do: false
 
   @spec requires_revision?(map()) :: boolean()
-  def requires_revision?(%{id: action_id}) when is_binary(action_id),
-    do: Map.has_key?(@intent_messages, action_id)
+  def requires_revision?(%{revision: revision}) when is_binary(revision) and revision != "",
+    do: true
 
   def requires_revision?(_spec), do: false
+
+  defp maybe_put_revision(spec, revision) when is_binary(revision),
+    do: Map.put(spec, :revision, revision)
+
+  defp maybe_put_revision(spec, _revision), do: spec
 
   @spec deliver(map(), map(), map()) :: {:ok, map()} | {:error, atom()}
   def deliver(card, %{id: "follow_up"}, %{message: message}), do: send_follow_up(card, message)

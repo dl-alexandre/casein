@@ -24,6 +24,10 @@ defmodule CaseinMob.ReviewDecisionScreen do
       |> Mob.Socket.assign(:card, card)
       |> Mob.Socket.assign(:note, "")
       |> Mob.Socket.assign(:submitted_action, nil)
+      |> Mob.Socket.assign(:pending_confirmation, nil)
+      |> Mob.Socket.assign(:feed_joined?, false)
+      |> Mob.Socket.assign(:fresh_card?, false)
+      |> Mob.Socket.assign(:authoritative?, false)
       |> Mob.Socket.assign(:intervention_completed, false)
       |> Mob.Socket.assign(:card_expired, false)
       |> Mob.Socket.assign(:message, nil)
@@ -37,6 +41,58 @@ defmodule CaseinMob.ReviewDecisionScreen do
 
   def handle_info({:tap, {:action, action_id}}, socket) when is_binary(action_id) do
     {:noreply, submit_action(socket, action_id)}
+  end
+
+  def handle_info({:tap, {:confirm_action, action_id}}, socket) when is_binary(action_id) do
+    {:noreply, confirm_action(socket, action_id)}
+  end
+
+  def handle_info({:tap, :cancel_confirmation}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:pending_confirmation, nil)
+     |> Mob.Socket.assign(:message, "Action cancelled")}
+  end
+
+  def handle_info({:mobile_cards_status, status}, socket) do
+    feed_joined? = status_state(status) == :joined
+    fresh_card? = feed_joined? and socket.assigns.fresh_card?
+    authoritative? = feed_joined? and fresh_card?
+
+    socket =
+      socket
+      |> Mob.Socket.assign(:feed_joined?, feed_joined?)
+      |> Mob.Socket.assign(:fresh_card?, fresh_card?)
+      |> Mob.Socket.assign(:authoritative?, authoritative?)
+      |> maybe_clear_confirmation(authoritative?)
+      |> maybe_assign_connection_message(status)
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:mobile_cards_snapshot, payload}, socket) do
+    card_id = get(socket.assigns.card, "id")
+
+    case Enum.find(get(payload, "cards", []), &(get(&1, "id") == card_id)) do
+      card when is_map(card) ->
+        authoritative? = socket.assigns.feed_joined?
+
+        {:noreply,
+         socket
+         |> Mob.Socket.assign(:card, card)
+         |> Mob.Socket.assign(:fresh_card?, true)
+         |> Mob.Socket.assign(:authoritative?, authoritative?)
+         |> Mob.Socket.assign(:card_expired, false)}
+
+      _missing ->
+        {:noreply,
+         socket
+         |> Mob.Socket.assign(:fresh_card?, false)
+         |> Mob.Socket.assign(:authoritative?, false)
+         |> Mob.Socket.assign(:card_expired, true)
+         |> Mob.Socket.assign(:pending_confirmation, nil)
+         |> Mob.Socket.assign(:message, "This request expired or was removed.")}
+    end
   end
 
   def handle_info({:card_action_result, card_id, result}, socket) do
@@ -476,8 +532,8 @@ defmodule CaseinMob.ReviewDecisionScreen do
     invalid_card? = blank?(get(assigns.card, "id"))
 
     children =
-      case {assigns.card_expired, actions} do
-        {true, _actions} ->
+      case {assigns.card_expired, assigns.pending_confirmation, actions} do
+        {true, _confirmation, _actions} ->
           [
             body_text(
               "This request is no longer live. Refresh the Action Center before acting again."
@@ -497,13 +553,17 @@ defmodule CaseinMob.ReviewDecisionScreen do
             }
           ]
 
-        {false, []} ->
+        {false, spec, _actions} when is_map(spec) ->
+          confirmation_controls(spec, assigns.authoritative?)
+
+        {false, nil, []} ->
           [body_text("No actions available for this card.")]
 
-        {false, specs} ->
+        {false, nil, specs} ->
           Enum.map(specs, fn spec ->
             disabled? =
-              submitted? or invalid_card? or action_disabled?(spec, assigns.note) or
+              not assigns.authoritative? or submitted? or invalid_card? or
+                action_disabled?(spec, assigns.note) or
                 (assigns.intervention_completed and intervention_action?(spec))
 
             action_control(spec, disabled?)
@@ -516,6 +576,45 @@ defmodule CaseinMob.ReviewDecisionScreen do
       props: %{fill_width: true, gap: 8},
       children: Enum.reject(children, &is_nil/1)
     }
+  end
+
+  defp confirmation_controls(spec, authoritative?) do
+    prompt =
+      case get(spec, "confirmation") do
+        value when is_binary(value) and value != "" -> value
+        _ -> "Confirm #{String.downcase(action_label(spec))}?"
+      end
+
+    [
+      body_text(prompt),
+      %{
+        type: :button,
+        props: %{
+          text: "Confirm #{action_label(spec)}",
+          background: style_background(get(spec, "style")),
+          text_color: style_text_color(get(spec, "style")),
+          fill_width: true,
+          padding: :space_sm,
+          height: 44.0,
+          disabled: not authoritative?,
+          on_tap: {self(), {:confirm_action, get(spec, "id")}}
+        },
+        children: []
+      },
+      %{
+        type: :button,
+        props: %{
+          text: "Cancel",
+          background: :surface_raised,
+          text_color: :on_surface,
+          fill_width: true,
+          padding: :space_sm,
+          height: 44.0,
+          on_tap: {self(), :cancel_confirmation}
+        },
+        children: []
+      }
+    ]
   end
 
   defp action_button(spec, disabled?) do
@@ -553,6 +652,10 @@ defmodule CaseinMob.ReviewDecisionScreen do
     Mob.Socket.assign(socket, :message, "Refresh the Action Center before acting again.")
   end
 
+  defp submit_action(%{assigns: %{authoritative?: false}} = socket, _action_id) do
+    Mob.Socket.assign(socket, :message, "Reconnect and refresh before acting.")
+  end
+
   defp submit_action(socket, action_id) do
     case find_action(socket.assigns.card, action_id) do
       nil ->
@@ -562,10 +665,64 @@ defmodule CaseinMob.ReviewDecisionScreen do
         if requires_note?(spec) and String.trim(socket.assigns.note) == "" do
           Mob.Socket.assign(socket, :message, "Add a short note first")
         else
-          submit(socket, spec)
+          maybe_confirm(socket, spec)
         end
     end
   end
+
+  defp maybe_confirm(socket, spec) do
+    if get(spec, "destructive?") == true do
+      socket
+      |> Mob.Socket.assign(:pending_confirmation, spec)
+      |> Mob.Socket.assign(:message, nil)
+    else
+      submit(socket, spec)
+    end
+  end
+
+  defp confirm_action(%{assigns: %{authoritative?: false}} = socket, _action_id) do
+    socket
+    |> Mob.Socket.assign(:pending_confirmation, nil)
+    |> Mob.Socket.assign(:message, "Reconnect and refresh before acting.")
+  end
+
+  defp confirm_action(socket, action_id) do
+    case socket.assigns.pending_confirmation do
+      spec when is_map(spec) ->
+        if get(spec, "id") == action_id do
+          socket
+          |> Mob.Socket.assign(:pending_confirmation, nil)
+          |> submit(spec)
+        else
+          socket
+          |> Mob.Socket.assign(:pending_confirmation, nil)
+          |> Mob.Socket.assign(:message, "Action unavailable")
+        end
+
+      _ ->
+        Mob.Socket.assign(socket, :message, "Action unavailable")
+    end
+  end
+
+  defp maybe_clear_confirmation(socket, true), do: socket
+
+  defp maybe_clear_confirmation(socket, false) do
+    Mob.Socket.assign(socket, :pending_confirmation, nil)
+  end
+
+  defp maybe_assign_connection_message(socket, status) do
+    if status_state(status) in [:disconnected, :error] do
+      Mob.Socket.assign(socket, :message, "Connection lost. Reconnect and refresh before acting.")
+    else
+      socket
+    end
+  end
+
+  defp status_state({state, _reason}) when state in [:joined, :connecting, :disconnected, :error],
+    do: state
+
+  defp status_state(state) when state in [:joined, :connecting, :disconnected, :error], do: state
+  defp status_state(_status), do: :connecting
 
   defp submit(socket, spec) do
     card_id = get(socket.assigns.card, "id")

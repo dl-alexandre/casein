@@ -43,14 +43,36 @@ defmodule Casein.Mobile.CardTest do
     assert card.meta.diff_preview == "- old auth\n+ new auth"
     assert card.meta.files_changed == ["lib/auth.ex", "test/auth_test.exs"]
     assert card.meta.previous_decisions == [%{action: "deny", note: "Missing tests"}]
+    assert [revision] = card.actions |> Enum.map(& &1.revision) |> Enum.uniq()
+    assert is_binary(revision)
     assert card.created_at == @now
     assert card.updated_at == @now
+  end
+
+  test "review action revisions are stable for one approval and change for a replacement" do
+    attrs = %{
+      user_id: "dev",
+      workspace_id: "ws-1",
+      session_id: "run-1",
+      review_count: 1,
+      approval_id: "approval-1",
+      command_id: "compile"
+    }
+
+    first = Card.needs_review(attrs, @now)
+    same = Card.needs_review(attrs, @later)
+    replacement = Card.needs_review(%{attrs | approval_id: "approval-2"}, @later)
+
+    assert action_revisions(first) == action_revisions(same)
+    refute action_revisions(first) == action_revisions(replacement)
   end
 
   test "needs_review returns nil when the count is cleared" do
     assert Card.needs_review(%{user_id: "dev", workspace_id: "ws-1", review_count: 0}, @now) ==
              nil
   end
+
+  defp action_revisions(card), do: Enum.map(card.actions, & &1.revision)
 
   test "in_progress card uses active terminology and normal priority" do
     card =

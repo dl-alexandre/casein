@@ -2,7 +2,8 @@ defmodule Casein.Mobile.UserObserverTest do
   use Casein.DataCase, async: false
 
   alias Casein.Audit
-  alias Casein.Mobile.{AttentionInbox, UserObserver}
+  alias Casein.Mobile.{AttentionInbox, AttentionTransition, UserObserver}
+  alias Casein.Repo
   alias Casein.Runs.Ledger
   alias Casein.Terminals.Session.Info
   alias Casein.Workspace
@@ -207,6 +208,71 @@ defmodule Casein.Mobile.UserObserverTest do
     cleared = UserObserver.reconcile_live_work(user_id, "ws-1", [])
     refute Enum.any?(cleared.cards, &(&1.source == "live_work"))
     assert Enum.any?(cleared.cards, &(&1.type == :needs_review))
+  end
+
+  test "live work reconciliation durably records only meaningful state and disappearance changes" do
+    previous = Application.get_env(:casein, :mobile_attention_store_enabled)
+    Application.put_env(:casein, :mobile_attention_store_enabled, true)
+    user_id = unique_user()
+
+    try do
+      prepare_user(user_id)
+
+      working = %Info{
+        id: "agent-runtime-1",
+        kind: :agent,
+        workspace_id: "ws-1",
+        runner_id: "runtime-1",
+        status: :active,
+        metadata: %{
+          agent: "codex",
+          windows: [%{conversation_title: "Fix visibility", agent_state: :working}]
+        }
+      }
+
+      first = UserObserver.reconcile_live_work(user_id, "ws-1", [working])
+      assert [card] = first.cards
+
+      assert AttentionInbox.project_many(user_id, Casein.Origin.id(), [card])[card.id].since_viewed.count ==
+               1
+
+      duplicate = UserObserver.reconcile_live_work(user_id, "ws-1", [working])
+      assert duplicate.version == first.version
+      assert Repo.aggregate(AttentionTransition, :count) == 1
+
+      blocked =
+        put_in(working.metadata.windows, [
+          %{conversation_title: "Fix visibility", agent_state: :blocked}
+        ])
+
+      changed = UserObserver.reconcile_live_work(user_id, "ws-1", [blocked])
+      assert [card] = changed.cards
+      attention = AttentionInbox.project_many(user_id, Casein.Origin.id(), [card])[card.id]
+      assert attention.reason_code == "human_blocked"
+      assert attention.since_viewed.count == 2
+      assert Repo.aggregate(AttentionTransition, :count) == 2
+
+      cleared = UserObserver.reconcile_live_work(user_id, "ws-1", [])
+      assert cleared.cards == []
+      assert Repo.aggregate(AttentionTransition, :count) == 3
+
+      latest =
+        AttentionTransition
+        |> Repo.all()
+        |> Enum.max_by(& &1.id)
+
+      assert latest.event_action == "live_work.disappeared"
+      assert latest.state == "needs_attention"
+      assert latest.reason_code == "offline_resumable"
+    after
+      UserObserver.stop(user_id)
+
+      if is_nil(previous) do
+        Application.delete_env(:casein, :mobile_attention_store_enabled)
+      else
+        Application.put_env(:casein, :mobile_attention_store_enabled, previous)
+      end
+    end
   end
 
   test "late directory and hydration messages cannot repopulate a cleared workspace" do
