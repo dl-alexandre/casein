@@ -83,6 +83,27 @@ defmodule McpCtl.Params do
   @spec port() :: map()
   def port, do: %{type: "integer"}
 
+  @spec runtime_id() :: map()
+  def runtime_id do
+    %{
+      type: "string",
+      description:
+        "Explicit runtime whose preview surface should be opened. Use the runtime_id " <>
+          "returned by Artifact MCP to open that artifact beside the calling agent, " <>
+          "even when the artifact runs in a different tmux session."
+    }
+  end
+
+  @spec runtime_required() :: map()
+  def runtime_required do
+    %{
+      type: "boolean",
+      description:
+        "When true, fail instead of falling back to the workspace app when no matching " <>
+          "runtime preview surface exists."
+    }
+  end
+
   @spec path() :: map()
   def path, do: %{type: "string", default: "/"}
 
@@ -248,6 +269,8 @@ defmodule McpCtl.Params do
     |> Map.merge(%{
       tmux_session: tmux_session(),
       surface: surface(),
+      runtime_id: runtime_id(),
+      runtime_required: runtime_required(),
       default_headers: default_headers(),
       actor_id: actor_id(),
       assignment_id: assignment_id(),

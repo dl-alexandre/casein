@@ -1312,6 +1312,35 @@ defmodule Casein.Agents.PreviewToolsTest do
     assert registration.url == "https://alice.devbox.example.com"
   end
 
+  test "preview_open selects an explicit runtime across tmux sessions" do
+    caller_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+    artifact_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}artifact"
+
+    seed_runtime_surface!(@v3_workspace.id, artifact_session,
+      runtime_id: "art-explicit",
+      port: 4102
+    )
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open", @v3_workspace, %{
+               "mode" => "app",
+               "runtime_id" => "art-explicit",
+               "tmux_session" => caller_session
+             })
+
+    registration = PreviewPanes.get_by_pane(pane_id)
+    assert registration.tmux_session == caller_session
+    assert registration.url == "http://localhost:4102"
+  end
+
+  test "preview_open does not fall back when an explicit runtime is missing" do
+    assert {:error, %{error: :runtime_surface_not_found}} =
+             PreviewTools.invoke("preview_open", @v3_workspace, %{
+               "mode" => "app",
+               "runtime_id" => "art-missing"
+             })
+  end
+
   test "preview_open_here rejects explicit base surface requests" do
     prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
     worktree_session = "#{prefix}wt-agent"

@@ -118,7 +118,7 @@ defmodule Casein.Previews.SurfaceResolver do
             {:ok, surface}
 
           {:error, %{error: :runtime_surface_not_found} = reason} ->
-            if Keyword.get(opts, :runtime_required),
+            if runtime_target_required?(opts),
               do: {:error, reason},
               else: resolve_base_surface(workspace, requested)
 
@@ -260,13 +260,16 @@ defmodule Casein.Previews.SurfaceResolver do
 
   defp runtime_scope?(workspace, opts) do
     tmux_session = non_empty_string(Keyword.get(opts, :tmux_session))
+    runtime_id = non_empty_string(Keyword.get(opts, :runtime_id))
 
-    is_binary(tmux_session) and Enum.any?(runtime_candidates(workspace, opts))
+    is_binary(runtime_id) or
+      (is_binary(tmux_session) and Enum.any?(runtime_candidates(workspace, opts)))
   end
 
   defp runtime_candidates(workspace, opts) do
     workspace_id = workspace_id(workspace)
     tmux_session = non_empty_string(Keyword.get(opts, :tmux_session))
+    runtime_id = non_empty_string(Keyword.get(opts, :runtime_id))
 
     case workspace_id do
       id when is_binary(id) and id != "" ->
@@ -274,12 +277,18 @@ defmodule Casein.Previews.SurfaceResolver do
         |> Deps.impl(:runtimes).list_runtimes()
         |> Enum.reject(&(&1.status in @inactive_runtime_statuses))
         |> Enum.filter(fn %Runtime{} = runtime ->
-          is_nil(tmux_session) or runtime.tmux_session_id == tmux_session
+          is_binary(runtime_id) or is_nil(tmux_session) or
+            runtime.tmux_session_id == tmux_session
         end)
 
       _ ->
         []
     end
+  end
+
+  defp runtime_target_required?(opts) do
+    Keyword.get(opts, :runtime_required) == true or
+      is_binary(non_empty_string(Keyword.get(opts, :runtime_id)))
   end
 
   defp runtime_surface_structs(%Runtime{} = runtime) do

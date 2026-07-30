@@ -12,7 +12,12 @@ defmodule Casein.Agents.PreviewTools.Helpers do
 
   @doc false
   def surface_props do
-    Map.put(workspace_props(), :tmux_session, Params.tmux_session())
+    Map.merge(workspace_props(), %{
+      tmux_session: Params.tmux_session(),
+      runtime_id: Params.runtime_id(),
+      runtime_required: Params.runtime_required(),
+      port: Params.port()
+    })
   end
 
   @doc false
