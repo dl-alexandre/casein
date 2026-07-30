@@ -199,6 +199,10 @@ defmodule Casein.MixProject do
         "sobelow --skip --exit",
         "credo --min-priority high",
         "format --check-formatted",
+        # Config-seam guard (sibling of check-scc-guard.sh). SCC stays
+        # pre-push-only; this one also rides precommit.ci so PR gate and
+        # deploy checks catch cycle-bound Application.get_env/3 defaults.
+        "cmd ./scripts/check-config-seam-guard.sh",
         "cmd ./scripts/test-cover-gate.sh"
       ]
     ]
