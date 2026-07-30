@@ -85,13 +85,23 @@ defmodule CaseinMob.ReviewDecisionScreen do
          |> Mob.Socket.assign(:card_expired, false)}
 
       _missing ->
-        {:noreply,
-         socket
-         |> Mob.Socket.assign(:fresh_card?, false)
-         |> Mob.Socket.assign(:authoritative?, false)
-         |> Mob.Socket.assign(:card_expired, true)
-         |> Mob.Socket.assign(:pending_confirmation, nil)
-         |> Mob.Socket.assign(:message, "This request expired or was removed.")}
+        socket =
+          socket
+          |> Mob.Socket.assign(:fresh_card?, false)
+          |> Mob.Socket.assign(:authoritative?, false)
+          |> Mob.Socket.assign(:pending_confirmation, nil)
+
+        if intervention_action_id?(socket.assigns.submitted_action) do
+          {:noreply,
+           socket
+           |> Mob.Socket.assign(:card_expired, false)
+           |> Mob.Socket.assign(:message, "Request resolved. Waiting for delivery confirmation.")}
+        else
+          {:noreply,
+           socket
+           |> Mob.Socket.assign(:card_expired, true)
+           |> Mob.Socket.assign(:message, "This request expired or was removed.")}
+        end
     end
   end
 

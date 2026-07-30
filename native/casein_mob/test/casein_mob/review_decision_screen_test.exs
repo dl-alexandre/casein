@@ -277,6 +277,38 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert find(view, :button, text: "Return to Action Center")
   end
 
+  test "a resolved snapshot waits for the in-flight intervention reply" do
+    card = intervention_card()
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+
+    assert assigns(view).submitted_action == "follow_up"
+
+    view = render_info(view, {:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert assigns(view).submitted_action == "follow_up"
+    assert assigns(view).card_expired == false
+    assert text(view) =~ "Request resolved. Waiting for delivery confirmation."
+    assert find(view, :button, text: "Send follow-up").props.disabled == true
+
+    view =
+      render_info(
+        view,
+        {:card_action_result, card["id"],
+         {:ok, %{"result" => %{"confirmation" => "Follow-up delivered to the exact agent."}}}}
+      )
+
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).intervention_completed == true
+    assert text(view) =~ "Follow-up delivered to the exact agent."
+    refute text(view) =~ "expired or was removed"
+  end
+
   test "a stale action revision forces authoritative Action Center refresh" do
     card =
       update_in(intervention_card(), ["actions"], fn actions ->
