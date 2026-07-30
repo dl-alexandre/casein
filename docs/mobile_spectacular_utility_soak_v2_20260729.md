@@ -11,7 +11,7 @@ terminal output, raw logs, commands, or file contents in this document.
 | Connected meaningful-transition p95 | not yet measured | <= 2 s | pending |
 | Cold restored live feed | prior iPad < 2 s; Android not normalized | < 3 s | iPad foreground 1.693 s, authoritative feed 6.148 s; SM-T390 authenticated 6.725 s |
 | Reconnect catch-up | prior evidence qualitative | < 5 s | SM-T390 9.954 s; safe but above target |
-| Intervention completion | 80% historical | 100% naturally available actions | pending |
+| Intervention completion | 80% historical | 100% naturally available actions | not exercised: no authoritative action card was declared |
 | Exact resume completion | 90% historical | >= 95% | pending |
 | Duplicate transitions/actions | 0 observed historically | 0 | pending |
 | Desktop-required rate | not recoverable | measured, then reduced where safe | pending |
@@ -40,6 +40,7 @@ terminal output, raw logs, commands, or file contents in this document.
 | 2026-07-29 23:39 | iPad reordered preconnect | Moving transport work after persistence initialization resolves embedded boot | Exact signed `d2f590a5` still remained at `Starting BEAM…`; Repo ordering was not the cause | Coding iPad console and signed artifact provenance | Product defect / blocking | Remove speculative startup preconnect entirely and restore the previously proven watcher-driven connection path |
 | 2026-07-29 23:56 | iPad module bisect | Compact dashboard layout remains renderable when no resume context exists | Exact-base control booted; feature Review screen alone booted; feature Dashboard alone reproduced the hang. The layout moved an optional `resume_button/2` into an unfiltered child list, emitting a nil child when no resume context existed | Single-module device BEAM bisect with exact hashes | Product defect / blocking | Reject nil children in the paired summary and assert the no-resume paired tree recursively contains none |
 | 2026-07-30 00:01 | Final exact-head devices | Reviewed native state boots and remains safe on both connected devices | Coding iPad: 3 applicable UI tests passed, 1 no-card skip, full portrait/landscape canvas, no crashes. SM-T390: UIAutomator passed with compact layout, offline read-only/reconnect, no crash/ANR | Signed/data-preserving iPad build and exact device BEAM hashes; Android exact device BEAM hash | Green functionality / performance follow-up | Land reviewed fix; retain measured cold hydration/reconnect budgets as unresolved performance work rather than weaken authority checks |
+| 2026-07-30 01:05 | Deployed disposable-agent action proof | A harmless prompt in the explicit disposable agent pane yields a server-declared clarification card on both devices | Guarded delivery targeted only the role-marked agent pane, but neither device received an action card after authoritative refresh; Live remained healthy, Needs Me remained empty, and Android offline/recovery remained visibly stale then authoritative | Aggregate transition counts plus bounded iPad and SM-T390 UI automation; no pane contents or message bodies captured | Missing authoritative projection / follow-up | Do not fabricate a card or bypass the typed action contract; design a narrow server-declared clarification event before claiming physical action/replay proof |
 
 ## Findings
 
