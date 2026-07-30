@@ -20,6 +20,15 @@ defmodule CaseinWeb.API.ArtifactMCP do
   @ui_resource_uri "ui://casein-artifact/artifact-app.html"
   @ui_mime_type "text/html;profile=mcp-app"
 
+  # Baked in at compile time, following Casein.Terminals.ToolThemes. The view is
+  # a static asset shipped with the release, so reading it per `resources/read`
+  # bought nothing — and this way a missing asset fails the build instead of
+  # degrading to "no such resource" in production. `@external_resource` makes an
+  # edit to the HTML trigger a recompile.
+  @ui_app_path Path.expand(Path.join("priv", "mcp_apps/artifact_app.html"))
+  @external_resource @ui_app_path
+  @ui_app_html File.read!(@ui_app_path)
+
   # Tools whose result describes a single artifact, so the viewer has something
   # to render. artifact_list (many) and artifact_retire (gone) do not qualify.
   @ui_tools ~w(artifact_create artifact_update artifact_get artifact_serve artifact_snapshot)
@@ -72,20 +81,10 @@ defmodule CaseinWeb.API.ArtifactMCP do
 
   @impl true
   def read_resource(@ui_resource_uri, _opts) do
-    case File.read(ui_app_path()) do
-      {:ok, html} ->
-        {:ok, [%{uri: @ui_resource_uri, mimeType: @ui_mime_type, text: html}]}
-
-      # Treated as absent rather than a 500: a missing priv asset means this
-      # build simply cannot offer the app.
-      {:error, _reason} ->
-        {:error, :not_found}
-    end
+    {:ok, [%{uri: @ui_resource_uri, mimeType: @ui_mime_type, text: @ui_app_html}]}
   end
 
   def read_resource(_uri, _opts), do: {:error, :not_found}
-
-  defp ui_app_path, do: Application.app_dir(:casein, "priv/mcp_apps/artifact_app.html")
 
   @impl true
   def list_tools(opts) do
