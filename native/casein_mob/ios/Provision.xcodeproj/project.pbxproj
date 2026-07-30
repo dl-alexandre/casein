@@ -8,12 +8,15 @@
 
 /* Begin PBXBuildFile section */
 		AA000001 /* MobProvision.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002 /* MobProvision.swift */; };
+		BB000001 /* CaseinMobSoakUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000002 /* CaseinMobSoakUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		AA000002 /* MobProvision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobProvision.swift; sourceTree = "<group>"; };
 		AA000003 /* MobProvision.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MobProvision.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA00000F /* CaseinMob.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CaseinMob.entitlements; sourceTree = "<group>"; };
+		BB000002 /* CaseinMobSoakUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseinMobSoakUITests.swift; sourceTree = "<group>"; };
+		BB000003 /* CaseinMobSoakUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CaseinMobSoakUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -22,6 +25,7 @@
 			children = (
 				AA000002 /* MobProvision.swift */,
 				AA00000F /* CaseinMob.entitlements */,
+				BB000004 /* CaseinMobSoakUITests */,
 				AA000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -30,8 +34,17 @@
 			isa = PBXGroup;
 			children = (
 				AA000003 /* MobProvision.app */,
+				BB000003 /* CaseinMobSoakUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		BB000004 /* CaseinMobSoakUITests */ = {
+			isa = PBXGroup;
+			children = (
+				BB000002 /* CaseinMobSoakUITests.swift */,
+			);
+			path = CaseinMobSoakUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -52,6 +65,21 @@
 			productReference = AA000003 /* MobProvision.app */;
 			productType = "com.apple.product-type.application";
 		};
+		BB000006 /* CaseinMobSoakUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB000007 /* Build configuration list for PBXNativeTarget "CaseinMobSoakUITests" */;
+			buildPhases = (
+				BB000008 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CaseinMobSoakUITests;
+			productName = CaseinMobSoakUITests;
+			productReference = BB000003 /* CaseinMobSoakUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -61,11 +89,15 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
-					AA000006 = {
+						AA000006 = {
 						SystemCapabilities = {
 							"com.apple.Push" = {
 								enabled = 1;
 							};
+						};
+						BB000006 = {
+							CreatedOnToolsVersion = 27.0;
+							ProvisioningStyle = Automatic;
 						};
 					};
 				};
@@ -83,6 +115,7 @@
 			projectRoot = "";
 			targets = (
 				AA000006 /* MobProvision */,
+				BB000006 /* CaseinMobSoakUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -93,6 +126,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA000001 /* MobProvision.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB000008 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB000001 /* CaseinMobSoakUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,6 +195,36 @@
 			};
 			name = Release;
 		};
+		BB00000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2MP8QWK7R6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexandrefamilyfarm.casein-mob.soak-ui-tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BB00000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2MP8QWK7R6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexandrefamilyfarm.casein-mob.soak-ui-tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -171,6 +242,15 @@
 			buildConfigurations = (
 				AA00000D /* Debug */,
 				AA00000E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BB000007 /* Build configuration list for PBXNativeTarget "CaseinMobSoakUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB00000B /* Debug */,
+				BB00000C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

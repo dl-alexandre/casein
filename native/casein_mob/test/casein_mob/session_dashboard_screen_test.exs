@@ -62,6 +62,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     view = mount_screen(SessionDashboardScreen)
 
     assert_renderable(view)
+    assert_no_nil_children(tree(view))
     assert text(view) =~ "casein.test · Connecting"
     assert text(view) =~ "Saved profile · validating live access"
     assert text(view) =~ "https://casein.test"
@@ -85,7 +86,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
              source: :review
            }
 
-    assert find(view, :button, text: "Resume casein.test work")
+    assert find(view, :button, text: "Resume casein.test work").props.fill_width
+    assert find(view, :button, text: "Unpair").props.fill_width == false
 
     view = render_info(view, {:tap, :resume_last_session})
 

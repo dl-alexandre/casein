@@ -84,6 +84,7 @@ defmodule Casein.Mobile.Card do
       user_id = require_string!(attrs, :user_id)
       workspace_id = require_string!(attrs, :workspace_id)
       session_id = optional_string(attrs[:session_id] || attrs["session_id"])
+      revision = review_revision(attrs, user_id, workspace_id, session_id, review_count)
 
       base(
         :needs_review,
@@ -94,7 +95,7 @@ defmodule Casein.Mobile.Card do
           session_id: session_id,
           priority: :high,
           status: "open",
-          actions: review_action_specs(),
+          actions: review_action_specs(revision),
           context: %{
             session_id: session_id,
             command_id: attrs[:command_id] || attrs["command_id"],
@@ -388,8 +389,8 @@ defmodule Casein.Mobile.Card do
   The action specs offered on a `needs_review` card. Server-authored and stable;
   the client renders these and submits the chosen `id` plus validated params.
   """
-  @spec review_action_specs() :: [action_spec()]
-  def review_action_specs do
+  @spec review_action_specs(String.t() | nil) :: [action_spec()]
+  def review_action_specs(revision \\ nil) do
     [
       %{
         id: "approve",
@@ -416,6 +417,26 @@ defmodule Casein.Mobile.Card do
         input: [%{name: :note, type: :text, required: false, max_length: @review_note_max_length}]
       }
     ]
+    |> Enum.map(&maybe_put_revision(&1, revision))
+  end
+
+  defp maybe_put_revision(spec, revision) when is_binary(revision),
+    do: Map.put(spec, :revision, revision)
+
+  defp maybe_put_revision(spec, _revision), do: spec
+
+  defp review_revision(attrs, user_id, workspace_id, session_id, review_count) do
+    [
+      user_id,
+      workspace_id,
+      session_id,
+      attrs[:approval_id] || attrs["approval_id"],
+      attrs[:command_id] || attrs["command_id"],
+      review_count
+    ]
+    |> :erlang.term_to_binary()
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.url_encode64(padding: false)
   end
 
   @doc "The action ids a card declares, in render order."

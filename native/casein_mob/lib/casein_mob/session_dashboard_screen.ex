@@ -437,50 +437,44 @@ defmodule CaseinMob.SessionDashboardScreen do
     %{
       type: :column,
       props: %{fill_width: true, background: :surface, padding: :space_sm, gap: 4},
-      children: [
-        %{
-          type: :row,
-          props: %{fill_width: true, gap: 4},
-          children:
-            [
-              %{
-                type: :text,
-                props: %{
-                  text: "#{host_name} · #{connection_health_label(assigns.mobile_cards_status)}",
-                  text_color: :on_surface,
-                  text_size: :lg,
-                  font_weight: "bold",
-                  weight: 1
-                },
-                children: []
-              },
-              resume_button(assigns[:resume_context], host_name),
-              %{
-                type: :button,
-                props: %{
-                  text: "Unpair",
-                  background: :surface_raised,
-                  text_color: :on_surface,
-                  padding: :space_sm,
-                  on_tap: {self(), :unpair}
-                },
-                children: []
-              }
-            ]
-            |> Enum.reject(&is_nil/1)
-        },
-        muted_line(host_url),
-        muted_line(connection_health_copy(assigns.mobile_cards_status)),
-        %{
-          type: :text,
-          props: %{
-            text: push_debug_line(assigns),
-            text_color: :muted,
-            text_size: :xs
+      children:
+        [
+          %{
+            type: :text,
+            props: %{
+              text: "#{host_name} · #{connection_health_label(assigns.mobile_cards_status)}",
+              text_color: :on_surface,
+              text_size: :lg,
+              font_weight: "bold"
+            },
+            children: []
           },
-          children: []
-        }
-      ]
+          resume_button(assigns[:resume_context], host_name),
+          %{
+            type: :button,
+            props: %{
+              text: "Unpair",
+              fill_width: false,
+              background: :surface_raised,
+              text_color: :on_surface,
+              padding: :space_sm,
+              on_tap: {self(), :unpair}
+            },
+            children: []
+          },
+          muted_line(host_url),
+          muted_line(connection_health_copy(assigns.mobile_cards_status)),
+          %{
+            type: :text,
+            props: %{
+              text: push_debug_line(assigns),
+              text_color: :muted,
+              text_size: :xs
+            },
+            children: []
+          }
+        ]
+        |> Enum.reject(&is_nil/1)
     }
   end
 
@@ -563,6 +557,7 @@ defmodule CaseinMob.SessionDashboardScreen do
       type: :button,
       props: %{
         text: "Resume #{host_name} work",
+        fill_width: true,
         background: :surface_raised,
         text_color: :on_surface,
         padding: :space_sm,

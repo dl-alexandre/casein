@@ -14,6 +14,7 @@ defmodule Casein.Mobile.UserObserver do
   alias Casein.Mobile.AttentionInbox
   alias Casein.Mobile.Card
   alias Casein.Mobile.LiveWork
+  alias Casein.Mobile.ResumeCard
   alias Casein.Notifications
   alias Casein.Push
   alias Casein.Terminals.SessionDirectory
@@ -498,26 +499,57 @@ defmodule Casein.Mobile.UserObserver do
           end
         end)
 
+      record_live_work_transitions(existing_live, next_cards, projected_by_key)
+
       state = %{state | version: state.version + 1, cards: next_cards}
       broadcast(state)
       state
     end
   end
 
+  defp record_live_work_transitions(existing_live, next_cards, projected_by_key) do
+    Enum.each(projected_by_key, fn {key, _projected_card} ->
+      card = Map.fetch!(next_cards, key)
+
+      if live_card_fingerprint(Map.get(existing_live, key)) != live_card_fingerprint(card) do
+        _ = AttentionInbox.record_card(card, "live_work.reconciled")
+      end
+    end)
+
+    existing_live
+    |> Map.drop(Map.keys(projected_by_key))
+    |> Enum.each(fn {_key, card} ->
+      resume = ResumeCard.project(card)
+
+      _ =
+        AttentionInbox.record_card(card, "live_work.disappeared",
+          state: resume.state,
+          phase: resume.phase,
+          reason_code: "offline_resumable",
+          occurred_at: now()
+        )
+    end)
+  end
+
+  defp live_card_fingerprint(nil), do: nil
+
+  defp live_card_fingerprint(card) do
+    Map.take(card, [
+      :source,
+      :kind,
+      :status,
+      :title,
+      :body,
+      :context,
+      :meta,
+      :expires_at
+    ])
+  end
+
   defp live_fingerprint(cards) do
     cards
     |> Enum.map(fn {key, card} ->
-      {key,
-       Map.take(card, [
-         :source,
-         :kind,
-         :status,
-         :title,
-         :body,
-         :context,
-         :meta,
-         :expires_at
-       ])}
+      {key, live_card_fingerprint(card)}
     end)
     |> Enum.sort()
   end
