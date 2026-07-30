@@ -16,15 +16,15 @@ defmodule Casein.Workspaces.AliasesTest do
     refute Aliases.linked?(left, Aliases.folder_id_for_path("/tmp/other"))
   end
 
-  test "viewer_ids/1 always includes the folder id for folder workspaces" do
+  test "viewer_ids/2 always includes the folder id for folder workspaces" do
     path = "/tmp/casein_aliases_viewer"
     folder_id = Aliases.folder_id_for_path(path)
 
-    assert folder_id in Aliases.viewer_ids(folder_id)
+    assert folder_id in Aliases.viewer_ids(folder_id, resolve_remote?: true)
   end
 
-  test "viewer_ids/1 returns the input ID when no linked workspaces exist" do
-    ids = Aliases.viewer_ids("some-unknown-workspace-id")
+  test "viewer_ids/2 returns the input ID when no linked workspaces exist" do
+    ids = Aliases.viewer_ids("some-unknown-workspace-id", resolve_remote?: true)
     assert "some-unknown-workspace-id" in ids
   end
 
@@ -56,10 +56,10 @@ defmodule Casein.Workspaces.AliasesTest do
       refute_received {:manager_called, _}
     end
 
-    test "the default (resolve_remote?: true) does reach the Manager for a cold id", %{
+    test "resolve_remote?: true reaches the Manager for a cold id", %{
       cold_id: cold_id
     } do
-      assert cold_id in Aliases.viewer_ids(cold_id)
+      assert cold_id in Aliases.viewer_ids(cold_id, resolve_remote?: true)
       assert_received {:manager_called, _}
     end
   end

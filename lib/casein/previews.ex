@@ -370,7 +370,7 @@ defmodule Casein.Previews do
   defp mirror_linked_preview(id, workspace) do
     workspace_id = workspace.id || workspace[:id]
 
-    allowed_ids = Deps.impl(:workspaces).viewer_ids(workspace_id)
+    allowed_ids = Deps.impl(:workspaces).viewer_ids(workspace_id, resolve_remote?: true)
 
     source =
       Repo.one(

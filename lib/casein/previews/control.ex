@@ -1161,7 +1161,8 @@ defmodule Casein.Previews.Control do
       current_url: session.current_url || preview.url
     }
 
-    for workspace_id <- Deps.impl(:workspaces).viewer_ids(preview.workspace_id) do
+    for workspace_id <-
+          Deps.impl(:workspaces).viewer_ids(preview.workspace_id, resolve_remote?: true) do
       Phoenix.PubSub.broadcast(
         Casein.PubSub,
         "preview:" <> workspace_id,
@@ -1185,7 +1186,8 @@ defmodule Casein.Previews.Control do
         observation: observation
       }
 
-      for workspace_id <- Deps.impl(:workspaces).viewer_ids(entry.preview.workspace_id) do
+      for workspace_id <-
+            Deps.impl(:workspaces).viewer_ids(entry.preview.workspace_id, resolve_remote?: true) do
         Phoenix.PubSub.broadcast(
           Casein.PubSub,
           "preview:" <> workspace_id,

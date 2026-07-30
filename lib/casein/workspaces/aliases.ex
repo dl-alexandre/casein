@@ -10,19 +10,24 @@ defmodule Casein.Workspaces.Aliases do
   path are treated as one viewer audience so MCP opens reach whichever tab the
   human has open.
 
-  `resolve_remote?` (default `true`) controls the cold-`State` fallback: when a
-  workspace has no persisted host_path record, `true` resolves it via a
-  `Workspaces.get/1` HTTP call, `false` degrades to the canonical id alone.
+  `opts` is mandatory — there is no default for `resolve_remote?`. An implicit
+  HTTP-resolving default is how #314 cascaded: a cold-`State` fallback that
+  blocks on `Workspaces.get/1` was reached inline from a singleton GenServer
+  fan-out. Every call site must state its intent:
 
-  Pass `resolve_remote?: false` from any context that must not block on (or
-  crash inside) synchronous HTTP — notably best-effort PubSub broadcast fan-out
-  from a long-lived GenServer, where a cold-State HTTP call has no test-owner
-  `$callers` bridge and would crash the process. Missing a linked-alias viewer
-  on a cold cache is self-healing (its next poll picks up the state); crashing
-  the singleton is not.
+  - `resolve_remote?: true` — allow the cold-`State` HTTP fallback when no
+    persisted host_path record exists (the historical default; correct for
+    client/call-site paths that own the request process).
+  - `resolve_remote?: false` — degrade to the canonical id alone. Required from
+    any context that must not block on (or crash inside) synchronous HTTP —
+    notably best-effort PubSub broadcast fan-out from a long-lived GenServer,
+    where a cold-State HTTP call has no test-owner `$callers` bridge and would
+    crash the process. Missing a linked-alias viewer on a cold cache is
+    self-healing (its next poll picks up the state); crashing the singleton is
+    not.
   """
   @spec viewer_ids(String.t(), keyword()) :: [String.t()]
-  def viewer_ids(workspace_id, opts \\ [])
+  def viewer_ids(workspace_id, opts)
 
   def viewer_ids(workspace_id, opts) when is_binary(workspace_id) and workspace_id != "" do
     workspace_id

@@ -133,7 +133,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.SessionResolve do
 
   defp pane_visibility_rank(workspace_id, %{pane_id: pane_id}) when is_binary(pane_id) do
     workspace_id
-    |> Shared.workspaces().viewer_ids()
+    |> then(&Shared.workspaces().viewer_ids(&1, resolve_remote?: true))
     |> Enum.flat_map(&PreviewActivity.recent_pane(&1, pane_id, 5))
     |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
     |> Enum.find(&fresh_loaded_visibility?/1)

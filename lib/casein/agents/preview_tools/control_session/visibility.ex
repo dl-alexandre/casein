@@ -384,7 +384,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Visibility do
   defp preview_activity_workspace_ids(workspace, registration) do
     [Shared.workspace_id(workspace), Map.get(registration, :workspace_id)]
     |> Enum.filter(&(is_binary(&1) and &1 != ""))
-    |> Enum.flat_map(fn id -> Shared.workspaces().viewer_ids(id) end)
+    |> Enum.flat_map(fn id -> Shared.workspaces().viewer_ids(id, resolve_remote?: true) end)
     |> Enum.uniq()
   end
 

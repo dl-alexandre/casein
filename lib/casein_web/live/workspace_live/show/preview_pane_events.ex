@@ -444,7 +444,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents do
 
   defp preview_pane_workspace_ids(workspace, workspace_id, path_result) do
     ([workspace_id] ++
-       WorkspaceAliases.viewer_ids(workspace_id) ++
+       WorkspaceAliases.viewer_ids(workspace_id, resolve_remote?: true) ++
        workspace_folder_aliases(workspace, path_result))
     |> Enum.reject(&(&1 in [nil, ""]))
     |> Enum.uniq()
