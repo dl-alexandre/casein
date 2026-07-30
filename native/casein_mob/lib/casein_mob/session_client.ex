@@ -877,7 +877,11 @@ defmodule CaseinMob.SessionClient do
         remaining = MapSet.delete(pids, subscriber)
 
         if MapSet.size(remaining) == 0 do
-          socket = assign(socket, :subscribers, Map.delete(socket.assigns.subscribers, topic))
+          socket =
+            socket
+            |> assign(:subscribers, Map.delete(socket.assigns.subscribers, topic))
+            |> assign(:topic_snapshots, Map.delete(socket.assigns.topic_snapshots, topic))
+
           if joined?(socket, topic), do: leave(socket, topic), else: socket
         else
           assign(socket, :subscribers, Map.put(socket.assigns.subscribers, topic, remaining))

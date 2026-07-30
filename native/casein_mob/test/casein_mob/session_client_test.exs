@@ -127,12 +127,20 @@ defmodule CaseinMob.SessionClientTest do
         "mobile:user:me" => MapSet.new([self(), other]),
         "session:ws-1" => MapSet.new([self()])
       })
+      |> Socket.assign(:topic_snapshots, %{
+        "mobile:user:me" => %{"cards" => [%{"id" => "card-1"}]},
+        "session:ws-1" => %{"sessions" => [%{"id" => "session-1"}]}
+      })
 
     assert {:noreply, socket} =
              SessionClient.handle_info({:DOWN, make_ref(), :process, self(), :normal}, socket)
 
     assert socket.assigns.subscribers == %{
              "mobile:user:me" => MapSet.new([other])
+           }
+
+    assert socket.assigns.topic_snapshots == %{
+             "mobile:user:me" => %{"cards" => [%{"id" => "card-1"}]}
            }
   end
 
