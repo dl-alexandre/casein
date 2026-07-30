@@ -388,7 +388,7 @@ setup_build_cache
 write_deploy_status in_progress "$target" gate "" "$deployed_full"
 log "using deploy cache ${CACHE_ROOT}"
 log "running pre-push gate in worktree ${target_short}"
-if ! ( cd "$WORKTREE" && bash scripts/pre-push-check.sh ); then
+if ! ( cd "$WORKTREE" && mise exec -- bash scripts/pre-push-check.sh ); then
   log "error: pre-push gate failed in deploy worktree — aborting deploy"
   record_deploy_failure gate "pre-push gate failed"
   trap - EXIT
