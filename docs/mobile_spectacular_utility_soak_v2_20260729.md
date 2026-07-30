@@ -9,8 +9,8 @@ terminal output, raw logs, commands, or file contents in this document.
 | Metric | Before | Target | After |
 |---|---:|---:|---:|
 | Connected meaningful-transition p95 | not yet measured | <= 2 s | pending |
-| Cold restored live feed | prior iPad < 2 s; Android not normalized | < 3 s | pending |
-| Reconnect catch-up | prior evidence qualitative | < 5 s | pending |
+| Cold restored live feed | prior iPad < 2 s; Android not normalized | < 3 s | iPad foreground 1.693 s, authoritative feed 6.148 s; SM-T390 authenticated 6.725 s |
+| Reconnect catch-up | prior evidence qualitative | < 5 s | SM-T390 9.954 s; safe but above target |
 | Intervention completion | 80% historical | 100% naturally available actions | pending |
 | Exact resume completion | 90% historical | >= 95% | pending |
 | Duplicate transitions/actions | 0 observed historically | 0 | pending |
@@ -39,6 +39,7 @@ terminal output, raw logs, commands, or file contents in this document.
 | 2026-07-29 23:33 | iPad reviewed head | Exact reviewed state boots and exposes authoritative Action Center | Signed install preserved data but remained at `Starting BEAM…` beyond 40 s; no crash report. The only boot-path delta was transport preconnect before Repo startup/migrations | Coding iPad console and XCUITest at `1ecc52ea` | Product defect / blocking | Move preconnect after persistence initialization, retain overlap with root-screen startup, and physically revalidate before merge |
 | 2026-07-29 23:39 | iPad reordered preconnect | Moving transport work after persistence initialization resolves embedded boot | Exact signed `d2f590a5` still remained at `Starting BEAM…`; Repo ordering was not the cause | Coding iPad console and signed artifact provenance | Product defect / blocking | Remove speculative startup preconnect entirely and restore the previously proven watcher-driven connection path |
 | 2026-07-29 23:56 | iPad module bisect | Compact dashboard layout remains renderable when no resume context exists | Exact-base control booted; feature Review screen alone booted; feature Dashboard alone reproduced the hang. The layout moved an optional `resume_button/2` into an unfiltered child list, emitting a nil child when no resume context existed | Single-module device BEAM bisect with exact hashes | Product defect / blocking | Reject nil children in the paired summary and assert the no-resume paired tree recursively contains none |
+| 2026-07-30 00:01 | Final exact-head devices | Reviewed native state boots and remains safe on both connected devices | Coding iPad: 3 applicable UI tests passed, 1 no-card skip, full portrait/landscape canvas, no crashes. SM-T390: UIAutomator passed with compact layout, offline read-only/reconnect, no crash/ANR | Signed/data-preserving iPad build and exact device BEAM hashes; Android exact device BEAM hash | Green functionality / performance follow-up | Land reviewed fix; retain measured cold hydration/reconnect budgets as unresolved performance work rather than weaken authority checks |
 
 ## Findings
 
