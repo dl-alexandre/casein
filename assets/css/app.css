@@ -724,11 +724,45 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   pointer-events: none;
   z-index: 80;
   transition: opacity 160ms ease, transform 160ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 #casein-clipboard-toast.casein-clipboard-toast--visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* Only a toast with buttons accepts taps; a plain status toast stays
+   transparent so it can't swallow a tap meant for the terminal beneath it. */
+#casein-clipboard-toast[data-actionable="true"] {
+  pointer-events: auto;
+}
+
+.casein-clipboard-toast__message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.casein-clipboard-toast__action {
+  flex: none;
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.6rem;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  /* Comfortable touch target — this is the primary control on mobile. */
+  min-height: 2rem;
+}
+
+.casein-clipboard-toast__action:hover,
+.casein-clipboard-toast__action:focus-visible {
+  background: color-mix(in srgb, currentColor 22%, transparent);
 }
 
 #casein-clipboard-toast[data-kind="pending"] {

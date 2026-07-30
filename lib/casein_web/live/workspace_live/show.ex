@@ -41,6 +41,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias CaseinWeb.WorkspaceLive.Show.CockpitData
   alias CaseinWeb.WorkspaceLive.Show.ContextMenuEvents
   alias CaseinWeb.WorkspaceLive.Show.FileEvents
+  alias CaseinWeb.WorkspaceLive.Show.ClipboardDrawerEvents
   alias CaseinWeb.WorkspaceLive.Show.FileOperations
   alias CaseinWeb.WorkspaceLive.Show.FilePaneEvents
   alias CaseinWeb.WorkspaceLive.Show.HistoryEvents
@@ -140,6 +141,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
+    clipboard:toggle clipboard:close clipboard:refresh clipboard:clear
     situation_drawer:toggle situation_drawer:close
     connect:toggle connect:close connect:load connect:mint connect:revoke
     search:run annotation:open artifact:refresh artifact:serve artifact:inspect artifact:open
@@ -336,6 +338,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         # subscribes to the viewer's notification topic and loads the unread
         # badge count on the connected mount; the inbox list is lazy (opens).
         |> NotificationsDrawerEvents.mount()
+        |> ClipboardDrawerEvents.mount()
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -879,6 +882,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_event("notifications:" <> _ = event, params, socket),
     do: NotificationsDrawerEvents.handle_event(event, params, socket)
 
+  # Clipboard drawer: the retrievable history of what agents have copied.
+  def handle_event("clipboard:" <> _ = event, params, socket),
+    do: ClipboardDrawerEvents.handle_event(event, params, socket)
+
   # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
   # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
   @doc false
@@ -991,6 +998,11 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
   def handle_info({:notification_updated, _notification}, socket),
     do: {:noreply, NotificationsDrawerEvents.handle_notification_change(socket)}
+
+  # A terminal program copied something (OSC 52). Broadcast so every viewer of
+  # this workspace — including one on another device — can pick it up.
+  def handle_info({:clipboard_history, _entry}, socket),
+    do: {:noreply, ClipboardDrawerEvents.handle_history_change(socket)}
 
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
     {:noreply, LogsEvents.insert_log_line(socket, line)}
@@ -1749,8 +1761,15 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
     Enum.reduce(payloads, socket, fn b64, s ->
       case Base.decode64(b64) do
-        {:ok, text} when text != "" -> push_event(s, "clipboard:write", %{"text" => text})
-        _ -> s
+        {:ok, text} when text != "" ->
+          # Retain it before asking the browser to write it: on iOS that write
+          # is frequently refused, and the drawer is how the copy stays
+          # recoverable instead of being lost with the toast.
+          s = ClipboardDrawerEvents.record(s, pane_id, text)
+          push_event(s, "clipboard:write", %{"text" => text})
+
+        _ ->
+          s
       end
     end)
   end

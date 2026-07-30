@@ -42,12 +42,20 @@ import {PaneHistoryDrawer} from "./pane_history_drawer"
 import {TerminalSurface} from "./terminal_surface_hook"
 import {TmuxPaneResize} from "./tmux_pane_resize_hook"
 import {CopyText} from "./copy_text_hook"
+import {ShareText} from "./share_text_hook"
 import {ContextMenu} from "./context_menu_hook"
 import {WindowPickerSidebar} from "./window_picker_sidebar"
 import {SessionsPickerSidebar} from "./sessions_picker_sidebar"
 import {WindowTabStrip} from "./window_tab_strip"
 import {HeaderOverflow} from "./header_overflow"
-import {copyTextSync, showClipboardToast} from "./terminal_copy"
+import {copyInGesture} from "./clipboard_write.mjs"
+import {
+  canShareText,
+  copyTextSync,
+  hideClipboardToast,
+  shareText,
+  showClipboardToast
+} from "./terminal_copy"
 import {installPickerLinkCopy} from "./picker_link_copy"
 import {installPreviewBridge} from "./preview_bridge"
 import {installAgentReferenceDragSources} from "./agent_reference_drag.mjs"
@@ -232,7 +240,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   reconnectAfterMs: jitteredBackoff([50, 150, 350, 750, 1500, 3000], 5000),
   rejoinAfterMs: jitteredBackoff([400, 900, 1800], 5000),
   params: {_csrf_token: csrfToken, tab_id: caseinTabId()},
-  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow},
+  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ShareText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow},
 })
 
 installPickerLinkCopy()
@@ -286,23 +294,53 @@ function __clipboardWriteSucceeded() {
   showClipboardToast("Copied to clipboard")
 }
 
+// Land the stashed copy. Only call this from inside a user gesture — see
+// copyInGesture for why the sync attempt has to come first.
 function __flushPendingClipboard() {
   const text = __pendingClipboardText
   if (text == null) return
 
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).then(
-      () => __clipboardWriteSucceeded(),
-      () => {
-        if (copyTextSync(text)) {
-          __clipboardWriteSucceeded()
-        }
-      }
-    )
-    return
+  copyInGesture(text, {
+    syncCopy: (value) => {
+      if (!copyTextSync(value)) return false
+      __clipboardWriteSucceeded()
+      return true
+    },
+    asyncWrite: (value) => navigator.clipboard?.writeText?.(value),
+    // On failure the text stays pending, so a later gesture or another tap on
+    // the toast's Copy button can retry it.
+    onAsyncResult: (ok) => {
+      if (ok) __clipboardWriteSucceeded()
+    }
+  })
+}
+
+function __sharePendingClipboard() {
+  const text = __pendingClipboardText
+  if (text == null) return
+  if (shareText(text)) {
+    __pendingClipboardText = null
+    __teardownClipboardGesture()
+    hideClipboardToast()
+  }
+}
+
+// Offer the copy as buttons rather than relying solely on "tap anywhere". A
+// click on a button is the clearest user activation WebKit accepts, and on the
+// terminal an arbitrary tap also focuses the hidden input and raises the soft
+// keyboard as a side effect. The window-level listeners stay armed underneath
+// as a fallback for people who do just tap.
+function __showPendingClipboardToast(text) {
+  const actions = [{label: "Copy", onClick: () => __flushPendingClipboard()}]
+  if (canShareText(text)) {
+    actions.push({label: "Share", onClick: () => __sharePendingClipboard()})
   }
 
-  if (copyTextSync(text)) __clipboardWriteSucceeded()
+  showClipboardToast("Agent copied text", {
+    kind: "pending",
+    duration: 15000,
+    actions
+  })
 }
 
 function __armClipboardGesture() {
@@ -348,7 +386,7 @@ window.addEventListener("phx:clipboard:write", (e) => {
     (err) => {
       __pendingClipboardText = text
       __armClipboardGesture()
-      showClipboardToast("Copy ready — tap anywhere, then paste", { kind: "pending", duration: 6000 })
+      __showPendingClipboardToast(text)
       if (window.console && console.debug) {
         console.debug("OSC52 clipboard write deferred to next gesture:", err?.name || err)
       }
