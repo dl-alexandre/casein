@@ -49,15 +49,19 @@ defmodule Casein.Agents.Transcripts do
   """
   @spec activity_hint(String.t(), keyword()) :: String.t() | nil
   def activity_hint(path, opts \\ []) when is_binary(path) do
-    with {:ok, adapter, expanded} <- transcript_adapter(path),
-         do: adapter.activity_hint(expanded, opts)
+    case transcript_adapter(path) do
+      {:ok, adapter, expanded} -> adapter.activity_hint(expanded, opts)
+      {:error, _reason} -> nil
+    end
   end
 
   @doc "Return the final assistant message on the active transcript branch."
   @spec final_assistant_message(String.t()) :: String.t() | nil
   def final_assistant_message(path) when is_binary(path) do
-    with {:ok, adapter, expanded} <- transcript_adapter(path),
-         do: adapter.final_assistant_message(expanded)
+    case transcript_adapter(path) do
+      {:ok, adapter, expanded} -> adapter.final_assistant_message(expanded)
+      {:error, _reason} -> nil
+    end
   end
 
   defp transcript_adapter(path) do

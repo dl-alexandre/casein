@@ -178,6 +178,13 @@ defmodule Casein.Agents.TranscriptsTest do
       assert Transcripts.final_assistant_message(path) == "Done."
     end
 
+    test "presentation helpers ignore stale or invalid transcript paths", %{home: home} do
+      path = Path.join([home, ".claude", "projects", "gone", "missing.jsonl"])
+
+      assert Transcripts.activity_hint(path) == nil
+      assert Transcripts.final_assistant_message(path) == nil
+    end
+
     test "tails to the requested number of entries", %{home: home} do
       path = claude_transcript!(home, "tail.jsonl", sample_transcript())
 
