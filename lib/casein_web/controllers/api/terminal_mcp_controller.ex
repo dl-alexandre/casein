@@ -20,7 +20,7 @@ defmodule CaseinWeb.API.TerminalMCPController do
     workspace_id = default_workspace_id(conn)
     caller_pane = default_caller_pane(conn)
 
-    case MCPTransport.ensure_known_session(conn) do
+    case MCPTransport.preflight(conn, conn.body_params) do
       {:halt, conn} ->
         conn
 

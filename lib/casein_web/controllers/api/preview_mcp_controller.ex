@@ -22,7 +22,7 @@ defmodule CaseinWeb.API.PreviewMCPController do
     workspace_id = default_workspace_id(conn)
     tmux_session = default_tmux_session(conn)
 
-    with {:cont, conn} <- MCPTransport.ensure_known_session(conn),
+    with {:cont, conn} <- MCPTransport.preflight(conn, conn.body_params),
          :ok <- validate_tmux_session_scope(workspace_id, tmux_session) do
       opts =
         [

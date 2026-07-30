@@ -13,7 +13,7 @@ defmodule CaseinWeb.API.ArtifactMCPController do
     conn = fetch_query_params(conn)
     workspace_id = default_workspace_id(conn)
 
-    case MCPTransport.ensure_known_session(conn) do
+    case MCPTransport.preflight(conn, conn.body_params) do
       {:halt, conn} ->
         conn
 

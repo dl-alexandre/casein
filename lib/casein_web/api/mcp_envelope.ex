@@ -21,26 +21,74 @@ defmodule CaseinWeb.API.MCPEnvelope do
     * `call_tool/3` — the `tools/call` dispatch (workspace resolution, scoping,
       tool invocation, audit). Builds its response with the public helpers below.
 
-  `initialize`, `ping`, notification routing, unknown-method errors, parse
-  errors, and protocol-version negotiation are handled here for every Casein MCP
-  server.
+  `initialize`, `ping`, `server/discover`, notification routing, unknown-method
+  errors, parse errors, and protocol-version negotiation are handled here for
+  every Casein MCP server.
+
+  ## Two revisions on one endpoint
+
+  Spec revision `2026-07-28` removed the pieces this envelope was built around:
+  `initialize`, `notifications/initialized`, `ping`, and the `Mcp-Session-Id`
+  header. Instead of a handshake, **every** request carries its protocol version
+  and client capabilities in `params._meta`, and servers MUST implement
+  `server/discover`.
+
+  Rather than fork the module, we serve both from here and pick the behaviour per
+  request:
+
+    * A request whose `_meta` declares `2026-07-28` is a modern request — it may
+      call `server/discover`, its results carry `resultType` / `_meta.serverInfo`,
+      and list results carry the `CacheableResult` fields.
+    * Anything else (including every request that declares no version at all) is
+      a legacy request and gets a byte-identical response to what it got before
+      this dual-stack landed. `initialize` and `ping` keep working.
+
+  That last property is the compatibility contract: the agents running on this
+  box speak 2025-era revisions, so new fields are **emitted only** for clients
+  that asked for the revision defining them. `docs/design/mcp-2026-07-28-adoption.md`
+  records the reasoning.
   """
 
   @default_protocol_version "2025-03-26"
   @error_version "mcp-jsonrpc-v1"
 
+  # The revision that replaced the handshake with per-request `_meta`.
+  @protocol_2026 "2026-07-28"
+
+  # Freshness hints for `CacheableResult` results. Tool surfaces only change on
+  # deploy; `server/discover` output is stable for the life of a token.
+  @tools_list_ttl_ms 300_000
+  @discover_ttl_ms 3_600_000
+
+  # Reserved `_meta` keys from the 2026-07-28 core spec.
+  @meta_protocol_version "io.modelcontextprotocol/protocolVersion"
+  @meta_client_capabilities "io.modelcontextprotocol/clientCapabilities"
+  @meta_server_info "io.modelcontextprotocol/serverInfo"
+
+  # Spec-allocated error codes (-32020..-32099 is reserved for the spec; our own
+  # -32003 agent-capability denial stays legal in the grandfathered
+  # -32000..-32019 implementation-defined range).
+  @unsupported_protocol_version -32_022
+
+  # Official extension identifier for MCP Tasks.
+  @tasks_extension "io.modelcontextprotocol/tasks"
+
+  alias Casein.Agents.MCPTasks
   alias CaseinWeb.API.MCPCapabilityScope
 
-  # Protocol versions this minimal tool surface is wire-compatible with. When a
-  # client asks for one of these on `initialize`, we echo it back (per the MCP
-  # spec); otherwise we fall back to our default.
+  # Protocol versions this tool surface is wire-compatible with. When a client
+  # asks for one of these on `initialize`, we echo it back (per the MCP spec);
+  # otherwise we fall back to our default. Also the `supportedVersions` list
+  # advertised by `server/discover`.
   @supported_protocol_versions [
+    @protocol_2026,
     "2025-06-18",
     "2025-03-26",
     "2024-11-05"
   ]
 
   @type outcome :: {:reply, map()} | :noreply | {:error, map()}
+  @type revision :: :v2026 | :legacy
 
   @callback server_name() :: String.t()
   @callback instructions(opts :: keyword()) :: String.t()
@@ -48,12 +96,133 @@ defmodule CaseinWeb.API.MCPEnvelope do
   @callback call_tool(id :: term(), params :: map(), opts :: keyword()) :: map()
 
   @doc """
+  Tool names this server may run as a background task for Tasks-aware clients.
+
+  Listing a tool here asserts two things: it can outlive an HTTP request, and it
+  is safe to abandon mid-flight (see `Casein.Agents.MCPTasks` on cancellation).
+  Read-only waits qualify; a mutating tool does not.
+  """
+  @callback task_tools() :: [String.t()]
+
+  @doc """
   Handle a single decoded JSON-RPC message for `handler`.
   """
   @spec handle(map(), module(), keyword()) :: outcome()
   def handle(message, handler, opts \\ [])
-  def handle(%{"jsonrpc" => "2.0"} = message, handler, opts), do: route(message, handler, opts)
+
+  def handle(%{"jsonrpc" => "2.0"} = message, handler, opts) do
+    case resolve_revision(message) do
+      {:ok, revision} ->
+        opts = Keyword.put(opts, :protocol_revision, revision)
+
+        message
+        |> route(handler, opts)
+        |> decorate(revision, handler)
+
+      {:error, requested} ->
+        {:error,
+         error(
+           Map.get(message, "id"),
+           @unsupported_protocol_version,
+           "Unsupported protocol version",
+           %{
+             code: "unsupported_protocol_version",
+             supportedVersions: @supported_protocol_versions,
+             requested: requested
+           }
+         )}
+    end
+  end
+
   def handle(_, _handler, _opts), do: {:error, parse_error()}
+
+  @doc """
+  The protocol revision resolved for the in-flight request.
+
+  Handlers receive this in `opts`; it decides whether a response may carry
+  2026-07-28 fields.
+  """
+  @spec revision(keyword()) :: revision()
+  def revision(opts), do: Keyword.get(opts, :protocol_revision, :legacy)
+
+  @doc """
+  The protocol revision a request asks for.
+
+  A request that names no version is legacy — that fallback is load-bearing.
+  `scripts/lib/agent-doctor.sh` probes `initialize` with empty params and must
+  keep getting the old behaviour. A request naming a version we do not know is a
+  hard error (`UnsupportedProtocolVersionError`), which only reaches clients that
+  opted into per-request `_meta` in the first place.
+  """
+  @spec resolve_revision(map()) :: {:ok, revision()} | {:error, String.t()}
+  def resolve_revision(message) do
+    case declared_version(message) do
+      nil -> {:ok, :legacy}
+      @protocol_2026 -> {:ok, :v2026}
+      version when version in @supported_protocol_versions -> {:ok, :legacy}
+      other -> {:error, other}
+    end
+  end
+
+  @doc "The version string declared in a request's `_meta`, or nil."
+  @spec declared_version(map()) :: String.t() | nil
+  def declared_version(message) do
+    case Map.get(request_meta(message), @meta_protocol_version) do
+      version when is_binary(version) -> version
+      _ -> nil
+    end
+  end
+
+  @doc """
+  True when a request's params declare support for `extension` in their `_meta`
+  client capabilities.
+
+  The 2026-07-28 extension framework replaced handshake-time negotiation with a
+  per-request declaration, so this is the only place an extension may be
+  detected. Callers MUST NOT emit extension-shaped responses without it — a
+  client that never asked for Tasks must keep getting synchronous results.
+  """
+  @spec client_extension?(map(), String.t()) :: boolean()
+  def client_extension?(params, extension) when is_binary(extension) do
+    case Map.get(params_meta(params), @meta_client_capabilities) do
+      %{"extensions" => extensions} when is_map(extensions) ->
+        Map.has_key?(extensions, extension)
+
+      _ ->
+        false
+    end
+  end
+
+  defp params_meta(params) when is_map(params) do
+    case Map.get(params, "_meta") do
+      %{} = meta -> meta
+      _ -> %{}
+    end
+  end
+
+  defp params_meta(_params), do: %{}
+
+  defp request_meta(%{"params" => params}), do: params_meta(params)
+  defp request_meta(_message), do: %{}
+
+  # 2026-07-28 requires `resultType` on every result and asks servers to identify
+  # themselves in each result's `_meta`. Both are additive fields a legacy client
+  # never asked for, so they are stamped only for modern requests — that keeps
+  # pre-2026 responses byte-identical. Errors carry neither.
+  defp decorate({:reply, %{result: result} = response}, :v2026, handler) when is_map(result) do
+    server_info = %{name: handler.server_name(), version: server_version()}
+
+    result =
+      result
+      |> Map.put_new(:resultType, "complete")
+      |> Map.update(:_meta, %{@meta_server_info => server_info}, fn meta ->
+        Map.put_new(meta, @meta_server_info, server_info)
+      end)
+
+    {:reply, %{response | result: result}}
+  end
+
+  defp decorate(outcome, _revision, _handler), do: outcome
 
   # Notifications carry a method but no id; they never get a response body.
   defp route(%{"method" => "notifications/" <> _}, _handler, _opts), do: :noreply
@@ -66,6 +235,8 @@ defmodule CaseinWeb.API.MCPEnvelope do
   defp route(%{"id" => _}, _handler, _opts), do: :noreply
   defp route(_, _handler, _opts), do: {:error, parse_error()}
 
+  # `initialize` and `ping` were removed in 2026-07-28. They stay here for the
+  # 2025-era clients on this box; a modern client uses `server/discover` instead.
   defp dispatch("initialize", id, params, handler, opts) do
     {:reply,
      result(id, %{
@@ -78,15 +249,69 @@ defmodule CaseinWeb.API.MCPEnvelope do
 
   defp dispatch("ping", id, _params, _handler, _opts), do: {:reply, result(id, %{})}
 
+  # Servers MUST implement `server/discover`. Purely additive: legacy clients
+  # never call it, and before this existed it fell through to -32601.
+  defp dispatch("server/discover", id, _params, handler, opts) do
+    {:reply,
+     result(id, %{
+       supportedVersions: @supported_protocol_versions,
+       capabilities: server_capabilities(),
+       instructions: handler.instructions(opts),
+       ttlMs: @discover_ttl_ms,
+       # Never "public": `instructions/1` embeds the endpoint's pre-scoped
+       # workspace_id, so this response is caller-specific.
+       cacheScope: "private"
+     })}
+  end
+
   defp dispatch("tools/list", id, _params, handler, opts) do
-    tools = handler.list_tools(opts) |> MCPCapabilityScope.filter_tools(opts)
-    {:reply, result(id, %{tools: tools})}
+    tools =
+      handler.list_tools(opts)
+      |> MCPCapabilityScope.filter_tools(opts)
+      # Deterministic order lets clients cache the list and improves prompt-cache
+      # hit rates. Safe for every revision, so it is not gated.
+      |> Enum.sort_by(&tool_sort_key/1)
+
+    {:reply, result(id, cacheable(%{tools: tools}, @tools_list_ttl_ms, opts))}
+  end
+
+  defp dispatch("tasks/get", id, params, handler, opts) do
+    with_task(id, params, handler, opts, fn task_id, owner ->
+      case MCPTasks.get(task_id, owner) do
+        {:ok, task} -> result(id, task)
+        {:error, :unknown_task} -> unknown_task_error(id)
+      end
+    end)
+  end
+
+  defp dispatch("tasks/update", id, params, handler, opts) do
+    with_task(id, params, handler, opts, fn task_id, owner ->
+      responses = Map.get(params, "inputResponses", %{}) || %{}
+
+      case MCPTasks.update(task_id, owner, responses) do
+        :ok -> result(id, %{})
+        {:error, :unknown_task} -> unknown_task_error(id)
+      end
+    end)
+  end
+
+  defp dispatch("tasks/cancel", id, params, handler, opts) do
+    with_task(id, params, handler, opts, fn task_id, owner ->
+      case MCPTasks.cancel(task_id, owner) do
+        :ok -> result(id, %{})
+        {:error, :unknown_task} -> unknown_task_error(id)
+      end
+    end)
   end
 
   defp dispatch("tools/call", id, params, handler, opts) do
     case MCPCapabilityScope.prepare_call(params, opts) do
       {:ok, scoped_params} ->
-        {:reply, handler.call_tool(id, scoped_params, opts)}
+        if task_augmented?(params, handler, opts) do
+          {:reply, create_task(id, scoped_params, handler, opts)}
+        else
+          {:reply, handler.call_tool(id, scoped_params, opts)}
+        end
 
       {:error, reason} ->
         {:reply,
@@ -117,9 +342,124 @@ defmodule CaseinWeb.API.MCPEnvelope do
 
   def negotiate_protocol_version(_), do: @default_protocol_version
 
+  defp server_capabilities do
+    %{tools: %{listChanged: false}, extensions: %{@tasks_extension => %{}}}
+  end
+
+  # Task augmentation is server-directed but client-gated: the extension requires
+  # that we never hand a task to a client that did not declare support. The tool
+  # must also be one its handler nominated as safe to run detached.
+  defp task_augmented?(params, handler, opts) do
+    revision(opts) == :v2026 and
+      client_extension?(params, @tasks_extension) and
+      tool_name(params) in handler.task_tools()
+  end
+
+  defp create_task(id, params, handler, opts) do
+    owner = task_owner(handler, opts)
+
+    # The worker re-enters the handler exactly as a synchronous call would, then
+    # unwraps the envelope: a tool-level fault is a *completed* task carrying an
+    # error result, while a JSON-RPC error is a *failed* task.
+    #
+    # `task_augmented: true` lets a handler behave differently when detached — a
+    # wait, for instance, may keep waiting instead of returning at its
+    # connection-bound cap — and `task_id` lets it check for cancellation.
+    work = fn task_id ->
+      worker_opts =
+        opts
+        |> Keyword.put(:task_augmented, true)
+        |> Keyword.put(:task_id, task_id)
+
+      case handler.call_tool(id, params, worker_opts) do
+        %{result: result} -> {:ok, result}
+        %{error: error} -> {:error, error}
+      end
+    end
+
+    {:ok, task_id} = MCPTasks.run(owner, work, status_message: "Running #{tool_name(params)}")
+
+    result(id, %{
+      resultType: "task",
+      taskId: task_id,
+      status: "working",
+      createdAt: DateTime.utc_now() |> DateTime.to_iso8601(),
+      lastUpdatedAt: DateTime.utc_now() |> DateTime.to_iso8601(),
+      ttlMs: MCPTasks.ttl_ms(),
+      pollIntervalMs: MCPTasks.poll_interval_ms()
+    })
+  end
+
+  # Resolve the caller identity a task is bound to. Same-token, same-workspace
+  # callers share an owner; that is the trust boundary they already share.
+  defp task_owner(handler, opts) do
+    %{
+      server: handler.server_name(),
+      workspace_id: Keyword.get(opts, :default_workspace_id),
+      actor: Keyword.get(opts, :actor),
+      capability_id:
+        case Keyword.get(opts, :agent_capability) do
+          %{id: id} -> id
+          _ -> nil
+        end
+    }
+  end
+
+  defp with_task(id, params, handler, opts, fun) do
+    cond do
+      revision(opts) != :v2026 or not client_extension?(params, @tasks_extension) ->
+        {:error, error(id, -32_601, "Method not found", %{name: "tasks/*"})}
+
+      not is_binary(Map.get(params, "taskId")) ->
+        {:reply, error(id, -32_602, "Invalid params: taskId is required")}
+
+      true ->
+        {:reply, fun.(Map.get(params, "taskId"), task_owner(handler, opts))}
+    end
+  end
+
+  # Deliberately indistinguishable from "not yours", so a caller cannot probe for
+  # another agent's task ids.
+  defp unknown_task_error(id) do
+    error(id, -32_602, "Invalid params: unknown taskId", %{code: "unknown_task"})
+  end
+
+  defp tool_name(params) when is_map(params) do
+    case Map.get(params, "name") do
+      name when is_binary(name) -> name
+      _ -> nil
+    end
+  end
+
+  defp tool_name(_params), do: nil
+
+  # `CacheableResult`: `ttlMs` is a freshness hint; `cacheScope` decides whether
+  # a shared intermediary may cache. Both are 2026-07-28 additions, so they are
+  # omitted for legacy clients.
+  #
+  # SECURITY: `tools/list` is filtered per agent-capability token, so a scoped
+  # list marked "public" could be replayed by an intermediary to a different
+  # agent. Scoped ⇒ "private", always.
+  defp cacheable(result, ttl_ms, opts) do
+    case revision(opts) do
+      :v2026 ->
+        scope = if MCPCapabilityScope.scoped?(opts), do: "private", else: "public"
+        Map.merge(result, %{ttlMs: ttl_ms, cacheScope: scope})
+
+      :legacy ->
+        result
+    end
+  end
+
+  defp tool_sort_key(tool), do: Map.get(tool, :name) || Map.get(tool, "name") || ""
+
   # The Streamable HTTP transport returns an Mcp-Session-Id header on the
   # initialize response; clients may open a server→client SSE channel with that
   # id to receive notifications/* pushes.
+  #
+  # Reached only from `initialize`, so only legacy clients ever see it — which is
+  # what we want, since 2026-07-28 removed both the header and the GET channel it
+  # describes. `server/discover` deliberately returns bare `instructions/1`.
   defp streaming_hint do
     " This endpoint supports the MCP Streamable HTTP transport: the initialize " <>
       "response carries an Mcp-Session-Id header. Send that header on a GET to " <>

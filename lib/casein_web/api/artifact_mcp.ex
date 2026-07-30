@@ -40,6 +40,11 @@ defmodule CaseinWeb.API.ArtifactMCP do
   end
 
   @impl true
+  # Artifact builds are the candidate here, but they mutate a git worktree, so
+  # they are not safe to abandon on cancel without cooperative checks.
+  def task_tools, do: []
+
+  @impl true
   def list_tools(opts) do
     # Artifact has no MCPToolSearch core (only ~6 tools — core+meta would be
     # larger than the full list), so this returns the full set unchanged; the

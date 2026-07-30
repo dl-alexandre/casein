@@ -22,9 +22,14 @@ defmodule CaseinWeb.API.MCPTransport do
   import Phoenix.Controller, only: [json: 2]
 
   alias Casein.Agents.MCPSessions
+  alias CaseinWeb.API.MCPEnvelope
 
   @session_header "mcp-session-id"
+  @method_header "mcp-method"
+  @name_header "mcp-name"
   @error_version "mcp-streamable-http-v1"
+  # HeaderMismatchError, from the spec-reserved -32020..-32099 range.
+  @header_mismatch_code -32_020
   @safe_session_id ~r/^[A-Za-z0-9_-]{16,128}$/
   # Heartbeat cadence: keeps proxies from idling the SSE socket and lets a
   # closed connection surface as a chunk error so the loop exits.
@@ -61,8 +66,89 @@ defmodule CaseinWeb.API.MCPTransport do
   end
 
   @doc """
+  Run every pre-dispatch transport gate for a POST: session validity, then the
+  2026-07-28 request headers.
+  """
+  @spec preflight(Plug.Conn.t(), map()) :: {:cont, Plug.Conn.t()} | {:halt, Plug.Conn.t()}
+  def preflight(conn, message) do
+    with {:cont, conn} <- ensure_known_session(conn) do
+      ensure_request_headers(conn, message)
+    end
+  end
+
+  @doc """
+  Check the `Mcp-Method` / `Mcp-Name` request headers against the JSON-RPC body.
+
+  These headers became required in 2026-07-28 so intermediaries can route and
+  authorize without parsing the body. We enforce them only for requests that
+  declare that revision — no client on this box sends them, and rejecting a
+  legacy POST for a missing header would break every agent at once.
+
+  Within a modern request we reject a **mismatch** but tolerate **absence**. A
+  mismatch is the case with teeth: it means a proxy was told one method and the
+  server another, which is exactly the confusion the headers exist to prevent.
+  Absence merely costs the intermediary its optimization, and failing closed
+  there buys no safety.
+  """
+  @spec ensure_request_headers(Plug.Conn.t(), map()) ::
+          {:cont, Plug.Conn.t()} | {:halt, Plug.Conn.t()}
+  def ensure_request_headers(conn, message) when is_map(message) do
+    if MCPEnvelope.declared_version(message) == "2026-07-28" do
+      check_headers(conn, message)
+    else
+      {:cont, conn}
+    end
+  end
+
+  def ensure_request_headers(conn, _message), do: {:cont, conn}
+
+  defp check_headers(conn, message) do
+    cond do
+      mismatch?(conn, @method_header, Map.get(message, "method")) ->
+        {:halt, header_mismatch(conn, @method_header)}
+
+      mismatch?(conn, @name_header, tool_name(message)) ->
+        {:halt, header_mismatch(conn, @name_header)}
+
+      true ->
+        {:cont, conn}
+    end
+  end
+
+  defp mismatch?(conn, header, expected) do
+    case get_req_header(conn, header) do
+      [value | _] when is_binary(value) and value != "" -> value != expected
+      _ -> false
+    end
+  end
+
+  # `Mcp-Name` names the tool a `tools/call` targets; other methods have no name.
+  defp tool_name(%{"method" => "tools/call", "params" => %{"name" => name}}) when is_binary(name),
+    do: name
+
+  defp tool_name(_message), do: nil
+
+  defp header_mismatch(conn, header) do
+    conn
+    |> put_status(400)
+    |> json(%{
+      jsonrpc: "2.0",
+      id: nil,
+      error: %{
+        code: @header_mismatch_code,
+        message: "MCP request header does not match the request body",
+        data: %{code: "header_mismatch", header: header, error_version: @error_version}
+      }
+    })
+  end
+
+  @doc """
   When the request is an `initialize`, create a session and advertise its id on
   the response. Otherwise the connection is returned untouched.
+
+  Naturally inert for 2026-07-28 clients: they never send `initialize`, so no
+  session is ever minted for them — which matches the revision removing sessions
+  outright.
   """
   @spec maybe_issue_session(
           Plug.Conn.t(),

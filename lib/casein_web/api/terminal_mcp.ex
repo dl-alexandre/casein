@@ -20,12 +20,16 @@ defmodule CaseinWeb.API.TerminalMCP do
 
   @behaviour CaseinWeb.API.MCPEnvelope
 
-  alias Casein.Agents.{MCPAudit, MCPError, TerminalTools}
+  alias Casein.Agents.{MCPAudit, MCPError, MCPTasks, TerminalTools}
   alias Casein.MCP.Scope
   alias CaseinWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
   alias McpCtl.Tool
 
   @server_name "Casein Terminal MCP Server"
+
+  # One wait leg self-limits at 55s; this only has to outlast that plus the tool's
+  # own setup, and exists so a wedged leg cannot hang a task forever.
+  @wait_leg_timeout_ms 90_000
 
   @type outcome :: MCPEnvelope.outcome()
 
@@ -62,6 +66,13 @@ defmodule CaseinWeb.API.TerminalMCP do
   end
 
   @impl true
+  # `terminal_wait_agent_state` is the tool whose synchronous contract is a
+  # workaround: it caps itself at 55s and tells callers to re-issue. Run as a
+  # task it can wait as long as the agent actually takes. Read-only, so it is
+  # safe to abandon on cancel.
+  def task_tools, do: ["terminal_wait_agent_state"]
+
+  @impl true
   def list_tools(opts) do
     tool_specs()
     |> MCPToolSearch.list_tools(:terminal, opts)
@@ -83,7 +94,54 @@ defmodule CaseinWeb.API.TerminalMCP do
   def call_tool(id, %{"name" => "invoke_tool"} = params, opts),
     do: MCPToolSearch.route_invoke(id, Map.get(params, "arguments", %{}) || %{}, opts)
 
-  def call_tool(id, %{"name" => name} = params, opts) do
+  # Task-augmented waits keep waiting. The underlying tool still caps a single
+  # leg at 55s (a proxy limit, not a real bound on how long an agent takes), so
+  # the re-issue loop its description tells clients to run moves in here — where
+  # no HTTP request is held open. Each leg runs in a fresh process so its
+  # AgentState subscription does not accumulate across legs.
+  def call_tool(id, %{"name" => "terminal_wait_agent_state"} = params, opts) do
+    if Keyword.get(opts, :task_augmented, false) do
+      wait_until_settled(id, params, opts, wait_deadline())
+    else
+      invoke_tool_call(id, "terminal_wait_agent_state", params, opts)
+    end
+  end
+
+  def call_tool(id, %{"name" => name} = params, opts),
+    do: invoke_tool_call(id, name, params, opts)
+
+  def call_tool(id, _params, _opts) do
+    MCPEnvelope.error(id, -32_602, "Invalid params: tool name is required")
+  end
+
+  defp wait_until_settled(id, params, opts, deadline) do
+    response =
+      Task.async(fn -> invoke_tool_call(id, "terminal_wait_agent_state", params, opts) end)
+      |> Task.await(@wait_leg_timeout_ms)
+
+    cond do
+      settled?(response) -> response
+      System.monotonic_time(:millisecond) >= deadline -> response
+      cancelled?(opts) -> response
+      true -> wait_until_settled(id, params, opts, deadline)
+    end
+  end
+
+  # Only keep waiting when the tool positively reports a timeout; any other shape
+  # (a match, a tool error, a JSON-RPC error) ends the task.
+  defp settled?(%{result: %{structuredContent: %{"timed_out" => true}}}), do: false
+  defp settled?(_response), do: true
+
+  defp cancelled?(opts) do
+    case Keyword.get(opts, :task_id) do
+      task_id when is_binary(task_id) -> MCPTasks.cancelled?(task_id)
+      _ -> false
+    end
+  end
+
+  defp wait_deadline, do: System.monotonic_time(:millisecond) + MCPTasks.ttl_ms()
+
+  defp invoke_tool_call(id, name, params, opts) do
     default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
     args = Map.get(params, "arguments", %{}) || %{}
     audit_opts = [actor: Keyword.get(opts, :actor)]
@@ -142,9 +200,5 @@ defmodule CaseinWeb.API.TerminalMCP do
           | structuredContent: MCPEnvelope.jsonable(err.structuredContent)
         })
     end
-  end
-
-  def call_tool(id, _params, _opts) do
-    MCPEnvelope.error(id, -32_602, "Invalid params: tool name is required")
   end
 end
