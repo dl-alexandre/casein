@@ -2161,6 +2161,15 @@ assert(
       !src.includes('shotBuf.toString("base64")'),
     "packed report references external screenshots instead of embedding duplicate base64",
   );
+  assert(
+    src.includes('evidence_layout: "per-page-v1"') &&
+      src.includes("evidenceFileFor(result, index)") &&
+      src.includes("compactResult(result, evidenceFile)") &&
+      src.includes("Full evidence (JSON)") &&
+      !src.includes('detailJson("Tidewave", rt)') &&
+      !src.includes('detailJson("Evidence", {'),
+    "packed report stores full evidence in bounded per-page JSON files",
+  );
   assert(src.includes("acceptDownloads: true"), "browser context accepts downloads for download evidence");
   assert(src.includes("evidenceBlocked:"), "packed driver folds required-evidence gaps fail-closed");
   assert(src.includes("--health-url"), "packed driver exposes the health attestation flag");
