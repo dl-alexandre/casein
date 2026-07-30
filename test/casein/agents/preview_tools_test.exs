@@ -880,6 +880,28 @@ defmodule Casein.Agents.PreviewToolsTest do
     refute_received {:fake_tmux_split_pane, _, _, _, _}
   end
 
+  test "Windows rejects an unreachable localhost preview before opening browser control" do
+    bypass = HTTPStub.open()
+    HTTPStub.down(bypass)
+    Application.put_env(:casein, :preview_open_preflight, true)
+    System.put_env("CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY", "true")
+    on_exit(fn -> System.delete_env("CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY") end)
+
+    workspace = Map.put(@v3_workspace, :metadata, detected_port_metadata(bypass.port))
+
+    assert {:error,
+            %{
+              error: :preview_unreachable,
+              message: "Preview URL is unreachable; no preview pane was opened."
+            }} =
+             PreviewTools.invoke("preview_open_localhost", workspace, %{
+               "port" => bypass.port,
+               "actor_id" => "agent-1"
+             })
+
+    refute_received {:fake_tmux_split_pane, _, _, _, _}
+  end
+
   test "open_app_preview reports unconfirmed visibility honestly" do
     assert {:ok, payload} =
              PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})

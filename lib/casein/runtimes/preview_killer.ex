@@ -134,6 +134,8 @@ defmodule Casein.Runtimes.PreviewKiller do
 
     defp kill_port_listener(_), do: :ok
 
+    # fuser is resolved from the host PATH and receives only the range-checked integer port.
+    # sobelow_skip ["CI.System"]
     defp kill_unix_port_listener(port) do
       case System.find_executable("fuser") do
         nil ->

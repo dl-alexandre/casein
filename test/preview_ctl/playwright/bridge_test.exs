@@ -137,7 +137,7 @@ defmodule PreviewCtl.Playwright.BridgeTest do
 
   test "command/1 times out a stuck helper and restarts cleanly" do
     Application.put_env(:preview_ctl, :playwright_script, @fake_script)
-    Application.put_env(:preview_ctl, :playwright_command_timeout_ms, 50)
+    Application.put_env(:preview_ctl, :playwright_command_timeout_ms, 500)
     restart_bridge!()
 
     release =
@@ -145,7 +145,7 @@ defmodule PreviewCtl.Playwright.BridgeTest do
 
     on_exit(fn -> File.rm_rf(release) end)
 
-    assert {:error, {:playwright_timeout, 50}} =
+    assert {:error, {:playwright_timeout, 500}} =
              Bridge.command(%{
                action: "block",
                url: "http://example.test/timeout",

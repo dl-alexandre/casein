@@ -184,23 +184,31 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
   end
 
   defp open_control_only_app(workspace, surface, params) do
-    with {:ok, _url, preview_source} <- SurfaceDiscovery.resolve_url(workspace, surface, params),
+    opts = control_only_opts(params)
+
+    with {:ok, url, preview_source} <- SurfaceDiscovery.resolve_url(workspace, surface, params),
+         :ok <- PortProbing.preflight_preview_url(url, opts),
          {:ok, session} <-
-           PreviewControl.open_session(workspace, surface, control_only_opts(params)) do
+           PreviewControl.open_session(workspace, surface, opts) do
       control_only_payload(session, preview_source)
     end
   end
 
   defp open_control_only_localhost(workspace, params, url) do
-    with %URI{port: port} when is_integer(port) <- URI.parse(url),
+    opts = control_only_opts(params)
+    uri = URI.parse(url)
+
+    with %URI{port: port} when is_integer(port) <- uri,
+         :ok <- PortProbing.preflight_preview_url(url, opts),
          {:ok, session} <-
            PreviewControl.open_localhost_session(
              workspace,
              port,
-             Keyword.put(control_only_opts(params), :path, URI.parse(url).path || "/")
+             Keyword.put(opts, :path, uri.path || "/")
            ) do
       control_only_payload(session, "localhost")
     else
+      {:error, _reason} = error -> error
       _ -> {:error, :invalid_localhost_preview_url}
     end
   end

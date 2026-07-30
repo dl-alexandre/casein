@@ -184,6 +184,8 @@ defmodule Casein.Runtimes.PreviewLauncher.SystemRunner do
   require Logger
 
   @impl true
+  # executable and argv come from the internal PreviewServer adapter; System.cmd never invokes a shell.
+  # sobelow_skip ["CI.System"]
   def start(%{"command" => [executable | args], "cwd" => cwd} = spec)
       when is_binary(executable) and is_binary(cwd) do
     env = env_list(Map.get(spec, "env", %{}))

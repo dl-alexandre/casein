@@ -95,7 +95,7 @@ defmodule PreviewCtl.Playwright.Bridge do
         {:command_timeout, port},
         %{port: port, pending: %{from: from}} = state
       ) do
-    Port.close(port)
+    terminate_port(port)
     GenServer.reply(from, {:error, {:playwright_timeout, state.command_timeout_ms}})
     {:noreply, %{state | port: nil, pending: nil}}
   end
@@ -104,10 +104,8 @@ defmodule PreviewCtl.Playwright.Bridge do
 
   @impl GenServer
   def terminate(_reason, %{port: port}) when is_port(port) do
-    Port.close(port)
+    terminate_port(port)
     :ok
-  catch
-    :error, :badarg -> :ok
   end
 
   def terminate(_reason, _state), do: :ok
@@ -200,6 +198,44 @@ defmodule PreviewCtl.Playwright.Bridge do
   rescue
     error ->
       {:error, error, %{state | port: nil, pending: nil}}
+  end
+
+  defp terminate_port(port) do
+    os_pid =
+      case Port.info(port, :os_pid) do
+        {:os_pid, pid} when is_integer(pid) -> pid
+        _ -> nil
+      end
+
+    try do
+      Port.close(port)
+    catch
+      :error, :badarg -> :ok
+    end
+
+    terminate_os_process(os_pid)
+  end
+
+  defp terminate_os_process(nil), do: :ok
+
+  # taskkill is resolved from PATH and receives only the integer PID returned by Port.info/2.
+  # sobelow_skip ["CI.System"]
+  defp terminate_os_process(pid) when is_integer(pid) do
+    if match?({:win32, _}, :os.type()) do
+      case System.find_executable("taskkill.exe") || System.find_executable("taskkill") do
+        nil -> :ok
+        taskkill -> System.cmd(taskkill, ["/PID", Integer.to_string(pid), "/T", "/F"])
+      end
+    else
+      case System.find_executable("kill") do
+        nil -> :ok
+        kill -> System.cmd(kill, ["-TERM", Integer.to_string(pid)])
+      end
+    end
+
+    :ok
+  rescue
+    _error -> :ok
   end
 
   @doc false
