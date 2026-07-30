@@ -183,6 +183,7 @@ defmodule CaseinMob.SessionClient do
     socket =
       Socket.new()
       |> assign(:subscribers, %{})
+      |> assign(:topic_snapshots, %{})
       |> assign(:url, nil)
       |> assign(:token, nil)
       |> assign(:connecting?, false)
@@ -237,6 +238,7 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_join(topic, reply, socket) do
+    socket = cache_topic_snapshot(socket, topic, reply)
     notify_joined(socket, topic, reply)
 
     socket =
@@ -249,6 +251,7 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_message("session:" <> _workspace_id = topic, "snapshot", payload, socket) do
+    socket = cache_topic_snapshot(socket, topic, payload)
     notify(socket, topic, {:session_snapshot, workspace_id(topic), payload})
     {:ok, socket}
   end
@@ -259,6 +262,7 @@ defmodule CaseinMob.SessionClient do
   end
 
   def handle_message(topic, "cards_snapshot", payload, socket) do
+    socket = cache_topic_snapshot(socket, topic, payload)
     if mobile_cards_topic?(topic), do: notify(socket, topic, {:mobile_cards_snapshot, payload})
     {:ok, socket}
   end
@@ -295,7 +299,7 @@ defmodule CaseinMob.SessionClient do
   @impl Slipstream
   def handle_topic_close(topic, reason, socket) do
     notify_status(socket, topic, error_status(reason))
-    {:ok, socket}
+    {:ok, drop_topic_snapshot(socket, topic)}
   end
 
   @impl Slipstream
@@ -314,6 +318,7 @@ defmodule CaseinMob.SessionClient do
 
     socket =
       socket
+      |> assign(:topic_snapshots, %{})
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
 
@@ -362,6 +367,7 @@ defmodule CaseinMob.SessionClient do
     {:noreply,
      socket
      |> assign(:subscribers, %{})
+     |> assign(:topic_snapshots, %{})
      |> assign(:url, nil)
      |> assign(:token, nil)
      |> assign(:connecting?, false)
@@ -480,7 +486,8 @@ defmodule CaseinMob.SessionClient do
   defp maybe_put_origin_id(payload, _origin_id), do: payload
 
   defp watch_topic(socket, topic, subscriber) do
-    Process.monitor(subscriber)
+    current_subscribers = Map.get(socket.assigns.subscribers, topic, MapSet.new())
+    unless MapSet.member?(current_subscribers, subscriber), do: Process.monitor(subscriber)
 
     subscribers =
       Map.update(
@@ -494,7 +501,7 @@ defmodule CaseinMob.SessionClient do
 
     cond do
       not connected?(socket) -> ensure_connection_requested(socket)
-      joined?(socket, topic) -> socket
+      joined?(socket, topic) -> replay_joined_topic(socket, topic, subscriber)
       true -> join(socket, topic)
     end
   end
@@ -535,8 +542,42 @@ defmodule CaseinMob.SessionClient do
 
     socket
     |> assign(:subscribers, %{})
+    |> assign(:topic_snapshots, %{})
     |> assign(:push_registration_refs, %{})
     |> assign(:card_action_refs, %{})
+  end
+
+  defp cache_topic_snapshot(socket, topic, payload) do
+    snapshots = Map.put(socket.assigns[:topic_snapshots] || %{}, topic, payload)
+    assign(socket, :topic_snapshots, snapshots)
+  end
+
+  defp drop_topic_snapshot(socket, topic) do
+    snapshots = Map.delete(socket.assigns[:topic_snapshots] || %{}, topic)
+    assign(socket, :topic_snapshots, snapshots)
+  end
+
+  defp replay_joined_topic(socket, topic, subscriber) do
+    case Map.get(socket.assigns[:topic_snapshots] || %{}, topic) do
+      nil ->
+        socket
+
+      snapshot ->
+        notify_joined_subscriber(topic, subscriber, snapshot)
+        socket
+    end
+  end
+
+  defp notify_joined_subscriber("session:" <> workspace_id, subscriber, snapshot) do
+    send(subscriber, {:session_snapshot, workspace_id, snapshot})
+    send(subscriber, {:session_status, workspace_id, :joined})
+  end
+
+  defp notify_joined_subscriber(topic, subscriber, snapshot) do
+    if mobile_cards_topic?(topic) do
+      send(subscriber, {:mobile_cards_snapshot, snapshot})
+      send(subscriber, {:mobile_cards_status, :joined})
+    end
   end
 
   defp different_origin?(nil, _url), do: false
