@@ -84,9 +84,10 @@ defmodule CaseinMob.SessionClientTest do
       |> Socket.put_join_config(topic, %{})
       |> put_in([Access.key(:joins), topic, Access.key(:status)], :joined)
 
-    assert {:noreply, ^socket} =
+    assert {:noreply, watched_socket} =
              SessionClient.handle_cast({:watch_mobile_cards, self()}, socket)
 
+    assert is_reference(watched_socket.assigns.subscriber_monitors[self()])
     assert_receive {:mobile_cards_snapshot, ^snapshot}
     assert_receive {:mobile_cards_status, :joined}
   end
@@ -121,27 +122,70 @@ defmodule CaseinMob.SessionClientTest do
   test "subscriber process exit removes mobile card watchers" do
     other = spawn(fn -> Process.sleep(:infinity) end)
     on_exit(fn -> Process.exit(other, :kill) end)
+    monitor = make_ref()
 
     socket =
       socket_with_subscribers(%{
         "mobile:user:me" => MapSet.new([self(), other]),
         "session:ws-1" => MapSet.new([self()])
       })
+      |> Socket.assign(:subscriber_monitors, %{self() => monitor, other => make_ref()})
       |> Socket.assign(:topic_snapshots, %{
         "mobile:user:me" => %{"cards" => [%{"id" => "card-1"}]},
         "session:ws-1" => %{"sessions" => [%{"id" => "session-1"}]}
       })
 
     assert {:noreply, socket} =
-             SessionClient.handle_info({:DOWN, make_ref(), :process, self(), :normal}, socket)
+             SessionClient.handle_info({:DOWN, monitor, :process, self(), :normal}, socket)
 
     assert socket.assigns.subscribers == %{
              "mobile:user:me" => MapSet.new([other])
            }
 
+    assert Map.keys(socket.assigns.subscriber_monitors) == [other]
+
     assert socket.assigns.topic_snapshots == %{
              "mobile:user:me" => %{"cards" => [%{"id" => "card-1"}]}
            }
+  end
+
+  test "repeated watch and final unwatch own one bounded subscriber monitor" do
+    socket = socket_with_subscribers(%{})
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:watch_mobile_cards, self()}, socket)
+
+    monitor = socket.assigns.subscriber_monitors[self()]
+    assert is_reference(monitor)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:watch_mobile_cards, self()}, socket)
+
+    assert socket.assigns.subscriber_monitors == %{self() => monitor}
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:unwatch_mobile_cards, self()}, socket)
+
+    assert socket.assigns.subscribers == %{}
+    assert socket.assigns.subscriber_monitors == %{}
+    refute Process.demonitor(monitor, [:info])
+  end
+
+  test "clearing pairing flushes subscriber monitors across topics" do
+    monitor = Process.monitor(self())
+
+    socket =
+      socket_with_subscribers(%{
+        "mobile:user:me" => MapSet.new([self()]),
+        "session:ws-1" => MapSet.new([self()])
+      })
+      |> Socket.assign(:subscriber_monitors, %{self() => monitor})
+
+    assert {:noreply, socket} = SessionClient.handle_cast(:clear_pairing, socket)
+
+    assert socket.assigns.subscribers == %{}
+    assert socket.assigns.subscriber_monitors == %{}
+    refute Process.demonitor(monitor, [:info])
   end
 
   test "push registration reply notifies subscribers after server acknowledgement" do
@@ -348,6 +392,7 @@ defmodule CaseinMob.SessionClientTest do
   defp socket_with_subscribers(subscribers) do
     Socket.new()
     |> Socket.assign(:subscribers, subscribers)
+    |> Socket.assign(:subscriber_monitors, %{})
     |> Socket.assign(:topic_snapshots, %{})
     |> Socket.assign(:url, nil)
     |> Socket.assign(:token, nil)
