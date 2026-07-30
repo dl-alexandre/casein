@@ -4,7 +4,7 @@
 
 import { createServer } from "node:http";
 import { classifyRisk } from "./classify_risk.mjs";
-import { validateReportTree } from "./artifact_publish.mjs";
+import { prepareSourceTree, validateReportTree } from "./artifact_publish.mjs";
 import {
   CATEGORIES,
   EXIT,
@@ -190,6 +190,26 @@ assert(
     missingReferenceFailed = true;
   }
   assert(missingReferenceFailed, "artifact publisher rejects missing local references");
+  fsPublish.writeFileSync(pathPublish.join(reportDir, "report.html"), '<img src="shot.png">');
+  const workspaceDir = fsPublish.mkdtempSync(
+    pathPublish.join(osPublish.tmpdir(), "artifact-workspace-selftest-"),
+  );
+  const prepared = prepareSourceTree(
+    reportDir,
+    validateReportTree(reportDir).files,
+    workspaceDir,
+  );
+  assert(prepared.staged, "artifact publisher stages reports outside CASEIN_CHECKOUT");
+  assert(
+    fsPublish.readFileSync(pathPublish.join(prepared.sourceRoot, "shot.png"), "utf8") === "png",
+    "artifact publisher stages the validated report tree",
+  );
+  prepared.cleanup();
+  assert(
+    !fsPublish.existsSync(prepared.sourceRoot),
+    "artifact publisher removes linked-worktree staging",
+  );
+  fsPublish.rmSync(workspaceDir, { recursive: true, force: true });
   fsPublish.rmSync(reportDir, { recursive: true, force: true });
 }
 

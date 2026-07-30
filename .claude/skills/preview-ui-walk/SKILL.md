@@ -201,16 +201,17 @@ and evidence files. Publish the complete tree as an **artifact project** so it g
 login-gated URL a teammate can open straight from a PR — this is the deliverable,
 not the ephemeral walk pane.
 
-1. **Publish and verify** with the bundled publisher. The output must live inside
-   the product checkout so Artifact MCP can import it without moving binary data
-   through JSON:
+1. **Publish and verify** with the bundled publisher. Reports inside linked
+   agent worktrees are hard-linked into temporary ignored staging under
+   `CASEIN_CHECKOUT` so Artifact MCP can retain checkout confinement without
+   moving binary data through JSON:
    ```bash
    node references/artifact_publish.mjs --out .casein/walk-output/<run> \
      --name "<report.name>-<run>"
    ```
    The publisher validates local links, imports every file with `source_path`,
-   calls `artifact_verify`, starts the artifact server, and fails unless the root
-   and public mirror are byte-identical.
+   removes any staging, calls `artifact_verify`, starts the artifact server, and
+   fails unless the root and public mirror are byte-identical.
 2. **Read `public_url` from the response** — the artifact tools return the full
    payload, so `public_url` (durable, login-gated; e.g.
    `https://casein.devbox…/artifact-projects/<ws>/<id>/`) is right there, alongside

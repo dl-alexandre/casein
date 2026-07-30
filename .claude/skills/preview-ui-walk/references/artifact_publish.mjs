@@ -78,13 +78,62 @@ export function validateReportTree(root, files = walkFiles(root)) {
 }
 
 function workspaceRoot(outDir) {
+  const configured = process.env.CASEIN_CHECKOUT?.trim();
+  if (configured) {
+    const resolved = fs.realpathSync(configured);
+    if (!fs.statSync(resolved).isDirectory()) {
+      throw new Error(`CASEIN_CHECKOUT is not a directory: ${resolved}`);
+    }
+    return resolved;
+  }
   return execFileSync("git", ["-C", outDir, "rev-parse", "--show-toplevel"], {
     encoding: "utf8",
   }).trim();
 }
 
-function sourceEntry(workspace, outDir, destination, source = destination) {
-  const absolute = path.resolve(outDir, source);
+function inside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`));
+}
+
+export function prepareSourceTree(outDir, files, workspace) {
+  const sourceRoot = fs.realpathSync(outDir);
+  if (inside(workspace, sourceRoot)) {
+    return { sourceRoot, staged: false, cleanup() {} };
+  }
+
+  const stagingParent = path.join(workspace, "tmp", "casein-artifact-staging");
+  fs.mkdirSync(stagingParent, { recursive: true });
+  const stagedRoot = fs.mkdtempSync(path.join(stagingParent, "walk-"));
+
+  try {
+    for (const file of files) {
+      const source = path.join(sourceRoot, file);
+      const destination = path.join(stagedRoot, file);
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      try {
+        fs.linkSync(source, destination);
+      } catch (error) {
+        if (!["EXDEV", "EPERM", "EACCES"].includes(error?.code)) throw error;
+        fs.copyFileSync(source, destination);
+      }
+    }
+  } catch (error) {
+    fs.rmSync(stagedRoot, { recursive: true, force: true });
+    throw error;
+  }
+
+  return {
+    sourceRoot: stagedRoot,
+    staged: true,
+    cleanup() {
+      fs.rmSync(stagedRoot, { recursive: true, force: true });
+    },
+  };
+}
+
+function sourceEntry(workspace, sourceRoot, destination, source = destination) {
+  const absolute = path.resolve(sourceRoot, source);
   const relative = path.relative(workspace, absolute);
   if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`)) {
     throw new Error(`output must be inside the workspace checkout: ${absolute}`);
@@ -114,43 +163,52 @@ export async function publishReport({
   }
 
   const workspace = workspaceRoot(absoluteOut);
-  const files = checked.files.map((file) => sourceEntry(workspace, absoluteOut, file));
-  if (!checked.files.includes("index.html")) {
-    files.push(sourceEntry(workspace, absoluteOut, "index.html", "report.html"));
+  const prepared = prepareSourceTree(absoluteOut, checked.files, workspace);
+
+  try {
+    const files = checked.files.map(
+      (file) => sourceEntry(workspace, prepared.sourceRoot, file),
+    );
+    if (!checked.files.includes("index.html")) {
+      files.push(sourceEntry(workspace, prepared.sourceRoot, "index.html", "report.html"));
+    }
+
+    const opts = { timeoutMs: 120_000 };
+    const listed = await mcpCall(store, "artifact_list", {}, opts);
+    if (listed.error) throw new Error(listed.error);
+    const existing = (listed.ok?.artifacts || []).find(
+      (artifact) => artifact?.name === name && !artifact?.retired,
+    );
+    const write = existing
+      ? await mcpCall(
+          store,
+          "artifact_update",
+          { artifact_id: existing.id, prompt, files },
+          opts,
+        )
+      : await mcpCall(store, "artifact_create", { name, kind: "html", prompt, files }, opts);
+    if (write.error) throw new Error(write.error);
+
+    const artifactId = write.ok?.id || existing?.id;
+    if (!artifactId) throw new Error("artifact write returned no id");
+    const parity = await mcpCall(store, "artifact_verify", { artifact_id: artifactId }, opts);
+    if (parity.error) throw new Error(parity.error);
+    if (parity.ok?.status !== "ok" || parity.ok?.file_count < files.length) {
+      throw new Error(`artifact parity incomplete: ${JSON.stringify(parity.ok)}`);
+    }
+    const served = await mcpCall(store, "artifact_serve", { artifact_id: artifactId }, opts);
+    if (served.error) throw new Error(served.error);
+
+    return {
+      artifact_id: artifactId,
+      public_url: served.ok?.public_url || write.ok?.public_url || null,
+      file_count: parity.ok.file_count,
+      parity: parity.ok.status,
+      staged: prepared.staged,
+    };
+  } finally {
+    prepared.cleanup();
   }
-
-  const opts = { timeoutMs: 120_000 };
-  const listed = await mcpCall(store, "artifact_list", {}, opts);
-  if (listed.error) throw new Error(listed.error);
-  const existing = (listed.ok?.artifacts || []).find(
-    (artifact) => artifact?.name === name && !artifact?.retired,
-  );
-  const write = existing
-    ? await mcpCall(
-        store,
-        "artifact_update",
-        { artifact_id: existing.id, prompt, files },
-        opts,
-      )
-    : await mcpCall(store, "artifact_create", { name, kind: "html", prompt, files }, opts);
-  if (write.error) throw new Error(write.error);
-
-  const artifactId = write.ok?.id || existing?.id;
-  if (!artifactId) throw new Error("artifact write returned no id");
-  const parity = await mcpCall(store, "artifact_verify", { artifact_id: artifactId }, opts);
-  if (parity.error) throw new Error(parity.error);
-  if (parity.ok?.status !== "ok" || parity.ok?.file_count < files.length) {
-    throw new Error(`artifact parity incomplete: ${JSON.stringify(parity.ok)}`);
-  }
-  const served = await mcpCall(store, "artifact_serve", { artifact_id: artifactId }, opts);
-  if (served.error) throw new Error(served.error);
-
-  return {
-    artifact_id: artifactId,
-    public_url: served.ok?.public_url || write.ok?.public_url || null,
-    file_count: parity.ok.file_count,
-    parity: parity.ok.status,
-  };
 }
 
 async function main() {
