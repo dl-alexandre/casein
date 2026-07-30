@@ -15,7 +15,7 @@ defmodule Ghostty.PTY do
 
   def write(pty, data), do: GenServer.call(pty, {:write, IO.iodata_to_binary(data)})
   def resize(pty, cols, rows), do: GenServer.call(pty, {:resize, cols, rows})
-  def close(pty), do: GenServer.stop(pty)
+  def close(pty), do: GenServer.call(pty, :close, 10_000)
 
   @impl true
   def init(opts) do
@@ -98,10 +98,20 @@ defmodule Ghostty.PTY do
     {:reply, :ok, state}
   end
 
+  def handle_call(:close, from, state) do
+    :ok = :gen_tcp.send(state.control_socket, "close\n")
+    {:noreply, Map.put(state, :close_from, from)}
+  end
+
   @impl true
   def handle_info({:tcp, socket, data}, %{data_socket: socket} = state) do
     send(state.owner, {:data, data})
     {:noreply, state}
+  end
+
+  def handle_info({:tcp, socket, "closed\n"}, %{control_socket: socket, close_from: from} = state) do
+    GenServer.reply(from, :ok)
+    {:stop, :normal, state |> Map.delete(:close_from) |> Map.put(:closed?, true)}
   end
 
   def handle_info({:tcp, socket, _data}, %{control_socket: socket} = state), do: {:noreply, state}
@@ -135,6 +145,15 @@ defmodule Ghostty.PTY do
   end
 
   @impl true
+  def terminate(_reason, %{closed?: true} = state) do
+    :gen_tcp.close(state.data_socket)
+    :gen_tcp.close(state.control_socket)
+    if Port.info(state.port), do: Port.close(state.port)
+    :ok
+  catch
+    :error, :badarg -> :ok
+  end
+
   def terminate(_reason, %{port: port, data_socket: data_socket, control_socket: control_socket}) do
     _ = :gen_tcp.send(control_socket, "close\n")
     :gen_tcp.close(data_socket)
@@ -187,7 +206,11 @@ defmodule Ghostty.PTY do
   # Loopback is an address boundary, not an authorization boundary. A fresh,
   # per-bridge capability prevents another local process from claiming either
   # transport socket before the PowerShell bridge does.
-  defp accept_authenticated(listener, token, deadline \\ System.monotonic_time(:millisecond) + 15_000) do
+  defp accept_authenticated(
+         listener,
+         token,
+         deadline \\ System.monotonic_time(:millisecond) + 15_000
+       ) do
     remaining = deadline - System.monotonic_time(:millisecond)
 
     if remaining <= 0 do

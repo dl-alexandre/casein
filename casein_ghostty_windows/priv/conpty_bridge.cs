@@ -13,8 +13,13 @@ namespace Casein
     public static class ConPtyBridge
     {
         private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
+        private const uint CREATE_SUSPENDED = 0x00000004;
         private const int STARTF_USESTDHANDLES = 0x00000100;
         private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
+        private const int PROC_THREAD_ATTRIBUTE_JOB_LIST = 0x0002000D;
+        private const int JobObjectExtendedLimitInformation = 9;
+        private const int JobObjectBasicAccountingInformation = 1;
+        private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct COORD
@@ -76,6 +81,55 @@ namespace Casein
             public int bInheritHandle;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+        {
+            public long PerProcessUserTimeLimit;
+            public long PerJobUserTimeLimit;
+            public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize;
+            public UIntPtr MaximumWorkingSetSize;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint PriorityClass;
+            public uint SchedulingClass;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
+        {
+            public long TotalUserTime;
+            public long TotalKernelTime;
+            public long ThisPeriodTotalUserTime;
+            public long ThisPeriodTotalKernelTime;
+            public uint TotalPageFaultCount;
+            public uint TotalProcesses;
+            public uint ActiveProcesses;
+            public uint TotalTerminatedProcesses;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IO_COUNTERS
+        {
+            public ulong ReadOperationCount;
+            public ulong WriteOperationCount;
+            public ulong OtherOperationCount;
+            public ulong ReadTransferCount;
+            public ulong WriteTransferCount;
+            public ulong OtherTransferCount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        {
+            public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+            public IO_COUNTERS IoInfo;
+            public UIntPtr ProcessMemoryLimit;
+            public UIntPtr JobMemoryLimit;
+            public UIntPtr PeakProcessMemoryUsed;
+            public UIntPtr PeakJobMemoryUsed;
+        }
+
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CreatePipe(
             out SafeFileHandle hReadPipe,
@@ -131,6 +185,30 @@ namespace Casein
             out PROCESS_INFORMATION lpProcessInformation);
 
         [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(
+            IntPtr hJob,
+            int JobObjectInformationClass,
+            IntPtr lpJobObjectInformation,
+            uint cbJobObjectInformationLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool TerminateJobObject(IntPtr hJob, uint uExitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool QueryInformationJobObject(
+            IntPtr hJob,
+            int JobObjectInformationClass,
+            IntPtr lpJobObjectInformation,
+            uint cbJobObjectInformationLength,
+            IntPtr lpReturnLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint ResumeThread(IntPtr hThread);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
         private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
 
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -147,6 +225,8 @@ namespace Casein
             SafeFileHandle outputWrite = null;
             IntPtr pseudoConsole = IntPtr.Zero;
             IntPtr attributeList = IntPtr.Zero;
+            IntPtr job = IntPtr.Zero;
+            IntPtr jobList = IntPtr.Zero;
             PROCESS_INFORMATION processInfo = new PROCESS_INFORMATION();
 
             try
@@ -160,10 +240,12 @@ namespace Casein
                 outputWrite.Dispose();
                 outputWrite = null;
 
+                job = CreateKillOnCloseJob();
+
                 IntPtr attributeListSize = IntPtr.Zero;
-                InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attributeListSize);
+                InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref attributeListSize);
                 attributeList = Marshal.AllocHGlobal(attributeListSize);
-                Check(InitializeProcThreadAttributeList(attributeList, 1, 0, ref attributeListSize), "InitializeProcThreadAttributeList");
+                Check(InitializeProcThreadAttributeList(attributeList, 2, 0, ref attributeListSize), "InitializeProcThreadAttributeList");
 
                 Check(
                     UpdateProcThreadAttribute(
@@ -175,6 +257,19 @@ namespace Casein
                         IntPtr.Zero,
                         IntPtr.Zero),
                     "UpdateProcThreadAttribute");
+
+                jobList = Marshal.AllocHGlobal(IntPtr.Size);
+                Marshal.WriteIntPtr(jobList, job);
+                Check(
+                    UpdateProcThreadAttribute(
+                        attributeList,
+                        0,
+                        new IntPtr(PROC_THREAD_ATTRIBUTE_JOB_LIST),
+                        jobList,
+                        new IntPtr(IntPtr.Size),
+                        IntPtr.Zero,
+                        IntPtr.Zero),
+                    "UpdateProcThreadAttribute(JobList)");
 
                 STARTUPINFOEX startup = new STARTUPINFOEX();
                 startup.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
@@ -192,12 +287,17 @@ namespace Casein
                         ref processSecurity,
                         ref threadSecurity,
                         false,
-                        EXTENDED_STARTUPINFO_PRESENT,
+                        EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED,
                         IntPtr.Zero,
                         String.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
                         ref startup,
                         out processInfo),
                     "CreateProcess");
+
+                if (ResumeThread(processInfo.hThread) == UInt32.MaxValue)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "ResumeThread");
+                }
 
                 CloseHandle(processInfo.hThread);
                 processInfo.hThread = IntPtr.Zero;
@@ -220,7 +320,8 @@ namespace Casein
                         CancellationTokenSource cancellation = new CancellationTokenSource();
                         Task inputPump = Pump(network, input, cancellation.Token);
                         Task outputPump = Pump(output, network, cancellation.Token);
-                        Task controlPump = RunControlLoop(control, pseudoConsole, cancellation.Token);
+                        Task controlPump =
+                            RunControlLoop(control, pseudoConsole, job, cancellation.Token);
 
                         while (WaitForSingleObject(processInfo.hProcess, 50) == 0x00000102)
                         {
@@ -231,6 +332,14 @@ namespace Casein
                         }
 
                         cancellation.Cancel();
+                        // A control disconnect means the owning BEAM session is
+                        // gone. Terminate synchronously instead of relying only
+                        // on handle teardown so close/1 does not return while a
+                        // descendant remains alive.
+                        if (WaitForSingleObject(processInfo.hProcess, 0) == 0x00000102)
+                        {
+                            Check(TerminateJobObject(job, 1), "TerminateJobObject");
+                        }
                         if (pseudoConsole != IntPtr.Zero)
                         {
                             ClosePseudoConsole(pseudoConsole);
@@ -248,6 +357,8 @@ namespace Casein
             {
                 if (processInfo.hThread != IntPtr.Zero) CloseHandle(processInfo.hThread);
                 if (processInfo.hProcess != IntPtr.Zero) CloseHandle(processInfo.hProcess);
+                if (job != IntPtr.Zero) CloseHandle(job);
+                if (jobList != IntPtr.Zero) Marshal.FreeHGlobal(jobList);
                 if (attributeList != IntPtr.Zero)
                 {
                     DeleteProcThreadAttributeList(attributeList);
@@ -261,6 +372,48 @@ namespace Casein
             }
         }
 
+        private static IntPtr CreateKillOnCloseJob()
+        {
+            IntPtr job = CreateJobObject(IntPtr.Zero, null);
+            if (job == IntPtr.Zero)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateJobObject");
+            }
+
+            int size = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+            IntPtr limitsPointer = Marshal.AllocHGlobal(size);
+
+            try
+            {
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits =
+                    new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+                limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                Marshal.StructureToPtr(limits, limitsPointer, false);
+
+                if (!SetInformationJobObject(
+                        job,
+                        JobObjectExtendedLimitInformation,
+                        limitsPointer,
+                        (uint)size))
+                {
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "SetInformationJobObject");
+                }
+
+                return job;
+            }
+            catch
+            {
+                CloseHandle(job);
+                throw;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(limitsPointer);
+            }
+        }
+
         private static void Authenticate(NetworkStream stream, string token)
         {
             byte[] bytes = Encoding.ASCII.GetBytes(token ?? String.Empty);
@@ -269,14 +422,32 @@ namespace Casein
             stream.Flush();
         }
 
-        private static async Task RunControlLoop(NetworkStream stream, IntPtr pseudoConsole, CancellationToken cancellation)
+        private static async Task RunControlLoop(
+            NetworkStream stream,
+            IntPtr pseudoConsole,
+            IntPtr job,
+            CancellationToken cancellation)
         {
             using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, false, 1024, true))
             {
                 while (!cancellation.IsCancellationRequested)
                 {
                     string line = await reader.ReadLineAsync().ConfigureAwait(false);
-                    if (line == null || line == "close") return;
+                    if (line == null) return;
+
+                    if (line == "close")
+                    {
+                        Check(TerminateJobObject(job, 1), "TerminateJobObject");
+                        WaitForEmptyJob(job, 10000);
+                        byte[] acknowledgement = Encoding.ASCII.GetBytes("closed\n");
+                        await stream.WriteAsync(
+                            acknowledgement,
+                            0,
+                            acknowledgement.Length,
+                            cancellation).ConfigureAwait(false);
+                        await stream.FlushAsync(cancellation).ConfigureAwait(false);
+                        return;
+                    }
 
                     string[] parts = line.Split(' ');
                     short cols;
@@ -288,6 +459,45 @@ namespace Casein
                         CheckHResult(ResizePseudoConsole(pseudoConsole, new COORD(cols, rows)), "ResizePseudoConsole");
                     }
                 }
+            }
+        }
+
+        private static void WaitForEmptyJob(IntPtr job, int timeoutMilliseconds)
+        {
+            int size = Marshal.SizeOf(typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION));
+            IntPtr accountingPointer = Marshal.AllocHGlobal(size);
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
+
+            try
+            {
+                while (true)
+                {
+                    Check(
+                        QueryInformationJobObject(
+                            job,
+                            JobObjectBasicAccountingInformation,
+                            accountingPointer,
+                            (uint)size,
+                            IntPtr.Zero),
+                        "QueryInformationJobObject");
+
+                    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting =
+                        (JOBOBJECT_BASIC_ACCOUNTING_INFORMATION)Marshal.PtrToStructure(
+                            accountingPointer,
+                            typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION));
+
+                    if (accounting.ActiveProcesses == 0) return;
+                    if (DateTime.UtcNow >= deadline)
+                    {
+                        throw new TimeoutException("Timed out waiting for the terminal Job Object to empty");
+                    }
+
+                    Thread.Sleep(10);
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(accountingPointer);
             }
         }
 
