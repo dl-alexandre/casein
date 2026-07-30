@@ -85,13 +85,24 @@ defmodule CaseinMob.ReviewDecisionScreen do
          |> Mob.Socket.assign(:card_expired, false)}
 
       _missing ->
-        {:noreply,
-         socket
-         |> Mob.Socket.assign(:fresh_card?, false)
-         |> Mob.Socket.assign(:authoritative?, false)
-         |> Mob.Socket.assign(:card_expired, true)
-         |> Mob.Socket.assign(:pending_confirmation, nil)
-         |> Mob.Socket.assign(:message, "This request expired or was removed.")}
+        socket =
+          socket
+          |> Mob.Socket.assign(:fresh_card?, false)
+          |> Mob.Socket.assign(:authoritative?, false)
+          |> Mob.Socket.assign(:pending_confirmation, nil)
+
+        if intervention_action_id?(socket.assigns.submitted_action) or
+             socket.assigns.intervention_completed do
+          {:noreply,
+           socket
+           |> Mob.Socket.assign(:card_expired, false)
+           |> preserve_intervention_confirmation()}
+        else
+          {:noreply,
+           socket
+           |> Mob.Socket.assign(:card_expired, true)
+           |> Mob.Socket.assign(:message, "This request expired or was removed.")}
+        end
     end
   end
 
@@ -132,6 +143,13 @@ defmodule CaseinMob.ReviewDecisionScreen do
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp preserve_intervention_confirmation(%{assigns: %{intervention_completed: true}} = socket),
+    do: socket
+
+  defp preserve_intervention_confirmation(socket),
+    do:
+      Mob.Socket.assign(socket, :message, "Request resolved. Waiting for delivery confirmation.")
 
   def render(assigns) do
     %{

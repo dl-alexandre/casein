@@ -2086,6 +2086,65 @@ private fun MobButton(node: MobNode, modifier: Modifier) {
     }
 }
 
+/**
+ * Reconciles a controlled BEAM value with an Android edit buffer.
+ *
+ * `on_change` crosses JNI and the BEAM before the next rendered `value` comes
+ * back. Re-keying Compose state from every echoed value can therefore replace
+ * a newer edit and move its caret while the field is focused. Keep the local
+ * buffer authoritative during that window, then accept the latest parent value
+ * after blur or when a submitted parent produces a new value.
+ */
+private const val CONTROLLED_TEXT_PENDING_LIMIT = 1024
+
+internal class ControlledTextFieldState(initialValue: String) {
+    var value by mutableStateOf(initialValue)
+        private set
+
+    private var latestExternalValue = initialValue
+    private val pendingLocalValues = mutableListOf<String>()
+
+    fun onLocalValue(newValue: String) {
+        if (pendingLocalValues.lastOrNull() != newValue) {
+            pendingLocalValues += newValue
+            if (pendingLocalValues.size > CONTROLLED_TEXT_PENDING_LIMIT) {
+                pendingLocalValues.removeAt(0)
+            }
+        }
+        value = newValue
+    }
+
+    fun onExternalValue(newValue: String) {
+        val pendingIndex = pendingLocalValues.indexOf(newValue)
+
+        when {
+            pendingIndex >= 0 -> {
+                repeat(pendingIndex + 1) { pendingLocalValues.removeAt(0) }
+                latestExternalValue = newValue
+            }
+            newValue == latestExternalValue -> Unit
+            newValue == value -> {
+                latestExternalValue = newValue
+                pendingLocalValues.clear()
+            }
+            else -> {
+                latestExternalValue = newValue
+                value = newValue
+                pendingLocalValues.clear()
+            }
+        }
+    }
+
+    fun onFocusChanged(isFocused: Boolean) {
+        if (!isFocused) {
+            value = latestExternalValue
+            pendingLocalValues.clear()
+        }
+    }
+
+    fun onSubmit() = Unit
+}
+
 @Composable
 private fun MobTextField(node: MobNode, modifier: Modifier) {
     val changeHandle  = intProp(node.props, "on_change")
@@ -2119,10 +2178,6 @@ private fun MobTextField(node: MobNode, modifier: Modifier) {
         "search" -> ImeAction.Search
         "send"   -> ImeAction.Send
         else     -> ImeAction.Done
-    }
-
-    var localValue by remember(node.props["value"], rawInput) {
-        mutableStateOf(node.props["value"] as? String ?: "")
     }
 
     // Only fill width when explicitly asked. The unconditional fillMaxWidth
@@ -2185,8 +2240,22 @@ private fun MobTextField(node: MobNode, modifier: Modifier) {
         return
     }
 
+    val externalValue = node.props["value"] as? String ?: ""
+    val controlledState = remember(changeHandle, rawInput) {
+        ControlledTextFieldState(externalValue)
+    }
+    LaunchedEffect(controlledState, externalValue) {
+        controlledState.onExternalValue(externalValue)
+    }
+
+    fun submitInput() {
+        controlledState.onSubmit()
+        submitHandle?.let { MobBridge.nativeSendSubmit(it) }
+        if (!keepKeyboardOnSubmit) keyboardController?.hide()
+    }
+
     TextField(
-        value         = localValue,
+        value         = controlledState.value,
         onValueChange = { new ->
             if (rawInput) {
                 // Terminal mode: use the TextField as an IME surface, not as a
@@ -2195,15 +2264,16 @@ private fun MobTextField(node: MobNode, modifier: Modifier) {
                 if (new.isNotEmpty()) {
                     changeHandle?.let { MobBridge.nativeSendChangeStr(it, new) }
                 }
-                localValue = ""
+                controlledState.onLocalValue("")
             } else {
-                localValue = new
+                controlledState.onLocalValue(new)
                 changeHandle?.let { MobBridge.nativeSendChangeStr(it, new) }
             }
         },
         placeholder   = { Text(placeholder) },
         modifier      = tfModifier
             .onFocusChanged { state ->
+                controlledState.onFocusChanged(state.isFocused)
                 if (state.isFocused) focusHandle?.let { MobBridge.nativeSendFocus(it) }
                 else                 blurHandle?.let  { MobBridge.nativeSendBlur(it)  }
             },
@@ -2212,22 +2282,10 @@ private fun MobTextField(node: MobNode, modifier: Modifier) {
             if (isSecure) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
         keyboardActions = KeyboardActions(
-            onDone = {
-                submitHandle?.let { MobBridge.nativeSendSubmit(it) }
-                if (!keepKeyboardOnSubmit) keyboardController?.hide()
-            },
-            onGo = {
-                submitHandle?.let { MobBridge.nativeSendSubmit(it) }
-                if (!keepKeyboardOnSubmit) keyboardController?.hide()
-            },
-            onSearch = {
-                submitHandle?.let { MobBridge.nativeSendSubmit(it) }
-                if (!keepKeyboardOnSubmit) keyboardController?.hide()
-            },
-            onSend = {
-                submitHandle?.let { MobBridge.nativeSendSubmit(it) }
-                if (!keepKeyboardOnSubmit) keyboardController?.hide()
-            },
+            onDone = { submitInput() },
+            onGo = { submitInput() },
+            onSearch = { submitInput() },
+            onSend = { submitInput() },
         ),
     )
 }
