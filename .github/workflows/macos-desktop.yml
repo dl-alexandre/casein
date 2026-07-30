@@ -53,10 +53,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Pull requests and pushes exercise one representative current runner.
-        # Manual dispatches retain the full compatibility matrix for releases
-        # and explicit cross-version verification.
-        include: ${{ github.event_name == 'workflow_dispatch' && fromJSON('[{"name":"macOS 14 arm64","runner":"macos-14","cache":"macos-14-arm64"},{"name":"macOS 15 arm64","runner":"macos-15","cache":"macos-15-arm64"},{"name":"macOS 15 Intel","runner":"macos-15-intel","cache":"macos-15-x86_64"},{"name":"macOS 26 arm64","runner":"macos-26","cache":"macos-26-arm64"}]') || fromJSON('[{"name":"macOS 15 arm64","runner":"macos-15","cache":"macos-15-arm64"}]') }}
+        # Pull requests and pushes run on the self-hosted testserver box, whose
+        # minutes are free. GitHub-hosted macOS bills at 10x, and every run of
+        # this workflow had failed before starting on the account spending
+        # limit — 82 for 82 — so the hosted matrix now runs only on demand,
+        # for releases and explicit cross-version verification.
+        include: ${{ github.event_name == 'workflow_dispatch' && fromJSON('[{"name":"macOS 14 arm64","runner":"macos-14","cache":"macos-14-arm64"},{"name":"macOS 15 arm64","runner":"macos-15","cache":"macos-15-arm64"},{"name":"macOS 15 Intel","runner":"macos-15-intel","cache":"macos-15-x86_64"},{"name":"macOS 26 arm64","runner":"macos-26","cache":"macos-26-arm64"}]') || fromJSON('[{"name":"macOS 26 arm64 (self-hosted)","runner":["self-hosted","macOS","ARM64","milcmini"],"cache":"selfhosted-macos-26-arm64","selfHosted":true}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
 
@@ -66,13 +68,29 @@ jobs:
         with:
           fetch-depth: 0
 
+      # setup-beam publishes no prebuilt OTP for macOS, so the self-hosted box
+      # keeps its toolchain in mise instead — the same pin AGENTS.md uses
+      # locally and the devbox ships. Shims put mix/elixir/node on PATH for
+      # every later step.
+      - name: Set up Elixir, Erlang, and Node (self-hosted)
+        if: ${{ matrix.selfHosted }}
+        run: |
+          set -euo pipefail
+          MISE="$(command -v mise || echo "$HOME/.local/bin/mise")"
+          "$MISE" install
+          # Prepended to PATH, so the pinned toolchain wins over whatever
+          # Homebrew has installed on the box.
+          "$MISE" bin-paths >> "$GITHUB_PATH"
+
       - name: Set up Elixir and Erlang
+        if: ${{ !matrix.selfHosted }}
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
         with:
           elixir-version: "1.20.0"
           otp-version: "28.5"
 
       - name: Set up Node
+        if: ${{ !matrix.selfHosted }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -81,7 +99,10 @@ jobs:
             assets/package-lock.json
             priv/scripts/package-lock.json
 
+      # The self-hosted work folder persists between runs, so deps/ and _build/
+      # survive on disk and a cache round-trip would only add upload time.
       - name: Restore Mix build cache
+        if: ${{ !matrix.selfHosted }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
