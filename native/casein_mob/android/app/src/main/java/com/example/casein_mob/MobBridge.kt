@@ -2101,38 +2101,44 @@ internal class ControlledTextFieldState(initialValue: String) {
 
     private var focused = false
     private var latestExternalValue = initialValue
-    private var submittedExternalBaseline: String? = null
+    private val pendingLocalValues = mutableListOf<String>()
 
     fun onLocalValue(newValue: String) {
+        if (pendingLocalValues.lastOrNull() != newValue) {
+            pendingLocalValues += newValue
+        }
         value = newValue
     }
 
     fun onExternalValue(newValue: String) {
-        latestExternalValue = newValue
+        val pendingIndex = pendingLocalValues.indexOf(newValue)
 
         when {
-            !focused -> value = newValue
-            submittedExternalBaseline == null -> Unit
-            newValue == value -> submittedExternalBaseline = null
-            newValue != submittedExternalBaseline -> {
-                value = newValue
-                submittedExternalBaseline = null
+            pendingIndex >= 0 -> {
+                repeat(pendingIndex + 1) { pendingLocalValues.removeAt(0) }
+                latestExternalValue = newValue
             }
-            else -> Unit
+            newValue == latestExternalValue -> Unit
+            newValue == value -> {
+                latestExternalValue = newValue
+                pendingLocalValues.clear()
+            }
+            else -> {
+                latestExternalValue = newValue
+                value = newValue
+                pendingLocalValues.clear()
+            }
         }
     }
 
     fun onFocusChanged(isFocused: Boolean) {
         focused = isFocused
-        if (!isFocused) {
+        if (!isFocused && pendingLocalValues.isEmpty()) {
             value = latestExternalValue
-            submittedExternalBaseline = null
         }
     }
 
-    fun onSubmit() {
-        submittedExternalBaseline = latestExternalValue
-    }
+    fun onSubmit() = Unit
 }
 
 @Composable

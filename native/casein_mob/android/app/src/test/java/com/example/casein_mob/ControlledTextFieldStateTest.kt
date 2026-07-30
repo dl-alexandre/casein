@@ -35,6 +35,16 @@ class ControlledTextFieldStateTest {
     }
 
     @Test
+    fun `focused field accepts a programmatic parent replacement`() {
+        val state = ControlledTextFieldState("old code")
+        state.onFocusChanged(true)
+
+        state.onExternalValue("fresh clipboard code")
+
+        assertEquals("fresh clipboard code", state.value)
+    }
+
+    @Test
     fun `unfocused field follows an external parent value`() {
         val state = ControlledTextFieldState("draft")
 
@@ -56,13 +66,13 @@ class ControlledTextFieldStateTest {
     }
 
     @Test
-    fun `submitted field accepts a changed authoritative parent value while focused`() {
+    fun `submitted field accepts reset after a delayed local echo`() {
         val state = ControlledTextFieldState("")
         state.onFocusChanged(true)
         state.onLocalValue("Yes")
-        state.onExternalValue("Yes")
 
         state.onSubmit()
+        state.onExternalValue("Yes")
         state.onExternalValue("")
 
         assertEquals("", state.value)

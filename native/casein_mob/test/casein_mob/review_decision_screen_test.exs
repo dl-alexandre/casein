@@ -309,6 +309,31 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     refute text(view) =~ "expired or was removed"
   end
 
+  test "a resolved snapshot preserves an already confirmed intervention" do
+    card = intervention_card()
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info(
+        {:card_action_result, card["id"],
+         {:ok, %{"result" => %{"confirmation" => "Follow-up delivered to the exact agent."}}}}
+      )
+
+    assert assigns(view).intervention_completed == true
+    assert text(view) =~ "Follow-up delivered to the exact agent."
+
+    view = render_info(view, {:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert assigns(view).intervention_completed == true
+    assert assigns(view).card_expired == false
+    assert text(view) =~ "Follow-up delivered to the exact agent."
+    refute text(view) =~ "expired or was removed"
+  end
+
   test "a stale action revision forces authoritative Action Center refresh" do
     card =
       update_in(intervention_card(), ["actions"], fn actions ->

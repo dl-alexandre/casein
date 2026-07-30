@@ -91,11 +91,12 @@ defmodule CaseinMob.ReviewDecisionScreen do
           |> Mob.Socket.assign(:authoritative?, false)
           |> Mob.Socket.assign(:pending_confirmation, nil)
 
-        if intervention_action_id?(socket.assigns.submitted_action) do
+        if intervention_action_id?(socket.assigns.submitted_action) or
+             socket.assigns.intervention_completed do
           {:noreply,
            socket
            |> Mob.Socket.assign(:card_expired, false)
-           |> Mob.Socket.assign(:message, "Request resolved. Waiting for delivery confirmation.")}
+           |> preserve_intervention_confirmation()}
         else
           {:noreply,
            socket
@@ -142,6 +143,13 @@ defmodule CaseinMob.ReviewDecisionScreen do
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp preserve_intervention_confirmation(%{assigns: %{intervention_completed: true}} = socket),
+    do: socket
+
+  defp preserve_intervention_confirmation(socket),
+    do:
+      Mob.Socket.assign(socket, :message, "Request resolved. Waiting for delivery confirmation.")
 
   def render(assigns) do
     %{
