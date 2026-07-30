@@ -169,7 +169,8 @@ defmodule Casein.PreviewPanes do
   def list_for_workspace(workspace_id) when is_binary(workspace_id) do
     GenServer.call(
       __MODULE__,
-      {:list_for_workspace, Deps.impl(:workspaces).viewer_ids(workspace_id)}
+      {:list_for_workspace,
+       Deps.impl(:workspaces).viewer_ids(workspace_id, resolve_remote?: true)}
     )
   end
 
@@ -1775,7 +1776,7 @@ defmodule Casein.PreviewPanes do
   end
 
   defp ensure_shared_source_scope(workspace, %{workspace_id: workspace_id}) do
-    if workspace_id in Deps.impl(:workspaces).viewer_ids(workspace.id) do
+    if workspace_id in Deps.impl(:workspaces).viewer_ids(workspace.id, resolve_remote?: false) do
       :ok
     else
       {:error, :no_shared_preview_found}
@@ -2126,7 +2127,7 @@ defmodule Casein.PreviewPanes do
   end
 
   defp workspace_registrations_direct(workspace_id) when is_binary(workspace_id) do
-    workspace_ids = workspaces().viewer_ids(workspace_id)
+    workspace_ids = workspaces().viewer_ids(workspace_id, resolve_remote?: false)
 
     @table
     |> :ets.tab2list()
