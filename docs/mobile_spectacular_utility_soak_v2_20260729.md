@@ -11,7 +11,7 @@ terminal output, raw logs, commands, or file contents in this document.
 | Connected meaningful-transition p95 | not yet measured | <= 2 s | pending |
 | Cold restored live feed | prior iPad < 2 s; Android not normalized | < 3 s | authoritative p95: Coding iPad 0.811 s; SM-T390 2.984 s |
 | Reconnect catch-up | prior evidence qualitative | < 5 s | SM-T390 10.53 s end-to-end; 8.76 s was Android 9 Wi-Fi association/DHCP, then 1.77 s to authoritative recovery |
-| Intervention completion | 80% historical | 100% naturally available actions | 100% of the authoritative clarification action physically available; exactly-once delivery was proven independently on iPad and Android with authoritative resolution |
+| Intervention completion | 80% historical | 100% naturally available actions | 100% of the authoritative clarification action physically available; one physical submit produced one authoritative delivery/resolution independently on iPad and Android, while same-request replay remains server-contract tested |
 | Exact resume completion | 90% historical | >= 95% | pending |
 | Duplicate transitions/actions | 0 observed historically | 0 | pending |
 | Desktop-required rate | not recoverable | measured, then reduced where safe | pending |
