@@ -11,7 +11,7 @@ terminal output, raw logs, commands, or file contents in this document.
 | Connected meaningful-transition p95 | not yet measured | <= 2 s | pending |
 | Cold restored live feed | prior iPad < 2 s; Android not normalized | < 3 s | authoritative p95: Coding iPad 0.811 s; SM-T390 2.984 s |
 | Reconnect catch-up | prior evidence qualitative | < 5 s | SM-T390 10.53 s end-to-end; 8.76 s was Android 9 Wi-Fi association/DHCP, then 1.77 s to authoritative recovery |
-| Intervention completion | 80% historical | 100% naturally available actions | 100% of the one authoritative clarification action physically available; exactly-once iPad delivery and authoritative resolution |
+| Intervention completion | 80% historical | 100% naturally available actions | 100% of the authoritative clarification action physically available; one physical submit produced one authoritative delivery/resolution independently on iPad and Android, while same-request replay remains server-contract tested |
 | Exact resume completion | 90% historical | >= 95% | pending |
 | Duplicate transitions/actions | 0 observed historically | 0 | pending |
 | Desktop-required rate | not recoverable | measured, then reduced where safe | pending |
@@ -46,6 +46,15 @@ terminal output, raw logs, commands, or file contents in this document.
 | 2026-07-30 05:04 | Android response entry | Older Android controlled input preserves exact bounded text while BEAM echoes arrive | Sequential input was reproducibly reordered before submission; a focus-aware Android edit buffer retained exact sequential and atomic accessibility input on SM-T390. The safe pairing fixture was never submitted | JVM state tests, data-preserving physical instrumentation, package/profile persistence checks | Product defect / medium | Land the platform-only reconciliation fix and repeat the disposable clarification action on the deployed build |
 | 2026-07-30 05:05 | Cold hydration stages | Authoritative feed readiness, rather than harness settling, meets the three-second target | Coding iPad n=10 p50/p95 0.715/0.811 s. SM-T390 primary samples 2.874/2.900/2.984 s, p50 2.900 s and p95 2.984 s | Privacy-bounded stage timestamps only | Green | Keep harness launch timing separate from product feed readiness |
 | 2026-07-30 05:05 | Android reconnect stages | Reconnect reaches authoritative state within five seconds unless a measured platform/network floor dominates | End-to-end was 10.53 s; Wi-Fi association plus IPv4 took about 8.76 s after enable, while transport and authoritative join completed about 1.77 s later | Android connectivity timestamps plus privacy-bounded application stages | External/platform floor | Do not weaken single-origin authority or add silent failover to mask Android 9 radio association |
+| 2026-07-30 06:31 | Late action-screen subscription | A screen opened after the one active topic joined receives the latest authoritative card without reconnecting or changing origin | The topic client joined correctly, but action screens could miss the already-delivered snapshot and remain non-authoritative until a later event | Source trace, focused subscriber tests, and independent adversarial review | Product defect / medium | Cache one bounded authoritative snapshot per active topic and replay it only to subscribers of that exact topic |
+| 2026-07-30 06:44 | Subscriber lifecycle bounds | Authoritative replay does not outlive a topic subscription, pairing, or origin | Review found a final-unwatch cache leak and redundant process monitors; the final implementation clears topic state on final unwatch and owns one monitor per subscriber PID | 21 focused SessionClient tests, 188 full native tests, independent clean review | Product defect / medium | Fixed in PR #474 without adding polling, another socket, or a new server model |
+| 2026-07-30 06:48 | Android disabled actions | Offline/stale controls are both visually and behaviorally disabled | Material and compact buttons previously retained a dispatch path after becoming disabled | Focused JVM tests and full Android unit suite | Product defect / medium | Disabled state now gates both rendering semantics and dispatch |
+| 2026-07-30 06:52 | iPad exact merged build | A cold launch restores the authoritative clarification and late-opened response screen | Data-preserving signed install of merge `9d221942`; cold launch restored the Devbox card, and Respond opened the bounded 280-character action screen after authoritative target restoration. Portrait, full-canvas landscape, and background/foreground passed | Exact packaged/device BEAM hashes, strict codesign, signed XCUITest results, privacy-safe screenshots | Green | Keep iPad installed profile/data; no second physical submission was needed for cross-platform delivery proof |
+| 2026-07-30 06:53 | Deploy restart degradation | Lost ephemeral pane state cannot be guessed from a durable card | During deployment, the clarification remained visible but Respond degraded to the workspace fallback until the disposable role-marked agent state was authoritatively reported again | Card/UI state plus aggregate role/topology metadata; no pane contents | Green / fail-closed | Preserve fallback; never retarget from stale locator data |
+| 2026-07-30 06:55 | Android exact merged action | The real clarification response reaches the disposable agent once and no other pane | Data-preserving exact merge install showed the authoritative role-marked excerpt and enabled response. One physical Send produced one `mobile.clarification_resolved`, one card intervention, one attention action, and one resume intervention audit sequence, followed by `Action accepted` and authoritative card resolution | Privacy-bounded audit atoms, exact target reference, aggregate topology roles, UIAutomator screenshots/XML; no message body or raw pane output retained | Green | Exactly one physical submit; operator `%1091`, verify `%1093`, and unrelated panes were ineligible and received no guarded delivery |
+| 2026-07-30 06:57 | Android offline/inactive safety | Cached or inactive-origin cards remain visibly read-only and cannot dispatch | Offline card rendered `Last known · Offline · Read-only`; tapping did not navigate or mutate. Local Mac and Devbox profiles remained distinct, and killed/warm launch after resolution fell back to the correct origin-qualified Action Center | UIAutomator hierarchy, screenshots, and no new mutation audit | Green | Preserve explicit activation and authoritative refresh before action |
+| 2026-07-30 07:00 | Replay evidence boundary | Same request IDs replay the stored result without a second delivery | Server adversarial tests cover same-request replay. The physical UI was intentionally tapped once: after authoritative acceptance it exposes no retry control and a second tap would mint a new request ID rather than test idempotent replay | Server contract tests plus physical one-submit audit count | Honest limitation | Do not manufacture a second physical delivery claim or add a retry surface solely for testability |
+| 2026-07-30 07:02 | Canonical deployment | The reviewed mobile merge is active through the normal poller and remains present after master advances | Poller first activated exact merge `9d221942`; it then activated healthy master `ecb230a2`, a proven descendant containing the merge. Deploy service exited successfully and canonical `/healthz` passed | Host revision, git ancestry, systemd result, canonical health endpoint | Green | No manual production mutation |
 
 ## Findings
 
@@ -61,10 +70,20 @@ surface, simultaneous connection, silent failover, or sensitive telemetry was
 introduced.
 
 The follow-up clarification slice adds the missing authoritative Needs Me source
-without inventing a generalized task database. A subsequent narrow reliability
-slice keeps Android's focused edit buffer stable across stale parent echoes and
-prevents a resolved-card snapshot from racing the in-flight delivery result into
-a misleading expired state.
+without inventing a generalized task database. Subsequent narrow reliability
+slices keep Android's focused edit buffer stable across stale parent echoes,
+prevent a resolved-card snapshot from racing the in-flight delivery result into
+a misleading expired state, and replay the latest bounded authoritative snapshot
+to late action-screen subscribers. The replay cache is scoped to the exact active
+topic and is cleared on final unwatch, disconnect, pairing reset, and origin
+switch.
+
+The final physical action used only the disposable role-marked agent target.
+Android supplied the one cross-platform completion after iPad independently
+proved the same authoritative action path. The server recorded one resolution
+and one guarded delivery sequence, while cached/offline state remained read-only.
+Same-request replay remains adversarially contract-tested rather than falsely
+claimed from a second physical tap that would generate a different request ID.
 
 DairyPhone issue #457 remains physically unavailable in this soak. Source review
 narrows the unresolved camera-only path to the upstream `mob_scanner` iOS bridge:
