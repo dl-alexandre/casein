@@ -9,9 +9,9 @@ terminal output, raw logs, commands, or file contents in this document.
 | Metric | Before | Target | After |
 |---|---:|---:|---:|
 | Connected meaningful-transition p95 | not yet measured | <= 2 s | pending |
-| Cold restored live feed | prior iPad < 2 s; Android not normalized | < 3 s | iPad foreground 1.693 s, authoritative feed 6.148 s; SM-T390 authenticated 6.725 s |
-| Reconnect catch-up | prior evidence qualitative | < 5 s | SM-T390 9.954 s; safe but above target |
-| Intervention completion | 80% historical | 100% naturally available actions | not exercised: no authoritative action card was declared |
+| Cold restored live feed | prior iPad < 2 s; Android not normalized | < 3 s | authoritative p95: Coding iPad 0.811 s; SM-T390 2.984 s |
+| Reconnect catch-up | prior evidence qualitative | < 5 s | SM-T390 10.53 s end-to-end; 8.76 s was Android 9 Wi-Fi association/DHCP, then 1.77 s to authoritative recovery |
+| Intervention completion | 80% historical | 100% naturally available actions | 100% of the one authoritative clarification action physically available; exactly-once iPad delivery and authoritative resolution |
 | Exact resume completion | 90% historical | >= 95% | pending |
 | Duplicate transitions/actions | 0 observed historically | 0 | pending |
 | Desktop-required rate | not recoverable | measured, then reduced where safe | pending |
@@ -41,6 +41,11 @@ terminal output, raw logs, commands, or file contents in this document.
 | 2026-07-29 23:56 | iPad module bisect | Compact dashboard layout remains renderable when no resume context exists | Exact-base control booted; feature Review screen alone booted; feature Dashboard alone reproduced the hang. The layout moved an optional `resume_button/2` into an unfiltered child list, emitting a nil child when no resume context existed | Single-module device BEAM bisect with exact hashes | Product defect / blocking | Reject nil children in the paired summary and assert the no-resume paired tree recursively contains none |
 | 2026-07-30 00:01 | Final exact-head devices | Reviewed native state boots and remains safe on both connected devices | Coding iPad: 3 applicable UI tests passed, 1 no-card skip, full portrait/landscape canvas, no crashes. SM-T390: UIAutomator passed with compact layout, offline read-only/reconnect, no crash/ANR | Signed/data-preserving iPad build and exact device BEAM hashes; Android exact device BEAM hash | Green functionality / performance follow-up | Land reviewed fix; retain measured cold hydration/reconnect budgets as unresolved performance work rather than weaken authority checks |
 | 2026-07-30 01:05 | Deployed disposable-agent action proof | A harmless prompt in the explicit disposable agent pane yields a server-declared clarification card on both devices | Guarded delivery targeted only the role-marked agent pane, but neither device received an action card after authoritative refresh; Live remained healthy, Needs Me remained empty, and Android offline/recovery remained visibly stale then authoritative | Aggregate transition counts plus bounded iPad and SM-T390 UI automation; no pane contents or message bodies captured | Missing authoritative projection / follow-up | Do not fabricate a card or bypass the typed action contract; design a narrow server-declared clarification event before claiming physical action/replay proof |
+| 2026-07-30 04:46 | Authoritative clarification projection | Only a real server event for the disposable exact role-marked agent target creates Needs Me | The server-declared clarification appeared as one origin-qualified Needs Me card on both devices; duplicate target events coalesced to the newest revision | Bounded card identity/count and aggregate topology metadata; no pane contents or response body retained | Green | Contract landed in PR #471 and deployed in descendant `a76244c2` |
+| 2026-07-30 04:59 | Physical clarification action | A fresh physical action delivers once to the exact agent, resolves authoritatively, and leaves no stale mobile action | Coding iPad dispatched once; the server recorded one delivery outcome and resolution; both devices then showed zero clarification cards after authoritative refresh. No operator, verify, or unrelated target was eligible under the guarded contract | Privacy-bounded action/resolution audit atoms, card counts, exact target-role metadata, and physical UI state | Green with UX defect | Fix the snapshot/result race that briefly rendered a misleading expired message while delivery confirmation was in flight |
+| 2026-07-30 05:04 | Android response entry | Older Android controlled input preserves exact bounded text while BEAM echoes arrive | Sequential input was reproducibly reordered before submission; a focus-aware Android edit buffer retained exact sequential and atomic accessibility input on SM-T390. The safe pairing fixture was never submitted | JVM state tests, data-preserving physical instrumentation, package/profile persistence checks | Product defect / medium | Land the platform-only reconciliation fix and repeat the disposable clarification action on the deployed build |
+| 2026-07-30 05:05 | Cold hydration stages | Authoritative feed readiness, rather than harness settling, meets the three-second target | Coding iPad n=10 p50/p95 0.715/0.811 s. SM-T390 primary samples 2.874/2.900/2.984 s, p50 2.900 s and p95 2.984 s | Privacy-bounded stage timestamps only | Green | Keep harness launch timing separate from product feed readiness |
+| 2026-07-30 05:05 | Android reconnect stages | Reconnect reaches authoritative state within five seconds unless a measured platform/network floor dominates | End-to-end was 10.53 s; Wi-Fi association plus IPv4 took about 8.76 s after enable, while transport and authoritative join completed about 1.77 s later | Android connectivity timestamps plus privacy-bounded application stages | External/platform floor | Do not weaken single-origin authority or add silent failover to mask Android 9 radio association |
 
 ## Findings
 
@@ -54,6 +59,12 @@ the older-screen paired-summary layout. The intervention catalog is also narrowe
 coherent with the authoritative card posture. No new action kinds, terminal
 surface, simultaneous connection, silent failover, or sensitive telemetry was
 introduced.
+
+The follow-up clarification slice adds the missing authoritative Needs Me source
+without inventing a generalized task database. A subsequent narrow reliability
+slice keeps Android's focused edit buffer stable across stale parent echoes and
+prevents a resolved-card snapshot from racing the in-flight delivery result into
+a misleading expired state.
 
 DairyPhone issue #457 remains physically unavailable in this soak. Source review
 narrows the unresolved camera-only path to the upstream `mob_scanner` iOS bridge:
