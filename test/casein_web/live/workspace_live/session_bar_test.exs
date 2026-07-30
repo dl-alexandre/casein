@@ -1338,6 +1338,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
     end
   end
 
+  # Visible text of a session tab's secondary (detail) line, so assertions can
+  # tell it apart from the hover `title`, which legitimately repeats more.
+  defp tab_detail_text(html, dom_id) do
+    case Regex.run(~r/id="#{Regex.escape(dom_id)}".*?text-primary\/80">\s*([^<]*)</s, html) do
+      [_, text] -> String.trim(text)
+      _ -> ""
+    end
+  end
+
   defp pane(id) when is_binary(id), do: pane(%{id: id})
 
   defp pane(attrs) when is_map(attrs) do
@@ -1459,6 +1468,126 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
       assert tab.branch == "feature-x"
       assert tab.detail =~ "feature-x"
       refute tab.detail_secondary =~ "feature-x"
+    end
+  end
+
+  # A linked worktree's `--show-toplevel` IS the worktree, so a basename-derived
+  # label reads `agent-claude-adhoc-<stamp>` and hides which checkout it forked
+  # from. `anchor_label` is the origin-first form used by surfaces that render a
+  # session label with no `session_anchor_chip/1` beside it.
+  # A real agent worktree as the session directory sees it: cwd and toplevel are
+  # the worktree, `git_common_dir` is the only pointer back to the origin.
+  defp worktree_tab(extra \\ %{}) do
+    shell_tab(
+      Map.merge(
+        %{
+          cwd: "/tmp/casein-agent-worktrees/agent-claude-adhoc-20260730051850",
+          git_toplevel: "/tmp/casein-agent-worktrees/agent-claude-adhoc-20260730051850",
+          git_common_dir: "/data/workspaces/dalexandre/dev_ide/.git",
+          git_branch: "agent/claude/adhoc-20260730051850",
+          git_worktree?: true
+        },
+        extra
+      )
+    )
+  end
+
+  describe "session_tab/1 anchor_label" do
+    test "a worktree reads origin-first, and the raw label is left alone" do
+      tab = worktree_tab()
+
+      assert tab.anchor_label == "dev_ide ⑂ adhoc-20260730051850"
+
+      assert tab.label == "agent-claude-adhoc-20260730051850",
+             "label stays the identity value (rename prefill, agent references)"
+
+      assert tab.title =~ "/tmp/casein-agent-worktrees/agent-claude-adhoc-20260730051850",
+             "the worktree dir is not lost — it moves to the hover title"
+    end
+
+    test "a primary checkout keeps its own label" do
+      tab = shell_tab(%{cwd: "/r/apps/web", git_toplevel: "/r", git_branch: "feature-x"})
+
+      assert tab.anchor_label == tab.label
+      assert tab.anchor_label == "r/apps/web"
+    end
+
+    test "a worktree with no resolvable origin keeps its own label" do
+      tab = worktree_tab(%{git_common_dir: nil})
+
+      assert tab.anchor_label == tab.label
+    end
+
+    test "a deliberate operator alias wins over the origin" do
+      tab = worktree_tab(%{session_alias: "nav bugfix"})
+
+      assert tab.anchor_label == "nav bugfix"
+    end
+
+    # SessionDirectory.agent_worktree_tab/1 sets `session_alias` from the
+    # runtime's path_label — the worktree's own basename. That is derived, not
+    # chosen, so it must NOT suppress the origin the way a real alias does.
+    test "the poller's basename-derived alias does not suppress the origin" do
+      tab = worktree_tab(%{session_alias: "agent-claude-adhoc-20260730051850"})
+
+      assert tab.anchor_label == "dev_ide ⑂ adhoc-20260730051850"
+    end
+  end
+
+  describe "origin-first labels on the desktop chrome" do
+    test "the header session indicator shows the origin, with the worktree dir in its tooltip" do
+      tab = worktree_tab()
+
+      html =
+        render_component(&SessionBar.session_header_indicator/1,
+          workspace_id: "ws-1",
+          tabs: [tab],
+          active_id: tab.id,
+          active_fallback_label: "Shell",
+          active_fallback_detail: "",
+          open?: false
+        )
+
+      assert html =~ "dev_ide ⑂ adhoc-20260730051850"
+      refute html =~ ~s(>agent-claude-adhoc-20260730051850<)
+
+      assert html =~ "/tmp/casein-agent-worktrees/agent-claude-adhoc-20260730051850",
+             "the tooltip is the only place the worktree dir is still spelled out"
+    end
+
+    test "the session tab strip shows the origin without repeating the branch" do
+      tab = worktree_tab()
+
+      html =
+        render_component(&SessionBar.session_tabs/1,
+          workspace_id: "ws-1",
+          tabs: [tab],
+          active_id: tab.id,
+          shell_active?: false
+        )
+
+      assert html =~ "dev_ide ⑂ adhoc-20260730051850"
+
+      refute tab_detail_text(html, tab.dom_id) =~ "agent/claude/adhoc-20260730051850",
+             "the label already carries the branch tail — the detail line must not repeat it"
+
+      assert html =~ "agent/claude/adhoc-20260730051850",
+             "the full branch is still reachable via the hover title"
+    end
+
+    test "a non-worktree tab keeps its full detail line" do
+      tab = shell_tab(%{cwd: "/r", git_toplevel: "/r", git_branch: "feature-x"})
+
+      html =
+        render_component(&SessionBar.session_tabs/1,
+          workspace_id: "ws-1",
+          tabs: [tab],
+          active_id: tab.id,
+          shell_active?: false
+        )
+
+      assert tab_detail_text(html, tab.dom_id) =~ "feature-x",
+             "nothing was folded into the label, so the branch still belongs on the detail line"
     end
   end
 end

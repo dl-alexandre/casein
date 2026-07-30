@@ -75,12 +75,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
               class={terminal_tab_class(@active_id == tab.id)}
               title={tab.title}
             >
-              <span class="max-w-44 truncate font-medium">{tab.label}</span>
+              <span class="max-w-44 truncate font-medium">{tab_anchor_label(tab)}</span>
               <span
-                :if={tab.detail != ""}
+                :if={tab_anchor_detail(tab) != ""}
                 class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
               >
-                {tab.detail}
+                {tab_anchor_detail(tab)}
               </span>
             </a>
           <% end %>
@@ -93,12 +93,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
               class={terminal_tab_class(false)}
               title={tab.title}
             >
-              <span class="max-w-44 truncate font-medium">{tab.label}</span>
+              <span class="max-w-44 truncate font-medium">{tab_anchor_label(tab)}</span>
               <span
-                :if={tab.detail != ""}
+                :if={tab_anchor_detail(tab) != ""}
                 class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
               >
-                {tab.detail}
+                {tab_anchor_detail(tab)}
               </span>
             </.link>
           <% else %>
@@ -110,12 +110,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
               aria-disabled="true"
               disabled
             >
-              <span class="max-w-44 truncate font-medium">{tab.label}</span>
+              <span class="max-w-44 truncate font-medium">{tab_anchor_label(tab)}</span>
               <span
-                :if={tab.detail != ""}
+                :if={tab_anchor_detail(tab) != ""}
                 class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
               >
-                {tab.detail}
+                {tab_anchor_detail(tab)}
               </span>
             </button>
           <% end %>
@@ -1852,16 +1852,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   The shared `agent/grok/` prefix repeats across worktrees and only steals width;
   the full name still reaches the hover title via `session_anchor_title/1`.
   """
-  def branch_short(branch) when is_binary(branch) do
-    case String.split(branch, "/", trim: true) do
-      [] -> branch
-      parts -> List.last(parts)
-    end
-  end
+  defdelegate branch_short(branch), to: SessionBarVM
 
-  def branch_short(_), do: ""
-
-  defp default_branch?(branch), do: branch in ~w(main master trunk)
+  defp default_branch?(branch), do: SessionBarVM.default_branch?(branch)
 
   defp session_anchor_title(%{worktree?: true, repo: repo, branch: branch})
        when is_binary(repo) and repo != "" do
@@ -1950,32 +1943,67 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   defp active_session_label(tabs, active_id, fallback_label) do
     case Enum.find(tabs, &(&1.id == active_id)) do
-      %{label: label} -> label
       nil -> fallback_label
+      tab -> tab_anchor_label(tab)
     end
   end
 
   defp active_session_detail(tabs, active_id, fallback_detail) do
     case Enum.find(tabs, &(&1.id == active_id)) do
-      %{detail: detail} -> detail
       nil -> fallback_detail
+      tab -> tab_anchor_detail(tab)
     end
   end
 
-  defp active_session_picker_title(tabs, active_id, fallback_label, fallback_detail) do
-    label = active_session_label(tabs, active_id, fallback_label)
-    detail = active_session_detail(tabs, active_id, fallback_detail)
+  defp active_session_cwd(tabs, active_id) do
+    case Enum.find(tabs, &(&1.id == active_id)) do
+      %{cwd: cwd} when is_binary(cwd) and cwd != "" -> cwd
+      _ -> nil
+    end
+  end
 
+  # The cwd is part of the tooltip, not decoration: the visible label is the
+  # origin-first `repo ⑂ branch` form, so this is the only place the actual
+  # worktree directory is still spelled out.
+  defp active_session_picker_title(tabs, active_id, fallback_label, fallback_detail) do
     session =
-      if detail != "" and detail != label do
-        label <> " · " <> detail
-      else
-        label
-      end
+      [
+        active_session_label(tabs, active_id, fallback_label),
+        active_session_cwd(tabs, active_id),
+        active_session_detail(tabs, active_id, fallback_detail)
+      ]
+      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.uniq()
+      |> Enum.join(" · ")
 
     "Active session: " <>
       session <> ". Click to open sessions. Shortcut: Ctrl + B, then S"
   end
+
+  # Surfaces that render a session label alone — with no `session_anchor_chip/1`
+  # beside it — need the origin folded into the text itself. `anchor_label` is
+  # that form; tab-shaped maps built without it fall back to the plain label.
+  defp tab_anchor_label(tab) when is_map(tab) do
+    case Map.get(tab, :anchor_label) do
+      label when is_binary(label) and label != "" -> label
+      _ -> Map.get(tab, :label) || ""
+    end
+  end
+
+  # Pairs with `tab_anchor_label/1`. Once the label carries the branch tail, the
+  # detail line must drop the branch or it renders twice — which is what
+  # `detail_secondary` is for.
+  defp tab_anchor_detail(tab) when is_map(tab) do
+    detail = Map.get(tab, :detail) || ""
+
+    if anchored?(tab) do
+      Map.get(tab, :detail_secondary) || detail
+    else
+      detail
+    end
+  end
+
+  defp anchored?(tab), do: tab_anchor_label(tab) != (Map.get(tab, :label) || "")
 
   attr :url, :string, required: true
   attr :label, :string, required: true
