@@ -80,6 +80,14 @@ defmodule Casein.Runtimes.PreviewKiller do
     defp kill_os_pid(pid) do
       pid_str = to_string(pid)
 
+      if windows?() do
+        kill_windows_tree(pid_str)
+      else
+        kill_unix_pid(pid_str)
+      end
+    end
+
+    defp kill_unix_pid(pid_str) do
       case System.cmd("kill", ["-TERM", pid_str], stderr_to_stdout: true) do
         {_, 0} ->
           :ok
@@ -94,30 +102,83 @@ defmodule Casein.Runtimes.PreviewKiller do
       end
     end
 
+    # PID is digits-only from the launcher-owned registry and taskkill is resolved.
+    # sobelow_skip ["CI.System"]
+    defp kill_windows_tree(pid_str) do
+      case System.find_executable("taskkill.exe") || System.find_executable("taskkill") do
+        nil ->
+          {:error, :taskkill_missing}
+
+        taskkill ->
+          {output, status} =
+            System.cmd(taskkill, ["/PID", pid_str, "/T", "/F"], stderr_to_stdout: true)
+
+          Logger.debug(
+            "[runtime-reaper] taskkill /PID #{pid_str} /T /F status=#{status} " <>
+              "output=#{String.trim(output)}"
+          )
+
+          :ok
+      end
+    end
+
     # Port is range-checked; fuser path comes from System.find_executable/1.
     # sobelow_skip ["CI.System"]
     defp kill_port_listener(port) when is_integer(port) and port > 0 and port < 65_536 do
       if port_reachable?(port) do
-        case System.find_executable("fuser") do
-          nil ->
-            {:error, :fuser_missing}
-
-          fuser ->
-            {output, status} =
-              System.cmd(fuser, ["-k", "-TERM", "#{port}/tcp"], stderr_to_stdout: true)
-
-            Logger.debug(
-              "[runtime-reaper] fuser -k #{port}/tcp status=#{status} output=#{String.trim(output)}"
-            )
-
-            :ok
-        end
+        if windows?(), do: kill_windows_port_listener(port), else: kill_unix_port_listener(port)
       else
         :ok
       end
     end
 
     defp kill_port_listener(_), do: :ok
+
+    # fuser is resolved from the host PATH and receives only the range-checked integer port.
+    # sobelow_skip ["CI.System"]
+    defp kill_unix_port_listener(port) do
+      case System.find_executable("fuser") do
+        nil ->
+          {:error, :fuser_missing}
+
+        fuser ->
+          {output, status} =
+            System.cmd(fuser, ["-k", "-TERM", "#{port}/tcp"], stderr_to_stdout: true)
+
+          Logger.debug(
+            "[runtime-reaper] fuser -k #{port}/tcp status=#{status} output=#{String.trim(output)}"
+          )
+
+          :ok
+      end
+    end
+
+    # netstat is resolved and the port is range-checked before this call.
+    # sobelow_skip ["CI.System"]
+    defp kill_windows_port_listener(port) do
+      with netstat when is_binary(netstat) <-
+             System.find_executable("netstat.exe") || System.find_executable("netstat"),
+           {output, 0} <- System.cmd(netstat, ["-ano", "-p", "tcp"], stderr_to_stdout: true),
+           pid when is_binary(pid) <- listening_pid(output, port) do
+        kill_windows_tree(pid)
+      else
+        nil -> {:error, :windows_port_owner_not_found}
+        {_output, status} -> {:error, {:netstat_failed, status}}
+      end
+    end
+
+    defp listening_pid(output, port) do
+      pattern = ~r/^\s*TCP\s+\S+:#{port}\s+\S+\s+LISTENING\s+([0-9]+)\s*$/mi
+
+      case Regex.run(pattern, output) do
+        [_, pid] -> pid
+        _ -> nil
+      end
+    end
+
+    defp windows? do
+      System.get_env("CASEIN_NATIVE_WINDOWS") == "true" or match?({:win32, _}, :os.type())
+    end
 
     defp port_reachable?(port) do
       case :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false], 250) do

@@ -90,6 +90,13 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
 10. Call `preview_close` with the `session_id` when the agent is done. This
    kills the preview tmux pane and expires the pane registration.
 
+On native Windows desktop, `preview_open` opens a Playwright control session
+without creating a tmux pane. The response has `control_only: true`,
+`pane_id: null`, and `preview_open_state: "agent_only"`. The same
+observe/click/type/press/screenshot/navigate/reload/close operations work
+against that session; operator visibility remains in the existing browser
+cockpit and is reported honestly rather than pretending a tmux iframe exists.
+
 `casein-preview` is shipped in release `priv/scripts/`. Humans can also run
 `casein-preview :4000` (or any trusted URL) inside a tmux pane; the CLI
 registers the pane via `POST /api/preview/panes` and Casein paints an

@@ -28,6 +28,45 @@ Assert-Condition (Test-Path -LiteralPath $trustedLan) "Trusted LAN helper is mis
 Assert-Condition (Test-Path -LiteralPath $backupLibrary) "Backup helper is missing at $backupLibrary"
 Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'docs'))) 'Internal docs must not be included in a public desktop package'
 
+$releaseScripts = Get-ChildItem -LiteralPath (Join-Path $packageRoot 'lib') -Directory |
+    ForEach-Object { Join-Path $_.FullName 'priv\scripts' } |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'preview_playwright.mjs') } |
+    Select-Object -First 1
+Assert-Condition ([bool]$releaseScripts) 'Packaged Playwright helper is missing'
+$previewNode = Join-Path $releaseScripts 'runtime\node.exe'
+$playwrightPackage = Join-Path $releaseScripts 'node_modules\playwright\package.json'
+$headless = Get-ChildItem -LiteralPath (Join-Path $releaseScripts 'playwright-browsers') -Directory |
+    Where-Object Name -Like 'chromium_headless_shell-*' |
+    Select-Object -First 1
+Assert-Condition (Test-Path -LiteralPath $previewNode) 'Packaged preview node.exe is missing'
+Assert-Condition (Test-Path -LiteralPath $playwrightPackage) 'Packaged Playwright dependency is missing'
+Assert-Condition ([bool]$headless) 'Packaged Chromium headless shell is missing'
+
+$smokeScript = Join-Path ([IO.Path]::GetTempPath()) ("casein-playwright-smoke-" + [guid]::NewGuid().ToString('N') + '.cjs')
+$originalPlaywrightBrowsersPath = $env:PLAYWRIGHT_BROWSERS_PATH
+try {
+    @'
+const { chromium } = require(process.argv[2]);
+(async () => {
+  const browser = await chromium.launch({headless: true});
+  const page = await browser.newPage();
+  await page.setContent('<button id="ready">Windows preview ready</button>');
+  const text = await page.locator('#ready').textContent();
+  await browser.close();
+  if (text !== 'Windows preview ready') process.exit(2);
+  process.stdout.write('playwright-smoke-ok');
+})().catch(error => { console.error(error); process.exit(1); });
+'@ | Set-Content -LiteralPath $smokeScript -Encoding ascii
+    $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $releaseScripts 'playwright-browsers'
+    $playwrightModule = Join-Path $releaseScripts 'node_modules\playwright'
+    $smokeOutput = & $previewNode $smokeScript $playwrightModule
+    Assert-Condition ($LASTEXITCODE -eq 0) "Packaged Playwright smoke failed: $smokeOutput"
+    Assert-Condition (($smokeOutput -join '') -eq 'playwright-smoke-ok') 'Packaged Playwright smoke returned unexpected output'
+} finally {
+    $env:PLAYWRIGHT_BROWSERS_PATH = $originalPlaywrightBrowsersPath
+    Remove-Item -LiteralPath $smokeScript -Force -ErrorAction SilentlyContinue
+}
+
 $metadata = Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json
 Assert-Condition ($metadata.profile -eq 'desktop') 'Package profile must be desktop'
 Assert-Condition ($metadata.repo_adapter -eq 'sqlite') 'Package repository adapter must be sqlite'
@@ -53,6 +92,9 @@ try {
 
     $desktopEnvironment = Get-CaseinEnvironment 54321
     Assert-Condition ($desktopEnvironment.CASEIN_RELEASE_ROOT -eq $packageRoot) 'Release root was not injected into the desktop runtime'
+    Assert-Condition ($desktopEnvironment.CASEIN_PREVIEW_CONTROL_ADAPTER -eq 'playwright') 'Packaged desktop did not enable Playwright preview control'
+    Assert-Condition ($desktopEnvironment.CASEIN_PREVIEW_PLAYWRIGHT_SCRIPT -eq 'scripts/preview_playwright.mjs') 'Packaged desktop did not select the release-local Playwright helper'
+    Assert-Condition ($desktopEnvironment.CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY -eq 'true') 'Packaged desktop did not enable tmux-free Preview MCP opening'
     Assert-Condition ($desktopEnvironment.CASEIN_ORIGIN_ID.StartsWith('windows-')) 'Windows origin id was not generated'
     Assert-Condition ($desktopEnvironment.CASEIN_ORIGIN_DISPLAY_NAME.EndsWith(' (Windows)')) 'Windows origin name is not platform-distinct'
     $firstOriginId = $desktopEnvironment.CASEIN_ORIGIN_ID

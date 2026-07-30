@@ -321,6 +321,28 @@ defmodule Casein.Runtimes.PreviewServerTest do
     after
       System.delete_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER")
     end
+
+    test "Windows default command uses the native PowerShell launcher" do
+      System.put_env("CASEIN_NATIVE_WINDOWS", "true")
+      System.put_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER", "C:\\Casein\\runtime-preview-launch.ps1")
+
+      {:ok, server} =
+        PreviewServer.build_for_worktree(record(), "rt", "tmux", "/wt", %{"port" => 6005}, [])
+
+      assert server["command"] == [
+               "powershell.exe",
+               "-NoProfile",
+               "-ExecutionPolicy",
+               "Bypass",
+               "-File",
+               "C:\\Casein\\runtime-preview-launch.ps1",
+               "-Port",
+               "6005"
+             ]
+    after
+      System.delete_env("CASEIN_NATIVE_WINDOWS")
+      System.delete_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER")
+    end
   end
 
   describe "build_for_worktree/6 — status derivation" do

@@ -7,9 +7,11 @@ defmodule PreviewCtl.Playwright.BridgeTest do
 
   setup do
     previous = Application.get_env(:preview_ctl, :playwright_script)
+    previous_timeout = Application.get_env(:preview_ctl, :playwright_command_timeout_ms)
 
     on_exit(fn ->
       put_or_delete_env(previous)
+      put_or_delete_timeout(previous_timeout)
       restart_bridge!()
     end)
 
@@ -133,6 +135,27 @@ defmodule PreviewCtl.Playwright.BridgeTest do
              Bridge.command(%{action: "observe_live", url: "http://example.test/"})
   end
 
+  test "command/1 times out a stuck helper and restarts cleanly" do
+    Application.put_env(:preview_ctl, :playwright_script, @fake_script)
+    Application.put_env(:preview_ctl, :playwright_command_timeout_ms, 500)
+    restart_bridge!()
+
+    release =
+      Path.join(System.tmp_dir!(), "pw-bridge-timeout-#{System.unique_integer([:positive])}")
+
+    on_exit(fn -> File.rm_rf(release) end)
+
+    assert {:error, {:playwright_timeout, 500}} =
+             Bridge.command(%{
+               action: "block",
+               url: "http://example.test/timeout",
+               release_path: release
+             })
+
+    assert {:ok, %{"ok" => true}} =
+             Bridge.command(%{action: "observe_live", url: "http://example.test/restarted"})
+  end
+
   defp restart_bridge! do
     _ = Supervisor.terminate_child(Casein.Supervisor, Bridge)
     {:ok, _} = Supervisor.restart_child(Casein.Supervisor, Bridge)
@@ -160,4 +183,10 @@ defmodule PreviewCtl.Playwright.BridgeTest do
 
   defp put_or_delete_env(value),
     do: Application.put_env(:preview_ctl, :playwright_script, value)
+
+  defp put_or_delete_timeout(nil),
+    do: Application.delete_env(:preview_ctl, :playwright_command_timeout_ms)
+
+  defp put_or_delete_timeout(value),
+    do: Application.put_env(:preview_ctl, :playwright_command_timeout_ms, value)
 end

@@ -13,7 +13,8 @@ defmodule Casein.Runtimes.PreviewServer do
   alias Casein.Workspaces.State.WorkspaceRecord
 
   @app_surface "app"
-  @default_launcher "runtime-preview-launch.sh"
+  @unix_launcher "runtime-preview-launch.sh"
+  @windows_launcher "runtime-preview-launch.ps1"
   @safe_runtime_id ~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,255}\z/
 
   @type t :: map()
@@ -320,8 +321,11 @@ defmodule Casein.Runtimes.PreviewServer do
       port_value(value(existing, "port")) == port
   end
 
-  defp same_path?(left, right) when is_binary(left) and is_binary(right),
-    do: Path.expand(left) == Path.expand(right)
+  defp same_path?(left, right) when is_binary(left) and is_binary(right) do
+    left = Path.expand(left)
+    right = Path.expand(right)
+    if windows?(), do: String.downcase(left) == String.downcase(right), else: left == right
+  end
 
   defp same_path?(_left, _right), do: false
 
@@ -331,21 +335,42 @@ defmodule Casein.Runtimes.PreviewServer do
 
   defp live_os_pid?(pid) when is_binary(pid) do
     if Regex.match?(~r/\A[1-9][0-9]*\z/, pid) do
-      case System.find_executable("kill") do
-        nil ->
-          false
-
-        kill ->
-          # kill is resolved by System.find_executable/1 and pid is digits-only.
-          # sobelow_skip ["CI.System"]
-          match?({_, 0}, System.cmd(kill, ["-0", pid], stderr_to_stdout: true))
-      end
+      if windows?(), do: windows_pid_alive?(pid), else: unix_pid_alive?(pid)
     else
       false
     end
   end
 
   defp live_os_pid?(_pid), do: false
+
+  defp unix_pid_alive?(pid) do
+    case System.find_executable("kill") do
+      nil ->
+        false
+
+      kill ->
+        # kill is resolved by System.find_executable/1 and pid is digits-only.
+        # sobelow_skip ["CI.System"]
+        match?({_, 0}, System.cmd(kill, ["-0", pid], stderr_to_stdout: true))
+    end
+  end
+
+  # tasklist is resolved and pid is digits-only from the launcher-owned registry.
+  # sobelow_skip ["CI.System"]
+  defp windows_pid_alive?(pid) do
+    case System.find_executable("tasklist.exe") || System.find_executable("tasklist") do
+      nil ->
+        false
+
+      tasklist ->
+        case System.cmd(tasklist, ["/FI", "PID eq #{pid}", "/FO", "CSV", "/NH"],
+               stderr_to_stdout: true
+             ) do
+          {output, 0} -> String.contains?(output, "\"#{pid}\"")
+          _ -> false
+        end
+    end
+  end
 
   defp port_reachable?(port) do
     case :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false], 250) do
@@ -432,7 +457,20 @@ defmodule Casein.Runtimes.PreviewServer do
   end
 
   defp default_command(port) do
-    ["bash", default_launcher_path(), "--port", Integer.to_string(port)]
+    if windows?() do
+      [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        default_launcher_path(),
+        "-Port",
+        Integer.to_string(port)
+      ]
+    else
+      ["bash", default_launcher_path(), "--port", Integer.to_string(port)]
+    end
   end
 
   defp default_launcher_path do
@@ -444,15 +482,21 @@ defmodule Casein.Runtimes.PreviewServer do
 
       Code.ensure_loaded?(Application) ->
         release_path =
-          Application.app_dir(:casein, Path.join(["priv", "scripts", @default_launcher]))
+          Application.app_dir(:casein, Path.join(["priv", "scripts", launcher_name()]))
 
-        source_path = Path.expand(Path.join(["priv", "scripts", @default_launcher]))
+        source_path = Path.expand(Path.join(["priv", "scripts", launcher_name()]))
 
         if File.regular?(release_path), do: release_path, else: source_path
 
       true ->
-        Path.join(["priv", "scripts", @default_launcher])
+        Path.join(["priv", "scripts", launcher_name()])
     end
+  end
+
+  defp launcher_name, do: if(windows?(), do: @windows_launcher, else: @unix_launcher)
+
+  defp windows? do
+    System.get_env("CASEIN_NATIVE_WINDOWS") == "true" or match?({:win32, _}, :os.type())
   end
 
   defp command_list(command) when is_list(command) do

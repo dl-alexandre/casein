@@ -9,7 +9,8 @@ defmodule PreviewCtl.Playwright.Bridge do
   use GenServer
   require Logger
 
-  @timeout 60_000
+  @call_timeout 60_000
+  @default_command_timeout 55_000
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -17,7 +18,7 @@ defmodule PreviewCtl.Playwright.Bridge do
 
   @spec command(map()) :: {:ok, map()} | {:error, term()}
   def command(payload) when is_map(payload) do
-    GenServer.call(__MODULE__, {:command, payload}, @timeout)
+    GenServer.call(__MODULE__, {:command, payload}, @call_timeout)
   end
 
   @impl GenServer
@@ -30,7 +31,13 @@ defmodule PreviewCtl.Playwright.Bridge do
         executable: nil,
         script: nil,
         scripts_dir: nil,
-        browsers_dir: nil
+        browsers_dir: nil,
+        command_timeout_ms:
+          Application.get_env(
+            :preview_ctl,
+            :playwright_command_timeout_ms,
+            @default_command_timeout
+          )
       }
       |> configure_helper()
 
@@ -47,7 +54,8 @@ defmodule PreviewCtl.Playwright.Bridge do
     case ensure_port(state) do
       {:ok, %{port: port} = state} ->
         Port.command(port, Jason.encode!(payload) <> "\n")
-        {:noreply, %{state | pending: from}}
+        timer = Process.send_after(self(), {:command_timeout, port}, state.command_timeout_ms)
+        {:noreply, %{state | pending: %{from: from, timer: timer}}}
 
       {:error, reason, state} ->
         {:reply, {:error, reason}, state}
@@ -55,8 +63,11 @@ defmodule PreviewCtl.Playwright.Bridge do
   end
 
   @impl GenServer
-  def handle_info({port, {:data, {:eol, line}}}, %{port: port, pending: from} = state)
-      when not is_nil(from) do
+  def handle_info(
+        {port, {:data, {:eol, line}}},
+        %{port: port, pending: %{from: from, timer: timer}} = state
+      ) do
+    _ = Process.cancel_timer(timer)
     reply = decode_line(line)
     GenServer.reply(from, reply)
     {:noreply, %{state | pending: nil}}
@@ -68,14 +79,36 @@ defmodule PreviewCtl.Playwright.Bridge do
   end
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
-    if pending = state.pending do
-      GenServer.reply(pending, {:error, {:playwright_exited, status}})
+    case state.pending do
+      %{from: from, timer: timer} ->
+        _ = Process.cancel_timer(timer)
+        GenServer.reply(from, {:error, {:playwright_exited, status}})
+
+      nil ->
+        :ok
     end
 
     {:noreply, %{state | port: nil, pending: nil}}
   end
 
+  def handle_info(
+        {:command_timeout, port},
+        %{port: port, pending: %{from: from}} = state
+      ) do
+    terminate_port(port)
+    GenServer.reply(from, {:error, {:playwright_timeout, state.command_timeout_ms}})
+    {:noreply, %{state | port: nil, pending: nil}}
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
+
+  @impl GenServer
+  def terminate(_reason, %{port: port}) when is_port(port) do
+    terminate_port(port)
+    :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
 
   defp decode_line(line) do
     case Jason.decode(line) do
@@ -165,6 +198,44 @@ defmodule PreviewCtl.Playwright.Bridge do
   rescue
     error ->
       {:error, error, %{state | port: nil, pending: nil}}
+  end
+
+  defp terminate_port(port) do
+    os_pid =
+      case Port.info(port, :os_pid) do
+        {:os_pid, pid} when is_integer(pid) -> pid
+        _ -> nil
+      end
+
+    try do
+      Port.close(port)
+    catch
+      :error, :badarg -> :ok
+    end
+
+    terminate_os_process(os_pid)
+  end
+
+  defp terminate_os_process(nil), do: :ok
+
+  # taskkill is resolved from PATH and receives only the integer PID returned by Port.info/2.
+  # sobelow_skip ["CI.System"]
+  defp terminate_os_process(pid) when is_integer(pid) do
+    if match?({:win32, _}, :os.type()) do
+      case System.find_executable("taskkill.exe") || System.find_executable("taskkill") do
+        nil -> :ok
+        taskkill -> System.cmd(taskkill, ["/PID", Integer.to_string(pid), "/T", "/F"])
+      end
+    else
+      case System.find_executable("kill") do
+        nil -> :ok
+        kill -> System.cmd(kill, ["-TERM", Integer.to_string(pid)])
+      end
+    end
+
+    :ok
+  rescue
+    _error -> :ok
   end
 
   @doc false
