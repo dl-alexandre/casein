@@ -1,4 +1,4 @@
-defmodule Casein.Agents.AgentEvents.EctoAdapterTest do
+defmodule Casein.Agents.AgentEvents.ClarificationEctoAdapterTest do
   use Casein.DataCase, async: false
 
   alias Casein.Agents.AgentEvent
