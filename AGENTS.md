@@ -135,6 +135,57 @@ while another commits fixes to it). Before starting non-trivial work:
   read-only by other agents until the change lands. See the shared-checkout
   hazards in the memory notes.
 
+### Stacked pull requests (`gh stack`)
+
+GitHub stacked PRs went to public preview on 2026-07-30 and are live for the
+`dl-alexandre` account. The `gh stack` extension is installed host-wide — gh
+keeps extensions in its *data* dir (`~/.local/share/gh/extensions`), which is
+independent of `GH_CONFIG_DIR`, so every Casein agent-auth profile and every
+workspace already has it. Install or refresh it with:
+
+```bash
+bash scripts/ensure-gh-stack.sh          # install/upgrade + preview probe
+bash scripts/ensure-gh-stack.sh --check  # report only
+```
+
+Use a stack when one change is genuinely layered (schema → context → LiveView)
+and each layer is reviewable alone. It is the mechanism behind "land serially,
+small, and rebased" above — not a reason to split unrelated work.
+
+```bash
+gh stack init schema-layer      # stack rooted on the default branch
+gh stack add context-layer      # next layer up
+gh stack submit --auto          # push branches + open/refresh the PRs
+gh stack view --json            # inspect
+gh stack sync                   # after master moves
+gh stack merge --yes --squash   # merge the whole stack, bottom to top
+```
+
+**Agents must run every `gh stack` command non-interactively** — `view` without
+`--json` and `submit` without `--auto` open a TUI/prompt that hangs the pane, and
+`init`/`add`/`checkout` prompt unless given branch names as positional args. The
+vendored `gh-stack` skill (`.claude/skills/gh-stack`, staged into every agent
+config home by `scripts/lib/agent-skills.sh`) carries the full rule set.
+
+Devbox-specific caveats:
+
+- **The local pre-push gate does not cover a stack merge.** `.githooks/pre-push`
+  only gates direct pushes to `master`; `gh stack merge` lands on `master`
+  server-side, so run `bash scripts/pre-push-check.sh` on the top branch of the
+  stack before merging.
+- **`gh pr merge` does not work on stacked PRs** — use `gh stack merge`.
+- **Auth is per profile.** `submit`/`merge` use whichever `GH_CONFIG_DIR` is
+  active. The `.bashrc` hook only sets it under `/data/workspaces/dalexandre*`;
+  agent worktrees under `/tmp/casein-agent-worktrees` inherit it from the
+  launching pane. Check `gh auth status` first, and note that `dl-alexandre` is
+  currently the only gh account configured on the box — other profiles need
+  their own `gh auth login` before `gh stack submit` will work.
+- **Branch pushes still use the repo-local credential helper** (see Project
+  guidelines) — `gh stack push` is a plain `git push` underneath.
+- **Merge queue support is still rolling out**; if `master` gets a merge queue,
+  a stack is queued rather than merged atomically and the merge method you pass
+  is ignored.
+
 ### Agent session exit protocol (required)
 
 Before ending a session (or letting it go idle overnight), **every agent must

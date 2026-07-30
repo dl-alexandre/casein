@@ -23,7 +23,10 @@
 # .claude/skills copy already provides them. Space-separated; override to extend.
 # preview-ui-walk is host infrastructure for product-repo agents (OneBackend-v3
 # etc.): it drives Casein preview/artifact MCP, not the casein checkout itself.
-: "${CASEIN_GLOBAL_AGENT_SKILLS:=delegate-to-grok preview-ui-walk workspace-agent-pair}"
+# gh-stack (vendored from github/gh-stack) is likewise repo-agnostic: it teaches
+# the non-interactive `gh stack` invocations for stacked PRs, which agents need
+# in every checkout, not just casein.
+: "${CASEIN_GLOBAL_AGENT_SKILLS:=delegate-to-grok preview-ui-walk workspace-agent-pair gh-stack}"
 
 # agent_skills_install <source-skills-dir> <dest-config-dir>
 #
