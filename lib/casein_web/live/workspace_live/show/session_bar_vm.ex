@@ -349,13 +349,52 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
 
   @doc """
   Sorts workspace summaries for the SESSIONS sidebar. The current workspace
-  stays pinned first regardless of mode.
+  stays pinned first regardless of mode, then the viewer's OWN workspaces, then
+  everyone else's — so arrowing down the rail walks your own sessions first and
+  other people's stay out of the way (they also warm last, see
+  `Sidebar.warm_sessions/1`).
+
+  With no identifiable viewer (trusted single-user LAN mode) there is nothing to
+  partition on, so ordering is unchanged from the plain mode sort.
   """
   @spec sort_workspace_summaries_for_sidebar([map()], atom(), String.t()) :: [map()]
-  def sort_workspace_summaries_for_sidebar(summaries, mode, current_workspace_id)
+  @spec sort_workspace_summaries_for_sidebar([map()], atom(), String.t(), map() | nil) :: [map()]
+  def sort_workspace_summaries_for_sidebar(summaries, mode, current_workspace_id, viewer \\ nil)
       when is_list(summaries) and is_binary(current_workspace_id) do
     {current, rest} = Enum.split_with(summaries, &(summary_id(&1) == current_workspace_id))
-    current ++ sort_workspace_summaries_list(rest, mode)
+    {mine, others} = partition_viewer_workspaces(rest, viewer)
+
+    current ++
+      sort_workspace_summaries_list(mine, mode) ++
+      sort_workspace_summaries_list(others, mode)
+  end
+
+  @doc """
+  Splits summaries into `{mine, others}` by workspace owner.
+
+  Returns `{[], summaries}` when the viewer has no identity tokens, so unowned
+  boxes keep a single undifferentiated list.
+  """
+  @spec partition_viewer_workspaces([map()], map() | nil) :: {[map()], [map()]}
+  def partition_viewer_workspaces(summaries, viewer) when is_list(summaries) do
+    case Browse.viewer_identifiers(viewer) do
+      [] -> {[], summaries}
+      identifiers -> Enum.split_with(summaries, &owned_by?(&1, identifiers))
+    end
+  end
+
+  @doc "True when the summary's owner matches one of the viewer's identity tokens."
+  @spec summary_owned_by_viewer?(map(), map() | nil) :: boolean()
+  def summary_owned_by_viewer?(summary, viewer) do
+    case Browse.viewer_identifiers(viewer) do
+      [] -> false
+      identifiers -> owned_by?(summary, identifiers)
+    end
+  end
+
+  defp owned_by?(summary, identifiers) do
+    owner = Map.get(summary, :user) || Map.get(summary, "user")
+    is_binary(owner) and owner != "" and String.downcase(owner) in identifiers
   end
 
   defp sort_workspace_summaries_list(summaries, :recency), do: summaries
@@ -843,7 +882,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       current?: current?,
       live?: live?,
       openable?: openable?,
-      group: node_group(current?),
+      group: node_group(current?, summary_owned_by_viewer?(summary, viewer)),
       session_count: session_count,
       needs_you_count: needs_you_count,
       expanded?: explicitly_expanded? and not flat_session?,
@@ -877,9 +916,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   # Sidebar section grouping: the current workspace (and the synthetic scratch
-  # node) sit under "This workspace"; every other workspace under "Other workspaces".
-  defp node_group(true), do: :this
-  defp node_group(false), do: :other
+  # node) sit under "This workspace"; the viewer's own workspaces under "My
+  # workspaces"; everything else under "Other workspaces". `:mine` only appears
+  # when the viewer has identity tokens to match on — otherwise every non-current
+  # row stays `:other`, exactly as before.
+  defp node_group(true, _mine?), do: :this
+  defp node_group(false, true), do: :mine
+  defp node_group(false, false), do: :other
 
   defp summary_workspace_label(summary) do
     Map.get(summary, :name) || Map.get(summary, "name") || summary_id(summary) || "workspace"

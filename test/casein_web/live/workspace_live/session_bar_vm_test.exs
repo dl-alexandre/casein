@@ -12,6 +12,54 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
 
   defp workspace_nodes(tree), do: Enum.reject(tree, &Scratch.scratch?(&1.workspace_id))
 
+  describe "workspace_session_tree/4 ownership grouping" do
+    test "groups nodes as :this / :mine / :other by workspace owner" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", user: "dalexandre", session_count: 1, live?: true},
+        %{id: "ws-mine", name: "mine", user: "dalexandre", session_count: 1, live?: true},
+        %{id: "ws-theirs", name: "theirs", user: "zoe", session_count: 1, live?: true},
+        %{id: "ws-unowned", name: "unowned", session_count: 1, live?: true}
+      ]
+
+      groups =
+        summaries
+        |> SessionBarVM.workspace_session_tree("ws-a",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{},
+          viewer: %{email: "dalexandre@milcgroup.com"}
+        )
+        |> workspace_nodes()
+        |> Map.new(&{&1.workspace_id, &1.group})
+
+      assert groups == %{
+               "ws-a" => :this,
+               "ws-mine" => :mine,
+               "ws-theirs" => :other,
+               "ws-unowned" => :other
+             }
+    end
+
+    test "without a viewer identity every non-current node stays :other" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", user: "dalexandre", session_count: 1, live?: true},
+        %{id: "ws-b", name: "beta", user: "dalexandre", session_count: 1, live?: true}
+      ]
+
+      groups =
+        summaries
+        |> SessionBarVM.workspace_session_tree("ws-a",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{}
+        )
+        |> workspace_nodes()
+        |> Map.new(&{&1.workspace_id, &1.group})
+
+      assert groups == %{"ws-a" => :this, "ws-b" => :other}
+    end
+  end
+
   describe "workspace_session_tree/4" do
     test "prepends a scratch flat-session node at the top of the tree" do
       summaries = [
@@ -427,6 +475,57 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
         SessionBarVM.sort_workspace_summaries_for_sidebar(summaries, :name, "ws-b")
 
       assert [%{id: "ws-b"}, %{id: "ws-a"}] = sorted
+    end
+
+    test "sort_workspace_summaries_for_sidebar puts the viewer's own workspaces before others" do
+      summaries = [
+        %{id: "ws-cur", name: "current", user: "dalexandre"},
+        %{id: "ws-zoe", name: "aaa-theirs", user: "zoe"},
+        %{id: "ws-mine", name: "zzz-mine", user: "dalexandre"},
+        %{id: "ws-none", name: "mmm-unowned"}
+      ]
+
+      viewer = %{email: "dalexandre@milcgroup.com"}
+
+      sorted =
+        SessionBarVM.sort_workspace_summaries_for_sidebar(summaries, :name, "ws-cur", viewer)
+
+      # Current pinned, then mine, then everyone else's (each sorted by name).
+      assert ["ws-cur", "ws-mine", "ws-zoe", "ws-none"] == Enum.map(sorted, & &1.id)
+    end
+
+    test "sort_workspace_summaries_for_sidebar leaves order untouched with no viewer identity" do
+      summaries = [
+        %{id: "ws-cur", name: "current", user: "dalexandre"},
+        %{id: "ws-b", name: "beta", user: "zoe"},
+        %{id: "ws-a", name: "alpha", user: "dalexandre"}
+      ]
+
+      with_viewer =
+        SessionBarVM.sort_workspace_summaries_for_sidebar(summaries, :name, "ws-cur", nil)
+
+      assert ["ws-cur", "ws-a", "ws-b"] == Enum.map(with_viewer, & &1.id)
+    end
+
+    test "partition_viewer_workspaces matches the email local-part and is case-insensitive" do
+      summaries = [
+        %{id: "ws-mine", user: "DAlexandre"},
+        %{id: "ws-theirs", user: "zoe"},
+        %{id: "ws-unowned", user: ""}
+      ]
+
+      {mine, others} =
+        SessionBarVM.partition_viewer_workspaces(summaries, %{
+          email: "dalexandre@milcgroup.com"
+        })
+
+      assert Enum.map(mine, & &1.id) == ["ws-mine"]
+      assert Enum.map(others, & &1.id) == ["ws-theirs", "ws-unowned"]
+    end
+
+    test "partition_viewer_workspaces treats everything as unowned without viewer identity" do
+      summaries = [%{id: "ws-a", user: "dalexandre"}]
+      assert {[], ^summaries} = SessionBarVM.partition_viewer_workspaces(summaries, nil)
     end
 
     test "sort_session_tabs orders by name and liveness" do

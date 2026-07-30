@@ -90,11 +90,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidebarTest do
     end
   end
 
-  describe "handle_async_warm/2" do
-    test "non-ok fallback clears warm pending flag" do
-      s = socket(%{sidebar_ws_warm_pending?: true})
-      result = Sidebar.handle_async_warm(s, :some_error)
-      assert result.assigns.sidebar_ws_warm_pending? == false
+  describe "handle_async_warm/3" do
+    test "non-ok fallback clears only that batch's pending ids" do
+      s = socket(%{sidebar_ws_warm_pending: MapSet.new(["ws-a", "ws-b", "ws-c"])})
+      result = Sidebar.handle_async_warm(s, ["ws-a", "ws-b"], :some_error)
+      assert result.assigns.sidebar_ws_warm_pending == MapSet.new(["ws-c"])
+    end
+  end
+
+  describe "warm_sessions/1" do
+    test "is a no-op while the sessions rail is closed" do
+      s = socket(%{sessions_sidebar_open?: false})
+      assert Sidebar.warm_sessions(s) == s
     end
   end
 end
