@@ -70,14 +70,30 @@ defmodule Casein.Mobile.ResumeCard do
     kind = normalized(card, :kind)
 
     cond do
-      type == "needs_review" or kind == "approval_required" -> "needs_attention"
-      type == "connection_issue" -> "needs_attention"
-      status in ~w(failed error timed_out timeout) -> "failed"
-      status in ~w(ready ready_to_review review) -> "ready_to_review"
-      kind == "live_work" and status == "waiting" -> "needs_attention"
-      status in ~w(completed succeeded done) -> "completed"
-      type == "workspace_idle" -> "completed"
-      true -> "working"
+      type in ~w(needs_review clarification) or
+          kind in ~w(approval_required clarification_required) ->
+        "needs_attention"
+
+      type == "connection_issue" ->
+        "needs_attention"
+
+      status in ~w(failed error timed_out timeout) ->
+        "failed"
+
+      status in ~w(ready ready_to_review review) ->
+        "ready_to_review"
+
+      kind == "live_work" and status == "waiting" ->
+        "needs_attention"
+
+      status in ~w(completed succeeded done) ->
+        "completed"
+
+      type == "workspace_idle" ->
+        "completed"
+
+      true ->
+        "working"
     end
   end
 
@@ -90,6 +106,7 @@ defmodule Casein.Mobile.ResumeCard do
 
     cond do
       normalized(card, :type) == "needs_review" -> "review"
+      normalized(card, :type) == "clarification" -> "waiting"
       contains?(raw, "test") -> "testing"
       contains?(raw, "plan") -> "planning"
       contains?(raw, "deploy") -> "deploying"

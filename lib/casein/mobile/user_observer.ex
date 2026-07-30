@@ -13,6 +13,7 @@ defmodule Casein.Mobile.UserObserver do
   alias Casein.Audit.Event
   alias Casein.Mobile.AttentionInbox
   alias Casein.Mobile.Card
+  alias Casein.Mobile.Clarification
   alias Casein.Mobile.LiveWork
   alias Casein.Mobile.ResumeCard
   alias Casein.Notifications
@@ -181,7 +182,8 @@ defmodule Casein.Mobile.UserObserver do
       cards: %{},
       watched_workspaces: MapSet.new(),
       live_work_seen: MapSet.new(),
-      live_work_hydrations: %{}
+      live_work_hydrations: %{},
+      clarification_hydrations: %{}
     }
 
     emit([:user_observer, :start], %{count: 1}, %{user_id: user_id, observer_pid: self()})
@@ -211,7 +213,8 @@ defmodule Casein.Mobile.UserObserver do
         cards: %{},
         watched_workspaces: MapSet.new(),
         live_work_seen: MapSet.new(),
-        live_work_hydrations: %{}
+        live_work_hydrations: %{},
+        clarification_hydrations: %{}
       })
 
     broadcast(state)
@@ -228,14 +231,19 @@ defmodule Casein.Mobile.UserObserver do
     else
       :ok = Audit.subscribe(workspace_id)
       :ok = SessionDirectory.subscribe(workspace_id, workspace_name: workspace_name(workspace_id))
+      :ok = Clarification.subscribe(workspace_id)
       hydration_ref = make_ref()
+      clarification_ref = make_ref()
       hydrate_live_work_async(self(), workspace_id, hydration_ref)
+      hydrate_clarifications_async(self(), workspace_id, clarification_ref)
 
       {:reply, :ok,
        %{
          state
          | watched_workspaces: MapSet.put(state.watched_workspaces, workspace_id),
-           live_work_hydrations: Map.put(state.live_work_hydrations, workspace_id, hydration_ref)
+           live_work_hydrations: Map.put(state.live_work_hydrations, workspace_id, hydration_ref),
+           clarification_hydrations:
+             Map.put(state.clarification_hydrations, workspace_id, clarification_ref)
        }}
     end
   end
@@ -339,6 +347,50 @@ defmodule Casein.Mobile.UserObserver do
     end
   end
 
+  def handle_info({:clarification_requested, event}, state) do
+    if MapSet.member?(state.watched_workspaces, event.workspace_id) do
+      card = Clarification.card(event, state.user_id, workspace_name(event.workspace_id))
+
+      state = invalidate_clarification_hydration(state, event.workspace_id)
+      {:noreply, upsert_card(state, card, event.event_type)}
+    else
+      {:noreply, state}
+    end
+  end
+
+  def handle_info({:clarification_resolved, request_event_id, event}, state) do
+    state = invalidate_clarification_hydration(state, event.workspace_id)
+    {:noreply, remove_clarification(state, request_event_id, "agent.clarification_resolved")}
+  end
+
+  def handle_info(
+        {:clarifications_hydrated, workspace_id, hydration_ref, events},
+        state
+      ) do
+    if Map.get(state.clarification_hydrations, workspace_id) == hydration_ref and
+         MapSet.member?(state.watched_workspaces, workspace_id) do
+      state = %{
+        state
+        | clarification_hydrations: Map.delete(state.clarification_hydrations, workspace_id)
+      }
+
+      next_state =
+        Enum.reduce(events, state, fn event, acc ->
+          card = Clarification.card(event, acc.user_id, workspace_name(workspace_id))
+
+          upsert_card(acc, card, "agent.clarification_hydrated",
+            broadcast?: false,
+            persist_notification?: false
+          )
+        end)
+
+      if next_state.version > state.version, do: broadcast(next_state)
+      {:noreply, next_state}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info(_message, state), do: {:noreply, state}
 
   defp handle_audit_event(state, %Event{action: "run.approval_requested"} = event) do
@@ -402,14 +454,44 @@ defmodule Casein.Mobile.UserObserver do
     operation = if(existing, do: :update, else: :create)
     now = now()
     card = Card.merge_update(existing, card, now)
-    card = maybe_persist_card_created(card, operation)
+
+    card =
+      if Keyword.get(opts, :persist_notification?, true),
+        do: maybe_persist_card_created(card, operation),
+        else: card
+
     _ = record_card_transition(card, source, opts)
     state = %{state | version: state.version + 1, cards: Map.put(state.cards, key, card)}
     emit_card(:upsert, card, source, operation: operation)
     maybe_broadcast_card_created(card, operation)
-    broadcast(state)
+    if Keyword.get(opts, :broadcast?, true), do: broadcast(state)
     state
   end
+
+  defp remove_clarification(state, request_event_id, source) do
+    case Enum.find(state.cards, fn {_key, card} ->
+           card.type == :clarification and
+             Clarification.request_event_id(card) == request_event_id
+         end) do
+      {key, card} ->
+        state = %{state | version: state.version + 1, cards: Map.delete(state.cards, key)}
+        emit_card(:remove, card, source)
+        broadcast(state)
+        state
+
+      nil ->
+        state
+    end
+  end
+
+  defp invalidate_clarification_hydration(state, workspace_id) when is_binary(workspace_id) do
+    %{
+      state
+      | clarification_hydrations: Map.delete(state.clarification_hydrations, workspace_id)
+    }
+  end
+
+  defp invalidate_clarification_hydration(state, _workspace_id), do: state
 
   defp remove_card(state, type, attrs, source) do
     workspace_id = attrs[:workspace_id] || attrs["workspace_id"]
@@ -438,6 +520,7 @@ defmodule Casein.Mobile.UserObserver do
   defp unsubscribe_all(state) do
     Enum.each(state.watched_workspaces, fn workspace_id ->
       Phoenix.PubSub.unsubscribe(Casein.PubSub, Audit.topic(workspace_id))
+      Phoenix.PubSub.unsubscribe(Casein.PubSub, Clarification.topic(workspace_id))
       SessionDirectory.unsubscribe(workspace_id)
     end)
 
@@ -448,6 +531,15 @@ defmodule Casein.Mobile.UserObserver do
     Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
       tabs = SessionDirectory.tabs(workspace_id, workspace_name: workspace_name(workspace_id))
       send(observer, {:live_work_hydrated, workspace_id, hydration_ref, tabs})
+    end)
+
+    :ok
+  end
+
+  defp hydrate_clarifications_async(observer, workspace_id, hydration_ref) do
+    Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
+      events = Clarification.open_for_workspace(workspace_id)
+      send(observer, {:clarifications_hydrated, workspace_id, hydration_ref, events})
     end)
 
     :ok

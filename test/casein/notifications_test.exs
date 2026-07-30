@@ -44,6 +44,34 @@ defmodule Casein.NotificationsTest do
     assert duplicate.occurrence_count == 2
   end
 
+  test "clarification notification is actionable but never persists the question" do
+    card =
+      Card.clarification(
+        %{
+          user_id: "dev",
+          workspace_id: "ws-1",
+          workspace_name: "Devbox",
+          session_id: "agent-task-1",
+          question: "Deploy with token=do-not-leak?",
+          task_ref: %{type: "agent_task", id: "agent-task-1"},
+          locator: %{tmux_session: "casein_ws-1_agent", pane: "%2", tab: "terminal"},
+          clarification_event_id: Ecto.UUID.generate(),
+          clarification_request_id: "clarification-request-1"
+        },
+        @now
+      )
+
+    assert {:ok, notification, :created} =
+             Notifications.deliver_mobile_card(card, now: @now)
+
+    assert notification.title == "Casein needs your attention"
+    assert notification.body == "An agent is waiting for your response"
+    assert notification.metadata["reason_code"] == "human_blocked"
+    assert notification.metadata["required_decision"] == "Respond"
+    refute inspect(notification) =~ "Deploy with"
+    refute inspect(notification) =~ "do-not-leak"
+  end
+
   test "deliver persists and broadcasts a durable notification" do
     :ok = Notifications.subscribe("dev")
 

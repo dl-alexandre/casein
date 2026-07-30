@@ -430,6 +430,42 @@ defmodule CaseinMob.SessionConfigTest do
            }
   end
 
+  test "inactive clarification cache never persists the question body" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-mac",
+      display_name: "Local Mac",
+      url: "https://mac.test",
+      token: "mac-token"
+    })
+
+    assert :ok =
+             SessionConfig.cache_cards(
+               "origin-mac",
+               [
+                 %{
+                   "id" => "clarification-1",
+                   "workspace_id" => "mac-ws",
+                   "session_id" => "agent-task-1",
+                   "title" => "Agent needs clarification",
+                   "body" => "Sensitive question that must stay live-only",
+                   "type" => "clarification"
+                 }
+               ],
+               "2026-07-23T12:00:00Z"
+             )
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://devbox.test",
+      token: "devbox-token"
+    })
+
+    [cached] = SessionConfig.inactive_cached_cards()
+    assert cached["body"] == "Open Casein to view this request."
+    refute inspect(cached) =~ "Sensitive question"
+  end
+
   defp restore_app_env(nil), do: Application.delete_env(:casein_mob, :session)
   defp restore_app_env(value), do: Application.put_env(:casein_mob, :session, value)
 end

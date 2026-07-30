@@ -22,6 +22,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
   @policy_version 2
   @reporting_tools ~w(
     annotation_propose
+    terminal_request_clarification
     terminal_report_agent_state
     terminal_report_worktree
     terminal_set_agent_label

@@ -403,8 +403,8 @@ defmodule Casein.Notifications do
       session_id: session_id,
       type: mobile_notification_type(card),
       severity: if(attention.priority in ~w(critical high), do: "warning", else: "info"),
-      title: card_field(card, :title) || "Casein needs your attention",
-      body: card_field(card, :body),
+      title: mobile_attention_title(card),
+      body: mobile_attention_body(card),
       metadata: %{
         "card_id" => id,
         "attention_key" => attention.key,
@@ -424,6 +424,18 @@ defmodule Casein.Notifications do
       source_type: "mobile_card",
       source_id: id
     }
+  end
+
+  defp mobile_attention_title(card) do
+    if card_field(card, :type) in [:clarification, "clarification"],
+      do: "Casein needs your attention",
+      else: card_field(card, :title) || "Casein needs your attention"
+  end
+
+  defp mobile_attention_body(card) do
+    if card_field(card, :type) in [:clarification, "clarification"],
+      do: "An agent is waiting for your response",
+      else: card_field(card, :body)
   end
 
   defp mobile_notification_type(card) do

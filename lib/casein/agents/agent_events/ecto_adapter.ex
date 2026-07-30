@@ -51,6 +51,61 @@ defmodule Casein.Agents.AgentEvents.EctoAdapter do
   end
 
   @impl true
+  def list_by_event_types(workspace_id, event_types) do
+    AgentEvent
+    |> where(
+      [event],
+      event.workspace_id == ^workspace_id and event.event_type in ^event_types
+    )
+    |> newest_first()
+    |> Repo.all()
+  end
+
+  @impl true
+  def list_open_clarifications(workspace_id, request_type, resolved_type, opts) do
+    resolved =
+      from(resolution in AgentEvent,
+        where:
+          resolution.workspace_id == ^workspace_id and
+            resolution.event_type == ^resolved_type,
+        where:
+          fragment(
+            "?->>'request_event_id' = (?::text)",
+            resolution.payload,
+            parent_as(:request).id
+          ),
+        select: 1
+      )
+
+    newest_per_target =
+      from(request in AgentEvent,
+        where:
+          request.workspace_id == ^workspace_id and
+            request.event_type == ^request_type,
+        distinct: [
+          request.agent_session_id,
+          request.tmux_session_id,
+          request.pane_id
+        ],
+        order_by: [
+          asc: request.agent_session_id,
+          asc: request.tmux_session_id,
+          asc: request.pane_id,
+          desc: request.inserted_at,
+          desc: request.id
+        ]
+      )
+
+    from(request in subquery(newest_per_target),
+      as: :request,
+      where: not exists(subquery(resolved)),
+      order_by: [desc: request.inserted_at, desc: request.id],
+      limit: ^Keyword.fetch!(opts, :limit)
+    )
+    |> Repo.all()
+  end
+
+  @impl true
   def list_by_correlation(correlation_id, opts) do
     AgentEvent
     |> where([event], event.correlation_id == ^correlation_id)

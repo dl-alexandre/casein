@@ -36,6 +36,7 @@ defmodule Casein.Agents.TerminalTools do
     ListSessions,
     OpenFileInPane,
     PasteAgentText,
+    RequestClarification,
     ReportAgentState,
     ReportWorktree,
     SendAgentCommand,
@@ -64,6 +65,7 @@ defmodule Casein.Agents.TerminalTools do
     SendAgentKeys,
     SendAgentCommand,
     PasteAgentText,
+    RequestClarification,
     SendKeys,
     SendCommand,
     OpenFileInPane,
@@ -130,6 +132,8 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate send_agent_command(params), to: Agent
   @doc false
   defdelegate paste_agent_text(params), to: Agent
+  @doc false
+  defdelegate request_clarification(params), to: Agent
   @doc false
   defdelegate send_keys(params), to: Command
   @doc false

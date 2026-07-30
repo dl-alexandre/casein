@@ -38,6 +38,20 @@ defmodule Casein.Agents.AgentEvents.MemoryAdapter do
   end
 
   @impl true
+  def list_by_event_types(workspace_id, event_types) do
+    GenServer.call(__MODULE__, {:list_by_event_types, workspace_id, event_types})
+  end
+
+  @impl true
+  def list_open_clarifications(workspace_id, request_type, resolved_type, opts) do
+    GenServer.call(
+      __MODULE__,
+      {:list_open_clarifications, workspace_id, request_type, resolved_type,
+       Keyword.fetch!(opts, :limit)}
+    )
+  end
+
+  @impl true
   def list_by_correlation(correlation_id, opts) do
     GenServer.call(
       __MODULE__,
@@ -103,6 +117,45 @@ defmodule Casein.Agents.AgentEvents.MemoryAdapter do
     {:reply, events, state}
   end
 
+  def handle_call({:list_by_event_types, workspace_id, event_types}, _from, state) do
+    events =
+      state.events
+      |> Map.values()
+      |> Enum.filter(&(&1.workspace_id == workspace_id and &1.event_type in event_types))
+      |> Enum.sort_by(&{&1.occurred_at, &1.inserted_at, &1.id}, :desc)
+
+    {:reply, events, state}
+  end
+
+  def handle_call(
+        {:list_open_clarifications, workspace_id, request_type, resolved_type, limit},
+        _from,
+        state
+      ) do
+    clarification_events =
+      state.events
+      |> Map.values()
+      |> Enum.filter(
+        &(&1.workspace_id == workspace_id and
+            &1.event_type in [request_type, resolved_type])
+      )
+      |> Enum.sort_by(&{&1.occurred_at, &1.inserted_at, &1.id}, :desc)
+
+    resolved_ids =
+      clarification_events
+      |> Enum.filter(&(&1.event_type == resolved_type))
+      |> MapSet.new(&payload(&1, "request_event_id"))
+
+    events =
+      clarification_events
+      |> Enum.filter(&(&1.event_type == request_type))
+      |> Enum.uniq_by(&{&1.agent_session_id, &1.tmux_session_id, &1.pane_id})
+      |> Enum.reject(&MapSet.member?(resolved_ids, &1.id))
+      |> Enum.take(limit)
+
+    {:reply, events, state}
+  end
+
   def handle_call({:list_by_correlation, correlation_id, limit}, _from, state) do
     events = select(state, &(&1.correlation_id == correlation_id), limit, :asc)
     {:reply, events, state}
@@ -151,6 +204,10 @@ defmodule Casein.Agents.AgentEvents.MemoryAdapter do
   end
 
   defp sort_key(event), do: {event.occurred_at, event.inserted_at, event.id}
+
+  defp payload(%AgentEvent{payload: payload}, key) when is_map(payload) do
+    Map.get(payload, key) || Map.get(payload, :request_event_id)
+  end
 
   defp after_cursor?(event, %DateTime{} = after_at, after_id) when is_binary(after_id) do
     DateTime.compare(event.inserted_at, after_at) == :gt or
