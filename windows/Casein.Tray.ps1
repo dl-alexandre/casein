@@ -26,6 +26,7 @@ function Get-CaseinPaths {
         Log         = Join-Path $dataRoot 'desktop-host.log'
         RuntimePid  = Join-Path $dataRoot 'runtime.pid'
         RuntimeStatus = Join-Path $dataRoot 'runtime.json'
+        TrayPid     = Join-Path $dataRoot 'tray.pid'
         RuntimeTemp = Join-Path $dataRoot 'runtime-tmp'
         OriginIdentity = Join-Path $dataRoot 'origin.json'
         TrustedLan = Join-Path $dataRoot 'trusted-lan.json'
@@ -586,6 +587,7 @@ function Start-CaseinTray {
     $restartItem = $menu.Items.Add('Restart')
     $repairItem = $menu.Items.Add('Repair installation')
     $rollbackItem = $menu.Items.Add('Roll back last update')
+    $updateItem = $menu.Items.Add('Check for updates')
     $logsItem = $menu.Items.Add('Open logs')
     $supportItem = $menu.Items.Add('Create support bundle')
     $trustedLanItem = $menu.Items.Add('Trusted LAN access')
@@ -652,6 +654,20 @@ function Start-CaseinTray {
         } catch {
             Write-CaseinLog "Rollback failed: $($_.Exception.Message)"
             $tray.ShowBalloonTip(5000, 'Casein rollback failed', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Error)
+        }
+    })
+    $updateItem.Add_Click({
+        try {
+            $updater = Join-Path (Join-Path $env:LOCALAPPDATA 'Programs\Casein') 'Update-Casein.ps1'
+            if (-not (Test-Path -LiteralPath $updater)) { throw 'The installed updater is missing. Reinstall a signed Casein package.' }
+            Start-Process powershell.exe -ArgumentList @(
+                '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                '-File', $updater, '-Install'
+            )
+            $tray.ShowBalloonTip(3000, 'Casein update', 'Checking the signed update channel.', [Windows.Forms.ToolTipIcon]::Info)
+        } catch {
+            Write-CaseinLog "Update check failed: $($_.Exception.Message)"
+            $tray.ShowBalloonTip(5000, 'Casein update failed', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Error)
         }
     })
     $supportItem.Add_Click({
@@ -731,6 +747,7 @@ function Start-CaseinTray {
     $timer.Start()
 
     try {
+        Set-Content -LiteralPath $script:Paths.TrayPid -Value $PID -Encoding ascii
         if (Start-CaseinRuntime $script:Port) {
             $tray.Icon = $runningIcon
             $tray.Text = 'Casein - Running'
@@ -743,6 +760,7 @@ function Start-CaseinTray {
         }
         [Windows.Forms.Application]::Run()
     } finally {
+        Remove-Item -LiteralPath $script:Paths.TrayPid -Force -ErrorAction SilentlyContinue
         $timer.Dispose()
         $tray.Dispose()
         $menu.Dispose()

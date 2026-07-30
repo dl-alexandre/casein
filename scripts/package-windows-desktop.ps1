@@ -296,6 +296,7 @@ Copy-Item -Force -LiteralPath @(
     (Join-Path $root 'windows\Rollback-Casein.ps1'),
     (Join-Path $root 'windows\New-CaseinSupportBundle.ps1'),
     (Join-Path $root 'windows\Casein.Backup.ps1'),
+    (Join-Path $root 'windows\Update-Casein.ps1'),
     (Join-Path $root 'windows\Start-Casein.cmd')
 ) -Destination (Join-Path $outputPath 'windows')
 Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\Casein.png')
@@ -309,25 +310,31 @@ if (Test-Path -LiteralPath $docsPath) {
 $shortRevision = $sourceRevision.Substring(0, 7)
 $archiveBase = "Casein-windows-x64-$($metadata.version)-$shortRevision"
 $archivePath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.zip"
-$manifestPath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.manifest.json"
+$manifestPath = Join-Path (Split-Path -Parent $outputPath) "casein-$($metadata.channel).json"
 $shaPath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.zip.sha256"
-Remove-Item -LiteralPath $archivePath, $manifestPath, $shaPath -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $archivePath, $manifestPath, "$manifestPath.cat", $shaPath -Force -ErrorAction SilentlyContinue
 New-DesktopArchive -SourcePath $outputPath -DestinationPath $archivePath
 $archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
 
+$artifactName = [IO.Path]::GetFileName($archivePath)
+$artifactUrl = [Uri]::new([Uri]$metadata.update_manifest_url, $artifactName).AbsoluteUri
 [ordered]@{
-    metadata_version = 1
-    app = 'casein'
-    version = $metadata.version
-    revision = $sourceRevision
-    profile = $metadata.profile
-    repo_adapter = $metadata.repo_adapter
-    target = $metadata.target
-    artifact = [IO.Path]::GetFileName($archivePath)
-    sha256 = $archiveHash
-    bytes = (Get-Item -LiteralPath $archivePath).Length
-    built_at_utc = [DateTime]::UtcNow.ToString('o')
-} | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    manifest_version = 1
+    channel = $metadata.channel
+    generated_at = [DateTime]::UtcNow.ToString('o')
+    artifacts = @([ordered]@{
+        app = 'casein'
+        version = $metadata.version
+        revision = $sourceRevision
+        profile = $metadata.profile
+        repo_adapter = $metadata.repo_adapter
+        target = $metadata.target
+        url = $artifactUrl
+        sha256 = $archiveHash
+        size = (Get-Item -LiteralPath $archivePath).Length
+        min_installer_metadata_version = 1
+    })
+} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 Write-SignedUpdateCatalog -ManifestPath $manifestPath
 Set-Content -LiteralPath $shaPath -Value "$archiveHash *$([IO.Path]::GetFileName($archivePath))" -Encoding ascii
 

@@ -70,6 +70,23 @@ rejected. The complete clean-machine gate, including WSL-absent install,
 autostart, update, rollback, repair, support bundle, and uninstall, is tracked
 in #376.
 
+The installed tray exposes **Check for updates** only as thin release
+infrastructure. The updater reads the channel URL embedded in
+`casein.relmeta.json`, requires credential-free HTTPS, verifies the adjacent
+signed file catalog against the manifest, requires the catalog signer to match
+the signer pinned by the installed release, and refuses channel or
+profile/target/repository-adapter changes. It then verifies archive size and
+SHA-256 before presenting an explicit install confirmation. After installation
+it waits for loopback health; failure stops the new tray/runtime, restores the
+encrypted pre-update database snapshot and previous release, and relaunches
+that release.
+
+For protected-runner evidence, publish the archive and channel manifest
+together, with the signed catalog at `<manifest-url>.cat`. Exercise current,
+available, wrong-channel, wrong-signer, mutated-manifest, mutated-archive, and
+post-install health-failure cases. Redact URLs if they contain infrastructure
+details; never use URLs containing credentials.
+
 ## Physical device matrix
 
 Run every row once on a physical iPad and once on a physical Android device.

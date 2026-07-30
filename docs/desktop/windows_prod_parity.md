@@ -21,7 +21,7 @@ tmux implementation details on Windows.
 | Preview control and screenshots | Playwright sidecar and preview MCP | packaged Node/Playwright/Chromium runtime is enabled by the tray host | Add native preview-server process adapter and executable smoke evidence |
 | Multi-pane sessions and templates | tmux windows/panes | one durable PowerShell session | Native session/window/pane backend |
 | Worktrees and agent lifecycle | launcher, hooks, reaper, audit | backend features exist, desktop workflow incomplete | Native worktree launch, state hooks, recovery UI |
-| Updates | git-driven clean release deploy | local install/update with backup | Signed manifest, channel, rollback, offline installer |
+| Updates | git-driven clean release deploy | explicit tray check; trusted catalog, pinned channel/target, archive hash/size verification, encrypted backup, health-triggered rollback | Production-signed channel and clean-VM evidence; offline installer wrapper |
 | Operations | journal, health, deploy diagnostics | tray status, health, local log | Support bundle, repair action, crash reporting |
 | Accessibility and onboarding | browser UI | browser UI plus tray | First-run workspace/agent check and keyboard QA |
 

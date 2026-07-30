@@ -125,6 +125,12 @@ function Backup-UserData {
 
 $packageRoot = [IO.Path]::GetFullPath($PackageRoot)
 $trust = Test-ReleaseTrust $packageRoot
+$releaseManifestSignature = Get-AuthenticodeSignature -FilePath (Join-Path $packageRoot 'windows\Casein.Release.psd1')
+$signerThumbprint = if ($releaseManifestSignature.Status -eq 'Valid') {
+    [string]$releaseManifestSignature.SignerCertificate.Thumbprint
+} else {
+    $null
+}
 $metadata = Read-ReleaseMetadata $packageRoot
 if ($trust.Version -ne $metadata.version -or $trust.Revision -ne $metadata.revision) {
     throw 'Release trust identity does not match release metadata.'
@@ -160,6 +166,7 @@ try {
         release_root = $destination
         previous_release_root = $previousReleaseRoot
         previous_data_backup = $backup
+        signer_thumbprint = $signerThumbprint
         installed_at_utc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json
     $temporaryCurrent = "$currentPath.$PID.tmp"
@@ -175,6 +182,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Rollback-Casein.ps1') -Destination (Join-Path $installRoot 'Rollback-Casein.ps1') -Force
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\New-CaseinSupportBundle.ps1') -Destination (Join-Path $installRoot 'New-CaseinSupportBundle.ps1') -Force
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Casein.Backup.ps1') -Destination (Join-Path $installRoot 'Casein.Backup.ps1') -Force
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Update-Casein.ps1') -Destination (Join-Path $installRoot 'Update-Casein.ps1') -Force
     Set-Content -LiteralPath (Join-Path $installRoot 'Casein.cmd') -Encoding ascii -Value "@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0Casein.Launcher.ps1`""
 
     $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein'
