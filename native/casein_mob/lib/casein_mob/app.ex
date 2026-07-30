@@ -10,6 +10,7 @@ defmodule CaseinMob.App do
 
   @impl Mob.App
   def on_start do
+    CaseinMob.ConnectionTiming.start_boot()
     # Configure BEAM's DNS path so Req / Finch / Mint / `gen_tcp:connect/3`
     # with a hostname work on iOS without per-host setup. Flips the lookup
     # chain from the iOS-broken `:native` (inet_gethost port program) path
@@ -27,6 +28,7 @@ defmodule CaseinMob.App do
     # OS resolver instead, which seeds :inet_db so the session socket connects.
     # (See the Mob.DNS note above re: hosts that need Apple's resolver.)
     _ = resolve_session_hosts()
+    CaseinMob.ConnectionTiming.boot_stage(:dns_ready)
 
     {:ok, _} = Application.ensure_all_started(:castore)
     # Mob invokes this callback directly on-device instead of starting the
@@ -35,15 +37,19 @@ defmodule CaseinMob.App do
     {:ok, _} = Application.ensure_all_started(:req)
     {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
     {:ok, _} = Application.ensure_all_started(:slipstream)
+    CaseinMob.ConnectionTiming.boot_stage(:dependencies_ready)
     start_device_bridge()
     start_session_client()
+    CaseinMob.ConnectionTiming.boot_stage(:client_started)
     {:ok, _} = CaseinMob.Repo.start_link()
 
     Ecto.Migrator.with_repo(CaseinMob.Repo, fn repo ->
       Ecto.Migrator.run(repo, migrations_dir(), :up, all: true)
     end)
 
+    CaseinMob.ConnectionTiming.boot_stage(:database_ready)
     Mob.Screen.start_root(CaseinMob.SessionDashboardScreen)
+    CaseinMob.ConnectionTiming.boot_stage(:root_started)
     Mob.Dist.ensure_started(node: :"casein_mob_android@127.0.0.1", cookie: :mob_secret)
   end
 

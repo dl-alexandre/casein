@@ -32,6 +32,7 @@ defmodule CaseinMob.SessionClient do
   require Logger
 
   alias CaseinMob.SessionConfig
+  alias CaseinMob.ConnectionTiming
   alias Slipstream.Socket
 
   @name __MODULE__
@@ -188,15 +189,26 @@ defmodule CaseinMob.SessionClient do
       |> assign(:test_mode?, Keyword.get(opts, :test_mode?, false))
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
+      |> assign(:timing_cycle, :cold)
+      |> assign(
+        :timing_started_at,
+        ConnectionTiming.boot_started_at() || System.monotonic_time(:millisecond)
+      )
 
     socket =
       case SessionConfig.pairing() do
-        # Restore credentials without opening the transport yet. The dashboard
-        # registers its workspace/card watchers immediately after boot; letting
-        # the first watcher request the connection ensures an early disconnect
-        # always has a subscriber and can use the normal reconnect path.
-        {:ok, url, token} -> restore_configuration(socket, url, token)
-        :error -> socket
+        # Start the one active transport as soon as durable credentials are
+        # restored. The root screen can register watchers while DNS, migrations,
+        # and rendering continue; a later watcher joins the already-opening
+        # socket rather than serializing connection behind UI mount.
+        {:ok, url, token} ->
+          socket
+          |> restore_configuration(url, token)
+          |> timing_stage(:configuration_restored)
+          |> request_connect()
+
+        :error ->
+          timing_stage(socket, :no_configuration)
       end
 
     {:ok, socket}
@@ -208,6 +220,7 @@ defmodule CaseinMob.SessionClient do
       socket
       |> assign(:connecting?, false)
       |> reset_join_statuses()
+      |> timing_stage(:transport_connected)
 
     # A new transport has no server-side channel processes. Slipstream normally
     # closes its local join metadata with the old transport, but a fast native
@@ -225,6 +238,12 @@ defmodule CaseinMob.SessionClient do
   @impl Slipstream
   def handle_join(topic, reply, socket) do
     notify_joined(socket, topic, reply)
+
+    socket =
+      if mobile_cards_topic?(topic),
+        do: timing_stage(socket, :authoritative_cards_joined, complete?: true),
+        else: socket
+
     {:ok, socket}
   end
 
@@ -281,7 +300,12 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_disconnect(reason, socket) do
-    socket = assign(socket, :connecting?, false)
+    socket =
+      socket
+      |> assign(:connecting?, false)
+      |> begin_timing_cycle(:reconnect)
+      |> timing_stage(:disconnected)
+
     status = disconnected_status(reason)
 
     for topic <- Map.keys(socket.assigns.subscribers), do: notify_status(socket, topic, status)
@@ -575,6 +599,8 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp request_connect(socket) do
+    socket = timing_stage(socket, :connect_requested)
+
     case connect(socket, connect_opts(socket)) do
       {:ok, socket} ->
         assign(socket, :connecting?, true)
@@ -587,6 +613,8 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp request_reconnect(socket) do
+    socket = timing_stage(socket, :reconnect_requested)
+
     case reconnect(socket) do
       {:ok, socket} -> {:ok, assign(socket, :connecting?, true)}
       {:error, _reason} = error -> error
@@ -709,7 +737,35 @@ defmodule CaseinMob.SessionClient do
       |> Keyword.put(:test_mode?, true)
       |> Keyword.put(:reconnect_after_msec, [0])
     else
-      opts
+      Keyword.put(opts, :reconnect_after_msec, [250, 500, 1_000, 2_000])
+    end
+  end
+
+  defp begin_timing_cycle(%{assigns: %{timing_cycle: :reconnect}} = socket, :reconnect),
+    do: socket
+
+  defp begin_timing_cycle(socket, cycle) do
+    socket
+    |> assign(:timing_cycle, cycle)
+    |> assign(:timing_started_at, System.monotonic_time(:millisecond))
+  end
+
+  defp timing_stage(socket, stage, opts \\ []) do
+    cycle = Map.get(socket.assigns, :timing_cycle, :cold)
+    started_at = Map.get(socket.assigns, :timing_started_at)
+
+    if is_integer(started_at) do
+      ConnectionTiming.stage(cycle, stage, started_at)
+
+      if Keyword.get(opts, :complete?, false) do
+        socket
+        |> assign(:timing_cycle, nil)
+        |> assign(:timing_started_at, nil)
+      else
+        socket
+      end
+    else
+      socket
     end
   end
 

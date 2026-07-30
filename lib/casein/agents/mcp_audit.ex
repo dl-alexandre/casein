@@ -149,6 +149,7 @@ defmodule Casein.Agents.MCPAudit do
         "terminal_send_agent_keys",
         "terminal_send_agent_command",
         "terminal_paste_agent_text",
+        "terminal_request_clarification",
         "annotation_propose",
         "terminal_set_agent_label",
         "gate_report",

@@ -11,6 +11,7 @@ defmodule Casein.Mobile.Intervention do
   alias Casein.Export.Sanitizer
   alias Casein.Mobile.ResumeCard
   alias Casein.Terminals
+  alias Casein.Terminals.AgentState
   alias Casein.Workspaces
 
   @follow_up_max_length 280
@@ -76,8 +77,17 @@ defmodule Casein.Mobile.Intervention do
   @spec action_specs(map()) :: [map()]
   def action_specs(card) when is_map(card) do
     revision = action_revision(card)
-    resume = ResumeCard.project(card)
 
+    case map_value(card, :type) do
+      type when type in [:clarification, "clarification"] ->
+        [action_spec(revision)]
+
+      _other ->
+        resume_action_specs(ResumeCard.project(card), revision)
+    end
+  end
+
+  defp resume_action_specs(resume, revision) do
     case {resume.state, resume.phase} do
       {"needs_attention", "review"} ->
         [
@@ -182,6 +192,61 @@ defmodule Casein.Mobile.Intervention do
 
   def send_follow_up(_card, _message), do: {:error, :invalid_payload}
 
+  @doc """
+  Revalidate an explicit terminal target against authoritative workspace
+  ownership and the current pane role.
+
+  Clarification requests use the same guard as intervention delivery so a
+  client locator, focused pane, or stale topology can never manufacture an
+  actionable mobile card.
+  """
+  @spec validate_agent_target(String.t(), String.t(), String.t()) ::
+          {:ok, map()} | {:error, atom()}
+  def validate_agent_target(workspace_id, tmux_session, pane_id) do
+    with true <- present?(workspace_id) or {:error, :invalid_card},
+         true <- present?(tmux_session) or {:error, :intervention_target_missing},
+         true <- present?(pane_id) or {:error, :intervention_target_missing},
+         {:ok, workspace} <- normalize_workspace(Workspaces.get(workspace_id)),
+         true <-
+           Terminals.tmux_session_in_workspace?(tmux_session, workspace) or
+             {:error, :workspace_scope_mismatch},
+         {:ok, pane} <- exact_agent_pane(tmux_session, pane_id) do
+      {:ok,
+       %{
+         workspace_id: workspace_id,
+         tmux_session: tmux_session,
+         pane_id: pane_id,
+         pane: pane
+       }}
+    end
+  rescue
+    _ -> {:error, :intervention_unavailable}
+  catch
+    :exit, _ -> {:error, :intervention_unavailable}
+  end
+
+  @doc """
+  Revalidate an exact agent pane and bind it to the agent session identity
+  reported authoritatively for that pane.
+  """
+  @spec validate_agent_task_target(String.t(), String.t(), String.t(), String.t() | nil) ::
+          {:ok, map()} | {:error, atom()}
+  def validate_agent_task_target(workspace_id, tmux_session, pane_id, expected_agent_session_id) do
+    with {:ok, target} <- validate_agent_target(workspace_id, tmux_session, pane_id),
+         %{agent_session_id: agent_session_id} when is_binary(agent_session_id) <-
+           AgentState.get(tmux_session, pane_id),
+         true <-
+           expected_agent_session_id in [nil, agent_session_id] or
+             {:error, :agent_session_mismatch} do
+      {:ok, Map.put(target, :agent_session_id, agent_session_id)}
+    else
+      nil -> {:error, :agent_session_unavailable}
+      %{agent_session_id: _} -> {:error, :agent_session_unavailable}
+      {:error, _reason} = error -> error
+      false -> {:error, :agent_session_mismatch}
+    end
+  end
+
   @spec action_revision(map()) :: String.t()
   def action_revision(card) when is_map(card) do
     locator = locator(card)
@@ -248,26 +313,22 @@ defmodule Casein.Mobile.Intervention do
     tmux_session = map_value(locator, :tmux_session)
     pane_id = map_value(locator, :pane)
 
-    with true <- present?(workspace_id) or {:error, :invalid_card},
-         true <- present?(tmux_session) or {:error, :intervention_target_missing},
-         true <- present?(pane_id) or {:error, :intervention_target_missing},
-         {:ok, workspace} <- normalize_workspace(Workspaces.get(workspace_id)),
-         true <-
-           Terminals.tmux_session_in_workspace?(tmux_session, workspace) or
-             {:error, :workspace_scope_mismatch},
-         {:ok, pane} <- exact_agent_pane(tmux_session, pane_id) do
-      {:ok,
-       %{
-         workspace_id: workspace_id,
-         tmux_session: tmux_session,
-         pane_id: pane_id,
-         pane: pane
-       }}
+    if map_value(card, :type) in [:clarification, "clarification"] do
+      expected_agent_session_id =
+        card
+        |> map_value(:context)
+        |> map_value(:task_ref)
+        |> map_value(:id)
+
+      validate_agent_task_target(
+        workspace_id,
+        tmux_session,
+        pane_id,
+        expected_agent_session_id
+      )
+    else
+      validate_agent_target(workspace_id, tmux_session, pane_id)
     end
-  rescue
-    _ -> {:error, :intervention_unavailable}
-  catch
-    :exit, _ -> {:error, :intervention_unavailable}
   end
 
   defp normalize_workspace({:ok, workspace}), do: {:ok, workspace}
@@ -282,9 +343,16 @@ defmodule Casein.Mobile.Intervention do
         {:error, :intervention_target_stale}
 
       pane ->
-        if map_value(pane, :role) == "agent",
-          do: {:ok, pane},
-          else: {:error, :intervention_target_role_mismatch}
+        cond do
+          map_value(pane, :role) != "agent" ->
+            {:error, :intervention_target_role_mismatch}
+
+          map_value(pane, :active) == true ->
+            {:error, :intervention_target_focused}
+
+          true ->
+            {:ok, pane}
+        end
     end
   end
 

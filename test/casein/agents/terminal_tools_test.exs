@@ -2,6 +2,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   use Casein.TestCase, async: false
 
   alias Casein.Agents.TerminalTools
+  alias Casein.Agents.AgentEvents
   alias Casein.Runtimes
   alias Casein.Terminals.Tmux
   alias Casein.Workspace
@@ -26,6 +27,8 @@ defmodule Casein.Agents.TerminalToolsTest do
     MemoryAdapter.clear()
     Runtimes.clear()
     Casein.Audit.MemoryAdapter.clear()
+    AgentEvents.clear()
+    Casein.Terminals.AgentState.clear()
 
     on_exit(fn ->
       TmuxCtl.Test.FakeState.restore(:fake_tmux_windows, previous.fake_tmux_windows)
@@ -46,6 +49,8 @@ defmodule Casein.Agents.TerminalToolsTest do
       MemoryAdapter.clear()
       Runtimes.clear()
       Casein.Audit.MemoryAdapter.clear()
+      AgentEvents.clear()
+      Casein.Terminals.AgentState.clear()
     end)
 
     :ok
@@ -889,6 +894,117 @@ defmodule Casein.Agents.TerminalToolsTest do
     end
   end
 
+  describe "terminal_request_clarification" do
+    test "creates one durable request only for the explicit role-marked agent pane" do
+      session = agent_pair_session!()
+      prepare_local_workspace!()
+
+      :ok =
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :blocked, nil,
+          agent_session_id: "agent-task-123"
+        )
+
+      params = %{
+        "workspace_id" => "alpha",
+        "session" => session,
+        "pane" => "%2",
+        "request_id" => "clarification-request-1",
+        "agent_session_id" => "agent-task-123",
+        "question" => "Should I run the focused suite?"
+      }
+
+      assert {:ok, %{status: "created", target: "%2", target_role: "agent"} = first} =
+               TerminalTools.invoke("terminal_request_clarification", params)
+
+      assert {:ok, %{status: "duplicate", request_event_id: event_id}} =
+               TerminalTools.invoke("terminal_request_clarification", params)
+
+      assert event_id == first.request_event_id
+
+      assert [event] =
+               AgentEvents.recent_for("alpha")
+               |> Enum.filter(&(&1.event_type == "agent.clarification_requested"))
+
+      assert event.event_type == "agent.clarification_requested"
+      assert event.payload["question"] == "Should I run the focused suite?"
+
+      refute Map.has_key?(first, :question)
+      refute Jason.encode!(first) =~ "focused suite"
+
+      assert {:error, :intervention_target_role_mismatch} =
+               TerminalTools.invoke(
+                 "terminal_request_clarification",
+                 %{params | "pane" => "%1", "request_id" => "clarification-request-2"}
+               )
+
+      assert Enum.count(
+               AgentEvents.recent_for("alpha"),
+               &(&1.event_type == "agent.clarification_requested")
+             ) == 1
+
+      assert {:error, :agent_session_mismatch} =
+               TerminalTools.invoke(
+                 "terminal_request_clarification",
+                 %{params | "agent_session_id" => "invented-task"}
+               )
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          %{id: "%1", window_id: "@1", active: false, role: "operator"},
+          %{id: "%2", window_id: "@1", active: true, role: "agent"}
+        ]
+      })
+
+      assert {:error, :intervention_target_focused} =
+               TerminalTools.invoke(
+                 "terminal_request_clarification",
+                 %{params | "request_id" => "clarification-request-focused"}
+               )
+    end
+
+    test "rejects multiline, oversized, and malformed request data before persistence" do
+      session = agent_pair_session!()
+      prepare_local_workspace!()
+
+      :ok =
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :blocked, nil,
+          agent_session_id: "agent-task-456"
+        )
+
+      base = %{
+        "workspace_id" => "alpha",
+        "session" => session,
+        "pane" => "%2",
+        "request_id" => "clarification-request-3",
+        "agent_session_id" => "agent-task-456",
+        "question" => "Need a decision"
+      }
+
+      assert {:error, :question_invalid_characters} =
+               TerminalTools.invoke(
+                 "terminal_request_clarification",
+                 %{base | "question" => "first\nsecond"}
+               )
+
+      assert {:error, :question_too_long} =
+               TerminalTools.invoke(
+                 "terminal_request_clarification",
+                 %{base | "question" => String.duplicate("x", 201)}
+               )
+
+      assert {:error, :invalid_request_id} =
+               TerminalTools.invoke(
+                 "terminal_request_clarification",
+                 %{base | "request_id" => "bad"}
+               )
+
+      refute Enum.any?(
+               AgentEvents.recent_for("alpha"),
+               &(&1.event_type == "agent.clarification_requested")
+             )
+    end
+  end
+
   describe "terminal_wait_agent_state" do
     test "include_answer returns the final assistant message when done" do
       session = agent_pair_session!()
@@ -1040,7 +1156,8 @@ defmodule Casein.Agents.TerminalToolsTest do
           index: 0,
           active: true,
           current_command: "claude",
-          current_path: "/workspace"
+          current_path: "/workspace",
+          role: "operator"
         },
         %{
           id: "%2",
@@ -1048,7 +1165,8 @@ defmodule Casein.Agents.TerminalToolsTest do
           index: 1,
           active: false,
           current_command: "bash",
-          current_path: "/workspace"
+          current_path: "/workspace",
+          role: "agent"
         }
       ]
     })
@@ -1058,6 +1176,26 @@ defmodule Casein.Agents.TerminalToolsTest do
     })
 
     session
+  end
+
+  defp prepare_local_workspace! do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "casein-terminal-clarification-#{System.unique_integer([:positive])}"
+      )
+
+    previous_source = Application.get_env(:casein, :workspace_source)
+    previous_root = Application.get_env(:casein, :workspaces_root)
+    File.mkdir_p!(Path.join(root, "alpha"))
+    Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:casein, :workspaces_root, root)
+
+    on_exit(fn ->
+      restore_app_env(:workspace_source, previous_source)
+      restore_app_env(:workspaces_root, previous_root)
+      File.rm_rf(root)
+    end)
   end
 
   defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)

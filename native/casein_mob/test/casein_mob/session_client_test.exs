@@ -60,7 +60,8 @@ defmodule CaseinMob.SessionClientTest do
 
     snapshot = %{"cards" => [%{"id" => "in_progress:ws-1:run-1"}]}
 
-    assert {:ok, ^socket} = SessionClient.handle_join("mobile:user:me", snapshot, socket)
+    assert {:ok, recovered} = SessionClient.handle_join("mobile:user:me", snapshot, socket)
+    assert recovered.assigns.timing_started_at == nil
 
     assert_receive {:mobile_cards_snapshot, ^snapshot}
     assert_receive {:mobile_cards_status, :joined}
@@ -85,6 +86,7 @@ defmodule CaseinMob.SessionClientTest do
     # both join commands must be emitted for the new transport.
     assert Socket.join_status(socket, "mobile:user:me") == :closed
     assert Socket.join_status(socket, "session:ws-1") == :closed
+
     assert_receive {:__slipstream_command__,
                     %Slipstream.Commands.JoinTopic{topic: "mobile:user:me"}}
 

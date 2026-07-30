@@ -146,11 +146,15 @@ defmodule Casein.Push.Dispatcher do
   end
 
   defp mobile_push_action(%{type: :needs_review}), do: "mobile.needs_review"
+  defp mobile_push_action(%{type: :clarification}), do: "mobile.attention"
   defp mobile_push_action(_card), do: "mobile.attention"
 
   defp mobile_push_reason(%{type: :needs_review, body: body}, _attention)
        when is_binary(body),
        do: body
+
+  defp mobile_push_reason(%{type: :clarification}, _attention),
+    do: "An agent is waiting for your response"
 
   defp mobile_push_reason(_card, attention), do: attention.explanation
 

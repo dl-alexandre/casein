@@ -3,8 +3,9 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
   import Phoenix.ChannelTest
 
+  alias Casein.Agents.AgentEvents
   alias Casein.Audit
-  alias Casein.Mobile.{ActionOutcome, Card}
+  alias Casein.Mobile.{ActionOutcome, Card, Clarification}
   alias Casein.Mobile.UserObserver
   alias Casein.Push
   alias Casein.Runs.Ledger
@@ -12,6 +13,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.MemoryAdapter
   alias Casein.Repo
+  alias Casein.Terminals.AgentState
   alias CaseinWeb.ChannelAuth
   alias TmuxCtl.Test.FakeState
 
@@ -45,11 +47,13 @@ defmodule CaseinWeb.MobileUserChannelTest do
     Audit.clear()
     MemoryAdapter.clear()
     Push.Registry.clear()
+    AgentState.clear()
 
     on_exit(fn ->
       Audit.clear()
       MemoryAdapter.clear()
       Push.Registry.clear()
+      AgentState.clear()
       File.rm_rf(workspace_root)
       restore_env(:workspaces_root, prev_workspace_root)
       restore_env(:workspace_source, prev_workspace_source)
@@ -262,6 +266,11 @@ defmodule CaseinWeb.MobileUserChannelTest do
     create_workspace(workspace_root, workspace_id, user_id)
     {tmux_session, pane_id} = seed_intervention_target(workspace_id)
 
+    :ok =
+      AgentState.report(workspace_id, tmux_session, pane_id, :blocked, nil,
+        agent_session_id: "agent-task-123"
+      )
+
     FakeState.put(:fake_tmux_scrollback, %{
       {tmux_session, pane_id} =>
         "starting\nTOKEN=super-secret\n\e[31mNeeds your answer\e[0m\n" <>
@@ -287,6 +296,319 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert card.intervention["pwa_url"] =~ "tmux_session=#{tmux_session}"
     assert card.intervention["pwa_url"] =~ "pane=%252"
     assert Enum.any?(card.actions, &(&1["id"] == "follow_up"))
+  end
+
+  test "only an authoritative exact-agent clarification creates Needs Me and resolves once", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    :ok =
+      AgentState.report(workspace_id, tmux_session, pane_id, :blocked, nil,
+        agent_session_id: "agent-task-123"
+      )
+
+    FakeState.put(:fake_tmux_scrollback, %{{tmux_session, pane_id} => "Awaiting response"})
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local", mobile_platform: "ios"}
+             )
+
+    :ok = UserObserver.watch_workspace(user_id, workspace_id)
+    refute Enum.any?(UserObserver.snapshot(user_id).cards, &(&1.type == :clarification))
+
+    assert {:error, :intervention_target_role_mismatch} =
+             Clarification.request(%{
+               workspace_id: workspace_id,
+               tmux_session_id: tmux_session,
+               pane_id: "%1",
+               request_id: "request-wrong-pane",
+               agent_session_id: "agent-task-123",
+               question: "This must never project"
+             })
+
+    refute Enum.any?(UserObserver.snapshot(user_id).cards, &(&1.type == :clarification))
+
+    attrs = %{
+      workspace_id: workspace_id,
+      tmux_session_id: tmux_session,
+      pane_id: pane_id,
+      request_id: "request-authoritative-1",
+      agent_session_id: "agent-task-123",
+      question: "Should I run the focused suite?"
+    }
+
+    assert {:ok, request_event, :inserted} = Clarification.request(attrs)
+    assert {:ok, ^request_event, :duplicate} = Clarification.request(attrs)
+
+    payload = await_card_snapshot()
+    card = Enum.find(payload.cards, &(&1.type == "clarification"))
+    assert card.body == "Should I run the focused suite?"
+    assert card.resume["state"] == "needs_attention"
+    assert card.resume["phase"] == "waiting"
+    assert card.attention["reason_code"] == "human_blocked"
+    assert card.attention["required_decision"] == "Respond"
+    assert card.resume["locator"]["pane"] == pane_id
+    assert card.resume["task_ref"] == %{"type" => "agent_task", "id" => "agent-task-123"}
+    assert Enum.any?(card.actions, &(&1["id"] == "follow_up"))
+    refute Enum.any?(card.actions, &(&1["id"] == "summarize_blocker"))
+    assert length(Clarification.open_for_workspace(workspace_id)) == 1
+
+    follow_up =
+      intervention_action_payload(card, %{
+        "card_id" => card.id,
+        "action" => "follow_up",
+        "origin_id" => "origin-local",
+        "request_id" => "clarification-response-once",
+        "payload" => %{"message" => "Yes, run only the focused suite."}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", follow_up)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
+
+    assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id,
+                    "Yes, run only the focused suite.", [target: ^pane_id, submit: true]}
+
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, "%1", _, _}, 100
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, "%3", _, _}, 100
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", follow_up)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    assert Clarification.open_for_workspace(workspace_id) == []
+
+    assert {:ok, _next_event, :inserted} =
+             Clarification.request(%{
+               attrs
+               | request_id: "request-authoritative-2",
+                 question: "Should I continue after the focused suite?"
+             })
+
+    next_card = await_card_snapshot().cards |> Enum.find(&(&1.type == "clarification"))
+    refute next_card.id == card.id
+
+    next_follow_up =
+      intervention_action_payload(next_card, %{
+        "card_id" => next_card.id,
+        "action" => "follow_up",
+        "origin_id" => "origin-local",
+        "request_id" => "clarification-response-twice",
+        "payload" => %{"message" => "Continue only if it passes."}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", next_follow_up)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
+
+    assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id, "Continue only if it passes.",
+                    [target: ^pane_id, submit: true]}
+
+    audit = Audit.recent_for(workspace_id, 20)
+    assert Enum.any?(audit, &(&1.action == "mobile.clarification_requested"))
+    assert Enum.any?(audit, &(&1.action == "mobile.clarification_resolved"))
+    refute inspect(audit) =~ "Should I run the focused suite?"
+    refute inspect(audit) =~ "Yes, run only the focused suite."
+    refute inspect(audit) =~ "Should I continue after the focused suite?"
+    refute inspect(audit) =~ "Continue only if it passes."
+  end
+
+  test "new clarification revision invalidates a rendered action and pane replacement fails closed",
+       %{
+         workspace_root: workspace_root
+       } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    :ok =
+      AgentState.report(workspace_id, tmux_session, pane_id, :blocked, nil,
+        agent_session_id: "agent-task-456"
+      )
+
+    FakeState.put(:fake_tmux_scrollback, %{{tmux_session, pane_id} => "Awaiting response"})
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local"}
+             )
+
+    :ok = UserObserver.watch_workspace(user_id, workspace_id)
+
+    base = %{
+      workspace_id: workspace_id,
+      tmux_session_id: tmux_session,
+      pane_id: pane_id,
+      agent_session_id: "agent-task-456"
+    }
+
+    assert {:ok, _event, :inserted} =
+             Clarification.request(
+               Map.merge(base, %{
+                 request_id: "request-revision-1",
+                 question: "Use the first option?"
+               })
+             )
+
+    first = await_card_snapshot().cards |> Enum.find(&(&1.type == "clarification"))
+
+    stale =
+      intervention_action_payload(first, %{
+        "card_id" => first.id,
+        "action" => "follow_up",
+        "origin_id" => "origin-local",
+        "request_id" => "stale-clarification-action",
+        "payload" => %{"message" => "Yes"}
+      })
+
+    assert {:ok, _event, :inserted} =
+             Clarification.request(
+               Map.merge(base, %{
+                 request_id: "request-revision-2",
+                 question: "Use the revised option?"
+               })
+             )
+
+    second = await_card_snapshot().cards |> Enum.find(&(&1.type == "clarification"))
+    ref = Phoenix.ChannelTest.push(socket, "card_action", stale)
+    assert_reply ref, :error, %{reason: "card_not_found"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{id: "%1", window_id: "@1", active: true, role: "operator"},
+        %{id: pane_id, window_id: "@1", active: false, role: "verify"},
+        %{id: "%4", window_id: "@1", active: false, role: "agent"}
+      ]
+    })
+
+    replaced =
+      intervention_action_payload(second, %{
+        "card_id" => second.id,
+        "action" => "follow_up",
+        "origin_id" => "origin-local",
+        "request_id" => "replaced-clarification-pane",
+        "payload" => %{"message" => "Do not deliver"}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", replaced)
+    assert_reply ref, :error, %{reason: "intervention_unavailable"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+  end
+
+  test "live clarification events invalidate stale hydration snapshots", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    :ok =
+      AgentState.report(workspace_id, tmux_session, pane_id, :blocked, nil,
+        agent_session_id: "agent-task-hydration"
+      )
+
+    assert {:ok, _reply, _socket} = join_mobile(user_id, role: :admin)
+    :ok = UserObserver.watch_workspace(user_id, workspace_id)
+
+    base = %{
+      workspace_id: workspace_id,
+      tmux_session_id: tmux_session,
+      pane_id: pane_id,
+      agent_session_id: "agent-task-hydration"
+    }
+
+    assert {:ok, first_event, :inserted} =
+             Clarification.request(
+               Map.merge(base, %{
+                 request_id: "hydration-race-first",
+                 question: "Use the old option?"
+               })
+             )
+
+    [{observer, _value}] = Registry.lookup(Casein.Mobile.UserObserverRegistry, user_id)
+    first_ref = make_ref()
+
+    :sys.replace_state(observer, fn state ->
+      %{state | clarification_hydrations: %{workspace_id => first_ref}}
+    end)
+
+    assert {:ok, second_event, :inserted} =
+             Clarification.request(
+               Map.merge(base, %{
+                 request_id: "hydration-race-second",
+                 question: "Use the current option?"
+               })
+             )
+
+    _ = :sys.get_state(observer)
+    send(observer, {:clarifications_hydrated, workspace_id, first_ref, [first_event]})
+    _ = :sys.get_state(observer)
+
+    [card] =
+      UserObserver.snapshot(user_id).cards
+      |> Enum.filter(&(&1.type == :clarification))
+
+    assert Clarification.request_event_id(card) == second_event.id
+
+    resolution_ref = make_ref()
+
+    :sys.replace_state(observer, fn state ->
+      %{state | clarification_hydrations: %{workspace_id => resolution_ref}}
+    end)
+
+    assert {:ok, _resolved, :inserted} = Clarification.resolve(card)
+    _ = :sys.get_state(observer)
+    send(observer, {:clarifications_hydrated, workspace_id, resolution_ref, [second_event]})
+    _ = :sys.get_state(observer)
+
+    refute Enum.any?(UserObserver.snapshot(user_id).cards, &(&1.type == :clarification))
+  end
+
+  test "open clarification survives unrelated event churn", %{workspace_root: workspace_root} do
+    workspace_id = unique_id("ws")
+    create_workspace(workspace_root, workspace_id, unique_id("dev"))
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    :ok =
+      AgentState.report(workspace_id, tmux_session, pane_id, :blocked, nil,
+        agent_session_id: "agent-task-churn"
+      )
+
+    assert {:ok, request_event, :inserted} =
+             Clarification.request(%{
+               workspace_id: workspace_id,
+               tmux_session_id: tmux_session,
+               pane_id: pane_id,
+               request_id: "clarification-before-churn",
+               agent_session_id: "agent-task-churn",
+               question: "Continue after the declared checks?"
+             })
+
+    for sequence <- 1..510 do
+      assert {:ok, _event, :inserted} =
+               AgentEvents.append_runtime(%{
+                 workspace_id: workspace_id,
+                 producer: "test",
+                 ingress: "test",
+                 source_event_id: "unrelated-#{sequence}",
+                 event_type: "test.unrelated",
+                 source_sequence: sequence
+               })
+    end
+
+    assert [open] = Clarification.open_for_workspace(workspace_id)
+    assert open.id == request_event.id
   end
 
   test "authoritative card exposes bounded evidence and omits raw evidence fields", %{

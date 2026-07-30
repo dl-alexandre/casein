@@ -366,7 +366,9 @@ defmodule Casein.Mobile.AttentionInbox do
     transition_phase = transition_value(latest, :phase)
 
     cond do
-      transition_action == "agent.blocked" or transition_state == "needs_attention" or
+      normalized(Map.get(card, :type)) == "clarification" or
+        (resume.state == "needs_attention" and resume.phase == "waiting") or
+        transition_action == "agent.blocked" or transition_state == "needs_attention" or
         source == "agent.blocked" or String.contains?(reason, "blocked") ->
         rank("critical", 700, "human_blocked", "Agent is blocked on you", "Respond", true)
 

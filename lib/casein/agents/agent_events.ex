@@ -224,6 +224,31 @@ defmodule Casein.Agents.AgentEvents do
     impl().list_for_session(workspace_id, agent_session_id, normalize_query_opts(opts))
   end
 
+  @doc "List every durable event of the requested types in newest-first order."
+  @spec list_by_event_types(String.t(), [String.t()]) :: [AgentEvent.t()]
+  def list_by_event_types(workspace_id, event_types)
+      when is_binary(workspace_id) and is_list(event_types) do
+    impl().list_by_event_types(workspace_id, event_types)
+  end
+
+  @doc """
+  List the newest unresolved clarification per exact task target.
+
+  Adapters must perform the open/latest projection before applying the result
+  bound so hydration never loads an unbounded clarification history.
+  """
+  @spec list_open_clarifications(String.t(), String.t(), String.t(), keyword()) ::
+          [AgentEvent.t()]
+  def list_open_clarifications(workspace_id, request_type, resolved_type, opts \\ [])
+      when is_binary(workspace_id) and is_binary(request_type) and is_binary(resolved_type) do
+    impl().list_open_clarifications(
+      workspace_id,
+      request_type,
+      resolved_type,
+      normalize_query_opts(opts)
+    )
+  end
+
   @spec list_by_correlation(String.t(), keyword()) :: [AgentEvent.t()]
   def list_by_correlation(correlation_id, opts \\ []) when is_binary(correlation_id) do
     impl().list_by_correlation(correlation_id, normalize_query_opts(opts))

@@ -24,7 +24,7 @@ defmodule Casein.Mobile.Actions do
   import Ecto.Query, only: [from: 2]
 
   alias Casein.Audit
-  alias Casein.Mobile.{ActionOutcome, Card, Intervention, UserObserver}
+  alias Casein.Mobile.{ActionOutcome, Card, Clarification, Intervention, UserObserver}
   alias Casein.Repo
   alias Casein.Runs.Ledger
   alias Casein.Workspaces
@@ -269,33 +269,59 @@ defmodule Casein.Mobile.Actions do
   defp deliver_intervention(context, card, outcome, spec, validated) do
     case Intervention.deliver(card, spec, validated) do
       {:ok, result} ->
-        result = Map.put(result, "requested_action_id", spec.id)
+        case maybe_resolve_clarification(context, card, spec) do
+          :ok ->
+            result = Map.put(result, "requested_action_id", spec.id)
 
-        {:ok, outcome} =
-          outcome
-          |> ActionOutcome.changeset(%{status: "accepted", result: result})
-          |> Repo.update()
+            {:ok, outcome} =
+              outcome
+              |> ActionOutcome.changeset(%{status: "accepted", result: result})
+              |> Repo.update()
 
-        record_intervention_audit(context, card, spec.id, "succeeded", nil)
+            record_intervention_audit(context, card, spec.id, "succeeded", nil)
 
-        {:ok,
-         %{
-           status: "accepted",
-           action_id: outcome.action_id,
-           card_id: outcome.card_id,
-           result: outcome.result,
-           idempotent: false
-         }}
+            {:ok,
+             %{
+               status: "accepted",
+               action_id: outcome.action_id,
+               card_id: outcome.card_id,
+               result: outcome.result,
+               idempotent: false
+             }}
+
+          {:error, reason} ->
+            fail_intervention_outcome(outcome, context, card, spec.id, reason)
+        end
 
       {:error, reason} ->
-        _ =
-          outcome
-          |> ActionOutcome.changeset(%{status: "failed", reason: to_string(reason)})
-          |> Repo.update()
-
-        record_intervention_audit(context, card, spec.id, "failed", reason)
-        {:error, reason}
+        fail_intervention_outcome(outcome, context, card, spec.id, reason)
     end
+  end
+
+  defp maybe_resolve_clarification(
+         context,
+         %{type: :clarification} = card,
+         %{id: "follow_up"} = spec
+       ) do
+    case Clarification.resolve(card, %{actor_id: context.user_id, action_id: spec.id}) do
+      {:ok, _event, _status} -> :ok
+      {:error, _reason} -> {:error, :clarification_resolution_failed}
+    end
+  end
+
+  defp maybe_resolve_clarification(_context, %{type: :clarification}, _spec),
+    do: {:error, :clarification_response_required}
+
+  defp maybe_resolve_clarification(_context, _card, _spec), do: :ok
+
+  defp fail_intervention_outcome(outcome, context, card, action_id, reason) do
+    _ =
+      outcome
+      |> ActionOutcome.changeset(%{status: "failed", reason: to_string(reason)})
+      |> Repo.update()
+
+    record_intervention_audit(context, card, action_id, "failed", reason)
+    {:error, reason}
   end
 
   defp record_intervention_audit(context, card, action_id, outcome, reason) do

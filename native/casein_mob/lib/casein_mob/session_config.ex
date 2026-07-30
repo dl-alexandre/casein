@@ -473,7 +473,7 @@ defmodule CaseinMob.SessionConfig do
       "workspace_name" => cache_text(card, :workspace_name),
       "session_id" => cache_text(card, :session_id),
       "title" => cache_text(card, :title),
-      "body" => cache_text(card, :body),
+      "body" => cached_body(card),
       "type" => cache_text(card, :type),
       "kind" => cache_text(card, :kind),
       "status" => cache_text(card, :status),
@@ -490,6 +490,12 @@ defmodule CaseinMob.SessionConfig do
   end
 
   defp cache_text(card, key), do: card |> map_value(key) |> present()
+
+  defp cached_body(card) do
+    if map_value(card, :type) in [:clarification, "clarification"],
+      do: "Open Casein to view this request.",
+      else: cache_text(card, :body)
+  end
 
   defp cache_priority(card) do
     case map_value(card, :priority) do

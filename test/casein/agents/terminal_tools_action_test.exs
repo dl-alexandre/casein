@@ -10,10 +10,10 @@ defmodule Casein.Agents.TerminalToolsActionTest do
   alias Casein.Agents.TerminalTools
 
   describe "definitions/0" do
-    test "exposes 18 terminal tools plus annotation tools" do
+    test "exposes 19 terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 20
+      assert length(names) == 21
 
       for expected <- [
             "terminal_list_sessions",
@@ -32,6 +32,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_set_agent_label",
             "terminal_report_worktree",
             "terminal_report_agent_state",
+            "terminal_request_clarification",
             "terminal_wait_agent_state",
             "gate_report",
             "annotation_list",
@@ -68,6 +69,24 @@ defmodule Casein.Agents.TerminalToolsActionTest do
       assert tool.metadata.danger_level == :high
       assert tool.metadata.policy_tags == [:raw_terminal_input]
       assert is_list(tool.metadata.examples)
+    end
+
+    test "clarification request is a bounded metadata mutation, not terminal input" do
+      tool = definition("terminal_request_clarification")
+
+      assert tool.parameters.required == [
+               "workspace_id",
+               "session",
+               "pane",
+               "request_id",
+               "agent_session_id",
+               "question"
+             ]
+
+      assert tool.metadata.mutation? == true
+      assert tool.metadata.danger_level == :low
+      assert tool.metadata.capabilities == [:terminal_metadata]
+      refute :raw_terminal_input in Map.get(tool.metadata, :policy_tags, [])
     end
   end
 

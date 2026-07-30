@@ -4,6 +4,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   alias Casein.Agents.{TerminalOutputFormat, Transcripts}
   alias Casein.AgentSessions.GrokACP.Attachments
   alias Casein.Labels
+  alias Casein.Mobile.Clarification
   alias Casein.Terminals.AgentState
   alias Casein.Terminals.TmuxTopology
 
@@ -138,6 +139,36 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
         {out, _code} ->
           {:error, String.trim(out)}
       end
+    end
+  end
+
+  @doc "Create a durable clarification request for an exact role-marked agent pane."
+  @spec request_clarification(map()) :: {:ok, map()} | {:error, term()}
+  def request_clarification(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_or_default_arg(params),
+         {:ok, pane_id} <- string_arg(params, "pane"),
+         {:ok, request_id} <- string_arg(params, "request_id"),
+         {:ok, agent_session_id} <- string_arg(params, "agent_session_id"),
+         {:ok, question} <- string_arg(params, "question"),
+         {:ok, event, status} <-
+           Clarification.request(%{
+             workspace_id: workspace_id,
+             tmux_session_id: session,
+             pane_id: pane_id,
+             request_id: request_id,
+             agent_session_id: agent_session_id,
+             question: question
+           }) do
+      {:ok,
+       %{
+         request_event_id: event.id,
+         revision: event.id,
+         session: session,
+         target: pane_id,
+         target_role: "agent",
+         status: if(status == :inserted, do: "created", else: "duplicate")
+       }}
     end
   end
 

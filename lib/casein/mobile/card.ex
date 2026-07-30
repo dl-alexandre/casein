@@ -7,7 +7,12 @@ defmodule Casein.Mobile.Card do
   """
 
   @type card_type ::
-          :needs_review | :in_progress | :outcome | :connection_issue | :workspace_idle
+          :needs_review
+          | :clarification
+          | :in_progress
+          | :outcome
+          | :connection_issue
+          | :workspace_idle
   @type priority :: :high | :normal | :low
 
   @type action :: %{
@@ -75,6 +80,46 @@ defmodule Casein.Mobile.Card do
   @priorities %{high: 0, normal: 1, low: 2}
   @connection_high_reasons [:token_revoked, :join_failed, :invalid_token, :pairing_expired]
   @review_note_max_length 280
+
+  @doc "Build an authoritative, exact-agent clarification card."
+  @spec clarification(map(), DateTime.t()) :: t()
+  def clarification(attrs, now \\ DateTime.utc_now()) when is_map(attrs) do
+    user_id = require_string!(attrs, :user_id)
+    workspace_id = require_string!(attrs, :workspace_id)
+    session_id = require_string!(attrs, :session_id)
+
+    base(
+      :clarification,
+      %{
+        id: attrs[:id] || attrs["id"],
+        user_id: user_id,
+        workspace_id: workspace_id,
+        workspace_name: workspace_name(attrs, workspace_id),
+        session_id: session_id,
+        priority: :high,
+        status: "waiting",
+        kind: "clarification_required",
+        title: "Agent needs clarification",
+        body: optional_string(attrs[:question] || attrs["question"]),
+        action: %{label: "Respond", route: {:session_detail, workspace_id, session_id}},
+        actions: [],
+        context: %{
+          session_id: session_id,
+          task_ref: attrs[:task_ref] || attrs["task_ref"],
+          locator: attrs[:locator] || attrs["locator"]
+        },
+        meta: %{
+          run_phase: "waiting",
+          clarification_event_id:
+            attrs[:clarification_event_id] || attrs["clarification_event_id"],
+          clarification_request_id:
+            attrs[:clarification_request_id] || attrs["clarification_request_id"],
+          last_activity_at: attrs[:last_activity_at] || attrs["last_activity_at"]
+        },
+        now: now
+      }
+    )
+  end
 
   @spec needs_review(map(), DateTime.t()) :: t() | nil
   def needs_review(attrs, now \\ DateTime.utc_now()) when is_map(attrs) do
@@ -517,7 +562,7 @@ defmodule Casein.Mobile.Card do
     now = attrs.now
 
     %{
-      id: Map.get(attrs, :id, id(type, workspace_id, session_id)),
+      id: Map.get(attrs, :id) || id(type, workspace_id, session_id),
       type: type,
       source: Map.get(attrs, :source, "casein"),
       kind: Map.get(attrs, :kind, default_kind(type)),
@@ -550,6 +595,7 @@ defmodule Casein.Mobile.Card do
   # Normalized `kind` mirrors the legacy `type` but reads as a producer-agnostic
   # verb so later producers (CI, incidents, deploys) can reuse the vocabulary.
   defp default_kind(:needs_review), do: "approval_required"
+  defp default_kind(:clarification), do: "clarification_required"
   defp default_kind(:in_progress), do: "in_progress"
   defp default_kind(:outcome), do: "run_completed"
   defp default_kind(:connection_issue), do: "connection_issue"
