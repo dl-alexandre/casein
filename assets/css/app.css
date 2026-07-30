@@ -785,6 +785,43 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
   display: none;
 }
 
+.tab-strip-scroller[data-reordering] {
+  cursor: grabbing;
+}
+
+.tab-strip-scroller[data-reordering] > [data-ctx-window-id] {
+  will-change: transform;
+}
+
+.tab-strip-scroller [data-tab-reordering] {
+  cursor: grabbing;
+  opacity: 0.5;
+  filter: saturate(0.65);
+}
+
+.tab-strip-scroller [data-tab-drop-before]::before,
+.tab-strip-scroller [data-tab-drop-after]::after {
+  position: absolute;
+  z-index: 10;
+  top: 0.2rem;
+  bottom: 0.2rem;
+  width: 2px;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-base-100) 70%, transparent),
+    0 0 0.55rem color-mix(in oklab, var(--color-primary) 70%, transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.tab-strip-scroller [data-tab-drop-before]::before {
+  left: -0.2rem;
+}
+
+.tab-strip-scroller [data-tab-drop-after]::after {
+  right: -0.2rem;
+}
+
 .tab-strip-scroller[data-clipped-left] {
   mask-image: linear-gradient(to right, transparent, black 1.25rem);
 }
