@@ -596,58 +596,50 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       <div class="min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-1 py-1.5">
         <% {ws_nodes, browse_nodes} =
           Enum.split_with(@tree, &(Map.get(&1, :kind) not in [:browse_root, :browse_dir])) %>
-        <% {this_nodes, other_nodes} =
-          Enum.split_with(ws_nodes, &(Map.get(&1, :group, :other) == :this)) %>
-        <div :if={this_nodes != []} class="flex flex-col gap-0.5">
-          <.sessions_sidebar_section_header :if={other_nodes != []} label="This workspace" />
-          <div
-            :for={{section, nodes} <- SessionBarVM.node_attention_groups(this_nodes)}
-            data-picker-group={section}
-            class="flex flex-col gap-0.5"
-          >
-            <.sessions_sidebar_section_header
-              label={attention_section_label(section)}
-              count={length(nodes)}
-              attention?={section == :needs_you}
-            />
-            <.sessions_sidebar_node
-              :for={node <- nodes}
-              node={node}
-              workspace_id={@workspace_id}
-              active_id={@active_id}
-              default_sid={@default_sid}
-              preview_panes={@preview_panes}
-              path_base={@path_base}
-              mutations_allowed?={@mutations_allowed?}
-              rename_session_id={@rename_session_id}
-            />
-          </div>
-        </div>
-        <div :if={other_nodes != []} class="mt-1.5 flex flex-col gap-0.5">
-          <.sessions_sidebar_section_header label="Other workspaces" />
-          <div
-            :for={{section, nodes} <- SessionBarVM.node_attention_groups(other_nodes)}
-            data-picker-group={section}
-            class="flex flex-col gap-0.5"
-          >
-            <.sessions_sidebar_section_header
-              label={attention_section_label(section)}
-              count={length(nodes)}
-              attention?={section == :needs_you}
-            />
-            <.sessions_sidebar_node
-              :for={node <- nodes}
-              node={node}
-              workspace_id={@workspace_id}
-              active_id={@active_id}
-              default_sid={@default_sid}
-              preview_panes={@preview_panes}
-              path_base={@path_base}
-              mutations_allowed?={@mutations_allowed?}
-              rename_session_id={@rename_session_id}
-            />
-          </div>
-        </div>
+        <% grouped = Enum.group_by(ws_nodes, &Map.get(&1, :group, :other)) %>
+        <% this_nodes = Map.get(grouped, :this, []) %>
+        <% mine_nodes = Map.get(grouped, :mine, []) %>
+        <% other_nodes = Map.get(grouped, :other, []) %>
+        <% multi_section? = Enum.count([this_nodes, mine_nodes, other_nodes], &(&1 != [])) > 1 %>
+        <.sessions_sidebar_group
+          nodes={this_nodes}
+          label="This workspace"
+          show_label?={multi_section?}
+          first?={true}
+          workspace_id={@workspace_id}
+          active_id={@active_id}
+          default_sid={@default_sid}
+          preview_panes={@preview_panes}
+          path_base={@path_base}
+          mutations_allowed?={@mutations_allowed?}
+          rename_session_id={@rename_session_id}
+        />
+        <.sessions_sidebar_group
+          nodes={mine_nodes}
+          label="My workspaces"
+          show_label?={multi_section?}
+          first?={this_nodes == []}
+          workspace_id={@workspace_id}
+          active_id={@active_id}
+          default_sid={@default_sid}
+          preview_panes={@preview_panes}
+          path_base={@path_base}
+          mutations_allowed?={@mutations_allowed?}
+          rename_session_id={@rename_session_id}
+        />
+        <.sessions_sidebar_group
+          nodes={other_nodes}
+          label="Other workspaces"
+          show_label?={multi_section?}
+          first?={this_nodes == [] and mine_nodes == []}
+          workspace_id={@workspace_id}
+          active_id={@active_id}
+          default_sid={@default_sid}
+          preview_panes={@preview_panes}
+          path_base={@path_base}
+          mutations_allowed?={@mutations_allowed?}
+          rename_session_id={@rename_session_id}
+        />
         <.sessions_sidebar_browse_node :for={node <- browse_nodes} node={node} depth={0} />
       </div>
       <button
@@ -662,6 +654,51 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         </span>
       </button>
     </nav>
+    """
+  end
+
+  attr :nodes, :list, required: true
+  attr :label, :string, required: true
+  attr :show_label?, :boolean, default: true
+  attr :first?, :boolean, default: false
+  attr :workspace_id, :string, required: true
+  attr :active_id, :string, default: nil
+  attr :default_sid, :string, default: nil
+  attr :preview_panes, :map, default: %{}
+  attr :path_base, :string, default: nil
+  attr :mutations_allowed?, :boolean, default: false
+  attr :rename_session_id, :string, default: nil
+
+  # One ownership section of the SESSIONS rail ("This workspace" / "My
+  # workspaces" / "Other workspaces"), subdivided by attention. Rendering order
+  # is the arrow-key order, so the viewer's own rows are always reachable first.
+  defp sessions_sidebar_group(assigns) do
+    ~H"""
+    <div :if={@nodes != []} class={["flex flex-col gap-0.5", not @first? && "mt-1.5"]}>
+      <.sessions_sidebar_section_header :if={@show_label?} label={@label} />
+      <div
+        :for={{section, nodes} <- SessionBarVM.node_attention_groups(@nodes)}
+        data-picker-group={section}
+        class="flex flex-col gap-0.5"
+      >
+        <.sessions_sidebar_section_header
+          label={attention_section_label(section)}
+          count={length(nodes)}
+          attention?={section == :needs_you}
+        />
+        <.sessions_sidebar_node
+          :for={node <- nodes}
+          node={node}
+          workspace_id={@workspace_id}
+          active_id={@active_id}
+          default_sid={@default_sid}
+          preview_panes={@preview_panes}
+          path_base={@path_base}
+          mutations_allowed?={@mutations_allowed?}
+          rename_session_id={@rename_session_id}
+        />
+      </div>
+    </div>
     """
   end
 

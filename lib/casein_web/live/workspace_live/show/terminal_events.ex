@@ -657,9 +657,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
      TerminalState.focus_active_terminal(socket, %{"reason" => "terminal:switch_to_shell"})}
   end
 
+  # Explicit "Refresh" in the rail: the user is asking for a re-scan, so drop
+  # the memoized Browse tier too (see Sidebar.browse_tier/3) — otherwise a
+  # directory created since the rail opened would stay invisible.
   def handle_event("terminal:refresh_sessions", _params, socket) do
     {:noreply,
      socket
+     |> Sidebar.invalidate_browse_cache()
      |> TerminalState.refresh_session_tabs()
      |> Show.assign_workspace_summaries()
      |> Sidebar.assign_sessions_sidebar_tree()}

@@ -14,8 +14,16 @@
 //
 // Desktop drag-and-drop reorders tabs via `tmux:move_window` (tmux move-window).
 
-const INSERTION_CLASS =
-  "outline outline-2 outline-primary -outline-offset-2"
+import {
+  insertionNeighbor,
+  movePayload,
+  previewTabMove,
+  restoreTabOrder,
+} from "./window_tab_reorder.mjs"
+
+const EDGE_SCROLL_ZONE = 44
+const MAX_EDGE_SCROLL_SPEED = 14
+const REORDER_ANIMATION_MS = 140
 
 export const WindowTabStrip = {
   mounted() {
@@ -24,7 +32,10 @@ export const WindowTabStrip = {
     this.lastActiveId = this.activeTab()?.id
     this.dragging = false
     this.draggedId = null
+    this.draggedTab = null
     this.dropTarget = null
+    this.originalOrder = null
+    this.dropCommitted = false
     this.center(false)
     this.updateFades()
     this.bindScrollerEvents()
@@ -61,7 +72,7 @@ export const WindowTabStrip = {
       this.scroller.removeEventListener("drop", this.onDrop)
       this.scroller.removeEventListener("dragend", this.onDragEnd)
     }
-    this.clearInsertionIndicator()
+    this.clearDragState()
     this.unbindTabDrag()
   },
 
@@ -103,15 +114,30 @@ export const WindowTabStrip = {
 
       this.dragging = true
       this.draggedId = windowId
+      this.draggedTab = tab
+      this.originalOrder = this.tabNodes().map(
+        (node) => node.dataset.ctxWindowId,
+      )
+      this.dropCommitted = false
       e.dataTransfer.effectAllowed = "move"
       e.dataTransfer.setData("text/plain", windowId)
+
+      // Defer styling until the browser has captured its native drag image.
+      requestAnimationFrame(() => {
+        if (!this.dragging) return
+        tab.setAttribute("data-tab-reordering", "")
+        this.scroller.setAttribute("data-reordering", "")
+      })
     }
 
     this.onDragOver = (e) => {
       if (!this.dragging) return
       e.preventDefault()
       e.dataTransfer.dropEffect = "move"
-      this.showInsertionIndicator(this.insertionNeighbor(e.clientX))
+      this.lastDragClientX = e.clientX
+      const neighbor = this.insertionNeighbor(e.clientX)
+      this.previewInsertion(neighbor)
+      this.startEdgeScroll()
     }
 
     this.onDrop = (e) => {
@@ -119,19 +145,19 @@ export const WindowTabStrip = {
       e.preventDefault()
 
       const neighbor = this.insertionNeighbor(e.clientX)
-      if (neighbor && neighbor.id !== this.draggedId) {
-        const payload = {
-          "window-id": this.draggedId,
-          "before-window-id": neighbor.id,
-        }
-        if (neighbor.placement === "after") payload.dir = "after"
+      this.previewInsertion(neighbor)
+      const payload = movePayload(this.draggedId, neighbor)
+      if (payload && this.orderChanged()) {
+        this.dropCommitted = true
         this.pushEvent("tmux:move_window", payload)
       }
 
-      this.clearDragState()
+      this.clearDragState({restore: !this.dropCommitted})
     }
 
-    this.onDragEnd = () => this.clearDragState()
+    this.onDragEnd = () => {
+      if (this.dragging) this.clearDragState({restore: !this.dropCommitted})
+    }
 
     this.scroller.addEventListener("dragover", this.onDragOver)
     this.scroller.addEventListener("drop", this.onDrop)
@@ -162,23 +188,56 @@ export const WindowTabStrip = {
     return [...this.scroller.querySelectorAll('[id^="tmux-window-"]')]
   },
 
-  insertionNeighbor(clientX) {
-    const tabs = this.tabNodes().filter(
-      (tab) => tab.dataset.ctxWindowId && tab.dataset.ctxWindowId !== this.draggedId,
-    )
+  orderChanged() {
+    const current = this.tabNodes().map((tab) => tab.dataset.ctxWindowId)
+    return current.some((id, index) => id !== this.originalOrder?.[index])
+  },
 
-    for (const tab of tabs) {
-      const rect = tab.getBoundingClientRect()
-      const mid = rect.left + rect.width / 2
-      if (clientX < mid) {
-        return {id: tab.dataset.ctxWindowId, placement: "before", tab}
-      }
+  insertionNeighbor(clientX) {
+    return insertionNeighbor(this.tabNodes(), this.draggedId, clientX)
+  },
+
+  previewInsertion(neighbor) {
+    if (
+      this.dropTarget?.tab === neighbor?.tab &&
+      this.dropTarget?.placement === neighbor?.placement
+    ) {
+      return
     }
 
-    const last = tabs[tabs.length - 1]
-    return last
-      ? {id: last.dataset.ctxWindowId, placement: "after", tab: last}
-      : null
+    const beforeRects = new Map(
+      this.tabNodes().map((tab) => [tab, tab.getBoundingClientRect()]),
+    )
+    const moved = previewTabMove(this.draggedTab, neighbor)
+    this.showInsertionIndicator(neighbor)
+    if (moved) this.animateReorder(beforeRects)
+  },
+
+  animateReorder(beforeRects) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+
+    for (const tab of this.tabNodes()) {
+      if (tab === this.draggedTab) continue
+      const before = beforeRects.get(tab)
+      const after = tab.getBoundingClientRect()
+      const deltaX = before ? before.left - after.left : 0
+      if (Math.abs(deltaX) < 1 || typeof tab.animate !== "function") continue
+
+      tab.getAnimations?.().forEach((animation) => {
+        if (animation.id === "window-tab-reorder") animation.cancel()
+      })
+      const animation = tab.animate(
+        [
+          {transform: `translateX(${deltaX}px)`},
+          {transform: "translateX(0)"},
+        ],
+        {
+          duration: REORDER_ANIMATION_MS,
+          easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        },
+      )
+      animation.id = "window-tab-reorder"
+    }
   },
 
   showInsertionIndicator(neighbor) {
@@ -191,19 +250,72 @@ export const WindowTabStrip = {
 
     this.clearInsertionIndicator()
     this.dropTarget = neighbor
-    neighbor?.tab?.classList.add(...INSERTION_CLASS.split(" "))
+    neighbor?.tab?.setAttribute(
+      neighbor.placement === "after"
+        ? "data-tab-drop-after"
+        : "data-tab-drop-before",
+      "",
+    )
   },
 
   clearInsertionIndicator() {
     if (this.dropTarget?.tab) {
-      this.dropTarget.tab.classList.remove(...INSERTION_CLASS.split(" "))
+      this.dropTarget.tab.removeAttribute("data-tab-drop-before")
+      this.dropTarget.tab.removeAttribute("data-tab-drop-after")
     }
     this.dropTarget = null
   },
 
-  clearDragState() {
+  startEdgeScroll() {
+    if (this.edgeScrollFrame) return
+
+    const tick = () => {
+      this.edgeScrollFrame = null
+      if (!this.dragging) return
+
+      const rect = this.scroller.getBoundingClientRect()
+      const x = this.lastDragClientX
+      let speed = 0
+      if (x < rect.left + EDGE_SCROLL_ZONE) {
+        speed =
+          -MAX_EDGE_SCROLL_SPEED *
+          Math.min(1, (rect.left + EDGE_SCROLL_ZONE - x) / EDGE_SCROLL_ZONE)
+      } else if (x > rect.right - EDGE_SCROLL_ZONE) {
+        speed =
+          MAX_EDGE_SCROLL_SPEED *
+          Math.min(1, (x - (rect.right - EDGE_SCROLL_ZONE)) / EDGE_SCROLL_ZONE)
+      }
+
+      if (speed !== 0) {
+        const previous = this.scroller.scrollLeft
+        this.scroller.scrollLeft += speed
+        if (this.scroller.scrollLeft !== previous) {
+          this.previewInsertion(this.insertionNeighbor(x))
+          this.updateFades()
+          this.edgeScrollFrame = requestAnimationFrame(tick)
+        }
+      }
+    }
+
+    this.edgeScrollFrame = requestAnimationFrame(tick)
+  },
+
+  stopEdgeScroll() {
+    if (this.edgeScrollFrame) cancelAnimationFrame(this.edgeScrollFrame)
+    this.edgeScrollFrame = null
+  },
+
+  clearDragState({restore = false} = {}) {
+    this.stopEdgeScroll()
+    if (restore) restoreTabOrder(this.scroller, this.originalOrder)
+    this.draggedTab?.removeAttribute("data-tab-reordering")
+    this.scroller?.removeAttribute("data-reordering")
     this.dragging = false
     this.draggedId = null
+    this.draggedTab = null
+    this.originalOrder = null
+    this.dropCommitted = false
+    this.lastDragClientX = null
     this.clearInsertionIndicator()
   },
 

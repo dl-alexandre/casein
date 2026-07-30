@@ -534,6 +534,62 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ "ex-1"
     end
 
+    test "renders a My workspaces section between This workspace and Other workspaces" do
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [
+            %{id: "ws-1", name: "alpha", user: "dalexandre", session_count: 1, live?: true},
+            %{id: "ws-mine", name: "my-other", user: "dalexandre", session_count: 1, live?: true},
+            %{id: "ws-theirs", name: "not-mine", user: "zoe", session_count: 1, live?: true}
+          ],
+          "ws-1",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")]),
+          sidebar_ws_sessions: %{},
+          viewer: %{email: "dalexandre@milcgroup.com"}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: nil
+        )
+
+      assert html =~ "This workspace"
+      assert html =~ "My workspaces"
+      assert html =~ "Other workspaces"
+
+      # Ordering is the arrow-key order: the viewer's own rows come first.
+      mine_at = :binary.match(html, "My workspaces") |> elem(0)
+      other_at = :binary.match(html, "Other workspaces") |> elem(0)
+      assert mine_at < other_at
+    end
+
+    test "omits the My workspaces section when the viewer has no identity" do
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [
+            %{id: "ws-1", name: "alpha", user: "dalexandre", session_count: 1, live?: true},
+            %{id: "ws-2", name: "beta", user: "dalexandre", session_count: 1, live?: true}
+          ],
+          "ws-1",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: nil
+        )
+
+      refute html =~ "My workspaces"
+      assert html =~ "Other workspaces"
+    end
+
     test "groups the tree into This workspace / Other workspaces with a live count" do
       tree =
         SessionBarVM.workspace_session_tree(

@@ -1605,11 +1605,34 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_async(:refresh_git_status, _result, socket), do: {:noreply, socket}
 
   def handle_async(:workspace_summaries, {:ok, summaries}, socket) do
+    # Fresh summaries can surface workspaces the open-time warm never saw (the
+    # rail warms against whatever summaries were already in assigns). Re-warm so
+    # newly discovered rows expand instantly too; warm_sessions/1 skips ids it
+    # has already loaded or has in flight.
     {:noreply,
-     socket |> assign_workspace_summaries(summaries) |> Sidebar.assign_sessions_sidebar_tree()}
+     socket
+     |> assign_workspace_summaries(summaries)
+     |> Sidebar.assign_sessions_sidebar_tree()
+     |> Sidebar.warm_sessions()}
   end
 
   def handle_async(:workspace_summaries, _result, socket), do: {:noreply, socket}
+
+  # Deferred picker-open refreshes (see refresh_sidebar_sources/1).
+  def handle_async(:sidebar_session_tabs, {:ok, tabs}, socket) when is_list(tabs) do
+    {:noreply,
+     socket |> TerminalState.assign_session_tabs(tabs) |> Sidebar.assign_sessions_sidebar_tree()}
+  end
+
+  def handle_async(:sidebar_session_tabs, _result, socket), do: {:noreply, socket}
+
+  # assign_tmux_topology/2 already rebuilds the windows rail (via
+  # assign_tmux_window_tabs/1), so there is nothing to rebuild here.
+  def handle_async(:sidebar_tmux_topology, {:ok, %{} = topology}, socket) do
+    {:noreply, TerminalState.assign_tmux_topology(socket, topology)}
+  end
+
+  def handle_async(:sidebar_tmux_topology, _result, socket), do: {:noreply, socket}
 
   def handle_async({:sidebar_ws_sessions, workspace_id}, {:ok, infos}, socket)
       when is_binary(workspace_id) and is_list(infos) do
@@ -1620,8 +1643,8 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
-  def handle_async(:sidebar_ws_warm, result, socket) do
-    {:noreply, Sidebar.handle_async_warm(socket, result)}
+  def handle_async({:sidebar_ws_warm, batch}, result, socket) do
+    {:noreply, Sidebar.handle_async_warm(socket, batch, result)}
   end
 
   def handle_async(:run_search, {:ok, {:ok, results}}, socket) do
@@ -2023,11 +2046,27 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # the browser. Sidebar.open/3 has rebuilt both trees from the seeded state.
   defp refresh_sidebar_sources(%{assigns: %{desktop_terminal?: true}} = socket), do: socket
 
+  # Both tmux refreshes used to run INLINE here, and `refresh_session_tabs/1`
+  # explicitly does its slow read in the caller process (see
+  # SessionDirectory.refresh_now/2's docstring). LiveView only ships a diff when
+  # handle_event returns, so the rail Sidebar.open/3 just built — and the
+  # focus push_event that lets the user start arrowing — waited on a full tmux
+  # fan-out before painting. The rail now paints from the cached tabs/topology
+  # immediately and both refreshes land later via handle_async.
   defp refresh_sidebar_sources(socket) do
+    workspace = socket.assigns.workspace
+    workspace_name = workspace.name || workspace.id
+    workspace_id = workspace.id
+    tmux_session = socket.assigns.tmux_session
+
     socket
-    |> TerminalState.refresh_session_tabs()
     |> assign_workspace_summaries()
-    |> TerminalState.refresh_tmux_topology()
+    |> start_async(:sidebar_session_tabs, fn ->
+      Terminals.refresh_session_tabs_now(workspace_id, workspace_name: workspace_name)
+    end)
+    |> start_async(:sidebar_tmux_topology, fn ->
+      Terminals.tmux_topology_refresh_now(tmux_session, workspace_id: workspace_id)
+    end)
   end
 
   defp seed_desktop_cockpit_state(socket) do

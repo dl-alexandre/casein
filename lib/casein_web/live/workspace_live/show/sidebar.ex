@@ -26,7 +26,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
       sidebar_expanded_windows: MapSet.new(),
       sidebar_expanded_dirs: MapSet.new(),
       sidebar_ws_sessions: %{},
-      sidebar_ws_warm_pending?: false,
+      sidebar_ws_warm_pending: MapSet.new(),
+      sidebar_browse_cache: nil,
       sidebar_ws_subscriptions: MapSet.new(),
       sessions_sidebar_tree: [],
       sessions_sidebar_needs_you: [],
@@ -93,6 +94,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
     |> assign(:sidebar_expanded_windows, MapSet.new())
     |> assign(:sidebar_expanded_dirs, MapSet.new())
     |> assign(:sidebar_ws_sessions, %{})
+    |> assign(:sidebar_ws_warm_pending, MapSet.new())
+    # Bound the Browse memo to one rail session: hot for the expand/collapse/sort
+    # churn that motivated it, re-scanned the next time the rail is summoned.
+    |> invalidate_browse_cache()
     |> assign(:sidebar_ws_subscriptions, MapSet.new())
     |> assign(:sessions_sidebar_tree, [])
     |> assign(:windows_sidebar_tree, [])
@@ -102,21 +107,24 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
     # set_sessions_sort/3 + restore_sort/3).
   end
 
+  # Miller-style Left out of the WINDOWS rail when the SESSIONS rail is not in
+  # the DOM yet (window_picker_sidebar.js `_focusSessionsRail`). This is the
+  # common way the rail is first summoned, and it used to skip the warm-up that
+  # open/3 does — so every foreign workspace stayed cold and each expansion paid
+  # a fresh SessionDirectory round-trip. Warm here too.
   @spec reveal_sessions(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
   def reveal_sessions(socket) do
     current_id = socket.assigns.workspace.id
 
-    socket =
-      socket
-      |> assign_sidebar_mode(:both)
-      |> assign(
-        :sidebar_expanded_workspaces,
-        MapSet.put(socket.assigns.sidebar_expanded_workspaces, current_id)
-      )
-      |> assign_sessions_sidebar_tree()
-      |> push_event("sidebar:focus_sessions", %{})
-
     socket
+    |> assign_sidebar_mode(:both)
+    |> assign(
+      :sidebar_expanded_workspaces,
+      MapSet.put(socket.assigns.sidebar_expanded_workspaces, current_id)
+    )
+    |> assign_sessions_sidebar_tree()
+    |> warm_sidebar_ws_sessions()
+    |> push_event("sidebar:focus_sessions", %{})
   end
 
   @spec toggle_window(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
@@ -234,12 +242,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
   @spec assign_sessions_sidebar_tree(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
   def assign_sessions_sidebar_tree(socket) do
     socket = ensure_current_workspace_summary(socket)
+    viewer = socket.assigns[:current_user]
 
     summaries =
       SessionBarVM.sort_workspace_summaries_for_sidebar(
         socket.assigns.workspace_summaries,
         socket.assigns.sessions_sidebar_sort,
-        socket.assigns.workspace.id
+        socket.assigns.workspace.id,
+        viewer
       )
 
     session_tree =
@@ -249,17 +259,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
         expanded_workspaces: socket.assigns.sidebar_expanded_workspaces,
         current_session_tabs: socket.assigns.session_tabs,
         sidebar_ws_sessions: socket.assigns.sidebar_ws_sessions,
-        viewer: socket.assigns[:current_user]
+        viewer: viewer
       )
       |> SessionBarVM.sort_sessions_in_tree(socket.assigns.sessions_sidebar_sort)
 
-    browse_tree =
-      Browse.browse_tier(
-        root: Browse.root(),
-        expanded_dirs: socket.assigns.sidebar_expanded_dirs,
-        viewer: socket.assigns[:current_user],
-        workspaces: summaries
-      )
+    {socket, browse_tree} = browse_tier(socket, summaries, viewer)
 
     needs_you =
       SessionBarVM.needs_you_strip(
@@ -273,6 +277,44 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
     |> assign(:sessions_sidebar_tree, session_tree ++ browse_tree)
     |> assign(:sessions_sidebar_needs_you, needs_you)
   end
+
+  # `Browse.browse_tier/1` walks the filesystem (File.ls + a File.dir? per
+  # entry) and this function runs on EVERY rebuild — each expand, collapse,
+  # sort cycle and async merge — so plain arrow-key navigation was paying for a
+  # directory scan it could not have changed. Memoize on the inputs that can
+  # actually change the tier; a hit skips the I/O entirely.
+  defp browse_tier(socket, summaries, viewer) do
+    root = Browse.root()
+    expanded_dirs = socket.assigns.sidebar_expanded_dirs
+    key = {root, expanded_dirs, viewer, Enum.map(summaries, &summary_path/1)}
+
+    case socket.assigns[:sidebar_browse_cache] do
+      {^key, tree} ->
+        {socket, tree}
+
+      _ ->
+        tree =
+          Browse.browse_tier(
+            root: root,
+            expanded_dirs: expanded_dirs,
+            viewer: viewer,
+            workspaces: summaries
+          )
+
+        {assign(socket, :sidebar_browse_cache, {key, tree}), tree}
+    end
+  end
+
+  @doc "Force the next tree rebuild to re-scan the Browse tier from disk."
+  @spec invalidate_browse_cache(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def invalidate_browse_cache(socket), do: assign(socket, :sidebar_browse_cache, nil)
+
+  defp summary_path(summary) when is_map(summary) do
+    Map.get(summary, :path) || Map.get(summary, "path") || Map.get(summary, :host_path) ||
+      Map.get(summary, "host_path")
+  end
+
+  defp summary_path(_), do: nil
 
   @doc "Toggle expansion of a Browse-tier directory (empty string = browse root)."
   @spec toggle_browse_dir(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
@@ -337,52 +379,78 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
 
   # Opening the sessions rail lazily loaded each workspace's session list only
   # on expand — an async round-trip per row, felt as "expanding is slow" while
-  # picking. Warm the cache for live workspaces in ONE background task as the
-  # rail opens; expansion then renders instantly from `sidebar_ws_sessions`.
-  # Results merge under already-loaded entries (an expand in flight wins), and
-  # the whole cache is dropped on close/1 as before.
+  # picking. Warm the cache as the rail opens so expansion renders instantly
+  # from `sidebar_ws_sessions`. Results merge under already-loaded entries (an
+  # expand in flight wins), and the whole cache is dropped on close/1.
+  #
+  # The warm used to be ONE task doing all 24 reads sequentially, merging only
+  # once every read finished — so the whole rail stayed cold until the slowest
+  # foreign workspace answered, and the 24 were taken in raw `workspace_summaries`
+  # order (not the rail's order), so which ones warmed at all was arbitrary.
+  # It now runs in small batches, ordered the way the rail is ordered — the
+  # viewer's own workspaces first — and each batch merges the moment it lands,
+  # so your own sessions become navigable while everyone else's are still loading.
   @sidebar_warm_limit 24
+  @sidebar_warm_batch 4
 
-  defp warm_sidebar_ws_sessions(socket) do
-    if socket.assigns[:sidebar_ws_warm_pending?] do
-      socket
-    else
-      current_id = socket.assigns.workspace.id
-      loaded = socket.assigns.sidebar_ws_sessions
+  @doc """
+  Warm session lists for the rail's other workspaces, viewer's own first.
 
-      candidates =
-        socket.assigns.workspace_summaries
-        |> Enum.filter(fn summary ->
-          id = summary_id(summary)
-
-          is_binary(id) and id != current_id and not Map.has_key?(loaded, id) and
-            (Map.get(summary, :live?, false) == true or
-               (Map.get(summary, :session_count) || 0) > 0)
-        end)
-        |> Enum.take(@sidebar_warm_limit)
-        |> Enum.map(fn summary ->
-          id = summary_id(summary)
-          {id, summary_workspace_name(summary, id)}
-        end)
-
-      if candidates == [] do
-        socket
-      else
-        socket
-        |> assign(:sidebar_ws_warm_pending?, true)
-        |> start_async(:sidebar_ws_warm, fn ->
-          Map.new(candidates, fn {id, name} ->
-            {id, SessionDirectory.read(id, workspace_name: name)}
-          end)
-        end)
-      end
-    end
+  Safe to call repeatedly: workspaces already loaded or already in flight are
+  skipped, so a late `workspace_summaries` refresh only warms what it added.
+  """
+  @spec warm_sessions(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def warm_sessions(socket) do
+    if socket.assigns[:sessions_sidebar_open?], do: warm_sidebar_ws_sessions(socket), else: socket
   end
 
-  @doc "Merge a completed rail warm-up (`:sidebar_ws_warm` async) into the cache."
-  @spec handle_async_warm(Phoenix.LiveView.Socket.t(), {:ok, map()} | term()) ::
+  defp warm_sidebar_ws_sessions(socket) do
+    current_id = socket.assigns.workspace.id
+    loaded = socket.assigns.sidebar_ws_sessions
+    in_flight = socket.assigns[:sidebar_ws_warm_pending] || MapSet.new()
+    viewer = socket.assigns[:current_user]
+
+    {mine, others} =
+      SessionBarVM.partition_viewer_workspaces(socket.assigns.workspace_summaries, viewer)
+
+    candidates =
+      (mine ++ others)
+      |> Enum.filter(fn summary ->
+        id = summary_id(summary)
+
+        is_binary(id) and id != current_id and not Map.has_key?(loaded, id) and
+          not MapSet.member?(in_flight, id) and
+          (Map.get(summary, :live?, false) == true or
+             (Map.get(summary, :session_count) || 0) > 0)
+      end)
+      |> Enum.take(@sidebar_warm_limit)
+      |> Enum.map(fn summary ->
+        id = summary_id(summary)
+        {id, summary_workspace_name(summary, id)}
+      end)
+
+    candidates
+    |> Enum.chunk_every(@sidebar_warm_batch)
+    |> Enum.reduce(socket, fn batch, acc ->
+      ids = Enum.map(batch, &elem(&1, 0))
+
+      acc
+      |> assign(
+        :sidebar_ws_warm_pending,
+        MapSet.union(acc.assigns[:sidebar_ws_warm_pending] || MapSet.new(), MapSet.new(ids))
+      )
+      |> start_async({:sidebar_ws_warm, ids}, fn ->
+        Map.new(batch, fn {id, name} ->
+          {id, SessionDirectory.read(id, workspace_name: name)}
+        end)
+      end)
+    end)
+  end
+
+  @doc "Merge one completed rail warm batch (`{:sidebar_ws_warm, ids}`) into the cache."
+  @spec handle_async_warm(Phoenix.LiveView.Socket.t(), [String.t()], {:ok, map()} | term()) ::
           Phoenix.LiveView.Socket.t()
-  def handle_async_warm(socket, {:ok, infos_by_ws}) when is_map(infos_by_ws) do
+  def handle_async_warm(socket, ids, {:ok, infos_by_ws}) when is_map(infos_by_ws) do
     loaded = socket.assigns.sidebar_ws_sessions
 
     merged =
@@ -395,14 +463,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
       end)
 
     socket
-    |> assign(:sidebar_ws_warm_pending?, false)
+    |> clear_warm_pending(ids)
     |> assign(:sidebar_ws_sessions, merged)
     |> assign_sessions_sidebar_tree()
   end
 
-  def handle_async_warm(socket, _result) do
-    assign(socket, :sidebar_ws_warm_pending?, false)
+  def handle_async_warm(socket, ids, _result), do: clear_warm_pending(socket, ids)
+
+  defp clear_warm_pending(socket, ids) when is_list(ids) do
+    pending = socket.assigns[:sidebar_ws_warm_pending] || MapSet.new()
+    assign(socket, :sidebar_ws_warm_pending, MapSet.difference(pending, MapSet.new(ids)))
   end
+
+  defp clear_warm_pending(socket, _ids), do: socket
 
   @spec handle_async_sessions(
           Phoenix.LiveView.Socket.t(),
