@@ -14,6 +14,10 @@ defmodule Casein.Desktop.PowerShellSession do
   @name __MODULE__
   @registry Module.concat(__MODULE__, Registry)
   @supervisor Module.concat(__MODULE__, Supervisor)
+  @default_cols 100
+  @default_rows 30
+  @capture_bytes 64 * 1024
+  @pane_roles ~w(operator agent verify preview)
 
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, @name)
@@ -59,6 +63,20 @@ defmodule Casein.Desktop.PowerShellSession do
 
   def status(workspace \\ nil), do: GenServer.call(server(workspace), :status)
 
+  @doc "Returns the product-level topology for one native Windows session."
+  def topology(workspace \\ nil), do: GenServer.call(server(workspace), :topology)
+
+  @doc "Returns retained raw terminal output for a validated native pane target."
+  def capture(workspace, pane_id), do: GenServer.call(server(workspace), {:capture, pane_id})
+
+  @doc "Resizes a validated native pane and its ConPTY transport."
+  def resize(workspace, pane_id, cols, rows),
+    do: GenServer.call(server(workspace), {:resize, pane_id, cols, rows})
+
+  @doc "Assigns a product role to a validated native pane target."
+  def set_pane_role(workspace, pane_id, role),
+    do: GenServer.call(server(workspace), {:set_pane_role, pane_id, role})
+
   @doc "Writes terminal input to one workspace-scoped native session."
   def send_input(workspace, data) when is_binary(data) do
     GenServer.call(server(workspace), {:input, data})
@@ -75,7 +93,7 @@ defmodule Casein.Desktop.PowerShellSession do
     cwd = Keyword.fetch!(opts, :cwd)
     workspace = Keyword.get(opts, :workspace)
 
-    case start_transport(cwd, workspace) do
+    case start_transport(cwd, workspace, @default_cols, @default_rows) do
       {:ok, term, pty} ->
         {:ok,
          %{
@@ -84,7 +102,12 @@ defmodule Casein.Desktop.PowerShellSession do
            cwd: cwd,
            workspace: workspace,
            subscribers: %{},
-           status: :running
+           status: :running,
+           ids: topology_ids(workspace),
+           cols: @default_cols,
+           rows: @default_rows,
+           pane_role: "operator",
+           capture: <<>>
          }}
 
       {:error, reason} ->
@@ -99,6 +122,36 @@ defmodule Casein.Desktop.PowerShellSession do
   end
 
   def handle_call(:status, _from, state), do: {:reply, state.status, state}
+
+  def handle_call(:topology, _from, state), do: {:reply, topology_snapshot(state), state}
+
+  def handle_call({:capture, pane_id}, _from, state) do
+    with :ok <- validate_pane(state, pane_id) do
+      {:reply, {:ok, state.capture}, state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:resize, pane_id, cols, rows}, _from, state) do
+    with :ok <- validate_pane(state, pane_id),
+         :ok <- validate_size(cols, rows),
+         :ok <- Ghostty.Terminal.resize(state.term, cols, rows),
+         :ok <- Ghostty.PTY.resize(state.pty, cols, rows) do
+      {:reply, :ok, %{state | cols: cols, rows: rows}}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:set_pane_role, pane_id, role}, _from, state) do
+    with :ok <- validate_pane(state, pane_id),
+         :ok <- validate_role(role) do
+      {:reply, :ok, %{state | pane_role: role}}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
 
   def handle_call({:input, data}, _from, state) do
     {:reply, Ghostty.PTY.write(state.pty, data), state}
@@ -120,7 +173,7 @@ defmodule Casein.Desktop.PowerShellSession do
   def handle_info({:data, data}, state) do
     :ok = Ghostty.Terminal.write(state.term, data)
     notify(state, {:desktop_terminal_output, data})
-    {:noreply, state}
+    {:noreply, %{state | capture: retain_capture(state.capture, data)}}
   end
 
   def handle_info({:pty_write, data}, state) when is_binary(data) do
@@ -159,7 +212,7 @@ defmodule Casein.Desktop.PowerShellSession do
   defp restart_transport(state, cwd, workspace) do
     _ = close_transport(state)
 
-    case start_transport(cwd, workspace) do
+    case start_transport(cwd, workspace, @default_cols, @default_rows) do
       {:ok, term, pty} ->
         updated = %{
           state
@@ -167,7 +220,11 @@ defmodule Casein.Desktop.PowerShellSession do
             pty: pty,
             cwd: cwd,
             workspace: workspace,
-            status: :running
+            status: :running,
+            ids: topology_ids(workspace),
+            cols: @default_cols,
+            rows: @default_rows,
+            capture: <<>>
         }
 
         notify(updated, {:desktop_terminal_restarted, term, pty})
@@ -181,7 +238,7 @@ defmodule Casein.Desktop.PowerShellSession do
   end
 
   defp recover_transport(state, reason) do
-    case start_transport(state.cwd, state.workspace) do
+    case start_transport(state.cwd, state.workspace, state.cols, state.rows) do
       {:ok, term, pty} ->
         updated = %{state | term: term, pty: pty, status: :running}
         notify(updated, {:desktop_terminal_restarted, term, pty})
@@ -194,10 +251,11 @@ defmodule Casein.Desktop.PowerShellSession do
     end
   end
 
-  defp start_transport(cwd, workspace) do
+  defp start_transport(cwd, workspace, cols, rows) do
     with {:ok, env} <- agent_environment(workspace, cwd),
-         {:ok, term} <- Ghostty.Terminal.start_link(cols: 100, rows: 30),
-         {:ok, pty} <- Ghostty.PTY.start_link(cwd: cwd, env: env) do
+         {:ok, term} <- Ghostty.Terminal.start_link(cols: cols, rows: rows),
+         {:ok, pty} <-
+           Ghostty.PTY.start_link(cwd: cwd, env: env, cols: cols, rows: rows) do
       {:ok, term, pty}
     else
       {:error, reason} -> {:error, reason}
@@ -242,4 +300,71 @@ defmodule Casein.Desktop.PowerShellSession do
   defp workspace_key(%{"id" => id}) when is_binary(id), do: id
   defp workspace_key(id) when is_binary(id), do: id
   defp workspace_key(_workspace), do: "__scratch__"
+
+  defp topology_ids(workspace) do
+    digest =
+      workspace
+      |> workspace_key()
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+      |> binary_part(0, 16)
+
+    session = "native-session-" <> digest
+    %{session: session, window: session <> ":window:0", pane: session <> ":pane:0"}
+  end
+
+  defp topology_snapshot(state) do
+    %{
+      session: %{
+        id: state.ids.session,
+        workspace_id: workspace_key(state.workspace),
+        alive?: state.status == :running
+      },
+      windows: [
+        %{
+          id: state.ids.window,
+          session_id: state.ids.session,
+          index: 0,
+          name: "PowerShell",
+          active?: true
+        }
+      ],
+      panes: [
+        %{
+          id: state.ids.pane,
+          window_id: state.ids.window,
+          index: 0,
+          role: state.pane_role,
+          active?: true,
+          cwd: state.cwd,
+          cols: state.cols,
+          rows: state.rows
+        }
+      ]
+    }
+  end
+
+  defp validate_pane(%{ids: %{pane: pane_id}}, pane_id), do: :ok
+  defp validate_pane(_state, _pane_id), do: {:error, :invalid_pane_target}
+
+  defp validate_size(cols, rows)
+       when is_integer(cols) and cols >= 1 and cols <= 500 and is_integer(rows) and rows >= 1 and
+              rows <= 500,
+       do: :ok
+
+  defp validate_size(_cols, _rows), do: {:error, :invalid_terminal_size}
+
+  defp validate_role(role) when role in @pane_roles, do: :ok
+  defp validate_role(_role), do: {:error, :invalid_pane_role}
+
+  defp retain_capture(previous, data) do
+    capture = previous <> IO.iodata_to_binary(data)
+    size = byte_size(capture)
+
+    if size > @capture_bytes do
+      binary_part(capture, size - @capture_bytes, @capture_bytes)
+    else
+      capture
+    end
+  end
 end

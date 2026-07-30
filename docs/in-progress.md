@@ -20,5 +20,8 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   behaviours or agent-runtime launch contracts.
 - **Out of scope:** packaging/update implementation and preview-specific
   implementation. Interface changes in those areas require coordination first.
-- **First slice:** make the existing ConPTY bridge own the complete child
+- **Landed:** PR #469 makes the existing ConPTY bridge own the complete child
   process tree with a kill-on-close Windows Job Object.
+- **Current slice:** expose stable product-level session/window/pane topology,
+  roles, capture, resize, and strict native target validation on the existing
+  application-owned PowerShell session.
