@@ -96,6 +96,10 @@ defmodule Casein.Runtimes.PreviewLauncher do
     command
   end
 
+  defp command_launcher_path([executable | _], _cwd) when is_binary(executable) do
+    System.find_executable(executable)
+  end
+
   defp command_launcher_path(_command, _cwd), do: nil
 
   defp launch_spec(server) do
@@ -180,10 +184,11 @@ defmodule Casein.Runtimes.PreviewLauncher.SystemRunner do
   require Logger
 
   @impl true
-  def start(%{"command" => ["bash" | args], "cwd" => cwd} = spec) when is_binary(cwd) do
+  def start(%{"command" => [executable | args], "cwd" => cwd} = spec)
+      when is_binary(executable) and is_binary(cwd) do
     env = env_list(Map.get(spec, "env", %{}))
 
-    case System.cmd("bash", args, cd: cwd, env: env, stderr_to_stdout: true) do
+    case System.cmd(executable, args, cd: cwd, env: env, stderr_to_stdout: true) do
       {_output, 0} ->
         :ok
 

@@ -41,6 +41,14 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
   def open_app_preview(workspace, params \\ %{}) do
     surface = Map.get(params, "surface", Map.get(params, :surface, "app"))
 
+    if native_windows?() do
+      open_control_only_app(workspace, surface, params)
+    else
+      open_visible_app(workspace, surface, params)
+    end
+  end
+
+  defp open_visible_app(workspace, surface, params) do
     with {:ok, url, preview_source} <- SurfaceDiscovery.resolve_url(workspace, surface, params),
          :ok <- SessionResolve.ensure_unambiguous_tmux_session(workspace, params),
          opts <- SessionResolve.split_opts(params, workspace),
@@ -138,6 +146,14 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
 
   @doc false
   def open_localhost_url(workspace, params, url) do
+    if native_windows?() do
+      open_control_only_localhost(workspace, params, url)
+    else
+      open_visible_localhost(workspace, params, url)
+    end
+  end
+
+  defp open_visible_localhost(workspace, params, url) do
     with :ok <- SessionResolve.ensure_unambiguous_tmux_session(workspace, params),
          opts <- SessionResolve.split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
@@ -165,6 +181,65 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
 
       {:ok, payload}
     end
+  end
+
+  defp open_control_only_app(workspace, surface, params) do
+    with {:ok, _url, preview_source} <- SurfaceDiscovery.resolve_url(workspace, surface, params),
+         {:ok, session} <-
+           PreviewControl.open_session(workspace, surface, control_only_opts(params)) do
+      control_only_payload(session, preview_source)
+    end
+  end
+
+  defp open_control_only_localhost(workspace, params, url) do
+    with %URI{port: port} when is_integer(port) <- URI.parse(url),
+         {:ok, session} <-
+           PreviewControl.open_localhost_session(
+             workspace,
+             port,
+             Keyword.put(control_only_opts(params), :path, URI.parse(url).path || "/")
+           ) do
+      control_only_payload(session, "localhost")
+    else
+      _ -> {:error, :invalid_localhost_preview_url}
+    end
+  end
+
+  defp control_only_payload(session, preview_source) do
+    health = Visibility.verify_preview_ready(session, %{})
+
+    {:ok,
+     session
+     |> Shared.session_payload()
+     |> Map.put(:pane_id, nil)
+     |> Map.put(:preview_source, preview_source)
+     |> Map.put(:control_only, true)
+     |> Map.put(:health, health)
+     |> Map.put(:visibility, %{status: "agent_only", platform: "windows"})
+     |> Map.put(:operator_visibility, %{
+       status: "agent_only",
+       message: "Browser automation is active without a tmux preview pane."
+     })
+     |> Map.put(:user_visible, false)
+     |> Map.put(:operator_visible, false)
+     |> Map.put(:preview_open_state, "agent_only")
+     |> Shared.put_preview_next("preview_observe_live", %{session_id: session.id})}
+  end
+
+  defp control_only_opts(params) do
+    [
+      actor_id: Shared.string_param(params, :actor_id),
+      default_headers: Map.get(params, "default_headers") || Map.get(params, :default_headers),
+      storage_profile: Shared.string_param(params, :storage_profile),
+      storage_profile_name: Shared.string_param(params, :storage_profile_name),
+      new_control_session:
+        Map.get(params, "new_control_session") || Map.get(params, :new_control_session)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp native_windows? do
+    System.get_env("CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY") == "true"
   end
 
   defp open_or_split_preview_pane(workspace, url, opts) do

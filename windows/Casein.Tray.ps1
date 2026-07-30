@@ -270,6 +270,9 @@ function Get-CaseinEnvironment {
         'CASEIN_DESKTOP_LAUNCH_TOKEN' = $launchToken
         'CASEIN_ORIGIN_ID' = $origin.origin_id
         'CASEIN_ORIGIN_DISPLAY_NAME' = $origin.origin_name
+        'CASEIN_PREVIEW_CONTROL_ADAPTER' = 'playwright'
+        'CASEIN_PREVIEW_PLAYWRIGHT_SCRIPT' = 'scripts/preview_playwright.mjs'
+        'CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY' = 'true'
     }
     $trustedLan = Read-CaseinTrustedLanState
     if ([bool]$trustedLan.enabled -and [int]$trustedLan.port -eq $Port) {
