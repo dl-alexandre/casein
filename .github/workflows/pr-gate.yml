@@ -43,6 +43,19 @@ jobs:
           # delete the runner's work directory to force a clean checkout.
           clean: false
 
+      # `.tool-versions` pins erlang/elixir but not node, and pre-push-check.sh
+      # calls `npm` bare from PATH — so the gate silently used whatever node the
+      # devbox happened to have (v20). Every other workflow that touches assets
+      # (deploy-devbox, macos-desktop, windows-desktop) already pins node 22, so
+      # release assets were built on 22 while the gate verified them on 20.
+      # jsdom >= 30 makes that divergence fatal: it requires
+      # ^22.22.2 || ^24.15.0 || >=26.0.0, and its undici calls
+      # `webidl.util.markAsUncloneable`, which does not exist on node 20.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
       - name: Detect docs-only PR
         id: detect
         shell: bash

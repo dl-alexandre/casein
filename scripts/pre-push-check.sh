@@ -167,6 +167,17 @@ fi
 log "linting JS hooks"
 (
   cd assets
+  # `npm` here is whatever is on PATH — .tool-versions pins erlang/elixir only.
+  # jsdom >= 30 needs node >= 22.22.2; on node 20 its undici blows up with a
+  # bare "webidl.util.markAsUncloneable is not a function" from seven terminal
+  # test files, which reads like a test bug rather than a toolchain mismatch.
+  # Say so plainly instead. CI pins node via setup-node in pr-gate.yml.
+  node_major="$(node -p 'process.versions.node.split(".")[0]')"
+  if ((node_major < 22)); then
+    echo "ERROR: node $(node -v) is too old — assets/ requires node >= 22.22.2 (jsdom 30)." >&2
+    echo "       Try: mise exec node@22 -- bash scripts/pre-push-check.sh" >&2
+    exit 1
+  fi
   # Skip the (slow) `npm ci` when package-lock.json is unchanged since the last
   # successful install — a sha256 stamp inside node_modules records what was
   # installed. Benefits the local hook and the self-hosted runner, which now
