@@ -10,6 +10,7 @@ defmodule CaseinWeb.Plugs.ApiAuth do
   import Plug.Conn
 
   alias Casein.Agents.{AgentCapabilityTokens, OrchestratorTokens}
+  alias CaseinWeb.API.MCPProtectedResource
 
   def init(opts), do: opts
 
@@ -207,8 +208,34 @@ defmodule CaseinWeb.Plugs.ApiAuth do
 
   defp deny(conn, status \\ 401, error \\ "unauthorized") do
     conn
+    |> maybe_challenge(status)
     |> put_resp_content_type("application/json")
     |> send_resp(status, Jason.encode!(%{error: error}))
     |> halt()
+  end
+
+  # RFC 9728: a 401 from an MCP endpoint points the client at this resource's
+  # metadata so it can discover the authorization server. Scoped to the MCP
+  # paths (this plug fronts the whole read-only API) and to 401s, and inert
+  # unless :mcp_authorization_servers is configured — so by default every
+  # existing 401 stays byte-identical.
+  defp maybe_challenge(conn, 401) do
+    if MCPProtectedResource.mcp_path?(conn.request_path) do
+      case MCPProtectedResource.challenge(request_origin(conn), conn.request_path) do
+        nil -> conn
+        challenge -> put_resp_header(conn, "www-authenticate", challenge)
+      end
+    else
+      conn
+    end
+  end
+
+  defp maybe_challenge(conn, _status), do: conn
+
+  defp request_origin(conn) do
+    case Application.get_env(:casein, :canonical_public_origin) do
+      origin when is_binary(origin) and origin != "" -> String.trim_trailing(origin, "/")
+      _ -> "#{conn.scheme}://#{conn.host}"
+    end
   end
 end

@@ -1,8 +1,24 @@
 # MCP 2026-07-28 adoption
 
-> Status: **proposed** (not started). Direction for migrating Casein's three MCP
-> servers — preview, terminal, artifact — onto MCP spec `2026-07-28`, and for
-> adopting the Tasks and Apps extensions.
+> Status: **implemented** on `agent/claude/adhoc-20260730022907`, Slices 0-5.
+> Direction for migrating Casein's three MCP servers — preview, terminal,
+> artifact — onto MCP spec `2026-07-28`, and for adopting the Tasks and Apps
+> extensions.
+>
+> **What landed, and the one deliberate gap.** Slices 0-4 are complete as
+> described below. Slice 5 ships *discovery* only: RFC 9728 protected-resource
+> metadata plus the `WWW-Authenticate` challenge that points at it, both gated on
+> `:mcp_authorization_servers` and therefore inert until configured. Token
+> verification still goes through the existing bearer path in
+> `plugs/api_auth.ex` — swapping that for IdP-issued token validation is a
+> separate change, because that plug fronts the entire read-only API and Casein
+> has no authorization server of its own (the IdP behind oauth2-proxy would be
+> it). Discovery is the half that is safe to land now and is the prerequisite
+> for the other half.
+>
+> Also still open: `notifications/tasks` is delivered, but no tool yet produces
+> `input_required`, so the MRTR/`tasks/update` path is implemented and tested
+> without a real producer. The Grok permission gate is the obvious first one.
 >
 > Sources: [spec changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog),
 > [extensions overview](https://modelcontextprotocol.io/docs/extensions/overview),

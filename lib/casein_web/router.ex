@@ -112,6 +112,12 @@ defmodule CaseinWeb.Router do
     plug CaseinWeb.Plugs.McpRateLimit
   end
 
+  # OAuth discovery metadata. No ApiAuth: an unauthenticated client must be able
+  # to read it to find out how to authenticate.
+  pipeline :mcp_metadata do
+    plug :accepts, ["json"]
+  end
+
   # GitHub push webhook — authenticated via X-Hub-Signature-256, not ApiAuth.
   pipeline :deploy_webhook do
     plug :accepts, ["json"]
@@ -285,6 +291,15 @@ defmodule CaseinWeb.Router do
     pipe_through :deploy_webhook
 
     post "/deploy_webhook", DeployWebhookController, :github
+  end
+
+  # RFC 9728 Protected Resource Metadata for the MCP endpoints. Unauthenticated
+  # by design — a client fetches it precisely because it has no token yet — and
+  # 404s unless :mcp_authorization_servers is configured.
+  scope "/.well-known", CaseinWeb.API do
+    pipe_through :mcp_metadata
+
+    get "/oauth-protected-resource/*resource", MCPProtectedResourceController, :show
   end
 
   scope "/api", CaseinWeb.API do
