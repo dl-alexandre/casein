@@ -12,7 +12,7 @@ defmodule Casein.ArtifactProjects do
   alias Casein.Files.PathSafety
   alias Casein.Git.Inspector, as: GitInspector
   alias Casein.Runtimes
-  alias Casein.Runtimes.{PreviewLauncher, Runtime}
+  alias Casein.Runtimes.Runtime
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.WorkspaceRecord
 
@@ -138,6 +138,7 @@ defmodule Casein.ArtifactProjects do
              "agent" => "artifact_project",
              "source" => "artifact_project",
              "runtime_profile" => runtime_profile(metadata["kind"] || @default_kind),
+             "ensure_preview_started" => true,
              "metadata" => %{"artifact_project" => metadata}
            }) do
       {:ok, project_from_runtime(runtime)}
@@ -150,9 +151,9 @@ defmodule Casein.ArtifactProjects do
   @spec serve(String.t()) :: {:ok, Project.t()} | {:error, term()}
   def serve(project_id) when is_binary(project_id) do
     with {:ok, %Runtime{} = runtime} <- runtime_project(project_id),
-         :ok <- PreviewLauncher.ensure_started(runtime),
-         {:ok, runtime} <- Runtimes.get_runtime(project_id) do
-      {:ok, project_from_runtime(runtime)}
+         {:ok, %Runtime{} = started} <- Runtimes.ensure_worktree_preview_started(runtime),
+         {:ok, current} <- Runtimes.get_runtime(started.id) do
+      {:ok, project_from_runtime(current)}
     end
   end
 
@@ -560,11 +561,9 @@ defmodule Casein.ArtifactProjects do
 
     case result do
       {:ok, %Runtime{} = restored} ->
-        _ = PreviewLauncher.ensure_started(restored)
-
-        case Runtimes.get_runtime(restored.id) do
+        case Runtimes.ensure_worktree_preview_started(restored) do
           {:ok, %Runtime{} = current} -> {:ok, project_from_runtime(current)}
-          :error -> {:ok, project_from_runtime(restored)}
+          {:error, _reason} = error -> error
         end
 
       {:error, _reason} = error ->
@@ -720,6 +719,7 @@ defmodule Casein.ArtifactProjects do
       "capabilities" => ["artifact_project", "preview"],
       "tools" => ["artifact_create", "artifact_update", "artifact_serve"],
       "runtime_profile" => profile,
+      "ensure_preview_started" => true,
       "metadata" => %{
         "artifact_project" => project_metadata,
         "runtime_profile" => profile

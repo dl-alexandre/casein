@@ -142,7 +142,8 @@ defmodule Casein.RuntimesTest do
              Runtimes.observe_worktree("ws-preview-worktree", %{
                "worktree_path" => worktree,
                "agent" => "codex",
-               "tmux_session_id" => tmux_session
+               "tmux_session_id" => tmux_session,
+               "ensure_preview_started" => true
              })
 
     {min_port, max_port} = EnvPorts.runtime_port_range()
@@ -217,7 +218,8 @@ defmodule Casein.RuntimesTest do
     assert {:ok, runtime} =
              Runtimes.observe_worktree("ws-upstream", %{
                "worktree_path" => worktree,
-               "agent" => "codex"
+               "agent" => "codex",
+               "ensure_preview_started" => true
              })
 
     assert runtime.metadata["upstream"] == "origin/agent-upstream"
@@ -250,6 +252,32 @@ defmodule Casein.RuntimesTest do
     refute Map.has_key?(payload, :behind)
   end
 
+  test "observe_worktree is record-only until preview startup is explicitly requested" do
+    root = tmp_repo!("record-only-preview-parent")
+    worktree = Path.join(root, "agent-worktree")
+
+    git!(root, ["worktree", "add", "-b", "agent-record-only", worktree, "main"])
+    seed_workspace("ws-record-only-preview", root)
+
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:casein, :runtime_preview_runner, __MODULE__.PreviewRunner)
+    Application.put_env(:casein, :runtime_preview_runner_test_pid, self())
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-record-only-preview", %{
+               "worktree_path" => worktree,
+               "agent" => "codex"
+             })
+
+    assert Runtimes.runtime_preview_server(runtime) == nil
+    refute_receive {:preview_start, _spec}, 100
+
+    assert {:ok, started} = Runtimes.ensure_worktree_preview_started(runtime)
+    assert is_integer(Runtimes.runtime_preview_server(started)["port"])
+    assert_receive {:preview_start, %{"runtime_id" => runtime_id}}, 1_000
+    assert runtime_id == runtime.id
+  end
+
   test "observe_worktree does not count expired runtimes against the preview port pool" do
     root = tmp_repo!("expired-port-parent")
     worktree = Path.join(root, "agent-worktree")
@@ -266,7 +294,8 @@ defmodule Casein.RuntimesTest do
     assert {:ok, stale} =
              Runtimes.observe_worktree("ws-expired-port", %{
                "worktree_path" => worktree,
-               "agent" => "codex"
+               "agent" => "codex",
+               "ensure_preview_started" => true
              })
 
     assert Runtimes.runtime_preview_server(stale)["port"] == 41_990
@@ -275,7 +304,8 @@ defmodule Casein.RuntimesTest do
     assert {:ok, runtime} =
              Runtimes.observe_worktree("ws-expired-port", %{
                "worktree_path" => worktree_next,
-               "agent" => "codex"
+               "agent" => "codex",
+               "ensure_preview_started" => true
              })
 
     assert Runtimes.runtime_preview_server(runtime)["port"] == 41_990
@@ -306,7 +336,8 @@ defmodule Casein.RuntimesTest do
     assert {:ok, runtime} =
              Runtimes.observe_worktree("ws-preview-port-full", %{
                "worktree_path" => worktree,
-               "agent" => "codex"
+               "agent" => "codex",
+               "ensure_preview_started" => true
              })
 
     assert runtime.worktree_path == worktree
@@ -336,7 +367,8 @@ defmodule Casein.RuntimesTest do
              Runtimes.observe_worktree("ws-preview-launch", %{
                "worktree_path" => worktree,
                "agent" => "codex",
-               "tmux_session_id" => tmux_session
+               "tmux_session_id" => tmux_session,
+               "ensure_preview_started" => true
              })
 
     server = Runtimes.runtime_preview_server(runtime)
@@ -373,7 +405,8 @@ defmodule Casein.RuntimesTest do
     assert {:ok, runtime} =
              Runtimes.observe_worktree("ws-preview-owned-port", %{
                "worktree_path" => worktree,
-               "agent" => "codex"
+               "agent" => "codex",
+               "ensure_preview_started" => true
              })
 
     server = Runtimes.runtime_preview_server(runtime)
@@ -425,7 +458,8 @@ defmodule Casein.RuntimesTest do
     assert {:ok, runtime} =
              Runtimes.observe_worktree("ws-preview-launch-missing", %{
                "worktree_path" => worktree,
-               "agent" => "codex"
+               "agent" => "codex",
+               "ensure_preview_started" => true
              })
 
     refute_receive {:preview_start, _spec}, 200
@@ -513,7 +547,8 @@ defmodule Casein.RuntimesTest do
              Runtimes.observe_worktree("ws-preview-heartbeat", %{
                "runtime_id" => "wt-preview-heartbeat",
                "worktree_path" => worktree,
-               "tmux_session_id" => tmux_session
+               "tmux_session_id" => tmux_session,
+               "ensure_preview_started" => true
              })
 
     server = Runtimes.runtime_preview_server(runtime)

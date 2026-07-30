@@ -11,6 +11,16 @@ defmodule Casein.Runtimes.ReaperTest do
   alias Casein.Workspace
   alias Casein.Workspaces.State
 
+  defmodule PreviewKiller do
+    @behaviour Casein.Runtimes.PreviewKiller.Behaviour
+
+    @impl true
+    def kill(server) do
+      send(Application.fetch_env!(:casein, :reaper_test_pid), {:preview_killed, server})
+      :ok
+    end
+  end
+
   setup do
     _ = Reaper
     Runtimes.clear()
@@ -122,6 +132,20 @@ defmodule Casein.Runtimes.ReaperTest do
 
   test "sweep_now skips dirty worktrees even when not dry-run" do
     now = ~U[2026-06-24 00:00:00Z]
+    previous_killer = Application.get_env(:casein, :runtime_preview_killer)
+    Application.put_env(:casein, :runtime_preview_killer, PreviewKiller)
+    Application.put_env(:casein, :reaper_test_pid, self())
+
+    on_exit(fn ->
+      restore_env(:runtime_preview_killer, previous_killer)
+      Application.delete_env(:casein, :reaper_test_pid)
+    end)
+
+    preview_server = %{
+      "runtime_id" => "rt-reaper-dirty",
+      "port" => 41_077,
+      "status" => "running"
+    }
 
     {:ok, _runtime} =
       RuntimeSeed.seed_runtime("ws-reaper",
@@ -132,7 +156,8 @@ defmodule Casein.Runtimes.ReaperTest do
         metadata: %{
           "kind" => "agent_worktree",
           "worktree_status" => "dirty",
-          "worktree_path" => "/tmp/casein-reaper-dirty"
+          "worktree_path" => "/tmp/casein-reaper-dirty",
+          "preview_server" => preview_server
         }
       )
 
@@ -142,6 +167,33 @@ defmodule Casein.Runtimes.ReaperTest do
 
     assert {:ok, still_expired} = Runtimes.get_runtime("rt-reaper-dirty")
     assert still_expired.status == "expired"
+    assert_received {:preview_killed, ^preview_server}
+  end
+
+  test "sweep_now preserves durable artifact projects" do
+    now = ~U[2026-06-24 00:00:00Z]
+    old = DateTime.add(now, -7200, :second)
+
+    {:ok, _runtime} =
+      RuntimeSeed.seed_runtime("ws-reaper",
+        runtime_id: "art-durable",
+        status: "provisioned",
+        created_at: old,
+        heartbeat_at: old,
+        metadata: %{
+          "kind" => "agent_worktree",
+          "agent" => "artifact_project",
+          "source" => "artifact_project",
+          "artifact_project" => %{"id" => "art-durable"},
+          "worktree_status" => "clean"
+        }
+      )
+
+    result = Reaper.sweep_now(dry_run: false, ttl_seconds: 3600)
+
+    assert result.expired == 0
+    refute "art-durable" in result.cleaned_ids
+    assert {:ok, %{status: "provisioned"}} = Runtimes.get_runtime("art-durable")
   end
 
   test "sweep_now reaps clean expired worktrees and invokes cleanup_expired/2" do
@@ -414,4 +466,7 @@ defmodule Casein.Runtimes.ReaperTest do
         end
     end
   end
+
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

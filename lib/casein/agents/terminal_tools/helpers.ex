@@ -120,6 +120,14 @@ defmodule Casein.Agents.TerminalTools.Helpers do
   def tmux_session_id_param, do: %{type: "string"}
 
   @doc false
+  def ensure_preview_started_param do
+    %{
+      type: "boolean",
+      description: "Start a runtime-owned preview server for this worktree. Defaults to false."
+    }
+  end
+
+  @doc false
   def exit_status_param do
     %{
       type: "string",

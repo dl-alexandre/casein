@@ -168,6 +168,7 @@ terminal_report_worktree(
   runner_id?,
   session_id?,
   tmux_session_id?,
+  ensure_preview_started?, # false by default; opt in only when this worktree needs an owned server
   exit_status?,   # "landed" | "wip" | "handoff" — call again at session end
   handoff?        # short status for the next agent/operator
 )

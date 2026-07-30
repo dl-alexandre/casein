@@ -2,11 +2,12 @@ defmodule Casein.Runtimes.Reaper do
   @moduledoc """
   Periodic sweeper for stale agent-worktree runtimes and their preview servers.
 
-  Calls `Runtimes.expire_stale/2`, tears down git-clean worktrees whose preview
-  port is idle, kills any orphaned preview-server OS processes recorded for the
-  runtime, then invokes `Runtimes.cleanup_expired/2` for successfully reaped
-  ids. Destructive cleanup is gated behind `:runtime_reaper_dry_run` (default
-  `true`) so rollout can start log-only.
+  Calls `Runtimes.expire_stale/2`, stops preview-server OS processes for expired
+  ephemeral worktrees, tears down git-clean worktrees, then invokes
+  `Runtimes.cleanup_expired/2` for successfully reaped ids. Dirty worktrees stay
+  on disk but no longer retain a preview process. Artifact projects are durable
+  until explicitly retired. Destructive cleanup is gated behind
+  `:runtime_reaper_dry_run` (default `true`) so rollout can start log-only.
   """
 
   use GenServer
@@ -98,9 +99,13 @@ defmodule Casein.Runtimes.Reaper do
 
     expired = Runtimes.expire_stale(now, ttl_seconds: ttl_seconds)
 
-    candidates =
-      Runtimes.list_runtimes(%{"status" => "expired"})
-      |> Enum.filter(&reapable?/1)
+    expired_runtimes = Runtimes.list_runtimes(%{"status" => "expired"})
+    candidates = Enum.filter(expired_runtimes, &reapable?/1)
+
+    preview_only =
+      expired_runtimes
+      |> Enum.filter(&ephemeral_agent_worktree_runtime?/1)
+      |> Enum.reject(&reapable?/1)
 
     {torn_down_ids, skipped} =
       if dry_run? do
@@ -113,6 +118,8 @@ defmodule Casein.Runtimes.Reaper do
 
         {[], Enum.map(candidates, &%{runtime_id: &1.id, reason: :dry_run})}
       else
+        Enum.each(preview_only, &teardown_expired_preview/1)
+
         Enum.reduce(candidates, {[], []}, fn runtime, {ids_acc, skipped_acc} ->
           case teardown_expired_runtime(runtime.id) do
             :ok ->
@@ -182,16 +189,24 @@ defmodule Casein.Runtimes.Reaper do
   end
 
   defp reapable?(%Runtime{} = runtime) do
-    agent_worktree_runtime?(runtime) and worktree_clean?(runtime) and
-      preview_server_idle?(runtime)
+    ephemeral_agent_worktree_runtime?(runtime) and worktree_clean?(runtime)
   end
 
-  defp agent_worktree_runtime?(%Runtime{metadata: metadata}) when is_map(metadata) do
-    Map.get(metadata, "kind") == "agent_worktree" or
-      Map.get(metadata, "provisioning_model") == "agent_worktree"
+  defp ephemeral_agent_worktree_runtime?(%Runtime{metadata: metadata})
+       when is_map(metadata) do
+    agent_worktree? =
+      Map.get(metadata, "kind") == "agent_worktree" or
+        Map.get(metadata, "provisioning_model") == "agent_worktree"
+
+    artifact_project? =
+      Map.get(metadata, "source") == "artifact_project" or
+        Map.get(metadata, "agent") == "artifact_project" or
+        is_map(Map.get(metadata, "artifact_project"))
+
+    agent_worktree? and not artifact_project?
   end
 
-  defp agent_worktree_runtime?(_), do: false
+  defp ephemeral_agent_worktree_runtime?(_), do: false
 
   defp worktree_clean?(%Runtime{metadata: metadata, worktree_path: path}) do
     cond do
@@ -213,10 +228,43 @@ defmodule Casein.Runtimes.Reaper do
     end
   end
 
-  defp preview_server_idle?(%Runtime{metadata: metadata}) do
+  defp teardown_expired_preview(%Runtime{} = runtime) do
+    Runtimes.with_runtime_lock(runtime.id, fn ->
+      Runtimes.with_preview_port_lock(fn ->
+        case Runtimes.get_runtime(runtime.id) do
+          {:ok, %Runtime{status: "expired"} = current} ->
+            teardown_preview_server(current)
+
+          _ ->
+            :ok
+        end
+      end)
+    end)
+  rescue
+    error ->
+      Logger.warning(
+        "[runtime-reaper] failed to stop expired preview #{runtime.id}: #{inspect(error)}"
+      )
+
+      :ok
+  catch
+    :exit, reason ->
+      Logger.warning(
+        "[runtime-reaper] expired preview stop exited #{runtime.id}: #{inspect(reason)}"
+      )
+
+      :ok
+  end
+
+  defp teardown_expired_preview(_runtime), do: :ok
+
+  defp teardown_preview_server(%Runtime{metadata: metadata}) do
     case PreviewServer.for_metadata(metadata || %{}) do
-      %{"port" => port} when is_integer(port) -> not port_reachable?(port)
-      _ -> true
+      %{} = server ->
+        PreviewKiller.kill(server)
+
+      _ ->
+        :ok
     end
   end
 
@@ -262,29 +310,6 @@ defmodule Casein.Runtimes.Reaper do
       {:exit, reason} -> {"command exited: #{inspect(reason)}", 125}
     end
   end
-
-  defp teardown_preview_server(%Runtime{metadata: metadata}) do
-    case PreviewServer.for_metadata(metadata || %{}) do
-      %{} = server ->
-        PreviewKiller.kill(server)
-
-      _ ->
-        :ok
-    end
-  end
-
-  defp port_reachable?(port) when is_integer(port) and port > 0 and port < 65_536 do
-    case :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false], 250) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        true
-
-      {:error, _} ->
-        false
-    end
-  end
-
-  defp port_reachable?(_), do: false
 
   defp schedule_sweep do
     Process.send_after(self(), :sweep, sweep_interval_ms())

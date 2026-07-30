@@ -7,6 +7,7 @@ defmodule Casein.ArtifactProjectsTest do
   alias Casein.Runtimes
   alias Casein.Runtimes.MemoryAdapter, as: RuntimeAdapter
   alias Casein.Test.PreviewPortProbe
+  alias Casein.Test.RuntimeSeed
   alias Casein.Workspace
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.MemoryAdapter
@@ -330,6 +331,38 @@ defmodule Casein.ArtifactProjectsTest do
     assert {:ok, served} = ArtifactProjects.serve(project.id)
     assert served.id == project.id
     assert served.preview_url == project.preview_url
+  end
+
+  test "serve provisions a preview after the port pool becomes available" do
+    previous_range = Application.get_env(:casein, :runtime_preview_port_range)
+    preview_port = PreviewPortProbe.unused_loopback_port!()
+    Application.put_env(:casein, :runtime_preview_port_range, {preview_port, preview_port})
+    on_exit(fn -> restore_env(:runtime_preview_port_range, previous_range) end)
+
+    assert {:ok, _reserved} =
+             RuntimeSeed.seed_runtime("ws-artifacts",
+               runtime_id: "reserved-preview-port",
+               status: "provisioned",
+               metadata: %{
+                 "preview_server" => %{
+                   "runtime_id" => "reserved-preview-port",
+                   "port" => preview_port
+                 }
+               }
+             )
+
+    assert {:ok, project} =
+             ArtifactProjects.create("ws-artifacts", %{
+               name: "Recovered Preview",
+               files: %{"index.html" => "<h1>Recovered</h1>\n"}
+             })
+
+    assert project.preview_server == nil
+    assert {:ok, _cleaned} = Runtimes.cleanup_runtime("reserved-preview-port")
+
+    assert {:ok, served} = ArtifactProjects.serve(project.id)
+    assert served.preview_server["port"] == preview_port
+    assert served.preview_url == "http://localhost:#{preview_port}"
   end
 
   test "retire removes the worktree and retains a restorable branch", %{repo: repo} do

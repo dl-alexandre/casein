@@ -21,6 +21,7 @@ defmodule Casein.Runtimes do
 
   alias Casein.Runtimes.{
     LifecycleEvent,
+    PreviewKiller,
     PreviewLauncher,
     PreviewServer,
     Profile,
@@ -88,10 +89,23 @@ defmodule Casein.Runtimes do
   @doc "Mark a runtime cleaned and append a lifecycle event."
   @spec cleanup_runtime(String.t(), map()) :: {:ok, Runtime.t()} | :error | {:error, term()}
   def cleanup_runtime(runtime_id, attrs \\ %{}) do
-    transition_runtime(runtime_id, :cleanup, "runtime_cleaned", attrs, fn runtime ->
-      now = datetime_value(attrs, "cleaned_at") || DateTime.utc_now()
-      %{runtime | cleaned_at: now, active_assignments: 0}
-    end)
+    result =
+      transition_runtime(runtime_id, :cleanup, "runtime_cleaned", attrs, fn runtime ->
+        now = datetime_value(attrs, "cleaned_at") || DateTime.utc_now()
+        %{runtime | cleaned_at: now, active_assignments: 0}
+      end)
+
+    case result do
+      {:ok, %Runtime{} = runtime} = ok ->
+        runtime.metadata
+        |> PreviewServer.for_metadata()
+        |> PreviewKiller.kill()
+
+        ok
+
+      other ->
+        other
+    end
   end
 
   @doc "Run a function while holding the shared lock for one runtime id."
@@ -175,6 +189,41 @@ defmodule Casein.Runtimes do
   end
 
   def observe_worktree(_workspace_id, _attrs), do: {:error, :invalid_attrs}
+
+  @doc "Provision and start the preview server for an already observed worktree runtime."
+  @spec ensure_worktree_preview_started(Runtime.t()) ::
+          {:ok, Runtime.t()} | {:error, term()}
+  def ensure_worktree_preview_started(%Runtime{} = runtime) do
+    result =
+      if is_map(runtime_preview_server(runtime)) do
+        with :ok <- PreviewLauncher.ensure_started(runtime),
+             {:ok, %Runtime{} = current} <- get_runtime(runtime.id) do
+          {:ok, current}
+        end
+      else
+        with {:ok, _observed} <-
+               observe_worktree(runtime.workspace_id, %{
+                 "runtime_id" => runtime.id,
+                 "worktree_path" => runtime.worktree_path,
+                 "tmux_session_id" => runtime.tmux_session_id,
+                 "branch" => runtime.branch,
+                 "runtime_profile" => runtime_profile(runtime),
+                 "ensure_preview_started" => true,
+                 "metadata" => runtime.metadata || %{}
+               }),
+             {:ok, %Runtime{} = current} <- get_runtime(runtime.id) do
+          {:ok, current}
+        end
+      end
+
+    case result do
+      {:ok, %Runtime{}} = ok -> ok
+      {:error, _reason} = error -> error
+      :error -> {:error, :runtime_preview_unavailable}
+    end
+  end
+
+  def ensure_worktree_preview_started(_runtime), do: {:error, :invalid_runtime}
 
   @doc """
   Reconcile Git-linked worktrees for a workspace home checkout.
@@ -629,22 +678,28 @@ defmodule Casein.Runtimes do
       |> Map.put("metadata", metadata)
       |> Map.put("_allow_occupied_preview_port", allow_occupied_port?)
 
-    case PreviewServer.build_for_worktree(
-           record,
-           runtime_id,
-           tmux_session_id,
-           worktree_path,
-           preview_attrs,
-           used_preview_ports(runtime_id)
-         ) do
-      {:ok, preview_server} ->
-        {:ok, PreviewServer.put_profile(metadata, preview_server)}
+    configured_server = PreviewServer.for_metadata(metadata)
 
-      {:error, :no_runtime_preview_port_available} ->
-        {:ok, PreviewServer.put_unavailable(metadata, "no_runtime_preview_port_available")}
+    if is_map(existing_server) or is_map(configured_server) or preview_start_requested?(attrs) do
+      case PreviewServer.build_for_worktree(
+             record,
+             runtime_id,
+             tmux_session_id,
+             worktree_path,
+             preview_attrs,
+             used_preview_ports(runtime_id)
+           ) do
+        {:ok, preview_server} ->
+          {:ok, PreviewServer.put_profile(metadata, preview_server)}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, :no_runtime_preview_port_available} ->
+          {:ok, PreviewServer.put_unavailable(metadata, "no_runtime_preview_port_available")}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      {:ok, metadata}
     end
   end
 
@@ -956,7 +1011,7 @@ defmodule Casein.Runtimes do
         :error -> Map.get(attrs, :ensure_preview_started)
       end
 
-    value not in [false, "false", 0, "0"]
+    value in [true, "true", 1, "1"]
   end
 
   # :global's requester id makes nested acquisitions by the same process look
@@ -1154,9 +1209,28 @@ defmodule Casein.Runtimes do
        when status in ["expired", "cleaned"],
        do: false
 
+  defp stale?(%Runtime{metadata: metadata} = runtime, now, ttl_seconds)
+       when is_map(metadata) do
+    if artifact_project_runtime?(metadata) do
+      false
+    else
+      stale_runtime?(runtime, now, ttl_seconds)
+    end
+  end
+
   defp stale?(%Runtime{} = runtime, now, ttl_seconds) do
+    stale_runtime?(runtime, now, ttl_seconds)
+  end
+
+  defp stale_runtime?(%Runtime{} = runtime, now, ttl_seconds) do
     last_seen = runtime.heartbeat_at || runtime.created_at
     last_seen && DateTime.compare(DateTime.add(last_seen, ttl_seconds, :second), now) != :gt
+  end
+
+  defp artifact_project_runtime?(metadata) do
+    Map.get(metadata, "source") == "artifact_project" or
+      Map.get(metadata, "agent") == "artifact_project" or
+      is_map(Map.get(metadata, "artifact_project"))
   end
 
   defp normalize_filter(filters) when is_map(filters) do
