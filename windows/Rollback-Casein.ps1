@@ -22,13 +22,29 @@ if (-not (Test-Path -LiteralPath $metadataPath)) { throw 'Previous release is in
 $metadata = Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json
 
 $backupProperty = $current.PSObject.Properties['previous_data_backup']
+$backup = if ($backupProperty) { [string]$backupProperty.Value } else { $null }
+if ($backup) {
+    . (Join-Path $InstallRoot 'Casein.Backup.ps1') -LibraryOnly
+    $dataRoot = Join-Path $env:LOCALAPPDATA 'Casein'
+    New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
+    foreach ($name in @('casein.sqlite3', 'casein.sqlite3-wal', 'casein.sqlite3-shm')) {
+        $encryptedDatabase = Join-Path $backup "$name.dpapi"
+        $backupManifest = Join-Path $backup "$name.backup.json"
+        if ((Test-Path -LiteralPath $encryptedDatabase) -or (Test-Path -LiteralPath $backupManifest)) {
+            if (-not ((Test-Path -LiteralPath $encryptedDatabase) -and (Test-Path -LiteralPath $backupManifest))) {
+                throw "The previous $name backup is incomplete; rollback was not changed."
+            }
+            Restore-CaseinBackupFile -Source $encryptedDatabase -Manifest $backupManifest -Destination (Join-Path $dataRoot $name)
+        }
+    }
+}
 $next = [ordered]@{
     schema = 1
     version = $metadata.version
     revision = $metadata.revision
     release_root = $previous
     previous_release_root = [string]$current.release_root
-    previous_data_backup = if ($backupProperty) { [string]$backupProperty.Value } else { $null }
+    previous_data_backup = $backup
     installed_at_utc = [DateTime]::UtcNow.ToString('o')
     rollback = $true
 } | ConvertTo-Json

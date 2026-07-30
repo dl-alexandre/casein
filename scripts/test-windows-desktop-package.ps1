@@ -18,12 +18,14 @@ $installer = Join-Path $packageRoot 'windows\Install-Casein.ps1'
 $uninstaller = Join-Path $packageRoot 'windows\Uninstall-Casein.ps1'
 $trayHost = Join-Path $packageRoot 'windows\Casein.Tray.ps1'
 $trustedLan = Join-Path $packageRoot 'windows\Casein.TrustedLan.ps1'
+$backupLibrary = Join-Path $packageRoot 'windows\Casein.Backup.ps1'
 
 Assert-Condition (Test-Path -LiteralPath $metadataPath) "Release metadata is missing at $metadataPath"
 Assert-Condition (Test-Path -LiteralPath $installer) "Installer is missing at $installer"
 Assert-Condition (Test-Path -LiteralPath $uninstaller) "Uninstaller is missing at $uninstaller"
 Assert-Condition (Test-Path -LiteralPath $trayHost) "Tray host is missing at $trayHost"
 Assert-Condition (Test-Path -LiteralPath $trustedLan) "Trusted LAN helper is missing at $trustedLan"
+Assert-Condition (Test-Path -LiteralPath $backupLibrary) "Backup helper is missing at $backupLibrary"
 Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'docs'))) 'Internal docs must not be included in a public desktop package'
 
 $metadata = Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json
@@ -38,6 +40,7 @@ $env:LOCALAPPDATA = $testLocalAppData
 try {
     . $trayHost -ReleaseRoot $packageRoot -LibraryOnly
     . $trustedLan -ReleaseRoot $packageRoot -LibraryOnly
+    . $backupLibrary -LibraryOnly
     Initialize-CaseinJobObjectSupport
     Assert-Condition (($null -ne ('Casein.Windows.JobObject' -as [type]))) 'Windows Job Object support did not load'
 
@@ -66,6 +69,17 @@ try {
     Assert-Condition ($protectedSecret.StartsWith('dpapi:')) 'Secret was not protected with DPAPI'
     Assert-Condition (-not $protectedSecret.Contains('legacy-secret-value')) 'Protected secret file contains plaintext'
     Assert-Condition ((Get-OrCreateCaseinSecret $legacySecretPath 32) -eq 'legacy-secret-value') 'DPAPI secret did not round trip'
+
+    $backupSource = Join-Path $testLocalAppData 'backup-source.sqlite3'
+    $backupCiphertext = Join-Path $testLocalAppData 'backup.sqlite3.dpapi'
+    $backupManifest = Join-Path $testLocalAppData 'backup.json'
+    $backupRestored = Join-Path $testLocalAppData 'backup-restored.sqlite3'
+    Set-Content -NoNewline -LiteralPath $backupSource -Value 'SQLite format 3 package-smoke'
+    $backupMetadata = Protect-CaseinBackupFile -Source $backupSource -Destination $backupCiphertext
+    $backupMetadata | ConvertTo-Json | Set-Content -LiteralPath $backupManifest -Encoding UTF8
+    Assert-Condition (-not ([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($backupCiphertext)).Contains('package-smoke'))) 'Encrypted backup leaked plaintext'
+    Restore-CaseinBackupFile -Source $backupCiphertext -Manifest $backupManifest -Destination $backupRestored
+    Assert-Condition ((Get-Content -Raw -LiteralPath $backupRestored) -eq 'SQLite format 3 package-smoke') 'Encrypted backup did not round trip'
 
     $selectedAddress = Select-CaseinLanAddress @(
         [pscustomobject]@{ Address = '192.168.50.7'; InterfaceAlias = 'vEthernet (WSL)'; InterfaceIndex = 2; InterfaceMetric = 1; HasDefaultGateway = $true; VirtualOrTunnel = $true },
@@ -101,7 +115,8 @@ try {
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
     Assert-Condition ($null -ne $backup) 'Upgrade did not create a data backup'
-    Assert-Condition ((Get-Content -Raw -LiteralPath (Join-Path $backup.FullName 'casein.sqlite3')).Trim() -eq 'desktop-package-smoke') 'Upgrade backup did not preserve the database'
+    Assert-Condition (Test-Path -LiteralPath (Join-Path $backup.FullName 'casein.sqlite3.dpapi')) 'Upgrade backup was not DPAPI encrypted'
+    Assert-Condition (Test-Path -LiteralPath (Join-Path $backup.FullName 'casein.sqlite3.backup.json')) 'Upgrade backup metadata is missing'
     foreach ($name in @('secret-key-base.txt', 'api-token.txt', 'desktop-launch-token.txt')) {
         Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $backup.FullName $name))) "Upgrade backup copied credential $name"
     }
