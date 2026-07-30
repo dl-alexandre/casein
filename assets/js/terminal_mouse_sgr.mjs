@@ -38,6 +38,33 @@ export function mouseTrackingActive(mouse) {
 }
 
 /**
+ * Whether a *drag* can mean anything to the running program — i.e. it asked for
+ * motion reports via DECSET 1002 (button-event) or 1003 (any-event).
+ *
+ * A program that only set 1000 (normal) or 9 (x10) hears about presses and
+ * releases and never about motion, so a drag inside it is dead input: the most
+ * it can produce is a press at one cell and a release at another. Claude Code
+ * is one of these — it sets 1000 + 1006 and neither 1002 nor 1003 — which is
+ * why a plain drag there is free to drive local selection, while tmux with
+ * `mouse on` (1002/1003, where drag means copy-mode select or pane-border
+ * resize) still owns its drags.
+ *
+ * `tracking` alone is too coarse for this question: it is true for every mode.
+ */
+export function dragReachesProgram(mouse) {
+  return Boolean(mouse?.button || mouse?.any)
+}
+
+/**
+ * Whether a *click* can mean anything to the running program. Every tracking
+ * mode reports press/release, so this is the umbrella `tracking` flag — named
+ * for the question it answers at the call site.
+ */
+export function clickReachesProgram(mouse) {
+  return mouseTrackingActive(mouse)
+}
+
+/**
  * Map a browser point onto a terminal cell when the grid is CSS-scaled.
  *
  * `cellWidth` comes from a DOM measurement inside the transformed frame, so it

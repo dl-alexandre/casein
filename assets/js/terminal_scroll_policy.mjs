@@ -1,8 +1,13 @@
 // Terminal scroll policy — shell vs agent TUI routing.
 //
 // Agent TUIs (Grok, Claude, Codex, …) own the alt screen + mouse tracking.
-// Wheel must go to the PTY at the pointer cell; selection is Shift-only.
-// Shell mode uses Ghostty emulator scrollback when present.
+// Wheel must go to the PTY at the pointer cell; shell mode uses Ghostty
+// emulator scrollback when present.
+//
+// Drag-selection is decided separately, from the program's actual mouse modes
+// rather than from this policy — see plainDragSelectMode.
+
+import {clickReachesProgram, dragReachesProgram} from "./terminal_mouse_sgr.mjs"
 
 export const POLICY_AGENT = "agent"
 export const POLICY_SHELL = "shell"
@@ -10,6 +15,11 @@ export const POLICY_SHELL = "shell"
 export const BACKEND_SGR = "sgr_mouse"
 export const BACKEND_KEYS_PAGE = "keys_page"
 export const BACKEND_EMULATOR = "emulator"
+
+/** Plain-primary-drag gesture modes (see plainDragSelectMode). */
+export const SELECT_IMMEDIATE = "immediate"
+export const SELECT_DEFERRED = "deferred"
+export const SELECT_SHIFT_ONLY = "shift_only"
 
 const AGENT_COMMAND_RE = /grok|claude|codex|opencode|composer/i
 
@@ -74,12 +84,27 @@ export function touchUsesWheelPipeline(policy, touchFingers, hasEmulatorScrollba
 }
 
 /**
- * Whether plain primary drag should start local cell selection.
- * Agent / mouse-tracking: only with Shift (iTerm convention).
+ * What a plain (unmodified) primary drag should do, decided from the mouse
+ * modes the program actually requested rather than from the scroll policy.
+ *
+ * - `SELECT_SHIFT_ONLY` — the program reads motion (1002/1003), so drags are
+ *   its own: tmux copy-mode selection, pane-border resize, lazygit. Local
+ *   selection needs Shift, the xterm/iTerm convention.
+ * - `SELECT_DEFERRED` — the program reads clicks but never motion (Claude Code:
+ *   1000 + 1006). It can act on a click, so we cannot simply swallow the
+ *   gesture; but a drag is dead input to it, so we should not waste one either.
+ *   Hold the press until the gesture declares itself — see the mousedown
+ *   handler in `ghostty_terminal.js`.
+ * - `SELECT_IMMEDIATE` — no tracking at all (plain shell): drag selects at once,
+ *   as it always has.
+ *
+ * Keying this off the coarse `tracking` boolean is what made Shift mandatory in
+ * agent panes that never wanted the drag in the first place.
  */
-export function allowPlainDragSelect(policy, mouseTracking, shiftKey) {
-  if (policy === POLICY_AGENT || mouseTracking) return Boolean(shiftKey)
-  return true
+export function plainDragSelectMode(mouse) {
+  if (dragReachesProgram(mouse)) return SELECT_SHIFT_ONLY
+  if (clickReachesProgram(mouse)) return SELECT_DEFERRED
+  return SELECT_IMMEDIATE
 }
 
 /**

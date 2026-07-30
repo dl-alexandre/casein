@@ -34,8 +34,10 @@ import {
 import {
   BACKEND_KEYS_PAGE,
   POLICY_AGENT,
-  allowPlainDragSelect,
+  SELECT_DEFERRED,
+  SELECT_SHIFT_ONLY,
   pageKeySteps,
+  plainDragSelectMode,
   readFocusedPaneScrollAttrs,
   resolveScrollBackend,
   resolveScrollPolicy,
@@ -605,10 +607,10 @@ function patchPreLayout(hook) {
   // Native browser text selection on the pre — desktop and touch alike. The
   // vendor disables it (user-select: none) and relies on its own cell-selection,
   // but that's suppressed whenever the program requests mouse tracking (tmux
-  // `mouse on` does this globally), leaving no way to select. With tracking on
-  // we use Shift+drag for local select (see mounted); plain gestures reach the
-  // PTY so multi-pane TUIs can focus/scroll. Without tracking, plain drag still
-  // selects and mouse events stay filtered.
+  // `mouse on` does this globally), leaving no way to select. We run our own
+  // cell selection instead, gated on what the program asked for: Shift+drag
+  // where drags reach the program, plain drag where only clicks do (see
+  // plainDragSelectMode and the mounted handlers).
   hook.pre.style.userSelect = "text"
   hook.pre.style.webkitUserSelect = "text"
   if (TOUCH_DEVICE) {
@@ -851,9 +853,15 @@ function pushMouseReport(hook, action, col, row) {
 function forwardTapAsClick(hook, clientX, clientY) {
   const point = terminalCellPointFromEvent(hook, { clientX, clientY })
   if (!point) return false
+  forwardCellClick(hook, point)
+  return true
+}
+
+// Press then release at an already-resolved cell. Also the tail of a deferred
+// desktop gesture that turned out to be a click rather than a drag-select.
+function forwardCellClick(hook, point) {
   pushMouseReport(hook, "press", point.col, point.row)
   pushMouseReport(hook, "release", point.col, point.row)
-  return true
 }
 
 function currentScrollContext(hook) {
@@ -1063,6 +1071,31 @@ function clearCellSelection(hook) {
   hook.__selectionActive = false
   if (hook.selectionLayer) hook.selectionLayer.innerHTML = ""
   replayPendingFrameIfIdle(hook)
+}
+
+// Open a local cell selection at `point`. The caller has already decided the
+// gesture is ours (and suppressed the event), so no PTY traffic happens from
+// here on: the mouse press/motion/release are dropped by shouldDropMouseEvent
+// for as long as __nativeSelecting holds.
+function beginCellSelection(hook, point) {
+  hook.__nativeSelecting = true
+  hook.__selectionActive = true
+  hook.__selectionAnchor = point
+  hook.__selectionFocus = point
+  renderCellSelection(hook)
+  window.getSelection?.()?.removeAllRanges()
+}
+
+// A deferred gesture stays a click until the pointer travels this far. Same
+// threshold as LINK_DRAG_SLOP_PX, which resolves the click-vs-drag question for
+// terminal links; a gesture crossing one should cross the other.
+const DRAG_SELECT_SLOP_PX = 4
+
+function exceededDragSlop(pending, event) {
+  return (
+    Math.hypot(event.clientX - pending.x, event.clientY - pending.y) >
+    DRAG_SELECT_SLOP_PX
+  )
 }
 
 function replayPendingFrameIfIdle(hook) {
@@ -2655,6 +2688,7 @@ const GhosttyTerminal = {
   mounted() {
     markTerminalPerf(this, "mount_start")
     this.__selectionActive = false
+    this.__pendingSelectDrag = null
     resetFrameTracking(this)
     // Default DOM renderer; canvas is opt-in (see terminal_canvas.js). Canvas
     // falls back to the DOM RLE painter for any frame it can't draw (e.g. before
@@ -2777,33 +2811,64 @@ const GhosttyTerminal = {
     // mouse tracking. Drawing our own overlay gives visible feedback and copy
     // text without forwarding the drag to tmux.
     //
-    // Agent TUI / mouse-tracking: plain clicks/drags reach the PTY (pane focus,
-    // multi-pane scroll hit-test). Local select requires Shift (iTerm convention).
-    // Shell without tracking: plain primary drag still selects.
+    // Which gestures are ours depends on the mouse modes the program requested,
+    // not on the scroll policy (see plainDragSelectMode):
+    //
+    //  - motion tracking (tmux `mouse on`, lazygit): drags are the program's;
+    //    local select requires Shift, the xterm/iTerm convention.
+    //  - click tracking only (Claude Code, 1000+1006): the press is deferred
+    //    until the gesture declares itself — a drag selects locally, a click is
+    //    replayed to the program on release.
+    //  - no tracking (plain shell): plain primary drag selects immediately.
     this.__onNativeSelectionMouseDown = (e) => {
       if (TOUCH_DEVICE || !terminalPreTarget(this, e.target)) return
 
-      const {policy, tracking} = currentScrollContext(this)
-      const allowSelect = allowPlainDragSelect(policy, tracking, e.shiftKey)
+      this.__pendingSelectDrag = null
 
-      if (!allowSelect) return
       if (!plainPrimaryMouseDown(e) && !(e.shiftKey && e.button === 0)) return
       if (e.ctrlKey || e.altKey || e.metaKey) return
+
+      const mode = plainDragSelectMode(this.mouse)
+      if (mode === SELECT_SHIFT_ONLY && !e.shiftKey) return
 
       const point = terminalCellPointFromEvent(this, e)
       if (!point) return
 
-      this.__nativeSelecting = true
-      this.__selectionActive = true
-      this.__selectionAnchor = point
-      this.__selectionFocus = point
-      renderCellSelection(this)
-      window.getSelection?.()?.removeAllRanges()
+      // Suppressing the mousedown is what keeps this gesture ours: the vendor's
+      // own mousedown listener never runs, so it neither pushes the press nor
+      // sets pointerActive — and with pointerActive false its mousemove and
+      // mouseup handlers early-return too. Nothing reaches the PTY unless we
+      // send it, which is why the click branch below must synthesize both the
+      // press and the release, and must focus the input itself (the vendor's
+      // focusInput was suppressed along with everything else).
       e.preventDefault()
       e.stopImmediatePropagation()
+
+      if (mode === SELECT_DEFERRED && !e.shiftKey) {
+        // Starting a new gesture retires the old highlight. Without this a
+        // click that resolves to a click (not a drag) leaves the previous
+        // selection painted, because unlike beginCellSelection it never
+        // re-anchors. Copy-on-select already put the text on the clipboard at
+        // the previous mouseup, so nothing is lost by dropping the paint.
+        if (this.__selectionActive) clearCellSelection(this)
+        this.__pendingSelectDrag = {point, x: e.clientX, y: e.clientY}
+        return
+      }
+
+      beginCellSelection(this, point)
     }
 
     this.__onNativeSelectionMouseMove = (e) => {
+      const pending = this.__pendingSelectDrag
+
+      if (pending) {
+        if (!exceededDragSlop(pending, e)) return
+        // Past the slop the gesture is a drag, and a drag is dead input to a
+        // click-only program. Take it, anchored where the press landed.
+        this.__pendingSelectDrag = null
+        beginCellSelection(this, pending.point)
+      }
+
       if (!this.__nativeSelecting) return
 
       const point = terminalCellPointFromEvent(this, e)
@@ -2821,6 +2886,18 @@ const GhosttyTerminal = {
     }
 
     this.__onNativeSelectionMouseUp = (e) => {
+      const pending = this.__pendingSelectDrag
+
+      if (pending) {
+        // Released inside the slop: the operator meant a click, so hand the
+        // program the press/release pair we held back, at the cell it started
+        // on. Focus is ours to restore for the same reason (see mousedown).
+        this.__pendingSelectDrag = null
+        forwardCellClick(this, pending.point)
+        this.input?.focus({preventScroll: true})
+        return
+      }
+
       if (!this.__nativeSelecting) return
 
       const point = terminalCellPointFromEvent(this, e)
@@ -3405,6 +3482,7 @@ const GhosttyTerminal = {
       this.__onNativeSelectionCopy = null
       this.__onNativeSelectionKeydown = null
       this.__nativeSelecting = false
+      this.__pendingSelectDrag = null
       this.__selectionAnchor = null
       this.__selectionFocus = null
       this.__selectionActive = false
