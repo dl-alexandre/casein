@@ -88,6 +88,13 @@ defmodule CaseinWeb.API.PreviewMCP do
   def task_tools, do: []
 
   @impl true
+  # No MCP App yet; screenshots would be the natural first one.
+  def list_resources(_opts), do: []
+
+  @impl true
+  def read_resource(_uri, _opts), do: {:error, :not_found}
+
+  @impl true
   def list_tools(opts) do
     tool_specs()
     |> MCPToolSearch.list_tools(:preview, opts)

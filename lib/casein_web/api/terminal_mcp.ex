@@ -73,6 +73,14 @@ defmodule CaseinWeb.API.TerminalMCP do
   def task_tools, do: ["terminal_wait_agent_state"]
 
   @impl true
+  # No MCP App yet. Pane capture and the candidate_sessions picker are the
+  # obvious candidates — both read badly as JSON — but neither is built.
+  def list_resources(_opts), do: []
+
+  @impl true
+  def read_resource(_uri, _opts), do: {:error, :not_found}
+
+  @impl true
   def list_tools(opts) do
     tool_specs()
     |> MCPToolSearch.list_tools(:terminal, opts)

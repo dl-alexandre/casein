@@ -35,6 +35,12 @@ defmodule CaseinWeb.API.MCPEnvelopeTasksTest do
     def task_tools, do: ["slow_tool", "plain_tool"]
 
     @impl true
+    def list_resources(_opts), do: []
+
+    @impl true
+    def read_resource(_uri, _opts), do: {:error, :not_found}
+
+    @impl true
     # Blocks until the test releases it, and reports back what the envelope told
     # it about the task context.
     def call_tool(id, %{"name" => "slow_tool"}, opts) do

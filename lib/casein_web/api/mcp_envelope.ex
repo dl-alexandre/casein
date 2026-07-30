@@ -70,8 +70,14 @@ defmodule CaseinWeb.API.MCPEnvelope do
   # -32000..-32019 implementation-defined range).
   @unsupported_protocol_version -32_022
 
-  # Official extension identifier for MCP Tasks.
+  # Official extension identifiers.
   @tasks_extension "io.modelcontextprotocol/tasks"
+  @ui_extension "io.modelcontextprotocol/ui"
+
+  # The only resource mime type MCP Apps defines today.
+  @ui_mime_type "text/html;profile=mcp-app"
+
+  @resources_ttl_ms 300_000
 
   alias Casein.Agents.MCPTasks
   alias CaseinWeb.API.MCPCapabilityScope
@@ -103,6 +109,24 @@ defmodule CaseinWeb.API.MCPEnvelope do
   Read-only waits qualify; a mutating tool does not.
   """
   @callback task_tools() :: [String.t()]
+
+  @doc """
+  Resources this server exposes, in `resources/list` shape.
+
+  Casein serves resources for one reason today: MCP Apps. A resource whose
+  `mimeType` is `text/html;profile=mcp-app` is an interactive view a host renders
+  inline, referenced from a tool's `_meta.ui.resourceUri`.
+  """
+  @callback list_resources(opts :: keyword()) :: [map()]
+
+  @doc """
+  Read one resource, returning `resources/read` `contents` entries.
+
+  `{:error, :not_found}` becomes an Invalid Params error — 2026-07-28 renumbered
+  resource-not-found from -32002 to -32602.
+  """
+  @callback read_resource(uri :: String.t(), opts :: keyword()) ::
+              {:ok, [map()]} | {:error, :not_found}
 
   @doc """
   Handle a single decoded JSON-RPC message for `handler`.
@@ -255,7 +279,7 @@ defmodule CaseinWeb.API.MCPEnvelope do
     {:reply,
      result(id, %{
        supportedVersions: @supported_protocol_versions,
-       capabilities: server_capabilities(),
+       capabilities: server_capabilities(handler, opts),
        instructions: handler.instructions(opts),
        ttlMs: @discover_ttl_ms,
        # Never "public": `instructions/1` embeds the endpoint's pre-scoped
@@ -278,6 +302,37 @@ defmodule CaseinWeb.API.MCPEnvelope do
   # The 2026-07-28 replacement for the GET SSE channel: the notification stream
   # is the response to this POST. The controller turns `{:stream, _}` into a
   # chunked SSE response; see `MCPTransport.subscription_stream/2`.
+  defp dispatch("resources/list", id, _params, handler, opts) do
+    resources = handler.list_resources(opts) |> Enum.sort_by(&resource_sort_key/1)
+    {:reply, result(id, cacheable(%{resources: resources}, @resources_ttl_ms, opts))}
+  end
+
+  # We publish concrete `ui://` resources, never templated ones — but the method
+  # must exist for clients that probe it before `resources/list`.
+  defp dispatch("resources/templates/list", id, _params, _handler, opts) do
+    {:reply, result(id, cacheable(%{resourceTemplates: []}, @resources_ttl_ms, opts))}
+  end
+
+  defp dispatch("resources/read", id, params, handler, opts) do
+    case Map.get(params, "uri") do
+      uri when is_binary(uri) ->
+        case handler.read_resource(uri, opts) do
+          {:ok, contents} ->
+            {:reply, result(id, cacheable(%{contents: contents}, @resources_ttl_ms, opts))}
+
+          {:error, :not_found} ->
+            {:reply,
+             error(id, -32_602, "Invalid params: unknown resource uri", %{
+               code: "resource_not_found",
+               uri: uri
+             })}
+        end
+
+      _ ->
+        {:reply, error(id, -32_602, "Invalid params: uri is required")}
+    end
+  end
+
   defp dispatch("subscriptions/listen", id, params, handler, opts) do
     if revision(opts) == :v2026 and client_extension?(params, @tasks_extension) do
       {:stream, subscription(id, params, handler, opts)}
@@ -353,9 +408,24 @@ defmodule CaseinWeb.API.MCPEnvelope do
 
   def negotiate_protocol_version(_), do: @default_protocol_version
 
-  defp server_capabilities do
-    %{tools: %{listChanged: false}, extensions: %{@tasks_extension => %{}}}
+  defp server_capabilities(handler, opts) do
+    extensions = %{@tasks_extension => %{}}
+
+    # Declare the UI extension only when this server actually publishes an app
+    # resource — "has resources" is not the same claim as "renders UI".
+    extensions =
+      if Enum.any?(handler.list_resources(opts), &(&1[:mimeType] == @ui_mime_type)),
+        do: Map.put(extensions, @ui_extension, %{}),
+        else: extensions
+
+    %{
+      tools: %{listChanged: false},
+      resources: %{listChanged: false},
+      extensions: extensions
+    }
   end
+
+  defp resource_sort_key(resource), do: Map.get(resource, :uri) || Map.get(resource, "uri") || ""
 
   # Task augmentation is server-directed but client-gated: the extension requires
   # that we never hand a task to a client that did not declare support. The tool

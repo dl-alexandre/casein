@@ -17,6 +17,13 @@ defmodule CaseinWeb.API.ArtifactMCP do
 
   @server_name "Casein Artifact MCP Server"
 
+  @ui_resource_uri "ui://casein-artifact/artifact-app.html"
+  @ui_mime_type "text/html;profile=mcp-app"
+
+  # Tools whose result describes a single artifact, so the viewer has something
+  # to render. artifact_list (many) and artifact_retire (gone) do not qualify.
+  @ui_tools ~w(artifact_create artifact_update artifact_get artifact_serve artifact_snapshot)
+
   @type outcome :: MCPEnvelope.outcome()
 
   @doc "Handle a single decoded JSON-RPC message."
@@ -34,7 +41,9 @@ defmodule CaseinWeb.API.ArtifactMCP do
         "to iterate, artifact_list/artifact_get to rediscover state, artifact_serve " <>
         "to ensure its preview server is running, and artifact_snapshot to create " <>
         "an explicit Git version marker. Tool results include preview_open_arguments; " <>
-        "pass those arguments to Preview MCP preview_open to make the artifact visible.",
+        "pass those arguments to Preview MCP preview_open to make the artifact visible. " <>
+        "Hosts that support MCP Apps render the artifact viewer inline instead, so no " <>
+        "preview handoff is needed there.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )
   end
@@ -43,6 +52,40 @@ defmodule CaseinWeb.API.ArtifactMCP do
   # Artifact builds are the candidate here, but they mutate a git worktree, so
   # they are not safe to abandon on cancel without cooperative checks.
   def task_tools, do: []
+
+  @impl true
+  # The artifact viewer, rendered inline by MCP Apps hosts. Serving this is what
+  # lets an artifact be *seen* without the caller having a Casein viewer open and
+  # hand-carrying preview_open_arguments over to Preview MCP.
+  def list_resources(_opts) do
+    [
+      %{
+        uri: @ui_resource_uri,
+        name: "Casein artifact viewer",
+        description:
+          "Interactive view of the artifact a tool just created, updated, or served, " <>
+            "including its public URL.",
+        mimeType: @ui_mime_type
+      }
+    ]
+  end
+
+  @impl true
+  def read_resource(@ui_resource_uri, _opts) do
+    case File.read(ui_app_path()) do
+      {:ok, html} ->
+        {:ok, [%{uri: @ui_resource_uri, mimeType: @ui_mime_type, text: html}]}
+
+      # Treated as absent rather than a 500: a missing priv asset means this
+      # build simply cannot offer the app.
+      {:error, _reason} ->
+        {:error, :not_found}
+    end
+  end
+
+  def read_resource(_uri, _opts), do: {:error, :not_found}
+
+  defp ui_app_path, do: Application.app_dir(:casein, "priv/mcp_apps/artifact_app.html")
 
   @impl true
   def list_tools(opts) do
@@ -57,8 +100,18 @@ defmodule CaseinWeb.API.ArtifactMCP do
   @doc "MCP tool specifications, mapped from ArtifactTools definitions."
   @spec tool_specs() :: [map()]
   def tool_specs do
-    Enum.map(ArtifactTools.definitions(), &Tool.mcp_spec/1)
+    ArtifactTools.definitions()
+    |> Enum.map(&Tool.mcp_spec/1)
+    |> Enum.map(&attach_ui_template/1)
   end
+
+  # `_meta.ui.resourceUri` is what makes a tool an MCP App: a host that supports
+  # the extension preloads the resource and renders the result through it.
+  # Ignored by every other client, so this is additive.
+  defp attach_ui_template(%{name: name} = spec) when name in @ui_tools,
+    do: Map.put(spec, :_meta, %{ui: %{resourceUri: @ui_resource_uri}})
+
+  defp attach_ui_template(spec), do: spec
 
   @impl true
   # Meta-tools: callable here too so cross-server search/invoke work from the
