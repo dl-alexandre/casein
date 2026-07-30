@@ -1050,7 +1050,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       }
       data-mobile-pane-active={to_string(@pane.id == @mobile_focus_pane_id)}
       data-viewport={preview_viewport_label(@preview)}
-      data-snapshot-mode={preview_snapshot_mode?(@preview)}
+      data-snapshot-mode={to_string(preview_snapshot_mode?(@preview))}
       class={[
         "preview-pane-overlay isolate overflow-hidden bg-zinc-950",
         @entered_preview_pane_id == @pane.id && "preview-pane-entered"
