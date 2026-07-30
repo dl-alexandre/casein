@@ -24,7 +24,23 @@ defmodule Casein.Release do
     migrator = migrator()
 
     for repo <- repos() do
-      {:ok, _, _} = migrator.with_repo(repo, &migrator.run(&1, :up, all: true))
+      {:ok, _, _} =
+        migrator.with_repo(repo, fn started_repo ->
+          verify_database!(started_repo)
+          migrator.run(started_repo, :up, all: true)
+        end)
+    end
+  end
+
+  @doc "Fail closed before migrations when a SQLite database is corrupt."
+  def verify_database!(repo \\ Casein.Repo) do
+    if function_exported?(repo, :__adapter__, 0) and repo.__adapter__() == Ecto.Adapters.SQLite3 do
+      case Ecto.Adapters.SQL.query!(repo, "PRAGMA integrity_check", []).rows do
+        [["ok"]] -> :ok
+        rows -> raise "SQLite integrity check failed: #{inspect(rows)}"
+      end
+    else
+      :ok
     end
   end
 

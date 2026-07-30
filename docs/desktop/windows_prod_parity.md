@@ -12,7 +12,7 @@ tmux implementation details on Windows.
 | Install and launch without language tooling | systemd release | packaged OTP release and tray host | Harden public signing and update channel |
 | Local security boundary | Caddy, scoped tokens | loopback binding and local bearer token | Add signed binaries and token rotation UX |
 | Mobile origin identity | Deployment-defined origin | installation-stable `windows-<uuid>` and `<machine> (Windows)` identity | Add trusted-LAN pairing transport |
-| Persistent product data | PostgreSQL | SQLite under LocalAppData | Backup/restore UI and migration recovery |
+| Persistent product data | PostgreSQL | SQLite under LocalAppData; integrity check before migration; DPAPI-encrypted pre-update snapshot restored by rollback | Clean-VM migration and rollback evidence |
 | Interactive terminal | tmux PTY | PowerShell through ConPTY | Job Object containment and richer diagnostics |
 | Resize and reconnect | tmux capture/attach | ConPTY resize and application-owned session | Crash/reboot restoration |
 | Agent MCP pairing | launch script injects scoped MCP | native shell injects scoped MCP and project discovery | Verify every supported agent runtime |

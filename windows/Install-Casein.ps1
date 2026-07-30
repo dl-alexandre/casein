@@ -109,12 +109,17 @@ function Backup-UserData {
     $stamp = [DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
     $backup = Join-Path $BackupRoot "before-update-$stamp"
     New-Item -ItemType Directory -Force -Path $backup | Out-Null
-    # Credentials are machine/user-bound DPAPI blobs and are neither useful nor
-    # appropriate in update backups. The live files remain in DataRoot.
-    foreach ($name in @('casein.sqlite3', 'desktop-host.json')) {
-        $source = Join-Path $DataRoot $name
-        if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $backup -Force }
+    . (Join-Path $PackageRoot 'windows\Casein.Backup.ps1') -LibraryOnly
+    foreach ($name in @('casein.sqlite3', 'casein.sqlite3-wal', 'casein.sqlite3-shm')) {
+        $databaseFile = Join-Path $DataRoot $name
+        if (Test-Path -LiteralPath $databaseFile) {
+            $manifest = Protect-CaseinBackupFile -Source $databaseFile -Destination (Join-Path $backup "$name.dpapi")
+            $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $backup "$name.backup.json") -Encoding UTF8
+        }
     }
+    # Settings are non-secret. DPAPI-bound credentials are deliberately excluded.
+    $settings = Join-Path $DataRoot 'desktop-host.json'
+    if (Test-Path -LiteralPath $settings) { Copy-Item -LiteralPath $settings -Destination $backup -Force }
     $backup
 }
 
@@ -169,6 +174,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Repair-Casein.ps1') -Destination $installedRepair -Force
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Rollback-Casein.ps1') -Destination (Join-Path $installRoot 'Rollback-Casein.ps1') -Force
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\New-CaseinSupportBundle.ps1') -Destination (Join-Path $installRoot 'New-CaseinSupportBundle.ps1') -Force
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Casein.Backup.ps1') -Destination (Join-Path $installRoot 'Casein.Backup.ps1') -Force
     Set-Content -LiteralPath (Join-Path $installRoot 'Casein.cmd') -Encoding ascii -Value "@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0Casein.Launcher.ps1`""
 
     $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein'
