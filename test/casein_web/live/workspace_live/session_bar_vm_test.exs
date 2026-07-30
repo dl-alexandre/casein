@@ -783,4 +783,57 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert row.agent_blocked_count == 2
     end
   end
+
+  # Workspace names are slugs that need not match the checkout on disk
+  # (`dalexandre-devide` lives at `dalexandre/dev_ide`), so the row's second line
+  # has to carry the directory — letting the branch take it lost your place.
+  describe "workspace_session_tree/3 row detail" do
+    defp workspace_detail(summary) do
+      [summary]
+      |> SessionBarVM.workspace_session_tree("other-ws", sidebar_ws_sessions: %{})
+      |> Enum.find(&(&1.workspace_id == summary.id))
+      |> Map.fetch!(:detail)
+    end
+
+    test "shows the directory, not the default branch" do
+      detail =
+        workspace_detail(%{
+          id: "ws-a",
+          name: "dalexandre-devide",
+          path_label: "dalexandre/dev_ide",
+          branch: "master",
+          live?: true,
+          sessions: []
+        })
+
+      assert detail == "dalexandre/dev_ide"
+    end
+
+    test "appends a branch that is actually interesting" do
+      detail =
+        workspace_detail(%{
+          id: "ws-a",
+          name: "dalexandre-devide",
+          path_label: "dalexandre/dev_ide",
+          branch: "feature-x",
+          live?: true,
+          sessions: []
+        })
+
+      assert detail == "dalexandre/dev_ide ⑂ feature-x"
+    end
+
+    test "falls back to the branch when there is no path to show" do
+      detail =
+        workspace_detail(%{
+          id: "ws-a",
+          name: "alpha",
+          branch: "master",
+          live?: true,
+          sessions: []
+        })
+
+      assert detail == "master"
+    end
+  end
 end

@@ -52,6 +52,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
 
   @uuid_pattern ~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
 
+  # Separates an origin anchor from its branch in a standalone label
+  # ("dev_ide ⑂ adhoc-20260730"). The `session_anchor_chip/1` variant packs the
+  # same glyph without spaces because it has an icon carrying the meaning.
+  @anchor_separator " ⑂ "
+
   @type session_window :: %{
           id: String.t() | nil,
           index: integer() | nil,
@@ -68,6 +73,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
           dom_id: String.t(),
           kind: atom(),
           label: String.t(),
+          anchor_label: String.t(),
           detail: String.t(),
           detail_secondary: String.t(),
           title: String.t(),
@@ -134,19 +140,22 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     attention_cls = tab_attention_classification(info, windows)
     detail = session_tab_detail(info, ordinal)
     branch = session_branch(info) || ""
+    label = session_tab_label(info)
+    repo = session_repo_label(info) || ""
 
     %{
       id: id,
       dom_id: "active_sessions-" <> id,
       kind: info.kind,
-      label: session_tab_label(info),
+      label: label,
+      anchor_label: session_anchor_label(info, label, repo, branch),
       detail: detail,
       # Same detail with the branch elided — for surfaces that already render
       # the branch via the anchor chip, so it isn't shown twice.
       detail_secondary: detail_without_branch(detail, branch),
       title: session_tab_title(info),
       branch: branch,
-      repo: session_repo_label(info) || "",
+      repo: repo,
       worktree?: session_worktree?(info),
       cwd: session_cwd(info),
       tmux_session: info.tmux_session,
@@ -222,6 +231,26 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   defp cwd_title(_title, _old_cwd, cwd), do: cwd
+
+  @doc """
+  The distinguishing tail of a branch name — `agent/grok/fix-thing` → `fix-thing`.
+
+  The shared `agent/grok/` prefix repeats across every worktree and only steals
+  width; the full name still reaches the hover titles.
+  """
+  @spec branch_short(term()) :: String.t()
+  def branch_short(branch) when is_binary(branch) do
+    case String.split(branch, "/", trim: true) do
+      [] -> branch
+      parts -> List.last(parts)
+    end
+  end
+
+  def branch_short(_branch), do: ""
+
+  @doc "Whether a branch is a repo default, and so not worth spending row width on."
+  @spec default_branch?(term()) :: boolean()
+  def default_branch?(branch), do: branch in ~w(main master trunk)
 
   # tmux flags a session in choose-tree when any window has activity; the
   # session row inherits the freshest window state.
@@ -885,16 +914,25 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     Map.get(summary, :name) || Map.get(summary, "name") || summary_id(summary) || "workspace"
   end
 
+  # The directory is what orients you, so it leads. A workspace *name* is a slug
+  # that need not match the checkout on disk (`dalexandre-devide` lives at
+  # `dalexandre/dev_ide`), and letting the branch take this line hid the path
+  # entirely. The branch is appended only when it is interesting — `master` on a
+  # primary checkout is per-row noise, the same rule
+  # `session_anchor_interesting?/1` applies to session rows.
   defp summary_workspace_detail(summary) do
-    branch = Map.get(summary, :branch) || Map.get(summary, "branch")
-    path_label = Map.get(summary, :path_label) || Map.get(summary, "path_label")
+    branch = blank_to_empty(Map.get(summary, :branch) || Map.get(summary, "branch"))
+    path_label = blank_to_empty(Map.get(summary, :path_label) || Map.get(summary, "path_label"))
 
     cond do
-      is_binary(branch) and branch != "" -> branch
-      is_binary(path_label) and path_label != "" -> path_label
-      true -> ""
+      path_label == "" -> branch
+      branch == "" or default_branch?(branch) -> path_label
+      true -> path_label <> @anchor_separator <> branch
     end
   end
+
+  defp blank_to_empty(value) when is_binary(value), do: value
+  defp blank_to_empty(_value), do: ""
 
   defp summary_workspace_title(summary) do
     label = summary_workspace_label(summary)
@@ -1107,11 +1145,71 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     (Map.get(session, :kind) || Map.get(session, "kind")) == :agent
   end
 
-  defp session_alias?(session) do
-    metadata = Map.get(session, :metadata) || Map.get(session, "metadata") || %{}
-    value = Map.get(metadata, :session_alias) || Map.get(metadata, "session_alias")
-    is_binary(value) and String.trim(value) != ""
+  # Origin-first label for surfaces that render a session on its own, with no
+  # `session_anchor_chip/1` beside it to name where the worktree came from.
+  #
+  # `git rev-parse --show-toplevel` inside a linked worktree returns the
+  # WORKTREE, so the basename-derived label reads `agent-claude-adhoc-<stamp>`
+  # — a timestamp that says nothing about which checkout it forked from. This
+  # reads `repo ⑂ branch-tail` instead: the origin comes first because that is
+  # the part that orients you. The worktree dir is not lost, it moves to the
+  # hover title (`session_tab_title/1` carries the full cwd).
+  defp session_anchor_label(info, label, repo, branch) do
+    cond do
+      not session_worktree?(info) -> label
+      repo == "" or branch == "" -> label
+      # `session_repo_label/1` falls back to the toplevel basename when there is
+      # no `git_common_dir` to resolve. For a worktree that IS the worktree dir,
+      # so there is no origin to reveal — prefixing it would just stutter
+      # ("agent-claude-adhoc-x ⑂ adhoc-x").
+      repo == worktree_basename(info) -> label
+      operator_named?(info) -> label
+      true -> repo <> @anchor_separator <> branch_short(branch)
+    end
   end
+
+  # A deliberate operator alias is chosen naming and always wins — except when
+  # the "alias" is just the worktree's own basename, which the directory poller
+  # injects for discovered agent worktrees (see
+  # `SessionDirectory.agent_worktree_tab/1`, which sets `session_alias` from the
+  # runtime's `path_label`). That one is derived, so it must not suppress the
+  # origin the way a real alias does.
+  defp operator_named?(info) do
+    case session_alias_text(info) do
+      nil -> false
+      alias_text -> alias_text != worktree_basename(info)
+    end
+  end
+
+  defp worktree_basename(info) do
+    metadata = session_metadata_map(info)
+
+    case Map.get(metadata, :git_toplevel) || Map.get(metadata, "git_toplevel") ||
+           Map.get(metadata, :worktree_path) || Map.get(metadata, "worktree_path") do
+      path when is_binary(path) and path != "" -> Path.basename(path)
+      _ -> nil
+    end
+  end
+
+  defp session_alias?(session), do: is_binary(session_alias_text(session))
+
+  defp session_alias_text(session) do
+    metadata = session_metadata_map(session)
+
+    case Map.get(metadata, :session_alias) || Map.get(metadata, "session_alias") do
+      value when is_binary(value) ->
+        case String.trim(value) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp session_metadata_map(session),
+    do: Map.get(session, :metadata) || Map.get(session, "metadata") || %{}
 
   defp summary_path_basename(summary) do
     case Map.get(summary, :path_label) || Map.get(summary, "path_label") do
