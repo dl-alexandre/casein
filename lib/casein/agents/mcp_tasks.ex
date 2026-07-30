@@ -357,7 +357,26 @@ defmodule Casein.Agents.MCPTasks do
     end
   end
 
-  defp put_record(record), do: :ets.insert(@table, {record.task_id, record})
+  @doc """
+  Subscribe the caller to a task's status changes.
+
+  Feeds `notifications/tasks` on a `subscriptions/listen` stream, so a client can
+  stop polling `tasks/get`.
+  """
+  @spec subscribe(task_id()) :: :ok | {:error, term()}
+  def subscribe(task_id) when is_binary(task_id) do
+    Phoenix.PubSub.subscribe(Casein.PubSub, topic(task_id))
+  end
+
+  @doc "PubSub topic carrying one task's status changes."
+  @spec topic(task_id()) :: String.t()
+  def topic(task_id), do: "mcp_tasks:" <> task_id
+
+  defp put_record(record) do
+    :ets.insert(@table, {record.task_id, record})
+    Phoenix.PubSub.broadcast(Casein.PubSub, topic(record.task_id), {:mcp_task, to_wire(record)})
+    true
+  end
 
   defp stop_worker(state, %{worker: pid} = record) when is_pid(pid) do
     _ = Task.Supervisor.terminate_child(@task_supervisor, pid)

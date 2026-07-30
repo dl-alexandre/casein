@@ -87,7 +87,7 @@ defmodule CaseinWeb.API.MCPEnvelope do
     "2024-11-05"
   ]
 
-  @type outcome :: {:reply, map()} | :noreply | {:error, map()}
+  @type outcome :: {:reply, map()} | :noreply | {:error, map()} | {:stream, map()}
   @type revision :: :v2026 | :legacy
 
   @callback server_name() :: String.t()
@@ -275,6 +275,17 @@ defmodule CaseinWeb.API.MCPEnvelope do
     {:reply, result(id, cacheable(%{tools: tools}, @tools_list_ttl_ms, opts))}
   end
 
+  # The 2026-07-28 replacement for the GET SSE channel: the notification stream
+  # is the response to this POST. The controller turns `{:stream, _}` into a
+  # chunked SSE response; see `MCPTransport.subscription_stream/2`.
+  defp dispatch("subscriptions/listen", id, params, handler, opts) do
+    if revision(opts) == :v2026 and client_extension?(params, @tasks_extension) do
+      {:stream, subscription(id, params, handler, opts)}
+    else
+      {:error, error(id, -32_601, "Method not found", %{name: "subscriptions/listen"})}
+    end
+  end
+
   defp dispatch("tasks/get", id, params, handler, opts) do
     with_task(id, params, handler, opts, fn task_id, owner ->
       case MCPTasks.get(task_id, owner) do
@@ -402,6 +413,31 @@ defmodule CaseinWeb.API.MCPEnvelope do
           %{id: id} -> id
           _ -> nil
         end
+    }
+  end
+
+  # We emit exactly one notification type, so the acknowledged filter is the
+  # caller's requested task ids narrowed to the ones they actually own. Every
+  # other requested type is omitted — the spec reads an omission as "not
+  # honoured", which is truthful here: our tool and resource lists only change
+  # on deploy, so we would never fire those notifications.
+  defp subscription(id, params, handler, opts) do
+    owner = task_owner(handler, opts)
+
+    task_ids =
+      params
+      |> Map.get("notifications", %{})
+      |> case do
+        %{} = filter -> Map.get(filter, "taskIds", [])
+        _ -> []
+      end
+      |> List.wrap()
+      |> Enum.filter(&(is_binary(&1) and match?({:ok, _}, MCPTasks.get(&1, owner))))
+
+    %{
+      id: id,
+      task_ids: task_ids,
+      notifications: if(task_ids == [], do: %{}, else: %{taskIds: task_ids})
     }
   end
 

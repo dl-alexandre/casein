@@ -39,6 +39,10 @@ defmodule CaseinWeb.API.TerminalMCPController do
             |> put_status(200)
             |> json(response)
 
+          # A `subscriptions/listen` response is itself a long-lived SSE stream.
+          {:stream, subscription} ->
+            MCPTransport.subscription_stream(conn, subscription)
+
           :noreply ->
             send_resp(conn, 202, "")
 
