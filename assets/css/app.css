@@ -706,12 +706,32 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     transform 140ms ease;
 }
 
-#casein-clipboard-toast {
+/* The one transient-message surface (assets/js/toast.js). Replaces the old
+   single-node #casein-clipboard-toast and absorbs the server flash group, which
+   used to render its own never-auto-dismissing toast in the opposite corner.
+   Two stacked lanes: `message` keeps the bottom-center spot the old toast
+   trained everyone to look at, `hint` (the shortcut coach) sits above it and is
+   styled deliberately quieter so coaching never reads as a real message. */
+.casein-toast-stack {
   position: fixed;
   left: 50%;
   bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%) translateY(12px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
   max-width: min(92vw, 28rem);
+  z-index: 80;
+  pointer-events: none;
+}
+
+.casein-toast {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 100%;
   padding: 0.55rem 0.9rem;
   border-radius: 0.5rem;
   border: 1px solid var(--casein-term-border);
@@ -722,31 +742,46 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   opacity: 0;
   pointer-events: none;
-  z-index: 80;
-  transition: opacity 160ms ease, transform 160ms ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
+  transform: translateY(12px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
 }
 
-#casein-clipboard-toast.casein-clipboard-toast--visible {
+/* `display: flex` above outranks the UA `[hidden] { display: none }` rule, so an
+   empty lane would keep its row and its gap. Restore it explicitly. */
+.casein-toast[hidden] {
+  display: none;
+}
+
+.casein-toast--visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateY(0);
 }
 
 /* Only a toast with buttons accepts taps; a plain status toast stays
    transparent so it can't swallow a tap meant for the terminal beneath it. */
-#casein-clipboard-toast[data-actionable="true"] {
+.casein-toast--visible[data-actionable="true"] {
   pointer-events: auto;
+  cursor: pointer;
 }
 
-.casein-clipboard-toast__message {
+.casein-toast__text {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.casein-clipboard-toast__action {
+.casein-toast__actions {
+  display: flex;
+  flex: none;
+  gap: 0.35rem;
+}
+
+.casein-toast__actions:empty {
+  display: none;
+}
+
+.casein-toast__action {
   flex: none;
   border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
   border-radius: 0.375rem;
@@ -760,19 +795,52 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   min-height: 2rem;
 }
 
-.casein-clipboard-toast__action:hover,
-.casein-clipboard-toast__action:focus-visible {
+.casein-toast__action:hover,
+.casein-toast__action:focus-visible {
   background: color-mix(in srgb, currentColor 22%, transparent);
 }
 
-#casein-clipboard-toast[data-kind="pending"] {
+/* "×3" grouped repeats and "+2" backlog. */
+.casein-toast__meta {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.casein-toast__meta:empty {
+  display: none;
+}
+
+.casein-toast[data-kind="pending"] {
   border-color: rgba(56, 189, 248, 0.45);
   color: #bae6fd;
 }
 
-#casein-clipboard-toast[data-kind="shortcut"] {
+.casein-toast[data-kind="error"] {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fecaca;
+}
+
+/* The hint lane: smaller, dimmer, and never the visual peer of a real message. */
+.casein-toast[data-lane="hint"] {
+  padding: 0.35rem 0.7rem;
+  font-size: 12px;
   border-color: rgba(217, 119, 6, 0.5);
   color: #fcd34d;
+  background: color-mix(in srgb, var(--casein-term-bg) 88%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .casein-toast {
+    transition: opacity 160ms ease;
+    transform: none;
+  }
+
+  .casein-toast--visible {
+    transform: none;
+  }
 }
 
 /* Workspace header: priority-based visibility from container width (preview

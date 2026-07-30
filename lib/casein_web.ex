@@ -65,6 +65,12 @@ defmodule CaseinWeb do
       # bell and drawer on workspace/dashboard headers, not in the layout.
       use Phoenix.LiveView, layout: {CaseinWeb.Layouts, :live}
 
+      # Error flashes are ephemeral by construction — one toast, then gone. This
+      # records them in the durable notification inbox so a failure the operator
+      # missed is still findable. Global on purpose: there are ~120 put_flash
+      # call sites and no other seam sees all of them.
+      on_mount CaseinWeb.FlashJournal
+
       unquote(html_helpers())
     end
   end

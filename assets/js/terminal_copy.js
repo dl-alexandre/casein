@@ -1,4 +1,5 @@
 import {applyCopySelection, copyInGesture, COPY_FALLBACK_STYLE} from "./clipboard_write.mjs"
+import {hideToast, showToast} from "./toast"
 
 let __fallbackInput = null
 
@@ -101,74 +102,18 @@ export function shareText(text) {
   }
 }
 
-function toastElement() {
-  let el = document.getElementById("casein-clipboard-toast")
-  if (el) return el
-
-  el = document.createElement("div")
-  el.id = "casein-clipboard-toast"
-  el.setAttribute("role", "status")
-  el.setAttribute("aria-live", "polite")
-  document.body.appendChild(el)
-  return el
-}
-
 export function hideClipboardToast() {
-  const el = document.getElementById("casein-clipboard-toast")
-  if (!el) return
-  clearTimeout(el.__hideTimer)
-  el.classList.remove("casein-clipboard-toast--visible")
-  delete el.dataset.actionable
+  hideToast("Agent copied text")
 }
 
 /**
- * Transient clipboard status. Pass `actions` ([{label, onClick}]) to render
- * buttons inside the toast — a real click on a button is the most reliable user
- * activation WebKit offers, which matters when the toast exists precisely
- * because an unattended clipboard write was refused.
+ * Retained name for the ~15 existing call sites; the surface underneath is now
+ * the shared toast stack (see toast.js), so clipboard results, server flash
+ * messages, and shortcut hints queue against each other instead of fighting
+ * over one DOM node in two different corners.
+ *
+ * `duration` is now optional — omit it to get the per-kind default.
  */
-export function showClipboardToast(message, {kind = "info", duration = 4000, actions = []} = {}) {
-  if (!message) return null
-
-  const el = toastElement()
-  el.dataset.kind = kind
-  el.replaceChildren()
-
-  const label = document.createElement("span")
-  label.className = "casein-clipboard-toast__message"
-  label.textContent = message
-  el.appendChild(label)
-
-  const usable = (actions || []).filter(
-    (action) => action && action.label && typeof action.onClick === "function"
-  )
-
-  for (const action of usable) {
-    const button = document.createElement("button")
-    button.type = "button"
-    button.className = "casein-clipboard-toast__action"
-    button.textContent = action.label
-    // The click *is* the activation the clipboard API needs, so the handler
-    // has to do the write itself rather than scheduling it.
-    button.addEventListener("click", (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      action.onClick(event)
-    })
-    el.appendChild(button)
-  }
-
-  // The toast sits over the terminal, so it stays pointer-transparent unless it
-  // has something to click — otherwise it would swallow taps meant for the pane.
-  if (usable.length > 0) el.dataset.actionable = "true"
-  else delete el.dataset.actionable
-
-  el.classList.add("casein-clipboard-toast--visible")
-  clearTimeout(el.__hideTimer)
-  el.__hideTimer = window.setTimeout(() => {
-    el.classList.remove("casein-clipboard-toast--visible")
-    delete el.dataset.actionable
-  }, duration)
-
-  return el
+export function showClipboardToast(message, options = {}) {
+  showToast(message, options)
 }
