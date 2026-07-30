@@ -7,8 +7,11 @@ import {
   BACKEND_SGR,
   POLICY_AGENT,
   POLICY_SHELL,
-  allowPlainDragSelect,
+  SELECT_DEFERRED,
+  SELECT_IMMEDIATE,
+  SELECT_SHIFT_ONLY,
   pageKeySteps,
+  plainDragSelectMode,
   resolveScrollBackend,
   resolveScrollPolicy,
   touchUsesWheelPipeline,
@@ -51,10 +54,25 @@ test("touchUsesWheelPipeline never arrows in agent mode", () => {
   assert.equal(touchUsesWheelPipeline(POLICY_SHELL, 2, false), true)
 })
 
-test("allowPlainDragSelect requires Shift under agent/tracking", () => {
-  assert.equal(allowPlainDragSelect(POLICY_AGENT, true, false), false)
-  assert.equal(allowPlainDragSelect(POLICY_AGENT, true, true), true)
-  assert.equal(allowPlainDragSelect(POLICY_SHELL, false, false), true)
+// The mode is a property of the program's requested mouse modes, NOT of the
+// scroll policy. An agent pane whose program only reads clicks must not inherit
+// the Shift requirement that exists for programs which read drags.
+test("plainDragSelectMode keys off motion tracking, not policy", () => {
+  // tmux `mouse on`, lazygit: 1002/1003 — drags belong to the program.
+  assert.equal(plainDragSelectMode({tracking: true, button: true}), SELECT_SHIFT_ONLY)
+  assert.equal(plainDragSelectMode({tracking: true, any: true}), SELECT_SHIFT_ONLY)
+
+  // Claude Code: 1000 + 1006, no motion. Clicks land, drags are ours.
+  assert.equal(
+    plainDragSelectMode({tracking: true, normal: true, sgr: true}),
+    SELECT_DEFERRED
+  )
+  assert.equal(plainDragSelectMode({tracking: true, x10: true}), SELECT_DEFERRED)
+
+  // Plain shell: nothing requested, drag selects with no ceremony.
+  assert.equal(plainDragSelectMode({tracking: false}), SELECT_IMMEDIATE)
+  assert.equal(plainDragSelectMode(null), SELECT_IMMEDIATE)
+  assert.equal(plainDragSelectMode(undefined), SELECT_IMMEDIATE)
 })
 
 test("resolveScrollBackend and pageKeySteps", () => {

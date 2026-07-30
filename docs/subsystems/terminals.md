@@ -249,13 +249,33 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
   after a real drag) writes the selection to the browser clipboard immediately
   while keeping the highlight. Cmd/Ctrl+C, the context-menu Copy action, and
   OSC52 still work. Touch keeps the system long-press callout (no auto-copy).
+- **Whether a drag selects depends on the program's mouse modes, not on the
+  scroll policy.** `plainDragSelectMode` (`terminal_scroll_policy.mjs`) reads the
+  DECSET modes Ghostty reports per pane:
+  - motion tracking (1002/1003 — tmux `mouse on`, lazygit, htop): drags are the
+    program's, so local selection needs **Shift**, the xterm/iTerm convention.
+  - click tracking only (1000/9, no motion — **Claude Code** sets 1000 + 1006):
+    the program can act on a click but can never see a drag, so the press is
+    **deferred** until the gesture declares itself. Past a 4px slop it becomes a
+    local selection and nothing reaches the PTY; released inside the slop it is
+    replayed to the program as press+release at the original cell. Suppressing
+    the mousedown is what makes the gesture ours — it also stops the vendor
+    setting `pointerActive`, so the vendor's own move/up handlers no-op and the
+    click branch must re-focus the input itself. A deferred press also retires
+    any existing highlight: a click never re-anchors the selection the way a
+    drag does, so without that it would stay painted.
+  - no tracking (plain shell): plain drag selects immediately.
+
+  Gating this on the coarse `mouse.tracking` flag is what used to make Shift
+  mandatory in agent panes that never wanted the drag. Regression tests:
+  `assets/test/ghostty_terminal_drag_select.test.mjs`.
 - **Agent TUI scroll is pointer-local SGR, not emulator history.** Focused-pane
   `role` / `current_command` (via `Casein.Terminals.PaneInteraction`) sets
   `data-scroll-policy` on pane tiles. Agent mode: wheel/touch → SGR mouse at the
   cell under the pointer (multi-pane hit-test); plain click reaches the PTY;
-  Shift-drag selects; Alt+wheel opens the pane history drawer (tmux capture —
-  dual-layer history). Shell mode keeps Ghostty scrollback + plain drag-select.
-  Debug with `?termscroll=1` or `localStorage["casein:termscroll"]="1"`.
+  Alt+wheel opens the pane history drawer (tmux capture — dual-layer history).
+  Shell mode keeps Ghostty scrollback. Debug with `?termscroll=1` or
+  `localStorage["casein:termscroll"]="1"`.
 - **Clipboard image paste into agents uses `@path`.** The paste reply includes
   `path_format` from the same pane interaction detector so Grok/Claude attach
   files instead of printing a shell-quoted absolute path line.
