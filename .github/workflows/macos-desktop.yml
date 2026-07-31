@@ -20,6 +20,7 @@ on:
       - "priv/repo/migrations/**"
       - "scripts/package-macos-desktop.sh"
       - "scripts/test-macos-desktop-package.sh"
+      - "scripts/with-ephemeral-macos-keychain.sh"
       - ".github/workflows/macos-desktop.yml"
   pull_request:
     paths:
@@ -38,6 +39,7 @@ on:
       - "priv/repo/migrations/**"
       - "scripts/package-macos-desktop.sh"
       - "scripts/test-macos-desktop-package.sh"
+      - "scripts/with-ephemeral-macos-keychain.sh"
       - ".github/workflows/macos-desktop.yml"
 
 concurrency:
@@ -119,20 +121,27 @@ jobs:
       - name: Test host and terminal resolution
         run: |
           mix test test/casein/terminals/tmux_executable_test.exs test/casein/desktop
-          /usr/bin/swift test --package-path native/casein_menubar
+          # Self-hosted runner sessions have no unlocked login keychain. Keep
+          # the real Security.framework round trip without prompting for UI.
+          scripts/with-ephemeral-macos-keychain.sh \
+            /usr/bin/swift test --package-path native/casein_menubar
 
       - name: Build self-contained package
         run: scripts/package-macos-desktop.sh
 
       - name: Verify package structure and signatures
+        # This launches the signed app through LaunchServices and must retain
+        # the logged-in user's normal GUI keychain context.
         run: scripts/test-macos-desktop-package.sh
 
       - name: Run packaged lifecycle and crash recovery
         env:
           CASEIN_RELEASE_ROOT: ${{ github.workspace }}/native/casein_menubar/build/Casein MenuBar.app/Contents/Resources/release
         run: |
-          /usr/bin/swift test --package-path native/casein_menubar --filter LifecycleIntegration
-          /usr/bin/swift test --package-path native/casein_menubar --filter CrashRecovery
+          scripts/with-ephemeral-macos-keychain.sh \
+            /usr/bin/swift test --package-path native/casein_menubar --filter LifecycleIntegration
+          scripts/with-ephemeral-macos-keychain.sh \
+            /usr/bin/swift test --package-path native/casein_menubar --filter CrashRecovery
 
       - name: Upload package and integrity metadata
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
