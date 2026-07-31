@@ -36,6 +36,12 @@ defmodule Casein.Access.Probe do
     path = Keyword.get(opts, :path, @health_path)
     url = join_url(base_url, path)
 
+    # Load-bearing, do not remove: `mix casein.doctor` calls this from a Mix
+    # task where the app is not started, so Req's Finch pool does not exist yet
+    # and `Req.get/2` dies in `Req.Finch.finch_name/1`. Idempotent and cheap
+    # when the app is already running.
+    _ = Application.ensure_all_started(:req)
+
     case Req.get(url,
            redirect: false,
            retry: false,

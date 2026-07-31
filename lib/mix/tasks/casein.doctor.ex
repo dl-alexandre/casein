@@ -111,7 +111,6 @@ defmodule Mix.Tasks.Casein.Doctor do
     )
   end
 
-
   defp check_access_endpoints do
     Mix.shell().info("")
 
@@ -123,7 +122,7 @@ defmodule Mix.Tasks.Casein.Doctor do
 
     entries
     |> Casein.Access.Endpoints.doctor_lines()
-    |> Enum.each(&Mix.shell().info/1)
+    |> Enum.each(fn line -> Mix.shell().info(line) end)
   end
 
   defp check_home_workspace(root, workspace, fix?) do
