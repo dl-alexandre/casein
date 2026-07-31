@@ -31,6 +31,22 @@ function grid() {
 
 const BOUNDS = {width: 100, height: 40}
 
+// The geometry tmux actually reports: one cell per divider, so neighbours are
+// separated by a gap rather than sharing an edge. Read from a live 216x69
+// window split into four panes (columns 0-107 | 108 divider | 109-215).
+//
+//   %a (0,0 108x35)  | %c (109,0  107x34)
+//   -- divider row 35 ------ divider row 34 --
+//   %b (0,36 108x33) | %d (109,35 107x34)
+function dividedGrid() {
+  return new Map([
+    ["%a", {left: 0, top: 0, width: 108, height: 35}],
+    ["%b", {left: 0, top: 36, width: 108, height: 33}],
+    ["%c", {left: 109, top: 0, width: 107, height: 34}],
+    ["%d", {left: 109, top: 35, width: 107, height: 34}],
+  ])
+}
+
 test("clamp bounds values on both sides", () => {
   assert.equal(clamp(5, 1, 10), 5)
   assert.equal(clamp(0, 1, 10), 1)
@@ -107,11 +123,41 @@ test("applyResize grows the pane and shrinks the neighbor symmetrically", () => 
   applyResize(geos, "%0", "right", 10)
   assert.equal(geos.get("%0").width, 60)
   assert.equal(geos.get("%1").width, 40)
+  // The neighbor's leading edge has to follow the moving boundary, or the
+  // grown pane simply paints over it.
+  assert.equal(geos.get("%1").left, 60)
 
   applyResize(geos, "%2", "up", 5)
   assert.equal(geos.get("%2").top, 15)
   assert.equal(geos.get("%2").height, 25)
   assert.equal(geos.get("%0").height, 15)
+})
+
+test("neighborForResize sees across the tmux divider cell", () => {
+  const geos = dividedGrid()
+  assert.equal(neighborForResize(geos, "%a", "right"), "%c")
+  assert.equal(neighborForResize(geos, "%c", "left"), "%a")
+  assert.equal(neighborForResize(geos, "%a", "down"), "%b")
+  assert.equal(neighborForResize(geos, "%b", "up"), "%a")
+})
+
+test("a divided-grid drag never overlaps the neighbor", () => {
+  const geos = dividedGrid()
+  applyResize(geos, "%a", "right", 6)
+
+  const dragged = geos.get("%a")
+  const neighbor = geos.get("%c")
+
+  // Divider cell preserved, no overlap, and the window total is unchanged.
+  assert.equal(dragged.left + dragged.width, 114)
+  assert.equal(neighbor.left, 115)
+  assert.equal(neighbor.left + neighbor.width, 216)
+
+  const down = dividedGrid()
+  applyResize(down, "%a", "down", 4)
+  assert.equal(down.get("%a").top + down.get("%a").height, 39)
+  assert.equal(down.get("%b").top, 40)
+  assert.equal(down.get("%b").top + down.get("%b").height, 69)
 })
 
 test("applyResize on a window edge moves only the pane", () => {

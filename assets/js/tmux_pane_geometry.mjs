@@ -35,6 +35,19 @@ export function cellPxFor(drag, rect) {
   return FALLBACK_CELL_PX
 }
 
+// tmux spends one cell on the divider it draws between adjacent panes, so
+// neighbours never share an edge: a 216-col window splits into `left=0
+// width=108` and `left=109 width=107`, with column 108 holding the border.
+// Requiring edges to touch exactly therefore finds a neighbour only in
+// layouts tmux never produces. Treat a 0- or 1-cell gap as adjacent; 2+ is a
+// genuinely different pane.
+export const DIVIDER_CELLS = 1
+
+function touches(edge, otherEdge) {
+  const gap = otherEdge - edge
+  return gap >= 0 && gap <= DIVIDER_CELLS
+}
+
 function overlapsY(a, b) {
   return a.top < b.top + b.height && a.top + a.height > b.top
 }
@@ -50,19 +63,19 @@ export function neighborForResize(geos, paneId, direction) {
   for (const [id, other] of geos) {
     if (id === paneId) continue
 
-    if (direction === "right" && overlapsY(pane, other) && other.left === pane.left + pane.width) {
+    if (direction === "right" && overlapsY(pane, other) && touches(pane.left + pane.width, other.left)) {
       return id
     }
 
-    if (direction === "left" && overlapsY(pane, other) && other.left + other.width === pane.left) {
+    if (direction === "left" && overlapsY(pane, other) && touches(other.left + other.width, pane.left)) {
       return id
     }
 
-    if (direction === "down" && overlapsX(pane, other) && other.top === pane.top + pane.height) {
+    if (direction === "down" && overlapsX(pane, other) && touches(pane.top + pane.height, other.top)) {
       return id
     }
 
-    if (direction === "up" && overlapsX(pane, other) && other.top + other.height === pane.top) {
+    if (direction === "up" && overlapsX(pane, other) && touches(other.top + other.height, pane.top)) {
       return id
     }
   }
@@ -77,16 +90,26 @@ export function applyResize(geos, paneId, direction, amount) {
   const neighborId = neighborForResize(geos, paneId, direction)
   const neighbor = neighborId ? geos.get(neighborId) : null
 
+  // A neighbour on the far side of the moving edge has to give up ground at
+  // that edge, which means moving its origin as well as its size. Shrinking
+  // width/height alone leaves its left/top pinned, so the growing pane just
+  // draws straight over it for the length of the drag.
   if (direction === "right") {
     pane.width += amount
-    if (neighbor) neighbor.width -= amount
+    if (neighbor) {
+      neighbor.left += amount
+      neighbor.width -= amount
+    }
   } else if (direction === "left") {
     pane.left -= amount
     pane.width += amount
     if (neighbor) neighbor.width -= amount
   } else if (direction === "down") {
     pane.height += amount
-    if (neighbor) neighbor.height -= amount
+    if (neighbor) {
+      neighbor.top += amount
+      neighbor.height -= amount
+    }
   } else if (direction === "up") {
     pane.top -= amount
     pane.height += amount
