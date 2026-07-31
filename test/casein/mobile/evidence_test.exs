@@ -135,6 +135,69 @@ defmodule Casein.Mobile.EvidenceTest do
            |> Evidence.project(@viewer) == nil
   end
 
+  test "returns nil without workspace source access when no evidence is declared", ctx do
+    Application.put_env(:casein, :workspace_source, __MODULE__)
+
+    for empty_evidence <- [
+          %{files_changed: [], diff_preview: nil},
+          %{files_changed: [], diff_preview: " \n", locator: %{artifact: nil}}
+        ] do
+      assert ctx.workspace_id
+             |> review_card(empty_evidence)
+             |> Evidence.project(@viewer) == nil
+    end
+
+    refute_received {:evidence_workspace_source_get, _workspace_id}
+  end
+
+  test "evidence candidates still take the workspace validation path and fail closed", ctx do
+    Application.put_env(:casein, :workspace_source, __MODULE__)
+
+    cards = [
+      review_card(ctx.workspace_id, %{files_changed: [%{path: nil}], diff_preview: nil}),
+      review_card(ctx.workspace_id, %{
+        files_changed: %{path: "lib/not-a-list.ex"},
+        diff_preview: nil
+      }),
+      review_card(ctx.workspace_id, %{files_changed: [], diff_preview: "+ declared change"}),
+      review_card(ctx.workspace_id, %{files_changed: [], diff_preview: 42}),
+      review_card(ctx.workspace_id, %{files_changed: [], diff_preview: <<255>>}),
+      review_card(ctx.workspace_id, %{
+        files_changed: [],
+        diff_preview: nil,
+        locator: %{artifact: 42}
+      }),
+      ctx.workspace_id
+      |> review_card(%{files_changed: [], diff_preview: nil})
+      |> put_in([:context, :files_changed], false)
+    ]
+
+    for card <- cards do
+      assert Evidence.project(card, @viewer) == nil
+
+      assert_received {:evidence_workspace_source_get, workspace_id}
+      assert workspace_id == ctx.workspace_id
+    end
+  end
+
+  test "empty context evidence cannot mask a metadata declaration", ctx do
+    Application.put_env(:casein, :workspace_source, __MODULE__)
+
+    card =
+      ctx.workspace_id
+      |> review_card(%{files_changed: [], diff_preview: nil})
+      |> put_in([:meta, :files_changed], [%{path: nil}])
+
+    assert Evidence.project(card, @viewer) == nil
+    assert_received {:evidence_workspace_source_get, workspace_id}
+    assert workspace_id == ctx.workspace_id
+  end
+
+  def get(workspace_id, _auth) do
+    send(self(), {:evidence_workspace_source_get, workspace_id})
+    {:error, :not_found}
+  end
+
   defp review_card(workspace_id, evidence) do
     Card.needs_review(
       %{
