@@ -282,6 +282,20 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
       GenServer.stop(worker, :normal)
     end
 
+    test "wrapped URL segments all carry the complete destination" do
+      worker = start_worker()
+      url = "https://example.com/a/very/long/path"
+
+      send(worker, {:terminal_payload, :data, %{data: url}})
+
+      assert_receive {:pane_frame, "pane-gen-1", %{web_links: links}}, 1_000
+      assert length(links) == 2
+      assert Enum.map(links, & &1.row) == [0, 1]
+      assert Enum.all?(links, &(&1.url == url))
+
+      GenServer.stop(worker, :normal)
+    end
+
     test "frames omit web_links when the changed rows carry no URL", %{root: root} do
       worker = start_link_worker(root, "pane-nourls")
 

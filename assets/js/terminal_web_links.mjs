@@ -1,12 +1,12 @@
 // Client-side store for server-detected terminal web links (http(s) URLs).
 //
-// Sibling to terminal_file_links.mjs: PaneWorker scans changed rows and
+// Sibling to terminal_file_links.mjs: PaneWorker scans visible rows and
 // attaches `payload.web_links = [{row, from, to, url}]` to the ghostty:render
 // frame, so link state is transactionally consistent with row content. This
 // module keeps the per-hook `Map(row -> links[])` in step with each accepted
-// frame: repainted rows are cleared first (all rows on a full frame), then the
-// frame's links are applied. Pure functions — DOM/overlay concerns live in
-// ghostty_terminal.js.
+// frame: affected link rows are cleared first (all rows on a full frame), then
+// the frame's links are applied. Wrapped segments all carry the complete URL.
+// Pure functions — DOM/overlay concerns live in ghostty_terminal.js.
 
 function fullFramePayload(payload) {
   return payload?.full_frame === true || payload?.["full_frame?"] === true
@@ -19,6 +19,10 @@ function updateWebLinkStore(store, payload) {
 
   if (fullFramePayload(payload)) {
     store.clear()
+  } else if (Array.isArray(payload?.web_link_rows)) {
+    for (const row of payload.web_link_rows) {
+      if (Number.isInteger(row)) store.delete(row)
+    }
   } else if (Array.isArray(payload?.rows)) {
     for (const row of payload.rows) {
       if (Number.isInteger(row?.index)) store.delete(row.index)

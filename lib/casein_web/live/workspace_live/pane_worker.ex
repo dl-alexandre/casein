@@ -547,12 +547,13 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
           state
         else
           rows = scannable_rows(payload, cells)
+          all_rows = scannable_rows(%{}, cells)
 
           payload =
             payload
             |> put_content_gen(state.content_gen)
             |> put_file_links(state, rows, id)
-            |> put_web_links(rows, id)
+            |> put_web_links(rows, all_rows, id)
 
           send(state.parent, {:pane_frame, state.pane_id, payload})
           emit_worker_frame_telemetry(:sent, state, payload, started)
@@ -655,28 +656,37 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
 
   # --- terminal web-link detection ----------------------------------------------
   #
-  # Scan the same changed rows for http(s) URLs and attach `payload.web_links`
-  # so they ride the ghostty:render frame alongside file links. No link_root
-  # gate and no filesystem validation — a URL is self-describing — so web links
-  # work for remote sessions too. The scanner's own `"://"` binary gate keeps
-  # the common (URL-free) row cheap.
-  defp put_web_links(payload, rows, id) do
+  # Scan the visible grid for http(s) URLs and attach `payload.web_links` so
+  # they ride the ghostty:render frame alongside file links. Full-grid context
+  # lets the scanner reconstruct URLs soft-wrapped across adjacent rows. The
+  # client refreshes current link rows plus repainted rows, which keeps
+  # incremental frames consistent without clearing unrelated state.
+  defp put_web_links(payload, changed_rows, all_rows, id) do
     started = System.monotonic_time()
-    links = WebLinkScanner.scan_rows(rows)
+    links = WebLinkScanner.scan_rows(all_rows)
 
     :telemetry.execute(
       [:casein, :terminal, :web_link_scan],
       %{
         duration_us:
           System.convert_time_unit(System.monotonic_time() - started, :native, :microsecond),
-        rows: length(rows),
+        rows: length(all_rows),
         links: length(links)
       },
       %{id: id, full_frame?: payload[:full_frame] == true}
     )
 
-    # Empty is omitted: the client clears link state for every repainted row,
-    # so absence means "no links" (same contract as file links).
+    refresh_rows =
+      (Enum.map(changed_rows, &elem(&1, 0)) ++ Enum.map(links, & &1.row))
+      |> Enum.uniq()
+
+    payload =
+      if payload[:full_frame] == true or refresh_rows == [] do
+        payload
+      else
+        Map.put(payload, :web_link_rows, refresh_rows)
+      end
+
     if links == [], do: payload, else: Map.put(payload, :web_links, links)
   end
 

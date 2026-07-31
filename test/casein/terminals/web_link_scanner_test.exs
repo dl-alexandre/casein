@@ -55,5 +55,46 @@ defmodule Casein.Terminals.WebLinkScannerTest do
 
       assert [%{row: 3, url: "https://z.dev", from: 6}] = WebLinkScanner.scan_rows(rows)
     end
+
+    test "reconstructs a URL soft-wrapped across terminal rows" do
+      url = "https://example.com/a/very/long/path"
+      rows = wrapped_rows(url, 13, 4)
+
+      links = WebLinkScanner.scan_rows(rows)
+
+      assert Enum.map(links, & &1.row) == [4, 5, 6]
+      assert Enum.all?(links, &(&1.url == url))
+      assert Enum.at(links, 0) == %{row: 4, from: 0, to: 12, url: url}
+      assert Enum.at(links, 1) == %{row: 5, from: 0, to: 12, url: url}
+      assert List.last(links) == %{row: 6, from: 0, to: 9, url: url}
+    end
+
+    test "trims punctuation after the final wrapped segment" do
+      url = "https://example.com/a/very/long/path"
+      [first | rest] = wrapped_rows(url <> ".", 20, 0)
+
+      assert links = WebLinkScanner.scan_rows([first | rest])
+      assert Enum.all?(links, &(&1.url == url))
+      assert List.last(links).to == 15
+    end
+
+    test "does not join a second URL that starts on the next row" do
+      rows = [{0, "https://one.test/x"}, {1, "https://two.test/y"}]
+
+      assert [
+               %{row: 0, url: "https://one.test/x"},
+               %{row: 1, url: "https://two.test/y"}
+             ] = WebLinkScanner.scan_rows(rows)
+    end
+  end
+
+  defp wrapped_rows(text, width, first_row) do
+    text
+    |> String.graphemes()
+    |> Enum.chunk_every(width)
+    |> Enum.map(&Enum.join/1)
+    |> List.update_at(-1, &String.pad_trailing(&1, width))
+    |> Enum.with_index(first_row)
+    |> Enum.map(fn {row, index} -> {index, row} end)
   end
 end
