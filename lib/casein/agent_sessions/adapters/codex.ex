@@ -93,9 +93,13 @@ defmodule Casein.AgentSessions.Adapters.Codex do
   @impl true
   def respond_to_request(%{runtime_id: runtime_id}, request_id, decision)
       when is_binary(runtime_id) do
-    with {:ok, broker} <- broker(runtime_id),
-         {:ok, resolved} <- to_broker_decision(decision) do
-      ApprovalBroker.resolve(broker, request_id, resolved)
+    # Argument validation before resource lookup, so the error a caller sees is
+    # deterministic instead of depending on whether the runtime happens to be up.
+    # A bad decision shape is a bad decision shape either way.
+    with {:ok, id} <- validate_request_id(request_id),
+         {:ok, resolved} <- to_broker_decision(decision),
+         {:ok, broker} <- broker(runtime_id) do
+      ApprovalBroker.resolve(broker, id, resolved)
     end
   end
 
@@ -119,6 +123,14 @@ defmodule Casein.AgentSessions.Adapters.Codex do
   # full six-kind vocabulary; flattening to accept/decline would make the
   # execpolicy and network-policy amendments unreachable, which is exactly the
   # gap the current codex_events.ex UI has.
+  # ApprovalBroker.resolve/3 guards `when is_binary(approval_id)`, so a
+  # non-binary id would raise FunctionClauseError straight out of the adapter
+  # instead of returning an error. The contract types request_id as term() and
+  # Grok's ids are `String.t() | integer()`, so a provider-agnostic caller can
+  # easily hand us an integer. Fail as a value, not as a crash.
+  defp validate_request_id(id) when is_binary(id) and id != "", do: {:ok, id}
+  defp validate_request_id(id), do: {:error, {:invalid_request_id, id}}
+
   defp to_broker_decision({:decision, decision}), do: {:ok, decision}
 
   defp to_broker_decision({:choice, _option_id}),

@@ -67,7 +67,10 @@ defmodule Casein.AgentSessions.Provider.PendingRequest do
     %__MODULE__{
       provider_id: Map.fetch!(attrs, :provider_id),
       session_ref: Map.get(attrs, :session_ref),
-      request_id: Map.fetch!(attrs, :request_id),
+      # @enforce_keys only requires the key to be present, so a nil id would
+      # pass and produce a row the operator can see but never resolve. Reject it
+      # at construction instead.
+      request_id: require_request_id(Map.fetch!(attrs, :request_id)),
       title: present_string(Map.get(attrs, :title), @default_title),
       detail: presence(Map.get(attrs, :detail)),
       options: normalize_options(Map.get(attrs, :options)),
@@ -87,6 +90,14 @@ defmodule Casein.AgentSessions.Provider.PendingRequest do
   @doc "Default title used when a provider supplies none."
   @spec default_title() :: String.t()
   def default_title, do: @default_title
+
+  defp require_request_id(nil) do
+    raise ArgumentError,
+          "request_id is required — a pending request with no id renders a row " <>
+            "the operator can see but never resolve"
+  end
+
+  defp require_request_id(id), do: id
 
   defp normalize_options(nil), do: nil
   defp normalize_options([]), do: nil
