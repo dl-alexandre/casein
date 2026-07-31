@@ -6,15 +6,40 @@
 CASEIN_CADDY_CANONICAL_DIAL="${CASEIN_CADDY_CANONICAL_DIAL:-unix//run/casein/current.sock}"
 CASEIN_CADDY_LOOPBACK_DIAL="${CASEIN_CADDY_LOOPBACK_DIAL:-127.0.0.1:4000}"
 CASEIN_CADDY_LEGACY_DIAL="${CASEIN_CADDY_LEGACY_DIAL:-unix//run/devide/current.sock}"
+CASEIN_CADDY_ADMIN_URL="${CASEIN_CADDY_ADMIN_URL:-http://localhost:2019}"
+
+# Keep Caddy admin calls bounded even when inherited environment values are
+# malformed or hostile. Enumerating the small accepted ranges avoids shell
+# arithmetic overflow on arbitrarily large numeric strings.
+case "${CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT:-}" in
+  1 | 2 | 3 | 4 | 5) ;;
+  *) CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT=2 ;;
+esac
+case "${CASEIN_CADDY_ADMIN_MAX_TIME:-}" in
+  1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10) ;;
+  *) CASEIN_CADDY_ADMIN_MAX_TIME=5 ;;
+esac
+
 CADDY_UPSTREAM_PATH="${CADDY_UPSTREAM_PATH:-}"
 CADDY_PREVIOUS_DIAL="${CADDY_PREVIOUS_DIAL:-}"
 CADDY_UPSTREAM_PATCHED="${CADDY_UPSTREAM_PATCHED:-0}"
 
+casein_caddy_admin_curl() {
+  sudo curl \
+    --connect-timeout "${CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT}" \
+    --max-time "${CASEIN_CADDY_ADMIN_MAX_TIME}" \
+    "$@"
+}
+
 casein_find_caddy_upstream_path() {
   local host="$1"
+  local config=""
 
-  sudo curl -s http://localhost:2019/config/ 2>/dev/null |
-    CASEIN_CADDY_HOST="$host" python3 -c '
+  if ! config="$(casein_caddy_admin_curl -s "${CASEIN_CADDY_ADMIN_URL}/config/" 2>/dev/null)"; then
+    return 1
+  fi
+
+  printf '%s\n' "$config" | CASEIN_CADDY_HOST="$host" python3 -c '
 import json
 import os
 import sys
@@ -73,6 +98,7 @@ casein_reconcile_caddy_upstream() {
   local host="$1"
   local mode="${2:-migration}"
   local observed=""
+  local previous_dial=""
 
   CADDY_UPSTREAM_PATH="$(casein_find_caddy_upstream_path "$host" || true)"
   if [ -z "$CADDY_UPSTREAM_PATH" ]; then
@@ -80,10 +106,14 @@ casein_reconcile_caddy_upstream() {
     return 1
   fi
 
-  CADDY_PREVIOUS_DIAL="$(
-    sudo curl -s "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" 2>/dev/null |
-      tr -d '"' || true
-  )"
+  if ! previous_dial="$(
+    casein_caddy_admin_curl -s \
+      "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" 2>/dev/null
+  )"; then
+    log "warning: Caddy upstream read failed for ${host}"
+    return 1
+  fi
+  CADDY_PREVIOUS_DIAL="$(printf '%s' "$previous_dial" | tr -d '"')"
 
   case "$CADDY_PREVIOUS_DIAL" in
     "$CASEIN_CADDY_CANONICAL_DIAL")
@@ -106,18 +136,22 @@ casein_reconcile_caddy_upstream() {
       ;;
   esac
 
-  if ! sudo curl -fsS -X PATCH \
-      "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
+  if ! casein_caddy_admin_curl -fsS -X PATCH \
+      "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" \
       -H "content-type: application/json" \
       -d "\"${CASEIN_CADDY_CANONICAL_DIAL}\"" >/dev/null; then
     log "warning: Caddy upstream PATCH failed; leaving ${CADDY_PREVIOUS_DIAL:-unknown} in place"
     return 1
   fi
 
-  observed="$(
-    sudo curl -s "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" 2>/dev/null |
-      tr -d '"' || true
-  )"
+  if ! observed="$(
+    casein_caddy_admin_curl -s \
+      "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" 2>/dev/null
+  )"; then
+    log "warning: Caddy upstream verification failed for ${host}"
+    return 1
+  fi
+  observed="$(printf '%s' "$observed" | tr -d '"')"
   if [ "$observed" != "$CASEIN_CADDY_CANONICAL_DIAL" ]; then
     log "warning: Caddy upstream verification read ${observed:-empty}, expected ${CASEIN_CADDY_CANONICAL_DIAL}"
     return 1

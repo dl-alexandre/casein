@@ -205,8 +205,8 @@ rollback() {
     [ -n "${CADDY_UPSTREAM_PATH}" ] &&
     [ -n "${CADDY_PREVIOUS_DIAL}" ]; then
     log "restoring Caddy upstream to ${CADDY_PREVIOUS_DIAL}"
-    sudo curl -fsS -X PATCH \
-      "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
+    casein_caddy_admin_curl -fsS -X PATCH \
+      "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" \
       -H "content-type: application/json" \
       -d "\"${CADDY_PREVIOUS_DIAL}\"" >/dev/null || true
   fi
