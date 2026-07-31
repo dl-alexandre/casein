@@ -12,6 +12,7 @@ defmodule CaseinMob.SessionDashboardScreen do
   """
   use Mob.Screen
 
+  alias CaseinMob.ConnectionTiming
   alias CaseinMob.PairingScreen
   alias CaseinMob.ReviewDecisionScreen
   alias CaseinMob.SessionClient
@@ -2038,6 +2039,7 @@ defmodule CaseinMob.SessionDashboardScreen do
         |> observe_origin_switch_if_pending(origin_id)
         |> maybe_open_pending_notification()
         |> complete_pending_origin_resume()
+        |> report_first_cards_render_ready(payload, length(cards))
 
       {:error, reason} ->
         socket
@@ -2060,6 +2062,28 @@ defmodule CaseinMob.SessionDashboardScreen do
       {:ok, profile} -> {:ok, profile.origin_id}
       :error -> {:error, :unknown_origin}
     end
+  end
+
+  defp report_first_cards_render_ready(socket, payload, card_count) do
+    if authoritative_live_work_snapshot?(payload) do
+      case ConnectionTiming.snapshot_generation(payload) do
+        generation when is_binary(generation) ->
+          :ok = SessionClient.cards_render_ready(generation, card_count)
+          socket
+
+        _missing_generation ->
+          socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp authoritative_live_work_snapshot?(payload) do
+    payload
+    |> get("live_work", %{})
+    |> get("status")
+    |> Kernel.==("authoritative")
   end
 
   defp snapshot_observed_at(cards) do

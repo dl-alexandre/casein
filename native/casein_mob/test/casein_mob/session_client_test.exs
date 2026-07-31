@@ -1,20 +1,26 @@
 defmodule CaseinMob.SessionClientTest do
   use ExUnit.Case, async: true
 
+  alias CaseinMob.ConnectionTiming
   alias CaseinMob.SessionClient
   alias Slipstream.Socket
 
   test "mobile card topic join and pushes notify subscribers" do
     socket = socket_with_subscriber("mobile:user:me", self())
-    snapshot = %{"cards" => [%{"id" => "needs_review:ws-1:run-1"}]}
+    snapshot = mobile_snapshot(socket, 4, [%{"id" => "needs_review:ws-1:run-1"}])
 
     assert {:ok, joined_socket} = SessionClient.handle_join("mobile:user:me", snapshot, socket)
-    assert joined_socket.assigns.topic_snapshots["mobile:user:me"] == snapshot
+    assert joined_socket.assigns.accepted_mobile_snapshot_version == 4
+    assert joined_socket.assigns.topic_snapshots["mobile:user:me"]["cards"] == snapshot["cards"]
 
-    assert_receive {:mobile_cards_snapshot, ^snapshot}
+    assert_receive {:mobile_cards_snapshot, received}
+    assert received["cards"] == snapshot["cards"]
     assert_receive {:mobile_cards_status, :joined}
 
-    next_snapshot = %{"cards" => []}
+    next_snapshot =
+      mobile_snapshot(joined_socket, 4, [], %{
+        "live_work" => %{"status" => "authoritative"}
+      })
 
     assert {:ok, updated_socket} =
              SessionClient.handle_message(
@@ -24,8 +30,13 @@ defmodule CaseinMob.SessionClientTest do
                joined_socket
              )
 
-    assert updated_socket.assigns.topic_snapshots["mobile:user:me"] == next_snapshot
-    assert_receive {:mobile_cards_snapshot, ^next_snapshot}
+    assert updated_socket.assigns.accepted_mobile_snapshot_version == 4
+
+    assert updated_socket.assigns.topic_snapshots["mobile:user:me"]["live_work"] ==
+             next_snapshot["live_work"]
+
+    assert_receive {:mobile_cards_snapshot, received}
+    assert received["live_work"] == next_snapshot["live_work"]
   end
 
   test "mobile card topic close reports mobile status without workspace id" do
@@ -64,21 +75,28 @@ defmodule CaseinMob.SessionClientTest do
     assert {:ok, socket} = SessionClient.handle_disconnect(:closed, socket)
     assert_receive {:mobile_cards_status, :disconnected}
 
-    snapshot = %{"cards" => [%{"id" => "in_progress:ws-1:run-1"}]}
+    assert {:ok, socket} = SessionClient.handle_connect(socket)
+    snapshot = mobile_snapshot(socket, 1, [%{"id" => "in_progress:ws-1:run-1"}])
 
     assert {:ok, recovered} = SessionClient.handle_join("mobile:user:me", snapshot, socket)
-    assert recovered.assigns.timing_started_at == nil
+    assert recovered.assigns.accepted_mobile_snapshot_version == 1
 
-    assert_receive {:mobile_cards_snapshot, ^snapshot}
+    assert_receive {:mobile_cards_snapshot, received}
+    assert received["cards"] == snapshot["cards"]
     assert_receive {:mobile_cards_status, :joined}
   end
 
   test "rewatching an already joined mobile card topic replays its authoritative snapshot" do
     topic = "mobile:user:me"
-    snapshot = %{"cards" => [%{"id" => "clarification:ws-1:event-1"}]}
+    base_socket = socket_with_subscriber(topic, self())
+
+    snapshot =
+      base_socket
+      |> mobile_snapshot(1, [%{"id" => "clarification:ws-1:event-1"}])
+      |> ConnectionTiming.decorate_snapshot(base_socket.assigns.timing_context)
 
     socket =
-      socket_with_subscriber(topic, self())
+      base_socket
       |> Map.put(:channel_pid, self())
       |> Socket.assign(:topic_snapshots, %{topic => snapshot})
       |> Socket.put_join_config(topic, %{})
@@ -88,7 +106,8 @@ defmodule CaseinMob.SessionClientTest do
              SessionClient.handle_cast({:watch_mobile_cards, self()}, socket)
 
     assert is_reference(watched_socket.assigns.subscriber_monitors[self()])
-    assert_receive {:mobile_cards_snapshot, ^snapshot}
+    assert_receive {:mobile_cards_snapshot, received}
+    assert received["cards"] == snapshot["cards"]
     assert_receive {:mobile_cards_status, :joined}
   end
 
@@ -316,6 +335,10 @@ defmodule CaseinMob.SessionClientTest do
       |> Socket.assign(:topic_snapshots, %{
         "mobile:user:me" => %{"cards" => [%{"id" => "old-card"}]}
       })
+      |> Socket.assign(:accepted_mobile_snapshot_version, 22)
+      |> Socket.assign(:accepted_mobile_snapshot_origin_id, "origin-1")
+
+    prior_generation = socket.assigns.timing_context.generation
 
     assert {:noreply, socket} =
              SessionClient.handle_cast(
@@ -329,6 +352,10 @@ defmodule CaseinMob.SessionClientTest do
     assert socket.assigns.topic_snapshots == %{}
     assert socket.assigns.push_registration_refs == %{}
     assert socket.assigns.card_action_refs == %{}
+    assert socket.assigns.accepted_mobile_snapshot_version == nil
+    assert socket.assigns.accepted_mobile_snapshot_origin_id == nil
+    assert socket.assigns.timing_context.cycle == :origin_switch
+    refute socket.assigns.timing_context.generation == prior_generation
 
     assert_receive {:mobile_cards_status, :disconnected}
     assert_receive {:push_registration_status, :user, {:error, :host_switched}}
@@ -379,6 +406,263 @@ defmodule CaseinMob.SessionClientTest do
     assert_receive {:card_action_result, "c1", {:error, "note_required"}}
   end
 
+  test "malformed join establishes no baseline and a later valid push recovers" do
+    socket = socket_with_subscriber("mobile:user:me", self())
+    malformed = mobile_snapshot(socket, "4", [%{"id" => "must-not-leak"}])
+
+    assert {:ok, socket} = SessionClient.handle_join("mobile:user:me", malformed, socket)
+    assert socket.assigns.accepted_mobile_snapshot_version == nil
+    assert socket.assigns.topic_snapshots == %{}
+    refute_receive {:mobile_cards_snapshot, _payload}
+    refute_receive {:mobile_cards_status, :joined}
+
+    valid = mobile_snapshot(socket, 4, [%{"id" => "accepted"}])
+
+    assert {:ok, socket} =
+             SessionClient.handle_message("mobile:user:me", "cards_snapshot", valid, socket)
+
+    assert socket.assigns.accepted_mobile_snapshot_version == 4
+    assert socket.assigns.topic_snapshots["mobile:user:me"]["cards"] == valid["cards"]
+    assert_receive {:mobile_cards_snapshot, received}
+    assert received["cards"] == valid["cards"]
+    assert_receive {:mobile_cards_status, :joined}
+  end
+
+  test "negative, string, float, nil, and missing versions fail closed" do
+    socket = socket_with_subscriber("mobile:user:me", self())
+
+    invalid_payloads =
+      [-1, "1", 1.0, nil]
+      |> Enum.map(&mobile_snapshot(socket, &1, [%{"id" => "must-not-leak"}]))
+      |> Kernel.++([Map.delete(mobile_snapshot(socket, 1), "version")])
+
+    socket =
+      Enum.reduce(invalid_payloads, socket, fn payload, socket ->
+        assert {:ok, socket} =
+                 SessionClient.handle_message(
+                   "mobile:user:me",
+                   "cards_snapshot",
+                   payload,
+                   socket
+                 )
+
+        socket
+      end)
+
+    assert socket.assigns.accepted_mobile_snapshot_version == nil
+    assert socket.assigns.topic_snapshots == %{}
+    refute_receive {:mobile_cards_snapshot, _payload}
+    refute_receive {:mobile_cards_status, :joined}
+  end
+
+  test "lower versions preserve the accepted cache while equal versions refresh metadata" do
+    socket = socket_with_subscriber("mobile:user:me", self())
+    baseline = mobile_snapshot(socket, 8, [], %{"live_work" => %{"status" => "hydrating"}})
+
+    assert {:ok, socket} = SessionClient.handle_join("mobile:user:me", baseline, socket)
+    assert_receive {:mobile_cards_snapshot, _payload}
+    assert_receive {:mobile_cards_status, :joined}
+
+    lower = mobile_snapshot(socket, 7, [%{"id" => "must-not-leak"}])
+
+    assert {:ok, rejected} =
+             SessionClient.handle_message("mobile:user:me", "cards_snapshot", lower, socket)
+
+    assert rejected.assigns.accepted_mobile_snapshot_version == 8
+
+    assert rejected.assigns.topic_snapshots["mobile:user:me"]["live_work"]["status"] ==
+             "hydrating"
+
+    refute_receive {:mobile_cards_snapshot, _payload}
+
+    equal =
+      mobile_snapshot(rejected, 8, [], %{"live_work" => %{"status" => "authoritative"}})
+
+    assert {:ok, refreshed} =
+             SessionClient.handle_message("mobile:user:me", "cards_snapshot", equal, rejected)
+
+    assert refreshed.assigns.accepted_mobile_snapshot_version == 8
+
+    assert refreshed.assigns.topic_snapshots["mobile:user:me"]["live_work"]["status"] ==
+             "authoritative"
+
+    assert_receive {:mobile_cards_snapshot, received}
+    assert received["live_work"]["status"] == "authoritative"
+  end
+
+  test "disconnect rejects its window and reconnect accepts a lower new baseline" do
+    socket = socket_with_subscriber("mobile:user:me", self())
+
+    assert {:ok, socket} =
+             SessionClient.handle_join("mobile:user:me", mobile_snapshot(socket, 9), socket)
+
+    assert_receive {:mobile_cards_snapshot, _payload}
+    assert_receive {:mobile_cards_status, :joined}
+
+    old_context = socket.assigns.timing_context
+    assert {:ok, disconnected} = SessionClient.handle_disconnect(:closed, socket)
+    assert_receive {:mobile_cards_status, :disconnected}
+
+    during_disconnect = mobile_snapshot(disconnected, 10)
+
+    assert {:ok, disconnected} =
+             SessionClient.handle_message(
+               "mobile:user:me",
+               "cards_snapshot",
+               during_disconnect,
+               disconnected
+             )
+
+    assert disconnected.assigns.topic_snapshots == %{}
+    refute_receive {:mobile_cards_snapshot, _payload}
+
+    assert {:ok, reconnected} = SessionClient.handle_connect(disconnected)
+
+    old_generation =
+      reconnected
+      |> mobile_snapshot(99)
+      |> Map.put("connection_generation", old_context.generation)
+      |> Map.put("connection_cycle", Atom.to_string(old_context.cycle))
+
+    assert {:ok, reconnected} =
+             SessionClient.handle_message(
+               "mobile:user:me",
+               "cards_snapshot",
+               old_generation,
+               reconnected
+             )
+
+    assert reconnected.assigns.accepted_mobile_snapshot_version == nil
+    refute_receive {:mobile_cards_snapshot, _payload}
+
+    new_baseline = mobile_snapshot(reconnected, 1)
+
+    assert {:ok, recovered} =
+             SessionClient.handle_message(
+               "mobile:user:me",
+               "cards_snapshot",
+               new_baseline,
+               reconnected
+             )
+
+    assert recovered.assigns.accepted_mobile_snapshot_version == 1
+    assert_receive {:mobile_cards_snapshot, _payload}
+    assert_receive {:mobile_cards_status, :joined}
+  end
+
+  test "mismatched connection cycle and origin are rejected before cache or notify" do
+    socket = socket_with_subscriber("mobile:user:me", self())
+
+    assert {:ok, socket} =
+             SessionClient.handle_join("mobile:user:me", mobile_snapshot(socket, 2), socket)
+
+    assert_receive {:mobile_cards_snapshot, _payload}
+    assert_receive {:mobile_cards_status, :joined}
+
+    wrong_cycle =
+      socket
+      |> mobile_snapshot(3)
+      |> Map.put("connection_cycle", "origin_switch")
+
+    assert {:ok, socket} =
+             SessionClient.handle_message(
+               "mobile:user:me",
+               "cards_snapshot",
+               wrong_cycle,
+               socket
+             )
+
+    wrong_origin =
+      socket
+      |> mobile_snapshot(3)
+      |> Map.put("origin", %{"id" => "origin-2", "display_name" => "Other"})
+
+    assert {:ok, socket} =
+             SessionClient.handle_message(
+               "mobile:user:me",
+               "cards_snapshot",
+               wrong_origin,
+               socket
+             )
+
+    assert socket.assigns.accepted_mobile_snapshot_version == 2
+    assert socket.assigns.topic_snapshots["mobile:user:me"]["version"] == 2
+    refute_receive {:mobile_cards_snapshot, _payload}
+  end
+
+  test "render-ready acknowledgement emits once per current generation and rejects stale ones" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_feed_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    socket = socket_with_subscriber("mobile:user:me", self())
+    generation = socket.assigns.timing_context.generation
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:cards_render_ready, generation, 3}, socket)
+
+    assert socket.assigns.render_ready_generation == generation
+
+    assert_receive {:feed_stage, %{card_count: 3},
+                    %{
+                      stage: :first_cards_render_ready,
+                      connection_generation: ^generation
+                    }}
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:cards_render_ready, generation, 4}, socket)
+
+    refute_receive {:feed_stage, _measurements, %{stage: :first_cards_render_ready}}
+
+    assert {:ok, reconnecting} = SessionClient.handle_disconnect(:closed, socket)
+    next_generation = reconnecting.assigns.timing_context.generation
+    refute next_generation == generation
+    assert reconnecting.assigns.render_ready_generation == nil
+
+    assert {:noreply, reconnecting} =
+             SessionClient.handle_cast({:cards_render_ready, generation, 5}, reconnecting)
+
+    assert reconnecting.assigns.render_ready_generation == nil
+    refute_receive {:feed_stage, _measurements, %{stage: :first_cards_render_ready}}
+
+    assert {:noreply, reconnecting} =
+             SessionClient.handle_cast(
+               {:cards_render_ready, next_generation, 6},
+               reconnecting
+             )
+
+    assert reconnecting.assigns.render_ready_generation == next_generation
+
+    assert_receive {:feed_stage, %{card_count: 6},
+                    %{
+                      stage: :first_cards_render_ready,
+                      connection_generation: ^next_generation
+                    }}
+  end
+
+  test "an unavailable origin store without an expected origin fails closed" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:expected_mobile_snapshot_origin_id, nil)
+
+    assert {:ok, socket} =
+             SessionClient.handle_join("mobile:user:me", mobile_snapshot(socket, 1), socket)
+
+    assert socket.assigns.accepted_mobile_snapshot_version == nil
+    assert socket.assigns.accepted_mobile_snapshot_origin_id == nil
+    assert socket.assigns.topic_snapshots == %{}
+    refute_receive {:mobile_cards_snapshot, _payload}
+    refute_receive {:mobile_cards_status, :joined}
+  end
+
   test "an unrelated reply ref is ignored" do
     socket = socket_with_subscriber("mobile:user:me", self())
     assert {:ok, _socket} = SessionClient.handle_reply("unknown-ref", :ok, socket)
@@ -390,6 +674,8 @@ defmodule CaseinMob.SessionClientTest do
   end
 
   defp socket_with_subscribers(subscribers) do
+    timing_context = ConnectionTiming.new_context(:cold)
+
     Socket.new()
     |> Socket.assign(:subscribers, subscribers)
     |> Socket.assign(:subscriber_monitors, %{})
@@ -399,5 +685,30 @@ defmodule CaseinMob.SessionClientTest do
     |> Socket.assign(:connecting?, false)
     |> Socket.assign(:push_registration_refs, %{})
     |> Socket.assign(:card_action_refs, %{})
+    |> Socket.assign(:timing_context, timing_context)
+    |> Socket.assign(:render_ready_generation, nil)
+    |> Socket.assign(:transport_ready?, true)
+    |> Socket.assign(:accepted_mobile_snapshot_version, nil)
+    |> Socket.assign(:accepted_mobile_snapshot_origin_id, nil)
+    |> Socket.assign(:expected_mobile_snapshot_origin_id, "origin-1")
+  end
+
+  defp mobile_snapshot(socket, version, cards \\ [], extras \\ %{}) do
+    context = socket.assigns.timing_context
+
+    Map.merge(
+      %{
+        "version" => version,
+        "connection_generation" => context.generation,
+        "connection_cycle" => Atom.to_string(context.cycle),
+        "origin" => %{"id" => "origin-1", "display_name" => "Devbox"},
+        "cards" => cards
+      },
+      extras
+    )
+  end
+
+  def handle_feed_stage(_event, measurements, metadata, subscriber) do
+    send(subscriber, {:feed_stage, measurements, metadata})
   end
 end

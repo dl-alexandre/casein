@@ -8,6 +8,7 @@ defmodule CaseinWeb.UserSocket do
   use Phoenix.Socket
 
   alias Casein.DeviceLinks
+  alias Casein.Mobile.FeedTiming
   alias Casein.Origin
 
   channel "terminal:*", CaseinWeb.TerminalChannel
@@ -17,6 +18,7 @@ defmodule CaseinWeb.UserSocket do
   @impl true
   def connect(params, socket, _connect_info) do
     token = params["token"]
+    timing = FeedTiming.new(params)
 
     case CaseinWeb.ChannelAuth.verify_user_token(token) do
       {:ok, user_id, email} when is_binary(user_id) ->
@@ -26,34 +28,59 @@ defmodule CaseinWeb.UserSocket do
         # it, the source rejects unauthenticated lookups and channel
         # joins refuse.
         user = %{id: user_id, username: user_id, email: email, role: :owner}
-        {:ok, assign(socket, :current_user, user)}
+
+        timing =
+          FeedTiming.emit(timing, :token_verified,
+            outcome: :succeeded,
+            reason_code: :user_token
+          )
+
+        {:ok,
+         socket
+         |> assign(:current_user, user)
+         |> assign(:mobile_feed_timing, timing)}
 
       _ ->
-        connect_scoped_token(token, socket)
+        connect_scoped_token(token, socket, timing)
     end
   end
 
-  defp connect_scoped_token(token, socket) do
+  defp connect_scoped_token(token, socket, timing) do
     case CaseinWeb.ChannelAuth.verify_pairing_token(token) do
       {:ok, %{workspace_id: workspace_id} = claims} ->
         user = Map.take(claims, [:id, :username, :email, :role])
+
+        timing =
+          FeedTiming.emit(timing, :token_verified,
+            outcome: :succeeded,
+            reason_code: :pairing_token
+          )
 
         {:ok,
          socket
          |> assign(:current_user, user)
          |> assign(:pairing_workspace_id, workspace_id)
          |> assign(:mobile_origin_id, Origin.id())
-         |> assign(:mobile_origin_name, Origin.display_name())}
+         |> assign(:mobile_origin_name, Origin.display_name())
+         |> assign(:mobile_feed_timing, timing)}
 
       _ ->
-        connect_device_link_token(token, socket)
+        connect_device_link_token(token, socket, timing)
     end
   end
 
-  defp connect_device_link_token(token, socket) do
+  defp connect_device_link_token(token, socket, timing) do
     case DeviceLinks.verify_token(token) do
       {:ok, %{workspace_id: workspace_id} = claims} when is_binary(workspace_id) ->
         user = Map.take(claims, [:id, :username, :email, :role])
+
+        timing =
+          timing
+          |> FeedTiming.with_platform(Map.get(claims, :platform))
+          |> FeedTiming.emit(:token_verified,
+            outcome: :succeeded,
+            reason_code: :device_link_token
+          )
 
         {:ok,
          socket
@@ -62,9 +89,16 @@ defmodule CaseinWeb.UserSocket do
          |> assign(:device_link_id, claims.device_link_id)
          |> assign(:mobile_platform, Map.get(claims, :platform))
          |> assign(:mobile_origin_id, claims.origin_id)
-         |> assign(:mobile_origin_name, claims.origin_name)}
+         |> assign(:mobile_origin_name, claims.origin_name)
+         |> assign(:mobile_feed_timing, timing)}
 
       _ ->
+        _timing =
+          FeedTiming.emit(timing, :token_verified,
+            outcome: :failed,
+            reason_code: :invalid_token
+          )
+
         :error
     end
   end

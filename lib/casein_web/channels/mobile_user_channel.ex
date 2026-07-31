@@ -13,6 +13,7 @@ defmodule CaseinWeb.MobileUserChannel do
   alias Casein.Mobile.Actions
   alias Casein.Mobile.AttentionInbox
   alias Casein.Mobile.Evidence
+  alias Casein.Mobile.FeedTiming
   alias Casein.Mobile.Intervention
   alias Casein.Mobile.Observability
   alias Casein.Mobile.ResumeCard
@@ -23,35 +24,75 @@ defmodule CaseinWeb.MobileUserChannel do
 
   @impl true
   def join("mobile:user:me", _params, socket) do
+    socket = emit_feed_stage(socket, :mobile_join_started, outcome: :started)
+
     case current_user_id(socket) do
       user_id when is_binary(user_id) ->
         join_user_topic(user_id, socket)
 
       _ ->
+        _socket =
+          emit_feed_stage(socket, :mobile_join_replied,
+            outcome: :failed,
+            reason_code: :unauthorized
+          )
+
         {:error, %{reason: "unauthorized"}}
     end
   end
 
   def join("mobile:user:" <> user_id, _params, socket) do
-    if current_user_id(socket) == user_id,
-      do: join_user_topic(user_id, socket),
-      else: {:error, %{reason: "unauthorized"}}
+    socket = emit_feed_stage(socket, :mobile_join_started, outcome: :started)
+
+    if current_user_id(socket) == user_id do
+      join_user_topic(user_id, socket)
+    else
+      _socket =
+        emit_feed_stage(socket, :mobile_join_replied,
+          outcome: :failed,
+          reason_code: :unauthorized
+        )
+
+      {:error, %{reason: "unauthorized"}}
+    end
   end
 
   @impl true
   def handle_in("watch_workspace", %{"workspace_id" => workspace_id}, socket)
       when is_binary(workspace_id) do
+    socket =
+      emit_feed_stage(socket, :workspace_watch_started,
+        outcome: :started,
+        reason_code: :workspace_watch
+      )
+
     user_id = socket.assigns.mobile_user_id
     user = socket.assigns[:current_user] || %{}
 
     case authorize_workspace(socket, user, workspace_id) do
       :ok ->
-        :ok = UserObserver.watch_workspace(user_id, workspace_id)
+        :ok = UserObserver.watch_workspace(user_id, workspace_id, feed_timing(socket))
         :ok = UserObserver.connection_live(user_id, workspace_id)
-        {:reply, {:ok, render_snapshot(UserObserver.snapshot(user_id), socket)}, socket}
+        {snapshot, socket} = observer_snapshot_timed(user_id, socket)
+        {payload, socket} = render_snapshot_timed(snapshot, socket)
+
+        socket =
+          emit_feed_stage(socket, :workspace_watch_replied,
+            outcome: :succeeded,
+            reason_code: :workspace_watched
+          )
+
+        {:reply, {:ok, payload}, socket}
 
       {:error, reason} ->
         report_connection_issue(user_id, workspace_id, reason)
+
+        socket =
+          emit_feed_stage(socket, :workspace_watch_replied,
+            outcome: :failed,
+            reason_code: :unauthorized
+          )
+
         {:reply, {:error, %{reason: Atom.to_string(reason)}}, socket}
     end
   end
@@ -195,7 +236,16 @@ defmodule CaseinWeb.MobileUserChannel do
 
   @impl true
   def handle_info({:mobile_cards_snapshot, payload}, socket) do
-    push(socket, "cards_snapshot", render_snapshot(payload, socket))
+    {payload, socket} = render_snapshot_timed(payload, socket)
+    :ok = push(socket, "cards_snapshot", payload)
+
+    socket =
+      emit_feed_stage(socket, :push_queued,
+        outcome: :succeeded,
+        reason_code: :pushed,
+        count: 1
+      )
+
     {:noreply, socket}
   end
 
@@ -204,7 +254,7 @@ defmodule CaseinWeb.MobileUserChannel do
   defp watch_paired_workspace(socket, user_id) do
     case socket.assigns[:pairing_workspace_id] do
       workspace_id when is_binary(workspace_id) ->
-        _ = UserObserver.watch_workspace(user_id, workspace_id)
+        _ = UserObserver.watch_workspace(user_id, workspace_id, feed_timing(socket))
         UserObserver.connection_live(user_id, workspace_id)
 
       _ ->
@@ -295,8 +345,17 @@ defmodule CaseinWeb.MobileUserChannel do
     :ok = UserObserver.subscribe(user_id)
     :ok = watch_paired_workspace(socket, user_id)
 
-    {:ok, render_snapshot(UserObserver.snapshot(user_id), socket),
-     assign(socket, :mobile_user_id, user_id)}
+    socket = assign(socket, :mobile_user_id, user_id)
+    {snapshot, socket} = observer_snapshot_timed(user_id, socket)
+    {payload, socket} = render_snapshot_timed(snapshot, socket)
+
+    socket =
+      emit_feed_stage(socket, :mobile_join_replied,
+        outcome: :succeeded,
+        reason_code: :mobile_join
+      )
+
+    {:ok, payload, socket}
   end
 
   defp current_user_id(socket) do
@@ -352,6 +411,45 @@ defmodule CaseinWeb.MobileUserChannel do
       },
       cards: Enum.map(cards, &render_card(&1, Map.fetch!(attention_by_card, &1.id), socket))
     }
+    |> Map.merge(FeedTiming.wire_context(feed_timing(socket)))
+  end
+
+  defp render_snapshot_timed(snapshot, socket) do
+    payload = render_snapshot(snapshot, socket)
+    measurements = FeedTiming.snapshot_measurements(payload)
+
+    socket =
+      emit_feed_stage(
+        socket,
+        :snapshot_rendered,
+        [
+          outcome: :succeeded,
+          reason_code: :rendered
+        ] ++ measurements
+      )
+
+    {payload, socket}
+  end
+
+  defp observer_snapshot_timed(user_id, socket) do
+    {snapshot, timing} = UserObserver.snapshot_timed(user_id, feed_timing(socket))
+    {snapshot, assign(socket, :mobile_feed_timing, timing)}
+  end
+
+  defp emit_feed_stage(socket, stage, opts) do
+    timing =
+      socket
+      |> feed_timing()
+      |> FeedTiming.emit(stage, opts)
+
+    assign(socket, :mobile_feed_timing, timing)
+  end
+
+  defp feed_timing(socket) do
+    case socket.assigns[:mobile_feed_timing] do
+      %FeedTiming{} = timing -> timing
+      _missing -> FeedTiming.disabled()
+    end
   end
 
   defp render_card(card, attention, socket) do

@@ -120,6 +120,117 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert joined_socket.assigns.mobile_user_id == user_id
   end
 
+  test "two mobile channels retain independent validated connection generations" do
+    user_id = unique_id("dev")
+    first_generation = feed_generation()
+    second_generation = feed_generation()
+    prepare_user(user_id)
+    attach_feed_telemetry(self())
+
+    token = ChannelAuth.sign_user_token(user_id, "#{user_id}@local")
+
+    assert {:ok, first_socket} =
+             Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{
+               "token" => token,
+               "connection_generation" => first_generation,
+               "connection_cycle" => "cold"
+             })
+
+    assert {:ok, second_socket} =
+             Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{
+               "token" => token,
+               "connection_generation" => second_generation,
+               "connection_cycle" => "reconnect"
+             })
+
+    assert {:ok,
+            %{
+              connection_generation: ^first_generation,
+              connection_cycle: "cold"
+            }, first_channel} =
+             subscribe_and_join(
+               first_socket,
+               CaseinWeb.MobileUserChannel,
+               "mobile:user:me"
+             )
+
+    assert {:ok,
+            %{
+              connection_generation: ^second_generation,
+              connection_cycle: "reconnect"
+            }, second_channel} =
+             subscribe_and_join(
+               second_socket,
+               CaseinWeb.MobileUserChannel,
+               "mobile:user:me"
+             )
+
+    assert first_channel.assigns.mobile_feed_timing.connection_generation == first_generation
+    assert second_channel.assigns.mobile_feed_timing.connection_generation == second_generation
+
+    assert_receive {:mobile_feed_stage, _measurements,
+                    %{
+                      stage: :snapshot_rendered,
+                      connection_generation: ^first_generation
+                    } = first_metadata}
+
+    assert_receive {:mobile_feed_stage, _measurements,
+                    %{
+                      stage: :snapshot_rendered,
+                      connection_generation: ^second_generation
+                    } = second_metadata}
+
+    refute inspect(first_metadata) =~ user_id
+    refute inspect(second_metadata) =~ user_id
+
+    UserObserver.in_progress_changed(user_id, %{
+      workspace_id: "private-workspace",
+      session_id: "private-session",
+      command: "private command"
+    })
+
+    assert_push "cards_snapshot", first_push, 1_000
+    assert_push "cards_snapshot", second_push, 1_000
+
+    assert MapSet.new([
+             first_push.connection_generation,
+             second_push.connection_generation
+           ]) == MapSet.new([first_generation, second_generation])
+
+    assert Enum.all?([first_push, second_push], fn payload ->
+             payload.connection_cycle in ["cold", "reconnect"]
+           end)
+
+    assert_receive {:mobile_feed_stage, _measurements,
+                    %{stage: :push_queued, connection_generation: ^first_generation}}
+
+    assert_receive {:mobile_feed_stage, _measurements,
+                    %{stage: :push_queued, connection_generation: ^second_generation}}
+  end
+
+  test "an invalid generation stays uncorrelated without changing authentication" do
+    user_id = unique_id("dev")
+    secret = "workspace=#{unique_id("secret")}&token=do-not-echo"
+    prepare_user(user_id)
+    attach_feed_telemetry(self())
+
+    token = ChannelAuth.sign_user_token(user_id, "#{user_id}@local")
+
+    assert {:ok, socket} =
+             Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{
+               "token" => token,
+               "connection_generation" => secret,
+               "connection_cycle" => secret
+             })
+
+    assert {:ok, %{connection_generation: nil, connection_cycle: "unknown"} = reply, _channel} =
+             subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:me")
+
+    assert reply.user_id == user_id
+    refute inspect(reply) =~ secret
+    refute_receive {:mobile_feed_stage, _measurements, _metadata}, 50
+  end
+
   test "mobile user topic registers a user-scoped push token" do
     user_id = unique_id("dev")
     prepare_user(user_id)
@@ -1853,6 +1964,27 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
   defp configure_ready_push_provider do
     Application.put_env(:casein, :push_provider, Casein.Push.TestProvider)
+  end
+
+  defp attach_feed_telemetry(test_pid) do
+    handler = {__MODULE__, test_pid, System.unique_integer([:positive])}
+
+    :telemetry.attach(
+      handler,
+      [:casein, :mobile, :feed, :stage],
+      fn _event, measurements, metadata, pid ->
+        send(pid, {:mobile_feed_stage, measurements, metadata})
+      end,
+      test_pid
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+  end
+
+  defp feed_generation do
+    16
+    |> :crypto.strong_rand_bytes()
+    |> Base.url_encode64(padding: false)
   end
 
   defp await_card_snapshot do
