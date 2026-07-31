@@ -367,9 +367,10 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert card.meta["reason"] == "token_revoked"
   end
 
-  test "authoritative card exposes a sanitized bounded intervention and exact PWA link", %{
-    workspace_root: workspace_root
-  } do
+  test "authoritative card exposes a typed intervention without terminal content and exact PWA link",
+       %{
+         workspace_root: workspace_root
+       } do
     user_id = unique_id("dev")
     workspace_id = unique_id("ws")
     run_id = unique_id("run")
@@ -383,9 +384,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
       )
 
     FakeState.put(:fake_tmux_scrollback, %{
-      {tmux_session, pane_id} =>
-        "starting\nTOKEN=super-secret\n\e[31mNeeds your answer\e[0m\n" <>
-          String.duplicate("\n", 30)
+      {tmux_session, pane_id} => "TOKEN=super-secret must-not-enter-mobile-feed"
     })
 
     assert {:ok, _reply, _socket} = join_mobile(user_id, role: :admin)
@@ -398,15 +397,66 @@ defmodule CaseinWeb.MobileUserChannelTest do
     })
 
     assert_push "cards_snapshot", %{cards: [card]}, 1_000
-    assert card.intervention["version"] == 1
+    assert card.intervention["version"] == 2
     assert card.intervention["target"] == %{"role" => "agent"}
-    assert card.intervention["recent_output"] =~ "TOKEN=[REDACTED]"
-    refute card.intervention["recent_output"] =~ "super-secret"
+    assert card.intervention["availability"] == "revalidated_on_submit"
+    refute Map.has_key?(card.intervention, "recent_output")
+    refute Map.has_key?(card.intervention, "captured_at")
+    refute Jason.encode!(card) =~ "super-secret"
     assert card.intervention["pwa_url"] =~ "/workspaces/#{workspace_id}?"
     assert card.intervention["pwa_url"] =~ "session=#{run_id}"
     assert card.intervention["pwa_url"] =~ "tmux_session=#{tmux_session}"
     assert card.intervention["pwa_url"] =~ "pane=%252"
     assert Enum.any?(card.actions, &(&1["id"] == "follow_up"))
+  end
+
+  test "a 32-card snapshot performs no eager terminal capture", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    targets =
+      for index <- 1..32 do
+        tmux_session = Casein.Terminals.tmux_session_name(workspace_id, "agent-#{index}")
+        pane_id = "%2"
+
+        UserObserver.in_progress_changed(user_id, %{
+          workspace_id: workspace_id,
+          session_id: "run-#{index}",
+          command: "bounded task #{index}",
+          run_phase: "executing",
+          locator: %{tmux_session: tmux_session, pane: pane_id}
+        })
+
+        {tmux_session, pane_id}
+      end
+
+    # A capture-based projection would pass this PID to the binary-only output
+    # formatter and crash. The pure feed projection must never read it.
+    FakeState.put(
+      :fake_tmux_scrollback,
+      Map.new(targets, fn target -> {target, self()} end)
+    )
+
+    FakeState.put(
+      :fake_tmux_panes,
+      Map.new(targets, fn {tmux_session, pane_id} ->
+        {tmux_session, [%{id: pane_id, window_id: "@1", active: false, role: "agent"}]}
+      end)
+    )
+
+    assert length(UserObserver.snapshot(user_id).cards) == 32
+    assert {:ok, reply, _socket} = join_mobile(user_id, role: :admin)
+    assert length(reply.cards) == 32
+
+    assert Enum.all?(reply.cards, fn card ->
+             card.intervention["version"] == 2 and
+               card.intervention["availability"] == "revalidated_on_submit" and
+               not Map.has_key?(card.intervention, "recent_output")
+           end)
   end
 
   test "only an authoritative exact-agent clarification creates Needs Me and resolves once", %{
@@ -612,6 +662,10 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
     ref = Phoenix.ChannelTest.push(socket, "card_action", replaced)
     assert_reply ref, :error, %{reason: "intervention_unavailable"}, 1_000
+
+    assert %{status: "rejected", reason: "intervention_unavailable"} =
+             Repo.get_by(ActionOutcome, request_id: "replaced-clarification-pane")
+
     refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
   end
 
@@ -1034,7 +1088,13 @@ defmodule CaseinWeb.MobileUserChannelTest do
       ]
     })
 
-    replaced = %{tampered | "origin_id" => "trusted-origin", "request_id" => "replaced-pane"}
+    replaced =
+      intervention_action_payload(card, %{
+        tampered
+        | "origin_id" => "trusted-origin",
+          "request_id" => "replaced-pane"
+      })
+
     ref = Phoenix.ChannelTest.push(socket, "card_action", replaced)
     assert_reply ref, :error, %{reason: "intervention_unavailable"}, 1_000
     refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
@@ -1048,7 +1108,68 @@ defmodule CaseinWeb.MobileUserChannelTest do
     stale = %{replaced | "request_id" => "stale-pane"}
     ref = Phoenix.ChannelTest.push(socket, "card_action", stale)
     assert_reply ref, :error, %{reason: "intervention_unavailable"}, 1_000
+
+    assert %{status: "rejected", reason: "intervention_unavailable"} =
+             Repo.get_by(ActionOutcome, request_id: "stale-pane")
+
     refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+  end
+
+  test "target replacement between preflight and delivery fails the second check without paste",
+       %{
+         workspace_root: workspace_root
+       } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    tmux_session = Casein.Terminals.tmux_session_name(workspace_id, "agent")
+    pane_id = "%2"
+
+    FakeState.put(:intervention_race_test_pid, self())
+    FakeState.put(:intervention_race_list_calls, 0)
+
+    FakeState.put(:intervention_race_panes, %{
+      tmux_session => [
+        %{id: pane_id, window_id: "@1", active: false, role: "agent"}
+      ]
+    })
+
+    on_exit(fn ->
+      FakeState.delete(:intervention_race_test_pid)
+      FakeState.delete(:intervention_race_list_calls)
+      FakeState.delete(:intervention_race_panes)
+    end)
+
+    Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.InterventionRaceAdapter)
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local"}
+             )
+
+    card_id = seed_intervention_card(user_id, workspace_id, tmux_session, pane_id)
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
+    assert FakeState.get(:intervention_race_list_calls) == 0
+
+    payload =
+      intervention_action_payload(card, %{
+        "card_id" => card_id,
+        "action" => "follow_up",
+        "origin_id" => "origin-local",
+        "request_id" => "target-changed-after-preflight",
+        "payload" => %{"message" => "Continue safely."}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
+    assert_reply ref, :error, %{reason: "intervention_target_role_mismatch"}, 1_000
+    assert_receive {:intervention_race_list_panes, 1}
+    assert_receive {:intervention_race_list_panes, 2}
+    refute_receive {:intervention_race_paste, _, _, _}, 100
+
+    assert %{status: "failed", reason: "intervention_target_role_mismatch"} =
+             Repo.get_by(ActionOutcome, request_id: "target-changed-after-preflight")
   end
 
   test "failed delivery is fail-closed and a new request can retry after reconnect", %{
@@ -1498,6 +1619,68 @@ defmodule CaseinWeb.MobileUserChannelTest do
       )
 
     assert_reply ref, :error, %{reason: "workspace_scope_mismatch"}, 1_000
+  end
+
+  test "workspace authorization rejects an intervention before any target probe", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    paired_workspace_id = unique_id("ws")
+    other_workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, paired_workspace_id, user_id)
+    create_workspace(workspace_root, other_workspace_id, user_id)
+    tmux_session = Casein.Terminals.tmux_session_name(other_workspace_id, "agent")
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: other_workspace_id,
+      session_id: "run-intervention",
+      review_count: 1,
+      locator: %{tmux_session: tmux_session, pane: "%2"}
+    })
+
+    [card] = UserObserver.snapshot(user_id).cards
+
+    FakeState.put(:intervention_race_test_pid, self())
+    FakeState.put(:intervention_race_list_calls, 0)
+
+    on_exit(fn ->
+      FakeState.delete(:intervention_race_test_pid)
+      FakeState.delete(:intervention_race_list_calls)
+    end)
+
+    Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.InterventionRaceAdapter)
+
+    token =
+      ChannelAuth.sign_pairing_token(
+        %{id: user_id, email: "#{user_id}@local", role: :admin},
+        paired_workspace_id
+      )
+
+    assert {:ok, socket} = Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{"token" => token})
+
+    assert {:ok, _reply, socket} =
+             subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:me")
+
+    ref =
+      Phoenix.ChannelTest.push(
+        socket,
+        "card_action",
+        origin_action(%{
+          "card_id" => card.id,
+          "action" => "follow_up",
+          "request_id" => "scope-before-target",
+          "payload" => %{
+            "message" => "Do not deliver",
+            "revision" => Casein.Mobile.Intervention.action_revision(card)
+          }
+        })
+      )
+
+    assert_reply ref, :error, %{reason: "workspace_scope_mismatch"}, 1_000
+    assert FakeState.get(:intervention_race_list_calls) == 0
+    refute_receive {:intervention_race_list_panes, _}, 100
+    refute_receive {:intervention_race_paste, _, _, _}, 100
   end
 
   test "card_action rejects request_changes without a required note", %{

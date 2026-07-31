@@ -11,10 +11,12 @@ defmodule Casein.Mobile.Actions do
        and validate params deterministically (`Casein.Mobile.Card`).
     3. **Authorize** the actor against the *reloaded* card's resource on every
        action, including pairing scope and workspace ownership.
-    4. **Persist + idempotency**: write a durable `ActionOutcome` keyed by
+    4. **Revalidate runtime target**: intervention actions verify the exact
+       current role-marked pane without capturing terminal content.
+    5. **Persist + idempotency**: write a durable `ActionOutcome` keyed by
        `request_id`; a retried submission replays the recorded outcome, and a
        second device racing on the same card is rejected as already resolved.
-    5. **Apply + audit**: run the side effect (via `Runs.Ledger`) and stamp mobile
+    6. **Apply + audit**: run the side effect (via `Runs.Ledger`) and stamp mobile
        audit metadata (source, card, action, device link, platform) atomically
        with the outcome record.
 
@@ -88,7 +90,8 @@ defmodule Casein.Mobile.Actions do
          :ok <- ensure_dispatchable(card),
          :ok <- ensure_action_revision(spec, action_params),
          {:ok, validated} <- validate_params(spec, action_params),
-         :ok <- authorize(context, card) do
+         :ok <- authorize(context, card),
+         :ok <- validate_runtime_target(card, spec) do
       commit(context, card, spec, validated, request_id)
     else
       {:error, reason} ->
@@ -222,7 +225,13 @@ defmodule Casein.Mobile.Actions do
     end
   end
 
-  # --- Steps 4 + 5: persist, apply, audit (atomic on the outcome) ---------
+  defp validate_runtime_target(card, spec) do
+    if Intervention.delivery_action?(spec),
+      do: Intervention.validate_action_target(card),
+      else: :ok
+  end
+
+  # --- Steps 5 + 6: persist, apply, audit (atomic on the outcome) ---------
 
   defp commit(context, card, spec, validated, request_id) do
     cond do

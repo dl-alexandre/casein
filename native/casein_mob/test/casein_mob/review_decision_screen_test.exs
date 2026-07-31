@@ -172,20 +172,94 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert assigns(view).submitted_action == nil
   end
 
-  test "renders bounded intervention output, short follow-up, and PWA escalation" do
+  test "renders explicit intervention context, short follow-up, and PWA escalation" do
     view = mount_screen(ReviewDecisionScreen, %{card: intervention_card()})
 
     assert_renderable(view)
     assert text(view) =~ "Agent needs you"
-    assert text(view) =~ "Recent agent output"
-    assert text(view) =~ "The focused test failed in auth_test.exs"
-    assert text(view) =~ "Live excerpt · target role: agent"
+    assert text(view) =~ "Intervention context"
+    assert text(view) =~ "Target: Agent"
+    assert text(view) =~ "Availability: Revalidated when sent"
+    assert text(view) =~ "Terminal context: Not collected on mobile"
     assert text(view) =~ "Short follow-up"
     assert find(view, :text_field).props.placeholder == "What should the agent do next?"
     follow_up = find(view, :button, text: "Send follow-up")
     assert follow_up.props.fill_width == true
     refute Map.has_key?(follow_up.props, :weight)
+    assert follow_up.props.disabled == true
     assert find(view, :button, text: "Open full terminal in PWA")
+  end
+
+  test "valid intervention actions enable only after an authoritative refresh" do
+    card =
+      put_in(intervention_card(), ["actions"], [
+        %{
+          "id" => "continue_task",
+          "label" => "Continue task",
+          "revision" => "revision-1",
+          "input" => []
+        }
+      ])
+
+    view = mount_screen(ReviewDecisionScreen, %{card: card})
+    assert find(view, :button, text: "Continue task").props.disabled == true
+
+    view = authoritative_refresh(view, card)
+    assert find(view, :button, text: "Continue task").props.disabled == false
+
+    view = render_info(view, {:tap, {:action, "continue_task"}})
+    assert assigns(view).submitted_action == "continue_task"
+  end
+
+  test "missing or malformed intervention contracts fail closed with explicit context" do
+    invalid_cards = [
+      put_in(intervention_card(), ["intervention"], "malformed"),
+      update_in(intervention_card(), ["intervention"], &Map.delete(&1, "target")),
+      put_in(intervention_card(), ["intervention", "target"], "agent"),
+      put_in(intervention_card(), ["intervention", "target"], %{"role" => "operator"}),
+      update_in(intervention_card(), ["intervention"], &Map.delete(&1, "availability")),
+      put_in(intervention_card(), ["intervention", "availability"], "eager")
+    ]
+
+    Enum.each(invalid_cards, fn card ->
+      view =
+        ReviewDecisionScreen
+        |> mount_screen(%{card: card})
+        |> authoritative_refresh(card)
+        |> render_info({:change, :note, "Continue."})
+
+      assert text(view) =~ "Availability: Unknown — refresh required"
+      assert find(view, :button, text: "Send follow-up").props.disabled == true
+
+      view = render_info(view, {:tap, {:action, "follow_up"}})
+      assert assigns(view).submitted_action == nil
+      assert text(view) =~ "Action unavailable. Refresh required."
+    end)
+
+    missing_target =
+      intervention_card()
+      |> update_in(["intervention"], &Map.delete(&1, "target"))
+      |> then(&mount_screen(ReviewDecisionScreen, %{card: &1}))
+
+    assert text(missing_target) =~ "Target: Unknown"
+  end
+
+  test "a malformed intervention contract disables only pane-delivery actions on a review card" do
+    follow_up = hd(intervention_card()["actions"])
+
+    card =
+      review_card()
+      |> put_in(["intervention"], "malformed")
+      |> update_in(["actions"], &(&1 ++ [follow_up]))
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Bounded note"})
+
+    assert find(view, :button, text: "Approve").props.disabled == false
+    assert find(view, :button, text: "Send follow-up").props.disabled == true
   end
 
   test "renders typed work intents and an authoritative delivery confirmation" do
@@ -386,13 +460,19 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert find(view, :button, text: "Return to Action Center")
   end
 
-  test "PWA escalation opens the exact server-issued URL" do
+  test "PWA escalation preserves the exact server-issued URL when native actions are unavailable" do
+    card = update_in(intervention_card(), ["intervention"], &Map.delete(&1, "availability"))
+    pwa_url = card["intervention"]["pwa_url"]
+
     view =
       ReviewDecisionScreen
-      |> mount_screen(%{card: intervention_card()})
+      |> mount_screen(%{card: card})
       |> render_info({:tap, :open_pwa})
 
     assert navigated_to(view) == CaseinMob.WebViewScreen
+
+    assert view.socket.__mob__.nav_action ==
+             {:push, CaseinMob.WebViewScreen, %{url: pwa_url}}
   end
 
   test "evidence handoff opens the exact server-issued PWA target" do
@@ -528,8 +608,8 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
       "title" => "Agent needs direction",
       "body" => "Testing paused for input",
       "intervention" => %{
-        "recent_output" => "The focused test failed in auth_test.exs",
         "target" => %{"role" => "agent"},
+        "availability" => "revalidated_on_submit",
         "pwa_url" => "https://casein.test/workspaces/ws-1?session=run-1&pane=%252"
       },
       "actions" => [

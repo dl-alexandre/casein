@@ -2,9 +2,12 @@ defmodule Casein.Mobile.Intervention do
   @moduledoc """
   Fail-closed bridge from an authoritative mobile card to one role-marked pane.
 
-  The client never chooses a target. Both excerpt capture and follow-up delivery
-  reload the card's bounded locator, verify that its tmux session belongs to the
-  card workspace, and require the exact pane to still carry `role=agent`.
+  Feed projection is pure: it exposes only a typed agent-role candidate and
+  server-declared actions. Dispatch validates the candidate without capturing
+  terminal content before claiming a request, and delivery repeats the exact
+  validation immediately before paste. For non-clarification cards, "exact"
+  means the current non-focused pane at the typed locator still carries
+  `role=agent`; clarification cards additionally bind the agent-session id.
   """
 
   alias Casein.Agents.TerminalOutputFormat
@@ -28,20 +31,46 @@ defmodule Casein.Mobile.Intervention do
   }
   @delivery_action_ids ["follow_up" | Map.keys(@intent_messages)]
 
-  @spec describe(map()) :: map() | nil
-  def describe(card) when is_map(card) do
-    with [_ | _] = actions <- action_specs(card),
-         {:ok, target} <- authoritative_target(card),
-         {:ok, excerpt} <- capture_excerpt(target) do
+  @doc """
+  Project the privacy-safe intervention contract from typed card metadata.
+
+  This function intentionally performs no workspace lookup, pane listing,
+  AgentState lookup, terminal capture, or mutation. The exact candidate is
+  revalidated at dispatch and again immediately before delivery.
+  """
+  @spec project(map()) :: map() | nil
+  def project(card) when is_map(card) do
+    actions = action_specs(card)
+
+    with [_ | _] <- actions,
+         true <- complete_candidate?(card) do
       %{
-        version: 1,
-        recent_output: excerpt,
-        captured_at: DateTime.utc_now(),
+        version: 2,
         target: %{role: "agent"},
+        availability: "revalidated_on_submit",
         action: Enum.find(actions, &(&1.id == "follow_up")),
         actions: actions,
         pwa_path: pwa_path(card)
       }
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Produce a bounded diagnostic descriptor for explicit desktop callers.
+
+  Mobile feed rendering uses `project/1` and never calls this capture path.
+  """
+  @spec describe(map()) :: map() | nil
+  def describe(card) when is_map(card) do
+    with %{actions: actions} = projection <- project(card),
+         {:ok, target} <- authoritative_target(card),
+         {:ok, excerpt} <- capture_excerpt(target) do
+      projection
+      |> Map.put(:recent_output, excerpt)
+      |> Map.put(:captured_at, DateTime.utc_now())
+      |> Map.put(:actions, actions)
     else
       _ -> nil
     end
@@ -129,7 +158,7 @@ defmodule Casein.Mobile.Intervention do
 
   @spec available_action(map(), String.t()) :: {:ok, map()} | {:error, atom()}
   def available_action(card, action_id) when action_id in @delivery_action_ids do
-    with %{actions: actions} <- describe(card),
+    with %{actions: actions} <- project(card),
          action when not is_nil(action) <- Enum.find(actions, &(&1.id == action_id)) do
       {:ok, action}
     else
@@ -138,6 +167,23 @@ defmodule Casein.Mobile.Intervention do
   end
 
   def available_action(_card, _action_id), do: {:error, :unsupported_action}
+
+  @doc """
+  Revalidate the current exact target without reading terminal content.
+
+  `Casein.Mobile.Actions` calls this after origin, revision, params, and actor
+  authorization but before claiming an intervention. Delivery performs the
+  same authoritative check again and never reuses this preflight result.
+  """
+  @spec validate_action_target(map()) :: :ok | {:error, atom()}
+  def validate_action_target(card) when is_map(card) do
+    case authoritative_target(card) do
+      {:ok, _target} -> :ok
+      {:error, _reason} -> {:error, :intervention_unavailable}
+    end
+  end
+
+  def validate_action_target(_card), do: {:error, :intervention_unavailable}
 
   @spec delivery_action?(map()) :: boolean()
   def delivery_action?(%{id: action_id}) when is_binary(action_id),
@@ -431,6 +477,28 @@ defmodule Casein.Mobile.Intervention do
 
   defp locator(card) do
     map_value(map_value(card, :context) || %{}, :locator) || %{}
+  end
+
+  defp complete_candidate?(card) do
+    candidate = locator(card)
+
+    present?(map_value(card, :workspace_id)) and
+      present?(map_value(card, :session_id)) and
+      present?(map_value(candidate, :tmux_session)) and
+      present?(map_value(candidate, :pane)) and
+      task_identity_complete?(card)
+  end
+
+  defp task_identity_complete?(card) do
+    if map_value(card, :type) in [:clarification, "clarification"] do
+      card
+      |> map_value(:context)
+      |> map_value(:task_ref)
+      |> map_value(:id)
+      |> present?()
+    else
+      true
+    end
   end
 
   defp tmux, do: Terminals.tmux_adapter()
