@@ -6,7 +6,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT}/scripts/lib/caddy-upstream.sh"
 
 log() { :; }
-sudo() { "$@"; }
+sudo() {
+  echo "Caddy admin probe unexpectedly invoked sudo" >&2
+  return 93
+}
 
 upstream_path="/apps/http/servers/srv0/routes/0/handle/0/upstreams/0/dial"
 current_dial="unix//run/casein/current.sock"
