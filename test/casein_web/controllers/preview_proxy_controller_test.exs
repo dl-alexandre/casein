@@ -290,6 +290,106 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
     File.rm_rf!(root)
   end
 
+  test "asks the upstream for an unencoded body instead of forwarding the browser's codecs",
+       %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
+        :ok =
+          :gen_tcp.send(
+            socket,
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n\r\n<html><head></head></html>"
+          )
+      end)
+
+    register_preview_port!(workspace_id, port)
+    ref = Process.monitor(task.pid)
+
+    conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> put_req_header("accept-encoding", "gzip, deflate, br, zstd")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/")
+
+    # Plaintext upstream bytes are what makes the <base> rewrite possible at all.
+    assert response(conn, 200) =~ ~s(<base href="/preview-proxy/#{workspace_id}/#{port}/">)
+    assert_receive {:preview_proxy_request, request}
+    assert request =~ "accept-encoding: identity"
+    refute request =~ "zstd"
+    assert_receive {:DOWN, ^ref, :process, _pid, :normal}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
+  test "forwards an upstream content-encoding it cannot decode rather than stripping it",
+       %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+    compressed = :zlib.gzip("<html><head></head></html>")
+
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
+        :ok =
+          :gen_tcp.send(socket, [
+            "HTTP/1.1 200 OK\r\n",
+            "content-type: text/html\r\n",
+            "content-encoding: gzip\r\n",
+            "content-length: #{byte_size(compressed)}\r\n",
+            "\r\n",
+            compressed
+          ])
+      end)
+
+    register_preview_port!(workspace_id, port)
+    ref = Process.monitor(task.pid)
+
+    conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/")
+
+    # Bytes untouched and labelled, so the browser decodes them instead of
+    # rendering the compressed stream as text.
+    assert response(conn, 200) == compressed
+    assert get_resp_header(conn, "content-encoding") == ["gzip"]
+    assert_receive {:DOWN, ^ref, :process, _pid, :normal}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
+  test "treats an upstream identity content-encoding as plaintext", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
+        :ok =
+          :gen_tcp.send(socket, [
+            "HTTP/1.1 200 OK\r\n",
+            "content-type: text/html\r\n",
+            "content-encoding: identity\r\n",
+            "\r\n",
+            "<html><head></head></html>"
+          ])
+      end)
+
+    register_preview_port!(workspace_id, port)
+    ref = Process.monitor(task.pid)
+
+    conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/")
+
+    assert response(conn, 200) =~ ~s(<base href="/preview-proxy/#{workspace_id}/#{port}/">)
+    assert get_resp_header(conn, "content-encoding") == []
+    assert_receive {:DOWN, ^ref, :process, _pid, :normal}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
   test "forwards request cookies and preserves repeated set-cookie responses", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
 

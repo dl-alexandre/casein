@@ -46,8 +46,9 @@ defmodule CaseinWeb.PreviewProxyController do
   alias CaseinWeb.PreviewProxy.WebSocketBridge
 
   # Don't JSON/term-decode the body (we forward bytes), don't follow redirects
-  # (the browser should see them, rewritten), bounded timeouts. Decompression
-  # stays on so we can inject <base> into HTML; we strip content-encoding below.
+  # (the browser should see them, rewritten), bounded timeouts. We ask the
+  # upstream for `identity` (see `forward_request_headers/1`) rather than relying
+  # on Req to decompress, so the body we rewrite and re-serve is always plaintext.
   @req_opts [
     decode_body: false,
     redirect: false,
@@ -231,11 +232,13 @@ defmodule CaseinWeb.PreviewProxyController do
     case Req.request(proxy_request_opts(conn, url)) do
       {:ok, %Req.Response{status: status, headers: headers, body: body}} ->
         content_type = Rewrite.first_header(headers, "content-type")
+        encoding = response_encoding(headers)
 
         conn
         |> put_forward_headers(headers)
         |> maybe_put_content_type(content_type)
-        |> send_resp(status, rewrite_body(body, content_type, workspace_id, port))
+        |> maybe_put_content_encoding(encoding)
+        |> send_resp(status, rewrite_body(body, content_type, encoding, workspace_id, port))
 
       {:error, reason} ->
         Logger.debug("preview proxy upstream error for #{url}: #{inspect(reason)}")
@@ -302,19 +305,30 @@ defmodule CaseinWeb.PreviewProxyController do
   defp maybe_put_body(opts, ""), do: opts
   defp maybe_put_body(opts, body), do: Keyword.put(opts, :body, body)
 
+  # The browser's own `accept-encoding` never reaches the upstream: we demand
+  # `identity` so the body comes back as plaintext we can actually rewrite.
+  # Forwarding it instead lets the upstream pick a codec (Chrome offers zstd,
+  # and Req only decompresses what its optional :ezstd / :brotli deps provide),
+  # after which `<base>` injection silently no-ops on the compressed bytes and
+  # the stripped `content-encoding` leaves the browser rendering them as text.
+  # The loopback hop is local, so nothing is lost; Casein's own endpoint still
+  # negotiates compression with the real client.
   defp forward_request_headers(conn) do
-    conn.req_headers
-    |> Enum.reject(fn {name, _value} -> drop_request_header?(name) end)
-    |> Enum.map(fn
-      {"host", _value} -> {"host", "127.0.0.1"}
-      header -> header
-    end)
+    headers =
+      conn.req_headers
+      |> Enum.reject(fn {name, _value} -> drop_request_header?(name) end)
+      |> Enum.map(fn
+        {"host", _value} -> {"host", "127.0.0.1"}
+        header -> header
+      end)
+
+    [{"accept-encoding", "identity"} | headers]
   end
 
   defp drop_request_header?(name) do
     String.downcase(name) in ~w(
-      connection content-length keep-alive proxy-authenticate proxy-authorization
-      trailer transfer-encoding upgrade
+      accept-encoding connection content-length keep-alive proxy-authenticate
+      proxy-authorization trailer transfer-encoding upgrade
     )
   end
 
@@ -328,7 +342,36 @@ defmodule CaseinWeb.PreviewProxyController do
   defp maybe_put_content_type(conn, content_type),
     do: Plug.Conn.put_resp_header(conn, "content-type", content_type)
 
-  defp rewrite_body(body, content_type, workspace_id, port) when is_binary(body) do
+  # `identity` (and a missing header) mean plaintext; anything else is a codec
+  # the upstream applied despite being asked not to.
+  defp response_encoding(headers) do
+    case Rewrite.first_header(headers, "content-encoding") do
+      value when is_binary(value) ->
+        case String.trim(String.downcase(value)) do
+          encoding when encoding in ["", "identity"] -> nil
+          encoding -> encoding
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  # Rewrite.forward_headers/1 strips content-encoding, which is right for the
+  # plaintext body we asked for. When the upstream compressed anyway we have to
+  # put it back: the browser can decode the bytes, but only if we say how.
+  defp maybe_put_content_encoding(conn, nil), do: conn
+
+  defp maybe_put_content_encoding(conn, encoding),
+    do: Plug.Conn.put_resp_header(conn, "content-encoding", encoding)
+
+  # A still-encoded body is opaque — rewriting it would corrupt it, and the
+  # pattern matches below would silently find nothing anyway.
+  defp rewrite_body(body, _content_type, encoding, _workspace_id, _port)
+       when is_binary(encoding),
+       do: body
+
+  defp rewrite_body(body, content_type, _encoding, workspace_id, port) when is_binary(body) do
     proxy_prefix = "/preview-proxy/#{workspace_id}/#{port}/"
 
     cond do
@@ -347,9 +390,6 @@ defmodule CaseinWeb.PreviewProxyController do
         body
         |> Rewrite.rewrite_phoenix_socket_paths(proxy_prefix)
         |> maybe_rewrite_loopback_origins(workspace_id)
-
-      Rewrite.javascript?(content_type) ->
-        Rewrite.rewrite_phoenix_socket_paths(body, proxy_prefix)
 
       true ->
         body
