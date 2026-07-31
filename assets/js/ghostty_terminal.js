@@ -588,6 +588,13 @@ function patchPreLayout(hook) {
     fontFeatureSettings: "normal",
     fontVariantLigatures: "none",
     textRendering: "geometricPrecision",
+    // Glyph size and row pitch both come from the root variables the A− / A+
+    // controls drive. fontSize used to be left to inherit (`text-sm` on the
+    // container), which is why those controls only ever moved the leading.
+    fontSize:
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--casein-font-size")
+        .trim() || "14px",
     lineHeight:
       getComputedStyle(document.documentElement)
         .getPropertyValue("--casein-terminal-line-height")
