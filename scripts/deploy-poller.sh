@@ -277,6 +277,10 @@ ensure_agent_shims() {
 
 ensure_caddy_upstream() {
   local host
+  # This helper is sourced by a long-lived poller. Never let a prior eligible
+  # outcome authorize the canonical attestation if this tick returns early.
+  CADDY_RECONCILE_OUTCOME="not_attempted"
+
   host="$(
     if [ -r "$ENV_FILE" ]; then
       awk -F= '/^PHX_HOST=/{print $2}' "$ENV_FILE" | tail -n 1
@@ -292,6 +296,22 @@ ensure_caddy_upstream() {
   fi
 
   casein_reconcile_caddy_upstream "$host" repair
+}
+
+read_casein_api_token() {
+  casein_read_casein_api_token "$ENV_FILE"
+}
+
+canonical_route_attests_current_handoff() {
+  local expected_revision="$1"
+  local current_target=""
+  local token=""
+
+  current_target="$(readlink "$CURRENT_SOCK" 2>/dev/null || true)"
+  token="$(read_casein_api_token)"
+
+  casein_canonical_route_attests_caddy_unavailable \
+    "$CANONICAL_DEVBOX_HOST" "$expected_revision" "$current_target" "$token"
 }
 
 # --- single-flight -----------------------------------------------------------
@@ -336,9 +356,14 @@ if [ "$deployed_full" = "$target" ]; then
   log "origin/${BRANCH} (${target_short}) already deployed — checking liveness"
   ensure_live_instance "${deployed:-$target}"
   if ! ensure_caddy_upstream; then
-    write_deploy_status failed "$target" caddy \
-      "canonical Caddy upstream repair failed" "$deployed_full"
-    exit 1
+    if casein_caddy_reconcile_allows_attestation &&
+        canonical_route_attests_current_handoff "$target"; then
+      log "warning: retaining exact canonical route after Caddy admin unavailability"
+    else
+      write_deploy_status failed "$target" caddy \
+        "canonical Caddy upstream repair failed" "$deployed_full"
+      exit 1
+    fi
   fi
   if [ "${CADDY_UPSTREAM_PATCHED:-0}" = "1" ] ||
     grep -q '"phase":"caddy"' "$LAST_DEPLOY_FILE" 2>/dev/null; then

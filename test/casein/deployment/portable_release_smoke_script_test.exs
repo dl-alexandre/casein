@@ -5,6 +5,7 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
   @compose Path.expand("../../../docker-compose.yml", __DIR__)
   @dockerfile Path.expand("../../../Dockerfile", __DIR__)
   @deploy_script Path.expand("../../../scripts/deploy-devbox-release.sh", __DIR__)
+  @poller_script Path.expand("../../../scripts/deploy-poller.sh", __DIR__)
   @caddy_helper Path.expand("../../../scripts/lib/caddy-upstream.sh", __DIR__)
 
   test "portable smoke script has valid shell syntax" do
@@ -50,13 +51,36 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ ~s(CURRENT_SYMLINK="${CASEIN_CURRENT_SOCK:-${RUN_ROOT}/current.sock}")
     assert text =~ ~s(source "${DEPLOY_SCRIPT_SELF_DIR}/lib/caddy-upstream.sh")
     assert text =~ "casein_caddy_admin_curl -fsS -X PATCH"
+    assert text =~ "casein_canonical_route_attests_caddy_unavailable"
+    assert text =~ ~s|token="$(casein_read_casein_api_token "${ENV_FILE}")"|
+    refute text =~ "awk -F= '/^CASEIN_API_TOKEN/"
     assert caddy_helper =~ "unix//run/casein/current.sock"
     assert caddy_helper =~ "casein_caddy_admin_curl() {\n  curl "
     assert caddy_helper =~ ~s(--connect-timeout "${CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT}")
     assert caddy_helper =~ ~s(--max-time "${CASEIN_CADDY_ADMIN_MAX_TIME}")
+    assert caddy_helper =~ "casein_canonical_route_attests_caddy_unavailable"
+    assert caddy_helper =~ ~s(--proto '=https')
+    assert caddy_helper =~ "casein_read_casein_api_token"
     refute caddy_helper =~ "sudo curl"
     refute text =~ "sudo curl -fsS -X PATCH"
     refute text =~ ~s(INST_DIR="/run/casein/instances")
     refute text =~ ~s(CURRENT_SYMLINK="/run/casein/current.sock")
+  end
+
+  test "poller uses the same canonical Caddy-unavailable attestation" do
+    text = File.read!(@poller_script)
+
+    assert text =~ "canonical_route_attests_current_handoff"
+    assert text =~ "casein_canonical_route_attests_caddy_unavailable"
+    assert text =~ ~s(casein_read_casein_api_token "$ENV_FILE")
+    refute text =~ "awk -F= '/^CASEIN_API_TOKEN/"
+
+    assert text =~
+             ~r|ensure_caddy_upstream\(\) \{\n  local host\n  # This helper.*?\n  CADDY_RECONCILE_OUTCOME="not_attempted"\n\n  host=|s
+
+    assert text =~
+             ~r|CADDY_RECONCILE_OUTCOME="not_attempted".*?if \[ .* != .* \]; then\n    log "refusing Caddy reconciliation.*?\n    return 1|s
+
+    assert text =~ "canonical Caddy upstream repair failed"
   end
 end

@@ -341,10 +341,7 @@ else
   log "RELEASE_COOKIE already pinned; leaving it untouched"
 fi
 
-token="$(
-  sudo awk -F= '/^CASEIN_API_TOKEN=/{print $2}' "${ENV_FILE}" |
-    tail -n 1
-)"
+token="$(casein_read_casein_api_token "${ENV_FILE}")"
 
 if [ -z "${token}" ]; then
   echo "error: CASEIN_API_TOKEN missing from ${ENV_FILE}" >&2
@@ -543,6 +540,10 @@ deploy_status_json="$(curl -sS --unix-socket "${CURRENT_SYMLINK}" \
 
 if printf '%s' "${deploy_status_json}" | grep -q '"ok":true'; then
   :
+elif casein_caddy_reconcile_allows_attestation &&
+    casein_canonical_route_attests_caddy_unavailable \
+    "${CADDY_HOST}" "${REVISION}" "${NEW_SOCKET}" "${token}"; then
+  log "warning: accepting exact canonical attestation after Caddy admin unavailability"
 elif [[ "${CASEIN_ALLOW_DEPLOY_DRIFT:-0}" == "1" ]]; then
   if printf '%s' "${deploy_status_json}" | grep -q '"deploy_revision_current":false'; then
     log "warning: deploy_revision_current=false — revision ${REVISION} is not on origin/master"
