@@ -27,10 +27,96 @@ agent_env_find_devbox_file() {
   return 1
 }
 
-agent_env_tmux_session_id() {
-  if [[ -z "${TMUX:-}" ]]; then
-    return 1
+# A tmux server bakes its socket path into the $TMUX every pane inherits, and
+# never revisits it. Rename or replace that socket file underneath a live
+# server — the devide → casein cutover did exactly that — and each pane keeps
+# pointing at a path with no server behind it, so every plain `tmux` call from
+# inside a perfectly healthy pane fails "no server running". The pane itself is
+# fine; only the inherited path is wrong. Find the live socket that actually
+# owns this pane and rewrite $TMUX so tmux works again for this process and
+# everything it spawns (agent hooks, repair-tmux-env.sh, the agent's own CLI).
+agent_env_tmux_probe_socket() {
+  local socket="$1" name
+  local -a args=()
+  [[ -n "$socket" ]] && args=(-S "$socket")
+
+  if [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]]; then
+    name="$(tmux "${args[@]}" display-message -p -t "$TMUX_PANE" '#{session_name}' 2>/dev/null)" ||
+      return 1
+  else
+    name="$(tmux "${args[@]}" display-message -p '#{session_name}' 2>/dev/null)" || return 1
   fi
+
+  [[ -n "$name" ]] || return 1
+  printf '%s\n' "$name"
+}
+
+agent_env_tmux_adopt_socket() {
+  local socket="$1" pid session_id
+
+  pid="$(tmux -S "$socket" display-message -p '#{pid}' 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+
+  if [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]]; then
+    session_id="$(tmux -S "$socket" display-message -p -t "$TMUX_PANE" '#{session_id}' 2>/dev/null)" ||
+      return 1
+  else
+    session_id="$(tmux -S "$socket" display-message -p '#{session_id}' 2>/dev/null)" || return 1
+  fi
+
+  export TMUX="${socket},${pid},${session_id#\$}"
+}
+
+agent_env_ensure_tmux_socket() {
+  [[ -n "${TMUX:-}" ]] || return 1
+  command -v tmux >/dev/null 2>&1 || return 1
+
+  # Memoized: the scan probes every socket in the directory, and callers below
+  # ask for the session name repeatedly during a single launch.
+  if [[ -n "${CASEIN_TMUX_SOCKET_RESOLVED:-}" ]]; then
+    [[ "$CASEIN_TMUX_SOCKET_RESOLVED" == "ok" ]]
+    return
+  fi
+  export CASEIN_TMUX_SOCKET_RESOLVED=failed
+
+  # Fast path: the inherited socket still answers for this pane.
+  if agent_env_tmux_probe_socket "" >/dev/null; then
+    export CASEIN_TMUX_SOCKET_RESOLVED=ok
+    return 0
+  fi
+
+  # Look for the renamed socket only as a sibling of the dead one, and only
+  # inside the canonical per-user tmux socket directory. Widening the search
+  # buys nothing real — a server cannot be renamed into another directory —
+  # and costs a lot: a $TMUX pointing anywhere else (a hermetic test's fake
+  # path, a bespoke -S socket) would otherwise sweep the host's live servers.
+  local dir socket name
+  dir="$(dirname -- "${TMUX%%,*}")"
+  [[ "$dir" == "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)" && -d "$dir" ]] || return 1
+
+  # A pane id is unique per server but not across servers, so resolving %N is
+  # not proof of identity. Adopt only a server that also agrees on the paired
+  # session name; with no name to check against, decline rather than guess.
+  [[ -n "${CASEIN_TMUX_SESSION:-}" ]] || return 1
+
+  # Named socket first so the common case never depends on scan order.
+  for socket in "${CASEIN_TMUX_SOCKET:-}" "${dir}/casein" "$dir"/*; do
+    [[ -n "$socket" && -S "$socket" ]] || continue
+    name="$(agent_env_tmux_probe_socket "$socket")" || continue
+    [[ "$name" == "${CASEIN_TMUX_SESSION}" ]] || continue
+
+    if agent_env_tmux_adopt_socket "$socket"; then
+      echo "casein: repaired stale \$TMUX socket -> ${socket} (session ${name})" >&2
+      export CASEIN_TMUX_SOCKET_RESOLVED=ok
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+agent_env_tmux_session_id() {
+  agent_env_ensure_tmux_socket || return 1
   if [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]]; then
     tmux display-message -p -t "$TMUX_PANE" '#{session_id}' 2>/dev/null || true
   else
@@ -39,9 +125,7 @@ agent_env_tmux_session_id() {
 }
 
 agent_env_tmux_session_name() {
-  if [[ -z "${TMUX:-}" ]]; then
-    return 1
-  fi
+  agent_env_ensure_tmux_socket || return 1
   if [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]]; then
     tmux display-message -p -t "$TMUX_PANE" '#{session_name}' 2>/dev/null || true
   else
@@ -55,6 +139,9 @@ agent_env_tmux_session_name() {
 # before bundle generation rather than during the later best-effort tmux repair.
 agent_env_bind_current_tmux_session() {
   local session_name workspace_id key url bound
+  # Not inside the command substitution below: the helpers repair $TMUX by
+  # exporting it, and an export made in a subshell dies with the subshell.
+  agent_env_ensure_tmux_socket || true
   session_name="$(agent_env_tmux_session_name)" || return 1
   workspace_id="${CASEIN_WORKSPACE_ID:-}"
 
@@ -242,6 +329,11 @@ agent_env_resolve_from_tmux_session_name() {
 }
 
 agent_env_resolve() {
+  # Repair here, in the caller's shell, so the corrected $TMUX is exported for
+  # everything the launch spawns — tmux state hooks, repair-tmux-env.sh, and
+  # the agent CLI itself all shell out to a bare `tmux`.
+  agent_env_ensure_tmux_socket || true
+
   if [[ -n "${CASEIN_API_TOKEN:-}" ]] && [[ -n "${CASEIN_WORKSPACE_ID:-}" ]]; then
     return 0
   fi
@@ -277,6 +369,9 @@ agent_env_stamp_pane_pairing() {
   local paired="$1" reason="${2:-}"
   [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]] || return 0
   command -v tmux >/dev/null 2>&1 || return 0
+  # Best-effort, as before: a socket that cannot be repaired is not a reason to
+  # skip the stamp — the inherited $TMUX may still be the live one.
+  agent_env_ensure_tmux_socket || true
   tmux set-option -p -t "$TMUX_PANE" @casein_paired "$paired" 2>/dev/null || true
   tmux set-option -p -t "$TMUX_PANE" @casein_paired_reason "$reason" 2>/dev/null || true
 }

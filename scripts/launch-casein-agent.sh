@@ -55,10 +55,34 @@ export CASEIN_AGENT_LAUNCH_CONTEXT="$RUNTIME"
 
 agent_env_resolve
 
+# "requires an exact current tmux session" says nothing about which of the
+# three preconditions failed, and they have completely different fixes.
+grok_tmux_bind_hint() {
+  local key
+  if [[ -z "${TMUX:-}" ]]; then
+    echo "hint: no \$TMUX — run grok from a Casein tmux pane" >&2
+    return 0
+  fi
+
+  if ! agent_env_ensure_tmux_socket; then
+    echo "hint: \$TMUX names ${TMUX%%,*}, and no live tmux socket under" \
+      "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u) owns pane ${TMUX_PANE:-<unset>}" >&2
+    return 0
+  fi
+
+  for key in CASEIN_WORKSPACE_ID CASEIN_TERMINAL_MCP_URL CASEIN_PREVIEW_MCP_URL; do
+    if [[ -z "${!key:-}" ]]; then
+      echo "hint: ${key} is unset for this pane — re-pair it" \
+        "(bash scripts/lib/repair-tmux-env.sh)" >&2
+    fi
+  done
+}
+
 if [[ "$RUNTIME" == "grok" ]]; then
   agent_env_bind_current_checkout
   if ! agent_env_bind_current_tmux_session; then
     echo "error: managed Grok launch requires an exact current tmux session" >&2
+    grok_tmux_bind_hint
     exit 1
   fi
 fi

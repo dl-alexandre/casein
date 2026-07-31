@@ -214,6 +214,102 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert text =~ "mcp_servers.${tidewave_key}.url"
   end
 
+  test "a renamed tmux socket is rebound instead of failing the launch" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "grok-tmux-socket-#{System.unique_integer([:positive])}"
+      )
+
+    fake_bin = Path.join(tmp, "bin")
+    socket_dir = Path.join([tmp, "run", "tmux-#{uid()}"])
+    good_socket = Path.join(socket_dir, "casein")
+    File.mkdir_p!(fake_bin)
+    File.mkdir_p!(socket_dir)
+    on_exit(fn -> File.rm_rf(tmp) end)
+
+    # -S accepts a path only if it is a real socket file, so bind one.
+    {_, 0} =
+      System.cmd("python3", [
+        "-c",
+        "import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])",
+        good_socket
+      ])
+
+    fake_tmux = Path.join(fake_bin, "tmux")
+
+    # Stands in for a server whose socket file was renamed underneath it: the
+    # path baked into the inherited $TMUX is dead, only the new path answers.
+    File.write!(fake_tmux, """
+    #!/usr/bin/env bash
+    # Same socket resolution as real tmux: -S wins, else the path in $TMUX.
+    sock="${TMUX%%,*}"
+    if [[ "${1:-}" == "-S" ]]; then
+      sock="$2"
+      shift 2
+    fi
+    if [[ "$sock" != "${FAKE_TMUX_GOOD_SOCKET:?}" ]]; then
+      echo "no server running on ${sock}" >&2
+      exit 1
+    fi
+    [[ "${1:-}" == "display-message" ]] || exit 64
+    shift
+    args=("$@")
+    if [[ "${args[1]:-}" == "-t" ]]; then
+      [[ "${args[2]:-}" == "%42" ]] || exit 65
+    fi
+    case "${args[-1]}" in
+      '\#{session_name}') printf '%s\\n' "${FAKE_TMUX_SESSION:?}" ;;
+      '\#{session_id}') printf '$7\\n' ;;
+      '\#{pid}') printf '4242\\n' ;;
+      *) exit 64 ;;
+    esac
+    """)
+
+    File.chmod!(fake_tmux, 0o755)
+
+    current = "casein_workspace-123_u-current"
+
+    {output, 0} =
+      System.cmd(
+        "bash",
+        [
+          "-c",
+          """
+          set -euo pipefail
+          source "#{Path.expand("../../scripts/lib/agent-env.sh", __DIR__)}"
+          agent_env_bind_current_tmux_session
+          printf '%s\\n%s\\n%s\\n' "$TMUX" "$CASEIN_TMUX_SESSION" "$CASEIN_TERMINAL_MCP_URL"
+          """
+        ],
+        stderr_to_stdout: false,
+        env: [
+          {"PATH", "#{fake_bin}:#{System.get_env("PATH")}"},
+          {"TMUX", "#{Path.join(socket_dir, "devide")},1,0"},
+          {"TMUX_PANE", "%42"},
+          {"TMUX_TMPDIR", Path.join(tmp, "run")},
+          {"FAKE_TMUX_GOOD_SOCKET", good_socket},
+          {"FAKE_TMUX_SESSION", current},
+          {"CASEIN_TMUX_SESSION", current},
+          {"CASEIN_WORKSPACE_ID", "workspace-123"},
+          {"CASEIN_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"},
+          {"CASEIN_PREVIEW_MCP_URL", "http://127.0.0.1:4000/api/preview/mcp"}
+        ]
+      )
+
+    assert [tmux, ^current, terminal_url] = String.split(output, "\n", trim: true)
+
+    # $TMUX itself is repaired, so every later bare `tmux` call in the launch
+    # (state hooks, repair-tmux-env.sh, the agent CLI) reaches the live server.
+    assert tmux == "#{good_socket},4242,7"
+    assert_bound_query(terminal_url, current)
+  end
+
+  defp uid do
+    {out, 0} = System.cmd("id", ["-u"])
+    String.trim(out)
+  end
+
   defp assert_bound_query(url, session, extra \\ []) do
     query =
       url
