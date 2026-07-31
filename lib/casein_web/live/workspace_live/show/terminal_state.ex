@@ -480,13 +480,57 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
 
   def subscribe_tmux_topology(socket) do
     if connected?(socket) do
-      {:ok, %{generation: generation}} =
+      {:ok, %{generation: generation} = result} =
         Terminals.switch_tmux_topology_subscription(nil, socket.assigns.tmux_session,
           read: :get,
           workspace_id: socket.assigns.workspace.id
         )
 
-      assign(socket, :tmux_topology_generation, generation)
+      socket
+      |> assign(:tmux_topology_generation, generation)
+      |> monitor_tmux_topology_watcher(result[:pid])
+    else
+      socket
+    end
+  end
+
+  @doc """
+  Watches the topology watcher itself so a dead one is noticed.
+
+  The watcher registers subscribers by pid and idle-stops once none are left, so
+  a crash costs this LiveView its registration: the restarted watcher sees an
+  empty watcher set, shuts down 60s later, and the window list silently stops
+  updating until something forces a refresh. Monitoring closes that hole — see
+  `Show.handle_info/2` for the `:DOWN` clause that resubscribes.
+  """
+  def monitor_tmux_topology_watcher(socket, pid) do
+    if ref = socket.assigns[:tmux_topology_watcher_ref] do
+      Process.demonitor(ref, [:flush])
+    end
+
+    assign(socket, :tmux_topology_watcher_ref, if(is_pid(pid), do: Process.monitor(pid)))
+  end
+
+  @doc """
+  Rebuilds the topology subscription after the watcher went down.
+
+  Resubscribing restarts the watcher (`ensure_started`), re-registers this
+  LiveView with it, and pulls a fresh topology in one step, so the recovery also
+  repairs whatever drifted while nothing was watching.
+  """
+  def resubscribe_tmux_topology(socket) do
+    socket = assign(socket, :tmux_topology_watcher_ref, nil)
+
+    if connected?(socket) and is_binary(socket.assigns[:tmux_session]) do
+      {:ok, %{generation: generation, topology: topology} = result} =
+        Terminals.switch_tmux_topology_subscription(nil, socket.assigns.tmux_session,
+          workspace_id: socket.assigns.workspace.id
+        )
+
+      socket
+      |> assign(:tmux_topology_generation, generation)
+      |> monitor_tmux_topology_watcher(result[:pid])
+      |> assign_tmux_topology(topology)
     else
       socket
     end
@@ -500,7 +544,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   """
   def switch_topology_subscription(socket, old_session) do
     if connected?(socket) do
-      {:ok, %{generation: generation, topology: topology}} =
+      {:ok, %{generation: generation, topology: topology} = result} =
         Terminals.switch_tmux_topology_subscription(old_session, socket.assigns.tmux_session,
           workspace_id: socket.assigns.workspace.id
         )
@@ -511,6 +555,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
       socket =
         socket
         |> assign(:tmux_topology_generation, generation)
+        |> monitor_tmux_topology_watcher(result[:pid])
         |> maybe_reset_preview_selection_on_session_change(session_changed?)
 
       assign_tmux_topology(socket, topology)

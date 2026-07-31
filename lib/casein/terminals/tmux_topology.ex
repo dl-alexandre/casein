@@ -94,7 +94,13 @@ defmodule Casein.Terminals.TmuxTopology do
   `new_session` in one step.
   """
   @spec switch_subscription(String.t() | nil, String.t(), keyword()) ::
-          {:ok, %{session: String.t(), generation: pos_integer() | nil, topology: t()}}
+          {:ok,
+           %{
+             session: String.t(),
+             generation: pos_integer() | nil,
+             topology: t(),
+             pid: pid() | nil
+           }}
   def switch_subscription(old_session, new_session, opts \\ []) when is_binary(new_session) do
     with {:ok, %{topology: topology} = result} <-
            Watcher.switch_subscription(old_session, new_session, watcher_opts(opts)) do

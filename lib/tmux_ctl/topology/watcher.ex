@@ -131,9 +131,21 @@ defmodule TmuxCtl.Topology.Watcher do
 
   @doc """
   Moves the caller's topology subscription from `old_session` to `new_session`.
+
+  The returned `:pid` is the watcher serving the subscription (nil when it could
+  not be reached). Callers should monitor it: `{:watch, self()}` registrations do
+  not survive a watcher restart, and a restarted watcher with no registered
+  watchers idle-stops — so a subscriber that does not re-register after a crash
+  goes permanently, silently stale.
   """
   @spec switch_subscription(String.t() | nil, String.t(), keyword()) ::
-          {:ok, %{session: String.t(), generation: pos_integer() | nil, topology: Topology.t()}}
+          {:ok,
+           %{
+             session: String.t(),
+             generation: pos_integer() | nil,
+             topology: Topology.t(),
+             pid: pid() | nil
+           }}
   def switch_subscription(old_session, new_session, opts \\ []) when is_binary(new_session) do
     {read, opts} = Keyword.pop(opts, :read, :refresh)
     pubsub = Keyword.get_lazy(opts, :pubsub, &pubsub/0)
@@ -153,14 +165,20 @@ defmodule TmuxCtl.Topology.Watcher do
           topology = GenServer.call(pid, read)
 
           {:ok,
-           %{session: new_session, generation: Map.get(topology, :generation), topology: topology}}
+           %{
+             session: new_session,
+             generation: Map.get(topology, :generation),
+             topology: topology,
+             pid: pid
+           }}
         catch
           :exit, _ ->
             {:ok,
              %{
                session: new_session,
                generation: nil,
-               topology: snapshot(new_session, opts)
+               topology: snapshot(new_session, opts),
+               pid: nil
              }}
         end
 
@@ -169,7 +187,8 @@ defmodule TmuxCtl.Topology.Watcher do
          %{
            session: new_session,
            generation: nil,
-           topology: snapshot(new_session, opts)
+           topology: snapshot(new_session, opts),
+           pid: nil
          }}
     end
   end

@@ -256,6 +256,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:tmux_topology_structure_version, 0)
         |> assign(:tmux_topology_layout_version, 0)
         |> assign(:tmux_topology_generation, nil)
+        |> assign(:tmux_topology_watcher_ref, nil)
         |> assign(:tmux_rename_window_id, nil)
         |> assign(:tmux_rename_session_id, nil)
         |> assign(:active_session_kind, :shell)
@@ -1022,6 +1023,34 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
     {:noreply, socket}
   end
+
+  # The topology watcher CRASHED. Its restart comes back with no registered
+  # watchers and idle-stops a minute later, so without this the window list
+  # would just quietly stop tracking tmux. Resubscribe: that restarts the
+  # watcher, re-registers us, and applies a fresh topology.
+  #
+  # Only on a crash. Every deliberate stop — idle grace, and the session going
+  # away — exits `:normal`, and resurrecting the watcher there would fight the
+  # `:session_terminated` clause below that blanks the window tabs on purpose.
+  def handle_info(
+        {:DOWN, ref, :process, _pid, reason},
+        %{assigns: %{tmux_topology_watcher_ref: ref}} = socket
+      )
+      when is_reference(ref) and reason != :normal do
+    {:noreply, TerminalState.resubscribe_tmux_topology(socket)}
+  end
+
+  def handle_info(
+        {:DOWN, ref, :process, _pid, _reason},
+        %{assigns: %{tmux_topology_watcher_ref: ref}} = socket
+      )
+      when is_reference(ref) do
+    {:noreply, assign(socket, :tmux_topology_watcher_ref, nil)}
+  end
+
+  # Any other monitor going down (a stray demonitor race) is not worth taking
+  # the whole viewer down for — this module has no catch-all handle_info.
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, socket), do: {:noreply, socket}
 
   def handle_info(
         {source, {:session_terminated, %{session: session} = payload}},
