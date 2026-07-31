@@ -1,6 +1,8 @@
 defmodule CaseinMob.SessionDashboardScreenTest do
   use Mob.ScreenCase, async: false
 
+  alias CaseinMob.ConnectionTiming
+  alias CaseinMob.SessionClient
   alias CaseinMob.SessionConfig
   alias CaseinMob.SessionDashboardScreen
 
@@ -1457,6 +1459,75 @@ defmodule CaseinMob.SessionDashboardScreenTest do
 
     assert text(view) =~ "workspace-with-a-very-long-..."
     refute text(view) =~ wid
+  end
+
+  test "hydrating cannot consume render-ready and authoritative empty emits once across replay and remount" do
+    ConnectionTiming.reset()
+    on_exit(fn -> ConnectionTiming.reset() end)
+
+    SessionConfig.put_pairing("http://127.0.0.1:1", "token")
+    {:ok, profile} = SessionConfig.connection()
+    start_supervised!({SessionClient, test_mode?: true})
+    context = :sys.get_state(SessionClient).assigns.timing_context
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        fn _event, measurements, metadata, subscriber ->
+          send(subscriber, {:feed_stage, measurements, metadata})
+        end,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    hydrating_payload =
+      ConnectionTiming.decorate_snapshot(
+        %{
+          "version" => 1,
+          "origin" => %{"id" => profile.origin_id, "display_name" => "Devbox"},
+          "cards" => [],
+          "live_work" => %{"status" => "hydrating"}
+        },
+        context
+      )
+
+    first_view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_snapshot, hydrating_payload})
+
+    client_state = :sys.get_state(SessionClient)
+    assert client_state.assigns.render_ready_generation == nil
+    refute_receive {:feed_stage, _measurements, %{stage: :first_cards_render_ready}}
+
+    authoritative_payload =
+      put_in(hydrating_payload, ["live_work", "status"], "authoritative")
+
+    first_view =
+      render_info(first_view, {:mobile_cards_snapshot, authoritative_payload})
+
+    client_state = :sys.get_state(SessionClient)
+    assert client_state.assigns.render_ready_generation == context.generation
+
+    assert_receive {:feed_stage, %{card_count: 0, duration_ms: duration_ms},
+                    %{stage: :first_cards_render_ready, connection_generation: generation}}
+
+    assert duration_ms >= 0
+    assert generation == context.generation
+
+    _first_view = render_info(first_view, {:mobile_cards_snapshot, authoritative_payload})
+    _client_state = :sys.get_state(SessionClient)
+
+    _remounted_view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_snapshot, authoritative_payload})
+
+    _client_state = :sys.get_state(SessionClient)
+    refute_receive {:feed_stage, _measurements, %{stage: :first_cards_render_ready}}
   end
 
   defp snapshot(attrs) do

@@ -12,6 +12,7 @@ defmodule Casein.Supervision.PlatformServices do
     [
       {Casein.RateLimit, clean_period: :timer.minutes(10)},
       {Task.Supervisor, name: Casein.TaskSupervisor},
+      Casein.Mobile.FeedTimingRecorder,
       {Registry, keys: :unique, name: Casein.Mobile.UserObserverRegistry},
       {DynamicSupervisor, name: Casein.Mobile.UserObserverSupervisor, strategy: :one_for_one},
       # Lazy per-workspace filesystem watchers for the Files panel tree.

@@ -2,7 +2,7 @@ defmodule Casein.Mobile.UserObserverTest do
   use Casein.DataCase, async: false
 
   alias Casein.Audit
-  alias Casein.Mobile.{AttentionInbox, AttentionTransition, UserObserver}
+  alias Casein.Mobile.{AttentionInbox, AttentionTransition, FeedTiming, UserObserver}
   alias Casein.Repo
   alias Casein.Runs.Ledger
   alias Casein.Terminals.Session.Info
@@ -694,6 +694,111 @@ defmodule Casein.Mobile.UserObserverTest do
     assert_receive {:mobile_cards_snapshot, %{version: ^version, cards: [_card]}}, 1_000
   end
 
+  test "feed timing keeps observer snapshots hydration and broadcasts identity-free" do
+    user_id = unique_user()
+    workspace_id = "private-workspace-#{System.unique_integer([:positive])}"
+    session_id = "private-session-#{System.unique_integer([:positive])}"
+    generation = feed_generation()
+
+    timing =
+      FeedTiming.new(%{
+        "connection_generation" => generation,
+        "connection_cycle" => "cold"
+      })
+
+    prepare_user(user_id)
+    attach_feed_telemetry(self())
+
+    State.sync(%Workspace{
+      id: workspace_id,
+      name: "private-name",
+      user: "dev",
+      path: System.tmp_dir!()
+    })
+
+    assert %{cards: []} = UserObserver.snapshot(user_id)
+    refute_receive {:observer_feed_stage, _measurements, _metadata}, 50
+
+    assert {%{cards: []}, timing} = UserObserver.snapshot_timed(user_id, timing)
+
+    assert_receive {:observer_feed_stage, measurements,
+                    %{stage: :observer_snapshot, connection_generation: ^generation} = metadata},
+                   1_000
+
+    refute_identity_metadata(measurements, metadata, [user_id, workspace_id, session_id])
+
+    UserObserver.in_progress_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: session_id,
+      command: "private command"
+    })
+
+    assert_receive {:mobile_cards_snapshot, %{cards: [_card]}}, 1_000
+    refute_receive {:observer_feed_stage, _measurements, _metadata}, 50
+
+    :ok = UserObserver.watch_workspace(user_id, workspace_id, timing)
+
+    assert_receive {:observer_feed_stage, started_measurements,
+                    %{
+                      stage: :session_hydration_started,
+                      connection_generation: ^generation
+                    } = started_metadata},
+                   1_000
+
+    assert_receive {:observer_feed_stage, finished_measurements,
+                    %{
+                      stage: :session_hydration_finished,
+                      connection_generation: ^generation
+                    } = finished_metadata},
+                   1_000
+
+    assert_receive {:observer_feed_stage, clarification_measurements,
+                    %{
+                      stage: :clarification_hydration_finished,
+                      connection_generation: ^generation
+                    } = clarification_metadata},
+                   1_000
+
+    assert_receive {:observer_feed_stage, broadcast_measurements,
+                    %{
+                      stage: :projection_broadcast,
+                      connection_generation: ^generation
+                    } = broadcast_metadata},
+                   1_000
+
+    for {stage_measurements, stage_metadata} <- [
+          {started_measurements, started_metadata},
+          {finished_measurements, finished_metadata},
+          {clarification_measurements, clarification_metadata},
+          {broadcast_measurements, broadcast_metadata}
+        ] do
+      refute_identity_metadata(stage_measurements, stage_metadata, [
+        user_id,
+        workspace_id,
+        session_id
+      ])
+    end
+
+    [{observer_pid, _value}] =
+      Registry.lookup(Casein.Mobile.UserObserverRegistry, user_id)
+
+    refute inspect(:sys.get_state(observer_pid)) =~ generation
+
+    later_generation = feed_generation()
+
+    later_timing =
+      FeedTiming.new(%{
+        "connection_generation" => later_generation,
+        "connection_cycle" => "reconnect"
+      })
+
+    :ok = UserObserver.watch_workspace(user_id, workspace_id, later_timing)
+
+    refute_receive {:observer_feed_stage, _measurements,
+                    %{connection_generation: ^later_generation}},
+                   50
+  end
+
   defp prepare_user(user_id) do
     {:ok, _pid} = UserObserver.ensure_started(user_id)
     :ok = UserObserver.clear(user_id)
@@ -705,6 +810,47 @@ defmodule Casein.Mobile.UserObserverTest do
     user_id = "observer-#{System.unique_integer([:positive])}"
     on_exit(fn -> UserObserver.stop(user_id) end)
     user_id
+  end
+
+  defp attach_feed_telemetry(test_pid) do
+    handler = {__MODULE__, test_pid, System.unique_integer([:positive])}
+
+    :telemetry.attach(
+      handler,
+      [:casein, :mobile, :feed, :stage],
+      fn _event, measurements, metadata, pid ->
+        send(pid, {:observer_feed_stage, measurements, metadata})
+      end,
+      test_pid
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+  end
+
+  defp refute_identity_metadata(measurements, metadata, private_values) do
+    serialized = inspect({measurements, metadata})
+
+    Enum.each(private_values, fn private_value ->
+      refute serialized =~ private_value
+    end)
+
+    assert Map.keys(metadata) |> Enum.sort() ==
+             [
+               :component,
+               :connection_generation,
+               :cycle,
+               :outcome,
+               :platform,
+               :reason_code,
+               :schema_version,
+               :stage
+             ]
+  end
+
+  defp feed_generation do
+    16
+    |> :crypto.strong_rand_bytes()
+    |> Base.url_encode64(padding: false)
   end
 
   defp flush do

@@ -14,6 +14,7 @@ defmodule Casein.Mobile.UserObserver do
   alias Casein.Mobile.AttentionInbox
   alias Casein.Mobile.Card
   alias Casein.Mobile.Clarification
+  alias Casein.Mobile.FeedTiming
   alias Casein.Mobile.LiveWork
   alias Casein.Mobile.ResumeCard
   alias Casein.Notifications
@@ -80,6 +81,12 @@ defmodule Casein.Mobile.UserObserver do
     GenServer.call(via(user_id), :snapshot)
   end
 
+  @spec snapshot_timed(String.t(), FeedTiming.t()) :: {snapshot(), FeedTiming.t()}
+  def snapshot_timed(user_id, %FeedTiming{} = timing) when is_binary(user_id) do
+    {:ok, _pid} = ensure_started(user_id)
+    GenServer.call(via(user_id), {:snapshot_timed, timing})
+  end
+
   @doc """
   Start observing a workspace's audit spine for this user.
 
@@ -92,6 +99,13 @@ defmodule Casein.Mobile.UserObserver do
       when is_binary(user_id) and is_binary(workspace_id) do
     {:ok, _pid} = ensure_started(user_id)
     GenServer.call(via(user_id), {:watch_workspace, workspace_id})
+  end
+
+  @spec watch_workspace(String.t(), String.t(), FeedTiming.t()) :: :ok | {:error, term()}
+  def watch_workspace(user_id, workspace_id, %FeedTiming{} = timing)
+      when is_binary(user_id) and is_binary(workspace_id) do
+    {:ok, _pid} = ensure_started(user_id)
+    GenServer.call(via(user_id), {:watch_workspace, workspace_id, timing})
   end
 
   @doc false
@@ -204,6 +218,19 @@ defmodule Casein.Mobile.UserObserver do
     {:reply, snapshot_payload(state), state}
   end
 
+  def handle_call({:snapshot_timed, timing}, _from, state) do
+    payload = snapshot_payload(state)
+
+    timing =
+      FeedTiming.emit(timing, :observer_snapshot,
+        outcome: :succeeded,
+        reason_code: :rendered,
+        card_count: length(payload.cards)
+      )
+
+    {:reply, {payload, timing}, state}
+  end
+
   def handle_call(:clear, _from, state) do
     state =
       state
@@ -226,30 +253,15 @@ defmodule Casein.Mobile.UserObserver do
   end
 
   def handle_call({:watch_workspace, workspace_id}, _from, state) do
-    if MapSet.member?(state.watched_workspaces, workspace_id) do
-      {:reply, :ok, state}
-    else
-      :ok = Audit.subscribe(workspace_id)
-      :ok = SessionDirectory.subscribe(workspace_id, workspace_name: workspace_name(workspace_id))
-      :ok = Clarification.subscribe(workspace_id)
-      hydration_ref = make_ref()
-      clarification_ref = make_ref()
-      hydrate_live_work_async(self(), workspace_id, hydration_ref)
-      hydrate_clarifications_async(self(), workspace_id, clarification_ref)
+    watch_workspace_reply(state, workspace_id, FeedTiming.disabled())
+  end
 
-      {:reply, :ok,
-       %{
-         state
-         | watched_workspaces: MapSet.put(state.watched_workspaces, workspace_id),
-           live_work_hydrations: Map.put(state.live_work_hydrations, workspace_id, hydration_ref),
-           clarification_hydrations:
-             Map.put(state.clarification_hydrations, workspace_id, clarification_ref)
-       }}
-    end
+  def handle_call({:watch_workspace, workspace_id, timing}, _from, state) do
+    watch_workspace_reply(state, workspace_id, timing)
   end
 
   def handle_call({:reconcile_live_work, workspace_id, tabs}, _from, state) do
-    state = reconcile_live_work_state(state, workspace_id, tabs)
+    state = reconcile_live_work_state(state, workspace_id, tabs, FeedTiming.disabled())
     {:reply, snapshot_payload(state), state}
   end
 
@@ -312,6 +324,7 @@ defmodule Casein.Mobile.UserObserver do
         state
       ) do
     if MapSet.member?(state.watched_workspaces, workspace_id) do
+      timing = FeedTiming.disabled()
       was_hydrating = Map.has_key?(state.live_work_hydrations, workspace_id)
 
       state = %{
@@ -320,8 +333,11 @@ defmodule Casein.Mobile.UserObserver do
           live_work_hydrations: Map.delete(state.live_work_hydrations, workspace_id)
       }
 
-      next_state = reconcile_live_work_state(state, workspace_id, tabs)
-      if was_hydrating and next_state.version == state.version, do: broadcast(next_state)
+      next_state = reconcile_live_work_state(state, workspace_id, tabs, timing)
+
+      if was_hydrating and next_state.version == state.version,
+        do: broadcast(next_state, timing)
+
       {:noreply, next_state}
     else
       {:noreply, state}
@@ -329,22 +345,20 @@ defmodule Casein.Mobile.UserObserver do
   end
 
   def handle_info({:live_work_hydrated, workspace_id, hydration_ref, tabs}, state) do
-    current_ref = Map.get(state.live_work_hydrations, workspace_id)
+    handle_live_work_hydrated(
+      workspace_id,
+      hydration_ref,
+      tabs,
+      FeedTiming.disabled(),
+      state
+    )
+  end
 
-    if MapSet.member?(state.watched_workspaces, workspace_id) and
-         current_ref == hydration_ref and
-         not MapSet.member?(state.live_work_seen, workspace_id) do
-      state = %{
+  def handle_info(
+        {:live_work_hydrated, workspace_id, hydration_ref, tabs, timing},
         state
-        | live_work_hydrations: Map.delete(state.live_work_hydrations, workspace_id)
-      }
-
-      next_state = reconcile_live_work_state(state, workspace_id, tabs)
-      if next_state.version == state.version, do: broadcast(next_state)
-      {:noreply, next_state}
-    else
-      {:noreply, state}
-    end
+      ) do
+    handle_live_work_hydrated(workspace_id, hydration_ref, tabs, timing, state)
   end
 
   def handle_info({:clarification_requested, event}, state) do
@@ -367,6 +381,67 @@ defmodule Casein.Mobile.UserObserver do
         {:clarifications_hydrated, workspace_id, hydration_ref, events},
         state
       ) do
+    handle_clarifications_hydrated(
+      workspace_id,
+      hydration_ref,
+      events,
+      FeedTiming.disabled(),
+      state
+    )
+  end
+
+  def handle_info(
+        {:clarifications_hydrated, workspace_id, hydration_ref, events, timing},
+        state
+      ) do
+    handle_clarifications_hydrated(workspace_id, hydration_ref, events, timing, state)
+  end
+
+  def handle_info(_message, state), do: {:noreply, state}
+
+  defp watch_workspace_reply(state, workspace_id, timing) do
+    if MapSet.member?(state.watched_workspaces, workspace_id) do
+      {:reply, :ok, state}
+    else
+      :ok = Audit.subscribe(workspace_id)
+      :ok = SessionDirectory.subscribe(workspace_id, workspace_name: workspace_name(workspace_id))
+      :ok = Clarification.subscribe(workspace_id)
+      hydration_ref = make_ref()
+      clarification_ref = make_ref()
+      hydrate_live_work_async(self(), workspace_id, hydration_ref, timing)
+      hydrate_clarifications_async(self(), workspace_id, clarification_ref, timing)
+
+      {:reply, :ok,
+       %{
+         state
+         | watched_workspaces: MapSet.put(state.watched_workspaces, workspace_id),
+           live_work_hydrations: Map.put(state.live_work_hydrations, workspace_id, hydration_ref),
+           clarification_hydrations:
+             Map.put(state.clarification_hydrations, workspace_id, clarification_ref)
+       }}
+    end
+  end
+
+  defp handle_live_work_hydrated(workspace_id, hydration_ref, tabs, timing, state) do
+    current_ref = Map.get(state.live_work_hydrations, workspace_id)
+
+    if MapSet.member?(state.watched_workspaces, workspace_id) and
+         current_ref == hydration_ref and
+         not MapSet.member?(state.live_work_seen, workspace_id) do
+      state = %{
+        state
+        | live_work_hydrations: Map.delete(state.live_work_hydrations, workspace_id)
+      }
+
+      next_state = reconcile_live_work_state(state, workspace_id, tabs, timing)
+      if next_state.version == state.version, do: broadcast(next_state, timing)
+      {:noreply, next_state}
+    else
+      {:noreply, state}
+    end
+  end
+
+  defp handle_clarifications_hydrated(workspace_id, hydration_ref, events, timing, state) do
     if Map.get(state.clarification_hydrations, workspace_id) == hydration_ref and
          MapSet.member?(state.watched_workspaces, workspace_id) do
       state = %{
@@ -384,14 +459,12 @@ defmodule Casein.Mobile.UserObserver do
           )
         end)
 
-      if next_state.version > state.version, do: broadcast(next_state)
+      if next_state.version > state.version, do: broadcast(next_state, timing)
       {:noreply, next_state}
     else
       {:noreply, state}
     end
   end
-
-  def handle_info(_message, state), do: {:noreply, state}
 
   defp handle_audit_event(state, %Event{action: "run.approval_requested"} = event) do
     attrs = event_card_attrs(state.user_id, event) |> Map.put(:review_count, review_count(event))
@@ -527,25 +600,50 @@ defmodule Casein.Mobile.UserObserver do
     %{state | watched_workspaces: MapSet.new()}
   end
 
-  defp hydrate_live_work_async(observer, workspace_id, hydration_ref) do
+  defp hydrate_live_work_async(observer, workspace_id, hydration_ref, timing) do
     Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
+      timing =
+        FeedTiming.emit(timing, :session_hydration_started,
+          outcome: :started,
+          reason_code: :workspace_watched
+        )
+
       tabs = SessionDirectory.tabs(workspace_id, workspace_name: workspace_name(workspace_id))
-      send(observer, {:live_work_hydrated, workspace_id, hydration_ref, tabs})
+
+      timing =
+        FeedTiming.emit(timing, :session_hydration_finished,
+          outcome: :succeeded,
+          reason_code: :hydrated,
+          count: length(tabs)
+        )
+
+      send(observer, {:live_work_hydrated, workspace_id, hydration_ref, tabs, timing})
     end)
 
     :ok
   end
 
-  defp hydrate_clarifications_async(observer, workspace_id, hydration_ref) do
+  defp hydrate_clarifications_async(observer, workspace_id, hydration_ref, timing) do
     Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
       events = Clarification.open_for_workspace(workspace_id)
-      send(observer, {:clarifications_hydrated, workspace_id, hydration_ref, events})
+
+      timing =
+        FeedTiming.emit(timing, :clarification_hydration_finished,
+          outcome: :succeeded,
+          reason_code: :hydrated,
+          count: length(events)
+        )
+
+      send(
+        observer,
+        {:clarifications_hydrated, workspace_id, hydration_ref, events, timing}
+      )
     end)
 
     :ok
   end
 
-  defp reconcile_live_work_state(state, workspace_id, tabs) do
+  defp reconcile_live_work_state(state, workspace_id, tabs, timing) do
     projected =
       LiveWork.project(
         state.user_id,
@@ -594,7 +692,7 @@ defmodule Casein.Mobile.UserObserver do
       record_live_work_transitions(existing_live, next_cards, projected_by_key)
 
       state = %{state | version: state.version + 1, cards: next_cards}
-      broadcast(state)
+      broadcast(state, timing)
       state
     end
   end
@@ -665,7 +763,7 @@ defmodule Casein.Mobile.UserObserver do
     }
   end
 
-  defp broadcast(state) do
+  defp broadcast(state, timing \\ FeedTiming.disabled()) do
     payload = snapshot_payload(state)
     started_at = System.monotonic_time()
 
@@ -680,6 +778,13 @@ defmodule Casein.Mobile.UserObserver do
       %{count: 1, duration: System.monotonic_time() - started_at},
       %{user_id: state.user_id, version: state.version, card_count: length(payload.cards)}
     )
+
+    _timing =
+      FeedTiming.emit(timing, :projection_broadcast,
+        outcome: :succeeded,
+        reason_code: :none,
+        card_count: length(payload.cards)
+      )
   end
 
   defp maybe_broadcast_card_created(card, :create) do

@@ -27,8 +27,9 @@ defmodule CaseinMob.App do
     # devbox host on some networks even though it's public; resolve it via the
     # OS resolver instead, which seeds :inet_db so the session socket connects.
     # (See the Mob.DNS note above re: hosts that need Apple's resolver.)
-    _ = resolve_session_hosts()
-    CaseinMob.ConnectionTiming.boot_stage(:dns_ready)
+    resolve_session_hosts()
+    |> dns_timing_opts()
+    |> then(&CaseinMob.ConnectionTiming.boot_stage(:dns_ready, &1))
 
     {:ok, _} = Application.ensure_all_started(:castore)
     # Mob invokes this callback directly on-device instead of starting the
@@ -39,29 +40,68 @@ defmodule CaseinMob.App do
     {:ok, _} = Application.ensure_all_started(:slipstream)
     CaseinMob.ConnectionTiming.boot_stage(:dependencies_ready)
     start_device_bridge()
+    # SessionClient atomically takes the cold timing context here and becomes
+    # its sole owner. App startup continues concurrently but must not append
+    # later stages to the handed-off shared-feed chain.
     start_session_client()
-    CaseinMob.ConnectionTiming.boot_stage(:client_started)
     {:ok, _} = CaseinMob.Repo.start_link()
 
     Ecto.Migrator.with_repo(CaseinMob.Repo, fn repo ->
       Ecto.Migrator.run(repo, migrations_dir(), :up, all: true)
     end)
 
-    CaseinMob.ConnectionTiming.boot_stage(:database_ready)
     Mob.Screen.start_root(CaseinMob.SessionDashboardScreen)
-    CaseinMob.ConnectionTiming.boot_stage(:root_started)
     Mob.Dist.ensure_started(node: :"casein_mob_android@127.0.0.1", cookie: :mob_secret)
   end
 
-  defp resolve_session_hosts do
-    with {:ok, url, _token} <- CaseinMob.SessionConfig.pairing(),
-         host when is_binary(host) <- URI.parse(url).host do
-      Mob.DNS.resolve(host)
-    else
-      _ -> :ok
+  @doc false
+  def resolve_session_hosts(resolver \\ &Mob.DNS.resolve/1) when is_function(resolver, 1) do
+    case CaseinMob.SessionConfig.pairing() do
+      {:ok, url, _token} -> resolve_session_url(url, resolver)
+      :error -> {:skip, :no_configuration}
     end
   rescue
-    _ -> :ok
+    _ -> {:error, :resolution_failed}
+  catch
+    :exit, _reason -> {:error, :resolution_failed}
+  end
+
+  @doc false
+  def dns_timing_opts({:ok, :resolved}),
+    do: [outcome: :succeeded, reason_code: :dns_resolved]
+
+  def dns_timing_opts({:skip, :ip_literal}),
+    do: [outcome: :skipped, reason_code: :dns_ip_literal]
+
+  def dns_timing_opts({:skip, :no_configuration}),
+    do: [outcome: :skipped, reason_code: :no_configuration]
+
+  def dns_timing_opts({:error, :invalid_url}),
+    do: [outcome: :failed, reason_code: :dns_invalid_url]
+
+  def dns_timing_opts(_failure),
+    do: [outcome: :failed, reason_code: :dns_resolution_failed]
+
+  defp resolve_session_url(url, resolver) do
+    case URI.parse(url).host do
+      host when is_binary(host) and host != "" -> resolve_session_host(host, resolver)
+      _invalid -> {:error, :invalid_url}
+    end
+  end
+
+  defp resolve_session_host(host, resolver) do
+    case :inet.parse_address(String.to_charlist(host)) do
+      {:ok, _address} -> {:skip, :ip_literal}
+      {:error, _reason} -> resolve_session_hostname(host, resolver)
+    end
+  end
+
+  defp resolve_session_hostname(host, resolver) do
+    case resolver.(host) do
+      {:ok, _address} -> {:ok, :resolved}
+      {:error, _reason} -> {:error, :resolution_failed}
+      _unexpected -> {:error, :resolution_failed}
+    end
   end
 
   # Returns the path to the migrations directory for the current environment.

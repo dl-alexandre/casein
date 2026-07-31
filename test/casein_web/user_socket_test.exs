@@ -2,6 +2,7 @@ defmodule CaseinWeb.UserSocketTest do
   use Casein.DataCase, async: false
 
   alias Casein.DeviceLinks
+  alias Casein.Mobile.FeedTiming
   alias Casein.Workspace
   alias CaseinWeb.{ChannelAuth, UserSocket}
 
@@ -46,6 +47,73 @@ defmodule CaseinWeb.UserSocketTest do
     assert :error = UserSocket.connect(%{"token" => "not-a-real-token"}, %Phoenix.Socket{}, %{})
   end
 
+  test "connect emits one final allowlisted auth decision and assigns validated timing" do
+    generation = generation()
+    token = ChannelAuth.sign_user_token("private-user", "private@example.com")
+    attach_feed_telemetry(self())
+
+    assert {:ok, socket} =
+             UserSocket.connect(
+               %{
+                 "token" => token,
+                 "connection_generation" => generation,
+                 "connection_cycle" => "cold"
+               },
+               %Phoenix.Socket{},
+               %{}
+             )
+
+    assert %FeedTiming{} = socket.assigns.mobile_feed_timing
+
+    assert FeedTiming.wire_context(socket.assigns.mobile_feed_timing) == %{
+             connection_generation: generation,
+             connection_cycle: "cold"
+           }
+
+    assert_receive {:feed_auth, measurements,
+                    %{
+                      stage: :token_verified,
+                      outcome: :succeeded,
+                      reason_code: :user_token,
+                      connection_generation: ^generation
+                    } = metadata}
+
+    refute_receive {:feed_auth, _measurements, _metadata}, 50
+
+    serialized = inspect({measurements, metadata})
+    refute serialized =~ token
+    refute serialized =~ "private-user"
+    refute serialized =~ "private@example.com"
+  end
+
+  test "connect emits only the final failure after all verifier fallbacks" do
+    generation = generation()
+    token = "invalid-private-token"
+    attach_feed_telemetry(self())
+
+    assert :error =
+             UserSocket.connect(
+               %{
+                 "token" => token,
+                 "connection_generation" => generation,
+                 "connection_cycle" => "reconnect"
+               },
+               %Phoenix.Socket{},
+               %{}
+             )
+
+    assert_receive {:feed_auth, measurements,
+                    %{
+                      stage: :token_verified,
+                      outcome: :failed,
+                      reason_code: :invalid_token,
+                      connection_generation: ^generation
+                    } = metadata}
+
+    refute_receive {:feed_auth, _measurements, _metadata}, 50
+    refute inspect({measurements, metadata}) =~ token
+  end
+
   test "connect accepts persistent device link tokens" do
     assert {:ok, %{token: token, link: link}} =
              DeviceLinks.create_from_pairing_claims(
@@ -82,4 +150,27 @@ defmodule CaseinWeb.UserSocketTest do
 
   defp restore(key, nil), do: Application.delete_env(:casein, key)
   defp restore(key, val), do: Application.put_env(:casein, key, val)
+
+  defp attach_feed_telemetry(test_pid) do
+    handler = {__MODULE__, test_pid, System.unique_integer([:positive])}
+
+    :telemetry.attach(
+      handler,
+      [:casein, :mobile, :feed, :stage],
+      fn _event, measurements, metadata, pid ->
+        if metadata.stage == :token_verified do
+          send(pid, {:feed_auth, measurements, metadata})
+        end
+      end,
+      test_pid
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+  end
+
+  defp generation do
+    16
+    |> :crypto.strong_rand_bytes()
+    |> Base.url_encode64(padding: false)
+  end
 end
