@@ -49,8 +49,11 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ ~s(RUN_ROOT="${CASEIN_RUN_ROOT:-/run/casein}")
     assert text =~ ~s(CURRENT_SYMLINK="${CASEIN_CURRENT_SOCK:-${RUN_ROOT}/current.sock}")
     assert text =~ ~s(source "${DEPLOY_SCRIPT_SELF_DIR}/lib/caddy-upstream.sh")
+    assert text =~ "casein_caddy_admin_curl -fsS -X PATCH"
     assert caddy_helper =~ "unix//run/casein/current.sock"
-    assert caddy_helper =~ "unix//run/casein/current.sock"
+    assert caddy_helper =~ ~s(--connect-timeout "${CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT}")
+    assert caddy_helper =~ ~s(--max-time "${CASEIN_CADDY_ADMIN_MAX_TIME}")
+    refute text =~ "sudo curl -fsS -X PATCH"
     refute text =~ ~s(INST_DIR="/run/casein/instances")
     refute text =~ ~s(CURRENT_SYMLINK="/run/casein/current.sock")
   end
