@@ -398,6 +398,77 @@ defmodule Scripts.AgentWorktreeTest do
     refute output =~ "stale launcher"
   end
 
+  test "ensure-gh-stack configures a repo for non-interactive gh stack without clobbering choices" do
+    tmp = tmp_dir!("ensure-gh-stack-test")
+    fake_bin = Path.join(tmp, "bin")
+    File.mkdir_p!(fake_bin)
+
+    # Stub gh so the test never touches the network or the real extension dir.
+    File.write!(Path.join(fake_bin, "gh"), """
+    #!/usr/bin/env bash
+    case "${1:-} ${2:-}" in
+      "extension list") printf 'gh stack\\tgithub/gh-stack\\tv0.1.0\\n' ;;
+      "extension upgrade") echo "[stack]: already up to date" ;;
+      "api graphql") echo "PullRequestStack" ;;
+      "api user") echo "test-login" ;;
+      *) exit 64 ;;
+    esac
+    """)
+
+    File.chmod!(Path.join(fake_bin, "gh"), 0o755)
+
+    script = Path.join(@root, "scripts/ensure-gh-stack.sh")
+    env = [{"PATH", "#{fake_bin}:#{system_path()}"}]
+
+    %{repo: fresh} = git_fixture!()
+
+    assert {output, 0} =
+             System.cmd("bash", [script, "--repo", fresh], env: env, stderr_to_stdout: true)
+
+    assert output =~ "gh-stack present (v0.1.0)"
+    assert output =~ "rerere.enabled=true"
+    assert output =~ "remote.pushDefault=origin"
+    assert git_config(fresh, "rerere.enabled") == "true"
+    assert git_config(fresh, "remote.pushDefault") == "origin"
+
+    # Re-running is idempotent and reports the existing values rather than
+    # rewriting them.
+    assert {second, 0} =
+             System.cmd("bash", [script, "--repo", fresh], env: env, stderr_to_stdout: true)
+
+    assert second =~ "rerere.enabled already true — left alone"
+
+    # A fork workflow deliberately pushes somewhere other than origin; pairing a
+    # workspace must not silently redirect those pushes.
+    %{repo: forked} = git_fixture!()
+    git!(["-C", forked, "config", "--local", "remote.pushDefault", "fork"])
+
+    assert {forked_output, 0} =
+             System.cmd("bash", [script, "--repo", forked], env: env, stderr_to_stdout: true)
+
+    assert forked_output =~ "remote.pushDefault already fork — left alone"
+    assert git_config(forked, "remote.pushDefault") == "fork"
+
+    # --check reports without touching git config at all.
+    %{repo: untouched} = git_fixture!()
+
+    assert {check_output, 0} =
+             System.cmd("bash", [script, "--check", "--repo", untouched],
+               env: env,
+               stderr_to_stdout: true
+             )
+
+    assert check_output =~ "gh-stack present"
+    assert git_config(untouched, "rerere.enabled") == ""
+  end
+
+  defp git_config(repo, key) do
+    {value, _} =
+      System.cmd("git", ["-C", repo, "config", "--local", "--get", key], stderr_to_stdout: true)
+
+    String.trim(value)
+  end
+
   defp git_fixture! do
     tmp =
       Path.join(System.tmp_dir!(), "agent-worktree-test-#{System.unique_integer([:positive])}")

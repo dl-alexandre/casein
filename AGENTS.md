@@ -138,15 +138,24 @@ while another commits fixes to it). Before starting non-trivial work:
 ### Stacked pull requests (`gh stack`)
 
 GitHub stacked PRs went to public preview on 2026-07-30 and are live for the
-`dl-alexandre` account. The `gh stack` extension is installed host-wide — gh
-keeps extensions in its *data* dir (`~/.local/share/gh/extensions`), which is
-independent of `GH_CONFIG_DIR`, so every Casein agent-auth profile and every
-workspace already has it. Install or refresh it with:
+`dl-alexandre` account. `scripts/ensure-workspace-agent-pair.sh` installs the
+`gh stack` extension as part of pairing, so a paired workspace has both halves —
+the extension and the `gh-stack` skill. Install or refresh it directly with:
 
 ```bash
-bash scripts/ensure-gh-stack.sh          # install/upgrade + preview probe
-bash scripts/ensure-gh-stack.sh --check  # report only
+bash scripts/ensure-gh-stack.sh                # install/upgrade + preview probe
+bash scripts/ensure-gh-stack.sh --check        # report only
+bash scripts/ensure-gh-stack.sh --repo <path>  # configure that repo, not $PWD
 ```
+
+**The extension is per-`HOME`, not host-wide.** gh reads extensions from
+`$XDG_DATA_HOME/gh/extensions` (default `~/.local/share/gh/extensions`) — keyed
+to `HOME`/`XDG_DATA_HOME`, *not* to `GH_CONFIG_DIR`. One install therefore covers
+every agent-auth profile sharing this `HOME`, but not a runtime with a different
+`HOME`, a different `XDG_DATA_HOME`, or a sandbox that does not bind the data
+dir. `gh extension list` coming back empty in a workspace means one of those,
+not a bad install. The skill is likewise staged *at launch or pair time*, so it
+never appears retroactively in an already-open pane.
 
 Use a stack when one change is genuinely layered (schema → context → LiveView)
 and each layer is reviewable alone. It is the mechanism behind "land serially,

@@ -155,9 +155,13 @@ export CASEIN_WORKSPACE_NAME="$WORKSPACE_NAME"
 # checkouts, then release overlays if present.
 skill_source_dir() {
   local candidate
+  # NOTE: the Casein rename did not move the on-box checkout, which is still
+  # named dev_ide — probe both names so this list does not silently rot down to
+  # the deploy-build candidate.
   for candidate in \
     "${ROOT}/.claude/skills" \
     "/data/workspaces/dalexandre/casein/.claude/skills" \
+    "/data/workspaces/dalexandre/dev_ide/.claude/skills" \
     "/opt/casein/deploy-build/.claude/skills" \
     "/opt/casein/release/lib/casein-0.1.0/priv/claude/skills"
   do
@@ -180,6 +184,26 @@ log "staging: ${STAGING}"
 # external skills, and Claude launches already stage there.
 agent_skills_install "$SKILL_SRC" "${HOME}/.claude"
 log "skills → ~/.claude/skills"
+
+# The gh-stack skill is useless without the extension it drives, and the
+# extension is per-HOME (gh reads $XDG_DATA_HOME/gh/extensions), so staging the
+# skill alone leaves a paired agent with instructions for a command it cannot
+# run. Ensure both halves here, against the workspace's own checkout so the
+# non-interactive git settings land on the repo the agent will actually push
+# from. Best-effort: a box without gh, or offline, must still pair.
+ensure_gh_stack() {
+  local script="${ROOT}/scripts/ensure-gh-stack.sh"
+  [[ "${CASEIN_AGENT_GH_STACK:-1}" != "0" ]] || return 0
+  [[ -f "$script" ]] || return 0
+
+  if bash "$script" --repo "$CHECKOUT" 2>&1 | sed 's/^/  /'; then
+    log "gh stack ready (extension + ${CHECKOUT} git config)"
+  else
+    echo "warn: gh-stack setup skipped — \`gh stack\` may prompt or be missing" >&2
+  fi
+}
+
+ensure_gh_stack
 
 install_for_opencode() {
   agent_skills_install "$SKILL_SRC" "${HOME}/.config/opencode"
