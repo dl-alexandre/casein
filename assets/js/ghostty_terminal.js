@@ -68,6 +68,7 @@ import {
 } from "./terminal_display_zoom.mjs"
 import {fileLinkAt, updateFileLinkStore} from "./terminal_file_links.mjs"
 import {pingWakeLock} from "./wake_lock"
+import {enterDismissesSoftKeyboard} from "./terminal_soft_keyboard.mjs"
 import {computeTerminalLayout} from "./terminal_layout_model.mjs"
 import {
   isMobileTerminalLayout,
@@ -3288,12 +3289,30 @@ const GhosttyTerminal = {
         }
       }
 
+      // Submitting a line — a shell command, an agent prompt — is the moment
+      // you want to *read*, and on a phone the soft keyboard eats over half the
+      // grid. So a plain Enter dismisses it; a tap on the terminal brings it
+      // back. Which keystrokes qualify (and which are the key bar's own
+      // synthesis, or a composer newline) is terminal_soft_keyboard.mjs. The
+      // blur is deferred a tick so the vendor's keydown handler still sees a
+      // focused input when it forwards the key.
+      this.__onEnterDismissKeyboard = (e) => {
+        if (!enterDismissesSoftKeyboard(e)) return
+        setTimeout(() => {
+          if (this.input && document.activeElement === this.input) {
+            this.input.blur()
+            hud("enter → keyboard dismissed")
+          }
+        }, 0)
+      }
+
       this.el.addEventListener("touchstart", this.__onTouchStart, { passive: true })
       // Non-passive: the scroll branch calls preventDefault to suppress the
       // page's rubber-band once it owns the gesture.
       this.el.addEventListener("touchmove", this.__onTouchMove, { passive: false })
       this.el.addEventListener("touchend", this.__onTouchEnd, { passive: true })
       this.el.addEventListener("mousedown", this.__onCaptureMousedown, true)
+      this.input?.addEventListener("keydown", this.__onEnterDismissKeyboard)
     }
 
     // When a selection clears, replay the most recent frame we skipped so the
@@ -3516,6 +3535,8 @@ const GhosttyTerminal = {
       this.el.removeEventListener("touchmove", this.__onTouchMove)
       this.el.removeEventListener("touchend", this.__onTouchEnd)
       this.el.removeEventListener("mousedown", this.__onCaptureMousedown, true)
+      this.input?.removeEventListener("keydown", this.__onEnterDismissKeyboard)
+      this.__onEnterDismissKeyboard = null
       this.__onTouchStart = null
     }
 
