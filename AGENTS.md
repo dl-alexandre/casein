@@ -252,6 +252,23 @@ global admin is `CASEIN_ADMIN_API_TOKEN`). Host tokens live in `/etc/casein/case
   - **Verify pane** is for `git status` / test output.
 - Built-in template id: `agent_pair` (`lib/casein/terminals/session_template/loader.ex`).
 
+### Definition of done (coverage matrix)
+
+A change is not done because one happy path works on the surface you happen to
+have open. Walk the axes below and mark each cell that the change *could*
+touch; untested cells are open bugs. Single-surface omissions that shipped as
+"done" and then regressed elsewhere: the chromeless-panes desktop/mobile CSS
+split, the mobile authority flap, and the iPad scroll fix (`1e8f4ef0`).
+
+| Axis | What to cover |
+|------|----------------|
+| **Surfaces** | Desktop viewer, mobile PWA, native mobile companion (`CaseinMob`), Electron/macOS + Windows desktop packages |
+| **Entry points** | Keybar, command palette, context strip, mobile sheet |
+| **Provider adapters** | Codex, Grok (ACP), Claude, OpenCode |
+| **Reverse state flows** | open/close, attach/detach, pair/unpair, lock/unlock, dirty/clean — the axis that has bitten Casein repeatedly |
+| **Connection modes** | Loopback, LAN, public HTTPS, SSH tunnel |
+| **Docs** | `docs/subsystems/` entry updated when behaviour or operator procedure changed |
+
 ### MCP endpoints (wire into external agent)
 
 | Surface | URL | Auth |
@@ -325,6 +342,23 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U casein -d casein_prod \
 ```
 
 `bin/casein rpc` for mode changes often fails with **Invalid challenge reply** (RELEASE_COOKIE drift) — prefer UI or direct SQL above.
+
+### Process-kill safety (shared box)
+
+This devbox is multi-tenant (multiple users, workspaces, and agent sessions).
+Process hygiene mistakes here reaps *other people's* work, not just yours.
+
+- **Never `pkill -f <pattern>`.** Pattern kills match across users and
+  workspaces. Kill only by a PID you captured yourself, or by the confirmed
+  port owner via `ss -H -ltnp` (then that PID).
+- **Never point a dev server at the production database.** `DATABASE_URL` is
+  inherited from the live release env (`/etc/casein/casein.env`).
+  `config/runtime.exs` guards `MIX_ENV=test` but **not** `MIX_ENV=dev` — a
+  casual `mix phx.server` can write through to prod data.
+- **Before killing a "stale" instance, prove it is stale.** A live
+  `SessionOwner` with one viewer and oscillating owner size is not stale;
+  reaping it drops the operator mid-session. Confirm via topology/status, not
+  by age alone.
 
 ### Friction we hit (save future time)
 
@@ -460,6 +494,13 @@ custom classes must fully style the input
 
 ## Test guidelines
 
+- **Targeted tests while iterating; repo-wide gates only at pre-push (or when
+  asked).** Run the files that exercise the code you changed
+  (`mix test path/to/file_test.exs`). Save full-suite / `mix precommit` /
+  `scripts/pre-push-check.sh` for the end of the change. This checkout is a
+  **shared working tree**: other sessions leave uncommitted diffs that make
+  repo-wide gates fail for reasons unrelated to your work, and attributing
+  those failures costs more than the gate saves during iteration.
 - **Always use `start_supervised!/1`** to start processes in tests as it guarantees cleanup between tests
 - **Avoid** `Process.sleep/1` and `Process.alive?/1` in tests
   - Instead of sleeping to wait for a process to finish, **always** use `Process.monitor/1` and assert on the DOWN message:

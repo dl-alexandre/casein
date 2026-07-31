@@ -96,7 +96,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Shared do
     |> workspace_id()
     |> case do
       id when is_binary(id) and id != "" ->
-        if registration_workspace_id in workspaces().viewer_ids(id),
+        if registration_workspace_id in workspaces().viewer_ids(id, resolve_remote?: true),
           do: :ok,
           else: {:error, :not_found}
 

@@ -27,9 +27,6 @@ defmodule Casein.Workspaces.PreviewDeps do
   def forward_auth_headers(workspace), do: Workspaces.forward_auth_headers(workspace)
 
   @impl true
-  def viewer_ids(workspace_id), do: Aliases.viewer_ids(workspace_id)
-
-  @impl true
   def viewer_ids(workspace_id, opts), do: Aliases.viewer_ids(workspace_id, opts)
 
   @impl true

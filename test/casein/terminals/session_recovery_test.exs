@@ -132,7 +132,10 @@ defmodule Casein.Terminals.SessionRecoveryTest do
     :ok = SessionRecovery.subscribe_workspace(ws)
 
     Application.put_env(:casein, :session_recovery_dedupe_ms, 0)
-    Application.put_env(:casein, :session_recovery_flap_window_ms, 50)
+    # Window must outlast a single notify's emit path (audit + PubSub can take
+    # >50ms under load); otherwise the second call resets the window and never
+    # reaches :flapping. 200ms stays short for CI while remaining stable.
+    Application.put_env(:casein, :session_recovery_flap_window_ms, 200)
     Application.put_env(:casein, :session_recovery_max_notices, 1)
 
     on_exit(fn ->
@@ -154,7 +157,13 @@ defmodule Casein.Terminals.SessionRecoveryTest do
     assert is_map(notify.())
     assert :flapping = notify.()
 
-    Process.sleep(60)
+    # Wall-clock settle past the flap window; receive-after, not Process.sleep.
+    # Do not use Eventually.await — notify.() has side effects (increments the
+    # flap counter), so a poller that re-invokes it would change the assertion.
+    receive do
+    after
+      250 -> :ok
+    end
 
     assert is_map(notify.()), "counter should restart after the flap window elapses"
   end

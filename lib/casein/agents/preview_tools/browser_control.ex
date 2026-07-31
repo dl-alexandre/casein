@@ -73,7 +73,7 @@ defmodule Casein.Agents.PreviewTools.BrowserControl do
     timeout = Keyword.get(opts, :timeout_ms, @default_action_timeout_ms)
 
     if is_binary(workspace_id) and workspace_id != "" do
-      workspace_ids = Deps.impl(:workspaces).viewer_ids(workspace_id)
+      workspace_ids = Deps.impl(:workspaces).viewer_ids(workspace_id, resolve_remote?: true)
       Enum.each(workspace_ids, &PreviewActivity.subscribe/1)
 
       payload =
@@ -105,7 +105,7 @@ defmodule Casein.Agents.PreviewTools.BrowserControl do
       id when is_binary(id) and id != "" ->
         payload = event_payload(id, action, opts)
 
-        for viewer_id <- Deps.impl(:workspaces).viewer_ids(id) do
+        for viewer_id <- Deps.impl(:workspaces).viewer_ids(id, resolve_remote?: true) do
           :ok =
             Phoenix.PubSub.broadcast(
               @pubsub,

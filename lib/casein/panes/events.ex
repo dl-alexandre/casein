@@ -9,7 +9,7 @@ defmodule Casein.Panes.Events do
   ## Alias awareness
 
   Fan-out mirrors the preview broadcasts: an event for `workspace_id` is published
-  to `"panes:" <> alias_id` for every id in `WorkspaceAliases.viewer_ids/1`, so
+  to `"panes:" <> alias_id` for every id in `WorkspaceAliases.viewer_ids/2`, so
   manager/folder-attached viewers see pane state for the workspaces they alias.
   Subscribers call `subscribe/1` with the workspace id they are attached as; the
   registry-side `broadcast/1` expands aliases.
@@ -58,7 +58,7 @@ defmodule Casein.Panes.Events do
   """
   @spec subscribe(String.t()) :: [String.t()]
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    for id <- WorkspaceAliases.viewer_ids(workspace_id) do
+    for id <- WorkspaceAliases.viewer_ids(workspace_id, resolve_remote?: true) do
       topic = topic(id)
       :ok = Phoenix.PubSub.subscribe(@pubsub, topic)
       topic
@@ -81,7 +81,7 @@ defmodule Casein.Panes.Events do
   def broadcast(%{workspace_id: workspace_id} = event) when is_binary(workspace_id) do
     normalized = normalize(event)
 
-    for id <- WorkspaceAliases.viewer_ids(workspace_id) do
+    for id <- WorkspaceAliases.viewer_ids(workspace_id, resolve_remote?: true) do
       Phoenix.PubSub.broadcast(
         @pubsub,
         topic(id),

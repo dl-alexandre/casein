@@ -14,7 +14,6 @@ defmodule Casein.Previews.Deps.Workspaces do
   @callback safe_host_path(workspace()) :: {:ok, String.t()} | {:error, atom()}
   @callback safe_host_loc(workspace()) :: {:ok, workspace_loc()} | {:error, atom()}
   @callback forward_auth_headers(workspace()) :: %{String.t() => String.t()} | nil
-  @callback viewer_ids(workspace_id :: String.t()) :: [String.t()]
   @callback viewer_ids(workspace_id :: String.t(), opts :: keyword()) :: [String.t()]
   @callback linked?(left :: String.t(), right :: String.t()) :: boolean()
   @callback viewer_route_id(workspace_id :: String.t()) :: String.t()
