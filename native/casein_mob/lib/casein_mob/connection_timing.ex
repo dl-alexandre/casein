@@ -14,6 +14,7 @@ defmodule CaseinMob.ConnectionTiming do
   @snapshot_context_key :__casein_feed_timing__
   @generation_bytes 16
   @generation_length 22
+  @max_native_timing_ms 2_147_483_647
   @max_card_count 1_000
   @max_snapshot_json_bytes 1_000_000
   @cycles [:cold, :reconnect, :origin_switch]
@@ -291,16 +292,20 @@ defmodule CaseinMob.ConnectionTiming do
          outcome,
          reason_code
        ) do
-    emit_native_stage(
-      native_nif(),
-      generation,
-      cycle,
-      stage,
-      duration_ms,
-      elapsed_ms,
-      outcome,
-      reason_code
-    )
+    if valid_native_stage_envelope?(generation, duration_ms, elapsed_ms) do
+      emit_native_stage(
+        native_nif(),
+        generation,
+        cycle,
+        stage,
+        duration_ms,
+        elapsed_ms,
+        outcome,
+        reason_code
+      )
+    else
+      :ok
+    end
   end
 
   defp emit_log(
@@ -353,7 +358,9 @@ defmodule CaseinMob.ConnectionTiming do
         reraise(error, __STACKTRACE__)
       end
 
-    error in ErlangError ->
+    # Rescue normalization includes built-in exception structs for Erlang errors.
+    # Only the exact loader errors below are softened; everything else reraises.
+    error ->
       if nif_not_loaded?(error) do
         :ok
       else
@@ -385,7 +392,7 @@ defmodule CaseinMob.ConnectionTiming do
         reraise(error, __STACKTRACE__)
       end
 
-    error in ErlangError ->
+    error ->
       if nif_not_loaded?(error) do
         :unknown
       else
@@ -415,6 +422,13 @@ defmodule CaseinMob.ConnectionTiming do
   end
 
   defp nif_not_loaded?(_error), do: false
+
+  defp valid_native_stage_envelope?(generation, duration_ms, elapsed_ms) do
+    is_binary(generation) and valid_generation(generation) == generation and
+      is_number(duration_ms) and
+      duration_ms >= 0 and duration_ms <= @max_native_timing_ms and is_number(elapsed_ms) and
+      elapsed_ms >= duration_ms and elapsed_ms <= @max_native_timing_ms
+  end
 
   defp new_generation do
     16

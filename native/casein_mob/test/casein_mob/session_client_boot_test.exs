@@ -430,6 +430,39 @@ defmodule CaseinMob.SessionClientBootTest do
     refute_receive {:native_generic_log, _, _}
   end
 
+  test "iOS structured timing skips envelopes rejected by the native schema" do
+    context = ConnectionTiming.new_context(:reconnect)
+
+    ConnectionTimingNativeNIFMock.configure(
+      platform: :ios,
+      subscriber: self(),
+      stage_log_result: {:erlang_error, :badarg}
+    )
+
+    invalid_generation = %{context | generation: "not-a-canonical-generation"}
+    observed_at = context.started_at + 1_000
+
+    assert %{last_at: ^observed_at} =
+             ConnectionTiming.record(invalid_generation, :connect_requested,
+               observed_at: observed_at
+             )
+
+    over_native_limit = context.started_at + 2_147_483_648_000
+
+    assert %{last_at: ^over_native_limit} =
+             ConnectionTiming.record(context, :connect_requested, observed_at: over_native_limit)
+
+    duration_exceeds_elapsed = %{context | last_at: context.started_at - 1_000}
+
+    assert %{last_at: ^observed_at} =
+             ConnectionTiming.record(duration_exceeds_elapsed, :connect_requested,
+               observed_at: observed_at
+             )
+
+    refute_receive {:native_feed_stage, _, _, _, _, _, _, _}
+    refute_receive {:native_generic_log, _, _}
+  end
+
   test "Android and unknown keep Logger and record options cannot inject native logging" do
     test_pid = self()
 
