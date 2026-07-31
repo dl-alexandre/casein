@@ -20,6 +20,7 @@ $trayHost = Join-Path $packageRoot 'windows\Casein.Tray.ps1'
 $trustedLan = Join-Path $packageRoot 'windows\Casein.TrustedLan.ps1'
 $backupLibrary = Join-Path $packageRoot 'windows\Casein.Backup.ps1'
 $updateLibrary = Join-Path $packageRoot 'windows\Update-Casein.ps1'
+$supportBundleScript = Join-Path $packageRoot 'windows\New-CaseinSupportBundle.ps1'
 
 Assert-Condition (Test-Path -LiteralPath $metadataPath) "Release metadata is missing at $metadataPath"
 Assert-Condition (Test-Path -LiteralPath $installer) "Installer is missing at $installer"
@@ -28,6 +29,7 @@ Assert-Condition (Test-Path -LiteralPath $trayHost) "Tray host is missing at $tr
 Assert-Condition (Test-Path -LiteralPath $trustedLan) "Trusted LAN helper is missing at $trustedLan"
 Assert-Condition (Test-Path -LiteralPath $backupLibrary) "Backup helper is missing at $backupLibrary"
 Assert-Condition (Test-Path -LiteralPath $updateLibrary) "Updater is missing at $updateLibrary"
+Assert-Condition (Test-Path -LiteralPath $supportBundleScript) "Support bundle helper is missing at $supportBundleScript"
 foreach ($name in @('Install-Casein.cmd', 'Repair-Casein.cmd', 'Uninstall-Casein.cmd')) {
     $commandPath = Join-Path $packageRoot $name
     Assert-Condition (Test-Path -LiteralPath $commandPath) "Offline lifecycle command is missing: $name"
@@ -122,6 +124,40 @@ try {
     Assert-Condition ($protectedSecret.StartsWith('dpapi:')) 'Secret was not protected with DPAPI'
     Assert-Condition (-not $protectedSecret.Contains('legacy-secret-value')) 'Protected secret file contains plaintext'
     Assert-Condition ((Get-OrCreateCaseinSecret $legacySecretPath 32) -eq 'legacy-secret-value') 'DPAPI secret did not round trip'
+
+    $rotationApiPath = Join-Path $testLocalAppData 'api-token.txt'
+    $rotationLaunchPath = Join-Path $testLocalAppData 'desktop-launch-token.txt'
+    $oldApiToken = Get-OrCreateCaseinSecret $rotationApiPath 48
+    $oldLaunchToken = Get-OrCreateCaseinSecret $rotationLaunchPath 48
+    Invoke-CaseinAccessTokenRotation -DataRoot $testLocalAppData -Validate { $true }
+    $rotatedApiToken = Get-OrCreateCaseinSecret $rotationApiPath 48
+    $rotatedLaunchToken = Get-OrCreateCaseinSecret $rotationLaunchPath 48
+    Assert-Condition ($rotatedApiToken -ne $oldApiToken) 'API token did not rotate'
+    Assert-Condition ($rotatedLaunchToken -ne $oldLaunchToken) 'Desktop launch token did not rotate'
+    Assert-Condition (Test-Path -LiteralPath (Join-Path $testLocalAppData 'credential-state.json')) 'Token rotation state is missing'
+    $recovered = $false
+    try {
+        Invoke-CaseinAccessTokenRotation -DataRoot $testLocalAppData -Validate { $false } -Recover { $script:recovered = $true }
+        throw 'Failed token rotation was accepted'
+    } catch {
+        Assert-Condition ($_.Exception.Message.Contains('did not become healthy')) 'Failed token rotation failed for the wrong reason'
+    }
+    Assert-Condition $recovered 'Failed token rotation did not invoke recovery'
+    Assert-Condition ((Get-OrCreateCaseinSecret $rotationApiPath 48) -eq $rotatedApiToken) 'Failed rotation did not restore the API token'
+    Assert-Condition ((Get-OrCreateCaseinSecret $rotationLaunchPath 48) -eq $rotatedLaunchToken) 'Failed rotation did not restore the desktop launch token'
+
+    $credentialStatePath = Join-Path $testLocalAppData 'credential-state.json'
+    $tamperedState = Get-Content -Raw -LiteralPath $credentialStatePath | ConvertFrom-Json
+    $tamperedState | Add-Member -NotePropertyName injected_secret -NotePropertyValue 'must-not-ship'
+    $tamperedState | ConvertTo-Json | Set-Content -LiteralPath $credentialStatePath -Encoding UTF8
+    $supportArchive = Join-Path $testLocalAppData 'support.zip'
+    $supportExpanded = Join-Path $testLocalAppData 'support-expanded'
+    & $supportBundleScript -DataRoot $testLocalAppData -InstallRoot (Join-Path $testLocalAppData 'Programs\Casein') -Destination $supportArchive | Out-Null
+    Expand-Archive -LiteralPath $supportArchive -DestinationPath $supportExpanded
+    $bundledCredentialState = Get-Content -Raw -LiteralPath (Join-Path $supportExpanded 'credential-state.json')
+    Assert-Condition (-not $bundledCredentialState.Contains('must-not-ship')) 'Support bundle copied untrusted credential-state fields'
+    Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $supportExpanded 'api-token.txt'))) 'Support bundle copied the API token file'
+    Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $supportExpanded 'desktop-launch-token.txt'))) 'Support bundle copied the desktop launch token file'
 
     $backupSource = Join-Path $testLocalAppData 'backup-source.sqlite3'
     $backupCiphertext = Join-Path $testLocalAppData 'backup.sqlite3.dpapi'

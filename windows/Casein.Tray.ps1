@@ -29,6 +29,7 @@ function Get-CaseinPaths {
         TrayPid     = Join-Path $dataRoot 'tray.pid'
         RuntimeTemp = Join-Path $dataRoot 'runtime-tmp'
         OriginIdentity = Join-Path $dataRoot 'origin.json'
+        CredentialState = Join-Path $dataRoot 'credential-state.json'
         TrustedLan = Join-Path $dataRoot 'trusted-lan.json'
         StartupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Casein.lnk'
     }
@@ -178,14 +179,7 @@ function Get-OrCreateCaseinSecret {
     param([string]$Path, [int]$Bytes)
 
     if (-not (Test-Path -LiteralPath $Path)) {
-        $buffer = New-Object byte[] $Bytes
-        $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
-        try {
-            $generator.GetBytes($buffer)
-        } finally {
-            $generator.Dispose()
-        }
-        $secret = [Convert]::ToBase64String($buffer)
+        $secret = New-CaseinSecretValue $Bytes
         Save-CaseinProtectedSecret $Path $secret
         return $secret
     }
@@ -204,6 +198,19 @@ function Get-OrCreateCaseinSecret {
     return $stored
 }
 
+function New-CaseinSecretValue {
+    param([int]$Bytes)
+
+    $buffer = New-Object byte[] $Bytes
+    $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $generator.GetBytes($buffer)
+    } finally {
+        $generator.Dispose()
+    }
+    [Convert]::ToBase64String($buffer)
+}
+
 function Save-CaseinProtectedSecret {
     param([string]$Path, [string]$Secret)
 
@@ -214,6 +221,58 @@ function Save-CaseinProtectedSecret {
     $temporary = "$Path.$PID.tmp"
     [IO.File]::WriteAllText($temporary, $encoded)
     Move-Item -LiteralPath $temporary -Destination $Path -Force
+}
+
+function Set-CaseinFileAtomically {
+    param([string]$Path, [string]$Content)
+
+    $temporary = "$Path.$PID.tmp"
+    [IO.File]::WriteAllText($temporary, $Content)
+    Move-Item -LiteralPath $temporary -Destination $Path -Force
+}
+
+function Invoke-CaseinAccessTokenRotation {
+    param(
+        [string]$DataRoot = $script:Paths.DataRoot,
+        [scriptblock]$Validate = { $true },
+        [scriptblock]$Recover = {}
+    )
+
+    $apiPath = Join-Path $DataRoot 'api-token.txt'
+    $launchPath = Join-Path $DataRoot 'desktop-launch-token.txt'
+    $statePath = Join-Path $DataRoot 'credential-state.json'
+    $paths = @($apiPath, $launchPath, $statePath)
+    $snapshots = @{}
+    foreach ($path in $paths) {
+        $snapshots[$path] = if (Test-Path -LiteralPath $path) {
+            [pscustomobject]@{ Exists = $true; Content = Get-Content -Raw -LiteralPath $path }
+        } else {
+            [pscustomobject]@{ Exists = $false; Content = $null }
+        }
+    }
+
+    try {
+        Save-CaseinProtectedSecret $apiPath (New-CaseinSecretValue 48)
+        Save-CaseinProtectedSecret $launchPath (New-CaseinSecretValue 48)
+        $state = [ordered]@{
+            schema = 1
+            rotated_at_utc = [DateTime]::UtcNow.ToString('o')
+        } | ConvertTo-Json
+        Set-CaseinFileAtomically $statePath $state
+        if (-not (& $Validate)) { throw 'Casein did not become healthy with the rotated access tokens.' }
+    } catch {
+        $rotationError = $_
+        foreach ($path in $paths) {
+            $snapshot = $snapshots[$path]
+            if ($snapshot.Exists) {
+                Set-CaseinFileAtomically $path ([string]$snapshot.Content)
+            } else {
+                Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+            }
+        }
+        & $Recover | Out-Null
+        throw $rotationError
+    }
 }
 
 function Get-OrCreateCaseinOriginIdentity {
@@ -590,6 +649,7 @@ function Start-CaseinTray {
     $updateItem = $menu.Items.Add('Check for updates')
     $logsItem = $menu.Items.Add('Open logs')
     $supportItem = $menu.Items.Add('Create support bundle')
+    $rotateTokensItem = $menu.Items.Add('Rotate local access tokens')
     $trustedLanItem = $menu.Items.Add('Trusted LAN access')
     $trustedLanState = Read-CaseinTrustedLanState
     $trustedLanItem.Checked = [bool]$trustedLanState.enabled
@@ -678,6 +738,33 @@ function Start-CaseinTray {
         } catch {
             Write-CaseinLog "Support bundle failed: $($_.Exception.Message)"
             $tray.ShowBalloonTip(5000, 'Support bundle failed', 'Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
+        }
+    })
+    $rotateTokensItem.Add_Click({
+        $confirmed = [Windows.Forms.MessageBox]::Show(
+            'Rotate Casein local access tokens? Existing local agent connections must reconnect. The Windows origin and workspace data are preserved.',
+            'Rotate local access tokens',
+            [Windows.Forms.MessageBoxButtons]::YesNo,
+            [Windows.Forms.MessageBoxIcon]::Warning
+        )
+        if ($confirmed -ne [Windows.Forms.DialogResult]::Yes) { return }
+
+        $rotateTokensItem.Enabled = $false
+        try {
+            Stop-CaseinRuntime $script:Port
+            Invoke-CaseinAccessTokenRotation `
+                -Validate { Start-CaseinRuntime $script:Port } `
+                -Recover {
+                    Stop-CaseinRuntime $script:Port
+                    Start-CaseinRuntime $script:Port
+                }
+            Write-CaseinLog 'Local access tokens rotated successfully'
+            $tray.ShowBalloonTip(5000, 'Casein access tokens rotated', 'Reconnect local agents to use the new credentials.', [Windows.Forms.ToolTipIcon]::Info)
+        } catch {
+            Write-CaseinLog "Access token rotation failed and previous credentials were restored: $($_.Exception.Message)"
+            $tray.ShowBalloonTip(5000, 'Token rotation failed', 'Previous credentials were restored. Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
+        } finally {
+            $rotateTokensItem.Enabled = $true
         }
     })
     $trustedLanItem.Add_Click({

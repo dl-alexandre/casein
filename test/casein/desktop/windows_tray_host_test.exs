@@ -64,6 +64,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
           "Roll back last update",
           "Open logs",
           "Create support bundle",
+          "Rotate local access tokens",
           "Trusted LAN access",
           "Copy Trusted LAN URL",
           "Launch at Windows sign-in",
@@ -120,9 +121,25 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "runtime.json"
     assert script =~ "trusted-lan.json"
     assert script =~ "system.json"
+    assert script =~ "credential-state.json"
+    assert script =~ "rotated_at_utc = [string]$credentialState.rotated_at_utc"
     refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'api-token.txt')"
+    refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'desktop-launch-token.txt')"
     refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'secret-key-base.txt')"
     refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'casein.sqlite3')"
+  end
+
+  test "access-token rotation is DPAPI protected and rolls back failed health" do
+    script = File.read!(@tray_script)
+
+    assert script =~ "function Invoke-CaseinAccessTokenRotation"
+    assert script =~ "Save-CaseinProtectedSecret $apiPath"
+    assert script =~ "Save-CaseinProtectedSecret $launchPath"
+    assert script =~ "rotated_at_utc"
+    assert script =~ "if (-not (& $Validate))"
+    assert script =~ "throw $rotationError"
+    assert script =~ "Previous credentials were restored"
+    refute script =~ "Write-CaseinLog $rotatedApiToken"
   end
 
   test "packager builds the Windows SQLite release and copies the host" do
