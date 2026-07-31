@@ -247,7 +247,7 @@ defmodule CaseinMob.SessionClientBootTest do
     assert ConnectionTiming.boot_context() == nil
   end
 
-  test "feed telemetry and logs ignore URL, token, content, and raw error options" do
+  test "info-visible feed telemetry log contains only the privacy allowlisted schema" do
     telemetry_id = {__MODULE__, self(), make_ref()}
 
     :ok =
@@ -263,10 +263,13 @@ defmodule CaseinMob.SessionClientBootTest do
     context = ConnectionTiming.new_context(:cold)
 
     log =
-      capture_log([level: :debug], fn ->
+      capture_log([level: :info], fn ->
         ConnectionTiming.record(context, :connect_requested,
           url: "https://sensitive.example/socket/websocket",
           token: "super-secret",
+          origin: "secret-origin",
+          workspace: "secret-workspace",
+          payload: %{"private" => "payload-content"},
           content: "private card content",
           raw_error: {:tls_alert, "private"},
           outcome: "unbounded-secret-outcome",
@@ -280,9 +283,33 @@ defmodule CaseinMob.SessionClientBootTest do
     assert metadata.reason_code == :none
     assert log =~ "connection_generation=#{context.generation}"
 
+    assert [line] =
+             log
+             |> String.split("\n", trim: true)
+             |> Enum.filter(&String.contains?(&1, "mobile_feed_stage "))
+
+    assert [_prefix, fields] = String.split(line, "mobile_feed_stage ", parts: 2)
+
+    assert Enum.map(String.split(fields), fn field ->
+             field
+             |> String.split("=", parts: 2)
+             |> List.first()
+           end) == [
+             "connection_generation",
+             "cycle",
+             "stage",
+             "duration_ms",
+             "elapsed_ms",
+             "outcome",
+             "reason_code"
+           ]
+
     emitted = inspect({measurements, metadata, log})
     refute emitted =~ "sensitive.example"
     refute emitted =~ "super-secret"
+    refute emitted =~ "secret-origin"
+    refute emitted =~ "secret-workspace"
+    refute emitted =~ "payload-content"
     refute emitted =~ "private card content"
     refute emitted =~ "tls_alert"
     refute emitted =~ "unbounded-secret"
@@ -291,7 +318,7 @@ defmodule CaseinMob.SessionClientBootTest do
     invalid_context = %{context | generation: "must-not-leak-generation"}
 
     invalid_log =
-      capture_log([level: :debug], fn ->
+      capture_log([level: :info], fn ->
         ConnectionTiming.record(invalid_context, :connect_requested)
       end)
 
