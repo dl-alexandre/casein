@@ -1,6 +1,11 @@
 import {copyPickerLink} from "./picker_link_copy"
 import {setTerminalPresetReporter, setTerminalSchemeReporter} from "./terminal_themes"
-import {swipeThresholdPx, swipeWindowProgress} from "./window_swipe.mjs"
+import {
+  resolveSwipeTarget,
+  swipeThresholdPx,
+  swipeWindowList,
+  swipeWindowProgress,
+} from "./window_swipe.mjs"
 import {
   leaderSecondKey,
   leaderSecondKeyDecision,
@@ -884,32 +889,23 @@ export const WorkspaceLeader = {
     idx.className = "window-swipe-bar__index"
     const name = document.createElement("span")
     name.className = "window-swipe-bar__name"
-    label.append(dot, idx, name)
+    const hint = document.createElement("span")
+    hint.className = "window-swipe-bar__hint"
+    label.append(dot, idx, name, hint)
     bar.append(chevron, label)
     document.body.appendChild(bar)
     this._swipeBar = bar
     return bar
   },
 
-  // Resolve the window a `next`/`prev` switch would land on, reading the live
-  // WindowTabStrip DOM (index order = tab order; tmux wraps at the ends). Null
-  // when there's no other window to switch to.
+  // Where a `next`/`prev` switch would land. Source selection and resolution
+  // are pure (window_swipe.mjs) so they stay unit-testable.
   _adjacentWindow(dir) {
-    const scroller = document.querySelector('[phx-hook="WindowTabStrip"] [data-tab-scroller]')
-    if (!scroller) return null
-    const tabs = Array.from(scroller.querySelectorAll("[data-ctx-window-id]"))
-    if (tabs.length < 2) return null
-    const activeIdx = tabs.findIndex((t) => t.hasAttribute("data-active-window"))
-    if (activeIdx < 0) return null
-    const step = dir === "next" ? 1 : -1
-    const adj = tabs[(activeIdx + step + tabs.length) % tabs.length]
-    if (!adj || adj === tabs[activeIdx]) return null
-    return {
-      index: adj.getAttribute("data-window-index") || "",
-      name: adj.getAttribute("data-window-name") || "",
-      activity: adj.getAttribute("data-window-activity") || "",
-      attention: adj.getAttribute("data-window-attention") || "",
-    }
+    const windows = swipeWindowList(
+      document.querySelector('[phx-hook="WindowTabStrip"] [data-tab-scroller]'),
+      this.el,
+    )
+    return resolveSwipeTarget(windows, dir)
   },
 
   _updateSwipeBar(edge, dir, progress, ready) {
@@ -935,19 +931,33 @@ export const WorkspaceLeader = {
     bar.querySelector(".window-swipe-bar__chevron").textContent =
       edge === "right" ? "‹" : "›"
 
-    const adj = this._adjacentWindow(dir)
-    bar.dataset.disabled = adj ? "false" : "true"
+    const target = this._adjacentWindow(dir)
+    bar.dataset.disabled = target.adjacent ? "false" : "true"
     const idxEl = bar.querySelector(".window-swipe-bar__index")
     const nameEl = bar.querySelector(".window-swipe-bar__name")
+    const hintEl = bar.querySelector(".window-swipe-bar__hint")
     const dotEl = bar.querySelector(".window-swipe-bar__dot")
-    if (adj) {
-      idxEl.textContent = adj.index
-      nameEl.textContent = adj.name
-      dotEl.dataset.activity = adj.activity
-      dotEl.dataset.attention = adj.attention
+
+    if (target.adjacent) {
+      idxEl.textContent = target.adjacent.index
+      nameEl.textContent = target.adjacent.name
+      // Where the release lands, in strip order — so a wrap-around (5 → 1) is
+      // legible mid-gesture instead of a surprise.
+      hintEl.textContent = `${target.position} of ${target.count}`
+      dotEl.dataset.activity = target.adjacent.activity
+      dotEl.dataset.attention = target.adjacent.attention
+    } else if (target.reason === "only") {
+      // Say what you're looking at and how to get a second one, rather than
+      // just naming the absence.
+      idxEl.textContent = target.current?.index || ""
+      nameEl.textContent = target.current?.name || "This window"
+      hintEl.textContent = "only window · C-b c adds one"
+      dotEl.dataset.activity = ""
+      dotEl.dataset.attention = ""
     } else {
       idxEl.textContent = ""
-      nameEl.textContent = "No other window"
+      nameEl.textContent = target.count ? `${target.count} windows` : "Windows loading"
+      hintEl.textContent = "no active window yet · try again"
       dotEl.dataset.activity = ""
       dotEl.dataset.attention = ""
     }

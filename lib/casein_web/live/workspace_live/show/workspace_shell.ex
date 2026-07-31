@@ -75,6 +75,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
+      data-tmux-windows={swipe_window_json(assigns)}
       class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 pointer-coarse:pt-0 pointer-coarse:pb-0 lg:px-6"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
@@ -228,9 +229,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       <% else %>
         <%!-- Thin reveal strip when chrome is hidden (focus mode).
              Click or keyboard shortcut brings the header + utility bar back.
-             Only shown in the outer container so it works across all tabs. --%>
+             Only shown in the outer container so it works across all tabs.
+             On touch it stays taller than the desktop hairline because it is
+             the *only* way back to the chrome (no Ctrl+Shift+F on a phone) and
+             it carries the session/window label — but only just: focus mode
+             exists to give rows back to the terminal, so every px above a
+             thumb-reachable target is a px the operator asked us not to
+             spend. --%>
         <div
-          class="mb-1 pointer-coarse:mb-0.5 h-1.5 pointer-coarse:h-7 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors flex items-center justify-center pointer-coarse:justify-between pointer-coarse:gap-2 pointer-coarse:px-2"
+          class="mb-1 pointer-coarse:mb-0.5 h-1.5 pointer-coarse:h-5 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors flex items-center justify-center pointer-coarse:justify-between pointer-coarse:gap-2 pointer-coarse:px-2"
           phx-click="terminal:toggle_chrome"
           title="Show header. Shortcut: Ctrl/Cmd + Shift + F"
           aria-label="Show header and utility bar"
@@ -586,6 +593,28 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       connect_info={@connect_info}
     />
     """
+  end
+
+  # The window-swipe bar names the window it will land on. It used to read that
+  # off the header's tab strip — which focus mode does not render at all, so on
+  # a phone (where focus mode is the point) every swipe reported "No other
+  # window" no matter how many were open. Carry the little the bar needs on the
+  # always-mounted leader root instead; the strip stays the preferred source
+  # when it is there, since a drag can reorder it client-side.
+  defp swipe_window_json(assigns) do
+    assigns
+    |> Map.get(:tmux_window_tabs)
+    |> List.wrap()
+    |> Enum.map(
+      &%{
+        index: to_string(&1.index),
+        name: &1.display_name,
+        activity: to_string(&1.activity_state),
+        attention: to_string(&1.attention),
+        active: &1.active? == true
+      }
+    )
+    |> Jason.encode!()
   end
 
   defp header_overflow_attrs(assigns) do

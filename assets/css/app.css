@@ -1362,6 +1362,19 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
   line-height: 1.15;
 }
 
+/* Secondary line under the window name: position ("3 of 5") when the swipe can
+   land, or why it can't. Muted and smaller so the name still reads first. */
+.window-swipe-bar__hint {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.62rem;
+  font-weight: 500;
+  line-height: 1.1;
+  opacity: 0.75;
+}
+
 .window-swipe-bar__dot {
   width: 0.5rem;
   height: 0.5rem;

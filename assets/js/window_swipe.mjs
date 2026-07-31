@@ -65,6 +65,72 @@ export function swipeWindowProgress(dx, dy, opts = {}) {
 }
 
 /**
+ * The window list the swipe bar labels itself from, newest truth first: the
+ * rendered tab strip when it exists (a drag can reorder it client-side ahead of
+ * the server), else the leader root's encoded copy — focus mode unmounts the
+ * whole header, and reading only the strip is what made every swipe there
+ * report "No other window".
+ *
+ * @param {Element|null} scroller  the [data-tab-scroller] element, if rendered
+ * @param {Element|null} leaderRoot  the always-mounted [phx-hook=WorkspaceLeader]
+ * @returns {Array<{index: string, name: string, activity: string,
+ *                  attention: string, active: boolean}>}
+ */
+export function swipeWindowList(scroller, leaderRoot) {
+  const tabs = scroller ? Array.from(scroller.querySelectorAll("[data-ctx-window-id]")) : []
+
+  if (tabs.length > 0) {
+    return tabs.map((el) => ({
+      index: el.getAttribute("data-window-index") || "",
+      name: el.getAttribute("data-window-name") || "",
+      activity: el.getAttribute("data-window-activity") || "",
+      attention: el.getAttribute("data-window-attention") || "",
+      active: el.hasAttribute("data-active-window"),
+    }))
+  }
+
+  const encoded = leaderRoot?.getAttribute("data-tmux-windows")
+  if (!encoded) return []
+
+  try {
+    const parsed = JSON.parse(encoded)
+    return Array.isArray(parsed) ? parsed : []
+  } catch (_) {
+    return []
+  }
+}
+
+/**
+ * Resolve the window a `next`/`prev` switch would land on (list order = tab
+ * order; tmux wraps at the ends).
+ *
+ * The failure cases are kept distinct because the bar needs different words for
+ * each: a lone window is a normal state the operator fixes with C-b c, while an
+ * empty list or an unmarked active window means the topology hasn't landed yet
+ * and retrying is the right advice. `current`/`count` let the bar report where
+ * you are even when there is nowhere to go.
+ *
+ * @param {Array<object>} windows  from swipeWindowList
+ * @param {"next"|"prev"} dir
+ * @returns {{adjacent?: object, current?: object|null, position?: number,
+ *            count?: number, reason?: "unavailable"|"only"|"unknown_active"}}
+ */
+export function resolveSwipeTarget(windows, dir) {
+  const list = Array.isArray(windows) ? windows : []
+  if (list.length === 0) return {reason: "unavailable"}
+
+  const activeIdx = list.findIndex((w) => w.active)
+  const current = activeIdx >= 0 ? list[activeIdx] : null
+
+  if (list.length < 2) return {reason: "only", current, count: list.length}
+  if (activeIdx < 0) return {reason: "unknown_active", current: null, count: list.length}
+
+  const step = dir === "next" ? 1 : -1
+  const pos = (activeIdx + step + list.length) % list.length
+  return {adjacent: list[pos], current, position: pos + 1, count: list.length}
+}
+
+/**
  * Resolve the commit threshold in px from the viewport width, clamped to a
  * comfortable thumb-travel range. Kept pure (width passed in) for testing.
  */
