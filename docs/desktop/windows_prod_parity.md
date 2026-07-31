@@ -21,8 +21,8 @@ tmux implementation details on Windows.
 | Preview control and screenshots | Playwright sidecar and preview MCP | packaged Node/Playwright/Chromium runtime is enabled by the tray host | Add native preview-server process adapter and executable smoke evidence |
 | Multi-pane sessions and templates | tmux windows/panes | one durable PowerShell session | Native session/window/pane backend |
 | Worktrees and agent lifecycle | launcher, hooks, reaper, audit | backend features exist, desktop workflow incomplete | Native worktree launch, state hooks, recovery UI |
-| Updates | git-driven clean release deploy | explicit tray check; trusted catalog, pinned channel/target, archive hash/size verification, encrypted backup, health-triggered rollback | Production-signed channel and clean-VM evidence; offline installer wrapper |
-| Operations | journal, health, deploy diagnostics | tray status, health, local log | Support bundle, repair action, crash reporting |
+| Updates | git-driven clean release deploy | explicit tray check; trusted catalog, pinned channel/target, archive hash/size verification, encrypted backup, health-triggered rollback | Production-signed channel and clean-VM evidence |
+| Operations | journal, health, deploy diagnostics | signed offline archive with one-command install/repair/uninstall, Apps & Features registration, tray status, health, local log, support bundle | Crash reporting and clean-VM evidence |
 | Accessibility and onboarding | browser UI | browser UI plus tray | First-run workspace/agent check and keyboard QA |
 
 ## Delivery order
@@ -71,3 +71,21 @@ The literal Windows/mobile acceptance gate is maintained in
 #371. Production signing evidence (#376), the physical-device matrix (#377),
 and authenticated post-deploy verification (#378) are focused evidence tasks;
 they do not replace or independently redefine the parent checklist.
+
+## Offline lifecycle
+
+The distributable ZIP is the offline, per-user Windows installer. Extract it
+locally, then run `Install-Casein.cmd`; it requires a valid production
+Authenticode release and opens the existing browser cockpit through the thin
+tray host. It does not require WSL, Erlang, Elixir, Node.js, Git, or an
+administrator account. The underlying installer also requires signing by
+default; `-AllowUnsignedDevelopment` exists only for the repository's isolated
+package smoke and must never be used for release acceptance.
+
+Keep the extracted archive until the installation has been exercised. Running
+`Repair-Casein.cmd` from that same trusted archive stops Casein, validates the
+installed release, replaces it atomically when any manifest-covered file is
+missing or changed, preserves user data through an encrypted pre-repair
+snapshot, and relaunches it. `Uninstall-Casein.cmd` removes the application and
+Apps & Features entry while retaining user data; pass `-RemoveUserData` to the
+packaged `windows\Uninstall-Casein.ps1` only when that deletion is deliberate.

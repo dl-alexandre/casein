@@ -2,7 +2,8 @@
 param(
     [string]$PackageRoot = (Split-Path -Parent $PSScriptRoot),
     [switch]$Launch,
-    [switch]$RequireSigned
+    [switch]$RequireSigned,
+    [switch]$AllowUnsignedDevelopment
 )
 
 Set-StrictMode -Version Latest
@@ -26,7 +27,7 @@ function Test-ReleaseTrust {
     $manifestPath = Join-Path $Root 'windows\Casein.Release.psd1'
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Release trust manifest is missing.' }
     $signature = Get-AuthenticodeSignature -FilePath $manifestPath
-    $signatureRequired = $RequireSigned -or $env:CASEIN_REQUIRE_SIGNED_RELEASES -eq '1'
+    $signatureRequired = -not $AllowUnsignedDevelopment -or $RequireSigned -or $env:CASEIN_REQUIRE_SIGNED_RELEASES -eq '1'
     if ($signatureRequired -and $signature.Status -ne 'Valid') {
         throw "A trusted Authenticode release signature is required; status: $($signature.Status)."
     }
@@ -147,6 +148,10 @@ $previousReleaseRoot = $null
 if (Test-Path -LiteralPath $currentPath) {
     $existingCurrent = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
     $previousReleaseRoot = [string]$existingCurrent.release_root
+    if ($previousReleaseRoot -eq $destination) {
+        $previousProperty = $existingCurrent.PSObject.Properties['previous_release_root']
+        $previousReleaseRoot = if ($previousProperty) { [string]$previousProperty.Value } else { $null }
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $releasesRoot, $backupRoot | Out-Null
@@ -154,7 +159,17 @@ Stop-InstalledRuntime $dataRoot
 $backup = Backup-UserData $dataRoot $backupRoot
 
 try {
-    if (-not (Test-Path -LiteralPath $destination)) {
+    $copyRelease = -not (Test-Path -LiteralPath $destination)
+    if (-not $copyRelease) {
+        try {
+            Test-ReleaseTrust $destination | Out-Null
+        } catch {
+            Write-Warning "Installed release failed validation and will be repaired: $($_.Exception.Message)"
+            Remove-ReleaseTree -Path $destination
+            $copyRelease = $true
+        }
+    }
+    if ($copyRelease) {
         Copy-ReleaseTree -Source $packageRoot -Destination $stage
         Move-Item -LiteralPath $stage -Destination $destination
     }

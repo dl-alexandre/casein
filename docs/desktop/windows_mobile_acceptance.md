@@ -15,7 +15,7 @@ competing completion lists.
 | Stable origin across URL changes | Installation-scoped `windows-<uuid>` plus mobile profile reconciliation by origin id | Covered by automated tests |
 | Credential isolation | Windows DPAPI and origin-qualified mobile profiles | Covered by automated tests |
 | Resume/intervene safety | Shared authoritative-refresh, origin, locator, role, idempotency, and audit contracts | Covered by existing server/mobile tests |
-| Packaging lifecycle | Per-user install, backup, rollback, repair, autostart, support bundle, uninstall | Windows CI smoke exists |
+| Packaging lifecycle | Signed offline archive; one-command per-user install/repair/uninstall; backup, rollback, autostart, support bundle | Windows CI smoke and clean-machine harness exist; clean Windows 11 evidence required |
 | Production signing/update trust | Whole-payload hash manifest; production mode signs all PE/PowerShell executables, root manifest, and update catalog | Code complete; production-key evidence is #376 |
 | Native Windows/macOS builds | Target-OS workflows exist | Runner availability and successful artifact evidence required |
 | Physical iPad/Android matrix | Procedure below | External device evidence is #377 |
@@ -69,6 +69,28 @@ and smoke logs. Verify a mutated payload and mutated update manifest are both
 rejected. The complete clean-machine gate, including WSL-absent install,
 autostart, update, rollback, repair, support bundle, and uninstall, is tracked
 in #376.
+
+For a production-signed extracted archive on a disposable Windows 11 test
+account, run the repository-provided lifecycle gate under Windows PowerShell
+5.1:
+
+```powershell
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File .\windows\Test-CaseinCleanMachine.ps1 `
+  -PackageRoot . `
+  -AcceptDestructiveCleanMachineTest `
+  -RequireNoDeveloperTooling `
+  -EvidencePath "$env:USERPROFILE\Desktop\casein-windows-acceptance.json"
+```
+
+The destructive acknowledgement is mandatory because the harness installs,
+damages one manifest-covered installed file, proves offline repair restores it,
+uninstalls, and removes Casein user data. It refuses unsigned packages,
+pre-Windows 11 hosts, non-Windows-PowerShell 5.1 execution, installed WSL
+distributions, or language/developer tools on `PATH`. The JSON evidence contains
+OS/package/certificate identity and phase results, but no tokens, URLs, database
+contents, or private-key material. A repository or unsigned CI run is not a
+substitute for attaching the resulting real-host evidence to #376.
 
 The installed tray exposes **Check for updates** only as thin release
 infrastructure. The updater reads the channel URL embedded in
