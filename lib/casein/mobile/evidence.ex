@@ -22,7 +22,8 @@ defmodule Casein.Mobile.Evidence do
 
   @spec project(map(), map()) :: map() | nil
   def project(card, viewer) when is_map(card) and is_map(viewer) do
-    with workspace_id when is_binary(workspace_id) <- value(card, :workspace_id),
+    with true <- candidate_evidence?(card),
+         workspace_id when is_binary(workspace_id) <- value(card, :workspace_id),
          {:ok, workspace} <- Workspaces.get(workspace_id),
          true <- Workspaces.viewer_terminal_owner?(workspace, viewer),
          {:ok, {:local, root}} <- Workspaces.safe_host_loc(workspace) do
@@ -55,6 +56,29 @@ defmodule Casein.Mobile.Evidence do
   end
 
   def project(_card, _viewer), do: nil
+
+  defp candidate_evidence?(card) do
+    context = value(card, :context)
+    meta = value(card, :meta)
+
+    Enum.any?([context, meta], fn container ->
+      files_candidate?(value(container, :files_changed)) or
+        diff_candidate?(value(container, :diff_preview))
+    end) or
+      not is_nil(locator_value(card, :artifact))
+  end
+
+  defp files_candidate?(nil), do: false
+  defp files_candidate?([]), do: false
+  defp files_candidate?(_value), do: true
+
+  defp diff_candidate?(nil), do: false
+
+  defp diff_candidate?(value) when is_binary(value) do
+    not String.valid?(value) or String.trim(value) != ""
+  end
+
+  defp diff_candidate?(_value), do: true
 
   defp changed_files(card, root) do
     candidates =
