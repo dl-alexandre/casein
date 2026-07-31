@@ -152,7 +152,7 @@ defmodule CaseinMob.ConnectionTiming do
 
       :telemetry.execute(@event, measurements, metadata)
 
-      Logger.debug(
+      Logger.info(
         "mobile_feed_stage connection_generation=#{metadata.connection_generation || "uncorrelated"} " <>
           "cycle=#{cycle} stage=#{stage} " <>
           "duration_ms=#{measurements.duration_ms} elapsed_ms=#{measurements.elapsed_ms} " <>
