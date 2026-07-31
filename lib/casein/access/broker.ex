@@ -54,18 +54,65 @@ defmodule Casein.Access.Broker do
   """
   @spec select([Endpoint.t()], client_context()) :: [Endpoint.t()]
   def select(endpoints, context \\ %{}) when is_list(endpoints) and is_map(context) do
+    {selected, _dropped} = select_with_reasons(endpoints, context)
+    selected
+  end
+
+  @doc """
+  Like `select/2`, but also returns why each candidate was dropped.
+
+  Scope filtering is **strict**: an absent `same_host?` / `on_tailnet?` /
+  `same_lan?` flag reads as `false`, because guessing "probably reachable" is how
+  a phone off the tailnet ends up timing out against a MagicDNS name. The
+  consequence is that `select(advertised(), %{})` legitimately returns `[]` —
+  every advertised door is scoped, and an empty context claims to be nowhere.
+
+  That empty result is correct but easy to misread as "nothing is advertised", so
+  this function exists to make it diagnosable. Use it when a client reports no
+  reachable endpoints:
+
+      {[], dropped} = Broker.select_with_reasons(Endpoints.advertised(), %{})
+      # dropped => [{%Endpoint{kind: :loopback}, {:scope_not_satisfied, :same_host}}]
+  """
+  @spec select_with_reasons([Endpoint.t()], client_context()) ::
+          {[Endpoint.t()], [{Endpoint.t(), term()}]}
+  def select_with_reasons(endpoints, context \\ %{})
+      when is_list(endpoints) and is_map(context) do
     incumbent = Map.get(context, :incumbent)
     failures = Map.get(context, :incumbent_failures, 0)
 
+    {eligible, dropped} =
+      Enum.reduce(endpoints, {[], []}, fn endpoint, {keep, drop} ->
+        case eligibility(endpoint, context) do
+          :ok -> {[endpoint | keep], drop}
+          {:error, reason} -> {keep, [{endpoint, reason} | drop]}
+        end
+      end)
+
     eligible =
-      endpoints
-      |> Enum.filter(&reachable_scope?(&1, context))
-      |> Enum.filter(&satisfiable_auth?(&1, context))
+      eligible
+      |> Enum.reverse()
       |> Enum.sort_by(&preference_index/1)
 
-    case sticky_incumbent(incumbent, failures, eligible) do
-      nil -> eligible
-      pinned -> [pinned | Enum.reject(eligible, &same_endpoint?(&1, pinned))]
+    selected =
+      case sticky_incumbent(incumbent, failures, eligible) do
+        nil -> eligible
+        pinned -> [pinned | Enum.reject(eligible, &same_endpoint?(&1, pinned))]
+      end
+
+    {selected, Enum.reverse(dropped)}
+  end
+
+  defp eligibility(%Endpoint{} = endpoint, context) do
+    cond do
+      not reachable_scope?(endpoint, context) ->
+        {:error, {:scope_not_satisfied, endpoint.scope}}
+
+      not satisfiable_auth?(endpoint, context) ->
+        {:error, {:auth_not_held, endpoint.auth}}
+
+      true ->
+        :ok
     end
   end
 

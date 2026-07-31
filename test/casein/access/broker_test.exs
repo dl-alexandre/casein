@@ -67,6 +67,55 @@ defmodule Casein.Access.BrokerTest do
     end
   end
 
+  describe "an empty result is explainable, not silent" do
+    test "select/2 with no context legitimately returns [] because every door is scoped" do
+      endpoints = [
+        ep(:loopback, "http://127.0.0.1:4000", scope: :same_host),
+        ep(:tailscale, "http://box.tailnet", scope: :same_tailnet)
+      ]
+
+      assert Broker.select(endpoints, %{}) == [],
+             "an empty context claims to be nowhere; guessing reachability is the flap"
+    end
+
+    test "select_with_reasons/2 says WHY each door was dropped" do
+      endpoints = [
+        ep(:loopback, "http://127.0.0.1:4000", scope: :same_host),
+        ep(:public_https, "https://public.example", auth: :bearer)
+      ]
+
+      {selected, dropped} =
+        Broker.select_with_reasons(endpoints, %{same_host?: false, has_bearer?: false})
+
+      assert selected == []
+
+      reasons = Enum.map(dropped, fn {endpoint, reason} -> {endpoint.kind, reason} end)
+      assert {:loopback, {:scope_not_satisfied, :same_host}} in reasons
+      assert {:public_https, {:auth_not_held, :bearer}} in reasons
+    end
+
+    test "reasons distinguish a scope miss from an auth miss" do
+      endpoints = [ep(:public_https, "https://public.example", auth: :bearer)]
+
+      {[], [{_endpoint, reason}]} =
+        Broker.select_with_reasons(endpoints, %{has_bearer?: false})
+
+      assert reason == {:auth_not_held, :bearer},
+             "an auth problem reported as a scope problem sends the operator the wrong way"
+    end
+
+    test "select/2 and select_with_reasons/2 agree on the selection" do
+      endpoints = [
+        ep(:loopback, "http://127.0.0.1:4000", scope: :same_host),
+        ep(:lan, "http://box.lan", scope: :same_lan)
+      ]
+
+      ctx = %{same_host?: true, same_lan?: true, has_session?: true}
+      {selected, _dropped} = Broker.select_with_reasons(endpoints, ctx)
+      assert selected == Broker.select(endpoints, ctx)
+    end
+  end
+
   describe "stickiness — the hysteresis that prevents flapping" do
     setup do
       endpoints = [
