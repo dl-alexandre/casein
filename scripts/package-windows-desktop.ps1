@@ -297,8 +297,14 @@ Copy-Item -Force -LiteralPath @(
     (Join-Path $root 'windows\New-CaseinSupportBundle.ps1'),
     (Join-Path $root 'windows\Casein.Backup.ps1'),
     (Join-Path $root 'windows\Update-Casein.ps1'),
+    (Join-Path $root 'windows\Test-CaseinCleanMachine.ps1'),
     (Join-Path $root 'windows\Start-Casein.cmd')
 ) -Destination (Join-Path $outputPath 'windows')
+Copy-Item -Force -LiteralPath @(
+    (Join-Path $root 'windows\Install-Casein.cmd'),
+    (Join-Path $root 'windows\Repair-Casein.cmd'),
+    (Join-Path $root 'windows\Uninstall-Casein.cmd')
+) -Destination $outputPath
 Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\Casein.png')
 Write-ReleaseTrustManifest -PackagePath $outputPath -Revision $sourceRevision -Version $metadata.version
 

@@ -28,6 +28,14 @@ Assert-Condition (Test-Path -LiteralPath $trayHost) "Tray host is missing at $tr
 Assert-Condition (Test-Path -LiteralPath $trustedLan) "Trusted LAN helper is missing at $trustedLan"
 Assert-Condition (Test-Path -LiteralPath $backupLibrary) "Backup helper is missing at $backupLibrary"
 Assert-Condition (Test-Path -LiteralPath $updateLibrary) "Updater is missing at $updateLibrary"
+foreach ($name in @('Install-Casein.cmd', 'Repair-Casein.cmd', 'Uninstall-Casein.cmd')) {
+    $commandPath = Join-Path $packageRoot $name
+    Assert-Condition (Test-Path -LiteralPath $commandPath) "Offline lifecycle command is missing: $name"
+    if ($name -ne 'Uninstall-Casein.cmd') {
+        Assert-Condition ((Get-Content -Raw -LiteralPath $commandPath).Contains('-RequireSigned')) "$name does not require a signed release"
+    }
+}
+Assert-Condition (Test-Path -LiteralPath (Join-Path $packageRoot 'windows\Test-CaseinCleanMachine.ps1')) 'Clean-machine acceptance harness is missing'
 Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'docs'))) 'Internal docs must not be included in a public desktop package'
 
 $releaseScripts = Get-ChildItem -LiteralPath (Join-Path $packageRoot 'lib') -Directory |
@@ -154,7 +162,11 @@ try {
     )
     Assert-Condition ($selectedAddress.Address -eq '192.168.50.8') 'Trusted LAN selection did not prefer the physical default route'
 
-    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot
+    $unsignedOutput = & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot 2>&1
+    Assert-Condition ($LASTEXITCODE -ne 0) 'Unsigned package installation was accepted by default'
+    Assert-Condition (($unsignedOutput -join "`n").Contains('trusted Authenticode release signature is required')) 'Unsigned package failed for the wrong reason'
+
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot -AllowUnsignedDevelopment
     if ($LASTEXITCODE -ne 0) { throw "Installer exited with $LASTEXITCODE" }
 
     $installRoot = Join-Path $testLocalAppData 'Programs\Casein'
@@ -169,6 +181,12 @@ try {
     Assert-Condition (Test-Path -LiteralPath (Join-Path $current.release_root 'bin\casein.bat')) 'Installed release is missing casein.bat'
     Assert-Condition ($current.revision -eq $metadata.revision) 'Installed release revision differs from package metadata'
 
+    $repairProbe = Join-Path $current.release_root 'windows\New-CaseinSupportBundle.ps1'
+    Remove-Item -LiteralPath $repairProbe -Force
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot -AllowUnsignedDevelopment
+    if ($LASTEXITCODE -ne 0) { throw "Repair reinstall exited with $LASTEXITCODE" }
+    Assert-Condition (Test-Path -LiteralPath $repairProbe) 'Repair reinstall did not restore a damaged release file'
+
     $dataRoot = Join-Path $testLocalAppData 'Casein'
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
     Set-Content -LiteralPath (Join-Path $dataRoot 'casein.sqlite3') -Value 'desktop-package-smoke' -Encoding ascii
@@ -176,7 +194,7 @@ try {
         Set-Content -LiteralPath (Join-Path $dataRoot $name) -Value 'dpapi:package-smoke-placeholder' -Encoding ascii
     }
 
-    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot -AllowUnsignedDevelopment
     if ($LASTEXITCODE -ne 0) { throw "Upgrade installer exited with $LASTEXITCODE" }
 
     $backup = Get-ChildItem -LiteralPath (Join-Path $dataRoot 'backups') -Directory |
