@@ -152,12 +152,13 @@ defmodule CaseinMob.ConnectionTiming do
 
       :telemetry.execute(@event, measurements, metadata)
 
-      Logger.info(
+      line =
         "mobile_feed_stage connection_generation=#{metadata.connection_generation || "uncorrelated"} " <>
           "cycle=#{cycle} stage=#{stage} " <>
           "duration_ms=#{measurements.duration_ms} elapsed_ms=#{measurements.elapsed_ms} " <>
           "outcome=#{metadata.outcome} reason_code=#{metadata.reason_code}"
-      )
+
+      emit_log(metadata.platform, line)
 
       %{context | last_at: observed_at}
     else
@@ -277,17 +278,83 @@ defmodule CaseinMob.ConnectionTiming do
 
   defp valid_generation(_value), do: nil
 
+  defp emit_log(:ios, line), do: emit_native_log(native_nif(), line)
+
+  defp emit_log(_platform, line) do
+    Logger.info(line)
+    :ok
+  end
+
+  defp emit_native_log(nif, line) do
+    nif.log(:info, line)
+    :ok
+  rescue
+    error in UndefinedFunctionError ->
+      if missing_native_call?(error, nif, :log, 2) do
+        :ok
+      else
+        reraise(error, __STACKTRACE__)
+      end
+
+    error in ErlangError ->
+      if nif_not_loaded?(error) do
+        :ok
+      else
+        reraise(error, __STACKTRACE__)
+      end
+  catch
+    :exit, :nif_not_loaded -> :ok
+    :exit, {:nif_not_loaded, _detail} -> :ok
+  end
+
   defp platform do
     if System.get_env("MOB_BEAMS_DIR") do
-      case :mob_nif.platform() do
-        platform when platform in [:ios, :android] -> platform
-        _ -> :unknown
-      end
+      native_platform(native_nif())
     else
       :unknown
     end
+  end
+
+  defp native_platform(nif) do
+    case nif.platform() do
+      platform when platform in [:ios, :android] -> platform
+      _ -> :unknown
+    end
   rescue
-    _ in [UndefinedFunctionError, ErlangError] -> :unknown
+    error in UndefinedFunctionError ->
+      if missing_native_call?(error, nif, :platform, 0) do
+        :unknown
+      else
+        reraise(error, __STACKTRACE__)
+      end
+
+    error in ErlangError ->
+      if nif_not_loaded?(error) do
+        :unknown
+      else
+        reraise(error, __STACKTRACE__)
+      end
+  catch
+    :exit, :nif_not_loaded -> :unknown
+    :exit, {:nif_not_loaded, _detail} -> :unknown
+  end
+
+  defp native_nif do
+    Application.get_env(:casein_mob, :connection_timing_native_nif, :mob_nif)
+  end
+
+  defp missing_native_call?(
+         %UndefinedFunctionError{} = error,
+         expected_module,
+         expected_function,
+         expected_arity
+       ) do
+    error.module == expected_module and error.function == expected_function and
+      error.arity == expected_arity
+  end
+
+  defp nif_not_loaded?(%ErlangError{original: original}) do
+    original in [:not_loaded, :nif_not_loaded]
   end
 
   defp new_generation do

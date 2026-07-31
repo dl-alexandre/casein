@@ -1,13 +1,30 @@
+Code.require_file("../../test_support/connection_timing_native_nif_mock.ex", __DIR__)
+
 defmodule CaseinMob.SessionClientBootTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
   alias CaseinMob.ConnectionTiming
+  alias CaseinMob.ConnectionTimingNativeNIFMock
   alias CaseinMob.SessionClient
   alias CaseinMob.SessionConfig
 
   setup do
+    previous_native_nif =
+      Application.fetch_env(:casein_mob, :connection_timing_native_nif)
+
+    previous_mob_beams_dir = System.get_env("MOB_BEAMS_DIR")
+
+    Application.put_env(
+      :casein_mob,
+      :connection_timing_native_nif,
+      ConnectionTimingNativeNIFMock
+    )
+
+    System.put_env("MOB_BEAMS_DIR", "connection-timing-test")
+    ConnectionTimingNativeNIFMock.configure()
+
     if Process.whereis(Mob.State) == nil do
       start_supervised!(Mob.State)
     end
@@ -18,6 +35,20 @@ defmodule CaseinMob.SessionClientBootTest do
     on_exit(fn ->
       if Process.whereis(Mob.State), do: SessionConfig.clear_all()
       ConnectionTiming.reset()
+
+      case previous_native_nif do
+        {:ok, native_nif} ->
+          Application.put_env(:casein_mob, :connection_timing_native_nif, native_nif)
+
+        :error ->
+          Application.delete_env(:casein_mob, :connection_timing_native_nif)
+      end
+
+      if previous_mob_beams_dir do
+        System.put_env("MOB_BEAMS_DIR", previous_mob_beams_dir)
+      else
+        System.delete_env("MOB_BEAMS_DIR")
+      end
     end)
   end
 
@@ -328,6 +359,213 @@ defmodule CaseinMob.SessionClientBootTest do
     refute invalid_log =~ "must-not-leak-generation"
   end
 
+  test "iOS feed telemetry uses the native sink exactly once with the fixed privacy schema" do
+    context = ConnectionTiming.new_context(:cold)
+    test_pid = self()
+    ConnectionTimingNativeNIFMock.configure(platform: :ios, subscriber: self())
+
+    logger_output =
+      capture_log([level: :info], fn ->
+        updated_context =
+          ConnectionTiming.record(context, :connect_requested,
+            url: "https://sensitive.example/socket/websocket",
+            token: "super-secret",
+            origin: "secret-origin",
+            workspace: "secret-workspace",
+            payload: %{"private" => "payload-content"},
+            content: "private card content",
+            raw_error: {:tls_alert, "private"},
+            outcome: "unbounded-secret-outcome",
+            reason_code: {:unbounded, "secret-reason"}
+          )
+
+        send(test_pid, {:updated_timing_context, updated_context})
+      end)
+
+    assert_receive {:native_timing_log, :info, line}
+    refute_receive {:native_timing_log, _, _}
+    assert_receive {:updated_timing_context, updated_context}
+    assert updated_context.last_at >= context.last_at
+    refute logger_output =~ "mobile_feed_stage"
+
+    assert String.starts_with?(line, "mobile_feed_stage ")
+    fields = String.replace_prefix(line, "mobile_feed_stage ", "")
+
+    assert timing_field_names(fields) == [
+             "connection_generation",
+             "cycle",
+             "stage",
+             "duration_ms",
+             "elapsed_ms",
+             "outcome",
+             "reason_code"
+           ]
+
+    assert byte_size(line) < 512
+    refute_private_timing_data(line)
+  end
+
+  test "Android and unknown keep Logger and record options cannot inject native logging" do
+    test_pid = self()
+
+    for platform <- [:android, :unknown] do
+      context = ConnectionTiming.new_context(:reconnect)
+
+      ConnectionTimingNativeNIFMock.configure(
+        platform: platform,
+        subscriber: self()
+      )
+
+      log =
+        capture_log([level: :info], fn ->
+          ConnectionTiming.record(context, :transport_connected,
+            timing_platform: :ios,
+            timing_native_log_sink: fn level, line ->
+              send(test_pid, {:injected_timing_log, platform, level, line})
+            end
+          )
+        end)
+
+      assert [_line] =
+               log
+               |> String.split("\n", trim: true)
+               |> Enum.filter(&String.contains?(&1, "mobile_feed_stage "))
+    end
+
+    refute_receive {:native_timing_log, _, _}
+    refute_receive {:injected_timing_log, _, _, _}
+  end
+
+  test "not-loaded iOS native log errors and exits preserve telemetry and context advancement" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_connection_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    for log_result <- [{:nif_error, :not_loaded}, {:exit, :nif_not_loaded}] do
+      context = ConnectionTiming.new_context(:cold)
+      observed_at = context.last_at + 10_000
+
+      ConnectionTimingNativeNIFMock.configure(
+        platform: :ios,
+        subscriber: self(),
+        log_result: log_result
+      )
+
+      updated_context =
+        ConnectionTiming.record(context, :connect_requested, observed_at: observed_at)
+
+      assert updated_context.last_at == observed_at
+
+      assert_receive {:connection_stage, %{duration_ms: 10.0},
+                      %{platform: :ios, stage: :connect_requested}}
+
+      assert_receive {:native_timing_log, :info, "mobile_feed_stage " <> _fields}
+    end
+
+    refute_receive {:native_timing_log, _, _}
+  end
+
+  test "an unexpected Erlang error from the iOS native log propagates" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_connection_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    ConnectionTimingNativeNIFMock.configure(
+      platform: :ios,
+      subscriber: self(),
+      log_result: {:erlang_error, :unexpected_app_bug}
+    )
+
+    context = ConnectionTiming.new_context(:cold)
+
+    error =
+      assert_raise ErlangError, fn ->
+        ConnectionTiming.record(context, :connect_requested)
+      end
+
+    assert error.original == :unexpected_app_bug
+    assert_receive {:connection_stage, _measurements, %{platform: :ios}}
+    assert_receive {:native_timing_log, :info, "mobile_feed_stage " <> _fields}
+  end
+
+  test "an undefined call inside the iOS native log propagates" do
+    missing_dependency = CaseinMob.ConnectionTimingMissingLogDependency
+
+    ConnectionTimingNativeNIFMock.configure(
+      platform: :ios,
+      log_result: {:undefined_function, missing_dependency, :write, []}
+    )
+
+    error =
+      assert_raise UndefinedFunctionError, fn ->
+        ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
+      end
+
+    assert error.module == missing_dependency
+    assert error.function == :write
+    assert error.arity == 0
+  end
+
+  test "unexpected platform detection failures propagate" do
+    ConnectionTimingNativeNIFMock.configure(
+      platform_result: {:erlang_error, :unexpected_platform_bug}
+    )
+
+    erlang_error =
+      assert_raise ErlangError, fn ->
+        ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
+      end
+
+    assert erlang_error.original == :unexpected_platform_bug
+
+    missing_dependency = CaseinMob.ConnectionTimingMissingPlatformDependency
+
+    ConnectionTimingNativeNIFMock.configure(
+      platform_result: {:undefined_function, missing_dependency, :read, []}
+    )
+
+    undefined_error =
+      assert_raise UndefinedFunctionError, fn ->
+        ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
+      end
+
+    assert undefined_error.module == missing_dependency
+    assert undefined_error.function == :read
+    assert undefined_error.arity == 0
+  end
+
+  test "not-loaded platform errors and exits fall back to the unknown Logger path" do
+    for platform_result <- [{:nif_error, :not_loaded}, {:exit, :nif_not_loaded}] do
+      ConnectionTimingNativeNIFMock.configure(platform_result: platform_result)
+
+      log =
+        capture_log([level: :info], fn ->
+          ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
+        end)
+
+      assert [_line] =
+               log
+               |> String.split("\n", trim: true)
+               |> Enum.filter(&String.contains?(&1, "mobile_feed_stage "))
+    end
+  end
+
   def handle_connect_start(_event, _measurements, _metadata, subscriber) do
     send(subscriber, :connect_started)
   end
@@ -343,5 +581,25 @@ defmodule CaseinMob.SessionClientBootTest do
     after
       0 -> Enum.reverse(acc)
     end
+  end
+
+  defp timing_field_names(fields) do
+    Enum.map(String.split(fields), fn field ->
+      field
+      |> String.split("=", parts: 2)
+      |> List.first()
+    end)
+  end
+
+  defp refute_private_timing_data(line) do
+    refute line =~ "sensitive.example"
+    refute line =~ "super-secret"
+    refute line =~ "secret-origin"
+    refute line =~ "secret-workspace"
+    refute line =~ "payload-content"
+    refute line =~ "private card content"
+    refute line =~ "tls_alert"
+    refute line =~ "unbounded-secret"
+    refute line =~ "secret-reason"
   end
 end
