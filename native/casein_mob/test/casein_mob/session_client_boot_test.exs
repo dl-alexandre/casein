@@ -359,7 +359,7 @@ defmodule CaseinMob.SessionClientBootTest do
     refute invalid_log =~ "must-not-leak-generation"
   end
 
-  test "iOS feed telemetry uses the native sink exactly once with the fixed privacy schema" do
+  test "iOS feed telemetry uses the structured native sink exactly once with allowlisted fields" do
     context = ConnectionTiming.new_context(:cold)
     test_pid = self()
     ConnectionTimingNativeNIFMock.configure(platform: :ios, subscriber: self())
@@ -382,27 +382,85 @@ defmodule CaseinMob.SessionClientBootTest do
         send(test_pid, {:updated_timing_context, updated_context})
       end)
 
-    assert_receive {:native_timing_log, :info, line}
-    refute_receive {:native_timing_log, _, _}
+    assert_receive {:native_feed_stage, generation, :cold, :connect_requested, duration_ms,
+                    elapsed_ms, :failed, :none}
+
+    assert generation == context.generation
+    assert is_number(duration_ms) and duration_ms >= 0
+    assert is_number(elapsed_ms) and elapsed_ms >= duration_ms
+    refute_receive {:native_feed_stage, _, _, _, _, _, _, _}
+    refute_receive {:native_generic_log, _, _}
     assert_receive {:updated_timing_context, updated_context}
     assert updated_context.last_at >= context.last_at
     refute logger_output =~ "mobile_feed_stage"
 
-    assert String.starts_with?(line, "mobile_feed_stage ")
-    fields = String.replace_prefix(line, "mobile_feed_stage ", "")
+    emitted =
+      inspect({generation, :cold, :connect_requested, duration_ms, elapsed_ms, :failed, :none})
 
-    assert timing_field_names(fields) == [
-             "connection_generation",
-             "cycle",
-             "stage",
-             "duration_ms",
-             "elapsed_ms",
-             "outcome",
-             "reason_code"
-           ]
+    refute_private_timing_data(emitted)
+  end
 
-    assert byte_size(line) < 512
-    refute_private_timing_data(line)
+  test "iOS structured timing preserves stage duration and generation elapsed semantics" do
+    context = ConnectionTiming.new_context(:reconnect)
+    ConnectionTimingNativeNIFMock.configure(platform: :ios, subscriber: self())
+
+    first_at = context.started_at + 2_500
+
+    context =
+      ConnectionTiming.record(context, :connect_requested,
+        observed_at: first_at,
+        outcome: :started
+      )
+
+    assert_receive {:native_feed_stage, generation, :reconnect, :connect_requested, 2.5, 2.5,
+                    :started, :none}
+
+    second_at = context.started_at + 9_000
+
+    updated =
+      ConnectionTiming.record(context, :transport_connected,
+        observed_at: second_at,
+        reason_code: :dns_resolved
+      )
+
+    assert_receive {:native_feed_stage, ^generation, :reconnect, :transport_connected, 6.5, 9.0,
+                    :succeeded, :dns_resolved}
+
+    assert updated.last_at == second_at
+    refute_receive {:native_generic_log, _, _}
+  end
+
+  test "iOS structured timing skips envelopes rejected by the native schema" do
+    context = ConnectionTiming.new_context(:reconnect)
+
+    ConnectionTimingNativeNIFMock.configure(
+      platform: :ios,
+      subscriber: self(),
+      stage_log_result: {:erlang_error, :badarg}
+    )
+
+    invalid_generation = %{context | generation: "not-a-canonical-generation"}
+    observed_at = context.started_at + 1_000
+
+    assert %{last_at: ^observed_at} =
+             ConnectionTiming.record(invalid_generation, :connect_requested,
+               observed_at: observed_at
+             )
+
+    over_native_limit = context.started_at + 2_147_483_648_000
+
+    assert %{last_at: ^over_native_limit} =
+             ConnectionTiming.record(context, :connect_requested, observed_at: over_native_limit)
+
+    duration_exceeds_elapsed = %{context | last_at: context.started_at - 1_000}
+
+    assert %{last_at: ^observed_at} =
+             ConnectionTiming.record(duration_exceeds_elapsed, :connect_requested,
+               observed_at: observed_at
+             )
+
+    refute_receive {:native_feed_stage, _, _, _, _, _, _, _}
+    refute_receive {:native_generic_log, _, _}
   end
 
   test "Android and unknown keep Logger and record options cannot inject native logging" do
@@ -432,11 +490,12 @@ defmodule CaseinMob.SessionClientBootTest do
                |> Enum.filter(&String.contains?(&1, "mobile_feed_stage "))
     end
 
-    refute_receive {:native_timing_log, _, _}
+    refute_receive {:native_feed_stage, _, _, _, _, _, _, _}
+    refute_receive {:native_generic_log, _, _}
     refute_receive {:injected_timing_log, _, _, _}
   end
 
-  test "not-loaded iOS native log errors and exits preserve telemetry and context advancement" do
+  test "not-loaded iOS native stage errors and exits preserve telemetry and context advancement" do
     telemetry_id = {__MODULE__, self(), make_ref()}
 
     :ok =
@@ -449,14 +508,19 @@ defmodule CaseinMob.SessionClientBootTest do
 
     on_exit(fn -> :telemetry.detach(telemetry_id) end)
 
-    for log_result <- [{:nif_error, :not_loaded}, {:exit, :nif_not_loaded}] do
+    for stage_log_result <- [
+          {:nif_error, :not_loaded},
+          {:nif_error, :nif_not_loaded},
+          {:exit, :nif_not_loaded},
+          {:exit, {:nif_not_loaded, :not_linked}}
+        ] do
       context = ConnectionTiming.new_context(:cold)
       observed_at = context.last_at + 10_000
 
       ConnectionTimingNativeNIFMock.configure(
         platform: :ios,
         subscriber: self(),
-        log_result: log_result
+        stage_log_result: stage_log_result
       )
 
       updated_context =
@@ -467,13 +531,20 @@ defmodule CaseinMob.SessionClientBootTest do
       assert_receive {:connection_stage, %{duration_ms: 10.0},
                       %{platform: :ios, stage: :connect_requested}}
 
-      assert_receive {:native_timing_log, :info, "mobile_feed_stage " <> _fields}
+      generation = context.generation
+
+      assert_receive {:native_feed_stage, ^generation, :cold, :connect_requested, duration_ms,
+                      elapsed_ms, :succeeded, :none}
+
+      assert duration_ms == 10.0
+      assert elapsed_ms == 10.0
     end
 
-    refute_receive {:native_timing_log, _, _}
+    refute_receive {:native_feed_stage, _, _, _, _, _, _, _}
+    refute_receive {:native_generic_log, _, _}
   end
 
-  test "an unexpected Erlang error from the iOS native log propagates" do
+  test "an unexpected Erlang error from the iOS native stage propagates" do
     telemetry_id = {__MODULE__, self(), make_ref()}
 
     :ok =
@@ -489,7 +560,7 @@ defmodule CaseinMob.SessionClientBootTest do
     ConnectionTimingNativeNIFMock.configure(
       platform: :ios,
       subscriber: self(),
-      log_result: {:erlang_error, :unexpected_app_bug}
+      stage_log_result: {:erlang_error, :unexpected_app_bug}
     )
 
     context = ConnectionTiming.new_context(:cold)
@@ -501,25 +572,68 @@ defmodule CaseinMob.SessionClientBootTest do
 
     assert error.original == :unexpected_app_bug
     assert_receive {:connection_stage, _measurements, %{platform: :ios}}
-    assert_receive {:native_timing_log, :info, "mobile_feed_stage " <> _fields}
+    generation = context.generation
+
+    assert_receive {:native_feed_stage, ^generation, :cold, :connect_requested, _, _, :succeeded,
+                    :none}
+
+    refute_receive {:native_generic_log, _, _}
   end
 
-  test "an undefined call inside the iOS native log propagates" do
-    missing_dependency = CaseinMob.ConnectionTimingMissingLogDependency
+  test "an unexpected return from the iOS native stage propagates" do
+    ConnectionTimingNativeNIFMock.configure(
+      platform: :ios,
+      stage_log_result: {:ok, :unexpected_native_result}
+    )
+
+    assert_raise MatchError, fn ->
+      ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
+    end
+  end
+
+  test "the exact missing iOS native stage function is a soft failure" do
+    context = ConnectionTiming.new_context(:cold)
 
     ConnectionTimingNativeNIFMock.configure(
       platform: :ios,
-      log_result: {:undefined_function, missing_dependency, :write, []}
+      subscriber: self(),
+      stage_log_result:
+        {:raise_undefined_function, ConnectionTimingNativeNIFMock, :log_mobile_feed_stage, 7}
     )
 
-    error =
-      assert_raise UndefinedFunctionError, fn ->
-        ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
-      end
+    updated = ConnectionTiming.record(context, :connect_requested, observed_at: context.last_at)
+    assert updated.last_at == context.last_at
+    generation = context.generation
 
-    assert error.module == missing_dependency
-    assert error.function == :write
-    assert error.arity == 0
+    assert_receive {:native_feed_stage, ^generation, :cold, :connect_requested, duration_ms,
+                    elapsed_ms, :succeeded, :none}
+
+    assert duration_ms == 0.0
+    assert elapsed_ms == 0.0
+    refute_receive {:native_generic_log, _, _}
+  end
+
+  test "near-miss undefined calls from the iOS native stage propagate" do
+    missing_dependency = CaseinMob.ConnectionTimingMissingLogDependency
+
+    for {stage_log_result, expected} <- [
+          {{:undefined_function, missing_dependency, :write, []},
+           {missing_dependency, :write, 0}},
+          {{:raise_undefined_function, ConnectionTimingNativeNIFMock, :log_mobile_feed_stage, 6},
+           {ConnectionTimingNativeNIFMock, :log_mobile_feed_stage, 6}}
+        ] do
+      ConnectionTimingNativeNIFMock.configure(
+        platform: :ios,
+        stage_log_result: stage_log_result
+      )
+
+      error =
+        assert_raise UndefinedFunctionError, fn ->
+          ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
+        end
+
+      assert {error.module, error.function, error.arity} == expected
+    end
   end
 
   test "unexpected platform detection failures propagate" do
@@ -581,14 +695,6 @@ defmodule CaseinMob.SessionClientBootTest do
     after
       0 -> Enum.reverse(acc)
     end
-  end
-
-  defp timing_field_names(fields) do
-    Enum.map(String.split(fields), fn field ->
-      field
-      |> String.split("=", parts: 2)
-      |> List.first()
-    end)
   end
 
   defp refute_private_timing_data(line) do

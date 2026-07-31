@@ -14,6 +14,7 @@ defmodule CaseinMob.ConnectionTiming do
   @snapshot_context_key :__casein_feed_timing__
   @generation_bytes 16
   @generation_length 22
+  @max_native_timing_ms 2_147_483_647
   @max_card_count 1_000
   @max_snapshot_json_bytes 1_000_000
   @cycles [:cold, :reconnect, :origin_switch]
@@ -152,13 +153,16 @@ defmodule CaseinMob.ConnectionTiming do
 
       :telemetry.execute(@event, measurements, metadata)
 
-      line =
-        "mobile_feed_stage connection_generation=#{metadata.connection_generation || "uncorrelated"} " <>
-          "cycle=#{cycle} stage=#{stage} " <>
-          "duration_ms=#{measurements.duration_ms} elapsed_ms=#{measurements.elapsed_ms} " <>
-          "outcome=#{metadata.outcome} reason_code=#{metadata.reason_code}"
-
-      emit_log(metadata.platform, line)
+      emit_log(
+        metadata.platform,
+        metadata.connection_generation,
+        cycle,
+        stage,
+        measurements.duration_ms,
+        measurements.elapsed_ms,
+        metadata.outcome,
+        metadata.reason_code
+      )
 
       %{context | last_at: observed_at}
     else
@@ -278,25 +282,85 @@ defmodule CaseinMob.ConnectionTiming do
 
   defp valid_generation(_value), do: nil
 
-  defp emit_log(:ios, line), do: emit_native_log(native_nif(), line)
+  defp emit_log(
+         :ios,
+         generation,
+         cycle,
+         stage,
+         duration_ms,
+         elapsed_ms,
+         outcome,
+         reason_code
+       ) do
+    if valid_native_stage_envelope?(generation, duration_ms, elapsed_ms) do
+      emit_native_stage(
+        native_nif(),
+        generation,
+        cycle,
+        stage,
+        duration_ms,
+        elapsed_ms,
+        outcome,
+        reason_code
+      )
+    else
+      :ok
+    end
+  end
 
-  defp emit_log(_platform, line) do
-    Logger.info(line)
+  defp emit_log(
+         _platform,
+         generation,
+         cycle,
+         stage,
+         duration_ms,
+         elapsed_ms,
+         outcome,
+         reason_code
+       ) do
+    Logger.info(
+      "mobile_feed_stage connection_generation=#{generation || "uncorrelated"} " <>
+        "cycle=#{cycle} stage=#{stage} " <>
+        "duration_ms=#{duration_ms} elapsed_ms=#{elapsed_ms} " <>
+        "outcome=#{outcome} reason_code=#{reason_code}"
+    )
+
     :ok
   end
 
-  defp emit_native_log(nif, line) do
-    nif.log(:info, line)
+  defp emit_native_stage(
+         nif,
+         generation,
+         cycle,
+         stage,
+         duration_ms,
+         elapsed_ms,
+         outcome,
+         reason_code
+       ) do
+    :ok =
+      nif.log_mobile_feed_stage(
+        generation,
+        cycle,
+        stage,
+        duration_ms,
+        elapsed_ms,
+        outcome,
+        reason_code
+      )
+
     :ok
   rescue
     error in UndefinedFunctionError ->
-      if missing_native_call?(error, nif, :log, 2) do
+      if missing_native_call?(error, nif, :log_mobile_feed_stage, 7) do
         :ok
       else
         reraise(error, __STACKTRACE__)
       end
 
-    error in ErlangError ->
+    # Rescue normalization includes built-in exception structs for Erlang errors.
+    # Only the exact loader errors below are softened; everything else reraises.
+    error ->
       if nif_not_loaded?(error) do
         :ok
       else
@@ -328,7 +392,7 @@ defmodule CaseinMob.ConnectionTiming do
         reraise(error, __STACKTRACE__)
       end
 
-    error in ErlangError ->
+    error ->
       if nif_not_loaded?(error) do
         :unknown
       else
@@ -355,6 +419,15 @@ defmodule CaseinMob.ConnectionTiming do
 
   defp nif_not_loaded?(%ErlangError{original: original}) do
     original in [:not_loaded, :nif_not_loaded]
+  end
+
+  defp nif_not_loaded?(_error), do: false
+
+  defp valid_native_stage_envelope?(generation, duration_ms, elapsed_ms) do
+    is_binary(generation) and valid_generation(generation) == generation and
+      is_number(duration_ms) and
+      duration_ms >= 0 and duration_ms <= @max_native_timing_ms and is_number(elapsed_ms) and
+      elapsed_ms >= duration_ms and elapsed_ms <= @max_native_timing_ms
   end
 
   defp new_generation do
