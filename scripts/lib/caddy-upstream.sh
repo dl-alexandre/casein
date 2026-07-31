@@ -25,7 +25,7 @@ CADDY_PREVIOUS_DIAL="${CADDY_PREVIOUS_DIAL:-}"
 CADDY_UPSTREAM_PATCHED="${CADDY_UPSTREAM_PATCHED:-0}"
 
 casein_caddy_admin_curl() {
-  sudo curl \
+  curl \
     --connect-timeout "${CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT}" \
     --max-time "${CASEIN_CADDY_ADMIN_MAX_TIME}" \
     "$@"
