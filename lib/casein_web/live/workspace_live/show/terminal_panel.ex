@@ -239,7 +239,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           id={"mobile-key-bar-mode-" <> @workspace.id}
           type="button"
           phx-click="mobile_nav:toggle"
-          class="mr-0.5 inline-flex min-h-[1.9rem] max-w-[min(42vw,11rem)] shrink-0 items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 text-zinc-100 transition active:opacity-80"
+          class="mr-0.5 inline-flex min-h-[1.9rem] shrink-0 items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 text-zinc-100 transition active:opacity-80"
           title={"Switch session or window — " <> mobile_mode_chip_title(assigns)}
           aria-label={
             "Switch session or window. Active session: " <>
@@ -247,15 +247,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           }
           aria-expanded={@mobile_nav_open}
         >
+          <%!-- tmux's own window.pane address, not a session name: at chip width
+               a worktree label truncates to "…hoc-2026…" — it says nothing, and
+               the collapsed chrome strip above already carries the session and
+               window names. The address is what you need to know where a
+               keystroke is going (and what C-b arrows will move). --%>
           <span
             data-mobile-window-number
-            class="inline-flex min-w-3.5 shrink-0 justify-center font-mono text-[11px] font-semibold leading-none text-sky-300/90"
+            class="inline-flex shrink-0 justify-center font-mono text-[11px] font-semibold leading-none text-sky-300/90"
             aria-hidden="true"
           >
-            {mobile_active_window_index(assigns)}
-          </span>
-          <span class="min-w-0 truncate text-[11px] font-medium leading-none tracking-tight">
-            {mobile_active_session_label(assigns)}
+            {mobile_active_pane_address(assigns)}
           </span>
           <.icon name="hero-chevron-up" class="size-3 shrink-0 text-zinc-500" />
         </button>
@@ -1018,12 +1020,33 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
     CaseinWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
   end
 
+  # Read the active window off the topology's own `active` flag rather than
+  # matching :tmux_active_window_id — that assign is never threaded this far
+  # (see terminal_tab_attrs), so the id lookup always missed and the chip has
+  # been rendering its "–" fallback on every phone.
   defp mobile_active_window_index(assigns) do
-    active_window_id = assigns[:tmux_active_window_id]
-
-    case Enum.find(assigns[:tmux_windows] || [], &(Map.get(&1, :id) == active_window_id)) do
+    case Enum.find(assigns[:tmux_windows] || [], &Map.get(&1, :active)) do
       %{index: index} when is_integer(index) -> Integer.to_string(index)
       _ -> "–"
+    end
+  end
+
+  # tmux's `window.pane` address for the pane the soft keyboard is typing into —
+  # UI focus first, since tapping a tile highlights it before tmux agrees. Falls
+  # back to the bare window number when no pane resolves (topology still
+  # arriving), so the chip never goes empty.
+  defp mobile_active_pane_address(assigns) do
+    window = mobile_active_window_index(assigns)
+    panes = active_tmux_window_panes(assigns[:tmux_windows] || [])
+    highlighted = assigns[:ui_highlight_pane_id]
+
+    pane =
+      Enum.find(panes, &(is_binary(highlighted) and Map.get(&1, :id) == highlighted)) ||
+        Enum.find(panes, &Map.get(&1, :active))
+
+    case pane do
+      %{index: index} when is_integer(index) -> window <> "." <> Integer.to_string(index)
+      _ -> window
     end
   end
 

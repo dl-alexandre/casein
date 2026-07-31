@@ -339,12 +339,17 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       assert has_element?(view, "#tmux-pane--1[phx-click='tmux:select_pane']")
       refute has_element?(view, "#tmux-pane--0[phx-click='tmux:select_pane']")
 
+      # The mobile key bar chip is a readout of exactly this: tmux's
+      # window.pane address for wherever the soft keyboard is typing.
+      assert mobile_keybar_address(view) == "0.0"
+
       view
       |> element("#tmux-pane--1")
       |> render_click()
 
       assert_receive {:fake_tmux_select_pane, ^session, "%1"}
       assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
+      assert mobile_keybar_address(view) == "0.1"
 
       # Swap is also compare-and-commit: the focused pane keeps its identity
       # while tmux moves it backward in layout order.
@@ -1328,6 +1333,15 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       bell: false,
       unseen_changes: false
     }
+  end
+
+  # The window.pane text inside the mobile key bar's session/window chip.
+  defp mobile_keybar_address(view) do
+    view
+    |> element("[data-mobile-window-number]")
+    |> render()
+    |> String.replace(~r/<[^>]*>/, "")
+    |> String.trim()
   end
 
   @fake_state_keys ~w(fake_tmux_windows fake_tmux_panes fake_tmux_test_pid)a
