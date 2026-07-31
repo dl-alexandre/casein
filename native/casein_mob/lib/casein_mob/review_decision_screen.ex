@@ -168,7 +168,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
                 [
                   summary_card(assigns.card),
                   context_card(assigns.card),
-                  recent_output_card(assigns.card),
+                  intervention_context_card(assigns.card),
                   evidence_card(assigns.card),
                   decision_context_card(assigns.card),
                   note_card(assigns),
@@ -311,41 +311,35 @@ defmodule CaseinMob.ReviewDecisionScreen do
     end
   end
 
-  defp recent_output_card(card) do
-    case card |> get("intervention", %{}) |> get("recent_output") do
-      output when is_binary(output) and output != "" ->
-        %{
-          type: :column,
-          props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
-          children: [
-            %{
-              type: :text,
-              props: %{
-                text: "Recent agent output",
-                text_color: :on_surface,
-                font_weight: "bold"
-              },
-              children: []
-            },
-            %{
-              type: :text,
-              props: %{text: output, text_color: :on_surface, text_size: :sm},
-              children: []
-            },
-            %{
-              type: :text,
-              props: %{
-                text: "Live excerpt · target role: agent",
-                text_color: :muted,
-                text_size: :xs
-              },
-              children: []
-            }
-          ]
-        }
+  defp intervention_context_card(card) do
+    if intervention?(card) do
+      intervention = get(card, "intervention", %{})
+      target = get(intervention, "target", %{})
+      target_label = if get(target, "role") == "agent", do: "Agent", else: "Unknown"
 
-      _ ->
-        nil
+      availability_label =
+        if intervention_contract_valid?(card),
+          do: "Revalidated when sent",
+          else: "Unknown — refresh required"
+
+      %{
+        type: :column,
+        props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
+        children: [
+          %{
+            type: :text,
+            props: %{
+              text: "Intervention context",
+              text_color: :on_surface,
+              font_weight: "bold"
+            },
+            children: []
+          },
+          body_text("Target: #{target_label}"),
+          body_text("Availability: #{availability_label}"),
+          body_text("Terminal context: Not collected on mobile")
+        ]
+      }
     end
   end
 
@@ -572,7 +566,10 @@ defmodule CaseinMob.ReviewDecisionScreen do
           ]
 
         {false, spec, _actions} when is_map(spec) ->
-          confirmation_controls(spec, assigns.authoritative?)
+          confirmation_controls(
+            spec,
+            assigns.authoritative? and intervention_action_contract_valid?(assigns.card, spec)
+          )
 
         {false, nil, []} ->
           [body_text("No actions available for this card.")]
@@ -581,6 +578,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
           Enum.map(specs, fn spec ->
             disabled? =
               not assigns.authoritative? or submitted? or invalid_card? or
+                not intervention_action_contract_valid?(assigns.card, spec) or
                 action_disabled?(spec, assigns.note) or
                 (assigns.intervention_completed and intervention_action?(spec))
 
@@ -680,10 +678,15 @@ defmodule CaseinMob.ReviewDecisionScreen do
         Mob.Socket.assign(socket, :message, "Action unavailable")
 
       spec ->
-        if requires_note?(spec) and String.trim(socket.assigns.note) == "" do
-          Mob.Socket.assign(socket, :message, "Add a short note first")
-        else
-          maybe_confirm(socket, spec)
+        cond do
+          not intervention_action_contract_valid?(socket.assigns.card, spec) ->
+            Mob.Socket.assign(socket, :message, "Action unavailable. Refresh required.")
+
+          requires_note?(spec) and String.trim(socket.assigns.note) == "" ->
+            Mob.Socket.assign(socket, :message, "Add a short note first")
+
+          true ->
+            maybe_confirm(socket, spec)
         end
     end
   end
@@ -707,14 +710,21 @@ defmodule CaseinMob.ReviewDecisionScreen do
   defp confirm_action(socket, action_id) do
     case socket.assigns.pending_confirmation do
       spec when is_map(spec) ->
-        if get(spec, "id") == action_id do
-          socket
-          |> Mob.Socket.assign(:pending_confirmation, nil)
-          |> submit(spec)
-        else
-          socket
-          |> Mob.Socket.assign(:pending_confirmation, nil)
-          |> Mob.Socket.assign(:message, "Action unavailable")
+        cond do
+          not intervention_action_contract_valid?(socket.assigns.card, spec) ->
+            socket
+            |> Mob.Socket.assign(:pending_confirmation, nil)
+            |> Mob.Socket.assign(:message, "Action unavailable. Refresh required.")
+
+          get(spec, "id") == action_id ->
+            socket
+            |> Mob.Socket.assign(:pending_confirmation, nil)
+            |> submit(spec)
+
+          true ->
+            socket
+            |> Mob.Socket.assign(:pending_confirmation, nil)
+            |> Mob.Socket.assign(:message, "Action unavailable")
         end
 
       _ ->
@@ -825,7 +835,24 @@ defmodule CaseinMob.ReviewDecisionScreen do
     |> Enum.min(fn -> @max_note_length end)
   end
 
-  defp intervention?(card), do: is_map(get(card, "intervention"))
+  defp intervention?(card) do
+    is_map(get(card, "intervention")) or Enum.any?(card_actions(card), &intervention_action?/1)
+  end
+
+  defp intervention_contract_valid?(card) do
+    if intervention?(card) do
+      intervention = get(card, "intervention", %{})
+
+      get(get(intervention, "target", %{}), "role") == "agent" and
+        get(intervention, "availability") == "revalidated_on_submit"
+    else
+      true
+    end
+  end
+
+  defp intervention_action_contract_valid?(card, spec) do
+    not intervention_action?(spec) or intervention_contract_valid?(card)
+  end
 
   defp escalation_button(card) do
     if pwa_url(card) do

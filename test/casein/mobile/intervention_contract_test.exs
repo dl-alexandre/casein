@@ -50,5 +50,71 @@ defmodule Casein.Mobile.InterventionContractTest do
              Enum.find(review_specs, &(&1.id == "address_review")).revision
   end
 
+  test "pure projection is deterministic and declares revalidation without terminal context" do
+    card =
+      Card.in_progress(
+        %{
+          user_id: "dev",
+          workspace_id: "ws",
+          session_id: "working",
+          locator: %{tmux_session: "casein_ws_agent", pane: "%2"}
+        },
+        @now
+      )
+
+    projection = Intervention.project(card)
+
+    assert projection == Intervention.project(card)
+    assert projection.version == 2
+    assert projection.target == %{role: "agent"}
+    assert projection.availability == "revalidated_on_submit"
+    assert projection.pwa_path =~ "/workspaces/ws?"
+    assert Enum.any?(projection.actions, &(&1.id == "continue_task"))
+    refute Map.has_key?(projection, :recent_output)
+    refute Map.has_key?(projection, :captured_at)
+    refute Map.has_key?(projection.target, :pane)
+    refute Map.has_key?(projection.target, :tmux_session)
+    assert {:ok, %{id: "continue_task"}} = Intervention.available_action(card, "continue_task")
+  end
+
+  test "projection fails closed for incomplete typed identity and terminal cards" do
+    working =
+      Card.in_progress(
+        %{
+          user_id: "dev",
+          workspace_id: "ws",
+          session_id: "working",
+          locator: %{tmux_session: "casein_ws_agent", pane: "%2"}
+        },
+        @now
+      )
+
+    missing_pane = put_in(working, [:context, :locator], %{tmux_session: "casein_ws_agent"})
+    missing_session = %{working | session_id: nil}
+
+    clarification_without_agent_session =
+      Card.clarification(
+        %{
+          user_id: "dev",
+          workspace_id: "ws",
+          session_id: "clarification",
+          locator: %{tmux_session: "casein_ws_agent", pane: "%2"},
+          task_ref: nil
+        },
+        @now
+      )
+
+    completed =
+      Card.outcome(
+        %{user_id: "dev", workspace_id: "ws", session_id: "done", outcome: "succeeded"},
+        @now
+      )
+
+    assert Intervention.project(missing_pane) == nil
+    assert Intervention.project(missing_session) == nil
+    assert Intervention.project(clarification_without_agent_session) == nil
+    assert Intervention.project(completed) == nil
+  end
+
   defp action_ids(card), do: card |> Intervention.action_specs() |> Enum.map(& &1.id)
 end

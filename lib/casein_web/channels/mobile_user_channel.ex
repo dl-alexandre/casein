@@ -454,7 +454,7 @@ defmodule CaseinWeb.MobileUserChannel do
 
   defp render_card(card, attention, socket) do
     resume = ResumeCard.project(card)
-    intervention = Intervention.describe(card)
+    intervention = Intervention.project(card)
     evidence = Evidence.project(card, socket.assigns[:current_user] || %{})
     actions = intervention_actions(card, intervention)
 
