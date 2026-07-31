@@ -86,6 +86,59 @@ defmodule Casein.Codex.AppServerTest do
            }
   end
 
+  # Exhaustive pin on the workspace_mode -> Codex security mapping
+  # (app_server.ex security_defaults/1). This is a SANDBOX BOUNDARY: a refactor
+  # that mis-maps a mode does not fail loudly, it silently widens what an agent
+  # may do. Before this, only :manual and :review were covered — :unrestricted
+  # (danger-full-access) and both other guarded modes were unpinned.
+  #
+  # If you add a workspace mode, add it here. An unlisted mode must land in the
+  # invalid-mode branch, never in a permissive default.
+  @mode_expectations [
+    {:manual, %{"approvalPolicy" => "on-request", "sandbox" => "workspace-write"}},
+    {:review, %{"approvalPolicy" => "never", "sandbox" => "read-only"}},
+    {:agent_write_locked, %{"approvalPolicy" => "never", "sandbox" => "read-only"}},
+    {:shared_stage_guarded, %{"approvalPolicy" => "never", "sandbox" => "read-only"}},
+    {:unrestricted, %{"approvalPolicy" => "never", "sandbox" => "danger-full-access"}}
+  ]
+
+  for {mode, expected} <- @mode_expectations do
+    test "workspace_mode #{inspect(mode)} pins security to #{inspect(expected)}" do
+      pid =
+        start_supervised!(
+          {AppServer,
+           workspace_id: "ws-#{unquote(mode)}",
+           runtime_id: "runtime-#{unquote(mode)}",
+           workspace_mode: unquote(mode),
+           cwd: File.cwd!(),
+           executable: "/bin/sh",
+           args: [@fixture]},
+          id: {:pinned, unquote(mode)}
+        )
+
+      assert :ok = AppServer.await_ready(pid)
+      assert AppServer.status(pid).security == unquote(Macro.escape(expected))
+    end
+  end
+
+  test "only :unrestricted may reach danger-full-access" do
+    permissive =
+      for {mode, %{"sandbox" => sandbox}} <- @mode_expectations,
+          sandbox == "danger-full-access",
+          do: mode
+
+    assert permissive == [:unrestricted],
+           "a mode other than :unrestricted now grants danger-full-access: #{inspect(permissive)}"
+  end
+
+  test "every guarded mode denies writes" do
+    for {mode, %{"sandbox" => sandbox, "approvalPolicy" => policy}} <- @mode_expectations,
+        mode in [:review, :agent_write_locked, :shared_stage_guarded] do
+      assert sandbox == "read-only", "#{mode} must be read-only, got #{sandbox}"
+      assert policy == "never", "#{mode} must not prompt for approval, got #{policy}"
+    end
+  end
+
   defp start_fake_server(runtime_id) do
     start_supervised!(
       {AppServer,

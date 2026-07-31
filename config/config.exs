@@ -233,3 +233,14 @@ config :casein, :file_server_clock, {System, :monotonic_time}
 config :casein, :link_resolver_clock, {System, :monotonic_time}
 
 config :casein, :preview_tools, Casein.Agents.PreviewTools
+
+# Structured agent-runtime adapters behind `Casein.AgentSessions`.
+#
+# The default lives here rather than as a module-literal `Application.get_env/3`
+# default in the reader: a module literal in a get_env/3 default is itself a
+# compile-time edge, which is how the xref cycles in #347/#348 got re-entangled.
+# `Casein.AgentSessions` reads this with `fetch_env!/2`.
+config :casein, :agent_session_providers, %{
+  codex: Casein.AgentSessions.Adapters.Codex,
+  grok_acp: Casein.AgentSessions.Adapters.GrokACP
+}
