@@ -89,14 +89,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
      |> maybe_preview_selected_theme()}
   end
 
-  def handle_event("palette:templates", _params, socket) do
-    if TerminalState.tmux_mutations_allowed?(socket) do
-      open_palette(socket, :tmux, "template apply")
-    else
-      TerminalState.deny_tmux_mutation(socket)
-    end
-  end
-
   # Form submit (Enter). Prefer the explicitly-selected id from arrow-nav;
   # fall back to top item for safety. Empty → close and restore any theme preview.
   def handle_event("palette:execute", %{"_selected_id" => ""}, socket) do

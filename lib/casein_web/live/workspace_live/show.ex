@@ -139,7 +139,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     agent:start_review_run
     grok_permission:respond grok_permission:cancel
     palette:open palette:ide palette:category palette:nav palette:close palette:query
-    palette:templates palette:execute
+    palette:execute
     audit_drawer:toggle audit_drawer:close
     clipboard:toggle clipboard:close clipboard:refresh clipboard:clear
     situation_drawer:toggle situation_drawer:close
