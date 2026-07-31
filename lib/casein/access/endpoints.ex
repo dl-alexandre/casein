@@ -45,7 +45,10 @@ defmodule Casein.Access.Endpoints do
         list ->
           Enum.map(list, fn {endpoint, alive?} ->
             status = if alive?, do: "OK   ", else: "WARN "
-            detail = "#{endpoint.base_url} scope=#{endpoint.scope} auth=#{endpoint.auth} #{liveness(alive?)}"
+
+            detail =
+              "#{endpoint.base_url} scope=#{endpoint.scope} auth=#{endpoint.auth} #{liveness(alive?)}"
+
             "  #{status} #{endpoint.kind} - #{detail}"
           end)
       end
@@ -145,7 +148,9 @@ defmodule Casein.Access.Endpoints do
 
   defp configured_string(name) do
     case System.get_env(name) do
-      nil -> nil
+      nil ->
+        nil
+
       value ->
         case String.trim(value) do
           "" -> nil

@@ -7,7 +7,11 @@ defmodule Casein.Access.EndpointsTest do
   setup do
     previous_canonical = Application.get_env(:casein, :canonical_public_origin)
     previous_endpoint = Application.get_env(:casein, CaseinWeb.Endpoint)
-    previous_env = snapshot_env(~w(CASEIN_LAN_HOST CASEIN_LAN_IP CASEIN_LAN CASEIN_LAN_INSECURE_HTTP CASEIN_LAN_INSECURE_HTTP_PORT PORT))
+
+    previous_env =
+      snapshot_env(
+        ~w(CASEIN_LAN_HOST CASEIN_LAN_IP CASEIN_LAN CASEIN_LAN_INSECURE_HTTP CASEIN_LAN_INSECURE_HTTP_PORT PORT)
+      )
 
     on_exit(fn ->
       restore(:canonical_public_origin, previous_canonical)

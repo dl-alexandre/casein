@@ -37,22 +37,25 @@ defmodule Casein.Access.ProbeTest do
 
     assert Probe.reachable?("http://127.0.0.1:#{stub.port}", timeout_ms: 500)
 
-    HTTPStub.down(stub)
-    HTTPStub.up(stub)
+    # Re-stub in place. Do NOT cycle down/up to change a status: `down/1` keeps
+    # the port reserved, so an immediate `up/1` races the reservation and dies
+    # with :eaddrinuse.
+    for {status, body} <- [{401, "auth"}, {403, "forbidden"}] do
+      HTTPStub.stub(stub, "GET", "/healthz", fn conn ->
+        Plug.Conn.resp(conn, status, body)
+      end)
 
-    HTTPStub.stub(stub, "GET", "/healthz", fn conn ->
-      Plug.Conn.resp(conn, 401, "auth")
-    end)
+      assert Probe.reachable?("http://127.0.0.1:#{stub.port}", timeout_ms: 500),
+             "#{status} proves a server is present, so it must count as alive"
+    end
 
-    assert Probe.reachable?("http://127.0.0.1:#{stub.port}", timeout_ms: 500)
+    for status <- [500, 502, 503] do
+      HTTPStub.stub(stub, "GET", "/healthz", fn conn ->
+        Plug.Conn.resp(conn, status, "down")
+      end)
 
-    HTTPStub.down(stub)
-    HTTPStub.up(stub)
-
-    HTTPStub.stub(stub, "GET", "/healthz", fn conn ->
-      Plug.Conn.resp(conn, 503, "down")
-    end)
-
-    refute Probe.reachable?("http://127.0.0.1:#{stub.port}", timeout_ms: 500)
+      refute Probe.reachable?("http://127.0.0.1:#{stub.port}", timeout_ms: 500),
+             "#{status} means the app behind the port is not serving"
+    end
   end
 end
