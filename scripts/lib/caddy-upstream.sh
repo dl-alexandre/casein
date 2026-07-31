@@ -7,8 +7,19 @@ CASEIN_CADDY_CANONICAL_DIAL="${CASEIN_CADDY_CANONICAL_DIAL:-unix//run/casein/cur
 CASEIN_CADDY_LOOPBACK_DIAL="${CASEIN_CADDY_LOOPBACK_DIAL:-127.0.0.1:4000}"
 CASEIN_CADDY_LEGACY_DIAL="${CASEIN_CADDY_LEGACY_DIAL:-unix//run/devide/current.sock}"
 CASEIN_CADDY_ADMIN_URL="${CASEIN_CADDY_ADMIN_URL:-http://localhost:2019}"
-CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT="${CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT:-2}"
-CASEIN_CADDY_ADMIN_MAX_TIME="${CASEIN_CADDY_ADMIN_MAX_TIME:-5}"
+
+# Keep Caddy admin calls bounded even when inherited environment values are
+# malformed or hostile. Enumerating the small accepted ranges avoids shell
+# arithmetic overflow on arbitrarily large numeric strings.
+case "${CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT:-}" in
+  1 | 2 | 3 | 4 | 5) ;;
+  *) CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT=2 ;;
+esac
+case "${CASEIN_CADDY_ADMIN_MAX_TIME:-}" in
+  1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10) ;;
+  *) CASEIN_CADDY_ADMIN_MAX_TIME=5 ;;
+esac
+
 CADDY_UPSTREAM_PATH="${CADDY_UPSTREAM_PATH:-}"
 CADDY_PREVIOUS_DIAL="${CADDY_PREVIOUS_DIAL:-}"
 CADDY_UPSTREAM_PATCHED="${CADDY_UPSTREAM_PATCHED:-0}"

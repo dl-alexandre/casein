@@ -33,8 +33,14 @@ curl() {
     esac
   done
 
-  [ "$connect_timeout" = "$CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT" ]
-  [ "$max_time" = "$CASEIN_CADDY_ADMIN_MAX_TIME" ]
+  if [ "$connect_timeout" != "$CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT" ]; then
+    echo "connect timeout option missing or incorrect: ${connect_timeout:-empty}" >&2
+    return 91
+  fi
+  if [ "$max_time" != "$CASEIN_CADDY_ADMIN_MAX_TIME" ]; then
+    echo "max time option missing or incorrect: ${max_time:-empty}" >&2
+    return 92
+  fi
 
   if [ "$url" = "${admin_url}/config/" ]; then
     printf '%s\n' \
@@ -49,6 +55,38 @@ curl() {
     return 22
   fi
 }
+
+assert_timeout_normalization() {
+  local input_connect_timeout="$1"
+  local input_max_time="$2"
+  local expected_connect_timeout="$3"
+  local expected_max_time="$4"
+
+  CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT="$input_connect_timeout"
+  CASEIN_CADDY_ADMIN_MAX_TIME="$input_max_time"
+  # shellcheck source=scripts/lib/caddy-upstream.sh
+  source "${ROOT}/scripts/lib/caddy-upstream.sh"
+
+  if [ "$CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT" != "$expected_connect_timeout" ]; then
+    echo "normalized connect timeout mismatch: got ${CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT}, expected ${expected_connect_timeout}" >&2
+    exit 1
+  fi
+  if [ "$CASEIN_CADDY_ADMIN_MAX_TIME" != "$expected_max_time" ]; then
+    echo "normalized max time mismatch: got ${CASEIN_CADDY_ADMIN_MAX_TIME}, expected ${expected_max_time}" >&2
+    exit 1
+  fi
+
+  casein_caddy_admin_curl -s "${admin_url}/config/" >/dev/null
+}
+
+assert_timeout_normalization 0 0 2 5
+assert_timeout_normalization nope invalid 2 5
+assert_timeout_normalization 999999999999999999999999 999999999999999999999999 2 5
+assert_timeout_normalization 5 10 5 10
+
+unset CASEIN_CADDY_ADMIN_CONNECT_TIMEOUT CASEIN_CADDY_ADMIN_MAX_TIME
+# shellcheck source=scripts/lib/caddy-upstream.sh
+source "${ROOT}/scripts/lib/caddy-upstream.sh"
 
 casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
 [ "$current_dial" = "unix//run/casein/current.sock" ]
