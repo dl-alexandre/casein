@@ -96,6 +96,7 @@ defmodule Mix.Tasks.Casein.Doctor do
     check_insecure_http_edge(insecure_http?, insecure_http_port, http_port, lan_host, fix?)
     check_node_assets()
     check_database(fix?)
+    check_access_endpoints()
 
     Mix.shell().info(
       quick_start_message(%{
@@ -108,6 +109,20 @@ defmodule Mix.Tasks.Casein.Doctor do
         workspace: workspace
       })
     )
+  end
+
+  defp check_access_endpoints do
+    Mix.shell().info("")
+
+    entries =
+      Casein.Access.Endpoints.advertised()
+      |> Enum.map(fn endpoint ->
+        {endpoint, Casein.Access.Probe.reachable?(endpoint)}
+      end)
+
+    entries
+    |> Casein.Access.Endpoints.doctor_lines()
+    |> Enum.each(fn line -> Mix.shell().info(line) end)
   end
 
   defp check_home_workspace(root, workspace, fix?) do
