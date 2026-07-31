@@ -26,6 +26,18 @@ try {
         $source = Join-Path $DataRoot $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $stage -Force }
     }
+    $credentialStatePath = Join-Path $DataRoot 'credential-state.json'
+    if (Test-Path -LiteralPath $credentialStatePath) {
+        try {
+            $credentialState = Get-Content -Raw -LiteralPath $credentialStatePath | ConvertFrom-Json
+            [ordered]@{
+                schema = [int]$credentialState.schema
+                rotated_at_utc = [string]$credentialState.rotated_at_utc
+            } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'credential-state.json') -Encoding UTF8
+        } catch {
+            Set-Content -LiteralPath (Join-Path $stage 'credential-state-invalid.txt') -Value 'Credential rotation state was invalid.' -Encoding ascii
+        }
+    }
     foreach ($name in @('current.json')) {
         $source = Join-Path $InstallRoot $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $stage -Force }

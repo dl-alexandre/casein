@@ -10,7 +10,7 @@ tmux implementation details on Windows.
 | Product capability | Devbox production | Windows desktop | Required work |
 |---|---|---|---|
 | Install and launch without language tooling | systemd release | packaged OTP release and tray host | Harden public signing and update channel |
-| Local security boundary | Caddy, scoped tokens | loopback binding and local bearer token | Add signed binaries and token rotation UX |
+| Local security boundary | Caddy, scoped tokens | loopback binding, DPAPI-protected bearer/launch tokens, and health-validated tray rotation with rollback | Add production-signed evidence |
 | Mobile origin identity | Deployment-defined origin | installation-stable `windows-<uuid>` and `<machine> (Windows)` identity | Add trusted-LAN pairing transport |
 | Persistent product data | PostgreSQL | SQLite under LocalAppData; integrity check before migration; DPAPI-encrypted pre-update snapshot restored by rollback | Clean-VM migration and rollback evidence |
 | Interactive terminal | tmux PTY | PowerShell through ConPTY | Job Object containment and richer diagnostics |
@@ -22,7 +22,7 @@ tmux implementation details on Windows.
 | Multi-pane sessions and templates | tmux windows/panes | one durable PowerShell session | Native session/window/pane backend |
 | Worktrees and agent lifecycle | launcher, hooks, reaper, audit | backend features exist, desktop workflow incomplete | Native worktree launch, state hooks, recovery UI |
 | Updates | git-driven clean release deploy | explicit tray check; trusted catalog, pinned channel/target, archive hash/size verification, encrypted backup, health-triggered rollback | Production-signed channel and clean-VM evidence |
-| Operations | journal, health, deploy diagnostics | signed offline archive with one-command install/repair/uninstall, Apps & Features registration, tray status, health, local log, support bundle | Crash reporting and clean-VM evidence |
+| Operations | journal, health, deploy diagnostics | signed offline archive with one-command install/repair/uninstall, Apps & Features registration, tray status, health, local log, and support bundle with non-secret rotation state | Crash reporting and clean-VM evidence |
 | Accessibility and onboarding | browser UI | browser UI plus tray | First-run workspace/agent check and keyboard QA |
 
 ## Delivery order
@@ -89,3 +89,17 @@ missing or changed, preserves user data through an encrypted pre-repair
 snapshot, and relaunches it. `Uninstall-Casein.cmd` removes the application and
 Apps & Features entry while retaining user data; pass `-RemoveUserData` to the
 packaged `windows\Uninstall-Casein.ps1` only when that deletion is deliberate.
+
+## Local access-token recovery
+
+Use **Rotate local access tokens** from the notification-area menu if a local
+agent credential or previously opened cockpit launch URL may have been exposed.
+The thin tray host asks for confirmation, stops the local runtime, replaces the
+API bearer and one-time launch proof roots with new current-user DPAPI-protected
+values, and waits for loopback health. The stable Windows origin, SQLite data,
+workspace state, and Phoenix session-signing root are not changed.
+
+Existing local agent connections must reconnect after a successful rotation.
+If the runtime does not become healthy, the tray restores the prior encrypted
+token files and restarts with them. Logs and support bundles record only the
+rotation timestamp and outcome; they never contain old or new token values.
