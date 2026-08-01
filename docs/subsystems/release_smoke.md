@@ -1,7 +1,9 @@
 # Release smoke gate
 
-**Status:** Active  
-**Owner:** Release engineering  
+**Status:** Active
+
+**Owner:** Release engineering
+
 **Last updated:** 2026-08-01
 
 The required pull-request gate runs `scripts/pre-push-check.sh` and then a
