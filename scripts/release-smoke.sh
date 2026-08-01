@@ -23,13 +23,24 @@ had_static_assets=0
 had_static_manifest=0
 had_asset_modules=0
 had_preview_modules=0
+declare -A existing_static_files=()
 [[ -e "${RELEASE_DIR}" ]] && had_release=1
 [[ -e "${STATIC_ASSETS}" ]] && had_static_assets=1
 [[ -e "${STATIC_MANIFEST}" ]] && had_static_manifest=1
 [[ -e "${ASSET_MODULES}" ]] && had_asset_modules=1
 [[ -e "${PREVIEW_MODULES}" ]] && had_preview_modules=1
+while IFS= read -r -d '' static_file; do
+  existing_static_files["${static_file#"${ROOT}/priv/static/"}"]=1
+done < <(find "${ROOT}/priv/static" -type f -print0)
 
 cleanup() {
+  local static_file relative
+  while IFS= read -r -d '' static_file; do
+    relative="${static_file#"${ROOT}/priv/static/"}"
+    if [[ -z "${existing_static_files[${relative}]+present}" ]]; then
+      rm -f -- "${static_file}"
+    fi
+  done < <(find "${ROOT}/priv/static" -type f -print0)
   rm -rf -- "${SMOKE_ROOT}"
   [[ "${had_release}" -eq 1 ]] || rm -rf -- "${RELEASE_DIR}"
   [[ "${had_static_assets}" -eq 1 ]] || rm -rf -- "${STATIC_ASSETS}"
