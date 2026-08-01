@@ -33,6 +33,29 @@ defmodule Casein.Desktop.AgentLauncher do
 
   def command(_id), do: {:error, :unsupported_agent}
 
+  @doc "Build a token-free provider command for an already prepared native worktree."
+  @spec command(String.t(), map()) :: {:ok, String.t()} | {:error, term()}
+  def command(id, context) when is_binary(id) and is_map(context) do
+    with {:ok, runtime} <- fetch_runtime(id),
+         {:ok, checkout} <- required_context(context, :checkout),
+         {:ok, staging} <- required_context(context, :staging) do
+      args = provider_args(id, context, staging)
+      executable = runtime.executable
+
+      command =
+        if id == "cursor" do
+          "Start-Process -FilePath #{ps_quote(executable)} -ArgumentList '.' -WorkingDirectory #{ps_quote(checkout)}"
+        else
+          "Set-Location -LiteralPath #{ps_quote(checkout)}; & #{ps_quote(executable)}" <>
+            Enum.map_join(args, "", &(" " <> ps_quote(&1)))
+        end
+
+      {:ok, command <> "\r"}
+    end
+  end
+
+  def command(_id, _context), do: {:error, :unsupported_agent}
+
   @doc "Return token-free executable, version, and authentication launch diagnostics."
   @spec diagnose(String.t(), keyword()) :: {:ok, map()} | {:error, :unsupported_agent}
   def diagnose(id, opts \\ [])
@@ -67,6 +90,43 @@ defmodule Casein.Desktop.AgentLauncher do
       :error -> {:error, :unsupported_agent}
     end
   end
+
+  defp provider_args("claude", _context, staging),
+    do: [
+      "--mcp-config",
+      Path.join(staging, ".mcp.json"),
+      "--settings",
+      Path.join(staging, "claude-hooks-settings.json")
+    ]
+
+  defp provider_args("codex", context, _staging) do
+    slug = Map.fetch!(context, :workspace_slug)
+
+    for {key, url} <- [
+          {"terminal", Map.fetch!(context, :terminal_url)},
+          {"preview", Map.fetch!(context, :preview_url)},
+          {"artifact", Map.fetch!(context, :artifact_url)}
+        ],
+        arg <- [
+          "mcp_servers.casein-#{key}-#{slug}.url=\"#{url}\"",
+          "mcp_servers.casein-#{key}-#{slug}.enabled=true",
+          "mcp_servers.casein-#{key}-#{slug}.bearer_token_env_var=\"CASEIN_API_TOKEN\""
+        ] do
+      ["-c", arg]
+    end
+    |> List.flatten()
+  end
+
+  defp provider_args(_id, _context, _staging), do: []
+
+  defp required_context(context, key) do
+    case Map.get(context, key) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> {:error, {:missing_launch_context, key}}
+    end
+  end
+
+  defp ps_quote(value), do: "'" <> String.replace(value, "'", "''") <> "'"
 
   # executable is resolved from the fixed @runtimes allowlist; System.cmd does not invoke a shell.
   # sobelow_skip ["CI.System"]

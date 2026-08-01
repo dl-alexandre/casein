@@ -71,6 +71,7 @@ compile-time-fixed argv.
 | `Casein.Agents.Run` | `lib/casein/agents/run.ex` | One in-flight review-mode run per workspace (supervised, linger, hard timeout). |
 | `Casein.Desktop.AgentLauncher` | `lib/casein/desktop/agent_launcher.ex` | Native Windows runtime allowlist plus token-free executable/version/auth diagnostics. |
 | `Casein.Desktop.AgentWorktree` | `lib/casein/desktop/agent_worktree.ex` | Native Windows isolated worktree creation with validated product-derived paths and argv-only Git execution. |
+| `Casein.Desktop.NativeAgentLaunch` | `lib/casein/desktop/native_agent_launch.ex` | Composes preflight, isolated worktree creation, provider MCP materialization, runtime reporting, and clean-only completion cleanup. |
 | `Casein.AgentSessions.GrokACP` | `lib/casein/agent_sessions/grok_acp.ex` | Supervised Grok leader attachment: initialize/authenticate, `session/new` or `session/load`, normalize tool/plan/permission events into `Activity`. |
 | `Casein.AgentSessions.GrokACP.Attachments` | `lib/casein/agent_sessions/grok_acp/attachments.ex` | Validates hook-reported private leader/bundle metadata, owns one ACP attachment per workspace/Grok session, and exposes workspace-scoped permission snapshots and decisions. |
 | `Casein.AgentSessions.GrokACP.Transport.Stdio` | `lib/casein/agent_sessions/grok_acp/transport/stdio.ex` | Starts or adopts a no-auto-update Grok leader and talks ACP through Grok's supported newline-JSON stdio bridge. |

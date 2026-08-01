@@ -27,5 +27,7 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
 - **Landed:** PR #502 adds token-free native launch preflight and executable,
   version, and authentication diagnostics for Codex, Claude, Grok, OpenCode,
   and Cursor.
-- **Current slice:** create isolated native Git worktrees with Windows-safe root
-  validation and argv-only Git execution before wiring them into provider launch.
+- **Landed:** PR #505 creates isolated native Git worktrees with Windows-safe
+  root validation and argv-only Git execution.
+- **Current slice:** compose provider preflight, workspace MCP materialization,
+  runtime reporting, and clean-only cleanup for native launches from those worktrees.
