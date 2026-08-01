@@ -90,6 +90,17 @@ jobs:
           command -v mise >/dev/null || { echo "mise not found on runner PATH"; exit 1; }
           bash scripts/pre-push-check.sh
 
+      - name: Build and inspect release
+        if: steps.detect.outputs.docs_only != 'true'
+        shell: bash
+        run: |
+          # Reuse the production build cache warmed by earlier runs. The smoke
+          # keeps its archive/extraction below _build and cleans disposable
+          # output; it never publishes or activates the assembled release.
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v mise >/dev/null || { echo "mise not found on runner PATH"; exit 1; }
+          MIX="mise exec -- mix" bash scripts/release-smoke.sh
+
       - name: Skip gate (docs-only PR)
         if: steps.detect.outputs.docs_only == 'true'
         run: |
