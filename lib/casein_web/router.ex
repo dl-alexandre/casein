@@ -245,6 +245,7 @@ defmodule CaseinWeb.Router do
 
     get "/agent-capabilities/current", AgentCapabilityController, :current
     delete "/agent-capabilities/current", AgentCapabilityController, :revoke_current
+    post "/mcp-tickets/exchange", McpTicketController, :exchange
 
     post "/workspaces/:workspace_id/artifacts/:artifact_id/restore",
          ArtifactProjectController,

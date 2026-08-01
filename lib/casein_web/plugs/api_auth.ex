@@ -103,7 +103,8 @@ defmodule CaseinWeb.Plugs.ApiAuth do
       "/api/terminals/mcp",
       "/api/preview/mcp",
       "/api/artifacts/mcp",
-      "/api/agent-capabilities/current"
+      "/api/agent-capabilities/current",
+      "/api/mcp-tickets/exchange"
     ]
   end
 

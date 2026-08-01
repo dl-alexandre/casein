@@ -79,6 +79,16 @@ defmodule Casein.Agents.MCPUrlsTest do
     assert MCPUrls.base_url() == "https://preview.example.test"
   end
 
+  test "ticket URLs keep the short-lived credential on its bound endpoint" do
+    System.put_env("CASEIN_AGENT_MCP_BASE_URL", "http://127.0.0.1:4000")
+
+    assert MCPUrls.ticket_url("terminal", "ws-1", "casein_ws-1_agent", "mcptkt_raw") ==
+             "http://127.0.0.1:4000/api/terminals/mcp?ticket=mcptkt_raw&tmux_session=casein_ws-1_agent&workspace_id=ws-1"
+
+    assert MCPUrls.ticket_url("artifact", "ws-1", nil, "mcptkt_raw") ==
+             "http://127.0.0.1:4000/api/artifacts/mcp?ticket=mcptkt_raw&workspace_id=ws-1"
+  end
+
   defp restore_app(key, nil), do: Application.delete_env(:casein, key)
   defp restore_app(key, value), do: Application.put_env(:casein, key, value)
 
