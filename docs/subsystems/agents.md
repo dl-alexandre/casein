@@ -69,11 +69,24 @@ compile-time-fixed argv.
 | `Casein.Agents.Activity` | `lib/casein/agents/activity.ex` | Live operator feed. It remains a transient PubSub/cache projection and hydrates its reads from durable `AgentEvents`. |
 | `Casein.Agents.ReviewCommand` | `lib/casein/agents/review_command.ex` | Allowlisted review-mode command; argv fixed at compile time, gated on detected capabilities. |
 | `Casein.Agents.Run` | `lib/casein/agents/run.ex` | One in-flight review-mode run per workspace (supervised, linger, hard timeout). |
+| `Casein.Desktop.AgentLauncher` | `lib/casein/desktop/agent_launcher.ex` | Native Windows runtime allowlist plus token-free executable/version/auth diagnostics. |
+| `Casein.Desktop.AgentWorktree` | `lib/casein/desktop/agent_worktree.ex` | Native Windows isolated worktree creation with validated product-derived paths and argv-only Git execution. |
 | `Casein.AgentSessions.GrokACP` | `lib/casein/agent_sessions/grok_acp.ex` | Supervised Grok leader attachment: initialize/authenticate, `session/new` or `session/load`, normalize tool/plan/permission events into `Activity`. |
 | `Casein.AgentSessions.GrokACP.Attachments` | `lib/casein/agent_sessions/grok_acp/attachments.ex` | Validates hook-reported private leader/bundle metadata, owns one ACP attachment per workspace/Grok session, and exposes workspace-scoped permission snapshots and decisions. |
 | `Casein.AgentSessions.GrokACP.Transport.Stdio` | `lib/casein/agent_sessions/grok_acp/transport/stdio.ex` | Starts or adopts a no-auto-update Grok leader and talks ACP through Grok's supported newline-JSON stdio bridge. |
 
 ## Data flow / lifecycle
+
+**Native Windows worktree boundary:**
+
+`Casein.Desktop.AgentWorktree` accepts only the five native provider ids and a
+short lowercase task slug. It resolves the primary repository with Git, derives
+the branch and worktree path itself, canonicalizes symlink/junction ancestors,
+rejects any resolved root inside the primary checkout, and invokes the fixed
+`git` executable with an argv list. Provider input cannot supply a command,
+worktree target, or shell fragment.
+Runtime launch integration and clean-only reaping remain separate follow-up
+slices; creating the worktree alone does not start an agent or alter the web UI.
 
 **Wiring an agent into a workspace (session setup):**
 

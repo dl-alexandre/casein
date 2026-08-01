@@ -24,6 +24,8 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   process tree with a kill-on-close Windows Job Object. PR #478 exposes stable
   product-level session/window/pane topology, roles, capture, resize, and strict
   native target validation on the application-owned PowerShell session.
-- **Current slice:** add token-free native launch preflight and executable,
+- **Landed:** PR #502 adds token-free native launch preflight and executable,
   version, and authentication diagnostics for Codex, Claude, Grok, OpenCode,
-  and Cursor before wiring runtime-specific MCP launch arguments.
+  and Cursor.
+- **Current slice:** create isolated native Git worktrees with Windows-safe root
+  validation and argv-only Git execution before wiring them into provider launch.
