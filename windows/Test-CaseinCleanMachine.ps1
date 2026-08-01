@@ -58,10 +58,12 @@ if ($RequireNoDeveloperTooling) {
 }
 
 $manifestPath = Join-Path $packageRoot 'windows\Casein.Release.psd1'
+$filesManifestPath = Join-Path $packageRoot 'windows\Casein.Release.Files.json'
 $installCommand = Join-Path $packageRoot 'Install-Casein.cmd'
 $repairCommand = Join-Path $packageRoot 'Repair-Casein.cmd'
 $uninstallCommand = Join-Path $packageRoot 'Uninstall-Casein.cmd'
 Assert-Path $manifestPath 'The signed release manifest is missing.'
+Assert-Path $filesManifestPath 'The signed release file manifest is missing.'
 Assert-Path $installCommand 'The offline install command is missing.'
 Assert-Path $repairCommand 'The offline repair command is missing.'
 Assert-Path $uninstallCommand 'The offline uninstall command is missing.'

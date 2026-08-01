@@ -36,17 +36,38 @@ function Test-ReleaseTrust {
     }
 
     $manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
-    if ($manifest.Schema -ne 1 -or -not $manifest.Files) { throw 'Release trust manifest is invalid.' }
+    if ($manifest.Schema -ne 2 -or -not $manifest.FilesManifest -or -not $manifest.FilesManifestSha256) {
+        throw 'Release trust manifest is invalid.'
+    }
     $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
-    foreach ($entry in $manifest.Files.GetEnumerator()) {
-        $path = [IO.Path]::GetFullPath((Join-Path $Root ([string]$entry.Key)))
+    $filesManifestPath = [IO.Path]::GetFullPath((Join-Path $Root ([string]$manifest.FilesManifest)))
+    if (-not $filesManifestPath.StartsWith($rootPath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Release file manifest path is unsafe.'
+    }
+    if (-not (Test-Path -LiteralPath $filesManifestPath -PathType Leaf)) {
+        throw 'Release file manifest is missing.'
+    }
+    $filesManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $filesManifestPath).Hash.ToLowerInvariant()
+    if ($filesManifestHash -ne ([string]$manifest.FilesManifestSha256).ToLowerInvariant()) {
+        throw 'Release file manifest integrity check failed.'
+    }
+    if ((Get-Item -LiteralPath $filesManifestPath).Length -gt 64MB) {
+        throw 'Release file manifest exceeds the safety limit.'
+    }
+    $files = Get-Content -Raw -LiteralPath $filesManifestPath | ConvertFrom-Json
+    $entries = @($files.PSObject.Properties)
+    if ($entries.Count -eq 0 -or $entries.Count -gt 100000) {
+        throw 'Release file manifest entry count is invalid.'
+    }
+    foreach ($entry in $entries) {
+        $path = [IO.Path]::GetFullPath((Join-Path $Root ([string]$entry.Name)))
         if (-not $path.StartsWith($rootPath, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Release trust manifest contains an unsafe path: $($entry.Key)"
+            throw "Release trust manifest contains an unsafe path: $($entry.Name)"
         }
-        if (-not (Test-Path -LiteralPath $path)) { throw "Release file is missing: $($entry.Key)" }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Release file is missing: $($entry.Name)" }
         $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
         if ($actual -ne ([string]$entry.Value).ToLowerInvariant()) {
-            throw "Release integrity check failed: $($entry.Key)"
+            throw "Release integrity check failed: $($entry.Name)"
         }
     }
     if ($signatureRequired) {

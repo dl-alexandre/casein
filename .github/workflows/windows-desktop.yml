@@ -9,6 +9,7 @@ on:
       - "lib/casein/desktop/**"
       - "lib/casein_web/plugs/desktop_auth.ex"
       - "scripts/package-windows-desktop.ps1"
+      - "scripts/prepare-windows-preview-runtime.ps1"
       - "scripts/test-windows-desktop-package.ps1"
       - ".github/workflows/windows-desktop.yml"
 
@@ -54,6 +55,10 @@ jobs:
           mix deps.get
           Push-Location assets; npm ci; Pop-Location
           Push-Location priv/scripts; npm ci; Pop-Location
+
+      - name: Prepare self-contained preview runtime
+        shell: pwsh
+        run: scripts/prepare-windows-preview-runtime.ps1
 
       - name: Build deterministic Windows package
         shell: pwsh

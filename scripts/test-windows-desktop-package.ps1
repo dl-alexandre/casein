@@ -198,6 +198,20 @@ try {
     )
     Assert-Condition ($selectedAddress.Address -eq '192.168.50.8') 'Trusted LAN selection did not prefer the physical default route'
 
+    $releaseTrustManifest = Import-PowerShellDataFile -LiteralPath (Join-Path $packageRoot 'windows\Casein.Release.psd1')
+    Assert-Condition ($releaseTrustManifest.Schema -eq 2) 'Release trust manifest schema was not upgraded'
+    $filesManifestPath = Join-Path $packageRoot ([string]$releaseTrustManifest.FilesManifest)
+    Assert-Condition (Test-Path -LiteralPath $filesManifestPath -PathType Leaf) 'Release file manifest is missing'
+    $filesManifestBytes = [IO.File]::ReadAllBytes($filesManifestPath)
+    try {
+        Add-Content -LiteralPath $filesManifestPath -Value 'tampered'
+        $tamperedOutput = & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot -AllowUnsignedDevelopment 2>&1
+        Assert-Condition ($LASTEXITCODE -ne 0) 'Tampered release file manifest was accepted'
+        Assert-Condition (($tamperedOutput -join "`n").Contains('Release file manifest integrity check failed')) 'Tampered release file manifest failed for the wrong reason'
+    } finally {
+        [IO.File]::WriteAllBytes($filesManifestPath, $filesManifestBytes)
+    }
+
     $unsignedOutput = & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot 2>&1
     Assert-Condition ($LASTEXITCODE -ne 0) 'Unsigned package installation was accepted by default'
     Assert-Condition (($unsignedOutput -join "`n").Contains('trusted Authenticode release signature is required')) 'Unsigned package failed for the wrong reason'
