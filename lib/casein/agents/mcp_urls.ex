@@ -44,6 +44,19 @@ defmodule Casein.Agents.MCPUrls do
       |> endpoint_url("/api/artifacts/mcp")
       |> with_query_param("workspace_id", workspace_id)
 
+  @doc "Build an MCP URL carrying a short-lived ticket for its bound surface."
+  def ticket_url(surface, workspace_id, tmux_session, ticket)
+      when surface in ~w(terminal preview artifact) and is_binary(ticket) do
+    url =
+      case surface do
+        "terminal" -> terminal_url(workspace_id, tmux_session: tmux_session)
+        "preview" -> preview_url(workspace_id, tmux_session: tmux_session)
+        "artifact" -> artifact_url(workspace_id)
+      end
+
+    with_query_param(url, "ticket", ticket)
+  end
+
   @doc "Canonicalizes only recognized retired managed origins."
   def canonicalize_known_base_url(base_url) when is_binary(base_url),
     do: Origin.canonicalize_known_base_url(base_url)

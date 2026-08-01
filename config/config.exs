@@ -29,6 +29,10 @@ config :casein, CaseinWeb.Plugs.McpRateLimit,
   scale_ms: 60_000,
   limit: 120
 
+config :casein, CaseinWeb.Plugs.McpTicketRateLimit,
+  scale_ms: 60_000,
+  limit: 30
+
 config :casein,
   # Event-driven tmux topology (Slices 1/2). Default OFF — polling path
   # unchanged. Dev flips ON in config/dev.exs (Slice 3); canary/prod via
@@ -108,7 +112,9 @@ config :casein,
   runtimes_adapter: Casein.Runtimes.EctoAdapter,
   # Persistent mobile companion tokens expire after this many seconds (default 90 days).
   device_link_ttl_seconds: 60 * 60 * 24 * 90,
-  device_link_reaper_enabled: true
+  device_link_reaper_enabled: true,
+  mcp_ticket_ttl_seconds: 300,
+  mcp_ticket_clock: {DateTime, :utc_now}
 
 # Configure the endpoint
 config :casein, CaseinWeb.Endpoint,
