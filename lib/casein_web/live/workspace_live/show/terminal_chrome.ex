@@ -829,15 +829,26 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
           }
           phx-value-pane-id={pane.id}
           title={pane_full_title(pane)}
-          class={[
-            "absolute overflow-hidden border border-zinc-900/35 transition-colors",
-            if(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id),
-              do:
-                "pointer-events-none z-20 after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-30 after:h-px after:bg-sky-500/45",
-              else: "pointer-events-auto z-10 cursor-pointer hover:bg-white/[0.03]"
-            ),
-            if(pane.feature_pane?, do: "bg-zinc-950", else: "bg-transparent")
-          ]}
+          class={
+            [
+              "absolute overflow-hidden transition-colors",
+              # A pane's rect covers exactly its own cells in the terminal grid,
+              # and box-sizing is border-box, so a border here paints over the
+              # outermost glyph column/row rather than into the gutter beside it.
+              # tmux already draws the real divider (pane-border-lines single) in
+              # the one cell it reserves between panes, so a CSS border would only
+              # add a second and third line at every boundary. Keep it solely for
+              # the fallback title cards, where no terminal surface is painting
+              # and nothing else separates the panes.
+              unless(@terminal_surface_pane, do: "border border-zinc-900/35"),
+              if(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id),
+                do:
+                  "pointer-events-none z-20 after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-30 after:h-px after:bg-sky-500/45",
+                else: "pointer-events-auto z-10 cursor-pointer hover:bg-white/[0.03]"
+              ),
+              if(pane.feature_pane?, do: "bg-zinc-950", else: "bg-transparent")
+            ]
+          }
           style={tmux_pane_style(pane, @tmux_pane_bounds)}
         >
           <%= if @tmux_mutations_enabled? and
