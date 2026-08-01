@@ -65,7 +65,10 @@ else
 fi
 
 echo ">>> building production release with casein.release.lan"
-MIX_ENV=prod "${mix_command[@]}" casein.release.lan
+MIX_ENV=prod \
+  MIX_BUILD_PATH="${BUILD_ROOT}" \
+  npm_config_cache="${SMOKE_ROOT}/npm-cache" \
+  "${mix_command[@]}" casein.release.lan
 
 [[ -x "${RELEASE_DIR}/bin/casein" ]] || {
   echo "error: release missing executable bin/casein" >&2
