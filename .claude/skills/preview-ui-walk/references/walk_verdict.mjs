@@ -48,6 +48,7 @@ export function pageVerdict({
   visualFailed,
   evidenceBlocked,
   cleanupFailed,
+  liveViewFailure,
   slowIsFailure = false,
 }) {
   // Interactions gate blocked required mutating steps (e.g. login fill/click).
@@ -112,6 +113,16 @@ export function pageVerdict({
     };
   }
 
+  // A LiveView can return an intact 200 SSR document, then crash while the
+  // websocket mounts. Content assertions against the stale SSR DOM are not a
+  // pass: the user sees Phoenix's reconnect/error state and has no live page.
+  if (liveViewFailure) {
+    return {
+      status: "RUNTIME_ERROR",
+      reason: liveViewFailure.reason || "LiveView client failed to connect",
+    };
+  }
+
   // Server-side evidence (error logs / probes / SQL) — not content asserts.
   const rtN =
     runtimeErrors != null
@@ -168,6 +179,27 @@ export function pageVerdict({
 
 export function isPassingStatus(status) {
   return status === "PASS" || status === "PASS_SLOW";
+}
+
+/**
+ * Turn the browser's `[data-phx-main]` state into a page-verdict signal.
+ * Non-LiveView pages have no such root and remain valid walk targets.
+ */
+export function liveViewClientFailure(state) {
+  if (!state || state.present !== true) return null;
+  const errorClasses = Array.isArray(state.error_classes) ? state.error_classes : [];
+  if (errorClasses.length > 0) {
+    return {
+      reason: `LiveView client entered error state (${errorClasses.join(", ")})`,
+    };
+  }
+  if (state.connected !== true) {
+    return { reason: "LiveView client did not connect" };
+  }
+  if (state.loading === true) {
+    return { reason: "LiveView client remained in loading state" };
+  }
+  return null;
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   isAuthBouncePath,
   isHardFailStatus,
   isPassingStatus,
+  liveViewClientFailure,
   pageVerdict,
   statusColor,
 } from "./walk_verdict.mjs";
@@ -34,6 +35,7 @@ import { tmpdir } from "node:os";
 void pageVerdict;
 void isHardFailStatus;
 void isPassingStatus;
+void liveViewClientFailure;
 void statusColor;
 void extractExceptionFromLogs;
 void extractBounceReason;
