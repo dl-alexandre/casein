@@ -22,7 +22,16 @@ state marker when validation fails. Repository evidence is provided by:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-windows-crash-diagnostics.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-windows-support-bundle.ps1
 ```
+
+Every JSON file in the bundle is reconstructed from a fixed diagnostic schema.
+Desktop settings retain only port and launch-at-sign-in state; runtime state is
+type-checked against the loopback status contract; Trusted LAN state omits the
+runtime executable path and reconstructs its URL; installed-release state omits
+release and backup paths while retaining version, revision, signer identity,
+timestamp, and rollback-availability booleans. Unknown fields never enter the
+archive, and invalid state is represented by a fixed non-sensitive marker.
 
 This smoke requires Windows PowerShell 5.1. It does not replace production
 Authenticode, protected-runner, or clean Windows 11 crash/recovery evidence.
