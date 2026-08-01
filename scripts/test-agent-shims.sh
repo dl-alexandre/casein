@@ -173,7 +173,7 @@ run_installer_verifies_precedence_when_bin_dir_off_path() (
 )
 
 run_launch_version_passthrough_skips_launcher() (
-  echo "== agent launch passthrough execs the real binary for version/help probes =="
+  echo "== agent launch passthrough execs the real binary for administrative commands =="
 
   local home out
   home="$(cd "$(mktemp -d)" && pwd -P)"
@@ -189,8 +189,11 @@ echo \"real-claude \$*\""
 
   write_executable "${HOME}/real-bin-dir/opencode" "#!/usr/bin/env bash
 echo \"real-opencode \$*\""
+  write_executable "${HOME}/real-bin-dir/grok" "#!/usr/bin/env bash
+echo \"real-grok \$*\""
   mkdir -p "${HOME}/.casein/real-bins"
   ln -sf "${HOME}/real-bin-dir/opencode" "${HOME}/.casein/real-bins/opencode"
+  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.casein/real-bins/grok"
 
   # Version/help probes must not resolve env, create a worktree, or inject
   # MCP — with no Casein env in this HOME, anything but a clean passthrough
@@ -203,6 +206,16 @@ echo \"real-opencode \$*\""
 
   out="$(cd "$home" && bash "${ROOT}/scripts/casein" agent launch opencode --help)"
   assert_eq "opencode --help passthrough" "real-opencode --help" "$out"
+
+  # Authentication must reach Grok before Casein resolves a workspace or
+  # requires the persistent OAuth credential that this command creates.
+  out="$(cd "$home" && CASEIN_AGENT_LAUNCH_STRICT=1 \
+    bash "${ROOT}/scripts/casein" agent launch grok login --device-auth)"
+  assert_eq "grok device login passthrough" "real-grok login --device-auth" "$out"
+
+  out="$(cd "$home" && CASEIN_AGENT_LAUNCH_STRICT=1 \
+    bash "${ROOT}/scripts/casein" agent launch grok logout)"
+  assert_eq "grok logout passthrough" "real-grok logout" "$out"
 )
 
 run_launch_falls_back_unpaired_without_env() (

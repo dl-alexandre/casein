@@ -254,7 +254,7 @@ agent_runtime_passthrough() {
   esac
 
   case "$runtime:$first" in
-    codex:update|codex:doctor|codex:help|codex:version|codex:-V|claude:update|claude:-v)
+    grok:login|grok:logout|codex:update|codex:doctor|codex:help|codex:version|codex:-V|claude:update|claude:-v)
       return 0
       ;;
   esac
