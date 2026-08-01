@@ -93,6 +93,7 @@ try {
     . $trustedLan -ReleaseRoot $packageRoot -LibraryOnly
     . $backupLibrary -LibraryOnly
     . $updateLibrary -LibraryOnly
+    $script:Paths = Get-CaseinPaths $packageRoot
     Initialize-CaseinJobObjectSupport
     Assert-Condition (($null -ne ('Casein.Windows.JobObject' -as [type]))) 'Windows Job Object support did not load'
 
@@ -153,7 +154,7 @@ try {
     Write-CaseinCrashState -RuntimePid 4242 -ExitCode 23 -RecoveryStatus 'detected'
     Update-CaseinRecoveryState -RecoveryStatus 'recovering' -RecoveryAttempts 2
     Update-CaseinRecoveryState -RecoveryStatus 'recovered' -RecoveryAttempts 2
-    $crashStatePath = Join-Path $testLocalAppData 'crash-state.json'
+    $crashStatePath = $script:Paths.CrashState
     $tamperedCrashState = Get-Content -Raw -LiteralPath $crashStatePath | ConvertFrom-Json
     $tamperedCrashState | Add-Member -NotePropertyName injected_secret -NotePropertyValue 'must-not-ship'
     $tamperedCrashState | ConvertTo-Json | Set-Content -LiteralPath $crashStatePath -Encoding UTF8
