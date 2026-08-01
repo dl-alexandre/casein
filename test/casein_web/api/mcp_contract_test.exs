@@ -329,6 +329,191 @@ defmodule CaseinWeb.API.MCPContractTest do
     end
   end
 
+  describe "2026-07-28 revision" do
+    test "server/discover advertises versions, capabilities and cache hints", %{conn: conn} do
+      for path <- @paths do
+        result =
+          conn
+          |> recycle()
+          |> authed()
+          |> post_mcp(path, rpc_2026("server-discover-1", "server/discover"))
+          |> json_response(200)
+          |> Map.fetch!("result")
+
+        assert "2026-07-28" in result["supportedVersions"]
+        assert result["resultType"] == "complete"
+        assert is_map(result["capabilities"]["tools"])
+        assert is_binary(result["instructions"])
+        assert result["ttlMs"] > 0
+
+        # `instructions` embeds the endpoint's pre-scoped workspace, so a shared
+        # intermediary must never cache this response.
+        assert result["cacheScope"] == "private"
+
+        assert %{"name" => name, "version" => _} =
+                 result["_meta"]["io.modelcontextprotocol/serverInfo"]
+
+        assert is_binary(name)
+      end
+    end
+
+    test "results carry resultType and serverInfo for modern requests", %{conn: conn} do
+      for path <- @paths do
+        result =
+          conn
+          |> recycle()
+          |> authed()
+          |> post_mcp(path, rpc_2026("tools-list-1", "tools/list"))
+          |> json_response(200)
+          |> Map.fetch!("result")
+
+        assert result["resultType"] == "complete"
+        assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"]
+        assert result["ttlMs"] > 0
+        # The global env token is not capability-scoped, so this list is not
+        # caller-specific.
+        assert result["cacheScope"] == "public"
+      end
+    end
+
+    test "legacy requests get none of the new result fields", %{conn: conn} do
+      for path <- @paths do
+        result =
+          conn
+          |> recycle()
+          |> authed()
+          |> post_mcp(path, %{"jsonrpc" => "2.0", "id" => "legacy-1", "method" => "tools/list"})
+          |> json_response(200)
+          |> Map.fetch!("result")
+
+        refute Map.has_key?(result, "resultType")
+        refute Map.has_key?(result, "ttlMs")
+        refute Map.has_key?(result, "cacheScope")
+        refute Map.has_key?(result, "_meta")
+      end
+    end
+
+    test "initialize and ping keep working for legacy clients", %{conn: conn} do
+      for path <- @paths do
+        init =
+          conn
+          |> recycle()
+          |> authed()
+          |> post_mcp(path, %{
+            "jsonrpc" => "2.0",
+            "id" => "init-1",
+            "method" => "initialize",
+            "params" => %{"protocolVersion" => "2025-03-26"}
+          })
+          |> json_response(200)
+
+        assert init["result"]["protocolVersion"] == "2025-03-26"
+        refute Map.has_key?(init["result"], "resultType")
+
+        ping =
+          conn
+          |> recycle()
+          |> authed()
+          |> post_mcp(path, %{"jsonrpc" => "2.0", "id" => "ping-1", "method" => "ping"})
+          |> json_response(200)
+
+        assert ping["result"] == %{}
+      end
+    end
+
+    test "tools/list is deterministically ordered", %{conn: conn} do
+      for path <- @paths do
+        names =
+          conn
+          |> recycle()
+          |> authed()
+          |> post_mcp(path, rpc_2026("tools-list-2", "tools/list"))
+          |> json_response(200)
+          |> get_in(["result", "tools"])
+          |> Enum.map(& &1["name"])
+
+        assert names == Enum.sort(names)
+        refute names == []
+      end
+    end
+
+    test "an unknown declared protocol version is rejected", %{conn: conn} do
+      for path <- @paths do
+        response =
+          conn
+          |> recycle()
+          |> authed()
+          |> post_mcp(path, %{
+            "jsonrpc" => "2.0",
+            "id" => "bad-version-1",
+            "method" => "tools/list",
+            "params" => %{
+              "_meta" => %{"io.modelcontextprotocol/protocolVersion" => "1999-01-01"}
+            }
+          })
+
+        assert %{"error" => %{"code" => -32_022, "data" => data}} = json_response(response, 400)
+        assert data["code"] == "unsupported_protocol_version"
+        assert "2026-07-28" in data["supportedVersions"]
+      end
+    end
+
+    test "Mcp-Method mismatch is rejected for modern requests only", %{conn: conn} do
+      for path <- @paths do
+        rejected =
+          conn
+          |> recycle()
+          |> authed()
+          |> put_req_header("mcp-method", "tools/call")
+          |> post_mcp(path, rpc_2026("mismatch-1", "tools/list"))
+
+        assert %{"error" => %{"code" => -32_020, "data" => data}} = json_response(rejected, 400)
+        assert data["code"] == "header_mismatch"
+
+        # The same bogus header on a legacy request must not break it — no client
+        # on this box sends these headers, and enforcing them there would 400
+        # every agent at once.
+        tolerated =
+          conn
+          |> recycle()
+          |> authed()
+          |> put_req_header("mcp-method", "tools/call")
+          |> post_mcp(path, %{"jsonrpc" => "2.0", "id" => "legacy-2", "method" => "tools/list"})
+
+        assert json_response(tolerated, 200)["result"]["tools"] != []
+      end
+    end
+
+    test "a modern request mints no session", %{conn: conn} do
+      for path <- @paths do
+        response =
+          conn
+          |> recycle()
+          |> authed()
+          |> post_mcp(path, rpc_2026("no-session-1", "server/discover"))
+
+        assert response.status == 200
+        assert get_resp_header(response, "mcp-session-id") == []
+      end
+    end
+  end
+
+  defp rpc_2026(id, method, params \\ %{}) do
+    %{
+      "jsonrpc" => "2.0",
+      "id" => id,
+      "method" => method,
+      "params" =>
+        Map.put(params, "_meta", %{
+          "io.modelcontextprotocol/protocolVersion" => "2026-07-28",
+          "io.modelcontextprotocol/clientInfo" => %{
+            "name" => "ContractTest",
+            "version" => "1.0.0"
+          }
+        })
+    }
+  end
+
   defp authed(conn), do: put_req_header(conn, "authorization", "Bearer " <> @token)
 
   defp post_mcp(conn, path, body) do

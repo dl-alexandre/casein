@@ -13,7 +13,7 @@ defmodule CaseinWeb.API.ArtifactMCPController do
     conn = fetch_query_params(conn)
     workspace_id = default_workspace_id(conn)
 
-    case MCPTransport.ensure_known_session(conn) do
+    case MCPTransport.preflight(conn, conn.body_params) do
       {:halt, conn} ->
         conn
 
@@ -30,6 +30,10 @@ defmodule CaseinWeb.API.ArtifactMCPController do
             |> MCPTransport.maybe_issue_session(:artifact, conn.body_params, workspace_id)
             |> put_status(200)
             |> json(response)
+
+          # A `subscriptions/listen` response is itself a long-lived SSE stream.
+          {:stream, subscription} ->
+            MCPTransport.subscription_stream(conn, subscription)
 
           :noreply ->
             send_resp(conn, 202, "")

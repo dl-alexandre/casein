@@ -142,6 +142,42 @@ defmodule CaseinWeb.API.TerminalMCPTest do
     assert {:error, %{error: %{code: -32_600}}} = TerminalMCP.handle(%{"not" => "jsonrpc"})
   end
 
+  test "only the read-only wait is nominated to run as a task" do
+    eligible = TerminalMCP.task_tools()
+
+    # It is the tool whose synchronous contract is a 55s workaround.
+    assert "terminal_wait_agent_state" in eligible
+
+    # Nominating a tool asserts it is safe to abandon mid-flight, so nothing that
+    # mutates a pane may appear here.
+    for mutating <- ["terminal_send_keys", "terminal_send_command", "terminal_report_worktree"] do
+      refute mutating in eligible
+    end
+  end
+
+  # A regression that let the server-side wait loop spin on an unexpected shape
+  # would wedge a background worker and flood the audit log, so fail fast rather
+  # than hang the suite.
+  @tag timeout: 10_000
+  test "a task-augmented wait stops looping on any non-timeout result" do
+    assert {:reply, %{result: %{isError: true, structuredContent: structured}}} =
+             TerminalMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 900,
+                 "method" => "tools/call",
+                 "params" => %{
+                   "name" => "terminal_wait_agent_state",
+                   "arguments" => %{"workspace_id" => "ws-wait"}
+                 }
+               },
+               task_augmented: true,
+               task_id: "task-not-registered"
+             )
+
+    assert structured["error"] == "missing_argument"
+  end
+
   test "tools/call with a missing session argument reports a structured tool error" do
     assert {:reply,
             %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =

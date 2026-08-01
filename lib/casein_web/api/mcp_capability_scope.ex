@@ -10,6 +10,18 @@ defmodule CaseinWeb.API.MCPCapabilityScope do
   alias Casein.Agents.TerminalTools
   alias CaseinWeb.API.MCPToolSearch
 
+  @doc """
+  True when this request carries an agent capability, i.e. when discovery and
+  authorization are narrowed to one caller.
+
+  Callers use this to decide response cacheability: a `tools/list` that
+  `filter_tools/2` narrowed is caller-specific and MUST NOT be advertised as
+  publicly cacheable, or a shared intermediary could serve one agent's scoped
+  tool surface to another.
+  """
+  @spec scoped?(keyword()) :: boolean()
+  def scoped?(opts), do: capability_context(opts) != :none
+
   @spec filter_tools([map()], keyword()) :: [map()]
   def filter_tools(tools, opts) when is_list(tools) do
     case capability_context(opts) do

@@ -22,7 +22,7 @@ defmodule CaseinWeb.API.PreviewMCPController do
     workspace_id = default_workspace_id(conn)
     tmux_session = default_tmux_session(conn)
 
-    with {:cont, conn} <- MCPTransport.ensure_known_session(conn),
+    with {:cont, conn} <- MCPTransport.preflight(conn, conn.body_params),
          :ok <- validate_tmux_session_scope(workspace_id, tmux_session) do
       opts =
         [
@@ -38,6 +38,10 @@ defmodule CaseinWeb.API.PreviewMCPController do
           |> MCPTransport.maybe_issue_session(:preview, conn.body_params, workspace_id)
           |> put_status(200)
           |> json(response)
+
+        # A `subscriptions/listen` response is itself a long-lived SSE stream.
+        {:stream, subscription} ->
+          MCPTransport.subscription_stream(conn, subscription)
 
         :noreply ->
           send_resp(conn, 202, "")

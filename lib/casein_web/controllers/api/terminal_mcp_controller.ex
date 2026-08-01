@@ -20,7 +20,7 @@ defmodule CaseinWeb.API.TerminalMCPController do
     workspace_id = default_workspace_id(conn)
     caller_pane = default_caller_pane(conn)
 
-    case MCPTransport.ensure_known_session(conn) do
+    case MCPTransport.preflight(conn, conn.body_params) do
       {:halt, conn} ->
         conn
 
@@ -38,6 +38,10 @@ defmodule CaseinWeb.API.TerminalMCPController do
             |> MCPTransport.maybe_issue_session(:terminal, conn.body_params, workspace_id)
             |> put_status(200)
             |> json(response)
+
+          # A `subscriptions/listen` response is itself a long-lived SSE stream.
+          {:stream, subscription} ->
+            MCPTransport.subscription_stream(conn, subscription)
 
           :noreply ->
             send_resp(conn, 202, "")

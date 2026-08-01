@@ -82,6 +82,19 @@ defmodule CaseinWeb.API.PreviewMCP do
   end
 
   @impl true
+  # Nothing here yet. `preview_record_stop` is the obvious next candidate, but it
+  # writes a recording artifact — establish that abandoning it mid-write is safe
+  # before nominating it.
+  def task_tools, do: []
+
+  @impl true
+  # No MCP App yet; screenshots would be the natural first one.
+  def list_resources(_opts), do: []
+
+  @impl true
+  def read_resource(_uri, _opts), do: {:error, :not_found}
+
+  @impl true
   def list_tools(opts) do
     tool_specs()
     |> MCPToolSearch.list_tools(:preview, opts)

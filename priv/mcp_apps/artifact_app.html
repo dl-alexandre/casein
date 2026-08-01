@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Casein artifact</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #16181d;
+        --muted: #5b6472;
+        --bg: #ffffff;
+        --panel: #f5f6f8;
+        --border: #dfe3e9;
+        --accent: #2f6feb;
+      }
+      :root[data-theme="dark"] {
+        --fg: #e7eaf0;
+        --muted: #9aa4b2;
+        --bg: #14161a;
+        --panel: #1c1f25;
+        --border: #2b3038;
+        --accent: #6ea8ff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 16px;
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+      }
+      h1 { font-size: 15px; margin: 0 0 2px; }
+      .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+      .panel {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 8px;
+        padding: 12px 14px;
+      }
+      dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
+      dt { color: var(--muted); font-size: 12px; }
+      dd {
+        margin: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      a { color: var(--accent); }
+      button {
+        margin-top: 12px;
+        font: inherit;
+        font-size: 13px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--accent); }
+      button[hidden] { display: none; }
+      .empty { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <h1>Casein artifact</h1>
+    <div class="sub" id="status">Connecting to host…</div>
+    <div class="panel"><dl id="fields"><dd class="empty">Waiting for the tool result…</dd></dl></div>
+    <button id="open" hidden>Open preview</button>
+
+    <script>
+      // MCP Apps view: a JSON-RPC 2.0 peer speaking the `ui/` dialect to the host
+      // over postMessage. The host is in control; we never touch the parent DOM.
+      (function () {
+        var nextId = 1;
+        var pending = {};
+        var publicUrl = null;
+
+        function send(message) {
+          window.parent.postMessage(Object.assign({ jsonrpc: "2.0" }, message), "*");
+        }
+
+        function request(method, params) {
+          var id = nextId++;
+          return new Promise(function (resolve, reject) {
+            pending[id] = { resolve: resolve, reject: reject };
+            send({ id: id, method: method, params: params || {} });
+          });
+        }
+
+        function notify(method, params) {
+          send({ method: method, params: params || {} });
+        }
+
+        function setStatus(text) {
+          document.getElementById("status").textContent = text;
+        }
+
+        function applyTheme(hostContext) {
+          var theme = hostContext && hostContext.theme;
+          if (theme === "light" || theme === "dark") {
+            document.documentElement.setAttribute("data-theme", theme);
+          }
+        }
+
+        // Tool payloads travel as structuredContent; fall back to parsing the
+        // text content the non-Apps path returns.
+        function payloadOf(result) {
+          if (!result) return null;
+          if (result.structuredContent) return result.structuredContent;
+          var text = (result.content || []).filter(function (c) {
+            return c.type === "text";
+          })[0];
+          if (!text) return null;
+          try {
+            return JSON.parse(text.text);
+          } catch (e) {
+            return null;
+          }
+        }
+
+        var FIELDS = [
+          ["Name", "name"],
+          ["Slug", "slug"],
+          ["Status", "status"],
+          ["Public URL", "public_url"],
+          ["Preview URL", "preview_url"],
+          ["Branch", "branch"],
+          ["Snapshot", "snapshot"],
+          ["Workspace", "workspace_id"]
+        ];
+
+        function render(result) {
+          var payload = payloadOf(result);
+          var list = document.getElementById("fields");
+          list.innerHTML = "";
+
+          if (!payload) {
+            var empty = document.createElement("dd");
+            empty.className = "empty";
+            empty.textContent = "The tool returned no structured artifact data.";
+            list.appendChild(empty);
+            return;
+          }
+
+          var shown = 0;
+          FIELDS.forEach(function (pair) {
+            var value = payload[pair[1]];
+            if (value === undefined || value === null || value === "") return;
+            shown++;
+            var dt = document.createElement("dt");
+            dt.textContent = pair[0];
+            var dd = document.createElement("dd");
+            if (/^https?:\/\//.test(String(value))) {
+              var a = document.createElement("a");
+              a.href = String(value);
+              a.textContent = String(value);
+              // Navigation is the host's job; the sandbox cannot open tabs.
+              a.addEventListener("click", function (event) {
+                event.preventDefault();
+                notify("ui/open-link", { url: String(value) });
+              });
+              dd.appendChild(a);
+            } else {
+              dd.textContent = String(value);
+            }
+            list.appendChild(dt);
+            list.appendChild(dd);
+          });
+
+          if (!shown) {
+            var none = document.createElement("dd");
+            none.className = "empty";
+            none.textContent = "No recognizable artifact fields in the result.";
+            list.appendChild(none);
+          }
+
+          publicUrl = payload.public_url || payload.preview_url || null;
+          var open = document.getElementById("open");
+          open.hidden = !publicUrl;
+          setStatus(publicUrl ? "Artifact ready." : "Artifact updated.");
+        }
+
+        document.getElementById("open").addEventListener("click", function () {
+          if (publicUrl) notify("ui/open-link", { url: publicUrl });
+        });
+
+        window.addEventListener("message", function (event) {
+          var message = event.data;
+          if (!message || message.jsonrpc !== "2.0") return;
+
+          // A response to one of our own requests.
+          if (message.id !== undefined && pending[message.id]) {
+            var slot = pending[message.id];
+            delete pending[message.id];
+            if (message.error) slot.reject(message.error);
+            else slot.resolve(message.result);
+            return;
+          }
+
+          switch (message.method) {
+            case "ui/notifications/tool-result":
+              render(message.params);
+              break;
+            case "ui/notifications/tool-cancelled":
+              setStatus("The tool call was cancelled.");
+              break;
+            case "ui/notifications/host-context-changed":
+              applyTheme(message.params);
+              break;
+            case "ping":
+              if (message.id !== undefined) send({ id: message.id, result: {} });
+              break;
+          }
+        });
+
+        request("ui/initialize", {
+          appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] }
+        })
+          .then(function (result) {
+            applyTheme(result && result.hostContext);
+            // The host sends nothing to the view until this arrives.
+            notify("ui/notifications/initialized", {});
+            setStatus("Waiting for the tool result…");
+          })
+          .catch(function () {
+            setStatus("Could not connect to the host.");
+          });
+      })();
+    </script>
+  </body>
+</html>

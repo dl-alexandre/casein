@@ -18,6 +18,8 @@ defmodule Casein.Supervision.Agents do
       Casein.Codex.SessionTitles,
       Casein.Codex.RuntimeSupervisor,
       Casein.Agents.MCPSessions,
+      {Task.Supervisor, name: Casein.Agents.MCPTaskSupervisor},
+      Casein.Agents.MCPTasks,
       Casein.Agents.Activity
     ]
 
