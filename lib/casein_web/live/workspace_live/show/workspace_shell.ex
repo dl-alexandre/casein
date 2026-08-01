@@ -577,7 +577,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       update_available={@update_available}
       deploy_drift={@deploy_drift}
       update_commits_behind={@update_commits_behind}
-      codex_approvals={@codex_approvals}
+      codex_pending_requests={@codex_pending_requests}
       grok_permission_requests={@grok_permission_requests}
     />
     <ClipboardDrawer.clipboard_drawer
@@ -691,8 +691,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   end
 
   defp agent_approval_count(assigns) do
-    (assigns[:codex_pending_approval_count] || 0) +
-      length(assigns[:grok_permission_requests] || [])
+    assigns[:agent_pending_approval_count] ||
+      (assigns[:codex_pending_approval_count] || 0) +
+        length(assigns[:grok_permission_requests] || [])
   end
 
   defp current_share_url(assigns) do

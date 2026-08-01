@@ -75,20 +75,19 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
     # Client-supplied attachment keys cannot escape the mounted workspace's
     # manager projection or reach an unrelated ACP process.
     html =
-      render_click(view, "grok_permission:respond", %{
-        "attachment-key" => "another-attachment",
-        "request-id" => "77",
+      render_click(view, "agent_approval:respond", %{
+        "provider-id" => "grok_acp",
+        "request-id" => "missing-request",
+        "decision-kind" => "choice",
         "option-id" => "allow-once"
       })
 
-    assert html =~ "Grok could not accept that response."
+    assert html =~ "That request was already resolved."
     refute_receive {:grok_acp_transport_write, ^pid, _line}, 30
     assert has_element?(view, "#agent-approval-center")
 
-    dom_id = Base.url_encode64(attachment_key <> ":77", padding: false)
-
     view
-    |> element("#grok-permission-#{dom_id} button[phx-value-option-id='allow-once']")
+    |> element("#agent-approval-center button[phx-value-option-id='allow-once']")
     |> render_click()
 
     assert_receive {:grok_acp_transport_write, ^pid, line}
@@ -101,9 +100,11 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
            }
 
     assert Enum.any?(Audit.list(), fn event ->
-             event.action == "agent.permission_decided" and
+             event.action == "agent.approval_decided" and
                event.workspace_id == @workspace_id and
                event.actor_id == "dev" and
+               event.target_type == "agent_approval" and
+               event.metadata[:provider_id] == :grok_acp and
                event.metadata[:outcome] == "selected" and
                event.metadata[:option_id] == "allow-once"
            end)
@@ -122,7 +123,7 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
     assert render(view) =~ "Deny request"
 
     view
-    |> element("#agent-approval-center button[phx-click='grok_permission:cancel']")
+    |> element("#agent-approval-center button[phx-value-decision-kind='cancel']")
     |> render_click()
 
     assert_receive {:grok_acp_transport_write, ^pid, cancel_line}
@@ -131,7 +132,7 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
     assert cancel_response["result"]["outcome"] == %{"outcome" => "cancelled"}
 
     assert Enum.any?(Audit.list(), fn event ->
-             event.action == "agent.permission_decided" and
+             event.action == "agent.approval_decided" and
                event.metadata[:outcome] == "cancelled" and
                not Map.has_key?(event.metadata, :option_id)
            end)

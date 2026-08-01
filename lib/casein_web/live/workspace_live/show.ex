@@ -34,6 +34,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias CaseinWeb.TerminalTelemetry
   alias CaseinWeb.WorkspaceLive.PaneWorker
   alias Casein.Panes
+  alias CaseinWeb.WorkspaceLive.Show.AgentApprovalEvents
   alias CaseinWeb.WorkspaceLive.Show.AgentEvents
   alias CaseinWeb.WorkspaceLive.Show.ArtifactEvents
   alias CaseinWeb.WorkspaceLive.Show.ConnectEvents
@@ -109,7 +110,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # (file edits -> can_edit_file?, run/command -> can_run_command?, etc.).
   @known_events ~w(
     switch_tab refresh
-    codex:refresh codex:select_thread codex:resolve_approval codex:start_exec codex:cancel_exec
+    codex:refresh codex:select_thread codex:start_exec codex:cancel_exec
     workspace:start workspace:stop workspace:set_mode
     workspace:grant_agent_write_unlock workspace:revoke_agent_write_unlock
     tmux:apply_template tmux:apply_previewed_template
@@ -137,7 +138,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     notifications:mark_all_read notifications:save_preferences
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     agent:start_review_run
-    grok_permission:respond grok_permission:cancel
+    agent_approval:respond
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:execute
     audit_drawer:toggle audit_drawer:close
@@ -800,8 +801,8 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_event("agent:" <> _ = event, params, socket),
     do: AgentEvents.handle_event(event, params, socket)
 
-  def handle_event("grok_permission:" <> _ = event, params, socket),
-    do: GrokPermissionEvents.handle_event(event, params, socket)
+  def handle_event("agent_approval:" <> _ = event, params, socket),
+    do: AgentApprovalEvents.handle_event(event, params, socket)
 
   def handle_event("audit_drawer:" <> _ = event, params, socket),
     do: AgentEvents.handle_event(event, params, socket)
