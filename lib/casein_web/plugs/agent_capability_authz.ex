@@ -19,6 +19,16 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthz do
   def init(opts), do: opts
 
   def call(%{assigns: %{api_token_scope: {:agent_capability, _id}}} = conn, _opts) do
+    authorize(conn)
+  end
+
+  def call(%{assigns: %{api_token_scope: {:mcp_ticket, _id}}} = conn, _opts) do
+    authorize(conn)
+  end
+
+  def call(conn, _opts), do: conn
+
+  defp authorize(conn) do
     conn = fetch_query_params(conn)
     claims = conn.assigns[:api_agent_capability]
 
@@ -34,8 +44,6 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthz do
       {:error, reason} -> deny(conn, reason)
     end
   end
-
-  def call(conn, _opts), do: conn
 
   @doc "Options forwarded by MCP controllers into the shared envelope."
   def handler_opts(conn) do

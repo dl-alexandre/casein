@@ -9,14 +9,18 @@ defmodule CaseinWeb.Plugs.ApiAuth do
 
   import Plug.Conn
 
-  alias Casein.Agents.{AgentCapabilityTokens, OrchestratorTokens}
+  alias Casein.Agents.{AgentCapabilityTokens, McpTickets, OrchestratorTokens}
   alias CaseinWeb.API.MCPProtectedResource
 
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    token = bearer(conn)
-    authorize(conn, token, api_tokens())
+    conn = fetch_query_params(conn)
+
+    case conn.query_params["ticket"] do
+      ticket when is_binary(ticket) and ticket != "" -> authorize_ticket(conn, ticket)
+      _ -> authorize(conn, bearer(conn), api_tokens())
+    end
   end
 
   @doc """
@@ -33,6 +37,7 @@ defmodule CaseinWeb.Plugs.ApiAuth do
     case conn.assigns[:api_token_scope] do
       {:workspace, workspace_id} when is_binary(workspace_id) -> "ws:" <> workspace_id
       {:orchestrator, subject_id} -> "orchestrator:" <> to_string(subject_id)
+      {:mcp_ticket, ticket_id} -> "mcp_ticket:" <> to_string(ticket_id)
       :global -> "global"
       _ -> nil
     end
@@ -63,6 +68,26 @@ defmodule CaseinWeb.Plugs.ApiAuth do
   end
 
   defp authorize_db_token(conn, token), do: authorize_orchestrator_token(conn, token)
+
+  defp authorize_ticket(conn, ticket) do
+    workspace_id = conn.query_params["workspace_id"]
+
+    with workspace_id when is_binary(workspace_id) and workspace_id != "" <- workspace_id,
+         {:ok, surface} <- ticket_surface(conn.request_path),
+         {:ok, claims} <- McpTickets.consume(ticket, workspace_id, surface) do
+      conn
+      |> assign(:api_token_scope, {:mcp_ticket, claims.ticket_id})
+      |> assign(:api_workspace_id, claims.workspace_id)
+      |> assign(:api_agent_capability, claims)
+    else
+      _ -> deny(conn, 401, "invalid_mcp_ticket")
+    end
+  end
+
+  defp ticket_surface("/api/terminals/mcp"), do: {:ok, "terminal"}
+  defp ticket_surface("/api/preview/mcp"), do: {:ok, "preview"}
+  defp ticket_surface("/api/artifacts/mcp"), do: {:ok, "artifact"}
+  defp ticket_surface(_path), do: {:error, :ticket_path_forbidden}
 
   defp authorize_agent_capability(conn, token) do
     case AgentCapabilityTokens.verify(token) do
