@@ -4,6 +4,8 @@ defmodule CaseinWeb.API.McpTicketController do
   use CaseinWeb, :controller
 
   alias Casein.Agents.{McpTickets, MCPUrls}
+  alias Casein.Audit
+  alias CaseinWeb.Plugs.ApiAuth
 
   def exchange(%{assigns: %{api_agent_capability: claims}} = conn, params) do
     with {:ok, workspace_id} <- required_string(params, "workspace_id"),
@@ -11,6 +13,23 @@ defmodule CaseinWeb.API.McpTicketController do
          {:ok, surface} <- surface(params["surface"]),
          {:ok, scopes} <- scopes(params["scopes"]),
          {:ok, ticket} <- McpTickets.issue(claims, surface, scopes) do
+      Audit.emit!(%{
+        workspace_id: ticket.workspace_id,
+        actor_id: ApiAuth.actor(conn),
+        action: "agent.mcp_ticket.exchanged",
+        source: "mcp_ticket_exchange",
+        target_type: "mcp_ticket",
+        target_ref: ticket.id,
+        decision: :allow,
+        reason: :issued,
+        metadata: %{
+          capability_id: claims.id,
+          surface: ticket.surface,
+          scopes: ticket.scopes,
+          expires_at: ticket.expires_at
+        }
+      })
+
       conn
       |> put_status(:created)
       |> json(%{

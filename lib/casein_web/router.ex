@@ -113,6 +113,12 @@ defmodule CaseinWeb.Router do
     plug CaseinWeb.Plugs.McpRateLimit
   end
 
+  pipeline :mcp_ticket_exchange do
+    plug :accepts, ["json"]
+    plug CaseinWeb.Plugs.ApiAuth
+    plug CaseinWeb.Plugs.McpTicketRateLimit
+  end
+
   # OAuth discovery metadata. No ApiAuth: an unauthenticated client must be able
   # to read it to find out how to authenticate.
   pipeline :mcp_metadata do
@@ -245,7 +251,6 @@ defmodule CaseinWeb.Router do
 
     get "/agent-capabilities/current", AgentCapabilityController, :current
     delete "/agent-capabilities/current", AgentCapabilityController, :revoke_current
-    post "/mcp-tickets/exchange", McpTicketController, :exchange
 
     post "/workspaces/:workspace_id/artifacts/:artifact_id/restore",
          ArtifactProjectController,
@@ -294,6 +299,12 @@ defmodule CaseinWeb.Router do
     pipe_through :deploy_webhook
 
     post "/deploy_webhook", DeployWebhookController, :github
+  end
+
+  scope "/api", CaseinWeb.API do
+    pipe_through :mcp_ticket_exchange
+
+    post "/mcp-tickets/exchange", McpTicketController, :exchange
   end
 
   # RFC 9728 Protected Resource Metadata for the MCP endpoints. Unauthenticated

@@ -37,6 +37,7 @@ defmodule CaseinWeb.Plugs.ApiAuth do
     case conn.assigns[:api_token_scope] do
       {:workspace, workspace_id} when is_binary(workspace_id) -> "ws:" <> workspace_id
       {:orchestrator, subject_id} -> "orchestrator:" <> to_string(subject_id)
+      {:agent_capability, capability_id} -> "agent_capability:" <> to_string(capability_id)
       {:mcp_ticket, ticket_id} -> "mcp_ticket:" <> to_string(ticket_id)
       :global -> "global"
       _ -> nil
