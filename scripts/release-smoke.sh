@@ -47,6 +47,12 @@ else
   mix_command=(mix)
 fi
 
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  echo ">>> Darwin runner: casein.release.lan will ad-hoc sign downloaded Bun binaries"
+else
+  echo ">>> SKIP Bun ad-hoc signing: codesign is required only for Darwin releases"
+fi
+
 echo ">>> building production release with casein.release.lan"
 MIX_ENV=prod "${mix_command[@]}" casein.release.lan
 
@@ -110,10 +116,12 @@ for path in \
 done
 
 node "${scripts_dir}/node_modules/playwright/cli.js" --version >/dev/null
+echo ">>> SKIP Playwright Chromium download: deploy installs it into the runtime user's home; the dedicated preview E2E job owns that persistent browser cache"
 
 if [[ -d "${EXTRACTED}/docs" ]]; then
   echo "error: private source docs unexpectedly shipped in the release" >&2
   exit 1
 fi
 
+echo ">>> SKIP activation: it requires live env secrets/database plus systemd and Caddy mutation, all forbidden in PR smoke"
 echo ">>> release smoke passed"
