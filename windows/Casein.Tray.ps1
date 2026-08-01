@@ -26,6 +26,7 @@ function Get-CaseinPaths {
         Log         = Join-Path $dataRoot 'desktop-host.log'
         RuntimePid  = Join-Path $dataRoot 'runtime.pid'
         RuntimeStatus = Join-Path $dataRoot 'runtime.json'
+        CrashState  = Join-Path $dataRoot 'crash-state.json'
         TrayPid     = Join-Path $dataRoot 'tray.pid'
         RuntimeTemp = Join-Path $dataRoot 'runtime-tmp'
         OriginIdentity = Join-Path $dataRoot 'origin.json'
@@ -426,6 +427,85 @@ function Test-CaseinProcessAlive {
     return $null -ne (Get-Process -Id $RuntimePid -ErrorAction SilentlyContinue)
 }
 
+function Write-CaseinCrashState {
+    param(
+        [int]$RuntimePid,
+        [AllowNull()][Nullable[int]]$ExitCode,
+        [ValidateSet('detected', 'recovering', 'recovered', 'exhausted', 'startup_failed')]
+        [string]$RecoveryStatus,
+        [ValidateRange(0, 3)][int]$RecoveryAttempts = 0,
+        [AllowNull()][string]$DetectedAtUtc = $null,
+        [AllowNull()][string]$RecoveredAtUtc = $null
+    )
+
+    if (-not $DetectedAtUtc) { $DetectedAtUtc = [DateTime]::UtcNow.ToString('o') }
+    $state = [ordered]@{
+        schema = 1
+        detected_at_utc = $DetectedAtUtc
+        runtime_pid = [Math]::Max(0, $RuntimePid)
+        exit_code = $ExitCode
+        recovery_attempts = $RecoveryAttempts
+        recovery_status = $RecoveryStatus
+        recovered_at_utc = $RecoveredAtUtc
+    }
+    $temporary = "$($script:Paths.CrashState).tmp"
+    $state | ConvertTo-Json | Set-Content -LiteralPath $temporary -Encoding UTF8
+    Move-Item -LiteralPath $temporary -Destination $script:Paths.CrashState -Force
+}
+
+function Read-CaseinCrashState {
+    if (-not (Test-Path -LiteralPath $script:Paths.CrashState)) { return $null }
+    try {
+        $state = Get-Content -Raw -LiteralPath $script:Paths.CrashState | ConvertFrom-Json
+        if ([int]$state.schema -ne 1) { return $null }
+        return $state
+    } catch {
+        return $null
+    }
+}
+
+function Get-CaseinRuntimeExitCode {
+    param([int]$RuntimePid)
+
+    try {
+        if ($script:RuntimeProcess -and $script:RuntimeProcess.Id -eq $RuntimePid -and $script:RuntimeProcess.HasExited) {
+            return [int]$script:RuntimeProcess.ExitCode
+        }
+    } catch {
+        Write-CaseinLog "Runtime process $RuntimePid exited without a readable exit code"
+    }
+    return $null
+}
+
+function Observe-CaseinRuntimeFailure {
+    $runtimePid = Get-CaseinRuntimePid
+    if ($runtimePid -le 0 -or (Test-CaseinProcessAlive $runtimePid)) { return $false }
+    if ($script:LastFailedRuntimePid -eq $runtimePid) { return $true }
+
+    $exitCode = Get-CaseinRuntimeExitCode $runtimePid
+    Write-CaseinCrashState -RuntimePid $runtimePid -ExitCode $exitCode -RecoveryStatus 'detected'
+    $script:LastFailedRuntimePid = $runtimePid
+    Write-CaseinLog "Recorded unexpected runtime exit for process $runtimePid"
+    return $true
+}
+
+function Update-CaseinRecoveryState {
+    param(
+        [ValidateSet('recovering', 'recovered', 'exhausted')][string]$RecoveryStatus,
+        [ValidateRange(0, 3)][int]$RecoveryAttempts
+    )
+
+    $state = Read-CaseinCrashState
+    if (-not $state) { return }
+    $recoveredAt = $null
+    if ($RecoveryStatus -eq 'recovered') { $recoveredAt = [DateTime]::UtcNow.ToString('o') }
+    $exitCode = $null
+    if ($null -ne $state.exit_code) { $exitCode = [int]$state.exit_code }
+    Write-CaseinCrashState -RuntimePid ([int]$state.runtime_pid) -ExitCode $exitCode `
+        -RecoveryStatus $RecoveryStatus -RecoveryAttempts $RecoveryAttempts `
+        -DetectedAtUtc ([string]$state.detected_at_utc) -RecoveredAtUtc $recoveredAt
+}
+
 function Clear-CaseinStaleRuntimeState {
     param([int]$Port)
 
@@ -500,17 +580,28 @@ function Start-CaseinRuntime {
 
     if (Clear-CaseinStaleRuntimeState $Port) { return $true }
     Write-CaseinLog "Starting desktop runtime on 127.0.0.1:$Port"
-    Invoke-CaseinRelease -Arguments @('eval', 'Casein.Release.migrate()') -Port $Port -Wait | Out-Null
+    try {
+        Invoke-CaseinRelease -Arguments @('eval', 'Casein.Release.migrate()') -Port $Port -Wait | Out-Null
+    } catch {
+        Write-CaseinCrashState -RuntimePid 0 -ExitCode $null -RecoveryStatus 'startup_failed'
+        throw
+    }
     # On Windows the release `start` command remains attached to the daemon it
     # launches. Waiting for that command therefore waits until Casein stops and
     # then misreports the shutdown exit code as a startup failure.
     $runtime = Invoke-CaseinRelease -Arguments @('start') -Port $Port
+    if ($script:RuntimeProcess) { $script:RuntimeProcess.Dispose() }
+    $script:RuntimeProcess = $runtime
     if ($script:RuntimeJob) { $script:RuntimeJob.Dispose() }
     $script:RuntimeJob = [Casein.Windows.JobObject]::CreateKillOnClose()
     [Casein.Windows.JobObject]::Assign($script:RuntimeJob, $runtime.Handle)
     Set-Content -LiteralPath $script:Paths.RuntimePid -Value $runtime.Id -Encoding ascii
     $ready = Wait-CaseinReady $Port
-    if (-not $ready) { Stop-CaseinRuntime $Port }
+    if (-not $ready) {
+        $exitCode = Get-CaseinRuntimeExitCode $runtime.Id
+        Write-CaseinCrashState -RuntimePid $runtime.Id -ExitCode $exitCode -RecoveryStatus 'startup_failed'
+        Stop-CaseinRuntime $Port
+    }
     Write-CaseinLog "Runtime ready: $ready"
     $ready
 }
@@ -526,6 +617,10 @@ function Stop-CaseinRuntime {
             $script:RuntimeJob.Dispose()
             $script:RuntimeJob = $null
         }
+        if ($script:RuntimeProcess) {
+            $script:RuntimeProcess.Dispose()
+            $script:RuntimeProcess = $null
+        }
         return
     }
 
@@ -536,6 +631,10 @@ function Stop-CaseinRuntime {
         if ($script:RuntimeJob) {
             $script:RuntimeJob.Dispose()
             $script:RuntimeJob = $null
+        }
+        if ($script:RuntimeProcess) {
+            $script:RuntimeProcess.Dispose()
+            $script:RuntimeProcess = $null
         }
         return
     }
@@ -548,6 +647,10 @@ function Stop-CaseinRuntime {
     if ($script:RuntimeJob) {
         $script:RuntimeJob.Dispose()
         $script:RuntimeJob = $null
+    }
+    if ($script:RuntimeProcess) {
+        $script:RuntimeProcess.Dispose()
+        $script:RuntimeProcess = $null
     }
 }
 
@@ -627,6 +730,7 @@ function Start-CaseinTray {
     $script:LaunchAtSignIn = [bool]$settings.launchAtSignIn
     $script:RecoveryAttempts = 0
     $script:NextRecoveryAt = [DateTime]::MinValue
+    $script:LastFailedRuntimePid = 0
     Save-CaseinSettings $script:Port $script:LaunchAtSignIn
 
     $runningIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(34, 197, 94))
@@ -819,6 +923,7 @@ function Start-CaseinTray {
             $tray.Text = 'Casein - Stopped'
             $tray.Icon = $errorIcon
             $openItem.Enabled = $false
+            [void](Observe-CaseinRuntimeFailure)
             Clear-CaseinStaleRuntimeState $script:Port | Out-Null
 
             if ($script:RecoveryAttempts -lt 3 -and [DateTime]::UtcNow -ge $script:NextRecoveryAt) {
@@ -827,7 +932,14 @@ function Start-CaseinTray {
                 $script:NextRecoveryAt = [DateTime]::UtcNow.AddSeconds($delaySeconds)
                 $statusItem.Text = "Recovering ($($script:RecoveryAttempts)/3)"
                 Write-CaseinLog "Attempting automatic runtime recovery $($script:RecoveryAttempts)/3"
-                if (Start-CaseinRuntime $script:Port) { $script:RecoveryAttempts = 0 }
+                Update-CaseinRecoveryState -RecoveryStatus 'recovering' -RecoveryAttempts $script:RecoveryAttempts
+                if (Start-CaseinRuntime $script:Port) {
+                    Update-CaseinRecoveryState -RecoveryStatus 'recovered' -RecoveryAttempts $script:RecoveryAttempts
+                    $script:RecoveryAttempts = 0
+                } elseif ($script:RecoveryAttempts -ge 3) {
+                    Update-CaseinRecoveryState -RecoveryStatus 'exhausted' -RecoveryAttempts $script:RecoveryAttempts
+                    Write-CaseinLog 'Automatic runtime recovery exhausted after 3 attempts'
+                }
             }
         }
     })
@@ -862,6 +974,8 @@ function Start-CaseinTray {
 
 $script:Paths = Get-CaseinPaths $ReleaseRoot
 $script:RuntimeJob = $null
+$script:RuntimeProcess = $null
+$script:LastFailedRuntimePid = 0
 New-Item -ItemType Directory -Force -Path $script:Paths.DataRoot | Out-Null
 
 if (-not $LibraryOnly) {

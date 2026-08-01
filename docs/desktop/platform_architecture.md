@@ -264,7 +264,19 @@ The host persists only local runtime state under `%LOCALAPPDATA%\Casein`:
 - `desktop-host.json` — retained port and launch-at-sign-in preference;
 - `secret-key-base.txt` — per-install Phoenix secret;
 - `api-token.txt` — per-install local API bearer token;
-- `desktop-host.log` — lifecycle and startup errors.
+- `desktop-host.log` — bounded lifecycle and startup errors;
+- `crash-state.json` — the latest runtime exit code and automatic-recovery
+  outcome. This record is fixed-schema and contains no command line,
+  environment, exception text, credentials, or workspace data.
+
+The tray detects an unexpected exit only after the owned runtime process is no
+longer alive. It records the numeric process/exit information available to it,
+then updates the same bounded record as its three health-checked recovery
+attempts progress to `recovered` or `exhausted`. Intentional restart and quit do
+not create crash incidents. **Create support bundle** includes a reconstructed,
+allowlisted copy of this record; malformed state is replaced by a non-sensitive
+`crash-state-invalid.txt` marker. Production crash acceptance still requires a
+clean Windows 11 machine and is tracked in issue #376.
 
 Create a Windows payload from a native Windows checkout with:
 

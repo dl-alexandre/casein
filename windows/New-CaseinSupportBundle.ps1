@@ -38,6 +38,36 @@ try {
             Set-Content -LiteralPath (Join-Path $stage 'credential-state-invalid.txt') -Value 'Credential rotation state was invalid.' -Encoding ascii
         }
     }
+    $crashStatePath = Join-Path $DataRoot 'crash-state.json'
+    if (Test-Path -LiteralPath $crashStatePath) {
+        try {
+            $crashState = Get-Content -Raw -LiteralPath $crashStatePath | ConvertFrom-Json
+            if ([int]$crashState.schema -ne 1) { throw 'Unsupported crash state schema.' }
+            $allowedStatuses = @('detected', 'recovering', 'recovered', 'exhausted', 'startup_failed')
+            if ($allowedStatuses -notcontains [string]$crashState.recovery_status) { throw 'Invalid recovery status.' }
+            $detectedAt = [DateTime]::MinValue
+            if (-not [DateTime]::TryParse([string]$crashState.detected_at_utc, [ref]$detectedAt)) { throw 'Invalid detection timestamp.' }
+            $recoveredAt = $null
+            if ($crashState.recovered_at_utc) {
+                $parsedRecoveredAt = [DateTime]::MinValue
+                if (-not [DateTime]::TryParse([string]$crashState.recovered_at_utc, [ref]$parsedRecoveredAt)) { throw 'Invalid recovery timestamp.' }
+                $recoveredAt = $parsedRecoveredAt.ToUniversalTime().ToString('o')
+            }
+            $exitCode = $null
+            if ($null -ne $crashState.exit_code) { $exitCode = [int]$crashState.exit_code }
+            [ordered]@{
+                schema = 1
+                detected_at_utc = $detectedAt.ToUniversalTime().ToString('o')
+                runtime_pid = [Math]::Max(0, [int]$crashState.runtime_pid)
+                exit_code = $exitCode
+                recovery_attempts = [Math]::Min(3, [Math]::Max(0, [int]$crashState.recovery_attempts))
+                recovery_status = [string]$crashState.recovery_status
+                recovered_at_utc = $recoveredAt
+            } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'crash-state.json') -Encoding UTF8
+        } catch {
+            Set-Content -LiteralPath (Join-Path $stage 'crash-state-invalid.txt') -Value 'Crash recovery state was invalid.' -Encoding ascii
+        }
+    }
     foreach ($name in @('current.json')) {
         $source = Join-Path $InstallRoot $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $stage -Force }
