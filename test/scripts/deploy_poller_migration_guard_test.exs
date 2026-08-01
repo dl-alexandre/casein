@@ -44,6 +44,17 @@ defmodule Scripts.DeployPollerMigrationGuardTest do
     refute File.exists?(fixture.worktree)
   end
 
+  test "the attended migration override allows deployment", %{tmp: tmp} do
+    fixture = build_fixture(tmp, :with_migration)
+
+    {output, status} = run_poller(fixture, [{"CASEIN_ALLOW_MIGRATION_DEPLOY", "1"}])
+
+    assert status == 0
+    assert output =~ "migration deploy explicitly allowed"
+    assert output =~ fixture.migration
+    assert output =~ "deployed #{String.slice(fixture.target, 0, 7)}"
+  end
+
   defp build_fixture(tmp, migration_mode) do
     root = Path.join(tmp, "checkout")
     remote = Path.join(tmp, "origin.git")

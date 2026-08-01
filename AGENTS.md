@@ -82,6 +82,14 @@ before packaging the release, so a `--no-verify` push that lands on `master` sti
 cannot activate until that worktree gate passes. `bash scripts/deploy-local.sh`
 remains the manual override for an immediate deploy of the current checkout.
 
+The poller refuses to auto-deploy a revision that adds files under
+`priv/repo/migrations/`; migrations require a local, deliberate service update.
+For an attended one-run poller update, use
+`CASEIN_ALLOW_MIGRATION_DEPLOY=1 bash scripts/deploy-poller.sh`. Never persist
+that override in `casein-deploy.service` or its timer environment. Refusals and
+the migration filenames are visible in `journalctl -u casein-deploy.service`
+and `/run/casein/last-deploy.json`.
+
 The running release also performs a deploy-drift check at boot. If `/etc/casein/casein.env` has a manual revision label or a SHA that differs from `origin/master`, Casein logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
 
 ### Source control before deploy (required)

@@ -21,6 +21,11 @@
 # origin/master already matches the deployed revision. Single-flight via flock,
 # so an overlapping timer tick during a multi-minute build is a no-op.
 #
+# Migration safety: unattended runs refuse any target that adds files under
+# priv/repo/migrations/. For a deliberate, attended service update only, run a
+# single poller invocation with CASEIN_ALLOW_MIGRATION_DEPLOY=1. Do not persist
+# this override in the timer service environment.
+#
 set -euo pipefail
 
 # CASEIN_POLLER_ROOT is set by self_update() before it re-execs the canonical
@@ -404,13 +409,21 @@ mapfile -t new_migrations < <(
     "${migration_base}..${target}" -- priv/repo/migrations/
 )
 
-if [ "${#new_migrations[@]}" -gt 0 ]; then
+if [ "${#new_migrations[@]}" -gt 0 ] && [ "${CASEIN_ALLOW_MIGRATION_DEPLOY:-0}" != "1" ]; then
   log "automatic deploy REFUSED: ${target_short} introduces database migrations:"
   for migration in "${new_migrations[@]}"; do
     log "  ${migration}"
   done
   log "apply this revision with a deliberate local service update"
+  log "attended override: CASEIN_ALLOW_MIGRATION_DEPLOY=1 bash scripts/deploy-poller.sh"
   exit 1
+fi
+
+if [ "${#new_migrations[@]}" -gt 0 ]; then
+  log "migration deploy explicitly allowed by CASEIN_ALLOW_MIGRATION_DEPLOY=1:"
+  for migration in "${new_migrations[@]}"; do
+    log "  ${migration}"
+  done
 fi
 
 if [ -n "$deployed" ]; then from_label="${deployed:0:12}"; else from_label="none"; fi
