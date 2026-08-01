@@ -54,6 +54,8 @@ config :casein,
     healthy_interval_ms: 60_000,
     warning_interval_ms: 30_000,
     alarm_interval_ms: 10_000,
+    sample_cap: 120,
+    sample_retention_ms: 7_200_000,
     sampler: {Casein.Signals.DiskPressureWatch, :sample_disk_usage},
     clock: {System, :monotonic_time, [:millisecond]}
   ],

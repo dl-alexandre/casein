@@ -38,6 +38,9 @@ defmodule Casein.Signals.DiskPressureWatch do
   @doc false
   def sample_now(server \\ __MODULE__), do: GenServer.call(server, :sample_now)
 
+  @doc "Recent samples, newest first. Retained only in the watcher process."
+  def recent_samples(server \\ __MODULE__), do: GenServer.call(server, :recent_samples)
+
   @doc false
   @spec classify(number(), number(), number()) :: level()
   def classify(used_percent, warning_percent, alarm_percent)
@@ -68,8 +71,11 @@ defmodule Casein.Signals.DiskPressureWatch do
       alarm_interval_ms: setting(opts, cfg, :alarm_interval_ms),
       sampler: setting(opts, cfg, :sampler),
       clock: setting(opts, cfg, :clock),
+      sample_cap: setting(opts, cfg, :sample_cap),
+      sample_retention_ms: setting(opts, cfg, :sample_retention_ms),
       schedule?: Keyword.get(opts, :schedule?, true),
       level: :healthy,
+      samples: [],
       timer: nil
     }
 
@@ -85,6 +91,10 @@ defmodule Casein.Signals.DiskPressureWatch do
   def handle_call(:sample_now, _from, state) do
     {reply, state} = take_sample(state)
     {:reply, reply, state}
+  end
+
+  def handle_call(:recent_samples, _from, state) do
+    {:reply, state.samples, state}
   end
 
   @impl true
@@ -107,7 +117,7 @@ defmodule Casein.Signals.DiskPressureWatch do
         level = classify(used_percent, state.warning_percent, state.alarm_percent)
         action = transition(state.level, level)
         sample = Map.put(sample, :sampled_at_ms, invoke_clock(state.clock))
-        state = %{state | level: level}
+        state = %{state | level: level, samples: retain_sample(state, sample)}
         state = apply_transition(state, action, sample)
         {{:ok, sample}, state}
 
@@ -185,6 +195,16 @@ defmodule Casein.Signals.DiskPressureWatch do
   defp schedule_next(state) do
     interval = Map.fetch!(state, interval_key(state.level))
     %{state | timer: Process.send_after(self(), :sample, interval)}
+  end
+
+  # Retention is bounded by both age and count; whichever bound is reached
+  # first wins. Samples never leave process memory and are never persisted.
+  defp retain_sample(state, sample) do
+    cutoff = sample.sampled_at_ms - state.sample_retention_ms
+
+    [sample | state.samples]
+    |> Enum.take_while(&(&1.sampled_at_ms >= cutoff))
+    |> Enum.take(state.sample_cap)
   end
 
   defp setting(opts, cfg, key), do: Keyword.get(opts, key, Keyword.fetch!(cfg, key))
