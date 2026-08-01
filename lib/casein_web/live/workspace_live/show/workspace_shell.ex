@@ -577,7 +577,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       update_available={@update_available}
       deploy_drift={@deploy_drift}
       update_commits_behind={@update_commits_behind}
-      codex_approvals={@codex_approvals}
+      codex_pending_requests={@codex_pending_requests}
       grok_permission_requests={@grok_permission_requests}
     />
     <ClipboardDrawer.clipboard_drawer

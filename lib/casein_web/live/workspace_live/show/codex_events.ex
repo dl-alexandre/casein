@@ -5,7 +5,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
   import Phoenix.LiveView
   import CaseinWeb.WorkspaceLive.Show.Context
 
-  alias Casein.Codex.{Event, EventSink, ExecRun, Runtime, Store}
+  alias Casein.AgentSessions.Provider.PendingRequest
+  alias Casein.Codex.{Event, EventSink, ExecRun, Store}
 
   @delta_flush_ms 150
   @max_live_delta_bytes 32_000
@@ -17,6 +18,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
     |> assign(:codex_subscribed?, false)
     |> assign(:codex_threads, [])
     |> assign(:codex_approvals, [])
+    |> assign(:codex_pending_requests, [])
     |> assign(:codex_pending_approval_count, 0)
     |> assign(:codex_selected_thread_id, nil)
     |> assign(:codex_timeline, [])
@@ -62,6 +64,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
     socket
     |> assign(:codex_threads, threads)
     |> assign(:codex_approvals, approvals)
+    |> assign(:codex_pending_requests, pending_requests(approvals))
     |> assign(:codex_pending_approval_count, pending_count(approvals))
     |> assign(:codex_selected_thread_id, selected_thread_id)
     |> assign_timeline(selected_thread_id)
@@ -82,41 +85,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
        |> assign_timeline(thread_id)}
     else
       {:noreply, put_flash(socket, :error, "That Codex thread is no longer available.")}
-    end
-  end
-
-  def handle_event(
-        "codex:resolve_approval",
-        %{"approval-id" => approval_id, "decision" => decision},
-        socket
-      ) do
-    with decision when decision in [:accept, :decline] <- decision_atom(decision),
-         %{runtime_id: runtime_id} <-
-           Enum.find(socket.assigns.codex_approvals, &pending_approval?(&1, approval_id)),
-         {:ok, _approval} <- safe_resolve(runtime_id, approval_id, decision) do
-      label = if decision == :accept, do: "granted", else: "denied"
-      {:noreply, socket |> refresh() |> put_flash(:info, "Codex approval #{label}.")}
-    else
-      nil ->
-        {:noreply, socket |> refresh() |> put_flash(:error, "Approval is no longer pending.")}
-
-      {:error, :already_resolved} ->
-        {:noreply, socket |> refresh() |> put_flash(:error, "Approval was already resolved.")}
-
-      {:error, :runtime_unavailable} ->
-        {:noreply,
-         socket
-         |> refresh()
-         |> put_flash(:error, "The owning Codex runtime is unavailable; no reply was sent.")}
-
-      {:error, reason} ->
-        {:noreply,
-         socket
-         |> refresh()
-         |> put_flash(:error, "Could not resolve approval: #{inspect(reason)}")}
-
-      _other ->
-        {:noreply, put_flash(socket, :error, "Invalid approval action.")}
     end
   end
 
@@ -240,27 +208,43 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
 
   defp pending_count(approvals), do: Enum.count(approvals, &(&1.status == "pending"))
 
-  defp pending_approval?(approval, id),
-    do: approval.id == id and approval.status == "pending"
+  defp pending_requests(approvals) do
+    approvals
+    |> Enum.filter(&(&1.status == "pending"))
+    |> Enum.map(fn approval ->
+      PendingRequest.new(%{
+        provider_id: :codex,
+        session_ref: %{
+          provider_id: :codex,
+          runtime_id: approval.runtime_id,
+          thread_id: approval.thread_id
+        },
+        request_id: approval.id,
+        title: approval_title(approval.kind),
+        detail: approval_detail(approval.payload),
+        options: nil,
+        requested_at: approval.requested_at,
+        metadata: approval.metadata
+      })
+    end)
+  end
 
   defp history_active?(socket), do: socket.assigns[:tab] == "history"
 
   defp approval_event?(%Event{type: type}),
     do: type in [:approval_requested, :approval_resolved]
 
-  defp safe_resolve(runtime_id, approval_id, decision) do
-    if Runtime.whereis_component(runtime_id, :approval_broker) do
-      Runtime.resolve_approval(runtime_id, approval_id, decision)
-    else
-      {:error, :runtime_unavailable}
-    end
-  catch
-    :exit, _reason -> {:error, :runtime_unavailable}
-  end
+  defp approval_title(:command_execution), do: "Command execution"
+  defp approval_title(:file_change), do: "File changes"
+  defp approval_title(:permissions), do: "Additional permissions"
 
-  defp decision_atom("accept"), do: :accept
-  defp decision_atom("decline"), do: :decline
-  defp decision_atom(_decision), do: nil
+  defp approval_title(kind),
+    do: kind |> to_string() |> String.replace("_", " ") |> String.capitalize()
+
+  defp approval_detail(payload) do
+    payload_value(payload, :command) || payload_value(payload, :grant_root) ||
+      payload_value(payload, :reason)
+  end
 
   defp payload_value(map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
 

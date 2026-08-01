@@ -101,7 +101,7 @@ defmodule CaseinWeb.NotificationsDrawer do
   attr :update_available, :boolean, default: false
   attr :deploy_drift, :any, default: nil
   attr :update_commits_behind, :integer, default: 0
-  attr :codex_approvals, :list, default: []
+  attr :codex_pending_requests, :list, default: []
   attr :grok_permission_requests, :list, default: []
 
   def notifications_drawer(assigns) do
@@ -113,8 +113,7 @@ defmodule CaseinWeb.NotificationsDrawer do
       |> assign(:drift_visible?, drift_visible?(assigns))
       |> assign(
         :pending_agent_approval_count,
-        pending_codex_approval_count(assigns.codex_approvals) +
-          length(assigns.grok_permission_requests)
+        length(assigns.codex_pending_requests) + length(assigns.grok_permission_requests)
       )
 
     ~H"""
@@ -182,10 +181,9 @@ defmodule CaseinWeb.NotificationsDrawer do
         </div>
 
         <div class="min-h-0 flex-1 space-y-4 overflow-auto px-3 py-3">
-          <AgentApprovals.agent_approvals
-            codex_approvals={@codex_approvals}
-            grok_requests={@grok_permission_requests}
-          />
+          <AgentApprovals.pending_approvals requests={
+            @codex_pending_requests ++ @grok_permission_requests
+          } />
 
           <section :if={@deploy_system_visible?} id="deploy-system-section" class="space-y-2">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">System</h3>
@@ -477,12 +475,6 @@ defmodule CaseinWeb.NotificationsDrawer do
       </aside>
     </div>
     """
-  end
-
-  defp pending_codex_approval_count(approvals) do
-    Enum.count(approvals, fn approval ->
-      Map.get(approval, :status, Map.get(approval, "status")) == "pending"
-    end)
   end
 
   defp deploy_severity(assigns) do

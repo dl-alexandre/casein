@@ -66,6 +66,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
     assert s.assigns.codex_subscribed? == false
     assert s.assigns.codex_threads == []
     assert s.assigns.codex_approvals == []
+    assert s.assigns.codex_pending_requests == []
     assert s.assigns.codex_pending_approval_count == 0
     assert s.assigns.codex_selected_thread_id == nil
     assert s.assigns.codex_timeline == []
@@ -156,37 +157,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
     assert_raise FunctionClauseError, fn ->
       CodexEvents.handle_event("codex:select_thread", %{"thread-id" => ""}, s)
     end
-  end
-
-  test "codex:resolve_approval with an invalid decision hits the nil else branch" do
-    # decision_atom/1 returns nil; the with/else clause matches `nil` first
-    # (shared with "no pending approval"), so the message is the pending one.
-    s = panel(%{codex_approvals: []})
-
-    assert {:noreply, s2} =
-             CodexEvents.handle_event(
-               "codex:resolve_approval",
-               %{"approval-id" => "a1", "decision" => "maybe"},
-               s
-             )
-
-    assert s2.assigns.flash["error"] == "Approval is no longer pending."
-  end
-
-  test "codex:resolve_approval for a missing pending approval flashes an error" do
-    s =
-      panel(%{
-        codex_approvals: [%{id: "a1", status: "resolved", runtime_id: "rt"}]
-      })
-
-    assert {:noreply, s2} =
-             CodexEvents.handle_event(
-               "codex:resolve_approval",
-               %{"approval-id" => "a1", "decision" => "accept"},
-               s
-             )
-
-    assert s2.assigns.flash["error"] == "Approval is no longer pending."
   end
 
   test "codex:start_exec rejects an empty prompt" do
@@ -319,6 +289,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
     assert {:noreply, s2} = CodexEvents.handle_info(ev, s)
     assert s2.assigns.codex_pending_approval_count == 1
     assert [%{id: "approval-global", status: "pending"}] = s2.assigns.codex_approvals
+
+    assert [%{provider_id: :codex, request_id: "approval-global", options: nil}] =
+             s2.assigns.codex_pending_requests
   end
 
   test "handle_info :flush_codex_deltas concatenates the buffer into live delta" do
@@ -405,6 +378,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
     assert {:noreply, s2} = CodexEvents.handle_event("codex:refresh", %{}, s)
     assert s2.assigns.codex_threads == []
     assert s2.assigns.codex_approvals == []
+    assert s2.assigns.codex_pending_requests == []
     assert s2.assigns.codex_pending_approval_count == 0
     assert s2.assigns.codex_error == nil
   end
