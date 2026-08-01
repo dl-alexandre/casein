@@ -107,8 +107,32 @@ defmodule Casein.Signals.DiskPressureWatch do
       raise ArgumentError, "disk warning threshold must be below alarm threshold"
     end
 
+    if state.schedule?, do: tighten_disksup_interval()
     if state.schedule?, do: send(self(), :sample)
     {:ok, state}
+  end
+
+  # `:disksup.get_disk_data/0` returns a CACHE, and OTP refreshes it every 30
+  # minutes by default. Without this, polling every 10s at alarm level just
+  # re-reads data that can be half an hour old — the adaptive intervals would be
+  # decorative and the alarm would lag by up to 30 minutes, which is exactly the
+  # delay this watcher exists to remove.
+  #
+  # One minute is OTP's floor (`set_check_interval/1` takes whole minutes), so no
+  # sub-minute tier can be fresher than that. The tiers below a minute still
+  # serve a purpose — they re-evaluate promptly after the cache refreshes — but
+  # they cannot outrun the source.
+  defp tighten_disksup_interval do
+    :disksup.set_check_interval(1)
+    :ok
+  catch
+    # os_mon may be absent (e.g. a trimmed release or a test node). A watcher
+    # that cannot tighten the interval is degraded, not broken — it still
+    # samples, just against OTP's default refresh.
+    :exit, reason ->
+      require Logger
+      Logger.warning("disk_pressure_watch: could not set :disksup interval: #{inspect(reason)}")
+      :ok
   end
 
   @impl true
