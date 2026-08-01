@@ -68,6 +68,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
     assert s.assigns.codex_approvals == []
     assert s.assigns.codex_pending_requests == []
     assert s.assigns.codex_pending_approval_count == 0
+    assert s.assigns.agent_pending_approval_count == 0
     assert s.assigns.codex_selected_thread_id == nil
     assert s.assigns.codex_timeline == []
     assert s.assigns.codex_live_delta == ""
@@ -272,7 +273,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
   end
 
   test "approval events refresh the global projection outside History" do
-    s = panel(%{tab: "terminal"})
+    grok_request = %{provider_id: :grok_acp, request_id: "grok-pending"}
+    s = panel(%{tab: "terminal", grok_permission_requests: [grok_request]})
 
     ev =
       event(:approval_requested,
@@ -288,6 +290,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
     assert :ok = Store.record(ev)
     assert {:noreply, s2} = CodexEvents.handle_info(ev, s)
     assert s2.assigns.codex_pending_approval_count == 1
+    assert s2.assigns.agent_pending_approval_count == 2
     assert [%{id: "approval-global", status: "pending"}] = s2.assigns.codex_approvals
 
     assert [%{provider_id: :codex, request_id: "approval-global", options: nil}] =

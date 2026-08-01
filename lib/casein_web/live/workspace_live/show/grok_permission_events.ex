@@ -6,10 +6,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents do
 
   alias Casein.AgentSessions.GrokACP.Attachments
   alias Casein.AgentSessions.Provider.PendingRequest
+  alias CaseinWeb.WorkspaceLive.Show.AgentApprovalState
 
   @doc "Seeds and subscribes the workspace-global permission surface."
   def mount(socket) do
-    socket = assign(socket, :grok_permission_requests, [])
+    socket =
+      socket
+      |> assign(:grok_permission_requests, [])
+      |> AgentApprovalState.assign_pending_count()
 
     if connected?(socket) do
       workspace_id = socket.assigns.workspace.id
@@ -26,7 +30,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents do
         %{assigns: %{workspace: %{id: workspace_id}}} = socket
       )
       when is_list(snapshots) do
-    assign(socket, :grok_permission_requests, normalize_requests(snapshots, workspace_id))
+    socket
+    |> assign(:grok_permission_requests, normalize_requests(snapshots, workspace_id))
+    |> AgentApprovalState.assign_pending_count()
   end
 
   def handle_info({:grok_acp_attachments_updated, _workspace_id, _snapshots}, socket), do: socket
@@ -35,9 +41,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents do
     workspace_id = socket.assigns.workspace.id
     requests = workspace_id |> Attachments.list() |> normalize_requests(workspace_id)
 
-    assign(socket, :grok_permission_requests, requests)
+    socket
+    |> assign(:grok_permission_requests, requests)
+    |> AgentApprovalState.assign_pending_count()
   catch
-    :exit, _reason -> assign(socket, :grok_permission_requests, [])
+    :exit, _reason ->
+      socket
+      |> assign(:grok_permission_requests, [])
+      |> AgentApprovalState.assign_pending_count()
   end
 
   defp normalize_requests(snapshots, workspace_id) do

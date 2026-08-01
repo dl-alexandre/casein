@@ -691,8 +691,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   end
 
   defp agent_approval_count(assigns) do
-    (assigns[:codex_pending_approval_count] || 0) +
-      length(assigns[:grok_permission_requests] || [])
+    assigns[:agent_pending_approval_count] ||
+      (assigns[:codex_pending_approval_count] || 0) +
+        length(assigns[:grok_permission_requests] || [])
   end
 
   defp current_share_url(assigns) do

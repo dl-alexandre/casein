@@ -7,6 +7,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
 
   alias Casein.AgentSessions.Provider.PendingRequest
   alias Casein.Codex.{Event, EventSink, ExecRun, Store}
+  alias CaseinWeb.WorkspaceLive.Show.AgentApprovalState
 
   @delta_flush_ms 150
   @max_live_delta_bytes 32_000
@@ -20,6 +21,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
     |> assign(:codex_approvals, [])
     |> assign(:codex_pending_requests, [])
     |> assign(:codex_pending_approval_count, 0)
+    |> AgentApprovalState.assign_pending_count()
     |> assign(:codex_selected_thread_id, nil)
     |> assign(:codex_timeline, [])
     |> assign(:codex_live_delta, "")
@@ -66,6 +68,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
     |> assign(:codex_approvals, approvals)
     |> assign(:codex_pending_requests, pending_requests(approvals))
     |> assign(:codex_pending_approval_count, pending_count(approvals))
+    |> AgentApprovalState.assign_pending_count()
     |> assign(:codex_selected_thread_id, selected_thread_id)
     |> assign_timeline(selected_thread_id)
     |> assign(:codex_error, nil)

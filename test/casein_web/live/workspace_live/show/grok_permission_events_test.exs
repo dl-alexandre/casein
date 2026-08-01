@@ -19,6 +19,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.GrokPermissionEventsTest do
             flash: %{},
             workspace: %{id: ws_id},
             current_user: %{id: "actor-#{System.unique_integer([:positive])}"},
+            codex_pending_requests: [],
             grok_permission_requests: []
           },
           assigns
@@ -34,7 +35,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.GrokPermissionEventsTest do
 
   test "handle_info normalizes attachment snapshots for the matching workspace" do
     ws_id = "ws-grok-perm-#{System.unique_integer([:positive])}"
-    s = socket(%{workspace: %{id: ws_id}})
+
+    s =
+      socket(%{
+        workspace: %{id: ws_id},
+        codex_pending_requests: [%{provider_id: :codex, request_id: "codex-1"}]
+      })
 
     snapshots = [
       %{
@@ -60,6 +66,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.GrokPermissionEventsTest do
       )
 
     assert [req] = s2.assigns.grok_permission_requests
+    assert s2.assigns.agent_pending_approval_count == 2
     assert req.provider_id == :grok_acp
     assert req.session_ref.workspace_id == ws_id
     assert req.session_ref.attachment_key == "att-1"
