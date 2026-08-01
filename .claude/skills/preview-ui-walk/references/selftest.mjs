@@ -36,6 +36,7 @@ import {
 } from "./preflight_run.mjs";
 import { verify as verifyPayload } from "./payload_pack.mjs";
 import {
+  beginPageRuntime,
   classifyRisk as classifyRiskRuntime,
   pageRuntimeLogs,
   probeTidewave,
@@ -2071,6 +2072,59 @@ assert(
       await new Promise((resolve) => retryServer.close(resolve));
     }
 
+    const logSnapshots = [
+      "baseline\n[error] ** (RuntimeError) late page A lib/one_web/a.ex:10",
+      "baseline\n[error] ** (RuntimeError) late page A lib/one_web/a.ex:10\n[error] ** (RuntimeError) page B lib/one_web/b.ex:20",
+    ];
+    let logSnapshot = 0;
+    const logServer = createServer((_req, res) => {
+      const text = logSnapshots[Math.min(logSnapshot, logSnapshots.length - 1)];
+      logSnapshot++;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: logSnapshot,
+          result: { content: [{ type: "text", text }] },
+        }),
+      );
+    });
+    await new Promise((resolve) => logServer.listen(0, "127.0.0.1", resolve));
+    const logAddress = logServer.address();
+    try {
+      const runtimeBag = {
+        require_tidewave: true,
+        log_levels: ["error"],
+        tidewave: {
+          status: "ok",
+          url: `http://127.0.0.1:${logAddress.port}/tidewave/mcp`,
+        },
+        stability_failures: [],
+        between_page_logs: [],
+        between_page_error_log_total: 0,
+        boundary_evidence_failures: 0,
+        _log_cursors: { error: "baseline" },
+        _last_page: "Page A",
+      };
+      const boundary = await beginPageRuntime(runtimeBag, { name: "Page B" }, {});
+      const pageLogs = await pageRuntimeLogs(runtimeBag, "Page B");
+      assert(
+        boundary.error_log_count === 1 &&
+          boundary.previous_page === "Page A" &&
+          boundary.next_page === "Page B" &&
+          runtimeBag.between_page_logs.length === 1,
+        "pre-navigation boundary preserves late prior-page logs as walk-level evidence",
+      );
+      assert(
+        countRuntimeErrors(boundary) === 1 &&
+          pageLogs.error_log_count === 1 &&
+          pageLogs.logs.levels.error.samples[0].includes("page B"),
+        "pre-navigation boundary prevents late prior-page logs from charging the next page",
+      );
+    } finally {
+      await new Promise((resolve) => logServer.close(resolve));
+    }
+
     const downServer = createServer((_req, res) => {
       res.writeHead(503, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "down" }));
@@ -2155,6 +2209,12 @@ assert(
     src.includes("settlePage(page, a.settleMs)") &&
       !src.includes("waitForTimeout(a.settleMs)"),
     "packed driver uses bounded adaptive readiness instead of a fixed per-page sleep",
+  );
+  assert(
+    src.includes("await beginPageRuntime(runtimeBag, pg, m);") &&
+      src.indexOf("await beginPageRuntime(runtimeBag, pg, m);") <
+        src.indexOf("let { loaded, navOutcome, bounceHit } = await navigatePage"),
+    "packed driver establishes a Tidewave log boundary before page navigation",
   );
   assert(
     src.includes('shot_file: shot ? shotFile : null') &&

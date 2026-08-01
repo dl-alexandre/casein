@@ -857,8 +857,12 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
     probes: [],
     probes_failed: 0,
     stability_failures: [],
+    between_page_logs: [],
+    between_page_error_log_total: 0,
+    boundary_evidence_failures: 0,
     // Per-level cursor: last seen log line text (for deltaLines).
     _log_cursors: {},
+    _last_page: null,
     _manifest: manifest,
   };
 
@@ -942,6 +946,90 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
   return bag;
 }
 
+/**
+ * Establish a log cursor immediately before navigating to a page.
+ *
+ * Tidewave exposes a cumulative ring tail, so logs emitted after page A's
+ * evidence capture would otherwise be charged to page B. Preserve those lines
+ * as walk-level, between-page evidence and advance the cursor before page B
+ * starts. The driver gates significant error samples at the walk level.
+ */
+export async function beginPageRuntime(runtimeBag, page, manifest) {
+  const pageName = page?.name || null;
+  if (!runtimeBag || runtimeBag.tidewave?.status !== "ok") {
+    return {
+      status: runtimeBag?.tidewave?.status || "disabled",
+      reason: runtimeBag?.tidewave?.reason || null,
+      phase: "before_navigation",
+      next_page: pageName,
+    };
+  }
+
+  const pageRt = mergePageRuntime(manifest || runtimeBag._manifest || {}, page || {});
+  const levels = pageRt.log_levels || runtimeBag.log_levels || ["error"];
+  const logs = await fetchLogs(runtimeBag.tidewave.url, levels, 80);
+  const previousPage = runtimeBag._last_page || null;
+
+  if (logs.failed_levels.length) {
+    const failure = {
+      phase: "before_navigation_logs",
+      previous_page: previousPage,
+      next_page: pageName,
+      failed_levels: logs.failed_levels,
+      errors: Object.fromEntries(
+        logs.failed_levels.map((level) => [level, logs.levels[level]?.error]),
+      ),
+    };
+    runtimeBag.stability_failures = runtimeBag.stability_failures || [];
+    runtimeBag.stability_failures.push(failure);
+    runtimeBag.boundary_evidence_failures =
+      (runtimeBag.boundary_evidence_failures || 0) + 1;
+    runtimeBag.between_page_logs = runtimeBag.between_page_logs || [];
+    runtimeBag.between_page_logs.push({ status: "error", ...failure });
+    return {
+      status: "error",
+      ...failure,
+      runtime_error_count: runtimeBag.require_tidewave ? 1 : 0,
+      evidence_failed: runtimeBag.require_tidewave ? 1 : 0,
+    };
+  }
+
+  const delta = { levels: {}, raw_count: 0 };
+  let errorCount = 0;
+  for (const level of levels) {
+    const entry = logs.levels[level] || { lines: [] };
+    const prevMarker = runtimeBag._log_cursors?.[level];
+    const newLines = deltaLines(prevMarker == null ? [] : [prevMarker], entry.lines || []);
+    const all = entry.lines || [];
+    if (all.length) {
+      runtimeBag._log_cursors = runtimeBag._log_cursors || {};
+      runtimeBag._log_cursors[level] = all[all.length - 1];
+    }
+    delta.levels[level] = {
+      count: newLines.length,
+      samples: newLines.slice(-5),
+    };
+    delta.raw_count += newLines.length;
+    if (level === "error") errorCount = newLines.length;
+  }
+
+  const boundary = {
+    status: "ok",
+    phase: "before_navigation",
+    previous_page: previousPage,
+    next_page: pageName,
+    logs: delta,
+    error_log_count: errorCount,
+  };
+  if (delta.raw_count > 0) {
+    runtimeBag.between_page_logs = runtimeBag.between_page_logs || [];
+    runtimeBag.between_page_logs.push(boundary);
+  }
+  runtimeBag.between_page_error_log_total =
+    (runtimeBag.between_page_error_log_total || 0) + errorCount;
+  return boundary;
+}
+
 /** Per-page log *delta* after navigate (not cumulative ring-buffer size). */
 export async function pageRuntimeLogs(runtimeBag, pageName, logLevels) {
   if (!runtimeBag || runtimeBag.tidewave?.status !== "ok") {
@@ -1015,6 +1103,7 @@ export async function pageRuntimeLogs(runtimeBag, pageName, logLevels) {
  * Safe to call when Tidewave is down — returns skipped status.
  */
 export async function pageRuntimeEvidence(runtimeBag, page, manifest) {
+  if (runtimeBag) runtimeBag._last_page = page?.name || null;
   const pageRt = mergePageRuntime(manifest || runtimeBag?._manifest || {}, page);
   const levels = pageRt.log_levels || runtimeBag?.log_levels || ["error"];
 
