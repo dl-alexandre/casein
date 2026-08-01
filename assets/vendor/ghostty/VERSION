@@ -1,0 +1,37 @@
+# Provenance for the vendored Ghostty web terminal artifact.
+#
+# READ THIS BEFORE RE-VENDORING. The artifact is NOT upstream 0.4.8 verbatim —
+# it is a local fork. `git log --follow -- assets/vendor/ghostty.js` shows 15
+# commits on top of the original vendor drop, several of which fix bugs that
+# cost real debugging time:
+#
+#   433c91ae  fit on container rect, not pre rect
+#   b920a0ed  lock advance width so cursor lines up with chars
+#   c3da04d3  pin pre line-height so cursor row math matches layout
+#   61d6adab  pin pre line-height as integer px to kill cursor-row drift
+#   71fdb580  pre fills container via absolute inset
+#   030c0652  map clicks through display scale
+#   62bd189e  coalesce identical-style cell runs in renderCells
+#   90d9faf5  let browser dev shortcuts through in raw terminal mode
+#
+# Re-fetching `upstream_revision` and overwriting the artifact WILL SILENTLY
+# DROP all of them, reintroducing cursor-row drift, wrong advance width, and
+# scale-broken clicks. To take an upstream update, re-apply these commits on top
+# of the new drop and then refresh `artifact_sha256` — do not just replace the
+# file.
+#
+# `upstream_*` and `hex_*` below describe the ANCESTOR the fork started from.
+# `artifact_sha256` describes the FORKED file that Casein actually ships, and is
+# what scripts/check-vendor-pin-guard.sh compares against.
+
+package=ghostty
+package_version=0.4.8
+upstream_repository=https://github.com/dannote/ghostty_ex
+upstream_revision=a162ff21bb6c38283ee2811ddd02cade831d83f4
+obtained_from=Hex ghostty 0.4.8, first vendored by Casein commit 056cc5fbb50d0996d7fde95230f0bb661fcfc912
+hex_package_checksum=0aa38364ed72b89962df62dac34a1c8521f17d9ab3acb86fcb5fa783935ebc6e
+hex_registry_checksum=4ed53d875c8b85872ef34224faa2297631a51a7626ef08e295444c59773ba5a7
+artifact=assets/vendor/ghostty.js
+artifact_is_local_fork=true
+artifact_local_commits_since_vendor=15
+artifact_sha256=c0c0dd6cad2e7724286ac7501b7c3068b7a1015c0824610698f71f115acbae66

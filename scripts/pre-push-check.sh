@@ -211,6 +211,9 @@ log "checking doc citations resolve (docs/subsystems, docs/reference)"
 log "checking preview stays out of the core SCC (extraction guard, PRs #301-#303)"
 MIX="${MIX[*]}" ./scripts/check-scc-guard.sh
 
+log "checking vendored Ghostty matches its pinned artifact hash"
+MIX="${MIX[*]}" ./scripts/check-vendor-pin-guard.sh
+
 log "checking config-seam module-literal defaults stay out of xref cycles (#347/#348)"
 MIX="${MIX[*]}" ./scripts/check-config-seam-guard.sh
 
