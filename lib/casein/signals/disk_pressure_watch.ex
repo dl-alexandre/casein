@@ -38,6 +38,30 @@ defmodule Casein.Signals.DiskPressureWatch do
   @doc false
   def sample_now(server \\ __MODULE__), do: GenServer.call(server, :sample_now)
 
+  @doc "Read the latest cached filesystem usage from OTP `:disksup`."
+  @spec sample_disk_usage(String.t()) :: {:ok, map()} | {:error, term()}
+  def sample_disk_usage(mount) when is_binary(mount) do
+    # `:disksup` is maintained by OTP's `:os_mon` application. Reading its
+    # latest data is a local GenServer call, so this watcher never shells out
+    # or parses `df` on each sample.
+    case Enum.find(:disksup.get_disk_data(), fn {mounted_on, _total_kb, _capacity} ->
+           List.to_string(mounted_on) == mount
+         end) do
+      {mounted_on, total_kb, used_percent} ->
+        {:ok,
+         %{
+           mount: List.to_string(mounted_on),
+           total_kb: total_kb,
+           used_percent: used_percent
+         }}
+
+      nil ->
+        {:error, {:mount_not_found, mount}}
+    end
+  catch
+    :exit, reason -> {:error, {:disksup_exit, reason}}
+  end
+
   @doc "Recent samples, newest first. Retained only in the watcher process."
   def recent_samples(server \\ __MODULE__), do: GenServer.call(server, :recent_samples)
 

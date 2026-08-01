@@ -46,7 +46,7 @@ defmodule Casein.MixProject do
     [
       mod: {Casein.Application, []},
       extra_applications:
-        [:logger, :runtime_tools] ++ if(native_windows?(), do: [], else: [:erlexec])
+        [:logger, :runtime_tools, :os_mon] ++ if(native_windows?(), do: [], else: [:erlexec])
     ]
   end
 
