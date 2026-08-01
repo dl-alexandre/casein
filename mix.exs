@@ -205,6 +205,8 @@ defmodule Casein.MixProject do
         "cmd ./scripts/check-config-seam-guard.sh",
         # HEEx boolean data-/aria- predicate attrs must use to_string/1 (#163).
         "cmd ./scripts/check-heex-boolean-attr-guard.sh",
+        # Vendored Ghostty bytes must match the reviewed SHA-256 pin.
+        "cmd ./scripts/check-vendor-pin-guard.sh",
         "cmd ./scripts/test-cover-gate.sh"
       ]
     ]
