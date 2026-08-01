@@ -21,7 +21,9 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
 - **Out of scope:** packaging/update implementation and preview-specific
   implementation. Interface changes in those areas require coordination first.
 - **Landed:** PR #469 makes the existing ConPTY bridge own the complete child
-  process tree with a kill-on-close Windows Job Object.
-- **Current slice:** expose stable product-level session/window/pane topology,
-  roles, capture, resize, and strict native target validation on the existing
-  application-owned PowerShell session.
+  process tree with a kill-on-close Windows Job Object. PR #478 exposes stable
+  product-level session/window/pane topology, roles, capture, resize, and strict
+  native target validation on the application-owned PowerShell session.
+- **Current slice:** add token-free native launch preflight and executable,
+  version, and authentication diagnostics for Codex, Claude, Grok, OpenCode,
+  and Cursor before wiring runtime-specific MCP launch arguments.

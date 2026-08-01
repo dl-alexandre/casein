@@ -6,26 +6,106 @@ defmodule Casein.Desktop.AgentLauncher do
   process, so provider launch commands never contain bearer tokens or config paths.
   """
 
-  @commands %{
-    "agent" => "agent",
-    "claude" => "claude",
-    "clauded" => "claude",
-    "codex" => "codex",
-    "grok" => "grok",
-    "opencode" => "opencode",
-    "cursor" => "Start-Process cursor -ArgumentList '.'"
+  @runtimes %{
+    "agent" => %{executable: "agent", command: "agent", auth: :provider_managed},
+    "claude" => %{executable: "claude", command: "claude", auth: :claude},
+    "clauded" => %{executable: "claude", command: "claude", auth: :claude},
+    "codex" => %{executable: "codex", command: "codex", auth: :codex},
+    "grok" => %{executable: "grok", command: "grok", auth: :provider_managed},
+    "opencode" => %{executable: "opencode", command: "opencode", auth: :provider_managed},
+    "cursor" => %{
+      executable: "cursor",
+      command: "Start-Process cursor -ArgumentList '.'",
+      auth: :provider_managed
+    }
   }
 
   @spec supported?(term()) :: boolean()
-  def supported?(id), do: is_binary(id) and Map.has_key?(@commands, id)
+  def supported?(id), do: is_binary(id) and Map.has_key?(@runtimes, id)
 
   @spec command(String.t()) :: {:ok, String.t()} | {:error, :unsupported_agent}
   def command(id) when is_binary(id) do
-    case Map.fetch(@commands, id) do
-      {:ok, command} -> {:ok, command <> "\r"}
+    case Map.fetch(@runtimes, id) do
+      {:ok, %{command: command}} -> {:ok, command <> "\r"}
       :error -> {:error, :unsupported_agent}
     end
   end
 
   def command(_id), do: {:error, :unsupported_agent}
+
+  @doc "Return token-free executable, version, and authentication launch diagnostics."
+  @spec diagnose(String.t(), keyword()) :: {:ok, map()} | {:error, :unsupported_agent}
+  def diagnose(id, opts \\ [])
+
+  def diagnose(id, opts) when is_binary(id) do
+    with {:ok, runtime} <- fetch_runtime(id) do
+      resolver = Keyword.get(opts, :resolver, &System.find_executable/1)
+      version_runner = Keyword.get(opts, :version_runner, &run_version/2)
+      version_timeout = Keyword.get(opts, :version_timeout, 5_000)
+      executable = resolver.(runtime.executable)
+
+      {:ok,
+       %{
+         runtime: id,
+         executable: executable,
+         executable_status: if(is_binary(executable), do: :available, else: :missing),
+         version:
+           if(is_binary(executable),
+             do: executable |> version_runner.(version_timeout) |> normalize_version(),
+             else: {:error, :missing}
+           ),
+         auth: auth_status(runtime.auth, opts)
+       }}
+    end
+  end
+
+  def diagnose(_id, _opts), do: {:error, :unsupported_agent}
+
+  defp fetch_runtime(id) do
+    case Map.fetch(@runtimes, id) do
+      {:ok, runtime} -> {:ok, runtime}
+      :error -> {:error, :unsupported_agent}
+    end
+  end
+
+  # executable is resolved from the fixed @runtimes allowlist; System.cmd does not invoke a shell.
+  # sobelow_skip ["CI.System"]
+  defp run_version(executable, timeout) when is_integer(timeout) and timeout > 0 do
+    task = Task.async(fn -> System.cmd(executable, ["--version"], stderr_to_stdout: true) end)
+
+    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, {output, 0}} ->
+        {:ok, String.trim(output)}
+
+      {:ok, {output, status}} ->
+        {:error, {:exit_status, status, output |> String.trim() |> String.slice(0, 512)}}
+
+      nil ->
+        {:error, :version_timeout}
+    end
+  rescue
+    error -> {:error, {:launch_failed, Exception.message(error)}}
+  end
+
+  defp normalize_version({:ok, output}) when is_binary(output),
+    do: {:ok, String.slice(output, 0, 512)}
+
+  defp normalize_version({:error, reason}), do: {:error, reason}
+  defp normalize_version(_other), do: {:error, :invalid_version_result}
+
+  defp auth_status(:provider_managed, _opts), do: :provider_managed
+
+  defp auth_status(provider, opts) when provider in [:claude, :codex] do
+    home = Keyword.get(opts, :home) || System.get_env("USERPROFILE") || System.get_env("HOME")
+
+    marker =
+      case provider do
+        :claude -> [".claude", ".credentials.json"]
+        :codex -> [".codex", "auth.json"]
+      end
+
+    if is_binary(home) and File.regular?(Path.join([home | marker])),
+      do: :signed_in,
+      else: :not_detected
+  end
 end
