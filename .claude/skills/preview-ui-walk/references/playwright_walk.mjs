@@ -16,7 +16,11 @@ import {
   runPageSteps,
   walkNeedsRequiredInteractions,
 } from "./page_steps.mjs";
-import { beginRuntime, pageRuntimeEvidence } from "./runtime_evidence.mjs";
+import {
+  beginPageRuntime,
+  beginRuntime,
+  pageRuntimeEvidence,
+} from "./runtime_evidence.mjs";
 import { collectVisualBaseline, storeFromEnv, visualVerdict } from "./visual_baseline.mjs";
 import { resolvePlaywrightCore } from "./resolve_dep.mjs";
 import { attachApi, attachDownloads, cleanupEvidence } from "./api_evidence.mjs";
@@ -39,6 +43,7 @@ void isAuthBouncePath;
 void interactionsAllowed;
 void runPageSteps;
 void walkNeedsRequiredInteractions;
+void beginPageRuntime;
 void beginRuntime;
 void pageRuntimeEvidence;
 void collectVisualBaseline;
