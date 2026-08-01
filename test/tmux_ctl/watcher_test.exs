@@ -191,6 +191,60 @@ defmodule TmuxCtl.Topology.WatcherTest do
              Watcher.switch_subscription(nil, session, watcher_opts(enabled: false))
   end
 
+  test "switch_subscription hands back the watcher pid so subscribers can monitor it" do
+    session = "watcher-pid-#{System.unique_integer([:positive])}"
+    put_fake_window(session, "shell")
+
+    assert {:ok, %{pid: pid}} =
+             Watcher.switch_subscription(nil, session, watcher_opts(read: :get, enabled: false))
+
+    assert is_pid(pid)
+    assert [{^pid, _}] = Registry.lookup(@registry, session)
+  end
+
+  # The hazard the pid exists for: `{:watch, pid}` registrations die with the
+  # watcher, so the restart comes up with an empty watcher set and idle-stops —
+  # leaving a subscriber that is still on the topic but will never hear from
+  # anyone again.
+  test "a subscriber that does not re-register goes silent after a watcher crash" do
+    session = "watcher-crash-#{System.unique_integer([:positive])}"
+    put_fake_window(session, "shell")
+
+    opts = watcher_opts(enabled: false, idle_stop_ms: 50)
+    assert {:ok, %{pid: pid}} = Watcher.switch_subscription(nil, session, opts)
+
+    ref = Process.monitor(pid)
+    Process.exit(pid, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^pid, :killed}, 500
+
+    # The supervisor's transient restart brings a watcher back, but with nobody
+    # registered it hands in its notice.
+    assert eventually_no_watcher?(session, 40)
+  end
+
+  test "resubscribing after a watcher crash restores delivery" do
+    session = "watcher-resub-#{System.unique_integer([:positive])}"
+    put_fake_window(session, "shell")
+
+    assert {:ok, %{pid: pid}} =
+             Watcher.switch_subscription(nil, session, watcher_opts(read: :get, enabled: false))
+
+    ref = Process.monitor(pid)
+    Process.exit(pid, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^pid, :killed}, 500
+
+    # Exactly what the LiveView does when its monitor fires.
+    assert {:ok, %{pid: new_pid}} =
+             Watcher.switch_subscription(nil, session, watcher_opts(read: :get, enabled: false))
+
+    assert is_pid(new_pid)
+
+    put_fake_window(session, "tests")
+    _ = Watcher.refresh_now(session, watcher_opts())
+
+    assert_receive {@tag, {:updated, %{session: ^session, windows: [%{name: "tests"}]}}}, 500
+  end
+
   test "stops after idle grace when nobody watches" do
     session = "watcher-idle-#{System.unique_integer([:positive])}"
     put_fake_window(session, "shell")
@@ -203,6 +257,19 @@ defmodule TmuxCtl.Topology.WatcherTest do
     ref = Process.monitor(pid)
     assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
     refute_receive {@tag, {:session_terminated, %{session: ^session}}}, 50
+  end
+
+  defp eventually_no_watcher?(_session, 0), do: false
+
+  defp eventually_no_watcher?(session, attempts) do
+    case Registry.lookup(@registry, session) do
+      [] ->
+        true
+
+      _ ->
+        Process.sleep(25)
+        eventually_no_watcher?(session, attempts - 1)
+    end
   end
 
   defp watcher_opts(overrides \\ []) do

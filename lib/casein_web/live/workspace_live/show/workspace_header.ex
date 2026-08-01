@@ -88,40 +88,44 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
             :if={@tmux_mutations_enabled?}
             type="button"
             phx-click="tmux:new_window"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            class={menu_item_class()}
             title="New window · Ctrl + B c"
             aria-label="New tmux window"
           >
-            New window
+            <span>New window</span>
+            <.menu_kbd keys="Ctrl B c" />
           </button>
 
           <button
             :if={length(@tmux_window_tabs) > 1}
             type="button"
             phx-click="tmux:last_window"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            class={menu_item_class()}
             title="Last window · Ctrl + B l"
           >
-            Last window
+            <span>Last window</span>
+            <.menu_kbd keys="Ctrl B l" />
           </button>
 
+          <%!-- No "Refresh windows" item: the topology watcher tracks tmux on
+                its own (control-mode events, or a 300ms poll when those are
+                off, with a 10s reconcile behind both) and now resubscribes
+                itself if the watcher dies, so a manual poke has nothing left to
+                fix. The desktop app keeps its terminal restart — that one
+                respawns the PTY, it is not a refresh. --%>
           <button
+            :if={@desktop_terminal?}
             type="button"
             phx-click="tmux:refresh_windows"
             class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
           >
-            {if @desktop_terminal?, do: "Restart terminal", else: "Refresh windows"}
+            Restart terminal
           </button>
-          <button
-            :if={@tmux_mutations_enabled?}
-            id={"tmux-template-palette-" <> @workspace.id}
-            type="button"
-            phx-click="palette:templates"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            Apply session template
-          </button>
-
+          <%!-- One templates entry, not two. The old "Apply session template"
+                row only opened the command palette filtered to "template apply"
+                — a shortcut for something the Command palette row already
+                reaches, sitting next to a library that applies templates too.
+                The library is the whole feature: save, tag, edit, apply. --%>
           <button
             :if={@tmux_mutations_enabled?}
             id={"tmux-template-library-" <> @workspace.id}
@@ -129,7 +133,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
             phx-click="tmux:open_template_library"
             class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
           >
-            Template library
+            Session templates…
           </button>
         <% end %>
 
@@ -149,19 +153,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
               type="button"
               phx-click="pane:navigate"
               phx-value-dir="next"
-              class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+              class={menu_item_class()}
               title="Cycle to next pane · Ctrl + B o"
             >
-              Cycle to next pane
+              <span>Cycle to next pane</span>
+              <.menu_kbd keys="Ctrl B o" />
             </button>
 
             <button
               type="button"
               phx-click="pane:close_focused"
-              class="block w-full px-3 py-1.5 text-left text-xs text-error/80 hover:bg-error/10 hover:text-error"
+              class={menu_item_class("text-error/80 hover:bg-error/10 hover:text-error")}
               title="Close pane · Ctrl + B x"
             >
-              Close focused pane
+              <span>Close focused pane</span>
+              <.menu_kbd keys="Ctrl B x" />
             </button>
 
             <button
@@ -264,31 +270,47 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
         <button
           type="button"
           phx-click="palette:open"
-          class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          class={menu_item_class()}
           title="Open command palette · Ctrl + P"
           aria-label="Open command palette"
         >
           <span>Command palette</span>
-          <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono text-[10px] text-base-content/60">
-            Ctrl P
-          </kbd>
+          <.menu_kbd keys="Ctrl P" />
         </button>
 
         <button
           type="button"
           phx-click={JS.toggle(to: "#leader-cheatsheet")}
-          class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          class={menu_item_class()}
           title="Help & keyboard shortcuts · Ctrl + B ?"
           aria-label="Help and keyboard shortcuts"
         >
           <span>Help &amp; shortcuts</span>
-          <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono text-[10px] text-base-content/60">
-            Ctrl B ?
-          </kbd>
+          <.menu_kbd keys="Ctrl B ?" />
         </button>
       </div>
     </details>
     """
+  end
+
+  # Menu rows that carry a binding show it: a shortcut discoverable only by
+  # hovering for a `title` tooltip is a shortcut nobody learns, and the panel
+  # now sizes to its content so the hint costs no truncation.
+  attr :keys, :string, required: true
+
+  defp menu_kbd(assigns) do
+    ~H"""
+    <kbd class="shrink-0 rounded bg-base-200 px-1 py-0.5 font-mono text-[10px] text-base-content/60">
+      {@keys}
+    </kbd>
+    """
+  end
+
+  defp menu_item_class(extra \\ nil) do
+    [
+      "flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-xs",
+      extra || "hover:bg-base-200"
+    ]
   end
 
   defp notification_attention_count(assigns) do

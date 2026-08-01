@@ -463,10 +463,13 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   background-color: var(--color-base-300);
 }
 
-/* Font size CSS variable — managed by app.js; mobile A- / A+ adjust it.
-   --casein-terminal-line-height is kept in sync by applyFontSize() in app.js. */
+/* Font size CSS variable — managed by app.js; the A- / A+ controls in the
+   mobile keybar and the header ⋯ menu adjust it, and ghostty_terminal.js writes
+   it onto the grid <pre>. --casein-terminal-line-height is kept in sync by
+   applyFontSize(). 14px/17px is what the grid rendered before the variable was
+   wired up (`text-sm` inherited from the container) — see terminal_font_size.mjs. */
 :root {
-  --casein-font-size: 13px;
+  --casein-font-size: 14px;
   /* Terminal chrome — JS applies Catppuccin presets; zinc fallbacks for first paint */
   --casein-term-bg: #0a0a0a;
   --casein-term-fg: #e4e4e7;
@@ -1007,9 +1010,23 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
   /* Above terminal tiles / pane overlays; below clipboard toast (z-80). */
   z-index: 60;
   margin-top: 0.125rem;
+  /* `width: max-content` is load-bearing. The containing block is the ⋯ button
+     itself (a ~2rem `position: relative` host), and an absolutely positioned
+     box with `right: 0` shrink-to-fits against *that*, not the viewport — so
+     `width: auto` collapsed the panel onto `min-width` and wrapped every label
+     that did not fit 12rem. Sizing to content and letting `max-width` cap the
+     growth is what stops the wrapping. */
+  width: max-content;
   min-width: 12rem;
-  max-width: min(18rem, 90vw);
-  max-height: min(70vh, 28rem);
+  /* The hook measures the room to the left of the ⋯ button and sets
+     --header-overflow-max-w. The panel is right-anchored, so that distance is
+     its ceiling; the static value is the pre-measurement fallback. */
+  max-width: var(--header-overflow-max-w, min(22rem, 90vw));
+  /* The HeaderOverflow hook measures the room left below the ⋯ button and sets
+     --header-overflow-max-h, so a tall viewport gets a tall menu instead of
+     scrolling inside a fixed cap with empty space below it. The static value
+     is the pre-measurement fallback. */
+  max-height: var(--header-overflow-max-h, min(70vh, 28rem));
   overflow-y: auto;
   border-radius: 0.375rem;
   border: 1px solid var(--color-base-300);

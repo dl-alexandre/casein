@@ -27,6 +27,12 @@ import topbar from "../vendor/topbar"
 import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
+import {
+  TERMINAL_FONT_STORAGE_KEY,
+  lineHeightFor,
+  nextFontSize,
+  storedFontSize
+} from "./terminal_font_size.mjs"
 import {MobileKeyBar} from "./mobile_key_bar"
 import {ChromeWidth} from "./chrome_width"
 import {WorkspaceLeader} from "./workspace_leader"
@@ -751,27 +757,33 @@ document.addEventListener("click", (e) => {
 // than the distorting CSS fit-scale) is handled by the TmuxPaneResize hook's
 // ensure-zoom logic — see assets/js/tmux_pane_resize_hook.js — not by a split event.
 
-// Font size via CSS variable — persisted in localStorage.
-// Mobile keybar A- / A+ buttons dispatch "casein:font-size" with {delta: ±1}.
-// The CSS variable --casein-terminal-line-height is kept in sync (≈ fontSize × 1.31).
-let _fontSize = parseInt(localStorage.getItem("casein:font-size") || "13", 10)
+// Font size via CSS variables — persisted in localStorage. The A- / A+ buttons
+// in the mobile keybar and the header ⋯ menu dispatch "casein:font-size" with
+// {delta: ±1}. Both variables are load-bearing: the <pre> reads --casein-font-size
+// for glyph size and --casein-terminal-line-height for row pitch (see
+// ghostty_terminal.js). See terminal_font_size.mjs for the numbers.
+let _fontSize = storedFontSize(localStorage.getItem(TERMINAL_FONT_STORAGE_KEY))
 
 function applyFontSize(px) {
   const root = document.documentElement.style
   root.setProperty("--casein-font-size", px + "px")
-  root.setProperty("--casein-terminal-line-height", Math.round(px * 1.31) + "px")
+  root.setProperty("--casein-terminal-line-height", lineHeightFor(px) + "px")
 }
 
 applyFontSize(_fontSize)
 initTerminalThemes()
 
 window.addEventListener("casein:font-size", (e) => {
-  _fontSize = Math.max(8, Math.min(24, _fontSize + (e.detail?.delta || 0)))
+  _fontSize = nextFontSize(_fontSize, e.detail?.delta || 0)
   applyFontSize(_fontSize)
-  localStorage.setItem("casein:font-size", _fontSize)
-  const lineH = Math.round(_fontSize * 1.31) + "px"
-  // Re-patch all mounted terminal pres with new lineHeight so cell metrics update
+  localStorage.setItem(TERMINAL_FONT_STORAGE_KEY, _fontSize)
+  const fontPx = _fontSize + "px"
+  const lineH = lineHeightFor(_fontSize) + "px"
+  // Re-patch all mounted terminal pres so cell metrics update. The hook writes
+  // both properties inline at mount, so the variables alone would not reach an
+  // already-rendered grid.
   document.querySelectorAll('[phx-hook="GhosttyTerminal"] pre').forEach((pre) => {
+    pre.style.fontSize = fontPx
     pre.style.lineHeight = lineH
   })
   // Nudge Ghostty panes to trigger refit via their ResizeObserver

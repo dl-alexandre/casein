@@ -106,7 +106,11 @@ defmodule CaseinWeb.WorkspaceHeaderChromeTest do
     assert html =~ "header-overflow"
     assert html =~ ~s(id="header-overflow-#{workspace_id}")
     assert html =~ ~s(phx-hook="HeaderOverflow")
-    assert has_element?(view, ".header-overflow button[phx-click='tmux:refresh_windows']")
+    # No manual refresh item on the web viewer: the topology watcher tracks
+    # tmux itself and the LiveView resubscribes when that watcher dies, so the
+    # button had nothing left to repair. The desktop app keeps its own
+    # "Restart terminal" (a PTY respawn, not a refresh).
+    refute has_element?(view, ".header-overflow button[phx-click='tmux:refresh_windows']")
     # Desktop sizing lives in the ⋯ menu (font + display zoom).
     assert has_element?(view, ~s(.header-overflow button[data-keybar-key="FontUp"]))
     assert has_element?(view, ~s(.header-overflow button[data-keybar-key="FontDown"]))
@@ -122,9 +126,12 @@ defmodule CaseinWeb.WorkspaceHeaderChromeTest do
     assert has_element?(view, ".header-overflow button[phx-click='notifications:toggle']")
     assert has_element?(view, ".header-overflow button[phx-click='palette:open']")
 
-    # Template palette/library ids are canonical in the ⋯ menu and must render
-    # exactly once (duplicate DOM ids corrupt LiveView patching).
-    assert length(String.split(html, ~s(id="tmux-template-palette-#{workspace_id}"))) == 2
+    # One templates entry — the library. The old "Apply session template" row
+    # was a shortcut into the palette that the Command palette row already
+    # reaches, next to a library that applies templates itself.
+    refute html =~ ~s(id="tmux-template-palette-#{workspace_id}")
+    # The library id is canonical in the ⋯ menu and must render exactly once
+    # (duplicate DOM ids corrupt LiveView patching).
     assert length(String.split(html, ~s(id="tmux-template-library-#{workspace_id}"))) == 2
 
     # Pruned inline chrome: these actions live in the ⋯ menu / C-b keys now.

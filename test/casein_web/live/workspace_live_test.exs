@@ -1693,11 +1693,13 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
     await_mount_hydration(view)
 
-    assert has_element?(view, "#tmux-template-palette-ws-1")
+    # The ⋯ menu's "Apply session template" shortcut is gone (one templates
+    # entry, the library). Template actions are reached the ordinary way: open
+    # the palette and type.
+    refute has_element?(view, "#tmux-template-palette-ws-1")
 
-    view
-    |> element("#tmux-template-palette-ws-1")
-    |> render_click()
+    render_click(view, "palette:open", %{})
+    render_change(view, "palette:query", %{"query" => "template apply"})
 
     assert has_element?(
              view,
