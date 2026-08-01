@@ -67,6 +67,59 @@ python3 …/walk.py --manifest .casein/preview-walk.json --out ./run
 Improving a walk = edit the product JSON (pages, asserts, probes, budgets). The
 engine stays stable; **workflows are product data**.
 
+### Choose durable coverage or one-off evidence
+
+Classify the request before opening a browser:
+
+- **Durable feature coverage**: a shipped feature adds or changes reusable
+  user-facing behavior. Update the product's existing manifest, or add a named
+  manifest, in the same product PR. Cover every affected role and real route,
+  add meaningful landed-content assertions, set a strict load budget, and
+  require the runtime evidence needed to prove the feature. Route scanners
+  commonly omit parameterized routes (`:id`, `*glob`); add those explicitly
+  with stable fixture identifiers instead of treating route-count parity as
+  complete coverage.
+- **One-off evidence**: an ad hoc acceptance check, investigation, or narrow
+  post-build question. Start from the nearest product manifest and keep any
+  temporary manifest in ignored run output or `/tmp`; do not silently expand
+  the durable catalog. A one-off still requires presweep attestation, the exact
+  deployed revision, assertions, error/evidence collection, and a published
+  Artifact URL. Promote it into the product catalog when it catches a reusable
+  regression, is requested again, or documents behavior the feature owns.
+
+Do not accept "the page opened" as either kind of evidence. Verify the landed
+URL, feature-specific content or state, authorization boundary, load budget,
+browser errors, and declared runtime evidence.
+
+### Choose targeted or full-catalog scope
+
+| Scope | Use when |
+|-------|----------|
+| **Targeted** | The change is isolated behind stable routing, auth, schemas, shared UI, and runtime configuration. Run every affected manifest/role. |
+| **Full catalog** | The change touches routing/live sessions, login/session/authz, shared layouts/components/hooks/assets, schemas or compatibility queries, runtime configuration, collectors/driver behavior, or multiple product surfaces. |
+
+Run the product presweep immediately before browser work in both cases. The
+product repo may define stricter full-suite triggers; follow those instead of
+weakening scope for speed.
+
+### Request patterns
+
+Durable feature request:
+
+> Add durable preview-walk coverage for `<feature>`. Include all affected real
+> routes and roles, fixture-backed dynamic routes, meaningful assertions,
+> strict timing budgets, and required runtime evidence. Run the presweep and
+> affected workflow, run the full catalog if shared contracts changed, and
+> publish the Artifact URL. Keep shared-data runs read-only.
+
+One-off request:
+
+> Run a one-off read-only preview walk for `<feature>` against the exact
+> deployed revision. Check `<paths/actions>`, authorization, load budgets,
+> browser errors, landed LiveView state, and runtime evidence. Run the presweep
+> first and publish a durable Artifact URL. Do not change the product catalog
+> unless the result exposes reusable coverage.
+
 ## ⚠️ Safety gate — READ THIS FIRST, every run
 
 A workspace app can be backed by **production upstream APIs even when its local DB
@@ -81,6 +134,10 @@ is throwaway**. The app's own walk manifest documents that risk under `safety`. 
    against `step.event`).
 3. The manifest carries the app's `safety` block. Honor it. Log what you skipped.
    When in doubt, screenshot; never click.
+4. A non-production `env_check` is necessary but does not authorize mutation of
+   a shared dev or stage dataset. When product policy marks a data source
+   read-only, use an isolated/disposable target with persistence, attribution,
+   and cleanup evidence for create/update/delete checks.
 
 ## What it produces
 
