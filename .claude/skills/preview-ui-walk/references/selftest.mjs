@@ -56,6 +56,7 @@ import {
   isBlockedStatus,
   isHardFailStatus,
   isSignificantErrorLine,
+  liveViewClientFailure,
   normalizeAppFramePrefixes,
   RESULT_CLASSES,
   resultClass,
@@ -267,6 +268,35 @@ assert(
     runtimeErrors: 1,
   }).status === "RUNTIME_ERROR",
   "server error logs → RUNTIME_ERROR (not ASSERT_FAILED)",
+);
+assert(
+  liveViewClientFailure({
+    present: true,
+    connected: false,
+    loading: false,
+    error_classes: ["phx-error", "phx-server-error"],
+  })?.reason.includes("phx-server-error"),
+  "LiveView client error classes produce a failure signal",
+);
+assert(
+  verdictFixture({
+    liveViewFailure: liveViewClientFailure({
+      present: true,
+      connected: false,
+      loading: false,
+      error_classes: ["phx-server-error"],
+    }),
+  }).status === "RUNTIME_ERROR",
+  "2xx SSR with a crashed LiveView websocket is RUNTIME_ERROR",
+);
+assert(
+  liveViewClientFailure({
+    present: true,
+    connected: true,
+    loading: false,
+    error_classes: [],
+  }) === null,
+  "connected LiveView client remains clean",
 );
 assert(
   countRuntimeErrors({
