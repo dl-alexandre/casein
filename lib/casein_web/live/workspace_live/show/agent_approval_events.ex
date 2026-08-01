@@ -164,10 +164,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovalEvents do
     metadata = if option_id, do: Map.put(metadata, :option_id, option_id), else: metadata
 
     Audit.emit!(%{
-      action: "agent.permission_decided",
+      action: "agent.approval_decided",
       workspace_id: socket.assigns.workspace.id,
       actor_id: Context.current_actor_id(socket),
-      target_type: "agent_permission",
+      target_type: "agent_approval",
       target_ref: "#{request.provider_id}:#{request.request_id}",
       metadata: metadata
     })

@@ -100,9 +100,11 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
            }
 
     assert Enum.any?(Audit.list(), fn event ->
-             event.action == "agent.permission_decided" and
+             event.action == "agent.approval_decided" and
                event.workspace_id == @workspace_id and
                event.actor_id == "dev" and
+               event.target_type == "agent_approval" and
+               event.metadata[:provider_id] == :grok_acp and
                event.metadata[:outcome] == "selected" and
                event.metadata[:option_id] == "allow-once"
            end)
@@ -130,7 +132,7 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
     assert cancel_response["result"]["outcome"] == %{"outcome" => "cancelled"}
 
     assert Enum.any?(Audit.list(), fn event ->
-             event.action == "agent.permission_decided" and
+             event.action == "agent.approval_decided" and
                event.metadata[:outcome] == "cancelled" and
                not Map.has_key?(event.metadata, :option_id)
            end)

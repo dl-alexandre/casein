@@ -31,13 +31,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovalEventsTest do
   use Casein.TestCase, async: false
 
   alias Casein.AgentSessions.Provider.PendingRequest
+  alias Casein.Audit
   alias CaseinWeb.WorkspaceLive.Show.AgentApprovalEvents
   alias CaseinWeb.WorkspaceLive.Show.AgentApprovalEventsTest.Provider
 
   setup do
     providers = Application.fetch_env!(:casein, :agent_session_providers)
+    Audit.clear()
     Application.put_env(:casein, :agent_session_providers, %{codex: Provider, grok_acp: Provider})
-    on_exit(fn -> Application.put_env(:casein, :agent_session_providers, providers) end)
+
+    on_exit(fn ->
+      Audit.clear()
+      Application.put_env(:casein, :agent_session_providers, providers)
+    end)
   end
 
   defp socket(requests) do
@@ -99,6 +105,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovalEventsTest do
              )
 
     assert_receive {:approval_response, :codex, "request-1", {:decision, :decline}}
+
+    assert [%{action: "agent.approval_decided", target_type: "agent_approval"} = audit] =
+             Audit.list()
+
+    assert audit.metadata.provider_id == :codex
   end
 
   test "Codex exec-policy amendments reach respond_to_request/4 as a decision tuple" do
