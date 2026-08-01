@@ -154,27 +154,32 @@ function Write-ReleaseTrustManifest {
     }
 
     $packagePrefixLength = $PackagePath.TrimEnd('\').Length + 1
+    $manifest = Join-Path $PackagePath 'windows\Casein.Release.psd1'
+    $filesManifestRelative = 'windows\Casein.Release.Files.json'
+    $filesManifest = Join-Path $PackagePath $filesManifestRelative
+    $excludedManifests = @($manifest, $filesManifest)
     $relativeFiles = Get-ChildItem -LiteralPath $PackagePath -Recurse -File |
-        Where-Object { $_.FullName -ne (Join-Path $PackagePath 'windows\Casein.Release.psd1') } |
+        Where-Object { $_.FullName -notin $excludedManifests } |
         ForEach-Object { $_.FullName.Substring($packagePrefixLength) } |
         Sort-Object
-    $entries = foreach ($relative in $relativeFiles) {
+    $fileHashes = [ordered]@{}
+    foreach ($relative in $relativeFiles) {
         $path = Join-Path $PackagePath $relative
-        "        '$($relative.Replace("'", "''"))' = '$((Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant())'"
+        $fileHashes[$relative] = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
     }
-    $manifest = Join-Path $PackagePath 'windows\Casein.Release.psd1'
+    $fileHashes | ConvertTo-Json -Depth 2 -Compress | Set-Content -LiteralPath $filesManifest -Encoding UTF8
+    $filesManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $filesManifest).Hash.ToLowerInvariant()
     $signedEntries = @($signedRelativeFiles | ForEach-Object { "        '$($_.Replace("'", "''"))'" })
     @"
 @{
-    Schema = 1
+    Schema = 2
     Version = '$Version'
     Revision = '$Revision'
+    FilesManifest = '$filesManifestRelative'
+    FilesManifestSha256 = '$filesManifestHash'
     SignedFiles = @(
 $($signedEntries -join "`r`n")
     )
-    Files = @{
-$($entries -join "`r`n")
-    }
 }
 "@ | Set-Content -LiteralPath $manifest -Encoding UTF8
 
