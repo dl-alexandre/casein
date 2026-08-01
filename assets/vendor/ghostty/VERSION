@@ -1,0 +1,7 @@
+package=ghostty
+package_version=0.4.8
+upstream_repository=https://github.com/dannote/ghostty_ex
+upstream_revision=a162ff21bb6c38283ee2811ddd02cade831d83f4
+obtained_from=Hex ghostty 0.4.8, first vendored by Casein commit 056cc5fbb50d0996d7fde95230f0bb661fcfc912
+hex_package_checksum=0aa38364ed72b89962df62dac34a1c8521f17d9ab3acb86fcb5fa783935ebc6e
+hex_registry_checksum=4ed53d875c8b85872ef34224faa2297631a51a7626ef08e295444c59773ba5a7
