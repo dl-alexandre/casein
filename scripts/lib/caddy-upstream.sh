@@ -39,7 +39,14 @@ casein_read_casein_api_token() {
   local token=""
 
   if [ -r "$env_file" ]; then
-    token="$(unset CASEIN_API_TOKEN; set -a; . "$env_file" >/dev/null 2>&1; printf '%s' "${CASEIN_API_TOKEN:-}")"
+    token="$(
+      unset CASEIN_API_TOKEN
+      set -a
+      # The trusted deploy caller supplies the environment path.
+      # shellcheck source=/dev/null
+      . "$env_file" >/dev/null 2>&1
+      printf '%s' "${CASEIN_API_TOKEN:-}"
+    )"
   elif sudo test -r "$env_file" 2>/dev/null; then
     token="$(sudo bash -c 'unset CASEIN_API_TOKEN; set -a; . "$1" >/dev/null 2>&1; printf "%s" "${CASEIN_API_TOKEN:-}"' _ "$env_file")"
   fi

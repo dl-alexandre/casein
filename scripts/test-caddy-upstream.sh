@@ -33,6 +33,9 @@ token_fixture="$(mktemp "${TMPDIR:-/tmp}/casein-token-fixture-XXXXXX")"
 cleanup_token_fixture() { rm -f "$token_fixture"; }
 trap 'cleanup_canonical_trace; cleanup_token_fixture' EXIT
 printf "%s\n" "CASEIN_API_TOKEN='quoted==padded=='" >"$token_fixture"
+# The helper is loaded by the sourced library above; ShellCheck also sees the
+# intentional re-sources below and otherwise misclassifies this call as early.
+# shellcheck disable=SC2218
 token_fixture_value="$(casein_read_casein_api_token "$token_fixture")"
 [ "$token_fixture_value" = "quoted==padded==" ]
 
