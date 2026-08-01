@@ -150,12 +150,22 @@ try {
     $tamperedState = Get-Content -Raw -LiteralPath $credentialStatePath | ConvertFrom-Json
     $tamperedState | Add-Member -NotePropertyName injected_secret -NotePropertyValue 'must-not-ship'
     $tamperedState | ConvertTo-Json | Set-Content -LiteralPath $credentialStatePath -Encoding UTF8
+    Write-CaseinCrashState -RuntimePid 4242 -ExitCode 23 -RecoveryStatus 'detected'
+    Update-CaseinRecoveryState -RecoveryStatus 'recovering' -RecoveryAttempts 2
+    Update-CaseinRecoveryState -RecoveryStatus 'recovered' -RecoveryAttempts 2
+    $crashStatePath = Join-Path $testLocalAppData 'crash-state.json'
+    $tamperedCrashState = Get-Content -Raw -LiteralPath $crashStatePath | ConvertFrom-Json
+    $tamperedCrashState | Add-Member -NotePropertyName injected_secret -NotePropertyValue 'must-not-ship'
+    $tamperedCrashState | ConvertTo-Json | Set-Content -LiteralPath $crashStatePath -Encoding UTF8
     $supportArchive = Join-Path $testLocalAppData 'support.zip'
     $supportExpanded = Join-Path $testLocalAppData 'support-expanded'
     & $supportBundleScript -DataRoot $testLocalAppData -InstallRoot (Join-Path $testLocalAppData 'Programs\Casein') -Destination $supportArchive | Out-Null
     Expand-Archive -LiteralPath $supportArchive -DestinationPath $supportExpanded
     $bundledCredentialState = Get-Content -Raw -LiteralPath (Join-Path $supportExpanded 'credential-state.json')
+    $bundledCrashState = Get-Content -Raw -LiteralPath (Join-Path $supportExpanded 'crash-state.json')
     Assert-Condition (-not $bundledCredentialState.Contains('must-not-ship')) 'Support bundle copied untrusted credential-state fields'
+    Assert-Condition (-not $bundledCrashState.Contains('must-not-ship')) 'Support bundle copied untrusted crash-state fields'
+    Assert-Condition ($bundledCrashState.Contains('recovered')) 'Support bundle omitted crash recovery outcome'
     Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $supportExpanded 'api-token.txt'))) 'Support bundle copied the API token file'
     Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $supportExpanded 'desktop-launch-token.txt'))) 'Support bundle copied the desktop launch token file'
 
