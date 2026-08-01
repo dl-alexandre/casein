@@ -44,6 +44,22 @@ defmodule Scripts.DeployPollerMigrationGuardTest do
     refute File.exists?(fixture.worktree)
   end
 
+  test "a migration refusal is recorded in the deploy status file", %{tmp: tmp} do
+    fixture = build_fixture(tmp, :with_migration)
+
+    {_output, status} = run_poller(fixture)
+
+    assert status != 0
+
+    deploy_status = fixture.last_deploy_file |> File.read!() |> Jason.decode!()
+
+    assert deploy_status["outcome"] == "failed"
+    assert deploy_status["phase"] == "migration_refused"
+    assert deploy_status["target_sha"] == fixture.target
+    assert deploy_status["from_sha"] == fixture.deployed
+    assert deploy_status["reason"] =~ fixture.migration
+  end
+
   test "the attended migration override allows deployment", %{tmp: tmp} do
     fixture = build_fixture(tmp, :with_migration)
 

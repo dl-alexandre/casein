@@ -416,6 +416,12 @@ if [ "${#new_migrations[@]}" -gt 0 ] && [ "${CASEIN_ALLOW_MIGRATION_DEPLOY:-0}" 
   done
   log "apply this revision with a deliberate local service update"
   log "attended override: CASEIN_ALLOW_MIGRATION_DEPLOY=1 bash scripts/deploy-poller.sh"
+  migration_reason="automatic deploy refused: new migrations: $(
+    IFS=,
+    printf '%s' "${new_migrations[*]}"
+  )"
+  write_deploy_status failed "$target" migration_refused \
+    "$migration_reason" "$deployed_full"
   exit 1
 fi
 
