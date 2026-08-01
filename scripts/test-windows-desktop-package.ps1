@@ -93,7 +93,6 @@ try {
     . $trustedLan -ReleaseRoot $packageRoot -LibraryOnly
     . $backupLibrary -LibraryOnly
     . $updateLibrary -LibraryOnly
-    $script:Paths = Get-CaseinPaths $packageRoot
     Initialize-CaseinJobObjectSupport
     Assert-Condition (($null -ne ('Casein.Windows.JobObject' -as [type]))) 'Windows Job Object support did not load'
 
@@ -151,10 +150,16 @@ try {
     $tamperedState = Get-Content -Raw -LiteralPath $credentialStatePath | ConvertFrom-Json
     $tamperedState | Add-Member -NotePropertyName injected_secret -NotePropertyValue 'must-not-ship'
     $tamperedState | ConvertTo-Json | Set-Content -LiteralPath $credentialStatePath -Encoding UTF8
-    Write-CaseinCrashState -RuntimePid 4242 -ExitCode 23 -RecoveryStatus 'detected'
-    Update-CaseinRecoveryState -RecoveryStatus 'recovering' -RecoveryAttempts 2
-    Update-CaseinRecoveryState -RecoveryStatus 'recovered' -RecoveryAttempts 2
-    $crashStatePath = $script:Paths.CrashState
+    $crashStatePath = Join-Path $testLocalAppData 'crash-state.json'
+    [ordered]@{
+        schema = 1
+        detected_at_utc = [DateTime]::UtcNow.AddSeconds(-1).ToString('o')
+        runtime_pid = 4242
+        exit_code = 23
+        recovery_attempts = 2
+        recovery_status = 'recovered'
+        recovered_at_utc = [DateTime]::UtcNow.ToString('o')
+    } | ConvertTo-Json | Set-Content -LiteralPath $crashStatePath -Encoding UTF8
     $tamperedCrashState = Get-Content -Raw -LiteralPath $crashStatePath | ConvertFrom-Json
     $tamperedCrashState | Add-Member -NotePropertyName injected_secret -NotePropertyValue 'must-not-ship'
     $tamperedCrashState | ConvertTo-Json | Set-Content -LiteralPath $crashStatePath -Encoding UTF8
