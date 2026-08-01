@@ -47,6 +47,16 @@ config :casein,
     window_ms: 300_000,
     sustained_ms: 60_000
   ],
+  disk_pressure_watch: [
+    mount: "/",
+    warning_percent: 85,
+    alarm_percent: 95,
+    healthy_interval_ms: 60_000,
+    warning_interval_ms: 30_000,
+    alarm_interval_ms: 10_000,
+    sampler: {Casein.Signals.DiskPressureWatch, :sample_disk_usage},
+    clock: {System, :monotonic_time, [:millisecond]}
+  ],
   tmux_ctl: [
     runner: Casein.Terminals.TmuxRunner,
     session_prefix: "casein",

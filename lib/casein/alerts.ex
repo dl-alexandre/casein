@@ -80,6 +80,22 @@ defmodule Casein.Alerts do
       channels: ["in_app"],
       ttl_seconds: 3_600,
       dedupe_window_seconds: 900
+    },
+    "disk.pressure_warning" => %{
+      type: "disk_pressure_warning",
+      severity: "warning",
+      title: "Disk usage is high",
+      channels: ["in_app"],
+      ttl_seconds: 3_600,
+      dedupe_window_seconds: 900
+    },
+    "disk.pressure_alarm" => %{
+      type: "disk_pressure_alarm",
+      severity: "error",
+      title: "Disk usage is critical",
+      channels: ["in_app", "push"],
+      ttl_seconds: 3_600,
+      dedupe_window_seconds: 900
     }
   }
 
