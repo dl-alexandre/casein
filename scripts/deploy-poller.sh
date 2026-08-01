@@ -21,6 +21,11 @@
 # origin/master already matches the deployed revision. Single-flight via flock,
 # so an overlapping timer tick during a multi-minute build is a no-op.
 #
+# Migration safety: unattended runs refuse any target that adds files under
+# priv/repo/migrations/. For a deliberate, attended service update only, run a
+# single poller invocation with CASEIN_ALLOW_MIGRATION_DEPLOY=1. Do not persist
+# this override in the timer service environment.
+#
 set -euo pipefail
 
 # CASEIN_POLLER_ROOT is set by self_update() before it re-execs the canonical
@@ -386,6 +391,45 @@ if [ -n "$deployed_full" ] && git merge-base --is-ancestor "$target" "$deployed_
     exit 0
   fi
   log "rolling BACK to ${target_short} (CASEIN_DEPLOY_ALLOW_ROLLBACK=1)"
+fi
+
+# Automatic deploys must never be the operation that introduces a database
+# migration. deploy-devbox-release.sh runs bin/migrate as an ExecStartPre after
+# replacing the active release directory, so this check must happen before the
+# clean worktree, build, or activation path changes anything on disk.
+migration_base="$deployed_full"
+if [ -z "$migration_base" ]; then
+  # With no trustworthy deployed revision, treat every migration in the target
+  # as new. A deliberate local service update can establish the first revision.
+  migration_base="$(git hash-object -t tree /dev/null)"
+fi
+
+mapfile -t new_migrations < <(
+  git diff --name-only --diff-filter=A \
+    "${migration_base}..${target}" -- priv/repo/migrations/
+)
+
+if [ "${#new_migrations[@]}" -gt 0 ] && [ "${CASEIN_ALLOW_MIGRATION_DEPLOY:-0}" != "1" ]; then
+  log "automatic deploy REFUSED: ${target_short} introduces database migrations:"
+  for migration in "${new_migrations[@]}"; do
+    log "  ${migration}"
+  done
+  log "apply this revision with a deliberate local service update"
+  log "attended override: CASEIN_ALLOW_MIGRATION_DEPLOY=1 bash scripts/deploy-poller.sh"
+  migration_reason="automatic deploy refused: new migrations: $(
+    IFS=,
+    printf '%s' "${new_migrations[*]}"
+  )"
+  write_deploy_status failed "$target" migration_refused \
+    "$migration_reason" "$deployed_full"
+  exit 1
+fi
+
+if [ "${#new_migrations[@]}" -gt 0 ]; then
+  log "migration deploy explicitly allowed by CASEIN_ALLOW_MIGRATION_DEPLOY=1:"
+  for migration in "${new_migrations[@]}"; do
+    log "  ${migration}"
+  done
 fi
 
 if [ -n "$deployed" ]; then from_label="${deployed:0:12}"; else from_label="none"; fi
