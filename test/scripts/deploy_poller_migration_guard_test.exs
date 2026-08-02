@@ -161,6 +161,7 @@ defmodule Scripts.DeployPollerMigrationGuardTest do
     ]
 
     System.cmd("bash", [Path.join(fixture.root, "scripts/deploy-poller.sh")],
+      cd: fixture.root,
       env: env ++ extra_env,
       stderr_to_stdout: true
     )
