@@ -4,8 +4,8 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
 
   The bridge is deliberately not exposed over HTTP. A local, hidden Erlang
   client discovers the single instance selected by `current.sock`, opens a
-  recorder fence before reading stdin, emits one fixed readiness control line,
-  and returns only the fixed aggregate on stdout.
+  recorder fence before reading stdin, emits one fixed readiness frame on
+  stdout, and returns only the fixed aggregate as the second stdout frame.
   """
 
   alias Casein.Mobile.{FeedTiming, FeedTimingRecorder}
@@ -20,7 +20,6 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
   @generation_line_bytes 23
   @stdin_max_bytes @generation_count * @generation_line_bytes + 1
   @rpc_timeout 5_000
-  @ready_fd_path "/dev/fd/3"
   @ready_line "CASEIN_MOBILE_FEED_SOAK_READY\n"
   @unix_file_type_mask 0o170000
   @unix_socket_mode 0o140000
@@ -380,11 +379,11 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
 
   def private_credential_stat?(_stat), do: false
 
-  defp signal_ready do
-    case File.open(@ready_fd_path, [:append, :binary], fn device ->
-           IO.binwrite(device, @ready_line)
-         end) do
-      {:ok, :ok} -> :ok
+  @doc false
+  @spec signal_ready() :: :ok | {:error, :readiness_unavailable}
+  def signal_ready do
+    case IO.binwrite(:stdio, @ready_line) do
+      :ok -> :ok
       _unavailable -> {:error, :readiness_unavailable}
     end
   rescue

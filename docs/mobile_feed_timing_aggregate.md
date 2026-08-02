@@ -62,12 +62,12 @@ The packaged `bin/mobile_feed_timing_soak` helper is a local release-only
 bridge; it is not routed through HTTP. Its only arguments are the fixed public
 platform and cycle names. It opens the server fence before reading exactly 20
 canonical LF-terminated IDs from stdin. Immediately after begin succeeds it
-writes the constant `CASEIN_MOBILE_FEED_SOAK_READY` line exactly once on a
-control-only descriptor that the overlay duplicates from outer stderr. A
-coordinator must observe that line before starting device work. The child
-runtime's ordinary stderr is discarded, and aggregate stdout remains silent
-and buffered until finish. Missing readiness fails closed and retires the
-fence without reading stdin. The bridge pins one strictly validated
+writes the constant `CASEIN_MOBILE_FEED_SOAK_READY` line exactly once as the
+first stdout frame. A coordinator must observe that exact frame before starting
+device work. The second and only other stdout frame is the aggregate after
+finish; the child runtime's ordinary stderr is discarded. Missing readiness,
+an extra frame, or a missing final aggregate fails closed. The bridge pins one
+strictly validated
 `/run/casein/current.sock` target around the consuming RPC, and starts a hidden
 non-listening distribution client. It never fails over or retries an uncertain
 finish. Success writes one aggregate JSON object. Every failure writes one

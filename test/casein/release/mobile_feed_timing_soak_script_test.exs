@@ -14,12 +14,10 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
     source = File.read!(@script)
 
     assert source =~ "--eval 'Casein.Mobile.FeedTimingSoakBridge.run()'"
-    assert source =~ "exec 3>&2"
     assert source =~ "unset RELEASE_COOKIE"
     assert source =~ "ERL_CRASH_DUMP=/dev/null"
     assert source =~ "ERL_CRASH_DUMP_SECONDS=0"
     assert source =~ "2>/dev/null"
-    assert source =~ "carriage_return"
     assert source =~ String.trim(@fixed_error)
     assert source =~ "credential_dir=\"/etc/casein\""
     assert source =~ "[ -O \"${credential_file}\" ]"
@@ -31,9 +29,12 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
     refute source =~ " clear"
     refute source =~ "mktemp"
     refute source =~ "RELEASE_COOKIE=\""
+    refute source =~ "exec 3>&2"
+    refute source =~ "aggregate_json="
+    refute source =~ "carriage_return"
   end
 
-  test "success forwards stdin only, strips an inherited cookie, and prints only child aggregate JSON" do
+  test "success forwards stdin, strips an inherited cookie, and directly streams two child frames" do
     {release_root, script} = fake_release(successful_fake_elixir())
     generations = generations(1..20)
     input = Enum.map_join(generations, "", &(&1 <> "\n"))
@@ -85,25 +86,6 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
     assert {@fixed_error, 74} == collect_port(runtime_port)
   end
 
-  test "successful runtime stdout noise is rejected without leaking it or an aggregate" do
-    {release_root, script} = fake_release(noisy_successful_fake_elixir())
-    input = Enum.map_join(generations(41..60), "", &(&1 <> "\n"))
-
-    port =
-      Port.open({:spawn_executable, script}, [
-        :binary,
-        :exit_status,
-        :stderr_to_stdout,
-        args: ["android", "cold"],
-        cd: release_root
-      ])
-
-    assert_receive {^port, {:data, "CASEIN_MOBILE_FEED_SOAK_READY\n"}}, 5_000
-    refute_receive {^port, {:data, _aggregate_before_finish}}, 50
-    assert Port.command(port, input)
-    assert {@fixed_error, 74} == collect_port(port)
-  end
-
   test "overlay rejects missing, extra, and case-variant arguments before starting the runtime" do
     {release_root, script} = fake_release(successful_fake_elixir())
 
@@ -121,7 +103,44 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
     end
   end
 
-  defp fake_release(fake_elixir_source) do
+  test "release metadata accepts one valid record with or without a trailing newline" do
+    expected = "{\"component\":\"server\",\"expected_generation_count\":20}\n"
+
+    for contents <- ["erts-15.0 0.1.0\n", "erts-15.0 0.1.0"] do
+      {release_root, script} = fake_release(immediate_success_fake_elixir(), contents)
+
+      assert {^expected, 0} =
+               System.cmd(script, ["ios", "cold"],
+                 cd: release_root,
+                 stderr_to_stdout: true
+               )
+    end
+  end
+
+  test "release metadata rejects empty, missing, malformed, unsafe, and extra fields" do
+    invalid_contents = [
+      "",
+      "\n",
+      "erts-15.0\n",
+      "erts/15.0 0.1.0\n",
+      "erts-15.0 ../0.1.0\n",
+      "erts-15.0 0.1.0 extra\n",
+      "erts-15.0 0.1.0\tunsafe\n",
+      "erts-15.0 0.1.0\nextra\n"
+    ]
+
+    for contents <- invalid_contents do
+      {release_root, script} = fake_release(immediate_success_fake_elixir(), contents)
+
+      assert {@fixed_error, 74} ==
+               System.cmd(script, ["android", "reconnect"],
+                 cd: release_root,
+                 stderr_to_stdout: true
+               )
+    end
+  end
+
+  defp fake_release(fake_elixir_source, start_erl_data \\ "erts-15.0 0.1.0\n") do
     root =
       System.tmp_dir!()
       |> Path.join("casein-mobile-feed-soak-#{System.unique_integer([:positive])}")
@@ -147,7 +166,7 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
     File.chmod!(credential_file, 0o600)
     File.chmod!(credential_dir, 0o500)
 
-    File.write!(Path.join(root, "releases/start_erl.data"), "erts-15.0 0.1.0\n")
+    File.write!(Path.join(root, "releases/start_erl.data"), start_erl_data)
     File.write!(Path.join(version_dir, "start_clean.boot"), "fixture")
     File.write!(Path.join(version_dir, "remote.vm.args"), "fixture")
 
@@ -182,7 +201,7 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
       *) exit 100 ;;
     esac
 
-    printf '%s\n' 'CASEIN_MOBILE_FEED_SOAK_READY' >&3
+    printf '%s\n' 'CASEIN_MOBILE_FEED_SOAK_READY'
     printf '%s\n' 'SUPPRESSED_RUNTIME_STDERR' >&2
     bytes="$(dd bs=460 count=1 2>/dev/null | wc -c | tr -d ' ')"
     [ "$bytes" = "460" ] || exit 101
@@ -193,21 +212,16 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
   defp noisy_failing_fake_elixir do
     """
     #!/bin/sh
-    printf '%s\n' 'UNSAFE_RUNTIME_STDOUT'
     printf '%s\n' 'UNSAFE_RUNTIME_STDERR' >&2
     exit 99
     """
   end
 
-  defp noisy_successful_fake_elixir do
-    String.replace(
-      successful_fake_elixir(),
-      ~s(printf '%s\n' '{"component":"server","expected_generation_count":20}'),
-      """
-      printf '%s\\n' 'UNSAFE_RUNTIME_STDOUT'
-      printf '%s\\n' '{"component":"server","expected_generation_count":20}'
-      """
-    )
+  defp immediate_success_fake_elixir do
+    """
+    #!/bin/sh
+    printf '%s\n' '{"component":"server","expected_generation_count":20}'
+    """
   end
 
   defp collect_port(port, output \\ "") do
