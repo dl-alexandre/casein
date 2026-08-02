@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://casein.dev/schemas/mobile-feed-timing-record-v1.json",
+  "title": "Casein native mobile feed timing record",
+  "description": "The fixed seven-field JSONL input record. connection_generation is HMAC-replaced before collector state and is never present in aggregate output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "connection_generation",
+    "cycle",
+    "stage",
+    "duration_ms",
+    "elapsed_ms",
+    "outcome",
+    "reason_code"
+  ],
+  "properties": {
+    "connection_generation": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "cycle": {
+      "enum": ["cold", "reconnect", "origin_switch"]
+    },
+    "stage": {
+      "enum": [
+        "app_start",
+        "dns_resolved",
+        "dependencies_ready",
+        "profile_restored",
+        "client_started",
+        "database_ready",
+        "root_started",
+        "connect_requested",
+        "tcp_connect_started",
+        "tcp_connected",
+        "transport_connected",
+        "mobile_join_replied",
+        "snapshot_received",
+        "snapshot_accepted",
+        "snapshot_rejected",
+        "first_cards_render_ready",
+        "no_configuration",
+        "disconnected"
+      ]
+    },
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2147483647,
+      "multipleOf": 0.001
+    },
+    "elapsed_ms": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2147483647,
+      "multipleOf": 0.001
+    },
+    "outcome": {
+      "enum": ["started", "succeeded", "failed", "skipped"]
+    },
+    "reason_code": {
+      "enum": [
+        "none",
+        "no_configuration",
+        "transport_disconnected",
+        "dns_resolved",
+        "dns_ip_literal",
+        "dns_invalid_url",
+        "dns_resolution_failed",
+        "invalid_payload",
+        "transport_not_ready",
+        "connection_generation_mismatch",
+        "connection_cycle_mismatch",
+        "invalid_snapshot_version",
+        "invalid_origin",
+        "unknown_origin",
+        "origin_mismatch",
+        "state_unavailable",
+        "snapshot_version_regression"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "stage": {
+              "enum": ["app_start", "connect_requested", "tcp_connect_started"]
+            },
+            "outcome": {"const": "started"},
+            "reason_code": {"const": "none"}
+          }
+        },
+        {
+          "properties": {
+            "stage": {"const": "dns_resolved"}
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "outcome": {"const": "succeeded"},
+                "reason_code": {"const": "dns_resolved"}
+              }
+            },
+            {
+              "properties": {
+                "outcome": {"const": "skipped"},
+                "reason_code": {
+                  "enum": ["dns_ip_literal", "no_configuration"]
+                }
+              }
+            },
+            {
+              "properties": {
+                "outcome": {"const": "failed"},
+                "reason_code": {
+                  "enum": ["dns_invalid_url", "dns_resolution_failed"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "properties": {
+            "stage": {"const": "no_configuration"},
+            "outcome": {"const": "skipped"},
+            "reason_code": {"const": "no_configuration"}
+          }
+        },
+        {
+          "properties": {
+            "stage": {"const": "disconnected"},
+            "outcome": {"const": "failed"},
+            "reason_code": {"const": "transport_disconnected"}
+          }
+        },
+        {
+          "properties": {
+            "stage": {"const": "snapshot_rejected"},
+            "outcome": {"const": "failed"},
+            "reason_code": {
+              "enum": [
+                "invalid_payload",
+                "transport_not_ready",
+                "connection_generation_mismatch",
+                "connection_cycle_mismatch",
+                "invalid_snapshot_version",
+                "invalid_origin",
+                "unknown_origin",
+                "origin_mismatch",
+                "state_unavailable",
+                "snapshot_version_regression"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "stage": {
+              "enum": [
+                "dependencies_ready",
+                "profile_restored",
+                "client_started",
+                "database_ready",
+                "root_started",
+                "tcp_connected",
+                "transport_connected",
+                "mobile_join_replied",
+                "snapshot_received",
+                "snapshot_accepted",
+                "first_cards_render_ready"
+              ]
+            },
+            "outcome": {"const": "succeeded"},
+            "reason_code": {"const": "none"}
+          }
+        }
+      ]
+    }
+  ]
+}
