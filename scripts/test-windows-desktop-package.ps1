@@ -54,26 +54,82 @@ Assert-Condition (Test-Path -LiteralPath $previewNode) 'Packaged preview node.ex
 Assert-Condition (Test-Path -LiteralPath $playwrightPackage) 'Packaged Playwright dependency is missing'
 Assert-Condition ([bool]$headless) 'Packaged Chromium headless shell is missing'
 
-$smokeScript = Join-Path ([IO.Path]::GetTempPath()) ("casein-playwright-smoke-" + [guid]::NewGuid().ToString('N') + '.cjs')
+$smokeScript = Join-Path ([IO.Path]::GetTempPath()) ("casein-preview-bridge-smoke-" + [guid]::NewGuid().ToString('N') + '.cjs')
 $originalPlaywrightBrowsersPath = $env:PLAYWRIGHT_BROWSERS_PATH
 try {
     @'
-const { chromium } = require(process.argv[2]);
+const { spawn } = require('child_process');
+const http = require('http');
+const readline = require('readline');
+
+const helper = process.argv[2];
+const server = http.createServer((_request, response) => {
+  response.writeHead(200, { 'content-type': 'text/html' });
+  response.end(`<!doctype html><input id="name"><button id="apply" onclick="localStorage.setItem('applied', document.getElementById('name').value)">Apply</button><script>document.getElementById('name').addEventListener('keydown', event => { if (event.key === 'Enter') sessionStorage.setItem('pressed', event.target.value) })</script>`);
+});
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
 (async () => {
-  const browser = await chromium.launch({headless: true});
-  const page = await browser.newPage();
-  await page.setContent('<button id="ready">Windows preview ready</button>');
-  const text = await page.locator('#ready').textContent();
-  await browser.close();
-  if (text !== 'Windows preview ready') process.exit(2);
-  process.stdout.write('playwright-smoke-ok');
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${server.address().port}/`;
+  const bridge = spawn(process.execPath, [helper, '--daemon'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: process.env,
+  });
+  const lines = readline.createInterface({ input: bridge.stdout });
+  const pending = [];
+  let stderr = '';
+  bridge.stderr.on('data', chunk => { stderr += chunk; });
+  lines.on('line', line => pending.shift()?.resolve(JSON.parse(line)));
+  bridge.on('exit', code => {
+    const error = new Error(`preview bridge exited ${code}: ${stderr}`);
+    while (pending.length) pending.shift().reject(error);
+  });
+
+  const command = payload => new Promise((resolve, reject) => {
+    pending.push({ resolve, reject });
+    bridge.stdin.write(JSON.stringify(payload) + '\n');
+  });
+  const request = (action, params = {}) => command({
+    action,
+    url,
+    browser_id: 'windows-package-smoke',
+    params,
+  });
+
+  try {
+    const diagnostic = await request('diagnose');
+    assert(diagnostic.ok && diagnostic.diagnostic?.status === 'ready', 'diagnose did not report ready');
+    assert((await request('observe_live')).ok, 'observe failed');
+    assert((await request('type', { selector: '#name', text: 'Casein bridge' })).ok, 'type failed');
+    assert((await request('click', { selector: '#apply' })).ok, 'click failed');
+    const clickedStorage = await request('get_storage');
+    assert(clickedStorage.ok && clickedStorage.local_storage?.applied === 'Casein bridge', 'click did not update browser storage');
+    assert((await request('click', { selector: '#name' })).ok, 'input focus failed');
+    assert((await request('press', { key: 'Enter' })).ok, 'press failed');
+    const pressedStorage = await request('get_storage');
+    assert(pressedStorage.ok && pressedStorage.session_storage?.pressed === 'Casein bridge', 'press did not update browser storage');
+    const screenshot = await request('screenshot');
+    assert(screenshot.ok && screenshot.artifact?.startsWith('data:image/png;base64,'), 'screenshot failed');
+    assert((await request('reload')).ok, 'reload failed');
+    assert((await request('close')).closed, 'close failed');
+    bridge.stdin.end();
+    await new Promise((resolve, reject) => bridge.once('exit', code => code === 0 ? resolve() : reject(new Error(`preview bridge exited ${code}: ${stderr}`))));
+    process.stdout.write('preview-bridge-smoke-ok');
+  } finally {
+    if (!bridge.killed) bridge.kill();
+    server.close();
+  }
 })().catch(error => { console.error(error); process.exit(1); });
 '@ | Set-Content -LiteralPath $smokeScript -Encoding ascii
     $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $releaseScripts 'playwright-browsers'
-    $playwrightModule = Join-Path $releaseScripts 'node_modules\playwright'
-    $smokeOutput = & $previewNode $smokeScript $playwrightModule
-    Assert-Condition ($LASTEXITCODE -eq 0) "Packaged Playwright smoke failed: $smokeOutput"
-    Assert-Condition (($smokeOutput -join '') -eq 'playwright-smoke-ok') 'Packaged Playwright smoke returned unexpected output'
+    $playwrightHelper = Join-Path $releaseScripts 'preview_playwright.mjs'
+    $smokeOutput = & $previewNode $smokeScript $playwrightHelper
+    Assert-Condition ($LASTEXITCODE -eq 0) "Packaged preview bridge smoke failed: $smokeOutput"
+    Assert-Condition (($smokeOutput -join '') -eq 'preview-bridge-smoke-ok') 'Packaged preview bridge smoke returned unexpected output'
 } finally {
     $env:PLAYWRIGHT_BROWSERS_PATH = $originalPlaywrightBrowsersPath
     Remove-Item -LiteralPath $smokeScript -Force -ErrorAction SilentlyContinue
