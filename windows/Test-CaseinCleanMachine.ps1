@@ -4,6 +4,10 @@ param(
     [Parameter(Mandatory = $true)]
     [switch]$AcceptDestructiveCleanMachineTest,
     [switch]$RequireNoDeveloperTooling,
+    [switch]$RequirePackageRootWithSpace,
+    [switch]$RequireLongPackageRoot,
+    [switch]$RequireUncPackageRoot,
+    [ValidateRange(120, 32000)][int]$MinimumLongPathLength = 180,
     [string]$EvidencePath = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'casein-windows-acceptance.json')
 )
 
@@ -30,6 +34,9 @@ if (-not $AcceptDestructiveCleanMachineTest) {
 }
 
 $packageRoot = [IO.Path]::GetFullPath($PackageRoot)
+$packageRootIsUnc = $packageRoot.StartsWith('\\')
+$packageRootHasSpace = $packageRoot.Contains(' ')
+$packageRootLength = $packageRoot.Length
 $os = Get-CimInstance Win32_OperatingSystem
 if ([Environment]::OSVersion.Version.Build -lt 22000) {
     throw 'Clean-machine acceptance requires Windows 11 (build 22000 or newer).'
@@ -74,13 +81,21 @@ if ($signature.Status -ne 'Valid') {
 }
 
 $evidence = [ordered]@{
-    schema = 1
+    schema = 2
     started_at_utc = [DateTime]::UtcNow.ToString('o')
     machine = $env:COMPUTERNAME
     os_caption = [string]$os.Caption
     os_version = [string]$os.Version
     powershell = [string]$PSVersionTable.PSVersion
-    package_root = $packageRoot
+    package_root_kind = if ($packageRootIsUnc) { 'unc' } else { 'local' }
+    package_root_length = $packageRootLength
+    package_root_has_space = $packageRootHasSpace
+    path_requirements = [ordered]@{
+        space = [bool]$RequirePackageRootWithSpace
+        long = [bool]$RequireLongPackageRoot
+        unc = [bool]$RequireUncPackageRoot
+        minimum_long_path_length = $MinimumLongPathLength
+    }
     manifest_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $manifestPath).Hash.ToLowerInvariant()
     signer_subject = [string]$signature.SignerCertificate.Subject
     signer_thumbprint = [string]$signature.SignerCertificate.Thumbprint
@@ -91,6 +106,17 @@ $evidence = [ordered]@{
 }
 
 try {
+    if ($RequirePackageRootWithSpace -and -not $packageRootHasSpace) {
+        throw 'The package root must contain a space for this acceptance run.'
+    }
+    if ($RequireLongPackageRoot -and $packageRootLength -lt $MinimumLongPathLength) {
+        throw "The package root must meet the requested minimum length for this acceptance run."
+    }
+    if ($RequireUncPackageRoot -and -not $packageRootIsUnc) {
+        throw 'The package root must be a UNC path for this acceptance run.'
+    }
+    $evidence.phases += 'package_path_contract'
+
     Invoke-CheckedCommand $installCommand
     $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\Casein'
     $currentPath = Join-Path $installRoot 'current.json'

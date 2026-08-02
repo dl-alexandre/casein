@@ -83,15 +83,39 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -EvidencePath "$env:USERPROFILE\Desktop\casein-windows-acceptance.json"
 ```
 
+Repeat the lifecycle gate from deliberately prepared extracted package roots to
+cover path handling. These switches fail closed unless the requested path shape
+is actually active:
+
+```powershell
+# A local extraction root containing spaces and at least 180 characters.
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File .\windows\Test-CaseinCleanMachine.ps1 `
+  -PackageRoot . `
+  -AcceptDestructiveCleanMachineTest `
+  -RequireNoDeveloperTooling `
+  -RequirePackageRootWithSpace `
+  -RequireLongPackageRoot
+
+# A protected test share; never put credentials in the UNC path.
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File .\windows\Test-CaseinCleanMachine.ps1 `
+  -PackageRoot . `
+  -AcceptDestructiveCleanMachineTest `
+  -RequireNoDeveloperTooling `
+  -RequireUncPackageRoot
+```
+
 The destructive acknowledgement is mandatory because the harness installs,
 damages one manifest-covered installed file, proves offline repair restores it,
 verifies launch-at-sign-in targets the stable installed launcher and is removed
 by uninstall, uninstalls, and removes Casein user data. It refuses unsigned packages,
 pre-Windows 11 hosts, non-Windows-PowerShell 5.1 execution, installed WSL
 distributions, or language/developer tools on `PATH`. The JSON evidence contains
-OS/package/certificate identity and phase results, but no tokens, URLs, database
-contents, or private-key material. A repository or unsigned CI run is not a
-substitute for attaching the resulting real-host evidence to #376.
+OS/package/certificate identity, safe path kind/length/space facts, and phase
+results, but never the actual package root, UNC server/share, tokens, URLs,
+database contents, or private-key material. A repository or unsigned CI run is
+not a substitute for attaching the resulting real-host evidence to #376.
 
 The current repository-gap subtraction and sequencing record is
 [`windows_acceptance_gap_audit.md`](windows_acceptance_gap_audit.md). Keep that
