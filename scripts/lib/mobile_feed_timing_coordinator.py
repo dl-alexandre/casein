@@ -80,6 +80,7 @@ MAX_AGGREGATE_RECORDS = 2_000
 MAX_DURATION_MS = 86_400_000
 MAX_CARD_COUNT = 1_000
 MAX_SNAPSHOT_JSON_BYTES = 1_000_000
+PUBLICATION_CLEANUP_ATTEMPTS = 3
 
 PLATFORMS = ("ios", "android")
 CYCLES = ("cold", "reconnect")
@@ -251,6 +252,84 @@ class RunOutcome:
     def __post_init__(self) -> None:
         if self.status not in STATUS_VALUES or self.exit_code != EXIT_CODES[self.status]:
             raise ValueError("invalid fixed outcome")
+
+
+@dataclass(slots=True, repr=False)
+class PublicationReceipt:
+    _claimed: bool = False
+    _success_status: str | None = None
+    _committed: bool = False
+
+    @property
+    def committed(self) -> bool:
+        return self._committed
+
+    def claim(self) -> bool:
+        if self._claimed or self._success_status is not None or self._committed:
+            return False
+        self._claimed = True
+        return True
+
+    def prepare(self, success_status: str) -> None:
+        if (
+            not self._claimed
+            or success_status not in {"complete", "cohort_mismatch"}
+            or self._success_status is not None
+            or self._committed
+        ):
+            raise CoordinatorFailure("internal_error")
+        self._success_status = success_status
+
+    def commit(self) -> None:
+        if (
+            not self._claimed
+            or self._success_status not in {"complete", "cohort_mismatch"}
+            or self._committed
+        ):
+            raise CoordinatorFailure("internal_error")
+        self._committed = True
+
+    def outcome_or(self, fallback_status: str) -> RunOutcome:
+        if self._committed and self._success_status is not None:
+            return _outcome(self._success_status, True)
+        return _outcome(fallback_status, False)
+
+    def __repr__(self) -> str:
+        if self._committed:
+            state = "committed"
+        elif self._success_status is not None:
+            state = "prepared"
+        elif self._claimed:
+            state = "claimed"
+        else:
+            state = "pristine"
+        return f"PublicationReceipt(state={state!r})"
+
+
+class _DeferredPublicationInterrupts:
+    def __init__(self) -> None:
+        self._previous_mask: set[signal.Signals] | None = None
+
+    def __enter__(self) -> None:
+        pthread_sigmask = getattr(signal, "pthread_sigmask", None)
+        if pthread_sigmask is None:
+            raise CoordinatorFailure("internal_error")
+        try:
+            self._previous_mask = pthread_sigmask(
+                signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM}
+            )
+        except (OSError, ValueError):
+            raise CoordinatorFailure("internal_error") from None
+
+    def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
+        previous_mask = self._previous_mask
+        self._previous_mask = None
+        if previous_mask is None:
+            return
+        try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        except (OSError, ValueError):
+            raise CoordinatorFailure("internal_error") from None
 
 
 def build_bridge_argv(platform: str, cycle: str) -> tuple[str, ...]:
@@ -1546,6 +1625,7 @@ class AtomicAggregatePublisher:
         native: Mapping[str, object],
         server: Mapping[str, object],
         vault: TerminalGenerationVault,
+        receipt: PublicationReceipt,
     ) -> None:
         token = secrets.token_hex(12)
         staging = f".casein-mobile-feed-timing-{token}.tmp"
@@ -1553,10 +1633,36 @@ class AtomicAggregatePublisher:
         root_fd = output_root.fileno()
         staging_fd: int | None = None
         created = False
-        revealed = False
+
+        def discard_staging() -> bool:
+            # First use the pinned staging descriptor, then close it and retry
+            # by name. A persistent filesystem refusal remains private and is
+            # never attested as a published cohort.
+            nonlocal created, staging_fd
+            with _DeferredPublicationInterrupts():
+                removed = self._remove_private_directory(
+                    root_fd, staging_fd, staging
+                )
+                if not removed and staging_fd is not None:
+                    _close_fd(staging_fd)
+                    staging_fd = None
+                attempts = 1
+                while not removed and attempts < PUBLICATION_CLEANUP_ATTEMPTS:
+                    removed = self._remove_private_directory(
+                        root_fd, None, staging
+                    )
+                    attempts += 1
+                removed = removed or self._private_directory_absent(
+                    root_fd, staging
+                )
+                if removed:
+                    created = False
+                return removed
+
         try:
-            os.mkdir(staging, 0o700, dir_fd=root_fd)
-            created = True
+            with _DeferredPublicationInterrupts():
+                os.mkdir(staging, 0o700, dir_fd=root_fd)
+                created = True
             staging_fd = os.open(
                 staging,
                 os.O_RDONLY
@@ -1569,14 +1675,15 @@ class AtomicAggregatePublisher:
             self._write_one(staging_fd, "native.json", native, vault)
             self._write_one(staging_fd, "server.json", server, vault)
             os.fsync(staging_fd)
-            os.replace(
-                staging,
-                final,
-                src_dir_fd=root_fd,
-                dst_dir_fd=root_fd,
-            )
-            created = False
-            revealed = True
+            with _DeferredPublicationInterrupts():
+                os.replace(
+                    staging,
+                    final,
+                    src_dir_fd=root_fd,
+                    dst_dir_fd=root_fd,
+                )
+                receipt.commit()
+                created = False
             try:
                 self._fsync_root(root_fd)
             except BaseException:
@@ -1585,23 +1692,25 @@ class AtomicAggregatePublisher:
                 # interruption cannot truthfully be reported as unpublished.
                 return
         except KeyboardInterrupt:
-            if revealed:
+            if receipt.committed:
                 return
-            if created:
-                self._remove_private_directory(root_fd, staging_fd, staging)
+            if created and not discard_staging():
+                raise CoordinatorFailure("publication_failed") from None
             raise
         except Exception:
-            if revealed:
+            if receipt.committed:
                 return
             if created:
-                self._remove_private_directory(root_fd, staging_fd, staging)
+                discard_staging()
             raise CoordinatorFailure("publication_failed") from None
         finally:
             if staging_fd is not None:
                 try:
-                    os.close(staging_fd)
-                except OSError:
-                    pass
+                    with _DeferredPublicationInterrupts():
+                        _close_fd(staging_fd)
+                except KeyboardInterrupt:
+                    if not receipt.committed:
+                        raise
 
     def _write_one(
         self,
@@ -1688,6 +1797,16 @@ class AtomicAggregatePublisher:
                 except OSError:
                     pass
 
+    def _private_directory_absent(self, root_fd: int, name: str) -> bool:
+        try:
+            os.stat(name, dir_fd=root_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False
+        return False
+
+
 class CohortCoordinator:
     def __init__(
         self,
@@ -1704,13 +1823,30 @@ class CohortCoordinator:
         self._publisher = publisher or AtomicAggregatePublisher()
         self._registry_factory = registry_factory or ScopedProcessRegistry
 
-    def run(self, config: CohortConfig) -> RunOutcome:
+    def run(
+        self,
+        config: CohortConfig,
+        receipt: PublicationReceipt | None = None,
+    ) -> RunOutcome:
+        receipt = receipt if receipt is not None else PublicationReceipt()
+        if not isinstance(receipt, PublicationReceipt) or not receipt.claim():
+            return _outcome("internal_error", False)
+        try:
+            return self._run(config, receipt)
+        except KeyboardInterrupt:
+            return receipt.outcome_or("interrupted")
+
+    def _run(
+        self,
+        config: CohortConfig,
+        receipt: PublicationReceipt,
+    ) -> RunOutcome:
         try:
             disable_process_artifacts()
         except KeyboardInterrupt:
-            return _outcome("interrupted", False)
+            return receipt.outcome_or("interrupted")
         except CoordinatorFailure:
-            return _outcome("internal_error", False)
+            return receipt.outcome_or("internal_error")
 
         latch = CompletionLatch()
         vault = TerminalGenerationVault()
@@ -1832,16 +1968,18 @@ class CohortCoordinator:
             )
             matched = bool(server["cohort_match"])
             latch.mark_cohort(matched=matched)
-            self._publisher.publish(output_root, native, server, vault)
-            return _outcome("complete" if matched else "cohort_mismatch", True)
+            success_status = "complete" if matched else "cohort_mismatch"
+            receipt.prepare(success_status)
+            self._publisher.publish(output_root, native, server, vault, receipt)
+            return receipt.outcome_or("publication_failed")
         except KeyboardInterrupt:
             if latch.cohort_state == "pending" and finish_attempted:
                 latch.mark_cohort(matched=None)
-            return _outcome("interrupted", False)
+            return receipt.outcome_or("interrupted")
         except CoordinatorFailure as failure:
             if latch.cohort_state == "pending" and finish_attempted:
                 latch.mark_cohort(matched=None)
-            return _outcome(failure.status, False)
+            return receipt.outcome_or(failure.status)
         except Exception:
             if latch.cohort_state == "pending" and finish_attempted:
                 latch.mark_cohort(matched=None)
@@ -1850,9 +1988,10 @@ class CohortCoordinator:
                 if finish_attempted and not finish_completed
                 else "internal_error"
             )
-            return _outcome(status, False)
+            return receipt.outcome_or(status)
         finally:
             cleanup_interrupted = False
+            cleanup_failed = False
             if not native_cleanup_complete:
                 try:
                     registry.terminate_all()
@@ -1875,9 +2014,19 @@ class CohortCoordinator:
             except BaseException:
                 pass
             if output_root is not None:
-                output_root.close()
+                try:
+                    with _DeferredPublicationInterrupts():
+                        output_root.close()
+                except KeyboardInterrupt:
+                    cleanup_interrupted = True
+                except BaseException:
+                    cleanup_failed = True
+            if receipt.committed:
+                return receipt.outcome_or("internal_error")
             if cleanup_interrupted:
-                return _outcome("interrupted", False)
+                return receipt.outcome_or("interrupted")
+            if cleanup_failed:
+                return receipt.outcome_or("internal_error")
 
     def __repr__(self) -> str:
         return "CohortCoordinator(bridge=<factory>, source=<factory>, publisher=<private>)"
@@ -1916,15 +2065,32 @@ def _fixed_status(output: TextIO, status: str) -> None:
         return
 
 
-def _interrupt_on_sigterm(signum: int, _frame: object) -> None:
+def _interrupt_on_signal(
+    receipt: PublicationReceipt,
+    signum: int,
+    _frame: object,
+) -> None:
     try:
         signal.signal(signum, signal.SIG_IGN)
     except (OSError, ValueError):
         pass
+    if receipt.committed:
+        return
     raise KeyboardInterrupt
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _receipt_signal_handler(receipt: PublicationReceipt) -> Callable[[int, object], None]:
+    def handle(signum: int, frame: object) -> None:
+        _interrupt_on_signal(receipt, signum, frame)
+
+    return handle
+
+
+def _run_entrypoint(
+    argv: Sequence[str] | None,
+    *,
+    restore_signal_handlers: bool,
+) -> int:
     try:
         disable_process_artifacts()
         args = _parser().parse_args(argv)
@@ -1939,27 +2105,61 @@ def main(argv: Sequence[str] | None = None) -> int:
         _fixed_status(sys.stderr, "invalid_arguments")
         return EXIT_CODES["invalid_arguments"]
 
-    previous_sigterm: object | None = None
-    sigterm_installed = False
+    receipt = PublicationReceipt()
+    previous_handlers: dict[signal.Signals, object] = {}
     try:
-        if threading.current_thread() is threading.main_thread():
-            previous_sigterm = signal.getsignal(signal.SIGTERM)
-            signal.signal(signal.SIGTERM, _interrupt_on_sigterm)
-            sigterm_installed = True
-        outcome = CohortCoordinator().run(config)
-    except KeyboardInterrupt:
-        outcome = _outcome("interrupted", False)
-    except Exception:
-        outcome = _outcome("internal_error", False)
-    finally:
-        if sigterm_installed and previous_sigterm is not None:
+        try:
             try:
-                signal.signal(signal.SIGTERM, previous_sigterm)
-            except (OSError, ValueError):
+                if threading.current_thread() is threading.main_thread():
+                    with _DeferredPublicationInterrupts():
+                        for interrupt_signal in (signal.SIGINT, signal.SIGTERM):
+                            previous_handlers[interrupt_signal] = signal.getsignal(
+                                interrupt_signal
+                            )
+                            signal.signal(
+                                interrupt_signal,
+                                _receipt_signal_handler(receipt),
+                            )
+                outcome = CohortCoordinator().run(config, receipt)
+            except KeyboardInterrupt:
+                outcome = receipt.outcome_or("interrupted")
+            except Exception:
+                outcome = receipt.outcome_or("internal_error")
+            _fixed_status(sys.stderr, outcome.status)
+        except KeyboardInterrupt:
+            outcome = receipt.outcome_or("interrupted")
+            _fixed_status(sys.stderr, outcome.status)
+        except Exception:
+            outcome = receipt.outcome_or("internal_error")
+            _fixed_status(sys.stderr, outcome.status)
+        return outcome.exit_code
+    finally:
+        if restore_signal_handlers and previous_handlers:
+            try:
+                with _DeferredPublicationInterrupts():
+                    for interrupt_signal, previous_handler in previous_handlers.items():
+                        try:
+                            signal.signal(interrupt_signal, previous_handler)
+                        except (OSError, ValueError):
+                            pass
+            except (CoordinatorFailure, KeyboardInterrupt):
+                # Status has already been emitted. Restoration was attempted
+                # for every captured handler before pending interrupts were
+                # released.
                 pass
-    _fixed_status(sys.stderr, outcome.status)
-    return outcome.exit_code
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Library-safe entry point that restores the caller's signal handlers."""
+
+    return _run_entrypoint(argv, restore_signal_handlers=True)
+
+
+def _cli_main(argv: Sequence[str] | None = None) -> int:
+    """Process entry point; handlers intentionally remain until process exit."""
+
+    return _run_entrypoint(argv, restore_signal_handlers=False)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_cli_main())
