@@ -21,6 +21,11 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
   @stdin_max_bytes @generation_count * @generation_line_bytes + 1
   @rpc_timeout 5_000
   @ready_line "CASEIN_MOBILE_FEED_SOAK_READY\n"
+  @hidden_client_options %{
+    name_domain: :shortnames,
+    hidden: true,
+    dist_listen: false
+  }
   @unix_file_type_mask 0o170000
   @unix_socket_mode 0o140000
 
@@ -158,6 +163,10 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
   @doc false
   @spec ready_line() :: String.t()
   def ready_line, do: @ready_line
+
+  @doc false
+  @spec hidden_client_options() :: map()
+  def hidden_client_options, do: @hidden_client_options
 
   @doc false
   @spec parse_cookie(term()) :: {:ok, String.t()} | {:error, :invalid_credential}
@@ -453,12 +462,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
     client_name = :erlang.binary_to_atom("casein_feed_soak_#{suffix}", :utf8)
     cookie_atom = :erlang.binary_to_atom(cookie, :utf8)
 
-    with {:ok, _pid} <-
-           :net_kernel.start([
-             client_name,
-             :shortnames,
-             %{hidden: true, dist_listen: false}
-           ]),
+    with {:ok, _pid} <- :net_kernel.start(client_name, hidden_client_options()),
          true <- Node.set_cookie(cookie_atom) do
       :ok
     else
