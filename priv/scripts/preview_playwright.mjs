@@ -10,6 +10,7 @@ import { createInterface } from "readline";
 import fs from "fs/promises";
 import { chromium } from "playwright";
 import { computeDiff, wantsVisualDiff } from "./preview_diff.mjs";
+import { diagnoseChromium } from "./preview_runtime_diagnostic.mjs";
 
 const browsers = new Map();
 const instrumentedPages = new WeakSet();
@@ -92,6 +93,11 @@ async function handlePayload(payload) {
   const storagePath = sanitizeStorageStatePath(storageStatePath);
 
   switch (action) {
+    case "diagnose": {
+      const diagnostic = await diagnoseChromium(chromium, { launchArgs: LAUNCH_ARGS });
+      return ok({ diagnostic });
+    }
+
     case "close": {
       const entry = browsers.get(id);
       if (entry) {
