@@ -279,6 +279,18 @@ try {
     Assert-Condition ($current.revision -eq $metadata.revision) 'Recovery install did not restore current release identity'
     Assert-Condition (Test-Path -LiteralPath (Join-Path $current.release_root 'bin\casein.bat')) 'Recovery install restored an unusable release root'
 
+    $releaseId = Split-Path -Leaf ([string]$current.release_root)
+    $staleStage = Join-Path (Split-Path -Parent ([string]$current.release_root)) "$releaseId.staging-2147483647"
+    $activeStage = Join-Path (Split-Path -Parent ([string]$current.release_root)) "$releaseId.staging-$PID"
+    New-Item -ItemType Directory -Force -Path $staleStage, $activeStage | Out-Null
+    Set-Content -LiteralPath (Join-Path $staleStage 'interrupted.txt') -Value 'stale' -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $activeStage 'in-progress.txt') -Value 'active' -Encoding ascii
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot -AllowUnsignedDevelopment
+    if ($LASTEXITCODE -ne 0) { throw "Interrupted-stage recovery installer exited with $LASTEXITCODE" }
+    Assert-Condition (-not (Test-Path -LiteralPath $staleStage)) 'Installer left a stale interrupted staging directory behind'
+    Assert-Condition (Test-Path -LiteralPath $activeStage) 'Installer removed staging owned by a live concurrent process'
+    Remove-Item -LiteralPath $activeStage -Recurse -Force
+
     . $trayHost -ReleaseRoot ([string]$current.release_root) -LibraryOnly
 
     $stateDataRoot = $script:Paths.DataRoot

@@ -123,8 +123,11 @@ library falls back to an automatically selected port with launch-at-sign-in
 disabled, then removes the invalid PID and runtime-status markers without
 reporting the runtime as ready. The same smoke proves the stable launcher fails
 closed on malformed `current.json`, does not disclose the disposable local data
-root through acceptance evidence, and a verified package atomically restores valid installed-release state.
-Interrupted install staging remains a separate acceptance gap.
+root through acceptance evidence, and a verified package atomically restores
+valid installed-release state. It also proves an offline reinstall removes a
+release-specific staging directory left by a dead installer PID while preserving
+one owned by a live process. Capturing these recoveries on a production-signed
+disposable host remains external evidence.
 
 The current repository-gap subtraction and sequencing record is
 [`windows_acceptance_gap_audit.md`](windows_acceptance_gap_audit.md). Keep that
