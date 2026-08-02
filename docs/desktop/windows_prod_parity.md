@@ -22,7 +22,7 @@ tmux implementation details on Windows.
 | Multi-pane sessions and templates | tmux windows/panes | one durable PowerShell session | Native session/window/pane backend |
 | Worktrees and agent lifecycle | launcher, hooks, reaper, audit | backend features exist, desktop workflow incomplete | Native worktree launch, state hooks, recovery UI |
 | Updates | git-driven clean release deploy | explicit tray check; trusted catalog, pinned channel/target, archive hash/size verification, encrypted backup, health-triggered rollback | Production-signed channel and clean-VM evidence |
-| Operations | journal, health, deploy diagnostics | signed offline archive with one-command install/repair/uninstall, Apps & Features registration, tray status, health, local log, and support bundle with allowlisted rotation plus latest crash/recovery state | Clean-VM crash/recovery evidence |
+| Operations | journal, health, deploy diagnostics | signed offline archive with one-command install/repair/uninstall, Apps & Features registration, tray status, health, local log, and support bundle with fixed-schema JSON diagnostics plus latest crash/recovery state | Clean-VM crash/recovery evidence |
 | Accessibility and onboarding | browser UI | browser UI plus tray | First-run workspace/agent check and keyboard QA |
 
 ## Delivery order

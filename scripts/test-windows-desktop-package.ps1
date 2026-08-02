@@ -163,15 +163,40 @@ try {
     $tamperedCrashState = Get-Content -Raw -LiteralPath $crashStatePath | ConvertFrom-Json
     $tamperedCrashState | Add-Member -NotePropertyName injected_secret -NotePropertyValue 'must-not-ship'
     $tamperedCrashState | ConvertTo-Json | Set-Content -LiteralPath $crashStatePath -Encoding UTF8
+    [ordered]@{ port = 4567; launchAtSignIn = $true; injected_secret = 'must-not-ship' } |
+        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $testLocalAppData 'desktop-host.json') -Encoding UTF8
+    [ordered]@{
+        schema = 1; status = 'ready'; port = 4567; base_url = 'http://127.0.0.1:4567'; pid = 4242
+        version = '0.1.0'; revision = 'abcdef1234567890'; started_at = [DateTime]::UtcNow.ToString('o')
+        injected_secret = 'must-not-ship'
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $testLocalAppData 'runtime.json') -Encoding UTF8
+    [ordered]@{
+        schema = 1; enabled = $true; address = '192.168.1.20'; interface_alias = 'Ethernet'
+        interface_index = 3; port = 4567; program = 'C:\must-not-ship\erl.exe'
+        url = 'http://must-not-ship'; enabled_at_utc = [DateTime]::UtcNow.ToString('o')
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $testLocalAppData 'trusted-lan.json') -Encoding UTF8
+    $supportInstallRoot = Join-Path $testLocalAppData 'support-install'
+    New-Item -ItemType Directory -Path $supportInstallRoot | Out-Null
+    [ordered]@{
+        schema = 1; version = '0.1.0'; revision = 'abcdef1234567890'
+        release_root = 'C:\must-not-ship\release'; previous_release_root = 'C:\previous\release'
+        previous_data_backup = 'C:\backup\snapshot.json'
+        signer_thumbprint = '0123456789ABCDEF0123456789ABCDEF01234567'
+        installed_at_utc = [DateTime]::UtcNow.ToString('o')
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $supportInstallRoot 'current.json') -Encoding UTF8
     $supportArchive = Join-Path $testLocalAppData 'support.zip'
     $supportExpanded = Join-Path $testLocalAppData 'support-expanded'
-    & $supportBundleScript -DataRoot $testLocalAppData -InstallRoot (Join-Path $testLocalAppData 'Programs\Casein') -Destination $supportArchive | Out-Null
+    & $supportBundleScript -DataRoot $testLocalAppData -InstallRoot $supportInstallRoot -Destination $supportArchive | Out-Null
     Expand-Archive -LiteralPath $supportArchive -DestinationPath $supportExpanded
     $bundledCredentialState = Get-Content -Raw -LiteralPath (Join-Path $supportExpanded 'credential-state.json')
     $bundledCrashState = Get-Content -Raw -LiteralPath (Join-Path $supportExpanded 'crash-state.json')
     Assert-Condition (-not $bundledCredentialState.Contains('must-not-ship')) 'Support bundle copied untrusted credential-state fields'
     Assert-Condition (-not $bundledCrashState.Contains('must-not-ship')) 'Support bundle copied untrusted crash-state fields'
     Assert-Condition ($bundledCrashState.Contains('recovered')) 'Support bundle omitted crash recovery outcome'
+    foreach ($name in @('desktop-host.json', 'runtime.json', 'trusted-lan.json', 'current.json')) {
+        $bundledState = Get-Content -Raw -LiteralPath (Join-Path $supportExpanded $name)
+        Assert-Condition (-not $bundledState.Contains('must-not-ship')) "Support bundle copied untrusted fields from $name"
+    }
     Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $supportExpanded 'api-token.txt'))) 'Support bundle copied the API token file'
     Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $supportExpanded 'desktop-launch-token.txt'))) 'Support bundle copied the desktop launch token file'
 
