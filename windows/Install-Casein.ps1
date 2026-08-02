@@ -124,6 +124,34 @@ function Remove-ReleaseTree {
     }
 }
 
+function Remove-AbandonedReleaseStages {
+    param([string]$ReleasesRoot)
+
+    if (-not (Test-Path -LiteralPath $ReleasesRoot)) { return }
+    Get-ChildItem -LiteralPath $ReleasesRoot -Directory -Filter '*.staging-*' |
+        Where-Object { $_.Name -match '\.staging-[0-9]+$' } |
+        ForEach-Object { Remove-ReleaseTree -Path $_.FullName }
+}
+
+function Read-InstalledReleaseState {
+    param([string]$CurrentPath, [string]$ReleasesRoot)
+
+    if (-not (Test-Path -LiteralPath $CurrentPath)) { return $null }
+    try {
+        $current = Get-Content -Raw -LiteralPath $CurrentPath | ConvertFrom-Json
+        $releaseRoot = [IO.Path]::GetFullPath([string]$current.release_root)
+        $releaseBoundary = [IO.Path]::GetFullPath($ReleasesRoot).TrimEnd('\') + '\'
+        if (-not $releaseRoot.StartsWith($releaseBoundary, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'release_root is outside the Casein releases directory'
+        }
+        $current
+    } catch {
+        Write-Warning "Installed release state is invalid and will be replaced: $($_.Exception.Message)"
+        Remove-Item -LiteralPath $CurrentPath -Force
+        $null
+    }
+}
+
 function Backup-UserData {
     param([string]$DataRoot, [string]$BackupRoot)
 
@@ -166,8 +194,8 @@ $destination = Join-Path $releasesRoot $releaseId
 $stage = "$destination.staging-$PID"
 $currentPath = Join-Path $installRoot 'current.json'
 $previousReleaseRoot = $null
-if (Test-Path -LiteralPath $currentPath) {
-    $existingCurrent = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
+$existingCurrent = Read-InstalledReleaseState -CurrentPath $currentPath -ReleasesRoot $releasesRoot
+if ($existingCurrent) {
     $previousReleaseRoot = [string]$existingCurrent.release_root
     if ($previousReleaseRoot -eq $destination) {
         $previousProperty = $existingCurrent.PSObject.Properties['previous_release_root']
@@ -176,6 +204,7 @@ if (Test-Path -LiteralPath $currentPath) {
 }
 
 New-Item -ItemType Directory -Force -Path $releasesRoot, $backupRoot | Out-Null
+Remove-AbandonedReleaseStages -ReleasesRoot $releasesRoot
 Stop-InstalledRuntime $dataRoot
 $backup = Backup-UserData $dataRoot $backupRoot
 

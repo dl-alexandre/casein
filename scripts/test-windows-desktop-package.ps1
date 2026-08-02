@@ -264,6 +264,17 @@ try {
     $installRoot = Join-Path $testLocalAppData 'Programs\Casein'
     $currentPath = Join-Path $installRoot 'current.json'
     Assert-Condition (Test-Path -LiteralPath $currentPath) 'Installer did not write current.json'
+
+    $releasesRoot = Join-Path $installRoot 'releases'
+    $abandonedStage = Join-Path $releasesRoot 'interrupted.staging-4242'
+    New-Item -ItemType Directory -Force -Path $abandonedStage | Out-Null
+    Set-Content -LiteralPath (Join-Path $abandonedStage 'partial.txt') -Value 'interrupted' -Encoding ascii
+    Set-Content -LiteralPath $currentPath -Value '{malformed' -Encoding ascii
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot -AllowUnsignedDevelopment
+    if ($LASTEXITCODE -ne 0) { throw "Corrupted-state recovery install exited with $LASTEXITCODE" }
+    $recoveredCurrent = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
+    Assert-Condition ([string]$recoveredCurrent.release_root -ne '') 'Installer did not replace malformed current.json'
+    Assert-Condition (-not (Test-Path -LiteralPath $abandonedStage)) 'Installer left interrupted staging data behind'
     Assert-Condition (Test-Path -LiteralPath (Join-Path $installRoot 'Casein.cmd')) 'Installer did not write the stable launcher'
     Assert-Condition (Test-Path -LiteralPath (Join-Path $installRoot 'Update-Casein.ps1')) 'Installer did not write the signed-channel updater'
     Assert-Condition (Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein') 'Installer did not register Apps & Features metadata'
