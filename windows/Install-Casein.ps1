@@ -124,6 +124,15 @@ function Remove-ReleaseTree {
     }
 }
 
+function Remove-AbandonedReleaseStages {
+    param([string]$ReleasesRoot)
+
+    if (-not (Test-Path -LiteralPath $ReleasesRoot)) { return }
+    Get-ChildItem -LiteralPath $ReleasesRoot -Directory -Filter '*.staging-*' |
+        Where-Object { $_.Name -match '\.staging-[0-9]+$' } |
+        ForEach-Object { Remove-ReleaseTree -Path $_.FullName }
+}
+
 function Backup-UserData {
     param([string]$DataRoot, [string]$BackupRoot)
 
@@ -182,6 +191,7 @@ if (Test-Path -LiteralPath $currentPath) {
 }
 
 New-Item -ItemType Directory -Force -Path $releasesRoot, $backupRoot | Out-Null
+Remove-AbandonedReleaseStages -ReleasesRoot $releasesRoot
 Stop-InstalledRuntime $dataRoot
 $backup = Backup-UserData $dataRoot $backupRoot
 
