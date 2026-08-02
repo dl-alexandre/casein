@@ -7,10 +7,18 @@ defmodule Casein.Desktop.NativeAgentLaunch do
   configuration, and return a PowerShell command containing no bearer token.
   """
 
-  alias Casein.Desktop.{AgentEnvironment, AgentLauncher, AgentWorktree}
+  alias Casein.Desktop.{AgentEnvironment, AgentLauncher, AgentWorktree, PowerShellSession}
   alias Casein.Runtimes
 
-  defstruct [:runtime, :worktree, :diagnostics, :command, :workspace_id, environment: %{}]
+  defstruct [
+    :runtime,
+    :worktree,
+    :diagnostics,
+    :command,
+    :workspace,
+    :workspace_id,
+    environment: %{}
+  ]
 
   @type t :: %__MODULE__{}
 
@@ -43,6 +51,7 @@ defmodule Casein.Desktop.NativeAgentLaunch do
          worktree: worktree,
          diagnostics: diagnostics,
          command: command,
+         workspace: workspace,
          workspace_id: workspace_id,
          environment: environment
        }}
@@ -52,6 +61,36 @@ defmodule Casein.Desktop.NativeAgentLaunch do
   end
 
   def prepare(_workspace, _runtime, _task, _opts), do: {:error, :invalid_arguments}
+
+  @doc "Start a prepared provider command in its workspace-owned native ConPTY session."
+  @spec start(t(), keyword()) :: :ok | {:error, term()}
+  def start(plan, opts \\ [])
+
+  def start(%__MODULE__{} = plan, opts) do
+    ensure_session = Keyword.get(opts, :ensure_session, &PowerShellSession.ensure_started/2)
+    send_input = Keyword.get(opts, :send_input, &PowerShellSession.send_input/2)
+    reporter = Keyword.get(opts, :reporter, &report/2)
+
+    with :ok <- ensure_session.(plan.worktree.path, plan.workspace),
+         :ok <- send_input.(plan.workspace, plan.command) do
+      :ok
+    else
+      {:error, _reason} = error ->
+        _ =
+          reporter.(
+            plan.workspace_id,
+            report_attrs(plan.runtime, plan.worktree)
+            |> Map.merge(%{
+              "exit_status" => "handoff",
+              "handoff" => "native #{plan.runtime} session launch failed"
+            })
+          )
+
+        error
+    end
+  end
+
+  def start(_plan, _opts), do: {:error, :invalid_launch_plan}
 
   @doc "Report launch completion and remove only a clean, landed worktree."
   @spec finish(t(), String.t(), String.t() | nil, keyword()) :: {:ok, map()} | {:error, term()}
