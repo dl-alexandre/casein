@@ -124,6 +124,26 @@ function Remove-ReleaseTree {
     }
 }
 
+function Remove-StaleReleaseStages {
+    param([string]$ReleasesRoot, [string]$ReleaseId)
+
+    $prefix = "$ReleaseId.staging-"
+    foreach ($candidate in @(Get-ChildItem -LiteralPath $ReleasesRoot -Directory -ErrorAction SilentlyContinue)) {
+        if (-not $candidate.Name.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+        $ownerText = $candidate.Name.Substring($prefix.Length)
+        $ownerPid = 0
+        if (-not [int]::TryParse($ownerText, [ref]$ownerPid) -or $ownerPid -le 0) {
+            continue
+        }
+        if ($ownerPid -eq $PID -or (Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)) {
+            continue
+        }
+        Remove-ReleaseTree -Path $candidate.FullName
+    }
+}
+
 function Backup-UserData {
     param([string]$DataRoot, [string]$BackupRoot)
 
@@ -182,6 +202,7 @@ if (Test-Path -LiteralPath $currentPath) {
 }
 
 New-Item -ItemType Directory -Force -Path $releasesRoot, $backupRoot | Out-Null
+Remove-StaleReleaseStages -ReleasesRoot $releasesRoot -ReleaseId $releaseId
 Stop-InstalledRuntime $dataRoot
 $backup = Backup-UserData $dataRoot $backupRoot
 

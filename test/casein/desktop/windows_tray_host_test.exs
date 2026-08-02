@@ -226,6 +226,10 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "Copy-ReleaseTree"
     assert script =~ "robocopy.exe"
     assert script =~ "Remove-ReleaseTree"
+    assert script =~ "function Remove-StaleReleaseStages"
+    assert script =~ "StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)"
+    assert script =~ "Get-Process -Id $ownerPid -ErrorAction SilentlyContinue"
+    assert script =~ "Remove-StaleReleaseStages -ReleasesRoot $releasesRoot -ReleaseId $releaseId"
   end
 
   test "Windows package requires a self-contained Playwright runtime" do
@@ -291,5 +295,14 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert smoke =~ "Stable launcher accepted malformed installed release state"
     assert smoke =~ "Malformed-state recovery install exited with $LASTEXITCODE"
     assert smoke =~ "Recovery install did not restore current release identity"
+  end
+
+  test "package smoke reaps only interrupted installer staging" do
+    smoke = File.read!(@package_smoke)
+
+    assert smoke =~ "\"$releaseId.staging-2147483647\""
+    assert smoke =~ "\"$releaseId.staging-$PID\""
+    assert smoke =~ "Installer left a stale interrupted staging directory behind"
+    assert smoke =~ "Installer removed staging owned by a live concurrent process"
   end
 end
