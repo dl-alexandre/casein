@@ -10,7 +10,7 @@ defmodule Casein.Mobile.FeedTimingRecorder do
 
   use GenServer
 
-  alias Casein.Mobile.FeedTiming
+  alias Casein.Mobile.{FeedTiming, FeedTimingAggregate}
 
   @event [:casein, :mobile, :feed, :stage]
   @handler_id {__MODULE__, :capture}
@@ -42,6 +42,56 @@ defmodule Casein.Mobile.FeedTimingRecorder do
   @spec snapshot_for(GenServer.server(), pos_integer()) :: [map()]
   def snapshot_for(server, limit \\ @default_limit) do
     GenServer.call(server, {:snapshot, limit})
+  end
+
+  @doc """
+  Returns a fixed-schema aggregate for one explicit platform/cycle cohort.
+
+  The aggregate never includes connection generations or individual records.
+  Inputs must be a nonempty, unique list of canonical generations and the
+  platform/cycle must use the fixed atom vocabulary.
+  """
+  @spec aggregate([String.t()], :ios | :android, :cold | :reconnect | :origin_switch) ::
+          {:ok, map()} | {:error, :invalid_request}
+  def aggregate(generations, platform, cycle) do
+    aggregate_for(__MODULE__, generations, platform, cycle)
+  end
+
+  @doc false
+  @spec aggregate_for(
+          GenServer.server(),
+          [String.t()],
+          :ios | :android,
+          :cold | :reconnect | :origin_switch
+        ) :: {:ok, map()} | {:error, :invalid_request}
+  def aggregate_for(server, generations, platform, cycle) do
+    GenServer.call(server, {:aggregate, generations, platform, cycle, false})
+  end
+
+  @doc """
+  Atomically returns an aggregate and removes only the matched retained records.
+
+  Invalid requests remove nothing. Records outside the explicit generation,
+  platform, and cycle cohort are never consumed.
+  """
+  @spec aggregate_and_consume(
+          [String.t()],
+          :ios | :android,
+          :cold | :reconnect | :origin_switch
+        ) :: {:ok, map()} | {:error, :invalid_request}
+  def aggregate_and_consume(generations, platform, cycle) do
+    aggregate_and_consume_for(__MODULE__, generations, platform, cycle)
+  end
+
+  @doc false
+  @spec aggregate_and_consume_for(
+          GenServer.server(),
+          [String.t()],
+          :ios | :android,
+          :cold | :reconnect | :origin_switch
+        ) :: {:ok, map()} | {:error, :invalid_request}
+  def aggregate_and_consume_for(server, generations, platform, cycle) do
+    GenServer.call(server, {:aggregate, generations, platform, cycle, true})
   end
 
   @spec capacity() :: pos_integer()
@@ -152,6 +202,23 @@ defmodule Casein.Mobile.FeedTimingRecorder do
     {:reply, records, state}
   end
 
+  def handle_call({:aggregate, generations, platform, cycle, consume?}, _from, state)
+      when is_boolean(consume?) do
+    reply =
+      with {:ok, request} <- FeedTimingAggregate.validate_request(generations, platform, cycle),
+           boundary <- :ets.lookup_element(state.table, :sequence, 2),
+           entries <- retained_entries_through(state.table, boundary),
+           {:ok, aggregate, matched_sequences} <- FeedTimingAggregate.build(entries, request) do
+        if consume? do
+          Enum.each(matched_sequences, &:ets.delete(state.table, &1))
+        end
+
+        {:ok, aggregate}
+      end
+
+    {:reply, reply, state}
+  end
+
   def handle_call(:capacity, _from, state), do: {:reply, state.capacity, state}
 
   def handle_call(:clear, _from, state) do
@@ -201,5 +268,14 @@ defmodule Casein.Mobile.FeedTimingRecorder do
     end
 
     :ok
+  end
+
+  defp retained_entries_through(table, boundary) do
+    table
+    |> :ets.tab2list()
+    |> Enum.filter(fn
+      {sequence, _record} when is_integer(sequence) -> sequence <= boundary
+      _counter -> false
+    end)
   end
 end
