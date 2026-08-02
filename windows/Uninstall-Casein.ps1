@@ -10,6 +10,7 @@ $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\Casein'
 $dataRoot = Join-Path $env:LOCALAPPDATA 'Casein'
 $pidPath = Join-Path $dataRoot 'runtime.pid'
 $trustedLanState = Join-Path $dataRoot 'trusted-lan.json'
+$startupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Casein.lnk'
 
 if (Test-Path -LiteralPath $pidPath) {
     $runtimePid = 0
@@ -40,6 +41,7 @@ if (Test-Path -LiteralPath $trustedLanState) {
 }
 
 Remove-Item -LiteralPath $installRoot -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $startupLink -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein' -Recurse -Force -ErrorAction SilentlyContinue
 if ($RemoveUserData) { Remove-Item -LiteralPath $dataRoot -Recurse -Force -ErrorAction SilentlyContinue }
 

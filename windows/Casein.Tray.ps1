@@ -658,13 +658,16 @@ function Set-CaseinStartup {
     param([bool]$Enabled)
 
     if ($Enabled) {
+        $stableLauncher = Join-Path $env:LOCALAPPDATA 'Programs\Casein\Casein.Launcher.ps1'
+        if (-not (Test-Path -LiteralPath $stableLauncher)) {
+            throw 'The stable Casein launcher is missing. Repair the installation before enabling launch at sign-in.'
+        }
         $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($script:Paths.StartupLink)
         $shortcut.TargetPath = (Get-Command powershell.exe).Source
-        $escapedScript = $PSCommandPath.Replace('"', '""')
-        $escapedRoot = $script:Paths.ReleaseRoot.Replace('"', '""')
-        $shortcut.Arguments = "-NoLogo -NoProfile -WindowStyle Hidden -File `"$escapedScript`" -ReleaseRoot `"$escapedRoot`""
-        $shortcut.WorkingDirectory = $script:Paths.ReleaseRoot
+        $escapedLauncher = $stableLauncher.Replace('"', '""')
+        $shortcut.Arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$escapedLauncher`""
+        $shortcut.WorkingDirectory = Split-Path -Parent $stableLauncher
         $shortcut.Description = 'Start Casein in the Windows notification area'
         $shortcut.Save()
     } else {

@@ -87,6 +87,7 @@ Assert-Condition ($metadata.target -eq 'windows-x86_64') 'Package target must be
 $originalLocalAppData = $env:LOCALAPPDATA
 $testLocalAppData = Join-Path ([IO.Path]::GetTempPath()) ("casein-package-smoke-" + [guid]::NewGuid().ToString('N'))
 $env:LOCALAPPDATA = $testLocalAppData
+$startupLink = Join-Path $testLocalAppData 'Startup\Casein.lnk'
 
 try {
     . $trayHost -ReleaseRoot $packageRoot -LibraryOnly
@@ -272,6 +273,18 @@ try {
     Assert-Condition (Test-Path -LiteralPath (Join-Path $current.release_root 'bin\casein.bat')) 'Installed release is missing casein.bat'
     Assert-Condition ($current.revision -eq $metadata.revision) 'Installed release revision differs from package metadata'
 
+    . $trayHost -ReleaseRoot ([string]$current.release_root) -LibraryOnly
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $startupLink) | Out-Null
+    $script:Paths.StartupLink = $startupLink
+    Set-CaseinStartup $true
+    Assert-Condition (Test-Path -LiteralPath $startupLink) 'Launch at sign-in did not create its shortcut'
+    $startupShortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($startupLink)
+    $stableLauncher = Join-Path $installRoot 'Casein.Launcher.ps1'
+    Assert-Condition ($startupShortcut.Arguments.Contains($stableLauncher)) 'Launch at sign-in did not target the stable launcher'
+    Assert-Condition (-not $startupShortcut.Arguments.Contains([string]$current.release_root)) 'Launch at sign-in pinned a release-specific path'
+    Set-CaseinStartup $false
+    Assert-Condition (-not (Test-Path -LiteralPath $startupLink)) 'Disabling launch at sign-in left its shortcut behind'
+
     $repairProbe = Join-Path $current.release_root 'windows\New-CaseinSupportBundle.ps1'
     Remove-Item -LiteralPath $repairProbe -Force
     & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot -AllowUnsignedDevelopment
@@ -303,9 +316,9 @@ try {
     Assert-Condition (-not (Test-Path -LiteralPath $installRoot)) 'Uninstaller left the installation root behind'
     Assert-Condition (-not (Test-Path -LiteralPath $dataRoot)) 'Uninstaller left user data behind after -RemoveUserData'
     Assert-Condition (-not (Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein')) 'Uninstaller left Apps & Features metadata behind'
-
     Write-Host "Windows desktop package smoke passed: $packageRoot"
 } finally {
+    Remove-Item -LiteralPath $startupLink -Force -ErrorAction SilentlyContinue
     $env:LOCALAPPDATA = $originalLocalAppData
     if (-not $KeepTestData) { Remove-Item -LiteralPath $testLocalAppData -Recurse -Force -ErrorAction SilentlyContinue }
 }
