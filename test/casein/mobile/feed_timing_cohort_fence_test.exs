@@ -312,6 +312,51 @@ defmodule Casein.Mobile.FeedTimingCohortFenceTest do
     assert aggregated + retained == 420
   end
 
+  test "finish waits for a reserved event to be inserted before capturing its upper fence" do
+    test_pid = self()
+
+    before_record_insert_fun = fn ->
+      send(test_pid, {:record_reserved, self()})
+
+      receive do
+        {:release_record_insert, ^test_pid} -> :ok
+      end
+    end
+
+    recorder =
+      start_recorder(500,
+        before_record_insert_fun: before_record_insert_fun
+      )
+
+    task_supervisor = start_supervised!(Task.Supervisor)
+    generations = generations(501..520)
+
+    assert {:ok, fence} = FeedTimingRecorder.begin_cohort_for(recorder, :ios, :cold)
+
+    emitter =
+      Task.Supervisor.async_nolink(task_supervisor, fn ->
+        emit_record(hd(generations), duration_ms: 7)
+      end)
+
+    assert_receive {:record_reserved, ^recorder}
+
+    finish_tag = make_ref()
+
+    send(
+      recorder,
+      {:"$gen_call", {self(), finish_tag}, {:finish_cohort, fence, generations, :ios, :cold}}
+    )
+
+    refute_receive {^finish_tag, _reply}
+    send(recorder, {:release_record_insert, self()})
+
+    assert_receive {^finish_tag, {:ok, aggregate}}
+    assert Task.await(emitter, 5_000) == :ok
+
+    assert aggregate["stage_timings"]["mobile_join_replied"]["sample_count"] == 1
+    assert FeedTimingRecorder.snapshot_for(recorder, 500) == []
+  end
+
   defp start_recorder(capacity, opts \\ []) do
     handler_id = {__MODULE__, make_ref()}
 

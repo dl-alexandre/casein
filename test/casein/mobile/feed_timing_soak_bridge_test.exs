@@ -3,6 +3,39 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
 
   alias Casein.Mobile.FeedTimingSoakBridge
 
+  @stages ~w(
+    token_verified
+    mobile_join_started
+    mobile_join_replied
+    workspace_watch_started
+    workspace_watch_replied
+    session_hydration_started
+    session_hydration_finished
+    clarification_hydration_finished
+    observer_snapshot
+    projection_broadcast
+    snapshot_rendered
+    push_queued
+  )
+  @outcomes ~w(started succeeded failed skipped)
+  @reasons ~w(
+    none
+    user_token
+    pairing_token
+    device_link_token
+    invalid_token
+    mobile_join
+    workspace_watch
+    workspace_watched
+    already_watched
+    hydrated
+    no_changes
+    stale_hydration
+    rendered
+    pushed
+    unauthorized
+  )
+
   test "scope parser accepts only the fixed non-secret vocabulary" do
     assert {:ok, :ios, :cold} = FeedTimingSoakBridge.parse_scope(["ios", "cold"])
 
@@ -110,12 +143,43 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
     refute encoded =~ cookie
     refute Enum.any?(generations, &String.contains?(encoded, &1))
 
-    leaking_id = put_in(aggregate["stage_timings"], %{"unsafe" => hd(generations)})
-    leaking_cookie = put_in(aggregate["reason_counts"], %{"unsafe" => cookie})
+    leaking_id =
+      put_in(
+        aggregate["stage_timings"]["token_verified"]["duration_ms"]["p50"],
+        hd(generations)
+      )
+
+    leaking_cookie = put_in(aggregate["reason_counts"]["none"], cookie)
+
+    arbitrary_nested_text =
+      put_in(
+        aggregate["stage_timings"]["token_verified"]["elapsed_ms"]["p50"],
+        "privacy-regression-sentinel"
+      )
+
+    forbidden_nested_key =
+      update_in(aggregate["stage_timings"]["token_verified"], fn timing ->
+        Map.put(timing, "unexpected", 1)
+      end)
+
+    malformed_number =
+      put_in(
+        aggregate["stage_timings"]["token_verified"]["duration_ms"]["max"],
+        86_400_001
+      )
+
+    oversized_nested_map =
+      update_in(aggregate["optional_measurements"], fn measurements ->
+        Map.put(measurements, String.duplicate("x", 70_000), %{})
+      end)
 
     for rejected <- [
           leaking_id,
           leaking_cookie,
+          arbitrary_nested_text,
+          forbidden_nested_key,
+          malformed_number,
+          oversized_nested_map,
           %{aggregate | "platform" => "android"},
           %{aggregate | "cycle" => "reconnect"},
           Map.put(aggregate, "unexpected", true)
@@ -413,6 +477,8 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
   defp generations(range), do: Enum.map(range, &generation/1)
 
   defp aggregate_fixture do
+    empty_summary = %{"min" => nil, "p50" => nil, "p95" => nil, "max" => nil}
+
     %{
       "schema_version" => 1,
       "component" => "server",
@@ -421,9 +487,17 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
       "expected_generation_count" => 20,
       "observed_generation_count" => 20,
       "cohort_match" => true,
-      "stage_timings" => %{},
-      "outcome_counts" => %{},
-      "reason_counts" => %{},
+      "stage_timings" =>
+        Map.new(@stages, fn stage ->
+          {stage,
+           %{
+             "sample_count" => 0,
+             "duration_ms" => empty_summary,
+             "elapsed_ms" => empty_summary
+           }}
+        end),
+      "outcome_counts" => Map.new(@outcomes, &{&1, 0}),
+      "reason_counts" => Map.new(@reasons, &{&1, 0}),
       "optional_measurements" => %{}
     }
   end

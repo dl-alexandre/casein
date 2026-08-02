@@ -194,7 +194,11 @@ defmodule Casein.Mobile.FeedTimingRecorder do
     monotonic_ms_fun =
       Keyword.get(opts, :monotonic_ms_fun, fn -> System.monotonic_time(:millisecond) end)
 
+    before_record_insert_fun =
+      Keyword.get(opts, :before_record_insert_fun, fn -> :ok end)
+
     true = is_function(monotonic_ms_fun, 0)
+    true = is_function(before_record_insert_fun, 0)
     _ = :telemetry.detach(handler_id)
 
     table =
@@ -212,7 +216,7 @@ defmodule Casein.Mobile.FeedTimingRecorder do
         handler_id,
         @event,
         &__MODULE__.handle_event/4,
-        %{table: table, capacity: capacity}
+        %{server: self()}
       )
 
     {:ok,
@@ -222,40 +226,56 @@ defmodule Casein.Mobile.FeedTimingRecorder do
        handler_id: handler_id,
        recorder_epoch: make_ref(),
        active_cohort_fences: %{},
-       monotonic_ms_fun: monotonic_ms_fun
+       monotonic_ms_fun: monotonic_ms_fun,
+       before_record_insert_fun: before_record_insert_fun
      }}
   end
 
   @doc false
-  def handle_event(@event, measurements, metadata, %{table: table, capacity: capacity}) do
+  def handle_event(@event, measurements, metadata, %{server: server}) do
     case FeedTiming.sanitize_event(measurements, metadata) do
       {:ok, sanitized} ->
-        sequence = :ets.update_counter(table, :sequence, {2, 1}, {:sequence, 0})
-
-        record = %{
-          recorded_at_ms: System.system_time(:millisecond),
-          measurements: sanitized.measurements,
-          metadata: sanitized.metadata
-        }
-
-        true = :ets.insert(table, {sequence, record})
-        enforce_capacity(table, capacity)
-
-        :ok
+        GenServer.call(server, {:record_event, sanitized})
 
       :error ->
         :ok
     end
   rescue
-    # A supervised restart can briefly leave an attached handler without its
-    # owning ETS table. Dropping that one measurement is safer than affecting
-    # the feed process that emitted it.
     ArgumentError -> :ok
+  catch
+    # Telemetry handlers execute in the caller. A supervised recorder restart
+    # must never take down the feed process that emitted a timing stage.
+    :exit, _recorder_unavailable -> :ok
   end
 
   def handle_event(_event, _measurements, _metadata, _config), do: :ok
 
   @impl true
+  def handle_call(
+        {:record_event, %{measurements: measurements, metadata: metadata}},
+        _from,
+        state
+      )
+      when is_map(measurements) and is_map(metadata) do
+    sequence = :ets.update_counter(state.table, :sequence, {2, 1}, {:sequence, 0})
+    :ok = state.before_record_insert_fun.()
+
+    record = %{
+      recorded_at_ms: System.system_time(:millisecond),
+      measurements: measurements,
+      metadata: metadata
+    }
+
+    true = :ets.insert(state.table, {sequence, record})
+    enforce_capacity(state.table, state.capacity)
+
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:record_event, _invalid}, _from, state) do
+    {:reply, :ok, state}
+  end
+
   def handle_call({:snapshot, limit}, _from, state) do
     records =
       state.table

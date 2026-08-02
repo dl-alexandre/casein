@@ -46,6 +46,48 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
                     "optional_measurements"
                   ])
 
+  @stage_names MapSet.new(~w(
+                 token_verified
+                 mobile_join_started
+                 mobile_join_replied
+                 workspace_watch_started
+                 workspace_watch_replied
+                 session_hydration_started
+                 session_hydration_finished
+                 clarification_hydration_finished
+                 observer_snapshot
+                 projection_broadcast
+                 snapshot_rendered
+                 push_queued
+               ))
+  @outcome_names MapSet.new(~w(started succeeded failed skipped))
+  @reason_names MapSet.new(~w(
+                  none
+                  user_token
+                  pairing_token
+                  device_link_token
+                  invalid_token
+                  mobile_join
+                  workspace_watch
+                  workspace_watched
+                  already_watched
+                  hydrated
+                  no_changes
+                  stale_hydration
+                  rendered
+                  pushed
+                  unauthorized
+                ))
+  @optional_measurement_names MapSet.new(~w(card_count snapshot_json_bytes))
+  @stage_timing_keys MapSet.new(~w(sample_count duration_ms elapsed_ms))
+  @summary_keys MapSet.new(~w(min p50 p95 max))
+  @optional_summary_keys MapSet.new(~w(sample_count min p50 p95 max))
+  @maximum_aggregate_records 2_000
+  @maximum_duration_ms 86_400_000
+  @maximum_card_count 1_000
+  @maximum_snapshot_json_bytes 1_000_000
+  @maximum_encoded_aggregate_bytes 65_536
+
   @failure_exit_status 74
 
   @doc """
@@ -475,7 +517,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
         ) :: {:ok, String.t()} | {:error, :invalid_aggregate}
   def encode_aggregate(aggregate, generations, cookie, platform, cycle)
       when is_map(aggregate) and is_list(generations) and is_binary(cookie) do
-    with true <- MapSet.new(Map.keys(aggregate)) == @aggregate_keys,
+    with true <- aggregate_schema_valid?(aggregate),
          1 <- aggregate["schema_version"],
          "server" <- aggregate["component"],
          platform_name <- Atom.to_string(platform),
@@ -483,7 +525,9 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
          cycle_name <- Atom.to_string(cycle),
          ^cycle_name <- aggregate["cycle"],
          @generation_count <- aggregate["expected_generation_count"],
+         true <- valid_generation_set?(generations),
          {:ok, encoded} <- Jason.encode(aggregate),
+         true <- byte_size(encoded) <= @maximum_encoded_aggregate_bytes,
          false <- String.contains?(encoded, cookie),
          false <- Enum.any?(generations, &String.contains?(encoded, &1)) do
       {:ok, encoded}
@@ -494,4 +538,113 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
 
   def encode_aggregate(_aggregate, _generations, _cookie, _platform, _cycle),
     do: {:error, :invalid_aggregate}
+
+  defp aggregate_schema_valid?(aggregate) do
+    exact_keys?(aggregate, @aggregate_keys) and
+      aggregate["schema_version"] == 1 and
+      aggregate["component"] == "server" and
+      aggregate["platform"] in ["ios", "android"] and
+      aggregate["cycle"] in ["cold", "reconnect", "origin_switch"] and
+      aggregate["expected_generation_count"] == @generation_count and
+      bounded_count?(aggregate["observed_generation_count"]) and
+      is_boolean(aggregate["cohort_match"]) and
+      cohort_flag_consistent?(aggregate) and
+      stage_timings_valid?(aggregate["stage_timings"]) and
+      fixed_counts_valid?(aggregate["outcome_counts"], @outcome_names) and
+      fixed_counts_valid?(aggregate["reason_counts"], @reason_names) and
+      optional_measurements_valid?(aggregate["optional_measurements"])
+  end
+
+  defp exact_keys?(map, expected) when is_map(map) do
+    MapSet.new(Map.keys(map)) == expected
+  end
+
+  defp exact_keys?(_map, _expected), do: false
+
+  defp cohort_flag_consistent?(%{
+         "cohort_match" => true,
+         "observed_generation_count" => @generation_count
+       }),
+       do: true
+
+  defp cohort_flag_consistent?(%{"cohort_match" => false}), do: true
+  defp cohort_flag_consistent?(_aggregate), do: false
+
+  defp stage_timings_valid?(stage_timings) do
+    exact_keys?(stage_timings, @stage_names) and
+      Enum.all?(stage_timings, fn {_stage, timing} -> stage_timing_valid?(timing) end)
+  end
+
+  defp stage_timing_valid?(timing) do
+    exact_keys?(timing, @stage_timing_keys) and
+      bounded_count?(timing["sample_count"]) and
+      duration_summary_valid?(timing["duration_ms"]) and
+      duration_summary_valid?(timing["elapsed_ms"])
+  end
+
+  defp duration_summary_valid?(summary) do
+    exact_keys?(summary, @summary_keys) and
+      Enum.all?(summary, fn {_key, value} ->
+        is_nil(value) or bounded_number?(value, @maximum_duration_ms)
+      end)
+  end
+
+  defp fixed_counts_valid?(counts, expected_names) do
+    exact_keys?(counts, expected_names) and
+      Enum.all?(counts, fn {_name, count} -> bounded_count?(count) end)
+  end
+
+  defp optional_measurements_valid?(measurements) when is_map(measurements) do
+    names = MapSet.new(Map.keys(measurements))
+
+    MapSet.subset?(names, @optional_measurement_names) and
+      Enum.all?(measurements, fn
+        {"card_count", summary} ->
+          optional_summary_valid?(summary, @maximum_card_count)
+
+        {"snapshot_json_bytes", summary} ->
+          optional_summary_valid?(summary, @maximum_snapshot_json_bytes)
+
+        _unexpected ->
+          false
+      end)
+  end
+
+  defp optional_measurements_valid?(_measurements), do: false
+
+  defp optional_summary_valid?(summary, maximum) do
+    exact_keys?(summary, @optional_summary_keys) and
+      bounded_count?(summary["sample_count"]) and
+      Enum.all?(~w(min p50 p95 max), fn key ->
+        value = summary[key]
+        is_nil(value) or (is_integer(value) and value >= 0 and value <= maximum)
+      end)
+  end
+
+  defp bounded_count?(count) do
+    is_integer(count) and count >= 0 and count <= @maximum_aggregate_records
+  end
+
+  defp bounded_number?(number, maximum) do
+    is_number(number) and number >= 0 and number <= maximum
+  end
+
+  defp valid_generation_set?(generations) do
+    valid_generation_set?(generations, MapSet.new(), 0)
+  end
+
+  defp valid_generation_set?([], generations, @generation_count),
+    do: MapSet.size(generations) == @generation_count
+
+  defp valid_generation_set?([generation | rest], generations, count)
+       when count < @generation_count and is_binary(generation) do
+    if FeedTiming.generation_valid?(generation) and
+         not MapSet.member?(generations, generation) do
+      valid_generation_set?(rest, MapSet.put(generations, generation), count + 1)
+    else
+      false
+    end
+  end
+
+  defp valid_generation_set?(_generations, _seen, _count), do: false
 end
