@@ -246,6 +246,10 @@ pub fn build(b: *std.Build) void {
             .name = "CaseinRuntimeOverlay",
             .source = b.fmt("{s}/CaseinRuntimeOverlay.m", .{project_ios_dir}),
         },
+        .{
+            .name = "CaseinScannerBoundaryProbe",
+            .source = b.fmt("{s}/CaseinScannerBoundaryProbe.m", .{project_ios_dir}),
+        },
         .{ .name = "beam_main", .source = b.fmt("{s}/beam_main.m", .{project_ios_dir}) },
     };
 
@@ -748,6 +752,7 @@ fn addLink(b: *std.Build, step: *std.Build.Step, opts: LinkOptions) void {
         "Foundation",
         "CoreGraphics",
         "QuartzCore",
+        "Security",
         "SwiftUI",
     };
     for (frameworks_base) |fw| {

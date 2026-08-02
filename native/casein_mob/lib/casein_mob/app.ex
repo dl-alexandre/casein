@@ -11,6 +11,7 @@ defmodule CaseinMob.App do
   @impl Mob.App
   def on_start do
     CaseinMob.ConnectionTiming.start_boot()
+    start_scanner_boundary_probe()
     # Configure BEAM's DNS path so Req / Finch / Mint / `gen_tcp:connect/3`
     # with a hostname work on iOS without per-host setup. Flips the lookup
     # chain from the iOS-broken `:native` (inet_gethost port program) path
@@ -132,6 +133,13 @@ defmodule CaseinMob.App do
 
   defp start_device_bridge do
     case CaseinMob.DeviceBridge.start_link() do
+      {:ok, _pid} -> :ok
+      {:error, {:already_started, _pid}} -> :ok
+    end
+  end
+
+  defp start_scanner_boundary_probe do
+    case CaseinMob.ScannerBoundaryProbe.start_link() do
       {:ok, _pid} -> :ok
       {:error, {:already_started, _pid}} -> :ok
     end

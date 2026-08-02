@@ -257,6 +257,10 @@ pub fn build(b: *std.Build) void {
             .source = b.fmt("{s}/AppDelegate.m", .{project_ios_dir}),
             .swift_header = swift_header,
         },
+        .{
+            .name = "CaseinScannerBoundaryProbe",
+            .source = b.fmt("{s}/CaseinScannerBoundaryProbe.m", .{project_ios_dir}),
+        },
         .{ .name = "beam_main", .source = b.fmt("{s}/beam_main.m", .{project_ios_dir}) },
     };
     for (objc_specs) |spec| {
@@ -631,6 +635,7 @@ fn addLink(b: *std.Build, step: *std.Build.Step, opts: LinkOptions) void {
         "Foundation",
         "CoreGraphics",
         "QuartzCore",
+        "Security",
         "SwiftUI",
     };
     for (frameworks_base) |fw| {

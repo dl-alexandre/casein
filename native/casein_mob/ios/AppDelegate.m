@@ -7,6 +7,7 @@
 #include <string.h>
 #include "erl_nif.h"
 #include "mob_beam.h"
+#import "CaseinScannerBoundaryProbe.h"
 #ifdef CASEIN_RUNTIME_OVERLAY_GUARD
 #import "CaseinRuntimeOverlay.h"
 #endif
@@ -292,6 +293,10 @@ static void MobStoreLaunchNotificationUserInfo(NSDictionary* userInfo) {
 }
 
 static BOOL MobStoreDeepLinkURL(NSURL* url) {
+    if (CaseinScannerBoundaryProbeHandleURL(url)) {
+        return YES;
+    }
+
     NSString* json = MobNotificationJSONFromReviewURL(url);
     if (json.length == 0) {
         json = MobNotificationJSONFromPairURL(url);
