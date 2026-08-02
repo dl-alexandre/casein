@@ -81,11 +81,26 @@ for wt in "$WT_ROOT"/*/; do
 
   upstream="$(git -C "$wt" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
   if [[ -z "$upstream" ]]; then
-    echo "keep    $name  (no upstream — may hold unpushed work)"; kept=$((kept+1)); continue
-  fi
-  ahead="$(git -C "$wt" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 1)"
-  if [[ "$ahead" != "0" ]]; then
-    echo "keep    $name  ($ahead unpushed commit(s))"; kept=$((kept+1)); continue
+    # No upstream is NOT evidence of unpushed work. A detached HEAD has none by
+    # definition, and detaching is routine here — verifying a merge by checking
+    # out origin/master leaves the worktree detached and therefore pinned
+    # forever under the old rule, even though it holds nothing.
+    #
+    # Ask the question that actually matters instead: is every commit reachable
+    # from HEAD already present on some remote? `--not --remotes` errs toward
+    # keeping (a squash-merged commit still looks unpushed), which is the right
+    # direction for a deleter.
+    unpushed="$(git -C "$wt" rev-list --count HEAD --not --remotes 2>/dev/null || echo 1)"
+    if [[ "$unpushed" != "0" ]]; then
+      echo "keep    $name  (no upstream, $unpushed commit(s) on no remote)"
+      kept=$((kept+1)); continue
+    fi
+    # Detached (or upstream-less) but fully published — fall through to removal.
+  else
+    ahead="$(git -C "$wt" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 1)"
+    if [[ "$ahead" != "0" ]]; then
+      echo "keep    $name  ($ahead unpushed commit(s))"; kept=$((kept+1)); continue
+    fi
   fi
 
   # clean + idle + fully pushed → safe to remove
