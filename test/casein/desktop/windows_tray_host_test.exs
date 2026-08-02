@@ -3,6 +3,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
 
   @tray_script Path.expand("../../../windows/Casein.Tray.ps1", __DIR__)
   @package_script Path.expand("../../../scripts/package-windows-desktop.ps1", __DIR__)
+  @package_smoke Path.expand("../../../scripts/test-windows-desktop-package.ps1", __DIR__)
   @preview_prepare Path.expand(
                      "../../../scripts/prepare-windows-preview-runtime.ps1",
                      __DIR__
@@ -265,5 +266,16 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert installer =~ "Get-Process -Id $runtimePid -ErrorAction SilentlyContinue"
     assert uninstaller =~ "Get-Process -Id $runtimePid -ErrorAction SilentlyContinue"
     assert uninstaller =~ "RemoveUserData"
+  end
+
+  test "package smoke recovers malformed settings and runtime markers" do
+    smoke = File.read!(@package_smoke)
+
+    assert smoke =~ "Set-Content -LiteralPath $settingsPath -Value '{malformed-settings'"
+    assert smoke =~ "Read-CaseinSettings"
+    assert smoke =~ "Malformed settings unexpectedly enabled launch at sign-in"
+    assert smoke =~ "Set-Content -LiteralPath $runtimePidPath -Value 'not-a-process-id'"
+    assert smoke =~ "Clear-CaseinStaleRuntimeState $recoveryProbePort"
+    assert smoke =~ "Malformed runtime status marker was not removed"
   end
 end

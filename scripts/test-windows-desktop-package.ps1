@@ -274,6 +274,24 @@ try {
     Assert-Condition ($current.revision -eq $metadata.revision) 'Installed release revision differs from package metadata'
 
     . $trayHost -ReleaseRoot ([string]$current.release_root) -LibraryOnly
+
+    $stateDataRoot = $script:Paths.DataRoot
+    New-Item -ItemType Directory -Force -Path $stateDataRoot | Out-Null
+    $settingsPath = Join-Path $stateDataRoot 'desktop-host.json'
+    Set-Content -LiteralPath $settingsPath -Value '{malformed-settings' -Encoding UTF8
+    $recoveredSettings = Read-CaseinSettings
+    Assert-Condition ($recoveredSettings.port -eq 0) 'Malformed settings did not fall back to an automatically selected port'
+    Assert-Condition (-not $recoveredSettings.launchAtSignIn) 'Malformed settings unexpectedly enabled launch at sign-in'
+
+    $runtimePidPath = Join-Path $stateDataRoot 'runtime.pid'
+    $runtimeStatusPath = Join-Path $stateDataRoot 'runtime.json'
+    Set-Content -LiteralPath $runtimePidPath -Value 'not-a-process-id' -Encoding ascii
+    Set-Content -LiteralPath $runtimeStatusPath -Value '{malformed-runtime-state' -Encoding UTF8
+    $recoveryProbePort = Get-FreeLoopbackPort
+    Assert-Condition (-not (Clear-CaseinStaleRuntimeState $recoveryProbePort)) 'Malformed runtime state unexpectedly reported a ready runtime'
+    Assert-Condition (-not (Test-Path -LiteralPath $runtimePidPath)) 'Malformed runtime PID marker was not removed'
+    Assert-Condition (-not (Test-Path -LiteralPath $runtimeStatusPath)) 'Malformed runtime status marker was not removed'
+
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $startupLink) | Out-Null
     $script:Paths.StartupLink = $startupLink
     Set-CaseinStartup $true
