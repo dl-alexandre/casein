@@ -25,11 +25,13 @@ native_log_producer_with_marker_only_filter |
     --output /tmp/casein-ios-cold-aggregate.json
 ```
 
-The producer in this example is a placeholder. Configure the platform's
-trusted, app-scoped live-log tool to select the literal marker before opening
-the pipe. Do not use a raw capture file, shell variable, clipboard, `tee`, or a
-general application-log export. The adapter itself has no input-file option.
-Its output must flow directly to the aggregate collector.
+The producer in this example is a placeholder. The only supported native
+producer is the bounded, app-scoped source supervisor documented in
+[`mobile_feed_timing_source_supervisor.md`](mobile_feed_timing_source_supervisor.md).
+It is a building block for the in-memory cohort coordinator, not a standalone
+physical-cohort runner. Do not use a raw capture file, shell variable,
+clipboard, `tee`, or a general application-log export. The adapter itself has
+no input-file option. Its output must flow directly to the aggregate collector.
 
 Input framing is intentionally narrow:
 
