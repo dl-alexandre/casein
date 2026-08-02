@@ -69,6 +69,37 @@ defmodule Casein.Desktop.NativeAgentLaunchTest do
              )
   end
 
+  test "launch composes preparation and ConPTY start while retaining the finish plan" do
+    workspace = workspace("C:/repo")
+    plan = %{plan("C:/worktrees/launch") | workspace: workspace, command: "codex\r"}
+    parent = self()
+
+    assert {:ok, ^plan} =
+             NativeAgentLaunch.launch(workspace, "codex", "ticket-462",
+               prepare_opts: [worktree_opts: [base_ref: "origin/master"]],
+               start_opts: [session: :native],
+               preparer: fn ^workspace, "codex", "ticket-462", prepare_opts ->
+                 send(parent, {:prepared, prepare_opts})
+                 {:ok, plan}
+               end,
+               starter: fn ^plan, start_opts ->
+                 send(parent, {:started, start_opts})
+                 :ok
+               end
+             )
+
+    assert_receive {:prepared, [worktree_opts: [base_ref: "origin/master"]]}
+    assert_receive {:started, [session: :native]}
+  end
+
+  test "launch stops before ConPTY when preparation fails" do
+    assert {:error, :authentication_not_detected} =
+             NativeAgentLaunch.launch(workspace("C:/repo"), "claude", "ticket-462",
+               preparer: fn _, _, _, _ -> {:error, :authentication_not_detected} end,
+               starter: fn _, _ -> flunk("starter must not run") end
+             )
+  end
+
   test "starts the token-free command in the prepared worktree session" do
     plan = %{plan("C:/worktrees/launch") | workspace: workspace("C:/repo"), command: "codex\r"}
     parent = self()
