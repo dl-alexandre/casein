@@ -167,11 +167,17 @@ $stage = "$destination.staging-$PID"
 $currentPath = Join-Path $installRoot 'current.json'
 $previousReleaseRoot = $null
 if (Test-Path -LiteralPath $currentPath) {
-    $existingCurrent = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
-    $previousReleaseRoot = [string]$existingCurrent.release_root
-    if ($previousReleaseRoot -eq $destination) {
-        $previousProperty = $existingCurrent.PSObject.Properties['previous_release_root']
-        $previousReleaseRoot = if ($previousProperty) { [string]$previousProperty.Value } else { $null }
+    try {
+        $existingCurrent = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
+        $previousReleaseRoot = [string]$existingCurrent.release_root
+        if ($previousReleaseRoot -eq $destination) {
+            $previousProperty = $existingCurrent.PSObject.Properties['previous_release_root']
+            $previousReleaseRoot = if ($previousProperty) { [string]$previousProperty.Value } else { $null }
+        }
+    } catch {
+        # A verified package is the recovery authority; do not echo corrupt local state or paths.
+        Write-Warning 'Installed release state is invalid and will be replaced from the verified package.'
+        $previousReleaseRoot = $null
     }
 }
 

@@ -121,8 +121,10 @@ The Windows package smoke also writes malformed desktop settings and runtime
 marker files into its disposable LocalAppData root. It verifies that the tray
 library falls back to an automatically selected port with launch-at-sign-in
 disabled, then removes the invalid PID and runtime-status markers without
-reporting the runtime as ready. This is repository evidence only; malformed
-`current.json` and interrupted install staging remain separate acceptance gaps.
+reporting the runtime as ready. The same smoke proves the stable launcher fails
+closed on malformed `current.json`, does not disclose the disposable local data
+root through acceptance evidence, and a verified package atomically restores valid installed-release state.
+Interrupted install staging remains a separate acceptance gap.
 
 The current repository-gap subtraction and sequencing record is
 [`windows_acceptance_gap_audit.md`](windows_acceptance_gap_audit.md). Keep that
