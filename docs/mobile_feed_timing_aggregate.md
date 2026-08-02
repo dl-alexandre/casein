@@ -39,3 +39,46 @@ records, timestamps, HMACs, workspace/session/pane identities, or content. It
 also never compares native and server monotonic timestamps. Cross-component
 analysis must compare stage durations or independently elapsed intervals, not
 subtract clocks from different processes or devices.
+
+## Fenced physical-soak collection
+
+Physical 20-cycle runs use the internal `begin_cohort/2` and
+`finish_cohort/4` recorder contract. Begin returns an opaque, recorder-epoch
+fence bound to one fixed platform/cycle and a lower sequence. Finish captures
+an upper sequence and considers only records in the open/closed interval
+`lower < sequence <= upper`. It requires exactly 20 unique canonical raw
+generation IDs, emits only their aggregate, and consumes only matched rows in
+that interval. Pre-fence rows, post-upper rows, other generations, and other
+platform/cycle scopes remain retained. This path never calls `clear/0`.
+
+Only one live fence is allowed per platform/cycle. The recorder also keeps a
+small fixed total fence cap and lazily expires abandoned fences after one hour,
+so interrupted helpers cannot create an unbounded registry or contaminate a
+later same-scope cohort. A finish attempt consumes its fence even when the
+scope, ID count, or request is invalid. Foreign, expired, replayed, altered,
+and malformed fences all return the same non-reflective error.
+
+The packaged `bin/mobile_feed_timing_soak` helper is a local release-only
+bridge; it is not routed through HTTP. Its only arguments are the fixed public
+platform and cycle names. It opens the server fence before reading exactly 20
+canonical LF-terminated IDs from stdin. Immediately after begin succeeds it
+writes the constant `CASEIN_MOBILE_FEED_SOAK_READY` line exactly once on a
+control-only descriptor that the overlay duplicates from outer stderr. A
+coordinator must observe that line before starting device work. The child
+runtime's ordinary stderr is discarded, and aggregate stdout remains silent
+and buffered until finish. Missing readiness fails closed and retires the
+fence without reading stdin. The bridge pins one strictly validated
+`/run/casein/current.sock` target around the consuming RPC, and starts a hidden
+non-listening distribution client. It never fails over or retries an uncertain
+finish. Success writes one aggregate JSON object. Every failure writes one
+fixed error code with no supplied value.
+
+Distribution credentials stay in the existing fixed
+`/etc/casein/casein.env` file. The helper requires that file to be owned by its
+effective release user, non-symlinked, single-linked, private, and below a
+bounded size; `/etc/casein` must be non-symlinked and non-writable to that
+user. The cookie is parsed in memory without sourcing the file and is never
+placed in argv, inherited environment, a new file, stdout, stderr, or a crash
+dump. Moving the cookie into a dedicated systemd credential would further
+reduce file scope, but is a separate host-hardening change rather than a
+requirement of this bridge.

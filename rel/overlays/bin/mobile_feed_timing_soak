@@ -1,0 +1,103 @@
+#!/bin/sh
+
+# Release-only privacy bridge for one native feed-timing cohort. Stdin is the
+# sole generation-ID channel. The only argv values are fixed, non-secret scope
+# names; the pinned cookie is read in-memory by the Elixir bridge and is never
+# copied into this process environment or a child argv.
+
+set -eu
+
+failure() {
+  printf '%s\n' 'CASEIN_MOBILE_FEED_SOAK_FAILED' >&2
+  exit 74
+}
+
+# Reserve a control-only descriptor by duplicating the outer stderr before
+# suppressing the clean runtime's ordinary stderr. The bridge writes one fixed
+# READY line here after the server fence opens; aggregate stdout stays buffered.
+if ! exec 3>&2; then
+  failure
+fi
+
+[ "$#" -eq 2 ] || failure
+
+platform="$1"
+cycle="$2"
+
+case "${platform}" in
+  ios | android) ;;
+  *) failure ;;
+esac
+
+case "${cycle}" in
+  cold | reconnect | origin_switch) ;;
+  *) failure ;;
+esac
+
+cd -P -- "$(dirname -- "$0")/.." || failure
+release_root="$(pwd -P)"
+
+start_erl_data="${release_root}/releases/start_erl.data"
+[ -r "${start_erl_data}" ] || failure
+
+IFS=' ' read -r _erts_vsn release_vsn _trailing <"${start_erl_data}" || failure
+
+case "${release_vsn}" in
+  '' | *[!A-Za-z0-9._-]*) failure ;;
+esac
+
+release_vsn_dir="${release_root}/releases/${release_vsn}"
+release_elixir="${release_vsn_dir}/elixir"
+release_boot="${release_vsn_dir}/start_clean"
+release_vm_args="${release_vsn_dir}/remote.vm.args"
+
+[ -x "${release_elixir}" ] || failure
+[ -r "${release_boot}.boot" ] || failure
+[ -r "${release_vm_args}" ] || failure
+
+credential_dir="/etc/casein"
+credential_file="${credential_dir}/casein.env"
+
+[ -d "${credential_dir}" ] || failure
+[ ! -L "${credential_dir}" ] || failure
+[ ! -w "${credential_dir}" ] || failure
+[ -f "${credential_file}" ] || failure
+[ ! -L "${credential_file}" ] || failure
+# The deployed Linux /bin/sh (dash) supports -O; it is the only check here
+# that binds the existing credential to this helper's effective release user.
+# shellcheck disable=SC3067
+[ -O "${credential_file}" ] || failure
+[ -r "${credential_file}" ] || failure
+
+# A caller may itself have RELEASE_COOKIE. Never forward it. The bridge reads
+# exactly one bounded line from the existing release-user-owned Casein env file
+# after the clean runtime starts, then sets the cookie only inside this
+# short-lived VM. The parent directory remains non-writable to that user.
+unset RELEASE_COOKIE
+
+export RELEASE_ROOT="${release_root}"
+export RELEASE_NAME="casein"
+export RELEASE_VSN="${release_vsn}"
+export RELEASE_COMMAND="eval"
+
+if aggregate_json="$(ERL_CRASH_DUMP=/dev/null ERL_CRASH_DUMP_SECONDS=0 \
+  "${release_elixir}" \
+  --boot "${release_boot}" \
+  --boot-var RELEASE_LIB "${release_root}/lib" \
+  --vm-args "${release_vm_args}" \
+  --eval 'Casein.Mobile.FeedTimingSoakBridge.run()' \
+  -- "${platform}" "${cycle}" 2>/dev/null)"; then
+  carriage_return="$(printf '\r')"
+
+  case "${aggregate_json}" in
+    '' | *"${carriage_return}"* | *'
+'*) failure ;;
+    '{'*'}') ;;
+    *) failure ;;
+  esac
+
+  printf '%s\n' "${aggregate_json}"
+  exit 0
+fi
+
+failure
