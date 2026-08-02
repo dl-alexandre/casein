@@ -1,0 +1,33 @@
+{
+  "configurations" : [
+    {
+      "id" : "B59571A2-8248-4C82-9140-95B441625CCE",
+      "name" : "Privacy-safe physical soak",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "areLocalizationScreenshotsEnabled" : false,
+    "codeCoverage" : false,
+    "diagnosticCollectionPolicy" : "Never",
+    "preferredScreenCaptureFormat" : "screenshots",
+    "uiTestingScreenshotsLifetime" : "keepNever",
+    "userAttachmentLifetime" : "keepNever"
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "selectedTests" : [
+        "CaseinMobFeedLifecycleUITests\/testCanonicalDevboxReconnectWithoutRelaunch"
+      ],
+      "target" : {
+        "containerPath" : "container:Provision.xcodeproj",
+        "identifier" : "CC000006",
+        "name" : "CaseinMobFeedLifecycleUITests"
+      }
+    }
+  ],
+  "version" : 1
+}
