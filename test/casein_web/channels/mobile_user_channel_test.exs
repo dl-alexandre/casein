@@ -5,7 +5,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
   alias Casein.Agents.AgentEvents
   alias Casein.Audit
-  alias Casein.Mobile.{ActionOutcome, Card, Clarification}
+  alias Casein.Mobile.{ActionOutcome, AttentionInbox, Card, Clarification}
   alias Casein.Mobile.UserObserver
   alias Casein.Push
   alias Casein.Runs.Ledger
@@ -14,6 +14,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
   alias Casein.Workspaces.State.MemoryAdapter
   alias Casein.Repo
   alias Casein.Terminals.AgentState
+  alias Casein.Terminals.Session.Info
   alias CaseinWeb.ChannelAuth
   alias TmuxCtl.Test.FakeState
 
@@ -336,6 +337,101 @@ defmodule CaseinWeb.MobileUserChannelTest do
       })
 
     assert_reply ref, :error, %{reason: "attention_scope_mismatch"}, 1_000
+  end
+
+  test "attention_viewed shares one monotonic cursor across mobile channels", %{
+    workspace_root: workspace_root
+  } do
+    enable_attention_store()
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    origin_id = "origin-local"
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    UserObserver.in_progress_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      run_phase: "executing"
+    })
+
+    [card] = UserObserver.snapshot(user_id).cards
+    attention_key = AttentionInbox.key(card)
+
+    assert {:ok, first} =
+             AttentionInbox.record_card(card, "run.started",
+               origin_id: origin_id,
+               event_id: unique_id("attention")
+             )
+
+    assert {:ok, second} =
+             AttentionInbox.record_card(card, "agent.state_changed",
+               origin_id: origin_id,
+               event_id: unique_id("attention"),
+               state: "working",
+               phase: "testing",
+               reason_code: "working"
+             )
+
+    assert first.id < second.id
+
+    assert {:ok, first_reply, first_socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{
+                 device_link_id: "device-link-ios",
+                 mobile_origin_id: origin_id,
+                 mobile_platform: "ios"
+               }
+             )
+
+    assert {:ok, second_reply, second_socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{
+                 device_link_id: "device-link-android",
+                 mobile_origin_id: origin_id,
+                 mobile_platform: "android"
+               }
+             )
+
+    assert [first_wire_card] = first_reply.cards
+    assert [second_wire_card] = second_reply.cards
+    assert first_wire_card.attention["since_viewed"]["through_marker"] == second.id
+    assert second_wire_card.attention["since_viewed"]["through_marker"] == second.id
+
+    high = %{
+      "origin_id" => origin_id,
+      "card_id" => card.id,
+      "attention_key" => attention_key,
+      "through_marker" => second.id
+    }
+
+    ref = Phoenix.ChannelTest.push(first_socket, "attention_viewed", high)
+    assert_reply ref, :ok, high_reply, 1_000
+    assert [high_card] = high_reply.cards
+    assert high_card.attention["since_viewed"]["viewed_through_marker"] == second.id
+    assert high_card.attention["since_viewed"]["count"] == 0
+
+    for _device <- 1..2 do
+      assert_push "cards_snapshot", %{cards: [shared_card]}, 1_000
+      assert shared_card.attention["since_viewed"]["viewed_through_marker"] == second.id
+      assert shared_card.attention["since_viewed"]["count"] == 0
+    end
+
+    lower = %{high | "through_marker" => first.id}
+    ref = Phoenix.ChannelTest.push(second_socket, "attention_viewed", lower)
+    assert_reply ref, :ok, lower_reply, 1_000
+    assert [lower_card] = lower_reply.cards
+    assert lower_card.attention["since_viewed"]["viewed_through_marker"] == second.id
+    assert lower_card.attention["since_viewed"]["count"] == 0
+
+    for _device <- 1..2 do
+      assert_push "cards_snapshot", %{cards: [shared_card]}, 1_000
+      assert shared_card.attention["since_viewed"]["viewed_through_marker"] == second.id
+      assert shared_card.attention["since_viewed"]["count"] == 0
+    end
   end
 
   test "workspace-scoped pairing token cannot ask to watch another workspace" do
@@ -1043,6 +1139,198 @@ defmodule CaseinWeb.MobileUserChannelTest do
     refute Jason.encode!(audit.metadata) =~ "Continue with the current task"
   end
 
+  test "continue_task delivers only its fixed intent to the exact agent and replays once", %{
+    workspace_root: workspace_root
+  } do
+    sentinel = "CLIENT-FREE-FORM-MUST-NOT-BE-DELIVERED"
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local", mobile_platform: "android"}
+             )
+
+    UserObserver.in_progress_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      command: "bounded task",
+      run_phase: "executing",
+      locator: %{tmux_session: tmux_session, pane: pane_id}
+    })
+
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
+    action = Enum.find(card.actions, &(&1["id"] == "continue_task"))
+    assert action["description"] == "The exact agent will continue the current task."
+    assert action["input"] == []
+
+    payload =
+      intervention_action_payload(card, %{
+        "card_id" => card.id,
+        "action" => "continue_task",
+        "origin_id" => "origin-local",
+        "request_id" => "continue-task-once",
+        "payload" => %{"message" => sentinel, "note" => sentinel}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
+
+    assert_reply ref,
+                 :ok,
+                 %{
+                   status: "accepted",
+                   idempotent: false,
+                   result: %{
+                     "action" => "continue_task",
+                     "confirmation" => "Continue request delivered to the exact agent.",
+                     "target_role" => "agent"
+                   }
+                 },
+                 1_000
+
+    assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id,
+                    "Continue with the current task.", [target: ^pane_id, submit: true]}
+
+    refute_receive {:fake_tmux_paste_text, _, _, ^sentinel, _}, 100
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, "%1", _, _}, 100
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, "%3", _, _}, 100
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    assert %{action_id: "follow_up", result: %{"requested_action_id" => "continue_task"}} =
+             outcome =
+             Repo.get_by!(ActionOutcome,
+               user_id: user_id,
+               request_id: "continue-task-once",
+               status: "accepted"
+             )
+
+    refute Jason.encode!(outcome.result) =~ sentinel
+
+    audit =
+      workspace_id
+      |> Audit.recent_for(20)
+      |> Enum.find(
+        &(&1.action == "mobile.intervention" and &1.metadata["action_id"] == "continue_task")
+      )
+
+    assert audit.metadata["outcome"] == "succeeded"
+    refute Jason.encode!(audit.metadata) =~ sentinel
+  end
+
+  test "summarize_blocker delivers only its fixed intent to the exact agent and replays once", %{
+    workspace_root: workspace_root
+  } do
+    sentinel = "CLIENT-BLOCKER-TEXT-MUST-NOT-BE-DELIVERED"
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local", mobile_platform: "ios"}
+             )
+
+    tab = %Info{
+      id: run_id,
+      sid: run_id,
+      kind: :shell,
+      status: :active,
+      workspace_id: workspace_id,
+      tmux_session: tmux_session,
+      metadata: %{
+        windows: [%{id: "@1", conversation_title: "Blocked task", agent_state: :blocked}],
+        pane_summaries: [
+          %{id: "%1", window_id: "@1", role: "operator"},
+          %{id: pane_id, window_id: "@1", role: "agent"},
+          %{id: "%3", window_id: "@1", role: "verify"}
+        ]
+      }
+    }
+
+    %{cards: [projected]} = UserObserver.reconcile_live_work(user_id, workspace_id, [tab])
+    assert projected.status == "waiting"
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
+
+    action = Enum.find(card.actions, &(&1["id"] == "summarize_blocker"))
+
+    assert action["description"] ==
+             "The exact agent will state the blocker and decision it needs."
+
+    assert action["input"] == []
+
+    payload =
+      intervention_action_payload(card, %{
+        "card_id" => card.id,
+        "action" => "summarize_blocker",
+        "origin_id" => "origin-local",
+        "request_id" => "summarize-blocker-once",
+        "payload" => %{"message" => sentinel, "note" => sentinel}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
+
+    assert_reply ref,
+                 :ok,
+                 %{
+                   status: "accepted",
+                   idempotent: false,
+                   result: %{
+                     "action" => "summarize_blocker",
+                     "confirmation" => "Blocker-summary request delivered to the exact agent.",
+                     "target_role" => "agent"
+                   }
+                 },
+                 1_000
+
+    assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id,
+                    "Summarize the blocker and the decision you need from me.",
+                    [target: ^pane_id, submit: true]}
+
+    refute_receive {:fake_tmux_paste_text, _, _, ^sentinel, _}, 100
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, "%1", _, _}, 100
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, "%3", _, _}, 100
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    assert %{
+             action_id: "follow_up",
+             result: %{"requested_action_id" => "summarize_blocker"}
+           } =
+             outcome =
+             Repo.get_by!(ActionOutcome,
+               user_id: user_id,
+               request_id: "summarize-blocker-once",
+               status: "accepted"
+             )
+
+    refute Jason.encode!(outcome.result) =~ sentinel
+
+    audit =
+      workspace_id
+      |> Audit.recent_for(20)
+      |> Enum.find(
+        &(&1.action == "mobile.intervention" and
+            &1.metadata["action_id"] == "summarize_blocker")
+      )
+
+    assert audit.metadata["outcome"] == "succeeded"
+    refute Jason.encode!(audit.metadata) =~ sentinel
+  end
+
   test "tampered origin and replaced or non-agent pane cannot mutate", %{
     workspace_root: workspace_root
   } do
@@ -1710,6 +1998,79 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert Ledger.timeline_for(workspace_id, run_id) == []
   end
 
+  test "request_changes rejects a replaced card revision then succeeds and replays once", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    request_id = "request-changes-after-replacement"
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      review_count: 1,
+      approval_id: "approval-v1",
+      command_id: "compile"
+    })
+
+    [first_card] = UserObserver.snapshot(user_id).cards
+    {:ok, first_action} = Card.fetch_action(first_card, "request_changes")
+
+    stale_payload =
+      origin_action(%{
+        "card_id" => first_card.id,
+        "action" => "request_changes",
+        "request_id" => request_id,
+        "payload" => %{
+          "note" => "Use the replacement review contract.",
+          "revision" => first_action.revision
+        }
+      })
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      review_count: 1,
+      approval_id: "approval-v2",
+      command_id: "compile"
+    })
+
+    [replacement] = UserObserver.snapshot(user_id).cards
+    assert replacement.id == first_card.id
+    {:ok, replacement_action} = Card.fetch_action(replacement, "request_changes")
+    refute replacement_action.revision == first_action.revision
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", stale_payload)
+    assert_reply ref, :error, %{reason: "action_revision_stale"}, 1_000
+    assert Ledger.timeline_for(workspace_id, run_id) == []
+
+    assert %{status: "rejected", reason: "action_revision_stale"} =
+             Repo.get_by!(ActionOutcome,
+               user_id: user_id,
+               request_id: request_id,
+               status: "rejected"
+             )
+
+    fresh_payload = put_in(stale_payload, ["payload", "revision"], replacement_action.revision)
+    ref = Phoenix.ChannelTest.push(socket, "card_action", fresh_payload)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
+
+    assert [%{action: "run.approval_denied", metadata: metadata}] =
+             Ledger.timeline_for(workspace_id, run_id)
+
+    assert metadata["mobile_action"] == "request_changes"
+    assert metadata["note"] == "Use the replacement review contract."
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", fresh_payload)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    assert [_single_effect] = Ledger.timeline_for(workspace_id, run_id)
+  end
+
   test "card_action replays the recorded outcome for a repeated request_id", %{
     workspace_root: workspace_root
   } do
@@ -2147,6 +2508,15 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
   defp configure_ready_push_provider do
     Application.put_env(:casein, :push_provider, Casein.Push.TestProvider)
+  end
+
+  defp enable_attention_store do
+    previous = Application.get_env(:casein, :mobile_attention_store_enabled)
+    Application.put_env(:casein, :mobile_attention_store_enabled, true)
+
+    on_exit(fn ->
+      restore_env(:mobile_attention_store_enabled, previous)
+    end)
   end
 
   defp attach_feed_telemetry(test_pid) do

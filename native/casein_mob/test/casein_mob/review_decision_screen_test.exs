@@ -320,6 +320,51 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert find(view, :button, text: "Approve").props.disabled == false
   end
 
+  test "renders and submits summarize blocker with its authoritative confirmation" do
+    card =
+      put_in(intervention_card(), ["actions"], [
+        %{
+          "id" => "summarize_blocker",
+          "label" => "Summarize blocker",
+          "description" => "The exact agent will state the blocker and decision it needs.",
+          "revision" => "revision-1",
+          "style" => "primary",
+          "destructive?" => false,
+          "confirmation" => nil,
+          "input" => []
+        }
+      ])
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+
+    assert text(view) =~ "The exact agent will state the blocker and decision it needs."
+    assert find(view, :button, text: "Summarize blocker").props.disabled == false
+    refute find(view, :text_field)
+
+    view = render_info(view, {:tap, {:action, "summarize_blocker"}})
+    assert assigns(view).submitted_action == "summarize_blocker"
+
+    view =
+      render_info(
+        view,
+        {:card_action_result, card["id"],
+         {:ok,
+          %{
+            "result" => %{
+              "confirmation" => "Blocker-summary request delivered to the exact agent."
+            }
+          }}}
+      )
+
+    assert assigns(view).intervention_completed == true
+
+    assert text(view) =~
+             "Blocker-summary request delivered to the exact agent. Waiting for an authoritative update."
+  end
+
   test "follow-up is required, bounded, and forces refresh after stale target failure" do
     view =
       ReviewDecisionScreen
