@@ -19,6 +19,8 @@
 		BB000002 /* CaseinMobSoakUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseinMobSoakUITests.swift; sourceTree = "<group>"; };
 		BB000003 /* CaseinMobSoakUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CaseinMobSoakUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC000002 /* CaseinMobFeedLifecycleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseinMobFeedLifecycleUITests.swift; sourceTree = "<group>"; };
+		CC000003 /* CaseinMobFeedLifecycleUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CaseinMobFeedLifecycleUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CC000004 /* CaseinMobFeedLifecycleSoak.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = CaseinMobFeedLifecycleSoak.xctestplan; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -27,6 +29,7 @@
 			children = (
 				AA000002 /* MobProvision.swift */,
 				AA00000F /* CaseinMob.entitlements */,
+				CC000004 /* CaseinMobFeedLifecycleSoak.xctestplan */,
 				BB000004 /* CaseinMobSoakUITests */,
 				AA000005 /* Products */,
 			);
@@ -37,6 +40,7 @@
 			children = (
 				AA000003 /* MobProvision.app */,
 				BB000003 /* CaseinMobSoakUITests.xctest */,
+				CC000003 /* CaseinMobFeedLifecycleUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,6 +87,21 @@
 			productReference = BB000003 /* CaseinMobSoakUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		CC000006 /* CaseinMobFeedLifecycleUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CC000007 /* Build configuration list for PBXNativeTarget "CaseinMobFeedLifecycleUITests" */;
+			buildPhases = (
+				CC000008 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CaseinMobFeedLifecycleUITests;
+			productName = CaseinMobFeedLifecycleUITests;
+			productReference = CC000003 /* CaseinMobFeedLifecycleUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -99,6 +118,10 @@
 							};
 						};
 						BB000006 = {
+							CreatedOnToolsVersion = 27.0;
+							ProvisioningStyle = Automatic;
+						};
+						CC000006 = {
 							CreatedOnToolsVersion = 27.0;
 							ProvisioningStyle = Automatic;
 						};
@@ -119,6 +142,7 @@
 			targets = (
 				AA000006 /* MobProvision */,
 				BB000006 /* CaseinMobSoakUITests */,
+				CC000006 /* CaseinMobFeedLifecycleUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -137,6 +161,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				BB000001 /* CaseinMobSoakUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CC000008 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 				CC000001 /* CaseinMobFeedLifecycleUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -229,6 +260,36 @@
 			};
 			name = Release;
 		};
+		CC00000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2MP8QWK7R6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexandrefamilyfarm.casein-mob.feed-lifecycle-ui-tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		CC00000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2MP8QWK7R6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexandrefamilyfarm.casein-mob.feed-lifecycle-ui-tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -255,6 +316,15 @@
 			buildConfigurations = (
 				BB00000B /* Debug */,
 				BB00000C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CC000007 /* Build configuration list for PBXNativeTarget "CaseinMobFeedLifecycleUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CC00000B /* Debug */,
+				CC00000C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
