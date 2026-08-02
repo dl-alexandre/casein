@@ -63,6 +63,12 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
   end
 
   test "real ERTS bridge readiness frame is emitted on stdout" do
+    assert %{
+             name_domain: :shortnames,
+             hidden: true,
+             dist_listen: false
+           } = FeedTimingSoakBridge.hidden_client_options()
+
     elixir = System.find_executable("elixir") || flunk("elixir executable unavailable")
 
     stderr_path =
@@ -80,8 +86,20 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
       |> Path.dirname()
 
     eval = """
-    case Casein.Mobile.FeedTimingSoakBridge.signal_ready() do
-      :ok -> :ok
+    client_name =
+      :erlang.binary_to_atom(
+        "casein_feed_soak_test_\#{System.unique_integer([:positive])}",
+        :utf8
+      )
+
+    with {:ok, _pid} <-
+           :net_kernel.start(
+             client_name,
+             Casein.Mobile.FeedTimingSoakBridge.hidden_client_options()
+           ),
+         :ok <- Casein.Mobile.FeedTimingSoakBridge.signal_ready() do
+      :ok
+    else
       _unavailable -> System.halt(74)
     end
     """
