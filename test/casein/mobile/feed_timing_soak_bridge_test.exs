@@ -62,6 +62,50 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
            end)
   end
 
+  test "real ERTS bridge readiness frame is emitted on stdout" do
+    elixir = System.find_executable("elixir") || flunk("elixir executable unavailable")
+
+    stderr_path =
+      Path.join(
+        System.tmp_dir!(),
+        "casein-feed-soak-ready-#{System.unique_integer([:positive])}.stderr"
+      )
+
+    on_exit(fn -> File.rm(stderr_path) end)
+
+    ebin_dir =
+      FeedTimingSoakBridge
+      |> :code.which()
+      |> List.to_string()
+      |> Path.dirname()
+
+    eval = """
+    case Casein.Mobile.FeedTimingSoakBridge.signal_ready() do
+      :ok -> :ok
+      _unavailable -> System.halt(74)
+    end
+    """
+
+    ready_line = FeedTimingSoakBridge.ready_line()
+
+    assert {^ready_line, 0} =
+             System.cmd(
+               "sh",
+               [
+                 "-c",
+                 ~S[exec "$1" -pa "$2" -e "$3" 2>"$4"],
+                 "casein-feed-soak-ready",
+                 elixir,
+                 ebin_dir,
+                 eval,
+                 stderr_path
+               ],
+               env: [{"ERL_CRASH_DUMP", "/dev/null"}]
+             )
+
+    assert File.read!(stderr_path) == ""
+  end
+
   test "cookie parser extracts exactly one bounded literal assignment without reflecting neighbors" do
     cookie = String.duplicate("a7", 24)
     unrelated_secret = "OTHER_SECRET=must-not-reflect"

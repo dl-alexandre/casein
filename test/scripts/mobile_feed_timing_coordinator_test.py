@@ -389,6 +389,17 @@ class ReadMap:
         return self.values[descriptor].popleft()
 
 
+class FakeMonotonic:
+    def __init__(self, values):
+        self.values = deque(values)
+        self.last = 0.0
+
+    def __call__(self):
+        if self.values:
+            self.last = self.values.popleft()
+        return self.last
+
+
 class RootFsyncFailurePublisher(coordinator.AtomicAggregatePublisher):
     def _fsync_root(self, _root_fd):
         raise OSError("fixed")
@@ -844,7 +855,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
         self.assertNotIn("sh", argv)
         self.assertNotIn("bash", argv)
 
-    def test_bridge_rejects_stdout_before_ready(self):
+    def test_bridge_rejects_malformed_stdout_before_ready(self):
         process = FakeBridgeProcess()
         selector = FakeSelector([[10]])
         reads = ReadMap({10: [b"stale\n"], 11: []})
@@ -862,8 +873,59 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
 
     def test_bridge_rejects_partial_ready_and_closes_stdin(self):
         process = FakeBridgeProcess()
-        selector = FakeSelector([[11], []])
-        reads = ReadMap({10: [], 11: [coordinator.BRIDGE_READY[:-1]]})
+        selector = FakeSelector([[10], []])
+        reads = ReadMap({10: [coordinator.BRIDGE_READY[:-1]], 11: []})
+        session = coordinator.BridgeSession(
+            "android",
+            "cold",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=lambda: selector,
+            read_fn=reads,
+        )
+        with self.assertRaises(coordinator.CoordinatorFailure):
+            session.open()
+        self.assertTrue(process.stdin.closed)
+
+    def test_bridge_rejects_no_ready_frame(self):
+        process = FakeBridgeProcess()
+        selector = FakeSelector([[10]])
+        reads = ReadMap({10: [b""], 11: []})
+        session = coordinator.BridgeSession(
+            "android",
+            "cold",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=lambda: selector,
+            read_fn=reads,
+        )
+        with self.assertRaises(coordinator.CoordinatorFailure) as failure:
+            session.open()
+        self.assertEqual("bridge_not_ready", failure.exception.status)
+        self.assertTrue(process.stdin.closed)
+
+    def test_bridge_rejects_extra_line_coalesced_with_ready(self):
+        process = FakeBridgeProcess()
+        selector = FakeSelector([[10]])
+        reads = ReadMap({10: [coordinator.BRIDGE_READY + b"extra\n"], 11: []})
+        session = coordinator.BridgeSession(
+            "android",
+            "cold",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=lambda: selector,
+            read_fn=reads,
+        )
+        with self.assertRaises(coordinator.CoordinatorFailure):
+            session.open()
+        self.assertTrue(process.stdin.closed)
+
+    def test_bridge_rejects_stderr_racing_exact_ready(self):
+        process = FakeBridgeProcess()
+        selector = FakeSelector([[10, 11]])
+        reads = ReadMap(
+            {
+                10: [coordinator.BRIDGE_READY],
+                11: [coordinator.BRIDGE_FAILED],
+            }
+        )
         session = coordinator.BridgeSession(
             "android",
             "cold",
@@ -878,13 +940,13 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
     def test_bridge_exact_ready_then_one_exact_send_and_fixed_aggregate(self):
         aggregate = json.dumps(server_aggregate(), separators=(",", ":")).encode() + b"\n"
         process = FakeBridgeProcess(waits=(0,))
-        handshake = FakeSelector([[11]])
+        handshake = FakeSelector([[10]])
         waiting = FakeSelector([[]])
         finish = FakeSelector([[10], [10, 11]])
         reads = ReadMap(
             {
-                10: [aggregate, b""],
-                11: [coordinator.BRIDGE_READY, b""],
+                10: [coordinator.BRIDGE_READY, aggregate, b""],
+                11: [b""],
             }
         )
         session = coordinator.BridgeSession(
@@ -905,6 +967,187 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             session.finish(payload)
         self.assertEqual([payload], process.stdin.payloads)
 
+    def test_bridge_rejects_early_final_frame_before_send(self):
+        aggregate = json.dumps(server_aggregate(), separators=(",", ":")).encode() + b"\n"
+        process = FakeBridgeProcess()
+        handshake = FakeSelector([[10]])
+        waiting = FakeSelector([[10]])
+        reads = ReadMap({10: [coordinator.BRIDGE_READY, aggregate], 11: []})
+        session = coordinator.BridgeSession(
+            "android",
+            "reconnect",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=SelectorFactory([handshake, waiting]),
+            read_fn=reads,
+        )
+        session.open()
+        with self.assertRaises(coordinator.CoordinatorFailure) as failure:
+            session.assert_waiting()
+        self.assertEqual("bridge_not_ready", failure.exception.status)
+
+    def test_bridge_rejects_missing_final_frame(self):
+        process = FakeBridgeProcess(waits=(0,))
+        handshake = FakeSelector([[10]])
+        finish = FakeSelector([[10], [11]])
+        reads = ReadMap(
+            {
+                10: [coordinator.BRIDGE_READY, b""],
+                11: [b""],
+            }
+        )
+        session = coordinator.BridgeSession(
+            "android",
+            "reconnect",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=SelectorFactory([handshake, finish]),
+            read_fn=reads,
+        )
+        session.open()
+        payload = b"".join(f"{generation(i)}\n".encode() for i in range(1, 21))
+        with self.assertRaises(coordinator.CoordinatorFailure) as failure:
+            session.finish(payload)
+        self.assertEqual("bridge_finish_ambiguous", failure.exception.status)
+
+    def test_bridge_rejects_extra_final_line(self):
+        aggregate = json.dumps(server_aggregate(), separators=(",", ":")).encode()
+        process = FakeBridgeProcess(waits=(0,))
+        handshake = FakeSelector([[10]])
+        finish = FakeSelector([[10], [10, 11]])
+        reads = ReadMap(
+            {
+                10: [coordinator.BRIDGE_READY, aggregate + b"\nextra\n", b""],
+                11: [b""],
+            }
+        )
+        session = coordinator.BridgeSession(
+            "android",
+            "reconnect",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=SelectorFactory([handshake, finish]),
+            read_fn=reads,
+        )
+        session.open()
+        payload = b"".join(f"{generation(i)}\n".encode() for i in range(1, 21))
+        with self.assertRaises(coordinator.CoordinatorFailure) as failure:
+            session.finish(payload)
+        self.assertEqual("bridge_finish_ambiguous", failure.exception.status)
+
+    def test_bridge_rejects_malformed_final_json(self):
+        process = FakeBridgeProcess(waits=(0,))
+        handshake = FakeSelector([[10]])
+        finish = FakeSelector([[10], [10, 11]])
+        reads = ReadMap(
+            {
+                10: [coordinator.BRIDGE_READY, b"{malformed}\n", b""],
+                11: [b""],
+            }
+        )
+        session = coordinator.BridgeSession(
+            "android",
+            "reconnect",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=SelectorFactory([handshake, finish]),
+            read_fn=reads,
+        )
+        session.open()
+        payload = b"".join(f"{generation(i)}\n".encode() for i in range(1, 21))
+        with self.assertRaises(coordinator.CoordinatorFailure) as failure:
+            session.finish(payload)
+        self.assertEqual("server_aggregate_invalid", failure.exception.status)
+
+    def test_bridge_rejects_final_phase_stderr(self):
+        aggregate = json.dumps(server_aggregate(), separators=(",", ":")).encode() + b"\n"
+        process = FakeBridgeProcess(waits=(0,))
+        handshake = FakeSelector([[10]])
+        finish = FakeSelector([[10, 11], [10, 11]])
+        reads = ReadMap(
+            {
+                10: [coordinator.BRIDGE_READY, aggregate, b""],
+                11: [coordinator.BRIDGE_FAILED, b""],
+            }
+        )
+        session = coordinator.BridgeSession(
+            "android",
+            "reconnect",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=SelectorFactory([handshake, finish]),
+            read_fn=reads,
+        )
+        session.open()
+        payload = b"".join(f"{generation(i)}\n".encode() for i in range(1, 21))
+        with self.assertRaises(coordinator.CoordinatorFailure) as failure:
+            session.finish(payload)
+        self.assertEqual("bridge_finish_ambiguous", failure.exception.status)
+
+    def test_bridge_rejects_nonzero_exit_after_valid_final_frame(self):
+        aggregate = json.dumps(server_aggregate(), separators=(",", ":")).encode() + b"\n"
+        process = FakeBridgeProcess(waits=(74,))
+        handshake = FakeSelector([[10]])
+        finish = FakeSelector([[10], [10, 11]])
+        reads = ReadMap(
+            {
+                10: [coordinator.BRIDGE_READY, aggregate, b""],
+                11: [b""],
+            }
+        )
+        session = coordinator.BridgeSession(
+            "android",
+            "reconnect",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=SelectorFactory([handshake, finish]),
+            read_fn=reads,
+        )
+        session.open()
+        payload = b"".join(f"{generation(i)}\n".encode() for i in range(1, 21))
+        with self.assertRaises(coordinator.CoordinatorFailure) as failure:
+            session.finish(payload)
+        self.assertEqual("bridge_finish_ambiguous", failure.exception.status)
+
+    def test_bridge_rejects_finish_timeout(self):
+        process = FakeBridgeProcess(
+            waits=(subprocess.TimeoutExpired("fixed", 0),)
+        )
+        handshake = FakeSelector([[10]])
+        finish = FakeSelector([])
+        reads = ReadMap({10: [coordinator.BRIDGE_READY], 11: []})
+        session = coordinator.BridgeSession(
+            "android",
+            "reconnect",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=SelectorFactory([handshake, finish]),
+            read_fn=reads,
+            monotonic=FakeMonotonic([0, 0, 0, 16, 16]),
+        )
+        session.open()
+        payload = b"".join(f"{generation(i)}\n".encode() for i in range(1, 21))
+        with self.assertRaises(coordinator.CoordinatorFailure) as failure:
+            session.finish(payload)
+        self.assertEqual("bridge_finish_ambiguous", failure.exception.status)
+
+    def test_bridge_rejects_oversized_final_frame(self):
+        oversized = b"{" + b"x" * coordinator.MAX_BRIDGE_AGGREGATE_WIRE_BYTES + b"}\n"
+        process = FakeBridgeProcess()
+        handshake = FakeSelector([[10]])
+        finish = FakeSelector([[10]])
+        reads = ReadMap(
+            {
+                10: [coordinator.BRIDGE_READY, oversized],
+                11: [],
+            }
+        )
+        session = coordinator.BridgeSession(
+            "android",
+            "reconnect",
+            process_factory=lambda *_args, **_kwargs: process,
+            selector_factory=SelectorFactory([handshake, finish]),
+            read_fn=reads,
+        )
+        session.open()
+        payload = b"".join(f"{generation(i)}\n".encode() for i in range(1, 21))
+        with self.assertRaises(coordinator.CoordinatorFailure) as failure:
+            session.finish(payload)
+        self.assertEqual("bridge_finish_ambiguous", failure.exception.status)
+
     def test_bridge_payload_validator_rejects_duplicate_cr_and_wrong_size(self):
         payload = b"".join(f"{generation(i)}\n".encode() for i in range(1, 21))
         self.assertTrue(coordinator._generation_payload_valid(payload))
@@ -913,10 +1156,31 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
         self.assertFalse(coordinator._generation_payload_valid(payload.replace(b"\n", b"\r\n")))
         self.assertFalse(coordinator._generation_payload_valid(payload[:-1]))
 
+    def test_bridge_final_frame_requires_exact_json_object_envelope(self):
+        valid = b'{"component":"server"}\n'
+        self.assertEqual(
+            b'{"component":"server"}',
+            coordinator._strict_bridge_final_payload(valid),
+        )
+
+        invalid = (
+            b" " + valid,
+            valid[:-1] + b" \n",
+            valid[:-1] + b"\r\n",
+            valid[:-2] + b"\x00}\n",
+            valid + b"extra\n",
+            valid[:-1],
+            b"[]\n",
+            b"{}\n\n",
+        )
+        for frame in invalid:
+            with self.subTest(frame=frame):
+                self.assertIsNone(coordinator._strict_bridge_final_payload(frame))
+
     def test_partial_bridge_write_is_ambiguous_and_never_retried(self):
         process = FakeBridgeProcess(writer=FakeWriter(partial=True))
-        handshake = FakeSelector([[11]])
-        reads = ReadMap({10: [], 11: [coordinator.BRIDGE_READY]})
+        handshake = FakeSelector([[10]])
+        reads = ReadMap({10: [coordinator.BRIDGE_READY], 11: []})
         session = coordinator.BridgeSession(
             "android",
             "cold",

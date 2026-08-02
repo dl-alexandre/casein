@@ -1069,14 +1069,16 @@ class BridgeSession:
                 events = selector.select(max(0.0, deadline - self._monotonic()))
                 if not events:
                     return False
+                ready_seen = False
                 for key, _mask in events:
                     try:
                         chunk = self._read_fn(key.fileobj.fileno(), 1024)
                     except (OSError, ValueError):
                         return False
-                    if key.data == "stdout":
-                        if chunk:
-                            return False
+                    if key.data == "stderr":
+                        # Stderr is failure-only. Even EOF racing the READY
+                        # frame means the bridge cannot still produce a final
+                        # aggregate on this process generation.
                         return False
                     if not chunk:
                         return False
@@ -1085,9 +1087,15 @@ class BridgeSession:
                         ready_buffer.clear()
                         return False
                     if b"\n" in ready_buffer:
-                        valid = bytes(ready_buffer) == BRIDGE_READY
+                        ready_seen = bytes(ready_buffer) == BRIDGE_READY
                         ready_buffer.clear()
-                        return valid
+                        if not ready_seen:
+                            return False
+                # Inspect every descriptor reported in this readiness batch
+                # before accepting stdout, so simultaneous stderr cannot be
+                # hidden by selector ordering.
+                if ready_seen:
+                    return True
             return False
         finally:
             ready_buffer.clear()
@@ -1180,9 +1188,7 @@ class BridgeSession:
                 return None
             if returncode != 0 or stderr_seen:
                 return None
-            if aggregate.count(b"\n") != 1 or not aggregate.endswith(b"\n"):
-                return None
-            return bytes(aggregate[:-1])
+            return _strict_bridge_final_payload(bytes(aggregate))
         finally:
             aggregate.clear()
             selector.close()
@@ -1238,6 +1244,24 @@ class BridgeSession:
         elif self._process is not None:
             state = "started"
         return f"BridgeSession(state={state!r})"
+
+
+def _strict_bridge_final_payload(frame: bytes) -> bytes | None:
+    if (
+        not isinstance(frame, bytes)
+        or len(frame) < 3
+        or len(frame) > MAX_BRIDGE_AGGREGATE_WIRE_BYTES
+        or frame.count(b"\n") != 1
+        or not frame.endswith(b"\n")
+        or b"\r" in frame
+        or b"\x00" in frame
+    ):
+        return None
+
+    payload = frame[:-1]
+    if not payload.startswith(b"{") or not payload.endswith(b"}"):
+        return None
+    return payload
 
 
 class BridgeLike(Protocol):

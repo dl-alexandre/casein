@@ -45,8 +45,9 @@ supervisor's reviewed start-stopped → PID-scoped attachment → resume lifecyc
 2. Start the fixed SSH command for
    `/opt/casein/release/bin/mobile_feed_timing_soak <platform> <cycle>`.
 3. Wait for the literal `CASEIN_MOBILE_FEED_SOAK_READY` control line. The
-   release helper emits it only after opening the recorder fence. Any stdout,
-   partial line, stale line, timeout, or early exit fails before device work.
+   release helper emits it as the first stdout frame only after opening the
+   recorder fence. Any partial, malformed, extra, stderr, timeout, or early-exit
+   frame fails before device work.
 4. Start the app-scoped source. Markers flow through an anonymous bounded pipe
    into `StreamAdapter`, then directly through an in-memory sink into
    `Collector`. The sink keeps no records or log lines.
@@ -58,7 +59,8 @@ supervisor's reviewed start-stopped → PID-scoped attachment → resume lifecyc
 7. Encode the generation vault exactly once as twenty canonical 22-byte IDs,
    each followed by LF: 20 lines and 460 bytes. Write it once to bridge stdin,
    close stdin, and never retry an uncertain finish.
-8. Strictly validate the fixed server aggregate. A valid
+8. Require the aggregate as the second and final stdout frame, then strictly
+   validate it. Missing, malformed, extra, or stderr frames fail closed. A valid
    `cohort_match=false` aggregate remains useful evidence and is published, but
    the coordinator exits nonzero. Validation mirrors the release bridge's
    occupancy, percentile, ordering, numeric-bound, cross-map-count, observation,

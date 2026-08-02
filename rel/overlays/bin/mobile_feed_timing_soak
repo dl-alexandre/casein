@@ -12,13 +12,6 @@ failure() {
   exit 74
 }
 
-# Reserve a control-only descriptor by duplicating the outer stderr before
-# suppressing the clean runtime's ordinary stderr. The bridge writes one fixed
-# READY line here after the server fence opens; aggregate stdout stays buffered.
-if ! exec 3>&2; then
-  failure
-fi
-
 [ "$#" -eq 2 ] || failure
 
 platform="$1"
@@ -111,23 +104,18 @@ export RELEASE_NAME="casein"
 export RELEASE_VSN="${release_vsn}"
 export RELEASE_COMMAND="eval"
 
-if aggregate_json="$(ERL_CRASH_DUMP=/dev/null ERL_CRASH_DUMP_SECONDS=0 \
+# The bridge owns a strict two-frame stdout protocol: fixed READY, then one
+# bounded aggregate after stdin closes. Stream those frames directly so ERTS
+# cannot close or repurpose an inherited control descriptor. Runtime stderr is
+# never protocol and remains suppressed; wrapper-owned failures stay fixed.
+if ERL_CRASH_DUMP=/dev/null ERL_CRASH_DUMP_SECONDS=0 \
   "${release_elixir}" \
   --boot "${release_boot}" \
   --boot-var RELEASE_LIB "${release_root}/lib" \
   --vm-args "${release_vm_args}" \
   --eval 'Casein.Mobile.FeedTimingSoakBridge.run()' \
-  -- "${platform}" "${cycle}" 2>/dev/null)"; then
-  carriage_return="$(printf '\r')"
-
-  case "${aggregate_json}" in
-    '' | *"${carriage_return}"* | *'
-'*) failure ;;
-    '{'*'}') ;;
-    *) failure ;;
-  esac
-
-  printf '%s\n' "${aggregate_json}"
+  -- "${platform}" "${cycle}" 2>/dev/null
+then
   exit 0
 fi
 
