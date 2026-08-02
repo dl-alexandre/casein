@@ -41,8 +41,9 @@ esac
 
 [[ -d "$TMP_ROOT" ]] || { echo "no temp root at $TMP_ROOT"; exit 0; }
 
-# Pure-ephemera glob prefixes (test artifacts + runtime diagnostic dumps). Each
-# is a `find -name` glob applied at maxdepth 1.
+# Pure-ephemera glob prefixes (test artifacts + runtime diagnostic dumps +
+# leftover agent/build scratch). Each is a `find -name` glob at maxdepth 1.
+# NEVER include `casein-agent-worktrees` — those have a git-aware janitor.
 ARTIFACT_GLOBS=(
   'ghostty_snapshot_*'
   'preview-pane-*'
@@ -62,6 +63,27 @@ ARTIFACT_GLOBS=(
   'casein-test-instances-*'
   'casein-scrollback-test-*'
   'summary-transcript-*'
+  # Devbox root-fs pressure: orphaned agent/build scratch under /tmp.
+  'ruby-build.*'
+  'onebackend-*'
+  'one-pr*'
+  'one-dev-*'
+  'pr-[0-9]*'
+  'pr[0-9]*'
+  'ob3-*'
+  'facility-*'
+  'site_setup_*'
+  'arch-commit-*'
+  'mtinker-*'
+  'casein-codex-*'
+  'casein-deploy-*'
+  'casein-integrate-*'
+  'casein-pr*'
+  'casein-rebase-*'
+  'casein-release-*'
+  'casein-autodeploy-*'
+  'devide-agent-worktrees'
+  'tmp.*'
 )
 
 total_kb=0
@@ -74,7 +96,15 @@ sweep() { # $1 = glob   $2 = min age (days)
     total_kb=$((total_kb + ${sz:-0}))
     count=$((count + 1))
     if [[ "$APPLY" == "1" ]]; then
-      rm -rf "$p"
+      # Best-effort: some trees mix root-owned sandbox mounts; skip failures.
+      if rm -rf "$p" 2>/dev/null; then
+        :
+      else
+        echo "skip    $p  (permission denied or busy)" >&2
+        total_kb=$((total_kb - ${sz:-0}))
+        count=$((count - 1))
+        continue
+      fi
     else
       echo "would remove  $p  (${sz:-0} KB)"
     fi
