@@ -116,6 +116,7 @@ class ProcessLike(Protocol):
 
 ProcessFactory = Callable[..., ProcessLike]
 DownstreamStatus = Callable[[], int | None]
+SourceReady = Callable[[], None]
 KillProcessGroup = Callable[[int, int], None]
 ProcessGroupExists = Callable[[int], bool]
 
@@ -449,6 +450,7 @@ class SourceSupervisor:
         line_reader_factory: Callable[[BinaryIO], SelectorLineReader] = SelectorLineReader,
         command_runner: CommandRunner | None = None,
         downstream_status: DownstreamStatus | None = None,
+        source_ready: SourceReady | None = None,
         kill_process_group: KillProcessGroup = os.killpg,
         process_group_exists: ProcessGroupExists | None = None,
     ):
@@ -460,6 +462,7 @@ class SourceSupervisor:
             process_group_exists=process_group_exists,
         )
         self._downstream_status = downstream_status
+        self._source_ready = source_ready
         self._kill_process_group = kill_process_group
         self._process_group_exists = process_group_exists or _process_group_exists
         self.lines_seen = 0
@@ -499,6 +502,8 @@ class SourceSupervisor:
                 self._consume_ios_connected(reader, plan.device_id)
                 if plan.ios_launch_mode is not None:
                     IOSLifecycle(self._command_runner).resume(plan.device_id, pid)
+                if self._source_ready is not None:
+                    self._source_ready()
 
             while True:
                 if self._downstream_status is not None and self._verified_downstream_success():
