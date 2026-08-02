@@ -945,7 +945,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             groups.signals,
         )
 
-    def test_scoped_cleanup_terminates_descendants_after_leader_exit(self):
+    def test_scoped_cleanup_refuses_reused_group_after_leader_exit(self):
         process = FakeWaitProcess([], pid=703)
         process.returncode = 0
         groups = FakeProcessGroups(alive=(process.pid,))
@@ -954,9 +954,23 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             process, groups.kill, groups.exists
         )
 
-        self.assertEqual("terminated", result)
+        self.assertEqual("failed", result)
+        self.assertEqual([], groups.signals)
+        self.assertTrue(groups.exists(process.pid))
+
+    def test_scoped_cleanup_does_not_escalate_after_leader_exits(self):
+        process = FakeWaitProcess([0], pid=708)
+        groups = FakeProcessGroups(
+            alive=(process.pid,), term_survivors=(process.pid,)
+        )
+
+        result = coordinator._terminate_process_group(
+            process, groups.kill, groups.exists
+        )
+
+        self.assertEqual("failed", result)
         self.assertEqual([(process.pid, signal.SIGTERM)], groups.signals)
-        self.assertFalse(groups.exists(process.pid))
+        self.assertTrue(groups.exists(process.pid))
 
     def test_registry_cleanup_does_not_short_circuit_after_a_failed_child(self):
         first = FakeWaitProcess(
@@ -1065,6 +1079,32 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
 
             self.assertEqual("source_failed", outcome.status)
             self.assertFalse(outcome.published)
+            self.assertEqual(0, bridge.finish_calls)
+            self.assertTrue(bridge.aborted)
+            self.assertEqual([], list(Path(root).iterdir()))
+
+    def test_reused_group_after_leader_exit_is_never_signalled_or_published(self):
+        with tempfile.TemporaryDirectory() as root:
+            process = FakeWaitProcess([], pid=709)
+            process.returncode = 0
+            groups = FakeProcessGroups(alive=(process.pid,))
+            bridge = FakeBridge(server_aggregate())
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: bridge,
+                source_factory=lambda _config: SyntheticSource(
+                    processes=(process,)
+                ),
+                registry_factory=lambda: coordinator.ScopedProcessRegistry(
+                    kill_process_group=groups.kill,
+                    process_group_exists=groups.exists,
+                ),
+            )
+
+            outcome = runner.run(self.config(root))
+
+            self.assertEqual("source_failed", outcome.status)
+            self.assertFalse(outcome.published)
+            self.assertEqual([], groups.signals)
             self.assertEqual(0, bridge.finish_calls)
             self.assertTrue(bridge.aborted)
             self.assertEqual([], list(Path(root).iterdir()))

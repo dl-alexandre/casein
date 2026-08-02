@@ -86,12 +86,15 @@ All coordinator children use argv execution with `shell=False`, new process
 groups, a reduced environment, `/dev/null` for non-protocol output, disabled
 Python bytecode, and disabled core dumps. Only the fixed SSH bridge inherits
 `SSH_AUTH_SOCK`; native source, ADB, and signed iOS lifecycle children do not.
-Cleanup is bounded TERM followed by KILL, checks the process group independently
-of its leader, visits every coordinator-owned group even if an earlier child
-exits, resists cleanup, or raises, and never targets an external process. A
-deferred interrupt or any failed group cleanup prevents bridge submission and
-publication. Successful native cleanup is authoritative and precedes the
-one-shot bridge send.
+Cleanup is bounded TERM followed by KILL and visits every coordinator-owned
+group even if an earlier child resists cleanup or raises. A numeric PGID is
+signalable only while its tracked leader identity remains live. If the leader
+has already exited, an absent group is `not_needed`; an existing group is
+ambiguous and fails cleanup without any signal. Leader identity is revalidated
+before escalation, so exit after TERM also prevents KILL. A deferred interrupt
+or any failed group cleanup prevents bridge submission and publication.
+Successful native cleanup is authoritative and precedes the one-shot bridge
+send.
 
 ## Failure and privacy semantics
 

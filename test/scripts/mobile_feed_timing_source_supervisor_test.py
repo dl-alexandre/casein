@@ -1011,25 +1011,40 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
             ),
         )
 
-    def test_process_group_cleanup_terminates_descendants_after_leader_exit(self):
+    def test_process_group_cleanup_refuses_reused_group_after_leader_exit(self):
         process = FakeProcess(pid=989, wait_outcomes=[])
         process._returncode = 0
         alive = {process.pid}
         kills = []
 
-        def kill(process_group_id, signal_value):
-            kills.append((process_group_id, signal_value))
-            alive.discard(process_group_id)
-
         result = source_module._terminate_process_group(
             process,
-            kill,
+            lambda process_group_id, signal_value: kills.append(
+                (process_group_id, signal_value)
+            ),
             lambda process_group_id: process_group_id in alive,
         )
 
-        self.assertEqual("terminated", result)
+        self.assertEqual("failed", result)
+        self.assertEqual([], kills)
+        self.assertEqual({process.pid}, alive)
+
+    def test_process_group_cleanup_does_not_escalate_after_leader_exit(self):
+        process = FakeProcess(pid=990, wait_outcomes=[0])
+        alive = {process.pid}
+        kills = []
+
+        result = source_module._terminate_process_group(
+            process,
+            lambda process_group_id, signal_value: kills.append(
+                (process_group_id, signal_value)
+            ),
+            lambda process_group_id: process_group_id in alive,
+        )
+
+        self.assertEqual("failed", result)
         self.assertEqual([(process.pid, signal.SIGTERM)], kills)
-        self.assertEqual(set(), alive)
+        self.assertEqual({process.pid}, alive)
 
     def test_hard_line_count_byte_prefix_and_framing_bounds(self):
         android = source_module.build_plan("android", ANDROID_SERIAL)

@@ -826,36 +826,43 @@ def _terminate_process_group(
 ) -> str:
     group_exists = process_group_exists or _process_group_exists
     leader_running = process.poll() is None
+    if not leader_running:
+        # A numeric PGID is not an owned capability after its tracked leader
+        # exits. It may already refer to an unrelated, reused process group.
+        return "failed" if group_exists(process.pid) else "not_needed"
     if not group_exists(process.pid):
-        return "failed" if leader_running else "not_needed"
+        return "failed"
 
     try:
         kill_process_group(process.pid, signal.SIGTERM)
     except ProcessLookupError:
-        return "failed" if process.poll() is None else "not_needed"
+        if process.poll() is None:
+            return "failed"
+        return "failed" if group_exists(process.pid) else "not_needed"
     except OSError:
         pass
 
-    leader_term_timed_out = False
-    if leader_running:
-        try:
-            process.wait(timeout=PROCESS_TERM_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            leader_term_timed_out = True
-    if not leader_term_timed_out and _wait_for_process_group_exit(
-        process.pid,
-        PROCESS_TERM_TIMEOUT_SECONDS,
-        group_exists,
-        monotonic,
-        sleeper,
-    ):
-        return "terminated"
+    try:
+        process.wait(timeout=PROCESS_TERM_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        pass
+    else:
+        return "failed" if group_exists(process.pid) else "terminated"
+
+    # Revalidate the tracked child identity immediately before escalation. A
+    # surviving numeric group after leader exit is ambiguous and must not be
+    # signalled.
+    if process.poll() is not None:
+        return "failed" if group_exists(process.pid) else "terminated"
+    if not group_exists(process.pid):
+        return "failed"
 
     try:
         kill_process_group(process.pid, signal.SIGKILL)
     except ProcessLookupError:
-        if not group_exists(process.pid) and process.poll() is not None:
-            return "killed"
+        if process.poll() is None:
+            return "failed"
+        return "failed" if group_exists(process.pid) else "killed"
     except OSError:
         pass
 
