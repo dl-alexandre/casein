@@ -117,6 +117,13 @@ results, but never the actual package root, UNC server/share, tokens, URLs,
 database contents, or private-key material. A repository or unsigned CI run is
 not a substitute for attaching the resulting real-host evidence to #376.
 
+The Windows package smoke also writes malformed desktop settings and runtime
+marker files into its disposable LocalAppData root. It verifies that the tray
+library falls back to an automatically selected port with launch-at-sign-in
+disabled, then removes the invalid PID and runtime-status markers without
+reporting the runtime as ready. This is repository evidence only; malformed
+`current.json` and interrupted install staging remain separate acceptance gaps.
+
 The current repository-gap subtraction and sequencing record is
 [`windows_acceptance_gap_audit.md`](windows_acceptance_gap_audit.md). Keep that
 audit subordinate to #371/#376 and update it when a listed slice lands.
