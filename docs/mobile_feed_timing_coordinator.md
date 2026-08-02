@@ -134,9 +134,13 @@ The coordinator never uses `tee`, a shell pipeline, a raw log capture, a pane,
 the operator terminal, a credential-bearing log, a general device-log export,
 or an output/status object containing a generation or device identity. On
 success, standard error is the fixed two-field coordinator/status object. On
-failure, it adds only the bounded allowlisted `phase`, `source`, `adapter`,
-`record_count`, and `generation_count` diagnostics. The published aggregates
-are checked again for secrets and generation values before their atomic reveal.
+failure, it adds only the bounded allowlisted `phase`, `source`, `source_phase`,
+`adapter`, `record_count`, and `generation_count` diagnostics. `source_phase`
+is the supervisor's strict fixed enum for the first causal source boundary;
+cleanup replaces it only when cleanup itself caused the failure. The
+coordinator accepts the phase only through the validated full supervisor status
+and never derives it from child output. The published aggregates are checked
+again for secrets and generation values before their atomic reveal.
 
 The output root is opened with `O_NOFOLLOW` during preflight and that same
 directory descriptor remains pinned for the entire run. It is the sole base for

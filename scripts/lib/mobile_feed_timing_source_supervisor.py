@@ -88,6 +88,22 @@ STATUS_VALUES = frozenset(
     }
 )
 
+SOURCE_PHASE_VALUES = frozenset(
+    {
+        "not_started",
+        "plan_validation",
+        "launch_suspended",
+        "pid_parse",
+        "source_spawn",
+        "source_connected",
+        "resume",
+        "stream",
+        "early_exit",
+        "cleanup",
+        "complete",
+    }
+)
+
 
 class InvalidArguments(Exception):
     """Raised without argparse's value-reflecting diagnostics."""
@@ -432,9 +448,14 @@ class IOSLifecycle:
     def __init__(self, runner: CommandRunner):
         self._runner = runner
 
-    def launch_suspended(self, udid: str) -> int:
-        payload = self._runner.run_json(build_ios_launch_suspended_argv(udid))
+    def launch_suspended_payload(self, udid: str) -> Mapping[str, object]:
+        return self._runner.run_json(build_ios_launch_suspended_argv(udid))
+
+    def suspended_pid(self, payload: Mapping[str, object]) -> int:
         return _pid_from_result(payload)
+
+    def launch_suspended(self, udid: str) -> int:
+        return self.suspended_pid(self.launch_suspended_payload(udid))
 
     def resume(self, udid: str, pid: int) -> None:
         safe_pid = _validate_pid(pid)
@@ -478,6 +499,8 @@ class SourceSupervisor:
         self.downstream_completion = "none"
         self.source_exit = "unknown"
         self.cleanup = "not_needed"
+        self.source_phase = "not_started"
+        self._failure_phase: str | None = None
 
     def run(
         self,
@@ -491,13 +514,21 @@ class SourceSupervisor:
         exit_code = 70
 
         try:
+            self._enter_phase("plan_validation")
             self._validate_plan(plan)
             source_argv = plan.source_argv
             if plan.ios_launch_mode is not None:
-                pid = IOSLifecycle(self._command_runner).launch_suspended(plan.device_id)
+                lifecycle = IOSLifecycle(self._command_runner)
+                self._enter_phase("launch_suspended")
+                launch_payload = lifecycle.launch_suspended_payload(plan.device_id)
+                self._enter_phase("pid_parse")
+                pid = lifecycle.suspended_pid(launch_payload)
+                del launch_payload
                 source_argv = build_ios_source_argv(plan.device_id, pid)
 
+            self._enter_phase("source_spawn")
             process = self._spawn_source(source_argv)
+            self._enter_phase("source_connected")
             stdout = process.stdout
             if stdout is None:
                 raise SourceFailure("source_capability_failed")
@@ -508,14 +539,19 @@ class SourceSupervisor:
             else:
                 self._consume_ios_connected(reader, plan.device_id)
                 if plan.ios_launch_mode is not None:
-                    IOSLifecycle(self._command_runner).resume(plan.device_id, pid)
+                    self._enter_phase("resume")
+                    lifecycle.resume(plan.device_id, pid)
+            self._enter_phase("stream")
             if self._source_ready is not None:
                 self._source_ready()
 
             while True:
                 if self._downstream_status is not None and self._verified_downstream_success():
+                    self._record_pre_cleanup_exit(process)
+                    self._enter_phase("cleanup")
                     self.cleanup = self._cleanup_process(process)
                     if not self._cleanup_proves_source_closed():
+                        self._record_failure("cleanup")
                         status, exit_code = "source_capability_failed", 3
                     else:
                         self.downstream_completion = "probe"
@@ -534,6 +570,7 @@ class SourceSupervisor:
                     # False, unavailable, and throwing probes keep waiting.
                     continue
                 if not raw_line:
+                    self._enter_phase("early_exit")
                     returncode = self._wait_for_source(process)
                     if returncode == 0:
                         status, exit_code = "incomplete", 2
@@ -551,30 +588,60 @@ class SourceSupervisor:
                     output.flush()
                 except BrokenPipeError:
                     _suppress_failed_output(output)
-                    cleanup = self._cleanup_process(process)
-                    self.cleanup = cleanup
+                    self._record_pre_cleanup_exit(process)
+                    try:
+                        self.cleanup = self._cleanup_process(process)
+                    except Exception:
+                        self.cleanup = "failed"
+                        downstream_verified = self._verified_downstream_success()
+                        self._record_failure(
+                            "cleanup" if downstream_verified else "stream"
+                        )
+                        status, exit_code = "source_capability_failed", 3
+                        break
+                    downstream_verified = self._verified_downstream_success()
                     if not self._cleanup_proves_source_closed():
                         status, exit_code = "source_capability_failed", 3
-                    elif self._verified_downstream_success():
+                        self._record_failure(
+                            "cleanup" if downstream_verified else "stream"
+                        )
+                    elif downstream_verified:
                         self.downstream_completion = "epipe"
                         status, exit_code = "downstream_complete", 0
                     else:
                         self.downstream_completion = "unverified_epipe"
                         status, exit_code = "downstream_unverified", 3
+                    if exit_code != 0:
+                        self._record_failure("stream")
                     break
                 except OSError as error:
                     if error.errno == errno.EPIPE:
                         _suppress_failed_output(output)
-                        cleanup = self._cleanup_process(process)
-                        self.cleanup = cleanup
+                        self._record_pre_cleanup_exit(process)
+                        try:
+                            self.cleanup = self._cleanup_process(process)
+                        except Exception:
+                            self.cleanup = "failed"
+                            downstream_verified = self._verified_downstream_success()
+                            self._record_failure(
+                                "cleanup" if downstream_verified else "stream"
+                            )
+                            status, exit_code = "source_capability_failed", 3
+                            break
+                        downstream_verified = self._verified_downstream_success()
                         if not self._cleanup_proves_source_closed():
                             status, exit_code = "source_capability_failed", 3
-                        elif self._verified_downstream_success():
+                            self._record_failure(
+                                "cleanup" if downstream_verified else "stream"
+                            )
+                        elif downstream_verified:
                             self.downstream_completion = "epipe"
                             status, exit_code = "downstream_complete", 0
                         else:
                             self.downstream_completion = "unverified_epipe"
                             status, exit_code = "downstream_unverified", 3
+                        if exit_code != 0:
+                            self._record_failure("stream")
                     else:
                         status, exit_code = "invalid_source_output", 3
                     break
@@ -587,8 +654,14 @@ class SourceSupervisor:
                     plan.ios_launch_mode == "cold_once"
                     and _IOS_COLD_TERMINAL_RE.fullmatch(marker_line) is not None
                 ):
-                    exited_before_cleanup = process.poll()
-                    self.cleanup = self._cleanup_process(process)
+                    exited_before_cleanup = self._record_pre_cleanup_exit(process)
+                    try:
+                        self.cleanup = self._cleanup_process(process)
+                    except Exception:
+                        self.cleanup = "failed"
+                        self._record_failure("cleanup")
+                        status, exit_code = "source_capability_failed", 3
+                        break
                     source_exit_failed_or_unverified = (
                         exited_before_cleanup is not None
                         and exited_before_cleanup != 0
@@ -598,22 +671,29 @@ class SourceSupervisor:
                     )
                     if (
                         self.cleanup == "failed"
-                        or source_exit_failed_or_unverified
                     ):
+                        self._record_failure("cleanup")
+                        status, exit_code = "source_capability_failed", 3
+                    elif source_exit_failed_or_unverified:
+                        self._record_failure("stream")
                         status, exit_code = "source_capability_failed", 3
                     else:
                         status, exit_code = "ios_cold_generation_complete", 0
                     break
 
         except SourceFailure as failure:
+            self._record_failure()
             status, exit_code = failure.status, 3
         except KeyboardInterrupt:
+            self._record_failure()
             status, exit_code = "interrupted", 130
         except (OSError, ValueError, subprocess.SubprocessError):
+            self._record_failure()
             status, exit_code = "source_capability_failed", 3
         except Exception:
             # The process boundary must collapse unexpected implementation
             # failures to one fixed status without reflecting exception text.
+            self._record_failure()
             status, exit_code = "internal_error", 70
         finally:
             if reader is not None:
@@ -622,7 +702,17 @@ class SourceSupervisor:
                 except Exception:
                     pass
             if process is not None and process.poll() is None:
-                self.cleanup = self._cleanup_process(process)
+                try:
+                    self.cleanup = self._cleanup_process(process)
+                except Exception:
+                    self.cleanup = "failed"
+                if self.cleanup == "failed" and exit_code == 0:
+                    self._record_failure("cleanup")
+                    status, exit_code = "source_capability_failed", 3
+            if exit_code == 0:
+                self._mark_complete()
+            else:
+                self._record_failure()
             self._write_status(status_output, plan.platform, status)
 
         return exit_code
@@ -649,6 +739,28 @@ class SourceSupervisor:
             raise SourceFailure("source_capability_failed") from None
         if plan != expected:
             raise SourceFailure("source_capability_failed")
+
+    def _enter_phase(self, phase: str) -> None:
+        if phase not in SOURCE_PHASE_VALUES or phase in {"not_started", "complete"}:
+            raise SourceFailure("internal_error")
+        if self._failure_phase is None:
+            self.source_phase = phase
+
+    def _record_failure(self, phase: str | None = None) -> None:
+        if self._failure_phase is not None:
+            return
+        candidate = phase or self.source_phase
+        if candidate not in SOURCE_PHASE_VALUES or candidate in {
+            "not_started",
+            "complete",
+        }:
+            candidate = "plan_validation"
+        self._failure_phase = candidate
+        self.source_phase = candidate
+
+    def _mark_complete(self) -> None:
+        if self._failure_phase is None:
+            self.source_phase = "complete"
 
     def _spawn_source(self, argv: tuple[str, ...]) -> ProcessLike:
         if not argv:
@@ -745,6 +857,14 @@ class SourceSupervisor:
             self.source_exit = "zero" if returncode == 0 else "nonzero"
         return cleanup
 
+    def _record_pre_cleanup_exit(self, process: ProcessLike) -> int | None:
+        returncode = process.poll()
+        if returncode is not None:
+            self.source_exit = "zero" if returncode == 0 else "nonzero"
+            if returncode != 0:
+                self._record_failure("stream")
+        return returncode
+
     def _verified_downstream_success(self) -> bool:
         if self._downstream_status is None:
             return False
@@ -771,6 +891,7 @@ class SourceSupervisor:
             "downstream_completion": self.downstream_completion,
             "source_exit": self.source_exit,
             "cleanup": self.cleanup,
+            "source_phase": self.source_phase,
         }
         try:
             output.write(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")

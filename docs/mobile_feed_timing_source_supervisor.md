@@ -86,9 +86,37 @@ stream-adapter process; they must not be written to an intermediate file.
 - Cleanup targets only the source child's new process group, first with `TERM`
   and then bounded `KILL` escalation.
 - Standard error is exactly one fixed-schema, identity-free aggregate status.
-  It contains only fixed categories and bounded counters.
+  It contains only fixed categories and bounded counters. The full supervisor
+  status includes one `source_phase` enum; malformed, missing, duplicate,
+  non-string, unknown, or extra phase data is rejected by the coordinator.
 - Normal execution disables Python bytecode creation. No raw source or lifecycle
   reply is written to disk.
+
+## Source phase boundaries
+
+`source_phase` is a causal boundary, not a timer and not a free-form error. A
+failed run retains the first boundary that failed. Later best-effort teardown
+does not overwrite it; `cleanup` is reported only when cleanup itself turns an
+otherwise successful source path into failure. A successful full supervisor
+status always reports `complete`.
+
+| `source_phase` | Exact boundary |
+|---|---|
+| `not_started` | The coordinator has not received a full supervisor status for the current source generation. A full supervisor run advances before doing work. |
+| `plan_validation` | Reconstruct and compare the allowlisted typed source plan before any child starts. |
+| `launch_suspended` | Run the fixed iOS start-stopped launch and receive its bounded JSON envelope. |
+| `pid_parse` | Validate the exact launch envelope and extract its strict integer PID. |
+| `source_spawn` | Spawn the sole allowlisted app-scoped source child. |
+| `source_connected` | Require the source stdout pipe and consume the exact Android readiness or iOS PID-attachment frame. |
+| `resume` | Validate the fixed same-PID iOS resume reply. Source readiness cannot be released before this succeeds. |
+| `stream` | Release source readiness, then read, validate, and forward only bounded timing markers. |
+| `early_exit` | The source reached EOF before an authoritative terminal/downstream completion. Zero exit is incomplete; nonzero exit is a capability failure. |
+| `cleanup` | Intentional source cleanup was the operation that failed after an otherwise successful terminal/downstream boundary. |
+| `complete` | The source boundary, authoritative completion condition, and required cleanup all succeeded. |
+
+The enum carries no duration, device, process, generation, command, output,
+exception, or credential field. `source_phase` supplements the existing fixed
+status category; it does not weaken any status or cleanup requirement.
 
 The dependency-injected contract suite never invokes adb, devicectl,
 idevicesyslog, a device, SSH, a terminal, or an operator pane. Run it through

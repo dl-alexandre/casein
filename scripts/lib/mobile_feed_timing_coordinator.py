@@ -137,6 +137,7 @@ SUPERVISOR_STATUS_KEYS = frozenset(
         "downstream_completion",
         "source_exit",
         "cleanup",
+        "source_phase",
     }
 )
 SUPERVISOR_DOWNSTREAM_VALUES = frozenset(
@@ -243,6 +244,7 @@ class FailureDiagnostic:
 
     phase: str
     source: str
+    source_phase: str
     adapter: str
     record_count: int
     generation_count: int
@@ -251,6 +253,8 @@ class FailureDiagnostic:
         if (
             self.phase not in DIAGNOSTIC_PHASE_VALUES
             or self.source not in DIAGNOSTIC_SOURCE_VALUES
+            or not isinstance(self.source_phase, str)
+            or self.source_phase not in source_contract.SOURCE_PHASE_VALUES
             or self.adapter not in DIAGNOSTIC_ADAPTER_VALUES
             or type(self.record_count) is not int
             or not 0 <= self.record_count <= MAX_AGGREGATE_RECORDS
@@ -263,6 +267,7 @@ class FailureDiagnostic:
         return {
             "phase": self.phase,
             "source": self.source,
+            "source_phase": self.source_phase,
             "adapter": self.adapter,
             "record_count": self.record_count,
             "generation_count": self.generation_count,
@@ -270,7 +275,9 @@ class FailureDiagnostic:
 
 
 def _baseline_failure_diagnostic(phase: str) -> FailureDiagnostic:
-    return FailureDiagnostic(phase, "not_started", "not_started", 0, 0)
+    return FailureDiagnostic(
+        phase, "not_started", "not_started", "not_started", 0, 0
+    )
 
 
 class SafeArgumentParser(argparse.ArgumentParser):
@@ -679,6 +686,7 @@ class FixedStatusSink:
         self._component_key = component_key
         self._component_name, self._allowed_statuses = contracts[component_key]
         self._status: str | None = None
+        self._source_phase: str | None = None
 
     def write(self, payload: str) -> int:
         if self._status is not None or not isinstance(payload, str) or not payload.endswith("\n"):
@@ -705,6 +713,8 @@ class FixedStatusSink:
         ):
             raise ValueError("invalid status")
         self._status = status
+        if self._component_key == "supervisor":
+            self._source_phase = parsed["source_phase"]
         return len(payload)
 
     def flush(self) -> None:
@@ -714,13 +724,15 @@ class FixedStatusSink:
     def status(self) -> str | None:
         return self._status
 
+    @property
+    def source_phase(self) -> str | None:
+        return self._source_phase
+
     def __repr__(self) -> str:
         return f"FixedStatusSink(status={self._status!r})"
 
 
 def _valid_supervisor_status(payload: Mapping[str, object]) -> bool:
-    if set(payload) == {"supervisor", "status"}:
-        return True
     if set(payload) != SUPERVISOR_STATUS_KEYS:
         return False
     counts = (
@@ -742,6 +754,8 @@ def _valid_supervisor_status(payload: Mapping[str, object]) -> bool:
         and payload.get("downstream_completion") in SUPERVISOR_DOWNSTREAM_VALUES
         and payload.get("source_exit") in SUPERVISOR_SOURCE_EXIT_VALUES
         and payload.get("cleanup") in SUPERVISOR_CLEANUP_VALUES
+        and isinstance(payload.get("source_phase"), str)
+        and payload.get("source_phase") in source_contract.SOURCE_PHASE_VALUES
     )
 
 
@@ -1034,6 +1048,22 @@ def _source_diagnostic_status(
     return "running" if source_driver is not None else "not_started"
 
 
+def _source_diagnostic_phase(source_driver: SourceDriver | None) -> str:
+    if source_driver is not None:
+        accessor = getattr(source_driver, "diagnostic_source_phase", None)
+        if callable(accessor):
+            try:
+                value = accessor()
+            except Exception:
+                value = None
+            if (
+                isinstance(value, str)
+                and value in source_contract.SOURCE_PHASE_VALUES
+            ):
+                return value
+    return "not_started"
+
+
 def _bounded_diagnostic_count(value: object, maximum: int) -> int:
     if type(value) is not int or value < 0:
         return 0
@@ -1061,10 +1091,15 @@ class PhysicalSourceDriver:
         self._json_runner_factory = json_runner_factory
         self._diagnostic_lock = threading.Lock()
         self._diagnostic_status = "not_started"
+        self._diagnostic_source_phase = "not_started"
 
     def diagnostic_status(self) -> str:
         with self._diagnostic_lock:
             return self._diagnostic_status
+
+    def diagnostic_source_phase(self) -> str:
+        with self._diagnostic_lock:
+            return self._diagnostic_source_phase
 
     def _set_diagnostic_status(self, status: str) -> None:
         safe_status = (
@@ -1072,6 +1107,25 @@ class PhysicalSourceDriver:
         )
         with self._diagnostic_lock:
             self._diagnostic_status = safe_status
+
+    def _begin_source_generation(self) -> None:
+        with self._diagnostic_lock:
+            self._diagnostic_source_phase = "not_started"
+
+    def _capture_supervisor_status(self, sink: FixedStatusSink) -> None:
+        status = sink.status or "internal_error"
+        phase = sink.source_phase or "not_started"
+        safe_status = (
+            status if status in DIAGNOSTIC_SOURCE_VALUES else "internal_error"
+        )
+        safe_phase = (
+            phase
+            if phase in source_contract.SOURCE_PHASE_VALUES
+            else "not_started"
+        )
+        with self._diagnostic_lock:
+            self._diagnostic_status = safe_status
+            self._diagnostic_source_phase = safe_phase
 
     def run(
         self,
@@ -1113,6 +1167,7 @@ class PhysicalSourceDriver:
         )
 
         for _index in range(TARGET_GENERATIONS):
+            self._begin_source_generation()
             self._set_diagnostic_status("running")
             status = FixedStatusSink("supervisor")
             supervisor = self._supervisor_factory(
@@ -1120,7 +1175,7 @@ class PhysicalSourceDriver:
                 command_runner=lifecycle_runner,
             )
             result = supervisor.run(plan, output, status)
-            self._set_diagnostic_status(status.status or "internal_error")
+            self._capture_supervisor_status(status)
             if result != 0 or status.status != "ios_cold_generation_complete":
                 return False
         return True
@@ -1152,6 +1207,7 @@ class PhysicalSourceDriver:
                     "ios", self._config.device, ios_pid=self._config.ios_pid
                 )
         status = FixedStatusSink("supervisor")
+        self._begin_source_generation()
         result: dict[str, object] = {"exit": None}
 
         def supervise() -> None:
@@ -1165,7 +1221,7 @@ class PhysicalSourceDriver:
             except Exception:
                 result["exit"] = 70
             finally:
-                self._set_diagnostic_status(status.status or "internal_error")
+                self._capture_supervisor_status(status)
 
         source_thread = threading.Thread(
             target=supervise,
@@ -1224,6 +1280,7 @@ class PhysicalSourceDriver:
         plan = source_contract.build_plan("android", self._config.device)
 
         for index in range(1, TARGET_GENERATIONS + 1):
+            self._begin_source_generation()
             command_runner.run(
                 build_android_force_stop_argv(self._config.device),
                 ANDROID_COMMAND_TIMEOUT_SECONDS,
@@ -1247,9 +1304,7 @@ class PhysicalSourceDriver:
                 except Exception:
                     result["exit"] = 70
                 finally:
-                    self._set_diagnostic_status(
-                        status.status or "internal_error"
-                    )
+                    self._capture_supervisor_status(status)
 
             source_thread = threading.Thread(
                 target=supervise_generation,
@@ -2119,6 +2174,7 @@ class CohortCoordinator:
                 _source_diagnostic_status(
                     source_driver, source_result.get("success")
                 ),
+                _source_diagnostic_phase(source_driver),
                 adapter_value,
                 _bounded_diagnostic_count(
                     sink.lines if sink is not None else 0,

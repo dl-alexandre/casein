@@ -259,6 +259,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
                 "downstream_completion",
                 "source_exit",
                 "cleanup",
+                "source_phase",
             },
             set(report),
         )
@@ -330,6 +331,9 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
                 self.assertEqual(b"", rejected["stdout"].getvalue())
                 self.assertEqual(
                     "source_capability_failed", rejected["report"]["status"]
+                )
+                self.assertEqual(
+                    "source_connected", rejected["report"]["source_phase"]
                 )
                 self.assertNotIn(SECRET, rejected["stderr"])
                 self.assertNotIn(ANDROID_SERIAL, rejected["stderr"])
@@ -516,6 +520,257 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         self.assertEqual("1", kwargs["env"]["PYTHONDONTWRITEBYTECODE"])
         self.assert_fixed_report(result["report"])
 
+    def test_source_phase_reports_each_first_failure_boundary_and_complete(self):
+        android = source_module.build_plan("android", ANDROID_SERIAL)
+        ios_suspended = source_module.build_plan(
+            "ios", IOS_UDID, ios_suspended_continuous=True
+        )
+
+        forged = source_module.SourcePlan(
+            platform="android",
+            device_id=ANDROID_SERIAL,
+            source_argv=("fixed",),
+        )
+        reports = {
+            "plan_validation": self.run_supervisor(forged, [])["report"],
+            "launch_suspended": self.run_supervisor(
+                ios_suspended,
+                [],
+                command_runner=FakeCommandRunner(
+                    [source_module.SourceFailure("source_capability_failed")]
+                ),
+            )["report"],
+            "pid_parse": self.run_supervisor(
+                ios_suspended,
+                [],
+                command_runner=FakeCommandRunner([devicectl_success("bad")]),
+            )["report"],
+            "source_connected": self.run_supervisor(
+                android, [b""], android_ready=False
+            )["report"],
+            "resume": self.run_supervisor(
+                ios_suspended,
+                [f"[connected:{IOS_UDID}]\n".encode()],
+                command_runner=FakeCommandRunner(
+                    [
+                        devicectl_success(PID),
+                        source_module.SourceFailure("source_capability_failed"),
+                    ]
+                ),
+            )["report"],
+            "stream": self.run_supervisor(
+                android, [b"not-a-marker\n"]
+            )["report"],
+            "early_exit_zero": self.run_supervisor(
+                android, [b""], process=FakeProcess(wait_outcomes=[0])
+            )["report"],
+            "early_exit_nonzero": self.run_supervisor(
+                android, [b""], process=FakeProcess(wait_outcomes=[9])
+            )["report"],
+            "complete": self.run_supervisor(
+                android,
+                [],
+                process=FakeProcess(wait_outcomes=[0]),
+                downstream_status=lambda: 0,
+            )["report"],
+        }
+
+        def fail_spawn(*_args, **_kwargs):
+            raise OSError("fixed")
+
+        spawn_supervisor = source_module.SourceSupervisor(
+            process_factory=fail_spawn
+        )
+        spawn_status = io.StringIO()
+        self.assertEqual(
+            3, spawn_supervisor.run(android, io.BytesIO(), spawn_status)
+        )
+        reports["source_spawn"] = json.loads(spawn_status.getvalue())
+
+        cleanup_process = FakeProcess(wait_outcomes=[0])
+        cleanup_supervisor = source_module.SourceSupervisor(
+            process_factory=RecordingFactory([cleanup_process]),
+            line_reader_factory=lambda _stream: FakeReader(
+                [source_module.ANDROID_READY_FRAME]
+            ),
+            downstream_status=lambda: 0,
+            kill_process_group=lambda *_args: None,
+            process_group_exists=lambda _pid: True,
+        )
+        cleanup_status = io.StringIO()
+        self.assertEqual(
+            3,
+            cleanup_supervisor.run(android, io.BytesIO(), cleanup_status),
+        )
+        reports["cleanup"] = json.loads(cleanup_status.getvalue())
+
+        expected = {
+            "plan_validation": "plan_validation",
+            "launch_suspended": "launch_suspended",
+            "pid_parse": "pid_parse",
+            "source_spawn": "source_spawn",
+            "source_connected": "source_connected",
+            "resume": "resume",
+            "stream": "stream",
+            "early_exit_zero": "early_exit",
+            "early_exit_nonzero": "early_exit",
+            "cleanup": "cleanup",
+            "complete": "complete",
+        }
+        self.assertEqual(
+            set(source_module.SOURCE_PHASE_VALUES),
+            {"not_started", *expected.values()},
+        )
+        for name, phase in expected.items():
+            with self.subTest(name=name):
+                self.assertEqual(phase, reports[name]["source_phase"])
+                self.assert_fixed_report(reports[name])
+                encoded = json.dumps(reports[name])
+                self.assertNotIn(ANDROID_SERIAL, encoded)
+                self.assertNotIn(IOS_UDID, encoded)
+                self.assertNotIn(str(PID), encoded)
+                self.assertNotIn(SECRET, encoded)
+
+    def test_cleanup_phase_only_replaces_an_otherwise_successful_boundary(self):
+        plan = source_module.build_plan("android", ANDROID_SERIAL)
+
+        def run_with_failed_cleanup(events, *, output, downstream_status=None):
+            process = FakeProcess(wait_outcomes=[0])
+            supervisor = source_module.SourceSupervisor(
+                process_factory=RecordingFactory([process]),
+                line_reader_factory=lambda _stream: FakeReader(
+                    [source_module.ANDROID_READY_FRAME, *events]
+                ),
+                downstream_status=downstream_status,
+                kill_process_group=lambda *_args: None,
+                process_group_exists=lambda _pid: True,
+            )
+            status_output = io.StringIO()
+            exit_code = supervisor.run(plan, output, status_output)
+            return exit_code, json.loads(status_output.getvalue())
+
+        stream_exit, stream_report = run_with_failed_cleanup(
+            [b"not-a-marker\n"], output=io.BytesIO()
+        )
+        self.assertEqual(3, stream_exit)
+        self.assertEqual("stream", stream_report["source_phase"])
+        self.assertEqual("failed", stream_report["cleanup"])
+
+        probes = iter((None, 0))
+        cleanup_exit, cleanup_report = run_with_failed_cleanup(
+            [marker_line()],
+            output=BrokenOutput(),
+            downstream_status=probes.__next__,
+        )
+        self.assertEqual(3, cleanup_exit)
+        self.assertEqual("cleanup", cleanup_report["source_phase"])
+        self.assertEqual("failed", cleanup_report["cleanup"])
+
+        def run_with_raising_cleanup(output, downstream_status):
+            process = FakeProcess(wait_outcomes=[0])
+
+            def raise_cleanup(*_args):
+                raise RuntimeError("fixed")
+
+            supervisor = source_module.SourceSupervisor(
+                process_factory=RecordingFactory([process]),
+                line_reader_factory=lambda _stream: FakeReader(
+                    [source_module.ANDROID_READY_FRAME, marker_line()]
+                ),
+                downstream_status=downstream_status,
+                kill_process_group=raise_cleanup,
+                process_group_exists=lambda _pid: True,
+            )
+            status_output = io.StringIO()
+            exit_code = supervisor.run(plan, output, status_output)
+            return exit_code, json.loads(status_output.getvalue())
+
+        for output in (BrokenOutput(), ErrorOutput(errno.EPIPE)):
+            with self.subTest(output=type(output).__name__, downstream="complete"):
+                verified = iter((None, 0))
+                exit_code, report = run_with_raising_cleanup(
+                    output, verified.__next__
+                )
+                self.assertEqual(3, exit_code)
+                self.assertEqual("cleanup", report["source_phase"])
+                self.assertEqual("failed", report["cleanup"])
+
+            with self.subTest(output=type(output).__name__, downstream="unverified"):
+                exit_code, report = run_with_raising_cleanup(
+                    output, lambda: None
+                )
+                self.assertEqual(3, exit_code)
+                self.assertEqual("stream", report["source_phase"])
+                self.assertEqual("failed", report["cleanup"])
+
+    def test_pre_cleanup_nonzero_exit_wins_over_cleanup_failure(self):
+        android = source_module.build_plan("android", ANDROID_SERIAL)
+
+        def run_android(output, downstream_status, events):
+            process = FakeProcess(
+                wait_outcomes=[9], poll_outcomes=[9] * 12
+            )
+            supervisor = source_module.SourceSupervisor(
+                process_factory=RecordingFactory([process]),
+                line_reader_factory=lambda _stream: FakeReader(
+                    [source_module.ANDROID_READY_FRAME, *events]
+                ),
+                downstream_status=downstream_status,
+                kill_process_group=lambda *_args: None,
+                process_group_exists=lambda _pid: True,
+            )
+            status_output = io.StringIO()
+            exit_code = supervisor.run(android, output, status_output)
+            return exit_code, json.loads(status_output.getvalue())
+
+        cases = (
+            (io.BytesIO(), lambda: 0, []),
+            (BrokenOutput(), iter((None, 0)).__next__, [marker_line()]),
+            (ErrorOutput(errno.EPIPE), iter((None, 0)).__next__, [marker_line()]),
+        )
+        for output, downstream_status, events in cases:
+            with self.subTest(output=type(output).__name__):
+                exit_code, report = run_android(
+                    output, downstream_status, events
+                )
+                self.assertEqual(3, exit_code)
+                self.assertEqual("stream", report["source_phase"])
+                self.assertEqual("nonzero", report["source_exit"])
+                self.assertEqual("failed", report["cleanup"])
+
+        ios_process = FakeProcess(
+            wait_outcomes=[9], poll_outcomes=[9] * 12
+        )
+        ios_supervisor = source_module.SourceSupervisor(
+            process_factory=RecordingFactory([ios_process]),
+            line_reader_factory=lambda _stream: FakeReader(
+                [
+                    f"[connected:{IOS_UDID}]\n".encode(),
+                    marker_line(stage="first_cards_render_ready"),
+                ]
+            ),
+            command_runner=FakeCommandRunner(
+                [devicectl_success(PID), devicectl_success()]
+            ),
+            kill_process_group=lambda *_args: None,
+            process_group_exists=lambda _pid: True,
+        )
+        ios_status = io.StringIO()
+        self.assertEqual(
+            3,
+            ios_supervisor.run(
+                source_module.build_plan(
+                    "ios", IOS_UDID, ios_suspended_launch=True
+                ),
+                io.BytesIO(),
+                ios_status,
+            ),
+        )
+        ios_report = json.loads(ios_status.getvalue())
+        self.assertEqual("stream", ios_report["source_phase"])
+        self.assertEqual("nonzero", ios_report["source_exit"])
+        self.assertEqual("failed", ios_report["cleanup"])
+
     def test_library_rejects_forged_plan_before_any_process_can_start(self):
         forged = source_module.SourcePlan(
             platform="android",
@@ -595,6 +850,9 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
                 self.assertEqual(3, result["status"])
                 self.assertEqual(1, len(runner.calls))
                 self.assertIn("launch", runner.calls[0])
+                self.assertEqual(
+                    "source_connected", result["report"]["source_phase"]
+                )
                 self.assertNotIn(SECRET, result["stderr"])
                 self.assertNotIn(IOS_UDID, result["stderr"])
 
@@ -678,6 +936,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
                 self.assertEqual(3, result["status"])
                 self.assertEqual(["launch", "resume"], events)
                 self.assertEqual(2, len(runner.calls))
+                self.assertEqual("resume", result["report"]["source_phase"])
 
     def test_explicit_ios_pid_signals_ready_only_after_exact_attachment(self):
         events: list[str] = []
@@ -754,6 +1013,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         self.assertEqual("probe", report["downstream_completion"])
         self.assertEqual(3, report["markers_forwarded"])
         self.assertEqual("terminated", report["cleanup"])
+        self.assertEqual("complete", report["source_phase"])
         self.assertEqual([(process.pid, signal.SIGTERM)], kills)
         self.assertEqual(2, len(runner.calls))
 
@@ -868,6 +1128,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         self.assertEqual("source_capability_failed", result["report"]["status"])
         self.assertEqual("not_needed", result["report"]["cleanup"])
         self.assertEqual("nonzero", result["report"]["source_exit"])
+        self.assertEqual("stream", result["report"]["source_phase"])
         self.assertEqual([], result["kills"])
 
     def test_ios_cold_completed_source_with_unknown_final_exit_fails_closed(self):
@@ -895,6 +1156,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         self.assertEqual("source_capability_failed", result["report"]["status"])
         self.assertEqual("not_needed", result["report"]["cleanup"])
         self.assertEqual("unknown", result["report"]["source_exit"])
+        self.assertEqual("stream", result["report"]["source_phase"])
         self.assertEqual([], result["kills"])
 
     def test_devicectl_json_pid_is_strict_and_resume_must_match(self):
@@ -950,6 +1212,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         self.assertEqual(3, result["status"])
         self.assertEqual("source_capability_failed", result["report"]["status"])
         self.assertEqual("nonzero", result["report"]["source_exit"])
+        self.assertEqual("early_exit", result["report"]["source_phase"])
         self.assertEqual(1, len(result["factory"].calls))
         self.assertEqual(list(plan.source_argv), result["factory"].calls[0][0])
         self.assertNotIn("127", result["stderr"])
@@ -1087,11 +1350,13 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
                 self.assertEqual(2, result["status"])
                 self.assertEqual("incomplete", result["report"]["status"])
                 self.assertEqual("none", result["report"]["downstream_completion"])
+                self.assertEqual("early_exit", result["report"]["source_phase"])
                 self.assertEqual([], result["kills"])
                 self.assertNotIn(SECRET, result["stderr"])
 
         standalone = self.run_supervisor(plan, [b""])
         self.assertEqual(2, standalone["status"])
+        self.assertEqual("early_exit", standalone["report"]["source_phase"])
         self.assertEqual(
             [source_module.ANDROID_READY_TIMEOUT_SECONDS, None],
             standalone["reader"].timeouts,
