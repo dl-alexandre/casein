@@ -19,6 +19,9 @@ defmodule Casein.Mobile.FeedTimingRecorder do
   @maximum_capacity 2_000
   @default_limit 100
   @maximum_limit 1_000
+  @soak_generation_count 20
+  @maximum_active_cohort_fences 4
+  @cohort_fence_ttl_ms :timer.hours(1)
 
   def start_link(opts \\ []) do
     case Keyword.get(opts, :name, __MODULE__) do
@@ -94,6 +97,57 @@ defmodule Casein.Mobile.FeedTimingRecorder do
     GenServer.call(server, {:aggregate, generations, platform, cycle, true})
   end
 
+  @doc """
+  Opens an opaque, recorder-local fence for one physical timing cohort.
+
+  The fence is single-use and is valid only for this recorder epoch and the
+  exact platform/cycle supplied here. Callers must not inspect or persist it.
+  """
+  @spec begin_cohort(:ios | :android, :cold | :reconnect | :origin_switch) ::
+          {:ok, term()} | {:error, :invalid_request}
+  def begin_cohort(platform, cycle) do
+    begin_cohort_for(__MODULE__, platform, cycle)
+  end
+
+  @doc false
+  @spec begin_cohort_for(
+          GenServer.server(),
+          :ios | :android,
+          :cold | :reconnect | :origin_switch
+        ) :: {:ok, term()} | {:error, :invalid_request}
+  def begin_cohort_for(server, platform, cycle) do
+    GenServer.call(server, {:begin_cohort, platform, cycle})
+  end
+
+  @doc """
+  Finishes one fenced physical cohort and consumes only its matched rows.
+
+  Exactly twenty unique canonical generations are required. The finish attempt
+  is single-use even when it fails validation, preventing a fence from being
+  replayed with a different scope or identifier set.
+  """
+  @spec finish_cohort(
+          term(),
+          [String.t()],
+          :ios | :android,
+          :cold | :reconnect | :origin_switch
+        ) :: {:ok, map()} | {:error, :invalid_request}
+  def finish_cohort(fence, generations, platform, cycle) do
+    finish_cohort_for(__MODULE__, fence, generations, platform, cycle)
+  end
+
+  @doc false
+  @spec finish_cohort_for(
+          GenServer.server(),
+          term(),
+          [String.t()],
+          :ios | :android,
+          :cold | :reconnect | :origin_switch
+        ) :: {:ok, map()} | {:error, :invalid_request}
+  def finish_cohort_for(server, fence, generations, platform, cycle) do
+    GenServer.call(server, {:finish_cohort, fence, generations, platform, cycle})
+  end
+
   @spec capacity() :: pos_integer()
   def capacity, do: GenServer.call(__MODULE__, :capacity)
 
@@ -136,6 +190,11 @@ defmodule Casein.Mobile.FeedTimingRecorder do
       |> normalize_capacity()
 
     handler_id = Keyword.get(opts, :handler_id, @handler_id)
+
+    monotonic_ms_fun =
+      Keyword.get(opts, :monotonic_ms_fun, fn -> System.monotonic_time(:millisecond) end)
+
+    true = is_function(monotonic_ms_fun, 0)
     _ = :telemetry.detach(handler_id)
 
     table =
@@ -156,7 +215,15 @@ defmodule Casein.Mobile.FeedTimingRecorder do
         %{table: table, capacity: capacity}
       )
 
-    {:ok, %{table: table, capacity: capacity, handler_id: handler_id}}
+    {:ok,
+     %{
+       table: table,
+       capacity: capacity,
+       handler_id: handler_id,
+       recorder_epoch: make_ref(),
+       active_cohort_fences: %{},
+       monotonic_ms_fun: monotonic_ms_fun
+     }}
   end
 
   @doc false
@@ -219,6 +286,68 @@ defmodule Casein.Mobile.FeedTimingRecorder do
     {:reply, reply, state}
   end
 
+  def handle_call({:begin_cohort, platform, cycle}, _from, state) do
+    state = expire_cohort_fences(state)
+
+    cond do
+      not FeedTimingAggregate.scope_valid?(platform, cycle) ->
+        {:reply, {:error, :invalid_request}, state}
+
+      cohort_scope_active?(state.active_cohort_fences, platform, cycle) ->
+        {:reply, {:error, :invalid_request}, state}
+
+      map_size(state.active_cohort_fences) >= @maximum_active_cohort_fences ->
+        {:reply, {:error, :invalid_request}, state}
+
+      true ->
+        lower_sequence = :ets.lookup_element(state.table, :sequence, 2)
+        private_tag = make_ref()
+        opened_at_ms = state.monotonic_ms_fun.()
+
+        fence =
+          {private_tag, state.recorder_epoch, lower_sequence, platform, cycle}
+
+        fence_binding = %{
+          recorder_epoch: state.recorder_epoch,
+          lower_sequence: lower_sequence,
+          platform: platform,
+          cycle: cycle,
+          opened_at_ms: opened_at_ms
+        }
+
+        state =
+          put_in(state.active_cohort_fences[private_tag], fence_binding)
+
+        {:reply, {:ok, fence}, state}
+    end
+  end
+
+  def handle_call(
+        {:finish_cohort, fence, generations, platform, cycle},
+        _from,
+        state
+      ) do
+    state = expire_cohort_fences(state)
+    {binding, state} = take_cohort_fence(state, fence)
+
+    reply =
+      with {:ok, lower_sequence} <-
+             validate_cohort_binding(binding, fence, platform, cycle),
+           true <- exactly_soak_generation_count?(generations),
+           {:ok, request} <- FeedTimingAggregate.validate_request(generations, platform, cycle),
+           upper_sequence <- :ets.lookup_element(state.table, :sequence, 2),
+           entries <-
+             retained_entries_between(state.table, lower_sequence, upper_sequence),
+           {:ok, aggregate, matched_sequences} <- FeedTimingAggregate.build(entries, request) do
+        Enum.each(matched_sequences, &:ets.delete(state.table, &1))
+        {:ok, aggregate}
+      else
+        _invalid_or_stale -> {:error, :invalid_request}
+      end
+
+    {:reply, reply, state}
+  end
+
   def handle_call(:capacity, _from, state), do: {:reply, state.capacity, state}
 
   def handle_call(:clear, _from, state) do
@@ -276,6 +405,80 @@ defmodule Casein.Mobile.FeedTimingRecorder do
     |> Enum.filter(fn
       {sequence, _record} when is_integer(sequence) -> sequence <= boundary
       _counter -> false
+    end)
+  end
+
+  defp retained_entries_between(table, lower_sequence, upper_sequence) do
+    table
+    |> :ets.tab2list()
+    |> Enum.filter(fn
+      {sequence, _record} when is_integer(sequence) ->
+        sequence > lower_sequence and sequence <= upper_sequence
+
+      _counter ->
+        false
+    end)
+  end
+
+  defp take_cohort_fence(state, {private_tag, _epoch, _lower, _platform, _cycle})
+       when is_reference(private_tag) do
+    {binding, active_cohort_fences} =
+      Map.pop(state.active_cohort_fences, private_tag)
+
+    {binding, %{state | active_cohort_fences: active_cohort_fences}}
+  end
+
+  defp take_cohort_fence(state, _malformed), do: {nil, state}
+
+  defp validate_cohort_binding(
+         %{
+           recorder_epoch: epoch,
+           lower_sequence: lower_sequence,
+           platform: platform,
+           cycle: cycle,
+           opened_at_ms: opened_at_ms
+         },
+         {_private_tag, epoch, lower_sequence, platform, cycle},
+         platform,
+         cycle
+       )
+       when is_reference(epoch) and is_integer(lower_sequence) and lower_sequence >= 0 and
+              is_integer(opened_at_ms),
+       do: {:ok, lower_sequence}
+
+  defp validate_cohort_binding(_binding, _fence, _platform, _cycle),
+    do: {:error, :invalid_request}
+
+  defp exactly_soak_generation_count?(generations),
+    do: exactly_soak_generation_count?(generations, 0)
+
+  defp exactly_soak_generation_count?([], @soak_generation_count), do: true
+
+  defp exactly_soak_generation_count?([_generation | rest], count)
+       when count < @soak_generation_count,
+       do: exactly_soak_generation_count?(rest, count + 1)
+
+  defp exactly_soak_generation_count?(_generations, _count), do: false
+
+  defp expire_cohort_fences(state) do
+    now_ms = state.monotonic_ms_fun.()
+
+    active_cohort_fences =
+      Map.reject(state.active_cohort_fences, fn
+        {_tag, %{opened_at_ms: opened_at_ms}} when is_integer(opened_at_ms) ->
+          opened_at_ms + @cohort_fence_ttl_ms <= now_ms
+
+        _malformed_binding ->
+          true
+      end)
+
+    %{state | active_cohort_fences: active_cohort_fences}
+  end
+
+  defp cohort_scope_active?(active_cohort_fences, platform, cycle) do
+    Enum.any?(active_cohort_fences, fn
+      {_tag, %{platform: ^platform, cycle: ^cycle}} -> true
+      _other_scope -> false
     end)
   end
 end

@@ -55,6 +55,10 @@ defmodule Casein.Mobile.FeedTimingAggregate do
           cycle: :cold | :reconnect | :origin_switch
         }
 
+  @doc false
+  @spec scope_valid?(term(), term()) :: boolean()
+  def scope_valid?(platform, cycle), do: platform in @platforms and cycle in @cycles
+
   @spec validate_request(term(), term(), term()) :: {:ok, request()} | {:error, :invalid_request}
   def validate_request(generations, platform, cycle)
       when platform in @platforms and cycle in @cycles do
