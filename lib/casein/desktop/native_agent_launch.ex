@@ -86,11 +86,13 @@ defmodule Casein.Desktop.NativeAgentLaunch do
 
   def start(%__MODULE__{} = plan, opts) do
     ensure_session = Keyword.get(opts, :ensure_session, &PowerShellSession.ensure_started/2)
-    send_input = Keyword.get(opts, :send_input, &PowerShellSession.send_input/2)
+    topology = Keyword.get(opts, :topology, &PowerShellSession.topology/1)
+    send_input = Keyword.get(opts, :send_input, &PowerShellSession.send_input/3)
     reporter = Keyword.get(opts, :reporter, &report/2)
 
     with :ok <- ensure_session.(plan.worktree.path, plan.workspace),
-         :ok <- send_input.(plan.workspace, plan.command) do
+         {:ok, pane_id} <- launch_pane(topology.(plan.workspace)),
+         :ok <- send_input.(plan.workspace, pane_id, plan.command) do
       :ok
     else
       {:error, _reason} = error ->
@@ -109,6 +111,9 @@ defmodule Casein.Desktop.NativeAgentLaunch do
   end
 
   def start(_plan, _opts), do: {:error, :invalid_launch_plan}
+
+  defp launch_pane(%{panes: [%{id: pane_id}]}) when is_binary(pane_id), do: {:ok, pane_id}
+  defp launch_pane(_topology), do: {:error, :invalid_native_topology}
 
   @doc "Report launch completion and remove only a clean, landed worktree."
   @spec finish(t(), String.t(), String.t() | nil, keyword()) :: {:ok, map()} | {:error, term()}

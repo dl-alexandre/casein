@@ -82,6 +82,11 @@ defmodule Casein.Desktop.PowerShellSession do
     GenServer.call(server(workspace), {:input, data})
   end
 
+  @doc "Writes terminal input only when the native pane target is current."
+  def send_input(workspace, pane_id, data) when is_binary(pane_id) and is_binary(data) do
+    GenServer.call(server(workspace), {:input, pane_id, data})
+  end
+
   @doc "Restarts the native shell in the given workspace directory."
   def restart(cwd \\ nil, workspace \\ nil),
     do: GenServer.call(server(workspace), {:restart, normalize_cwd(cwd), workspace})
@@ -155,6 +160,14 @@ defmodule Casein.Desktop.PowerShellSession do
 
   def handle_call({:input, data}, _from, state) do
     {:reply, Ghostty.PTY.write(state.pty, data), state}
+  end
+
+  def handle_call({:input, pane_id, data}, _from, state) do
+    with :ok <- validate_pane(state, pane_id) do
+      {:reply, Ghostty.PTY.write(state.pty, data), state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call({:ensure_workspace, cwd, workspace}, _from, state)

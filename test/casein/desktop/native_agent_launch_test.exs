@@ -110,7 +110,8 @@ defmodule Casein.Desktop.NativeAgentLaunchTest do
                  send(parent, {:ensured, workspace.id})
                  :ok
                end,
-               send_input: fn workspace, "codex\r" ->
+               topology: fn workspace -> %{panes: [%{id: "#{workspace.id}:pane:0"}]} end,
+               send_input: fn workspace, "workspace-1:pane:0", "codex\r" ->
                  send(parent, {:sent, workspace.id})
                  :ok
                end
@@ -127,7 +128,8 @@ defmodule Casein.Desktop.NativeAgentLaunchTest do
     assert {:error, :conpty_unavailable} =
              NativeAgentLaunch.start(plan,
                ensure_session: fn _, _ -> {:error, :conpty_unavailable} end,
-               send_input: fn _, _ -> flunk("command must not be sent") end,
+               topology: fn _ -> flunk("topology must not be read") end,
+               send_input: fn _, _, _ -> flunk("command must not be sent") end,
                reporter: fn "workspace-1", attrs ->
                  send(parent, {:handoff, attrs})
                  {:ok, attrs}
@@ -139,6 +141,18 @@ defmodule Casein.Desktop.NativeAgentLaunchTest do
                       "exit_status" => "handoff",
                       "handoff" => "native codex session launch failed"
                     }}
+  end
+
+  test "refuses provider input when native topology has no unambiguous pane target" do
+    plan = %{plan("C:/worktrees/launch") | workspace: workspace("C:/repo"), command: "codex\r"}
+
+    assert {:error, :invalid_native_topology} =
+             NativeAgentLaunch.start(plan,
+               ensure_session: fn _, _ -> :ok end,
+               topology: fn _ -> %{panes: []} end,
+               send_input: fn _, _, _ -> flunk("command must not be sent") end,
+               reporter: fn _, attrs -> {:ok, attrs} end
+             )
   end
 
   test "finish reports every exit and removes only clean landed worktrees" do

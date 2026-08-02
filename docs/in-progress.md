@@ -33,5 +33,7 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   runtime reporting, and clean-only cleanup for native launches from those worktrees.
 - **Landed:** PR #517 starts prepared provider plans through the existing
   workspace-owned PowerShell/ConPTY session and reports launch failures as handoffs.
-- **Current slice:** expose one backend launch transaction that composes prepare
+- **Landed:** PR #530 exposes one backend launch transaction that composes prepare
   and ConPTY start while retaining the plan for explicit finish/handoff cleanup.
+- **Current slice:** require native provider input to resolve and validate the
+  exact application-owned pane target before writing to ConPTY.
