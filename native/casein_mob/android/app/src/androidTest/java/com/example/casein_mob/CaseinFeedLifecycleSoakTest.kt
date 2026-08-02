@@ -32,7 +32,6 @@ class CaseinFeedLifecycleSoakTest {
     fun setUp() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         device = UiDevice.getInstance(instrumentation)
-        device.wakeUp()
 
         assertEquals(PACKAGE_NAME, instrumentation.targetContext.packageName)
 
@@ -55,29 +54,31 @@ class CaseinFeedLifecycleSoakTest {
         assertTrue("Action Center missing", waitForText(DASHBOARD_TITLE))
         assertCanonicalAuthenticatedDashboard()
 
-        repeat(RECONNECT_CYCLES) {
-            val selectedOrigin =
-                findVisibleText(SELECTED_DEVBOX)
-                    ?: throw AssertionError("canonical Devbox selector missing")
-
-            assertTrue("canonical Devbox selector is disabled", selectedOrigin.isEnabled)
-            assertTrue("canonical Devbox selector is not tappable", selectedOrigin.isClickable)
-
-            selectedOrigin.click()
-
-            assertTrue(
-                "current-origin activation missed its connecting transition",
-                device.wait(Until.hasObject(CONNECTING_STATUS), TRANSITION_TIMEOUT_MS),
-            )
-            assertTrue(
-                "authenticated feed did not return after current-origin activation",
-                waitForText(AUTHENTICATED_FEED, RECOVERY_TIMEOUT_MS),
-            )
-            assertTrue("canonical origin changed during reconnect", waitForText(CANONICAL_ORIGIN))
-            assertTrue("canonical Devbox selection changed during reconnect", hasText(SELECTED_DEVBOX))
-        }
+        repeat(RECONNECT_CYCLES) { runOneExplicitReconnect() }
 
         Log.i(TAG, PASS_METADATA)
+    }
+
+    private fun runOneExplicitReconnect() {
+        val selectedOrigin =
+            findVisibleText(SELECTED_DEVBOX)
+                ?: throw AssertionError("canonical Devbox selector missing")
+
+        assertTrue("canonical Devbox selector is disabled", selectedOrigin.isEnabled)
+        assertTrue("canonical Devbox selector is not tappable", selectedOrigin.isClickable)
+
+        selectedOrigin.click()
+
+        assertTrue(
+            "current-origin activation missed its connecting transition",
+            device.wait(Until.hasObject(CONNECTING_STATUS), TRANSITION_TIMEOUT_MS),
+        )
+        assertTrue(
+            "authenticated feed did not return after current-origin activation",
+            waitForText(AUTHENTICATED_FEED, RECOVERY_TIMEOUT_MS),
+        )
+        assertTrue("canonical origin changed during reconnect", waitForText(CANONICAL_ORIGIN))
+        assertTrue("canonical Devbox selection changed during reconnect", hasText(SELECTED_DEVBOX))
     }
 
     private fun assertCanonicalAuthenticatedDashboard() {
