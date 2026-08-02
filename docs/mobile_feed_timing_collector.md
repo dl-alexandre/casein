@@ -4,7 +4,10 @@
 cycle cohort as bounded JSONL from standard input. It accepts only the fixed
 seven-field native timing contract and writes only aggregate timing and
 integrity counts. It never reads a device, a terminal pane, a file of raw logs,
-or a credential-bearing application log.
+or a credential-bearing application log. For a live native log stream, use the
+strict no-retention adapter documented in
+[`mobile_feed_timing_stream.md`](mobile_feed_timing_stream.md); do not manually
+reconstruct JSONL from a general application-log capture.
 
 ```bash
 python3 scripts/lib/mobile_feed_timing_collector.py \
@@ -14,9 +17,9 @@ python3 scripts/lib/mobile_feed_timing_collector.py \
   < /dev/stdin
 ```
 
-The caller is responsible for reconstructing only the public, fixed-field
-native marker as JSONL and piping it directly to stdin. Do not create an
-intermediate raw capture file. The collector:
+The caller is responsible for supplying only the public, fixed-field native
+marker as JSONL and piping it directly to stdin. Do not create an intermediate
+raw capture file. The collector:
 
 - requires exactly the seven fields in
   `scripts/schemas/mobile_feed_timing_record.schema.json`;
