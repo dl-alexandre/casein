@@ -77,6 +77,18 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     end
   end
 
+  test "launch at sign-in follows the stable launcher and uninstall removes it" do
+    tray = File.read!(@tray_script)
+    uninstaller = File.read!(@uninstaller)
+
+    assert tray =~ "Programs\\Casein\\Casein.Launcher.ps1"
+    assert tray =~ "The stable Casein launcher is missing"
+    assert tray =~ "-ExecutionPolicy Bypass"
+    refute tray =~ "$escapedRoot = $script:Paths.ReleaseRoot"
+    assert uninstaller =~ "GetFolderPath('Startup')"
+    assert uninstaller =~ "Remove-Item -LiteralPath $startupLink"
+  end
+
   test "Trusted LAN selects a private physical interface and scopes its firewall rule" do
     script = File.read!(@trusted_lan)
     tray = File.read!(@tray_script)

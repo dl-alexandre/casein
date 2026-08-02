@@ -85,12 +85,17 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
 
 The destructive acknowledgement is mandatory because the harness installs,
 damages one manifest-covered installed file, proves offline repair restores it,
-uninstalls, and removes Casein user data. It refuses unsigned packages,
+verifies launch-at-sign-in targets the stable installed launcher and is removed
+by uninstall, uninstalls, and removes Casein user data. It refuses unsigned packages,
 pre-Windows 11 hosts, non-Windows-PowerShell 5.1 execution, installed WSL
 distributions, or language/developer tools on `PATH`. The JSON evidence contains
 OS/package/certificate identity and phase results, but no tokens, URLs, database
 contents, or private-key material. A repository or unsigned CI run is not a
 substitute for attaching the resulting real-host evidence to #376.
+
+The current repository-gap subtraction and sequencing record is
+[`windows_acceptance_gap_audit.md`](windows_acceptance_gap_audit.md). Keep that
+audit subordinate to #371/#376 and update it when a listed slice lands.
 
 The installed tray exposes **Check for updates** only as thin release
 infrastructure. The updater reads the channel URL embedded in

@@ -100,6 +100,21 @@ try {
     Assert-Path $repairProbe 'Installed release is incomplete.'
     $evidence.phases += 'install'
 
+    $trayLibrary = Join-Path ([string]$current.release_root) 'windows\Casein.Tray.ps1'
+    . $trayLibrary -ReleaseRoot ([string]$current.release_root) -LibraryOnly
+    Set-CaseinStartup $true
+    $startupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Casein.lnk'
+    Assert-Path $startupLink 'Launch at sign-in did not create its shortcut.'
+    $startupShortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($startupLink)
+    $stableLauncher = Join-Path $installRoot 'Casein.Launcher.ps1'
+    if (-not $startupShortcut.Arguments.Contains($stableLauncher)) {
+        throw 'Launch at sign-in does not target the stable installed launcher.'
+    }
+    if ($startupShortcut.Arguments.Contains([string]$current.release_root)) {
+        throw 'Launch at sign-in is pinned to a release-specific path.'
+    }
+    $evidence.phases += 'launch_at_sign_in'
+
     Remove-Item -LiteralPath $repairProbe -Force
     Invoke-CheckedCommand $repairCommand
     Assert-Path $repairProbe 'Offline repair did not restore a damaged release file.'
@@ -110,6 +125,7 @@ try {
     if (Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein') {
         throw 'Uninstall left Apps & Features registration behind.'
     }
+    if (Test-Path -LiteralPath $startupLink) { throw 'Uninstall left the launch-at-sign-in shortcut behind.' }
     $dataRoot = Join-Path $env:LOCALAPPDATA 'Casein'
     if (Test-Path -LiteralPath $dataRoot) {
         & (Join-Path $packageRoot 'windows\Uninstall-Casein.ps1') -RemoveUserData
