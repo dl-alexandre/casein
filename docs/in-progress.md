@@ -29,5 +29,7 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   and Cursor.
 - **Landed:** PR #505 creates isolated native Git worktrees with Windows-safe
   root validation and argv-only Git execution.
-- **Current slice:** compose provider preflight, workspace MCP materialization,
+- **Landed:** PR #513 composes provider preflight, workspace MCP materialization,
   runtime reporting, and clean-only cleanup for native launches from those worktrees.
+- **Current slice:** start prepared provider plans through the existing
+  workspace-owned PowerShell/ConPTY session and report launch failures as handoffs.

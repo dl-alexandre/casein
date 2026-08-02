@@ -69,6 +69,47 @@ defmodule Casein.Desktop.NativeAgentLaunchTest do
              )
   end
 
+  test "starts the token-free command in the prepared worktree session" do
+    plan = %{plan("C:/worktrees/launch") | workspace: workspace("C:/repo"), command: "codex\r"}
+    parent = self()
+
+    assert :ok =
+             NativeAgentLaunch.start(plan,
+               ensure_session: fn "C:/worktrees/launch", workspace ->
+                 send(parent, {:ensured, workspace.id})
+                 :ok
+               end,
+               send_input: fn workspace, "codex\r" ->
+                 send(parent, {:sent, workspace.id})
+                 :ok
+               end
+             )
+
+    assert_receive {:ensured, "workspace-1"}
+    assert_receive {:sent, "workspace-1"}
+  end
+
+  test "failed native session start records a token-free handoff" do
+    plan = %{plan("C:/worktrees/launch") | workspace: workspace("C:/repo"), command: "codex\r"}
+    parent = self()
+
+    assert {:error, :conpty_unavailable} =
+             NativeAgentLaunch.start(plan,
+               ensure_session: fn _, _ -> {:error, :conpty_unavailable} end,
+               send_input: fn _, _ -> flunk("command must not be sent") end,
+               reporter: fn "workspace-1", attrs ->
+                 send(parent, {:handoff, attrs})
+                 {:ok, attrs}
+               end
+             )
+
+    assert_receive {:handoff,
+                    %{
+                      "exit_status" => "handoff",
+                      "handoff" => "native codex session launch failed"
+                    }}
+  end
+
   test "finish reports every exit and removes only clean landed worktrees" do
     plan = plan("C:/worktrees/clean")
     parent = self()
