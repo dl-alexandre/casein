@@ -62,6 +62,24 @@ defmodule Casein.Desktop.NativeAgentLaunch do
 
   def prepare(_workspace, _runtime, _task, _opts), do: {:error, :invalid_arguments}
 
+  @doc "Prepare and start one native provider launch as a single backend transaction."
+  @spec launch(map(), String.t(), String.t(), keyword()) :: {:ok, t()} | {:error, term()}
+  def launch(workspace, runtime, task, opts \\ [])
+
+  def launch(workspace, runtime, task, opts)
+      when is_map(workspace) and is_binary(runtime) and is_binary(task) and is_list(opts) do
+    preparer = Keyword.get(opts, :preparer, &prepare/4)
+    starter = Keyword.get(opts, :starter, &start/2)
+
+    with {:ok, %__MODULE__{} = plan} <-
+           preparer.(workspace, runtime, task, Keyword.get(opts, :prepare_opts, [])),
+         :ok <- starter.(plan, Keyword.get(opts, :start_opts, [])) do
+      {:ok, plan}
+    end
+  end
+
+  def launch(_workspace, _runtime, _task, _opts), do: {:error, :invalid_arguments}
+
   @doc "Start a prepared provider command in its workspace-owned native ConPTY session."
   @spec start(t(), keyword()) :: :ok | {:error, term()}
   def start(plan, opts \\ [])

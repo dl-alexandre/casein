@@ -31,5 +31,7 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   root validation and argv-only Git execution.
 - **Landed:** PR #513 composes provider preflight, workspace MCP materialization,
   runtime reporting, and clean-only cleanup for native launches from those worktrees.
-- **Current slice:** start prepared provider plans through the existing
-  workspace-owned PowerShell/ConPTY session and report launch failures as handoffs.
+- **Landed:** PR #517 starts prepared provider plans through the existing
+  workspace-owned PowerShell/ConPTY session and reports launch failures as handoffs.
+- **Current slice:** expose one backend launch transaction that composes prepare
+  and ConPTY start while retaining the plan for explicit finish/handoff cleanup.
