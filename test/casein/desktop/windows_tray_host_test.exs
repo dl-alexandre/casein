@@ -278,4 +278,18 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert smoke =~ "Clear-CaseinStaleRuntimeState $recoveryProbePort"
     assert smoke =~ "Malformed runtime status marker was not removed"
   end
+
+  test "verified installer recovers malformed installed release state" do
+    installer = File.read!(@installer)
+    smoke = File.read!(@package_smoke)
+
+    assert installer =~
+             "Installed release state is invalid and will be replaced from the verified package."
+
+    refute installer =~ "Write-Warning \"Installed release state is invalid:"
+    assert smoke =~ "Set-Content -LiteralPath $currentPath -Value '{malformed-current-state'"
+    assert smoke =~ "Stable launcher accepted malformed installed release state"
+    assert smoke =~ "Malformed-state recovery install exited with $LASTEXITCODE"
+    assert smoke =~ "Recovery install did not restore current release identity"
+  end
 end

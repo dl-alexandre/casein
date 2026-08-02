@@ -273,6 +273,16 @@ try {
     Assert-Condition (Test-Path -LiteralPath (Join-Path $current.release_root 'bin\casein.bat')) 'Installed release is missing casein.bat'
     Assert-Condition ($current.revision -eq $metadata.revision) 'Installed release revision differs from package metadata'
 
+    Set-Content -LiteralPath $currentPath -Value '{malformed-current-state' -Encoding UTF8
+    $null = & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installRoot 'Casein.Launcher.ps1') 2>&1
+    Assert-Condition ($LASTEXITCODE -ne 0) 'Stable launcher accepted malformed installed release state'
+
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot -AllowUnsignedDevelopment
+    if ($LASTEXITCODE -ne 0) { throw "Malformed-state recovery install exited with $LASTEXITCODE" }
+    $current = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
+    Assert-Condition ($current.revision -eq $metadata.revision) 'Recovery install did not restore current release identity'
+    Assert-Condition (Test-Path -LiteralPath (Join-Path $current.release_root 'bin\casein.bat')) 'Recovery install restored an unusable release root'
+
     . $trayHost -ReleaseRoot ([string]$current.release_root) -LibraryOnly
 
     $stateDataRoot = $script:Paths.DataRoot
