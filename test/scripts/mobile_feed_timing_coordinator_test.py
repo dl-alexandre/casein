@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import importlib.util
 import io
 import json
@@ -51,6 +52,19 @@ coordinator = load_module(
 ANDROID_SERIAL = "R52M1234.ADB-1:5555"
 IOS_UDID = "00008101-001234560123001E"
 IOS_PID = 4242
+
+
+def raise_keyboard_interrupt(_signum, _frame):
+    raise KeyboardInterrupt
+
+
+@contextlib.contextmanager
+def installed_interrupt_handler(signal_value):
+    previous = signal.signal(signal_value, raise_keyboard_interrupt)
+    try:
+        yield
+    finally:
+        signal.signal(signal_value, previous)
 
 
 def generation(index: int) -> str:
@@ -415,6 +429,40 @@ class InterruptingRootFsyncPublisher(coordinator.AtomicAggregatePublisher):
         raise KeyboardInterrupt
 
 
+class InterruptAfterPublishPublisher(coordinator.AtomicAggregatePublisher):
+    def publish(self, *args, **kwargs):
+        super().publish(*args, **kwargs)
+        signal.raise_signal(signal.SIGINT)
+
+
+class InterruptingPinnedOutputRoot(coordinator.PinnedOutputRoot):
+    def close(self):
+        super().close()
+        signal.raise_signal(signal.SIGINT)
+
+
+class InterruptingOutputRootClosePublisher(coordinator.AtomicAggregatePublisher):
+    def preflight(self, output_root):
+        pinned = super().preflight(output_root)
+        return InterruptingPinnedOutputRoot(pinned.descriptor)
+
+
+class FailingWritePublisher(coordinator.AtomicAggregatePublisher):
+    def _write_one(self, *_args):
+        raise OSError("fixed")
+
+
+class FailAfterAggregateWritesPublisher(coordinator.AtomicAggregatePublisher):
+    def __init__(self):
+        self.write_count = 0
+
+    def _write_one(self, *args):
+        super()._write_one(*args)
+        self.write_count += 1
+        if self.write_count == 2:
+            raise OSError("fixed")
+
+
 class MobileFeedTimingCoordinatorTest(unittest.TestCase):
     def config(self, root, *, platform="android", cycle="reconnect"):
         if platform == "ios":
@@ -664,6 +712,765 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                 {"native.json", "server.json"},
                 {path.name for path in cohort_dirs[0].iterdir()},
             )
+
+    def test_signal_after_mkdir_is_deferred_until_staging_can_be_removed(self):
+        for interrupt_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=interrupt_signal):
+                with tempfile.TemporaryDirectory() as root:
+                    real_mkdir = os.mkdir
+
+                    def mkdir_then_signal(*args, **kwargs):
+                        real_mkdir(*args, **kwargs)
+                        signal.raise_signal(interrupt_signal)
+
+                    runner = coordinator.CohortCoordinator(
+                        bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                        source_factory=lambda _config: SyntheticSource(),
+                    )
+
+                    with (
+                        installed_interrupt_handler(interrupt_signal),
+                        mock.patch.object(
+                            coordinator.os, "mkdir", mkdir_then_signal
+                        ),
+                    ):
+                        outcome = runner.run(self.config(root))
+
+                    self.assertEqual("interrupted", outcome.status)
+                    self.assertFalse(outcome.published)
+                    self.assertEqual([], list(Path(root).iterdir()))
+
+    def test_signal_after_replace_is_deferred_until_receipt_is_committed(self):
+        for interrupt_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=interrupt_signal):
+                with tempfile.TemporaryDirectory() as root:
+                    real_replace = os.replace
+
+                    def replace_then_signal(*args, **kwargs):
+                        real_replace(*args, **kwargs)
+                        signal.raise_signal(interrupt_signal)
+
+                    runner = coordinator.CohortCoordinator(
+                        bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                        source_factory=lambda _config: SyntheticSource(),
+                    )
+
+                    with (
+                        installed_interrupt_handler(interrupt_signal),
+                        mock.patch.object(
+                            coordinator.os, "replace", replace_then_signal
+                        ),
+                    ):
+                        outcome = runner.run(self.config(root))
+
+                    self.assert_published_aggregate(root, outcome)
+
+    def test_post_publish_signal_uses_shared_committed_receipt(self):
+        with tempfile.TemporaryDirectory() as root:
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+                publisher=InterruptAfterPublishPublisher(),
+            )
+
+            with installed_interrupt_handler(signal.SIGINT):
+                outcome = runner.run(self.config(root))
+
+            self.assert_published_aggregate(root, outcome)
+
+    def test_post_publish_signal_preserves_committed_mismatch_status(self):
+        with tempfile.TemporaryDirectory() as root:
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(
+                    server_aggregate(match=False)
+                ),
+                source_factory=lambda _config: SyntheticSource(),
+                publisher=InterruptAfterPublishPublisher(),
+            )
+
+            with installed_interrupt_handler(signal.SIGINT):
+                outcome = runner.run(self.config(root))
+
+            self.assertEqual(coordinator.RunOutcome("cohort_mismatch", 5, True), outcome)
+            self.assertEqual(1, len(list(Path(root).iterdir())))
+
+    def test_output_root_close_signal_uses_shared_committed_receipt(self):
+        with tempfile.TemporaryDirectory() as root:
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+                publisher=InterruptingOutputRootClosePublisher(),
+            )
+
+            with installed_interrupt_handler(signal.SIGINT):
+                outcome = runner.run(self.config(root))
+
+            self.assert_published_aggregate(root, outcome)
+
+    def test_staging_close_signal_preserves_committed_publication(self):
+        with tempfile.TemporaryDirectory() as root:
+            real_close = os.close
+            signaled = False
+
+            def close_then_signal(descriptor):
+                nonlocal signaled
+                is_directory = stat.S_ISDIR(os.fstat(descriptor).st_mode)
+                real_close(descriptor)
+                if is_directory and not signaled:
+                    signaled = True
+                    signal.raise_signal(signal.SIGINT)
+
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+            )
+
+            with (
+                installed_interrupt_handler(signal.SIGINT),
+                mock.patch.object(coordinator.os, "close", close_then_signal),
+            ):
+                outcome = runner.run(self.config(root))
+
+            self.assertTrue(signaled)
+            self.assert_published_aggregate(root, outcome)
+
+    def test_staging_fsync_signal_removes_uncommitted_artifact(self):
+        with tempfile.TemporaryDirectory() as root:
+            real_fsync = os.fsync
+            signaled = False
+
+            def fsync_then_signal(descriptor):
+                nonlocal signaled
+                is_directory = stat.S_ISDIR(os.fstat(descriptor).st_mode)
+                real_fsync(descriptor)
+                if is_directory and not signaled:
+                    signaled = True
+                    signal.raise_signal(signal.SIGINT)
+
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+            )
+
+            with (
+                installed_interrupt_handler(signal.SIGINT),
+                mock.patch.object(coordinator.os, "fsync", fsync_then_signal),
+            ):
+                outcome = runner.run(self.config(root))
+
+            self.assertTrue(signaled)
+            self.assertEqual("interrupted", outcome.status)
+            self.assertFalse(outcome.published)
+            self.assertEqual([], list(Path(root).iterdir()))
+
+    def test_cleanup_signal_is_deferred_until_staging_is_removed(self):
+        with tempfile.TemporaryDirectory() as root:
+            real_rmdir = os.rmdir
+
+            def rmdir_then_signal(*args, **kwargs):
+                real_rmdir(*args, **kwargs)
+                signal.raise_signal(signal.SIGINT)
+
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+                publisher=FailingWritePublisher(),
+            )
+
+            with (
+                installed_interrupt_handler(signal.SIGINT),
+                mock.patch.object(coordinator.os, "rmdir", rmdir_then_signal),
+            ):
+                outcome = runner.run(self.config(root))
+
+            self.assertEqual("interrupted", outcome.status)
+            self.assertFalse(outcome.published)
+            self.assertEqual([], list(Path(root).iterdir()))
+
+    def test_transient_cleanup_unlink_failure_is_retried_without_a_leak(self):
+        with tempfile.TemporaryDirectory() as root:
+            real_unlink = os.unlink
+            failed_once = False
+
+            def unlink_fail_once(*args, **kwargs):
+                nonlocal failed_once
+                if not failed_once:
+                    failed_once = True
+                    raise OSError("fixed")
+                return real_unlink(*args, **kwargs)
+
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+                publisher=FailAfterAggregateWritesPublisher(),
+            )
+
+            with mock.patch.object(coordinator.os, "unlink", unlink_fail_once):
+                outcome = runner.run(self.config(root))
+
+            self.assertTrue(failed_once)
+            self.assertEqual(
+                coordinator.RunOutcome("publication_failed", 4, False), outcome
+            )
+            self.assertEqual([], list(Path(root).iterdir()))
+
+    def test_transient_cleanup_open_and_rmdir_failures_are_bounded_and_retried(self):
+        with tempfile.TemporaryDirectory() as root:
+            real_open = os.open
+            real_rmdir = os.rmdir
+            cleanup_started = False
+            cleanup_open_failed = False
+
+            def rmdir_fail_once(*args, **kwargs):
+                nonlocal cleanup_started
+                if not cleanup_started:
+                    cleanup_started = True
+                    raise OSError("fixed")
+                return real_rmdir(*args, **kwargs)
+
+            def cleanup_open_fail_once(path, *args, **kwargs):
+                nonlocal cleanup_open_failed
+                if (
+                    cleanup_started
+                    and not cleanup_open_failed
+                    and isinstance(path, str)
+                    and path.startswith(".casein-mobile-feed-timing-")
+                ):
+                    cleanup_open_failed = True
+                    raise OSError("fixed")
+                return real_open(path, *args, **kwargs)
+
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+                publisher=FailingWritePublisher(),
+            )
+
+            with (
+                mock.patch.object(coordinator.os, "open", cleanup_open_fail_once),
+                mock.patch.object(coordinator.os, "rmdir", rmdir_fail_once),
+            ):
+                outcome = runner.run(self.config(root))
+
+            self.assertTrue(cleanup_started)
+            self.assertTrue(cleanup_open_failed)
+            self.assertEqual(
+                coordinator.RunOutcome("publication_failed", 4, False), outcome
+            )
+            self.assertEqual([], list(Path(root).iterdir()))
+
+    def test_persistent_cleanup_refusal_is_bounded_and_never_attested(self):
+        with tempfile.TemporaryDirectory() as root:
+            rmdir_calls = 0
+
+            def refuse_rmdir(*_args, **_kwargs):
+                nonlocal rmdir_calls
+                rmdir_calls += 1
+                raise OSError("fixed")
+
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+                publisher=FailingWritePublisher(),
+            )
+
+            with mock.patch.object(coordinator.os, "rmdir", refuse_rmdir):
+                outcome = runner.run(self.config(root))
+
+            self.assertEqual(coordinator.PUBLICATION_CLEANUP_ATTEMPTS, rmdir_calls)
+            self.assertEqual(
+                coordinator.RunOutcome("publication_failed", 4, False), outcome
+            )
+            remaining = list(Path(root).iterdir())
+            self.assertEqual(1, len(remaining))
+            self.assertTrue(remaining[0].name.startswith("."))
+            self.assertEqual(0o700, stat.S_IMODE(remaining[0].stat().st_mode))
+
+    def test_failed_replace_removes_staging_and_never_commits_receipt(self):
+        with tempfile.TemporaryDirectory() as root:
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+            )
+
+            with mock.patch.object(
+                coordinator.os, "replace", side_effect=OSError("fixed")
+            ):
+                outcome = runner.run(self.config(root))
+
+            self.assertEqual("publication_failed", outcome.status)
+            self.assertFalse(outcome.published)
+            self.assertEqual([], list(Path(root).iterdir()))
+
+    def assert_published_aggregate(self, root, outcome):
+        self.assertEqual("complete", outcome.status)
+        self.assertTrue(outcome.published)
+        cohort_dirs = list(Path(root).iterdir())
+        self.assertEqual(1, len(cohort_dirs))
+        self.assertFalse(cohort_dirs[0].name.startswith("."))
+        self.assertEqual(0o700, stat.S_IMODE(cohort_dirs[0].stat().st_mode))
+        self.assertEqual(
+            {"native.json", "server.json"},
+            {path.name for path in cohort_dirs[0].iterdir()},
+        )
+        for path in cohort_dirs[0].iterdir():
+            self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
+
+    def test_main_run_boundary_uses_shared_committed_receipt(self):
+        class InterruptAfterRunCoordinator(coordinator.CohortCoordinator):
+            def run(self, config, receipt=None):
+                outcome = super().run(config, receipt)
+                signal.raise_signal(signal.SIGINT)
+                return outcome
+
+        with tempfile.TemporaryDirectory() as root:
+            stderr = io.StringIO()
+            runner = InterruptAfterRunCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+            )
+            argv = [
+                "--platform",
+                "android",
+                "--cycle",
+                "reconnect",
+                "--device",
+                ANDROID_SERIAL,
+                "--output-root",
+                root,
+            ]
+
+            with (
+                installed_interrupt_handler(signal.SIGINT),
+                mock.patch.object(coordinator, "CohortCoordinator", return_value=runner),
+                mock.patch.object(coordinator.sys, "stderr", stderr),
+            ):
+                exit_code = coordinator.main(argv)
+
+            self.assertEqual(0, exit_code)
+            self.assertEqual(
+                {"coordinator": coordinator.COORDINATOR_NAME, "status": "complete"},
+                json.loads(stderr.getvalue()),
+            )
+            self.assertEqual(1, len(list(Path(root).iterdir())))
+
+    def test_main_emits_committed_status_across_signal_boundary(self):
+        for interrupt_signal in (signal.SIGINT, signal.SIGTERM):
+            for matched, expected_status, expected_exit in (
+                (True, "complete", 0),
+                (False, "cohort_mismatch", 5),
+            ):
+                with self.subTest(
+                    signal=interrupt_signal,
+                    status=expected_status,
+                ):
+                    with tempfile.TemporaryDirectory() as root:
+                        stderr = io.StringIO()
+                        signaled = False
+                        runner = coordinator.CohortCoordinator(
+                            bridge_factory=lambda _config: FakeBridge(
+                                server_aggregate(match=matched)
+                            ),
+                            source_factory=lambda _config: SyntheticSource(),
+                        )
+                        real_fixed_status = coordinator._fixed_status
+
+                        def signal_then_write(output, status):
+                            nonlocal signaled
+                            if not signaled:
+                                signaled = True
+                                signal.raise_signal(interrupt_signal)
+                            real_fixed_status(output, status)
+
+                        argv = [
+                            "--platform",
+                            "android",
+                            "--cycle",
+                            "reconnect",
+                            "--device",
+                            ANDROID_SERIAL,
+                            "--output-root",
+                            root,
+                        ]
+
+                        with (
+                            mock.patch.object(
+                                coordinator,
+                                "CohortCoordinator",
+                                return_value=runner,
+                            ),
+                            mock.patch.object(
+                                coordinator,
+                                "_fixed_status",
+                                signal_then_write,
+                            ),
+                            mock.patch.object(coordinator.sys, "stderr", stderr),
+                        ):
+                            exit_code = coordinator.main(argv)
+
+                        self.assertTrue(signaled)
+                        self.assertEqual(expected_exit, exit_code)
+                        self.assertEqual(
+                            {
+                                "coordinator": coordinator.COORDINATOR_NAME,
+                                "status": expected_status,
+                            },
+                            json.loads(stderr.getvalue()),
+                        )
+                        self.assertEqual(1, len(list(Path(root).iterdir())))
+
+    def test_main_ignores_committed_signal_after_status_write(self):
+        for interrupt_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=interrupt_signal):
+                with tempfile.TemporaryDirectory() as root:
+                    stderr = io.StringIO()
+                    signaled = False
+                    runner = coordinator.CohortCoordinator(
+                        bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                        source_factory=lambda _config: SyntheticSource(),
+                    )
+                    real_fixed_status = coordinator._fixed_status
+
+                    def write_then_signal(output, status):
+                        nonlocal signaled
+                        real_fixed_status(output, status)
+                        if not signaled:
+                            signaled = True
+                            signal.raise_signal(interrupt_signal)
+
+                    argv = [
+                        "--platform",
+                        "android",
+                        "--cycle",
+                        "reconnect",
+                        "--device",
+                        ANDROID_SERIAL,
+                        "--output-root",
+                        root,
+                    ]
+
+                    with (
+                        mock.patch.object(
+                            coordinator,
+                            "CohortCoordinator",
+                            return_value=runner,
+                        ),
+                        mock.patch.object(
+                            coordinator,
+                            "_fixed_status",
+                            write_then_signal,
+                        ),
+                        mock.patch.object(coordinator.sys, "stderr", stderr),
+                    ):
+                        exit_code = coordinator.main(argv)
+
+                    self.assertTrue(signaled)
+                    self.assertEqual(0, exit_code)
+                    self.assertEqual(
+                        {
+                            "coordinator": coordinator.COORDINATOR_NAME,
+                            "status": "complete",
+                        },
+                        json.loads(stderr.getvalue()),
+                    )
+                    self.assertEqual(1, len(list(Path(root).iterdir())))
+
+    def test_main_precommit_signal_still_emits_interrupted_status_once(self):
+        for interrupt_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=interrupt_signal):
+                with tempfile.TemporaryDirectory() as root:
+                    stderr = io.StringIO()
+                    signaled = False
+                    real_fixed_status = coordinator._fixed_status
+
+                    def signal_then_write(output, status):
+                        nonlocal signaled
+                        if not signaled:
+                            signaled = True
+                            signal.raise_signal(interrupt_signal)
+                        real_fixed_status(output, status)
+
+                    argv = [
+                        "--platform",
+                        "android",
+                        "--cycle",
+                        "reconnect",
+                        "--device",
+                        ANDROID_SERIAL,
+                        "--output-root",
+                        str(Path(root) / "missing"),
+                    ]
+
+                    with (
+                        mock.patch.object(
+                            coordinator,
+                            "_fixed_status",
+                            signal_then_write,
+                        ),
+                        mock.patch.object(coordinator.sys, "stderr", stderr),
+                    ):
+                        exit_code = coordinator.main(argv)
+
+                    self.assertTrue(signaled)
+                    self.assertEqual(
+                        coordinator.EXIT_CODES["interrupted"], exit_code
+                    )
+                    self.assertEqual(
+                        {
+                            "coordinator": coordinator.COORDINATOR_NAME,
+                            "status": "interrupted",
+                        },
+                        json.loads(stderr.getvalue()),
+                    )
+
+    def test_cli_keeps_receipt_handlers_through_post_return_exit_boundary(self):
+        for interrupt_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=interrupt_signal):
+                with tempfile.TemporaryDirectory() as root:
+                    stderr = io.StringIO()
+                    runner = coordinator.CohortCoordinator(
+                        bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                        source_factory=lambda _config: SyntheticSource(),
+                    )
+                    argv = [
+                        "--platform",
+                        "android",
+                        "--cycle",
+                        "reconnect",
+                        "--device",
+                        ANDROID_SERIAL,
+                        "--output-root",
+                        root,
+                    ]
+                    previous_handlers = {
+                        value: signal.getsignal(value)
+                        for value in (signal.SIGINT, signal.SIGTERM)
+                    }
+
+                    try:
+                        with (
+                            mock.patch.object(
+                                coordinator,
+                                "CohortCoordinator",
+                                return_value=runner,
+                            ),
+                            mock.patch.object(coordinator.sys, "stderr", stderr),
+                        ):
+                            exit_code = coordinator._cli_main(argv)
+
+                        signal.raise_signal(interrupt_signal)
+                        self.assertEqual(0, exit_code)
+                        self.assertEqual(
+                            {
+                                "coordinator": coordinator.COORDINATOR_NAME,
+                                "status": "complete",
+                            },
+                            json.loads(stderr.getvalue()),
+                        )
+                    finally:
+                        for value, previous_handler in previous_handlers.items():
+                            signal.signal(value, previous_handler)
+
+    def test_library_main_restores_both_signal_handlers(self):
+        with tempfile.TemporaryDirectory() as root:
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+            )
+            argv = [
+                "--platform",
+                "android",
+                "--cycle",
+                "reconnect",
+                "--device",
+                ANDROID_SERIAL,
+                "--output-root",
+                root,
+            ]
+            previous_handlers = {
+                value: signal.getsignal(value)
+                for value in (signal.SIGINT, signal.SIGTERM)
+            }
+
+            with (
+                mock.patch.object(
+                    coordinator,
+                    "CohortCoordinator",
+                    return_value=runner,
+                ),
+                mock.patch.object(coordinator.sys, "stderr", io.StringIO()),
+            ):
+                exit_code = coordinator.main(argv)
+
+            self.assertEqual(0, exit_code)
+            for value, previous_handler in previous_handlers.items():
+                self.assertEqual(previous_handler, signal.getsignal(value))
+
+    def test_signal_during_handler_installation_is_deferred_and_bounded(self):
+        for pending_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=pending_signal):
+                with tempfile.TemporaryDirectory() as root:
+                    stderr = io.StringIO()
+                    bridge = FakeBridge(server_aggregate())
+                    runner = coordinator.CohortCoordinator(
+                        bridge_factory=lambda _config: bridge,
+                        source_factory=lambda _config: SyntheticSource(),
+                    )
+                    argv = [
+                        "--platform",
+                        "android",
+                        "--cycle",
+                        "reconnect",
+                        "--device",
+                        ANDROID_SERIAL,
+                        "--output-root",
+                        root,
+                    ]
+                    real_signal = signal.signal
+                    queued = False
+
+                    def install_then_queue(signum, handler):
+                        nonlocal queued
+                        previous = real_signal(signum, handler)
+                        if (
+                            not queued
+                            and signum == signal.SIGINT
+                            and callable(handler)
+                        ):
+                            queued = True
+                            signal.raise_signal(pending_signal)
+                        return previous
+
+                    with (
+                        mock.patch.object(
+                            coordinator,
+                            "CohortCoordinator",
+                            return_value=runner,
+                        ),
+                        mock.patch.object(
+                            coordinator.signal,
+                            "signal",
+                            install_then_queue,
+                        ),
+                        mock.patch.object(coordinator.sys, "stderr", stderr),
+                    ):
+                        exit_code = coordinator.main(argv)
+
+                    self.assertTrue(queued)
+                    self.assertEqual(
+                        coordinator.EXIT_CODES["interrupted"], exit_code
+                    )
+                    self.assertEqual(
+                        {
+                            "coordinator": coordinator.COORDINATOR_NAME,
+                            "status": "interrupted",
+                        },
+                        json.loads(stderr.getvalue()),
+                    )
+                    self.assertFalse(bridge.opened)
+
+    def test_signal_during_library_restoration_restores_every_handler(self):
+        with tempfile.TemporaryDirectory() as root:
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+            )
+            argv = [
+                "--platform",
+                "android",
+                "--cycle",
+                "reconnect",
+                "--device",
+                ANDROID_SERIAL,
+                "--output-root",
+                root,
+            ]
+            previous_handlers = {
+                value: signal.getsignal(value)
+                for value in (signal.SIGINT, signal.SIGTERM)
+            }
+            real_signal = signal.signal
+            queued = False
+
+            def restore_then_queue(signum, handler):
+                nonlocal queued
+                previous = real_signal(signum, handler)
+                if (
+                    not queued
+                    and signum == signal.SIGINT
+                    and handler == previous_handlers[signal.SIGINT]
+                ):
+                    queued = True
+                    signal.raise_signal(signal.SIGINT)
+                return previous
+
+            with (
+                mock.patch.object(
+                    coordinator,
+                    "CohortCoordinator",
+                    return_value=runner,
+                ),
+                mock.patch.object(
+                    coordinator.signal,
+                    "signal",
+                    restore_then_queue,
+                ),
+                mock.patch.object(coordinator.sys, "stderr", io.StringIO()),
+            ):
+                exit_code = coordinator.main(argv)
+
+            self.assertTrue(queued)
+            self.assertEqual(0, exit_code)
+            for value, previous_handler in previous_handlers.items():
+                self.assertEqual(previous_handler, signal.getsignal(value))
+
+    def test_committed_receipt_cannot_override_a_second_failed_run(self):
+        with tempfile.TemporaryDirectory() as root:
+            receipt = coordinator.PublicationReceipt()
+            first_root = Path(root) / "first"
+            first_root.mkdir()
+            first_runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(),
+            )
+
+            first_outcome = first_runner.run(self.config(first_root), receipt)
+
+            second_bridge = FakeBridge(server_aggregate())
+            second_runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: second_bridge,
+                source_factory=lambda _config: SyntheticSource(),
+            )
+            second_config = self.config(Path(root) / "missing")
+            second_outcome = second_runner.run(second_config, receipt)
+
+            self.assertEqual(coordinator.RunOutcome("complete", 0, True), first_outcome)
+            self.assertEqual(
+                coordinator.RunOutcome("internal_error", 70, False), second_outcome
+            )
+            self.assertFalse(second_bridge.opened)
+
+    def test_prepared_and_claimed_receipts_cannot_start_a_run(self):
+        for state in ("claimed", "prepared"):
+            with self.subTest(state=state):
+                with tempfile.TemporaryDirectory() as root:
+                    receipt = coordinator.PublicationReceipt()
+                    self.assertTrue(receipt.claim())
+                    if state == "prepared":
+                        receipt.prepare("complete")
+                    bridge = FakeBridge(server_aggregate())
+                    runner = coordinator.CohortCoordinator(
+                        bridge_factory=lambda _config: bridge,
+                        source_factory=lambda _config: SyntheticSource(),
+                    )
+
+                    outcome = runner.run(self.config(root), receipt)
+
+                    self.assertEqual(
+                        coordinator.RunOutcome("internal_error", 70, False), outcome
+                    )
+                    self.assertFalse(bridge.opened)
+                    self.assertEqual([], list(Path(root).iterdir()))
 
     def test_pinned_output_root_cannot_be_redirected_after_preflight(self):
         with tempfile.TemporaryDirectory() as parent:
@@ -1515,11 +2322,35 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
         self.assertTrue(sys.dont_write_bytecode)
         self.assertEqual((0, 0), coordinator.resource.getrlimit(coordinator.resource.RLIMIT_CORE))
 
-    def test_sigterm_handler_converts_once_to_bounded_interruption(self):
-        with mock.patch.object(coordinator.signal, "signal") as set_signal:
-            with self.assertRaises(KeyboardInterrupt):
-                coordinator._interrupt_on_sigterm(signal.SIGTERM, None)
-        set_signal.assert_called_once_with(signal.SIGTERM, signal.SIG_IGN)
+    def test_signal_handler_converts_once_to_bounded_interruption(self):
+        for interrupt_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=interrupt_signal):
+                receipt = coordinator.PublicationReceipt()
+                with mock.patch.object(coordinator.signal, "signal") as set_signal:
+                    with self.assertRaises(KeyboardInterrupt):
+                        coordinator._interrupt_on_signal(
+                            receipt, interrupt_signal, None
+                        )
+                set_signal.assert_called_once_with(
+                    interrupt_signal, signal.SIG_IGN
+                )
+
+    def test_signal_handler_ignores_after_publication_commit(self):
+        for interrupt_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=interrupt_signal):
+                receipt = coordinator.PublicationReceipt()
+                self.assertTrue(receipt.claim())
+                receipt.prepare("complete")
+                receipt.commit()
+
+                with mock.patch.object(coordinator.signal, "signal") as set_signal:
+                    coordinator._interrupt_on_signal(
+                        receipt, interrupt_signal, None
+                    )
+
+                set_signal.assert_called_once_with(
+                    interrupt_signal, signal.SIG_IGN
+                )
 
 
 if __name__ == "__main__":
