@@ -961,6 +961,32 @@ defmodule CaseinMob.SessionClientTest do
     assert_receive {:card_action_result, "c1", {:error, "note_required"}}
   end
 
+  test "a joined mobile topic forwards the exact attention cursor payload" do
+    push_sink = start_push_sink(self())
+
+    params = %{
+      "origin_id" => "origin-1",
+      "card_id" => "in_progress:ws-1:run-1",
+      "attention_key" => "ws-1:session:run-1",
+      "through_marker" => 42
+    }
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:noreply, ^socket} = SessionClient.handle_cast({:attention_viewed, params}, socket)
+    assert_receive {:push_message, %Slipstream.Commands.PushMessage{} = command}
+
+    assert Map.take(Map.from_struct(command), [:topic, :event, :payload]) == %{
+             topic: "mobile:user:me",
+             event: "attention_viewed",
+             payload: params
+           }
+  end
+
   test "malformed join establishes no baseline and a later valid push recovers" do
     socket = socket_with_subscriber("mobile:user:me", self())
     malformed = mobile_snapshot(socket, "4", [%{"id" => "must-not-leak"}])
