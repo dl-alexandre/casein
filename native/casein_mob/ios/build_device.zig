@@ -239,7 +239,12 @@ pub fn build(b: *std.Build) void {
         .{
             .name = "AppDelegate",
             .source = b.fmt("{s}/AppDelegate.m", .{project_ios_dir}),
+            .extra_flags = &.{"-DCASEIN_RUNTIME_OVERLAY_GUARD"},
             .swift_header = swift_header,
+        },
+        .{
+            .name = "CaseinRuntimeOverlay",
+            .source = b.fmt("{s}/CaseinRuntimeOverlay.m", .{project_ios_dir}),
         },
         .{ .name = "beam_main", .source = b.fmt("{s}/beam_main.m", .{project_ios_dir}) },
     };
