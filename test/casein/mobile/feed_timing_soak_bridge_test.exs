@@ -1,7 +1,7 @@
 defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
   use ExUnit.Case, async: true
 
-  alias Casein.Mobile.FeedTimingSoakBridge
+  alias Casein.Mobile.{FeedTiming, FeedTimingAggregate, FeedTimingSoakBridge}
 
   @stages ~w(
     token_verified
@@ -290,6 +290,38 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
                )
     end
 
+    {:ok, unexpected_record} =
+      FeedTiming.sanitize_event(
+        %{duration_ms: 1, elapsed_ms: 2, count: 1},
+        %{
+          schema_version: 1,
+          component: :server,
+          platform: :ios,
+          cycle: :cold,
+          stage: :token_verified,
+          outcome: :succeeded,
+          reason_code: :none,
+          connection_generation: generation(81)
+        }
+      )
+
+    assert {:ok, request} = FeedTimingAggregate.validate_request(generations, :ios, :cold)
+
+    assert {:ok, unexpected_only, []} =
+             FeedTimingAggregate.build([{1, unexpected_record}], request)
+
+    assert unexpected_only["observed_generation_count"] == 1
+    assert unexpected_only["stage_timings"]["token_verified"]["sample_count"] == 0
+
+    assert {:ok, _encoded} =
+             FeedTimingSoakBridge.encode_aggregate(
+               unexpected_only,
+               generations,
+               cookie,
+               :ios,
+               :cold
+             )
+
     stage_outcome_mismatch =
       put_in(positive_match["stage_timings"]["token_verified"]["sample_count"], 19)
 
@@ -301,12 +333,16 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
 
     matched_with_too_few_records = aggregate_with_records(empty_partial, 19, true)
 
+    matched_without_observed_generation =
+      Map.put(positive_partial, "observed_generation_count", 0)
+
     for rejected <- [
           stage_outcome_mismatch,
           outcome_reason_mismatch,
           reason_stage_mismatch,
           optional_exceeds_total,
-          matched_with_too_few_records
+          matched_with_too_few_records,
+          matched_without_observed_generation
         ] do
       assert {:error, :invalid_aggregate} =
                FeedTimingSoakBridge.encode_aggregate(

@@ -649,6 +649,11 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
          true <- outcome_total == reason_total,
          true <-
            optional_counts_within_total?(aggregate["optional_measurements"], stage_total),
+         true <-
+           matched_observation_count_valid?(
+             aggregate["observed_generation_count"],
+             stage_total
+           ),
          true <- cohort_record_count_valid?(aggregate["cohort_match"], stage_total) do
       true
     else
@@ -686,6 +691,15 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
   end
 
   defp optional_counts_within_total?(_measurements, _total), do: false
+
+  defp matched_observation_count_valid?(observed_generation_count, total)
+       when is_integer(total) and total > 0,
+       do: bounded_count?(observed_generation_count) and observed_generation_count > 0
+
+  defp matched_observation_count_valid?(observed_generation_count, 0),
+    do: bounded_count?(observed_generation_count)
+
+  defp matched_observation_count_valid?(_observed_generation_count, _total), do: false
 
   defp cohort_record_count_valid?(true, total), do: total >= @generation_count
   defp cohort_record_count_valid?(false, _total), do: true
