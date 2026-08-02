@@ -9,7 +9,7 @@ defmodule Casein.Desktop.PowerShellSession do
 
   use GenServer
 
-  alias Casein.Desktop.AgentEnvironment
+  alias Casein.Desktop.{AgentEnvironment, NativeAgentLaunch}
 
   @name __MODULE__
   @registry Module.concat(__MODULE__, Registry)
@@ -87,6 +87,39 @@ defmodule Casein.Desktop.PowerShellSession do
     GenServer.call(server(workspace), {:input, pane_id, data})
   end
 
+  @doc "Launches one provider and returns its retained plan with native topology."
+  @spec launch_agent(map(), String.t(), String.t(), keyword()) ::
+          {:ok, %{plan: NativeAgentLaunch.t(), topology: map()}} | {:error, term()}
+  def launch_agent(workspace, runtime, task, opts \\ [])
+
+  def launch_agent(workspace, runtime, task, opts)
+      when is_map(workspace) and is_binary(runtime) and is_binary(task) and is_list(opts) do
+    launcher = Keyword.get(opts, :launcher, &NativeAgentLaunch.launch/4)
+    topology_reporter = Keyword.get(opts, :topology_reporter, &record_agent_launch/1)
+    finisher = Keyword.get(opts, :finisher, &NativeAgentLaunch.finish/4)
+
+    case launcher.(workspace, runtime, task, Keyword.get(opts, :launch_opts, [])) do
+      {:ok, %NativeAgentLaunch{} = plan} ->
+        case topology_reporter.(workspace) do
+          {:ok, topology} ->
+            {:ok, %{plan: plan, topology: topology}}
+
+          {:error, reason} ->
+            topology_failure(plan, runtime, reason, finisher, opts)
+
+          {:topology_error, reason} ->
+            topology_failure(plan, runtime, reason, finisher, opts)
+
+          _other ->
+            topology_failure(plan, runtime, :invalid_topology_report, finisher, opts)
+        end
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  def launch_agent(_workspace, _runtime, _task, _opts), do: {:error, :invalid_arguments}
   @doc "Restarts the native shell in the given workspace directory."
   def restart(cwd \\ nil, workspace \\ nil),
     do: GenServer.call(server(workspace), {:restart, normalize_cwd(cwd), workspace})
@@ -168,6 +201,11 @@ defmodule Casein.Desktop.PowerShellSession do
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
+  end
+
+  def handle_call(:record_agent_launch, _from, state) do
+    updated = %{state | pane_role: "agent"}
+    {:reply, {:ok, topology_snapshot(updated)}, updated}
   end
 
   def handle_call({:ensure_workspace, cwd, workspace}, _from, state)
@@ -298,6 +336,26 @@ defmodule Casein.Desktop.PowerShellSession do
     else
       @name
     end
+  end
+
+  defp record_agent_launch(workspace) do
+    try do
+      GenServer.call(server(workspace), :record_agent_launch)
+    catch
+      :exit, reason -> {:topology_error, reason}
+    end
+  end
+
+  defp topology_failure(plan, runtime, reason, finisher, opts) do
+    _ =
+      finisher.(
+        plan,
+        "handoff",
+        "native #{runtime} topology reporting failed",
+        Keyword.get(opts, :finish_opts, [])
+      )
+
+    {:error, reason}
   end
 
   defp resolve({:via, Registry, {registry, key}}) do
