@@ -170,6 +170,10 @@ defmodule CaseinMob.IOSFeedLifecycleHarnessContractTest do
     assert runner =~ ~s("HOME=${HOME}")
     assert runner =~ ~s("PATH=${PATH}")
     assert runner =~ ~s("TMPDIR=${build_tmpdir}")
+    assert runner =~ ~s(build_tmpdir="${artifact_root}/tmp")
+    assert runner =~ ~s(/bin/mkdir -m 700 -- "${build_tmpdir}" || exit 74)
+    assert runner =~ ~s(/bin/chmod 700 "${build_tmpdir}" || exit 74)
+    refute runner =~ ~s(${TMPDIR:-/tmp})
     assert runner =~ "'LC_ALL=C'"
     assert runner =~ "'LANG=C'"
     assert runner =~ ~s("DEVELOPER_DIR=${DEVELOPER_DIR}")
@@ -177,6 +181,12 @@ defmodule CaseinMob.IOSFeedLifecycleHarnessContractTest do
     assert runner =~ "trap 'exit 74' HUP INT TERM"
     assert runner =~ ~s(-derivedDataPath "${artifact_root}/DerivedData")
     assert runner =~ ~s(-resultBundlePath "${artifact_root}/Result.xcresult")
+
+    assert_before(
+      runner,
+      "cleanup || cleanup_status=$?",
+      "printf '%s\\n' 'CASEIN_IOS_FEED_LIFECYCLE_SOAK_OK'"
+    )
 
     for forbidden <- [
           "-resultStreamPath",
@@ -195,13 +205,21 @@ defmodule CaseinMob.IOSFeedLifecycleHarnessContractTest do
     root = isolated_tmp_dir!("scrub")
     bin = Path.join(root, "bin")
     capture = Path.join(root, "xcodebuild-environment")
+    ambient_tmpdir = Path.join(root, "ambient-tmp-sentinel")
     File.mkdir_p!(bin)
+    File.mkdir!(ambient_tmpdir)
 
     write_executable!(
       Path.join(bin, "xcodebuild"),
       """
       #!/bin/sh
       printf 'CORE_LIMIT=%s\\n' "$(ulimit -c)" > #{shell_quote(capture)}
+      if tmp_mode=$(/usr/bin/stat -c '%a' "$TMPDIR" 2>/dev/null); then
+        :
+      else
+        tmp_mode=$(/usr/bin/stat -f '%Lp' "$TMPDIR") || exit 91
+      fi
+      printf 'TMP_MODE=%s\\n' "$tmp_mode" >> #{shell_quote(capture)}
       /usr/bin/env >> #{shell_quote(capture)}
       exit 0
       """
@@ -214,24 +232,32 @@ defmodule CaseinMob.IOSFeedLifecycleHarnessContractTest do
         env: [
           {"PATH", "#{bin}:/usr/bin:/bin"},
           {"DEVELOPER_DIR", "/casein/test/developer"},
-          {"CASEIN_AMBIENT_SENTINEL", sentinel}
+          {"CASEIN_AMBIENT_SENTINEL", sentinel},
+          {"TMPDIR", ambient_tmpdir}
         ],
         stderr_to_stdout: true
       )
 
     child_environment = File.read!(capture)
+    child_tmpdir = environment_value(child_environment, "TMPDIR")
+    artifact_root = Path.dirname(child_tmpdir)
 
     assert status == 0
     assert output == "CASEIN_IOS_FEED_LIFECYCLE_SOAK_OK\n"
     assert child_environment =~ "CORE_LIMIT=0\n"
+    assert child_environment =~ "TMP_MODE=700\n"
     assert child_environment =~ "HOME="
     assert child_environment =~ "PATH=#{bin}:/usr/bin:/bin\n"
-    assert child_environment =~ "TMPDIR="
     assert child_environment =~ "DEVELOPER_DIR=/casein/test/developer\n"
     assert child_environment =~ "LC_ALL=C\n"
     assert child_environment =~ "LANG=C\n"
     refute child_environment =~ "CASEIN_AMBIENT_SENTINEL"
     refute child_environment =~ sentinel
+    refute child_tmpdir == ambient_tmpdir
+    assert child_tmpdir == Path.join(artifact_root, "tmp")
+    assert artifact_root =~ ~r|\A/tmp/casein-ios-feed-lifecycle\.[A-Za-z0-9]{6}\z|
+    assert File.ls!(ambient_tmpdir) == []
+    assert {:error, :enoent} = File.lstat(artifact_root)
   end
 
   test "cleanup failure emits only the fixed failure status" do
@@ -331,6 +357,11 @@ defmodule CaseinMob.IOSFeedLifecycleHarnessContractTest do
   end
 
   defp shell_quote(value), do: "'" <> String.replace(value, "'", "'\\''") <> "'"
+
+  defp environment_value(environment, name) do
+    [_, value] = Regex.run(~r/^#{Regex.escape(name)}=(.*)$/m, environment)
+    value
+  end
 
   defp assert_before(text, first, second) do
     {first_offset, _length} = :binary.match(text, first)

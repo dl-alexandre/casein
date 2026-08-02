@@ -81,7 +81,9 @@ ulimit -c 0 || exit 74
 [ "${HOME+x}" = x ] || exit 74
 [ "${PATH+x}" = x ] || exit 74
 
-build_tmpdir=${TMPDIR:-/tmp}
+build_tmpdir="${artifact_root}/tmp"
+/bin/mkdir -m 700 -- "${build_tmpdir}" || exit 74
+/bin/chmod 700 "${build_tmpdir}" || exit 74
 
 set -- env -i \
   "HOME=${HOME}" \
