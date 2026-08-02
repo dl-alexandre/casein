@@ -57,12 +57,14 @@ supervisor's reviewed start-stopped → PID-scoped attachment → resume lifecyc
    release helper emits it as the first stdout frame only after opening the
    recorder fence. Any partial, malformed, extra, stderr, timeout, or early-exit
    frame fails before device work.
-4. Start the app-scoped source. For primary iOS reconnect, source readiness is
-   not signaled until start-stopped launch, strict PID extraction, PID-scoped
-   attachment, and same-PID resume have all succeeded; only then may the signed
-   lifecycle runner start. Markers flow through an anonymous bounded pipe into
-   `StreamAdapter`, then directly through an in-memory sink into `Collector`.
-   The sink keeps no records or log lines.
+4. Start the app-scoped source. Android source readiness is not signaled until
+   the remote application-UID `run-as` and logcat capability probe has produced
+   the exact identity-free readiness frame. For primary iOS reconnect,
+   readiness is not signaled until start-stopped launch, strict PID extraction,
+   PID-scoped attachment, and same-PID resume have all succeeded; only then may
+   the signed lifecycle runner start. Markers flow through an anonymous bounded
+   pipe into `StreamAdapter`, then directly through an in-memory sink into
+   `Collector`. The sink keeps no records or log lines.
 5. Retain only the raw generation from each accepted terminal
    `first_cards_render_ready` marker. The adapter and collector retain only
    their independent HMAC surrogates.
@@ -82,9 +84,15 @@ supervisor's reviewed start-stopped → PID-scoped attachment → resume lifecyc
 
 ## Platform lifecycle boundaries
 
-- Android cold uses the explicit serial for alternating package-only
-  `am force-stop com.example.casein_mob` and exact launcher-activity starts. It
-  waits for one accepted terminal generation before beginning the next cycle.
+- Android cold owns twenty independent source lifecycles while retaining one
+  in-memory adapter, collector, generation vault, and server fence. Every
+  generation performs package-only `am force-stop com.example.casein_mob` only
+  after the prior source is proven closed, starts a fresh application-UID
+  source, requires its bounded remote readiness frame, launches the exact
+  activity, waits for that generation's accepted terminal marker, and then
+  requires intentional scoped-source cleanup before the next force-stop. A
+  source, start, terminal, or cleanup ambiguity retires the fence with no retry
+  and no publication.
 - Android reconnect invokes only the installed signed instrumentation method
   `CaseinFeedLifecycleSoakTest#twentyExplicitCurrentOriginReconnects` on the
   explicit serial.

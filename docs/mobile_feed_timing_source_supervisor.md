@@ -4,9 +4,10 @@
 native-log producer for the strict mobile feed timing stream. It owns one
 app-scoped source process, removes only the fixed iOS connection framing in
 memory, and writes only newline-terminated `mobile_feed_stage ` markers to
-standard output. It never writes a raw capture, uses `tee`, invokes a shell,
-or reflects child output, child errors, device identifiers, process identifiers,
-commands, credentials, or log text.
+standard output. It never writes a raw capture, uses `tee`, invokes a local
+shell, interpolates input into the fixed Android remote command, or reflects
+child output, child errors, device identifiers, process identifiers, commands,
+credentials, or log text.
 
 This script is a narrow building block, not the final physical-cohort entry
 point. The in-memory cohort coordinator must own the source, stream adapter,
@@ -19,13 +20,18 @@ alone is never evidence of success.
 ## Fixed source contracts
 
 Android uses one `adb exec-out` remote-command argument. That constant command
-runs logcat as the Casein application UID, selects only the main buffer, uses raw
-formatting, starts at the current tail, applies the exact anchored timing-marker
-regex, and silences every tag except `Elixir`. There is no PID/UID fallback,
-general logcat export, or alternate regex. Failure of `run-as`, logcat regex,
-the application package, adb transport, or `--exit-on-write-error` is a hard
-capability failure. Because the filter is application-UID scoped, Android pane
-or app-process replacement does not broaden the source.
+runs a bounded logcat capability probe as the Casein application UID, emits one
+literal identity-free readiness frame, then replaces the remote shell with the
+reviewed long-lived logcat source. The supervisor must consume that exact frame
+within the readiness timeout before signaling its caller. It then selects only
+the main buffer, uses raw formatting, starts at the current tail, applies the
+exact anchored timing-marker regex, and silences every tag except `Elixir`.
+There is no PID/UID fallback, general logcat export, or alternate regex. Failure
+of the exact readiness frame, `run-as`, logcat, the application package, adb
+transport, or `--exit-on-write-error` is a hard capability failure. Because the
+filter is application-UID scoped, Android pane or app-process replacement does
+not broaden the source. The readiness frame is discarded in memory and is
+never forwarded or reported.
 
 iOS uses idevicesyslog 1.4 with one validated device UDID, one validated numeric
 PID, the literal `mobile_feed_stage ` match, color disabled, and exit-on-process

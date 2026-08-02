@@ -214,8 +214,11 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         downstream_status=None,
         source_ready=None,
         output=None,
+        android_ready=True,
     ):
         process = process or FakeProcess()
+        if plan.platform == "android" and android_ready:
+            events = [source_module.ANDROID_READY_FRAME, *events]
         reader = FakeReader(events)
         factory = RecordingFactory([process])
         kills: list[tuple[int, int]] = []
@@ -275,10 +278,12 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
                 "-s",
                 ANDROID_SERIAL,
                 "exec-out",
-                "exec run-as com.example.casein_mob "
-                "logcat -b main -v raw -T 1 "
-                "--regex='^mobile_feed_stage[ ]connection_generation=' "
-                "'Elixir:I' '*:S'",
+                "exec run-as com.example.casein_mob sh -c '"
+                "logcat -b main -d -t 1 >/dev/null 2>&1 || exit 1; "
+                'printf "%s\\n" casein_mobile_feed_source_ready; '
+                "exec logcat -b main -v raw -T 1 "
+                '--regex="^mobile_feed_stage[ ]connection_generation=" '
+                '"Elixir:I" "*:S"'"'",
             ),
             argv,
         )
@@ -286,6 +291,48 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         self.assertEqual(source_module.ANDROID_REMOTE_COMMAND, argv[-1])
         self.assertNotIn("--pid", argv)
         self.assertNotIn("--uid", argv)
+
+    def test_android_ready_requires_exact_remote_run_as_logcat_handshake(self):
+        plan = source_module.build_plan("android", ANDROID_SERIAL)
+        ready_events: list[str] = []
+        accepted = self.run_supervisor(
+            plan,
+            [marker_line(), b""],
+            source_ready=lambda: ready_events.append("ready"),
+        )
+
+        self.assertEqual(["ready"], ready_events)
+        self.assertEqual(marker_line(), accepted["stdout"].getvalue())
+        self.assertEqual(1, accepted["report"]["status_lines_discarded"])
+        self.assertEqual(
+            source_module.ANDROID_READY_TIMEOUT_SECONDS,
+            accepted["reader"].timeouts[0],
+        )
+
+        for first_line in (
+            b"",
+            b"casein_mobile_feed_source_ready\r\n",
+            b"casein_mobile_feed_source_ready extra\n",
+            marker_line(),
+            (SECRET + "\n").encode(),
+            source_module.ReadTimeout(),
+        ):
+            with self.subTest(first_line=type(first_line).__name__):
+                rejected_events: list[str] = []
+                rejected = self.run_supervisor(
+                    plan,
+                    [first_line],
+                    source_ready=lambda: rejected_events.append("ready"),
+                    android_ready=False,
+                )
+                self.assertEqual(3, rejected["status"])
+                self.assertEqual([], rejected_events)
+                self.assertEqual(b"", rejected["stdout"].getvalue())
+                self.assertEqual(
+                    "source_capability_failed", rejected["report"]["status"]
+                )
+                self.assertNotIn(SECRET, rejected["stderr"])
+                self.assertNotIn(ANDROID_SERIAL, rejected["stderr"])
 
     def test_android_identifier_validation_blocks_option_and_shell_injection(self):
         valid = ("emulator-5554", "192.0.2.1:5555", "ABC_123.device")
@@ -998,8 +1045,31 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         self.assertEqual("terminated", result["report"]["cleanup"])
         self.assertEqual([(876, signal.SIGTERM)], result["kills"])
         self.assertEqual(
-            source_module.DOWNSTREAM_POLL_SECONDS, result["reader"].timeouts[0]
+            source_module.DOWNSTREAM_POLL_SECONDS, result["reader"].timeouts[1]
         )
+
+    def test_android_terminal_race_with_natural_nonzero_source_exit_fails_closed(self):
+        plan = source_module.build_plan("android", ANDROID_SERIAL)
+        probes = iter((None, 0))
+        process = FakeProcess(
+            pid=877,
+            wait_outcomes=[9],
+            poll_outcomes=[9, 9, 9],
+        )
+        result = self.run_supervisor(
+            plan,
+            [marker_line(stage="first_cards_render_ready")],
+            process=process,
+            downstream_status=probes.__next__,
+        )
+
+        self.assertEqual(3, result["status"])
+        self.assertEqual(
+            "source_capability_failed", result["report"]["status"]
+        )
+        self.assertEqual("not_needed", result["report"]["cleanup"])
+        self.assertEqual("nonzero", result["report"]["source_exit"])
+        self.assertEqual([], result["kills"])
 
     def test_false_or_throwing_completion_probe_never_makes_term_success(self):
         plan = source_module.build_plan("android", ANDROID_SERIAL)
@@ -1022,7 +1092,10 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
 
         standalone = self.run_supervisor(plan, [b""])
         self.assertEqual(2, standalone["status"])
-        self.assertEqual([None], standalone["reader"].timeouts)
+        self.assertEqual(
+            [source_module.ANDROID_READY_TIMEOUT_SECONDS, None],
+            standalone["reader"].timeouts,
+        )
 
     def test_process_group_cleanup_escalates_and_never_targets_any_other_pid(self):
         plan = source_module.build_plan("android", ANDROID_SERIAL)
