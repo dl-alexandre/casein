@@ -54,29 +54,25 @@ Assert-Condition (Test-Path -LiteralPath $previewNode) 'Packaged preview node.ex
 Assert-Condition (Test-Path -LiteralPath $playwrightPackage) 'Packaged Playwright dependency is missing'
 Assert-Condition ([bool]$headless) 'Packaged Chromium headless shell is missing'
 
-$smokeScript = Join-Path ([IO.Path]::GetTempPath()) ("casein-playwright-smoke-" + [guid]::NewGuid().ToString('N') + '.cjs')
+$previewHelper = Join-Path $releaseScripts 'preview_playwright.mjs'
 $originalPlaywrightBrowsersPath = $env:PLAYWRIGHT_BROWSERS_PATH
 try {
-    @'
-const { chromium } = require(process.argv[2]);
-(async () => {
-  const browser = await chromium.launch({headless: true});
-  const page = await browser.newPage();
-  await page.setContent('<button id="ready">Windows preview ready</button>');
-  const text = await page.locator('#ready').textContent();
-  await browser.close();
-  if (text !== 'Windows preview ready') process.exit(2);
-  process.stdout.write('playwright-smoke-ok');
-})().catch(error => { console.error(error); process.exit(1); });
-'@ | Set-Content -LiteralPath $smokeScript -Encoding ascii
     $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $releaseScripts 'playwright-browsers'
-    $playwrightModule = Join-Path $releaseScripts 'node_modules\playwright'
-    $smokeOutput = & $previewNode $smokeScript $playwrightModule
-    Assert-Condition ($LASTEXITCODE -eq 0) "Packaged Playwright smoke failed: $smokeOutput"
-    Assert-Condition (($smokeOutput -join '') -eq 'playwright-smoke-ok') 'Packaged Playwright smoke returned unexpected output'
+    $diagnosticOutput = & $previewNode $previewHelper '{"action":"diagnose"}' 2>&1
+    Assert-Condition ($LASTEXITCODE -eq 0) "Packaged preview helper diagnostic failed: $diagnosticOutput"
+
+    try {
+        $diagnosticResponse = ($diagnosticOutput -join '') | ConvertFrom-Json
+    } catch {
+        throw "Packaged preview helper returned invalid JSON: $diagnosticOutput"
+    }
+
+    Assert-Condition ($diagnosticResponse.ok -eq $true) 'Packaged preview helper diagnostic was not successful'
+    Assert-Condition ($diagnosticResponse.diagnostic.status -eq 'ready') 'Packaged Chromium diagnostic was not ready'
+    Assert-Condition ([bool]$diagnosticResponse.diagnostic.node_version) 'Packaged preview helper did not report its Node version'
+    Assert-Condition (Test-Path -LiteralPath $diagnosticResponse.diagnostic.chromium_executable) 'Packaged preview helper resolved a missing Chromium executable'
 } finally {
     $env:PLAYWRIGHT_BROWSERS_PATH = $originalPlaywrightBrowsersPath
-    Remove-Item -LiteralPath $smokeScript -Force -ErrorAction SilentlyContinue
 }
 
 $metadata = Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json
