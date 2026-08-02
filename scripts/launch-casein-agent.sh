@@ -614,6 +614,32 @@ grok_reset_managed_home() {
   [[ "$(realpath -m "$reset_home")" == "$(realpath -m "$GROK_HOME")" ]]
 }
 
+# A managed Grok worker whose capability lacks terminal_send_agent_command gets
+# the read-only bwrap profile. That profile is severe and — before this — silent:
+# the pane reaches a normal-looking prompt, but the worktree and its git metadata
+# are write-denied, child network is blocked, and BEAM cannot start
+# ("Failed to write to erl_child_setup: 1"), so mix will not run either.
+#
+# Two separate sessions lost significant time diagnosing this from the symptoms.
+# The cause is never local: it is that the workspace's agent-write unlock has
+# expired or was never granted, so say so at launch instead of letting the worker
+# discover it by failing.
+grok_announce_read_only_sandbox() {
+  local capability_id="${1:-unknown}"
+
+  cat >&2 <<EOF
+warning: Grok is starting with a READ-ONLY sandbox (capability ${capability_id}).
+warning:   This worker CANNOT write its worktree, reach the network, or run mix.
+warning:   Cause: this workspace's agent-write unlock is expired or absent, so the
+warning:   issued capability omits terminal_send_agent_command.
+warning:   Fix: have an operator re-grant agent write for the workspace, then
+warning:   relaunch. Do NOT set CASEIN_GROK_SANDBOX_BASE to override it — that
+warning:   circumvents a deliberate, time-boxed control.
+warning:   For write work right now, delegate to codex instead:
+warning:     bash scripts/launch-casein-agent.sh codex
+EOF
+}
+
 grok_install_sandbox_profile() {
   local profile="$1" base="$2" capability_file="$3"
   local tmux_dir="${TMUX%%,*}"
@@ -800,6 +826,7 @@ grok_configure_capability() {
     sandbox_base="strict"
   else
     sandbox_base="read-only"
+    grok_announce_read_only_sandbox "$capability_id"
   fi
   profile="casein-${leader_id}-${capability_id//-/}-${sandbox_base}"
   profile="${profile:0:95}"
