@@ -17,18 +17,20 @@ defmodule CaseinMob.IOSConfigurationTest do
     profile = File.read!(@development_profile)
 
     assert build_setting_values(project, "DEVELOPMENT_TEAM") == ["2MP8QWK7R6"]
-    assert build_setting_occurrences(project, "DEVELOPMENT_TEAM") == 4
+    assert build_setting_occurrences(project, "DEVELOPMENT_TEAM") == 6
 
     assert build_setting_values(project, "PRODUCT_BUNDLE_IDENTIFIER") == [
              "com.alexandrefamilyfarm.casein-mob",
-             "com.alexandrefamilyfarm.casein-mob.soak-ui-tests"
+             "com.alexandrefamilyfarm.casein-mob.soak-ui-tests",
+             "com.alexandrefamilyfarm.casein-mob.feed-lifecycle-ui-tests"
            ]
 
-    assert build_setting_occurrences(project, "PRODUCT_BUNDLE_IDENTIFIER") == 4
+    assert build_setting_occurrences(project, "PRODUCT_BUNDLE_IDENTIFIER") == 6
 
     assert build_setting_frequency(project, "PRODUCT_BUNDLE_IDENTIFIER") == %{
              "com.alexandrefamilyfarm.casein-mob" => 2,
-             "com.alexandrefamilyfarm.casein-mob.soak-ui-tests" => 2
+             "com.alexandrefamilyfarm.casein-mob.soak-ui-tests" => 2,
+             "com.alexandrefamilyfarm.casein-mob.feed-lifecycle-ui-tests" => 2
            }
 
     assert build_setting_values(project, "CODE_SIGN_ENTITLEMENTS") == ["CaseinMob.entitlements"]
