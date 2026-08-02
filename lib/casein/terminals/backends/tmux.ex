@@ -15,6 +15,7 @@ defmodule Casein.Terminals.Backends.Tmux do
   alias Casein.Terminals.Theme
   alias Casein.Terminals.Tmux
   alias Casein.Terminals.TmuxRunner
+  alias Casein.Terminals.TmuxServer
 
   @impl true
   defdelegate session_name(workspace_name, sid), to: Tmux
@@ -72,7 +73,13 @@ defmodule Casein.Terminals.Backends.Tmux do
   end
 
   def spawn_spec({:remote, host, path}, session) do
-    remote = "cd #{shell_quote(path)} && exec tmux new-session -A -s #{session}"
+    # Always use the labeled Casein tmux server on the remote (issue #556).
+    # Label matches local isolation (casein / casein_dev / casein_test) so
+    # native `tmux -L <label> attach` sees the same sessions and the host's
+    # default tmux server is never touched. Config `-f` lands with remote
+    # bootstrap (`~/.casein/tmux/…`); without it tmux uses label defaults.
+    remote =
+      "cd #{shell_quote(path)} && exec tmux #{remote_tmux_global_flags()}new-session -A -s #{session}"
 
     command =
       ~c"ssh -tt -o BatchMode=yes -o ServerAliveInterval=30 -o ConnectTimeout=10 #{host} -- #{shell_quote(remote)}"
@@ -141,6 +148,15 @@ defmodule Casein.Terminals.Backends.Tmux do
     Application.get_env(:casein, :tmux_login_shell_command) ||
       System.get_env("CASEIN_TMUX_LOGIN_SHELL") ||
       Shims.shell_command()
+  end
+
+  # Space-terminated global flags for embedding in a remote shell command
+  # (e.g. "-L casein "). Empty when no label is configured (default server).
+  defp remote_tmux_global_flags do
+    case TmuxServer.args() do
+      [] -> ""
+      args -> Enum.join(args, " ") <> " "
+    end
   end
 
   defp shell_quote(value), do: "'" <> String.replace(value, "'", "'\\''") <> "'"
