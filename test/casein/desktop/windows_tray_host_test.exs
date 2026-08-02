@@ -89,6 +89,19 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert uninstaller =~ "Remove-Item -LiteralPath $startupLink"
   end
 
+  test "clean-machine acceptance can require space, long, and UNC package roots" do
+    script = File.read!(Path.expand("../../../windows/Test-CaseinCleanMachine.ps1", __DIR__))
+
+    assert script =~ "RequirePackageRootWithSpace"
+    assert script =~ "RequireLongPackageRoot"
+    assert script =~ "RequireUncPackageRoot"
+    assert script =~ "MinimumLongPathLength = 180"
+    assert script =~ "package_root_kind"
+    assert script =~ "package_root_length"
+    assert script =~ "package_root_has_space"
+    refute script =~ "package_root = $packageRoot"
+  end
+
   test "Trusted LAN selects a private physical interface and scopes its firewall rule" do
     script = File.read!(@trusted_lan)
     tray = File.read!(@tray_script)

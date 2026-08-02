@@ -31,7 +31,7 @@ available to this track until those PRs land or explicitly coordinate a change.
 |---|---|---|
 | Launch at sign-in across update/rollback/uninstall | Shortcut was release-pinned and uninstall left it behind | Point it at the stable installed launcher; package and clean-machine smokes verify creation, target, and cleanup |
 | Restart/reboot persistence | Runtime crash recovery is covered; real sign-out/reboot is not automated | Add a two-stage, reboot-resumable acceptance runner with an explicit continuation marker and bounded evidence |
-| Path spaces, long paths, and UNC extraction | Packaging has long-path deletion support; lifecycle acceptance does not exercise these roots | Add isolated lifecycle canaries and record normalized path kind/length without recording infrastructure URLs |
+| Path spaces, long paths, and UNC extraction | Clean-machine harness can fail closed unless the requested path shape is active and records only safe kind/length/space facts | Execute production-signed canaries on disposable local and protected-share roots; attach redacted JSON to #376 |
 | Corrupted state recovery | Release-file repair and SQLite pre-migration corruption rejection exist | Exercise malformed `current.json`, settings, runtime state, and interrupted staging with fail-closed/repair outcomes |
 | Update rollback evidence | Implementation and source/package smokes exist | Capture redacted before/after release identity, health-failure outcome, and restored database digest on a signed channel |
 | No-tooling install/repair/uninstall | Harness rejects language tools and installed WSL distributions | Run it on a production-signed disposable Windows 11 account and attach its JSON to #376 |
