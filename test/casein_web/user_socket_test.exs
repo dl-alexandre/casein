@@ -2,7 +2,7 @@ defmodule CaseinWeb.UserSocketTest do
   use Casein.DataCase, async: false
 
   alias Casein.DeviceLinks
-  alias Casein.Mobile.FeedTiming
+  alias Casein.Mobile.{FeedTiming, FeedTimingRecorder}
   alias Casein.Workspace
   alias CaseinWeb.{ChannelAuth, UserSocket}
 
@@ -86,9 +86,10 @@ defmodule CaseinWeb.UserSocketTest do
     refute serialized =~ "private@example.com"
   end
 
-  test "connect emits only the final failure after all verifier fallbacks" do
+  test "invalid tokens cannot retain attacker-controlled timing correlation" do
     generation = generation()
     token = "invalid-private-token"
+    recorder = start_timing_recorder()
     attach_feed_telemetry(self())
 
     assert :error =
@@ -102,19 +103,49 @@ defmodule CaseinWeb.UserSocketTest do
                %{}
              )
 
-    assert_receive {:feed_auth, measurements,
-                    %{
-                      stage: :token_verified,
-                      outcome: :failed,
-                      reason_code: :invalid_token,
-                      connection_generation: ^generation
-                    } = metadata}
-
     refute_receive {:feed_auth, _measurements, _metadata}, 50
-    refute inspect({measurements, metadata}) =~ token
+
+    refute Enum.any?(FeedTimingRecorder.snapshot_for(recorder), fn record ->
+             record.metadata.connection_generation == generation
+           end)
   end
 
-  test "connect accepts persistent device link tokens" do
+  test "connect emits correlated timing after a pairing token is authenticated" do
+    generation = generation()
+
+    token =
+      ChannelAuth.sign_pairing_token(
+        %{id: "owner", email: "owner@example.com", role: :owner},
+        "ws-1"
+      )
+
+    attach_feed_telemetry(self())
+
+    assert {:ok, socket} =
+             UserSocket.connect(
+               %{
+                 "token" => token,
+                 "connection_generation" => generation,
+                 "connection_cycle" => "cold"
+               },
+               %Phoenix.Socket{},
+               %{}
+             )
+
+    assert socket.assigns.pairing_workspace_id == "ws-1"
+
+    assert_receive {:feed_auth, _measurements,
+                    %{
+                      stage: :token_verified,
+                      outcome: :succeeded,
+                      reason_code: :pairing_token,
+                      connection_generation: ^generation
+                    }}
+  end
+
+  test "connect accepts persistent device link tokens and emits correlated timing" do
+    generation = generation()
+
     assert {:ok, %{token: token, link: link}} =
              DeviceLinks.create_from_pairing_claims(
                %{
@@ -127,7 +158,18 @@ defmodule CaseinWeb.UserSocketTest do
                %{platform: "ios"}
              )
 
-    assert {:ok, socket} = UserSocket.connect(%{"token" => token}, %Phoenix.Socket{}, %{})
+    attach_feed_telemetry(self())
+
+    assert {:ok, socket} =
+             UserSocket.connect(
+               %{
+                 "token" => token,
+                 "connection_generation" => generation,
+                 "connection_cycle" => "reconnect"
+               },
+               %Phoenix.Socket{},
+               %{}
+             )
 
     assert socket.assigns.current_user == %{
              id: "owner",
@@ -140,6 +182,15 @@ defmodule CaseinWeb.UserSocketTest do
     assert socket.assigns.device_link_id == link.id
     # Device provenance is available to the action dispatcher from connect.
     assert socket.assigns.mobile_platform == "ios"
+
+    assert_receive {:feed_auth, _measurements,
+                    %{
+                      stage: :token_verified,
+                      outcome: :succeeded,
+                      reason_code: :device_link_token,
+                      platform: :ios,
+                      connection_generation: ^generation
+                    }}
   end
 
   test "id/1 returns a stable users_socket identifier" do
@@ -166,6 +217,22 @@ defmodule CaseinWeb.UserSocketTest do
     )
 
     on_exit(fn -> :telemetry.detach(handler) end)
+  end
+
+  defp start_timing_recorder do
+    handler_id = {__MODULE__, make_ref()}
+
+    start_supervised!(
+      Supervisor.child_spec(
+        {FeedTimingRecorder,
+         [
+           name: nil,
+           capacity: 10,
+           handler_id: handler_id
+         ]},
+        id: handler_id
+      )
+    )
   end
 
   defp generation do

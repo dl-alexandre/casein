@@ -128,6 +128,28 @@ defmodule CaseinMob.SessionClientBootTest do
     refute_receive {:__slipstream_command__, %Slipstream.Commands.OpenConnection{}}
   end
 
+  test "connection validation failures never log their raw reason" do
+    assert {:ok, socket} = SessionClient.init(test_mode?: true)
+    test_pid = self()
+
+    log =
+      capture_log([level: :warning], fn ->
+        result =
+          SessionClient.handle_cast(
+            {:configure, "http://127.0.0.1:0", "must-not-appear"},
+            socket
+          )
+
+        send(test_pid, {:configure_result, result})
+      end)
+
+    assert_receive {:configure_result, {:noreply, rejected}}
+    refute rejected.assigns.connecting?
+    refute log =~ "unparsable port value"
+    refute log =~ "NimbleOptions.ValidationError"
+    refute log =~ "must-not-appear"
+  end
+
   test "first authoritative snapshot may perform the one-time legacy origin upgrade" do
     SessionConfig.put_pairing("http://127.0.0.1:1", "stored-token")
     assert {:ok, %{origin_id: "legacy_" <> _rest}} = SessionConfig.connection()
@@ -353,9 +375,8 @@ defmodule CaseinMob.SessionClientBootTest do
         ConnectionTiming.record(invalid_context, :connect_requested)
       end)
 
-    assert_receive {:connection_stage, _measurements, invalid_metadata}
-    assert invalid_metadata.connection_generation == nil
-    assert invalid_log =~ "connection_generation=uncorrelated"
+    refute_receive {:connection_stage, _measurements, _invalid_metadata}
+    refute invalid_log =~ "mobile_feed_stage"
     refute invalid_log =~ "must-not-leak-generation"
   end
 
@@ -430,6 +451,115 @@ defmodule CaseinMob.SessionClientBootTest do
     refute_receive {:native_generic_log, _, _}
   end
 
+  test "non-monotonic timing observations are dropped without advancing the generation" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_connection_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    context = ConnectionTiming.new_context(:reconnect)
+    ConnectionTimingNativeNIFMock.configure(platform: :ios, subscriber: self())
+
+    observed_at = context.started_at + 2_000
+
+    accepted =
+      ConnectionTiming.record(context, :connect_requested,
+        observed_at: observed_at,
+        outcome: :started
+      )
+
+    assert accepted.last_at == observed_at
+
+    assert_receive {:connection_stage, %{duration_ms: 2.0}, %{stage: :connect_requested}}
+
+    assert_receive {:native_feed_stage, _, :reconnect, :connect_requested, 2.0, 2.0, :started,
+                    :none}
+
+    assert ConnectionTiming.record(accepted, :transport_connected,
+             observed_at: context.started_at + 1_000
+           ) == accepted
+
+    refute_receive {:connection_stage, _measurements, %{stage: :transport_connected}}
+    refute_receive {:native_feed_stage, _, _, :transport_connected, _, _, _, _}
+  end
+
+  test "duplicate one-shot timing stages are dropped without advancing the generation" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_connection_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    context = ConnectionTiming.new_context(:cold)
+    ConnectionTimingNativeNIFMock.configure(platform: :ios, subscriber: self())
+
+    accepted =
+      ConnectionTiming.record(context, :transport_connected,
+        observed_at: context.started_at + 2_000
+      )
+
+    assert_receive {:connection_stage, _measurements, %{stage: :transport_connected}}
+
+    assert_receive {:native_feed_stage, _, :cold, :transport_connected, 2.0, 2.0, :succeeded,
+                    :none}
+
+    assert ConnectionTiming.record(accepted, :transport_connected,
+             observed_at: context.started_at + 3_000
+           ) == accepted
+
+    refute_receive {:connection_stage, _measurements, %{stage: :transport_connected}}
+    refute_receive {:native_feed_stage, _, _, :transport_connected, _, _, _, _}
+  end
+
+  test "snapshot timing stages remain repeatable within one generation" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_connection_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    context = ConnectionTiming.new_context(:reconnect)
+    ConnectionTimingNativeNIFMock.configure(platform: :android, subscriber: self())
+
+    first =
+      ConnectionTiming.record(context, :snapshot_received,
+        observed_at: context.started_at + 1_000
+      )
+
+    second =
+      ConnectionTiming.record(first, :snapshot_received, observed_at: context.started_at + 2_000)
+
+    assert second.last_at == context.started_at + 2_000
+
+    assert_receive {:connection_stage, %{duration_ms: 1.0}, %{stage: :snapshot_received}}
+    assert_receive {:connection_stage, %{duration_ms: 1.0}, %{stage: :snapshot_received}}
+
+    assert_receive {:native_feed_stage, _, :reconnect, :snapshot_received, 1.0, 1.0, :succeeded,
+                    :none}
+
+    assert_receive {:native_feed_stage, _, :reconnect, :snapshot_received, 1.0, 2.0, :succeeded,
+                    :none}
+  end
+
   test "iOS structured timing skips envelopes rejected by the native schema" do
     context = ConnectionTiming.new_context(:reconnect)
 
@@ -442,31 +572,71 @@ defmodule CaseinMob.SessionClientBootTest do
     invalid_generation = %{context | generation: "not-a-canonical-generation"}
     observed_at = context.started_at + 1_000
 
-    assert %{last_at: ^observed_at} =
-             ConnectionTiming.record(invalid_generation, :connect_requested,
-               observed_at: observed_at
-             )
+    assert ConnectionTiming.record(invalid_generation, :connect_requested,
+             observed_at: observed_at
+           ) == invalid_generation
 
     over_native_limit = context.started_at + 2_147_483_648_000
 
-    assert %{last_at: ^over_native_limit} =
-             ConnectionTiming.record(context, :connect_requested, observed_at: over_native_limit)
+    assert ConnectionTiming.record(context, :connect_requested, observed_at: over_native_limit) ==
+             context
 
     duration_exceeds_elapsed = %{context | last_at: context.started_at - 1_000}
 
-    assert %{last_at: ^observed_at} =
-             ConnectionTiming.record(duration_exceeds_elapsed, :connect_requested,
-               observed_at: observed_at
-             )
+    assert ConnectionTiming.record(duration_exceeds_elapsed, :connect_requested,
+             observed_at: observed_at
+           ) == duration_exceeds_elapsed
+
+    malformed_seen_stages = %{context | seen_stages: [:transport_connected]}
+
+    assert ConnectionTiming.record(malformed_seen_stages, :connect_requested,
+             observed_at: observed_at
+           ) == malformed_seen_stages
+
+    missing_generation = %{context | generation: nil}
+
+    assert ConnectionTiming.record(missing_generation, :connect_requested,
+             observed_at: observed_at
+           ) == missing_generation
+
+    corrupt_seen_stages = %{context | seen_stages: %MapSet{map: :not_a_map}}
+
+    assert ConnectionTiming.record(corrupt_seen_stages, :connect_requested,
+             observed_at: observed_at
+           ) == corrupt_seen_stages
 
     refute_receive {:native_feed_stage, _, _, _, _, _, _, _}
     refute_receive {:native_generic_log, _, _}
   end
 
-  test "Android and unknown keep Logger and record options cannot inject native logging" do
+  test "Android feed telemetry uses the dedicated native stage sink" do
+    context = ConnectionTiming.new_context(:reconnect)
+    ConnectionTimingNativeNIFMock.configure(platform: :android, subscriber: self())
+
+    log =
+      capture_log([level: :info], fn ->
+        ConnectionTiming.record(context, :transport_connected,
+          observed_at: context.started_at + 4_000,
+          url: "https://sensitive.example/socket/websocket",
+          token: "super-secret",
+          raw_error: {:tls_alert, "private"}
+        )
+      end)
+
+    assert_receive {:native_feed_stage, generation, :reconnect, :transport_connected, 4.0, 4.0,
+                    :succeeded, :none}
+
+    assert generation == context.generation
+    refute_receive {:native_feed_stage, _, _, _, _, _, _, _}
+    refute_receive {:native_generic_log, _, _}
+    refute log =~ "mobile_feed_stage"
+    refute_private_timing_data(inspect({generation, log}))
+  end
+
+  test "unknown platforms keep Logger and record options cannot inject native logging" do
     test_pid = self()
 
-    for platform <- [:android, :unknown] do
+    for platform <- [:unknown] do
       context = ConnectionTiming.new_context(:reconnect)
 
       ConnectionTimingNativeNIFMock.configure(
@@ -544,7 +714,7 @@ defmodule CaseinMob.SessionClientBootTest do
     refute_receive {:native_generic_log, _, _}
   end
 
-  test "an unexpected Erlang error from the iOS native stage propagates" do
+  test "native stage sink failures never interrupt timing advancement or feed telemetry" do
     telemetry_id = {__MODULE__, self(), make_ref()}
 
     :ok =
@@ -557,38 +727,33 @@ defmodule CaseinMob.SessionClientBootTest do
 
     on_exit(fn -> :telemetry.detach(telemetry_id) end)
 
-    ConnectionTimingNativeNIFMock.configure(
-      platform: :ios,
-      subscriber: self(),
-      stage_log_result: {:erlang_error, :unexpected_app_bug}
-    )
+    for stage_log_result <- [
+          {:erlang_error, :unexpected_app_bug},
+          {:exit, :unexpected_native_exit},
+          {:ok, :unexpected_native_result}
+        ] do
+      ConnectionTimingNativeNIFMock.configure(
+        platform: :ios,
+        subscriber: self(),
+        stage_log_result: stage_log_result
+      )
 
-    context = ConnectionTiming.new_context(:cold)
+      context = ConnectionTiming.new_context(:cold)
+      observed_at = context.started_at + 1_000
 
-    error =
-      assert_raise ErlangError, fn ->
-        ConnectionTiming.record(context, :connect_requested)
-      end
+      assert %{last_at: ^observed_at} =
+               ConnectionTiming.record(context, :connect_requested, observed_at: observed_at)
 
-    assert error.original == :unexpected_app_bug
-    assert_receive {:connection_stage, _measurements, %{platform: :ios}}
-    generation = context.generation
+      assert_receive {:connection_stage, %{duration_ms: 1.0},
+                      %{platform: :ios, stage: :connect_requested}}
 
-    assert_receive {:native_feed_stage, ^generation, :cold, :connect_requested, _, _, :succeeded,
-                    :none}
+      generation = context.generation
+
+      assert_receive {:native_feed_stage, ^generation, :cold, :connect_requested, 1.0, 1.0,
+                      :succeeded, :none}
+    end
 
     refute_receive {:native_generic_log, _, _}
-  end
-
-  test "an unexpected return from the iOS native stage propagates" do
-    ConnectionTimingNativeNIFMock.configure(
-      platform: :ios,
-      stage_log_result: {:ok, :unexpected_native_result}
-    )
-
-    assert_raise MatchError, fn ->
-      ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
-    end
   end
 
   test "the exact missing iOS native stage function is a soft failure" do
@@ -613,55 +778,53 @@ defmodule CaseinMob.SessionClientBootTest do
     refute_receive {:native_generic_log, _, _}
   end
 
-  test "near-miss undefined calls from the iOS native stage propagate" do
+  test "undefined calls raised by the native stage sink do not interrupt timing" do
     missing_dependency = CaseinMob.ConnectionTimingMissingLogDependency
 
-    for {stage_log_result, expected} <- [
-          {{:undefined_function, missing_dependency, :write, []},
-           {missing_dependency, :write, 0}},
-          {{:raise_undefined_function, ConnectionTimingNativeNIFMock, :log_mobile_feed_stage, 6},
-           {ConnectionTimingNativeNIFMock, :log_mobile_feed_stage, 6}}
+    for stage_log_result <- [
+          {:undefined_function, missing_dependency, :write, []},
+          {:raise_undefined_function, ConnectionTimingNativeNIFMock, :log_mobile_feed_stage, 6}
         ] do
       ConnectionTimingNativeNIFMock.configure(
         platform: :ios,
+        subscriber: self(),
         stage_log_result: stage_log_result
       )
 
-      error =
-        assert_raise UndefinedFunctionError, fn ->
-          ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
-        end
+      context = ConnectionTiming.new_context(:cold)
+      observed_at = context.started_at + 1_000
 
-      assert {error.module, error.function, error.arity} == expected
+      assert %{last_at: ^observed_at} =
+               ConnectionTiming.record(context, :connect_requested, observed_at: observed_at)
+
+      generation = context.generation
+
+      assert_receive {:native_feed_stage, ^generation, :cold, :connect_requested, 1.0, 1.0,
+                      :succeeded, :none}
     end
   end
 
-  test "unexpected platform detection failures propagate" do
-    ConnectionTimingNativeNIFMock.configure(
-      platform_result: {:erlang_error, :unexpected_platform_bug}
-    )
-
-    erlang_error =
-      assert_raise ErlangError, fn ->
-        ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
-      end
-
-    assert erlang_error.original == :unexpected_platform_bug
-
+  test "platform detection failures fall back without interrupting timing" do
     missing_dependency = CaseinMob.ConnectionTimingMissingPlatformDependency
 
-    ConnectionTimingNativeNIFMock.configure(
-      platform_result: {:undefined_function, missing_dependency, :read, []}
-    )
+    for platform_result <- [
+          {:erlang_error, :unexpected_platform_bug},
+          {:exit, :unexpected_platform_exit},
+          {:undefined_function, missing_dependency, :read, []}
+        ] do
+      ConnectionTimingNativeNIFMock.configure(platform_result: platform_result)
+      context = ConnectionTiming.new_context(:cold)
+      observed_at = context.started_at + 1_000
 
-    undefined_error =
-      assert_raise UndefinedFunctionError, fn ->
-        ConnectionTiming.record(ConnectionTiming.new_context(:cold), :connect_requested)
-      end
+      log =
+        capture_log([level: :info], fn ->
+          assert %{last_at: ^observed_at} =
+                   ConnectionTiming.record(context, :connect_requested, observed_at: observed_at)
+        end)
 
-    assert undefined_error.module == missing_dependency
-    assert undefined_error.function == :read
-    assert undefined_error.arity == 0
+      assert log =~ "mobile_feed_stage"
+      assert log =~ "connection_generation=#{context.generation}"
+    end
   end
 
   test "not-loaded platform errors and exits fall back to the unknown Logger path" do

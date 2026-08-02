@@ -31,8 +31,7 @@ defmodule CaseinMob.SessionClient do
   use Slipstream
   require Logger
 
-  alias CaseinMob.ConnectionTiming
-  alias CaseinMob.SessionConfig
+  alias CaseinMob.{ConnectionTiming, OriginIdentity, SessionConfig}
   alias Slipstream.Socket
 
   @name __MODULE__
@@ -49,22 +48,22 @@ defmodule CaseinMob.SessionClient do
   def configure(%{url: url, token: token} = pairing)
       when is_binary(url) and is_binary(token) do
     SessionConfig.put_pairing(pairing)
-    cast({:configure, url, token})
+    cast({:configure, url, token, active_origin_id()})
   end
 
   @doc false
   @spec configure(String.t(), String.t()) :: :ok
   def configure(url, token) when is_binary(url) and is_binary(token) do
     SessionConfig.put_pairing(url, token)
-    cast({:configure, url, token})
+    cast({:configure, url, token, active_origin_id()})
   end
 
   @doc "Switch the single live connection to a trusted saved origin."
   @spec activate_origin(String.t()) :: :ok | :error
   def activate_origin(origin_id) when is_binary(origin_id) do
     case SessionConfig.activate_origin(origin_id) do
-      {:ok, %{url: active_url, token: token}} ->
-        cast({:activate_origin, active_url, token})
+      {:ok, %{origin_id: active_origin_id, url: active_url, token: token}} ->
+        cast({:activate_origin, active_url, token, active_origin_id})
 
       :error ->
         :error
@@ -76,7 +75,7 @@ defmodule CaseinMob.SessionClient do
   def activate_host(url) when is_binary(url) do
     case SessionConfig.activate_host(url) do
       {:ok, active_url, token} ->
-        cast({:configure, active_url, token})
+        cast({:configure, active_url, token, active_origin_id()})
 
       :error ->
         :error
@@ -203,7 +202,10 @@ defmodule CaseinMob.SessionClient do
       |> assign(:topic_snapshots, %{})
       |> assign(:url, nil)
       |> assign(:token, nil)
+      |> assign(:configured_origin_id, nil)
       |> assign(:connecting?, false)
+      |> assign(:reconnect_generation_required?, false)
+      |> assign(:pending_configuration, nil)
       |> assign(:test_mode?, Keyword.get(opts, :test_mode?, false))
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
@@ -217,14 +219,17 @@ defmodule CaseinMob.SessionClient do
       |> assign(:accepted_mobile_snapshot_origin_id, nil)
 
     socket =
-      case SessionConfig.pairing() do
+      case SessionConfig.connection() do
         # Start the one active transport as soon as durable credentials are
         # restored. The root screen can register watchers while DNS, migrations,
         # and rendering continue; a later watcher joins the already-opening
         # socket rather than serializing connection behind UI mount.
-        {:ok, url, token} ->
+        {:ok, %{origin_id: origin_id, url: url, token: token}} ->
           socket
-          |> restore_configuration(url, token, resolve_dns?: is_nil(boot_context))
+          |> restore_configuration(url, token,
+            origin_id: origin_id,
+            resolve_dns?: is_nil(boot_context)
+          )
           |> timing_stage(:configuration_restored)
           |> request_connect()
 
@@ -240,70 +245,97 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_connect(socket) do
-    socket =
-      socket
-      |> assign(:connecting?, false)
-      |> reset_mobile_snapshot_guard()
-      |> assign(:transport_ready?, true)
-      |> reset_join_statuses()
-      |> timing_stage(:transport_connected)
-
-    # A new transport has no server-side channel processes. Slipstream normally
-    # closes its local join metadata with the old transport, but a fast native
-    # suspend/reconnect can deliver the new connection before that close event.
-    # Resetting the local statuses here prevents a stale `:joined` marker from
-    # suppressing the authoritative joins on the new connection.
-    socket =
-      socket.assigns.subscribers
-      |> Map.keys()
-      |> Enum.reduce(socket, fn topic, acc -> join(acc, topic) end)
-
-    {:ok, socket}
-  end
-
-  @impl Slipstream
-  def handle_join(topic, reply, socket) do
-    if mobile_cards_topic?(topic) do
-      socket = timing_stage(socket, :mobile_join_replied)
-
-      case accept_mobile_snapshot(socket, reply, :join) do
-        {:ok, socket, accepted_reply, _baseline?} ->
-          socket = cache_topic_snapshot(socket, topic, accepted_reply)
-          notify_joined(socket, topic, accepted_reply)
-          {:ok, socket}
-
-        {:error, socket} ->
-          {:ok, socket}
-      end
+    if pending_configuration?(socket) do
+      # A configuration can supersede a transport while its asynchronous open
+      # is still in flight. Serialize the replacement: close this now-stale
+      # transport and wait for its ChannelClosed before opening the pending one.
+      {:ok,
+       socket
+       |> assign(:connecting?, true)
+       |> assign(:transport_ready?, false)
+       |> disconnect()}
     else
-      socket = cache_topic_snapshot(socket, topic, reply)
-      notify_joined(socket, topic, reply)
+      socket =
+        socket
+        |> assign(:connecting?, false)
+        |> assign(:reconnect_generation_required?, false)
+        |> reset_mobile_snapshot_guard()
+        |> assign(:transport_ready?, true)
+        |> reset_join_statuses()
+        |> timing_stage(:transport_connected)
+
+      # A new transport has no server-side channel processes. Slipstream normally
+      # closes its local join metadata with the old transport, but a fast native
+      # suspend/reconnect can deliver the new connection before that close event.
+      # Resetting the local statuses here prevents a stale `:joined` marker from
+      # suppressing the authoritative joins on the new connection.
+      socket =
+        socket.assigns.subscribers
+        |> Map.keys()
+        |> Enum.reduce(socket, fn topic, acc -> join(acc, topic) end)
+
       {:ok, socket}
     end
   end
 
   @impl Slipstream
+  def handle_join(topic, reply, socket) do
+    cond do
+      pending_configuration?(socket) ->
+        {:ok, socket}
+
+      mobile_cards_topic?(topic) ->
+        socket = timing_stage(socket, :mobile_join_replied)
+
+        case accept_mobile_snapshot(socket, reply, :join) do
+          {:ok, socket, accepted_reply, _baseline?} ->
+            socket = cache_topic_snapshot(socket, topic, accepted_reply)
+            notify_joined(socket, topic, accepted_reply)
+            {:ok, socket}
+
+          {:error, socket} ->
+            {:ok, socket}
+        end
+
+      true ->
+        socket = cache_topic_snapshot(socket, topic, reply)
+        notify_joined(socket, topic, reply)
+        {:ok, socket}
+    end
+  end
+
+  @impl Slipstream
   def handle_message("session:" <> _workspace_id = topic, "snapshot", payload, socket) do
-    socket = cache_topic_snapshot(socket, topic, payload)
-    notify(socket, topic, {:session_snapshot, workspace_id(topic), payload})
-    {:ok, socket}
+    if pending_configuration?(socket) do
+      {:ok, socket}
+    else
+      socket = cache_topic_snapshot(socket, topic, payload)
+      notify(socket, topic, {:session_snapshot, workspace_id(topic), payload})
+      {:ok, socket}
+    end
   end
 
   def handle_message("session:" <> _workspace_id = topic, "alert", payload, socket) do
-    notify(socket, topic, {:session_alert, workspace_id(topic), payload})
+    unless pending_configuration?(socket),
+      do: notify(socket, topic, {:session_alert, workspace_id(topic), payload})
+
     {:ok, socket}
   end
 
   def handle_message(@mobile_cards_topic = topic, "cards_snapshot", payload, socket) do
-    case accept_mobile_snapshot(socket, payload, :push) do
-      {:ok, socket, accepted_payload, baseline?} ->
-        socket = cache_topic_snapshot(socket, topic, accepted_payload)
-        notify(socket, topic, {:mobile_cards_snapshot, accepted_payload})
-        if baseline?, do: notify(socket, topic, {:mobile_cards_status, :joined})
-        {:ok, socket}
+    if pending_configuration?(socket) do
+      {:ok, socket}
+    else
+      case accept_mobile_snapshot(socket, payload, :push) do
+        {:ok, socket, accepted_payload, baseline?} ->
+          socket = cache_topic_snapshot(socket, topic, accepted_payload)
+          notify(socket, topic, {:mobile_cards_snapshot, accepted_payload})
+          if baseline?, do: notify(socket, topic, {:mobile_cards_status, :joined})
+          {:ok, socket}
 
-      {:error, socket} ->
-        {:ok, socket}
+        {:error, socket} ->
+          {:ok, socket}
+      end
     end
   end
 
@@ -348,14 +380,14 @@ defmodule CaseinMob.SessionClient do
   def handle_disconnect(reason, socket) do
     socket =
       socket
-      |> assign(:connecting?, false)
-      |> assign(:transport_ready?, false)
-      |> reset_mobile_snapshot_guard()
-      |> begin_timing_cycle(:reconnect)
       |> timing_stage(:disconnected,
         outcome: :failed,
         reason_code: :transport_disconnected
       )
+      |> assign(:connecting?, false)
+      |> assign(:reconnect_generation_required?, true)
+      |> assign(:transport_ready?, false)
+      |> reset_mobile_snapshot_guard()
 
     status = disconnected_status(reason)
 
@@ -369,14 +401,37 @@ defmodule CaseinMob.SessionClient do
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
 
-    # Reconnect with backoff while we still have credentials and watchers.
-    if socket.assigns.url && map_size(socket.assigns.subscribers) > 0 do
-      case request_reconnect(socket) do
-        {:ok, socket} -> {:ok, socket}
-        {:error, _reason} -> {:ok, socket}
-      end
-    else
-      {:ok, socket}
+    case pop_pending_configuration(socket) do
+      {%{
+         url: url,
+         token: token,
+         origin_id: origin_id,
+         force_reconnect?: force?,
+         origin_changed?: origin_changed?,
+         origin_state_cleared?: origin_state_cleared?
+       }, socket} ->
+        {:ok,
+         apply_configuration(socket, url, token, origin_id, force?,
+           origin_changed?: origin_changed?,
+           origin_state_cleared?: origin_state_cleared?
+         )}
+
+      {nil, socket} ->
+        # Reconnect with backoff while we still have credentials and watchers.
+        if reconnect_configured?(socket) and map_size(socket.assigns.subscribers) > 0 do
+          closing_socket = socket
+          reconnecting = begin_timing_cycle(socket, :reconnect)
+
+          case request_reconnect(reconnecting) do
+            {:ok, socket} -> {:ok, socket}
+            # No transport was scheduled, so the attempted generation must not
+            # become authoritative. Keep the closing generation as the last
+            # truthful context.
+            {:error, _reason} -> {:ok, closing_socket}
+          end
+        else
+          {:ok, socket}
+        end
     end
   end
 
@@ -384,17 +439,21 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_cast({:configure, url, token}, socket) do
-    {:noreply, do_configure(socket, url, token)}
+    {:noreply, do_configure(socket, url, token, nil, false)}
+  end
+
+  def handle_cast({:configure, url, token, origin_id}, socket) do
+    {:noreply, do_configure(socket, url, token, origin_id, false)}
   end
 
   def handle_cast({:activate_origin, url, token}, socket) do
+    handle_cast({:activate_origin, url, token, nil}, socket)
+  end
+
+  def handle_cast({:activate_origin, url, token, origin_id}, socket) do
     # Explicit origin resume always establishes a fresh authoritative channel,
     # even when the requested origin is already active.
-    {:noreply,
-     socket
-     |> assign(:token, nil)
-     |> begin_timing_cycle(:origin_switch)
-     |> do_configure(url, token)}
+    {:noreply, do_configure(socket, url, token, origin_id, true)}
   end
 
   def handle_cast(:clear_pairing, socket) do
@@ -422,10 +481,12 @@ defmodule CaseinMob.SessionClient do
      |> assign(:topic_snapshots, %{})
      |> assign(:url, nil)
      |> assign(:token, nil)
+     |> assign(:configured_origin_id, nil)
      |> assign(:connecting?, false)
+     |> assign(:reconnect_generation_required?, false)
+     |> assign(:pending_configuration, nil)
      |> assign(:transport_ready?, false)
      |> reset_mobile_snapshot_guard()
-     |> begin_timing_cycle(:origin_switch)
      |> assign(:push_registration_refs, %{})
      |> assign(:card_action_refs, %{})}
   end
@@ -451,7 +512,7 @@ defmodule CaseinMob.SessionClient do
   end
 
   def handle_cast({:card_action, card_id, action, payload, origin_id}, socket) do
-    if connected?(socket) and joined?(socket, @mobile_cards_topic) do
+    if outbound_ready?(socket, @mobile_cards_topic) do
       request_id = new_request_id()
 
       action_payload =
@@ -478,7 +539,7 @@ defmodule CaseinMob.SessionClient do
   end
 
   def handle_cast({:mobile_observation, params}, socket) do
-    if connected?(socket) and joined?(socket, @mobile_cards_topic) do
+    if outbound_ready?(socket, @mobile_cards_topic) do
       _ = push(socket, @mobile_cards_topic, "mobile_observation", params)
     end
 
@@ -486,7 +547,7 @@ defmodule CaseinMob.SessionClient do
   end
 
   def handle_cast({:attention_viewed, params}, socket) do
-    if connected?(socket) and joined?(socket, @mobile_cards_topic) do
+    if outbound_ready?(socket, @mobile_cards_topic) do
       _ = push(socket, @mobile_cards_topic, "attention_viewed", params)
     end
 
@@ -570,21 +631,59 @@ defmodule CaseinMob.SessionClient do
       |> assign(:subscribers, subscribers)
 
     cond do
+      pending_configuration?(socket) -> socket
       not connected?(socket) -> ensure_connection_requested(socket)
       joined?(socket, topic) -> replay_joined_topic(socket, topic, subscriber)
       true -> join(socket, topic)
     end
   end
 
-  defp do_configure(socket, url, token) do
-    changed? = socket.assigns.url != url or socket.assigns.token != token
-    origin_changed? = different_origin?(socket.assigns.url, url)
-    had_configuration? = is_binary(socket.assigns.url)
+  defp do_configure(socket, url, token, next_origin_id, force_reconnect?) do
+    {changed?, origin_changed?, _had_configuration?} =
+      configuration_change(socket, url, token, next_origin_id, force_reconnect?)
+
+    cond do
+      pending_configuration?(socket) ->
+        replace_pending_configuration(socket, url, token, next_origin_id, origin_changed?)
+
+      changed? and (connected?(socket) or socket.assigns.connecting?) ->
+        queue_configuration(
+          socket,
+          url,
+          token,
+          next_origin_id,
+          force_reconnect?,
+          origin_changed?
+        )
+
+      true ->
+        apply_configuration(socket, url, token, next_origin_id, force_reconnect?)
+    end
+  end
+
+  defp apply_configuration(socket, url, token, next_origin_id, force_reconnect?, opts \\ []) do
+    {changed?, computed_origin_changed?, had_configuration?} =
+      configuration_change(socket, url, token, next_origin_id, force_reconnect?)
+
+    origin_changed? = Keyword.get(opts, :origin_changed?, computed_origin_changed?)
+    origin_state_cleared? = Keyword.get(opts, :origin_state_cleared?, false)
+    current_origin_id = Map.get(socket.assigns, :configured_origin_id)
+
+    configured_origin_id =
+      cond do
+        is_binary(next_origin_id) and next_origin_id != "" -> next_origin_id
+        not origin_changed? -> current_origin_id
+        true -> nil
+      end
 
     socket =
       socket
-      |> maybe_disconnect_for_reconfigure(changed?)
-      |> configure_timing_cycle(changed?, origin_changed?, had_configuration?)
+      |> configure_timing_cycle(
+        changed?,
+        origin_changed?,
+        had_configuration?,
+        origin_state_cleared?
+      )
 
     dns_result = resolve_host(url)
 
@@ -593,37 +692,109 @@ defmodule CaseinMob.SessionClient do
       |> timing_stage(:dns_resolved, dns_timing_opts(dns_result))
       |> assign(:url, url)
       |> assign(:token, token)
+      |> assign(:configured_origin_id, configured_origin_id)
 
     if changed?, do: request_connect(socket), else: ensure_connection_requested(socket)
   end
 
-  defp maybe_disconnect_for_reconfigure(socket, false), do: socket
+  defp configuration_change(socket, url, token, next_origin_id, force_reconnect?) do
+    current_origin_id = Map.get(socket.assigns, :configured_origin_id)
 
-  defp maybe_disconnect_for_reconfigure(socket, true) do
-    if connected?(socket) or socket.assigns.connecting? do
-      socket
-      |> disconnect()
-      |> assign(:connecting?, false)
-    else
-      socket
-    end
+    origin_changed? =
+      different_origin?(current_origin_id, socket.assigns.url, next_origin_id, url)
+
+    changed? =
+      force_reconnect? or socket.assigns.url != url or socket.assigns.token != token or
+        origin_changed?
+
+    {changed?, origin_changed?, is_binary(socket.assigns.url)}
   end
 
-  defp configure_timing_cycle(socket, _changed?, true, _had_configuration?) do
+  defp queue_configuration(
+         socket,
+         url,
+         token,
+         origin_id,
+         force_reconnect?,
+         origin_changed?
+       ) do
+    socket = if origin_changed?, do: clear_origin_state(socket), else: socket
+
+    socket =
+      socket
+      |> assign(:pending_configuration, %{
+        url: url,
+        token: token,
+        origin_id: origin_id,
+        force_reconnect?: force_reconnect?,
+        origin_changed?: origin_changed?,
+        origin_state_cleared?: origin_changed?
+      })
+      |> assign(:connecting?, true)
+
+    if connected?(socket), do: disconnect(socket), else: socket
+  end
+
+  defp replace_pending_configuration(socket, url, token, origin_id, origin_changed?) do
+    prior = Map.fetch!(socket.assigns, :pending_configuration)
+    origin_state_cleared? = Map.get(prior, :origin_state_cleared?, false)
+
+    pending_target_changed? =
+      different_origin?(prior.origin_id, prior.url, origin_id, url)
+
+    {socket, origin_state_cleared?} =
+      if pending_target_changed? or (origin_changed? and not origin_state_cleared?) do
+        {clear_origin_state(socket), true}
+      else
+        {socket, origin_state_cleared?}
+      end
+
+    # The current transport is already closing (or its open is superseded), so
+    # even a request back to the current origin must replace the pending target
+    # and establish one fresh transport after the close callback.
+    socket
+    |> assign(:pending_configuration, %{
+      url: url,
+      token: token,
+      origin_id: origin_id,
+      force_reconnect?: true,
+      origin_changed?: origin_changed?,
+      origin_state_cleared?: origin_state_cleared?
+    })
+    |> assign(:connecting?, true)
+  end
+
+  defp pending_configuration?(socket),
+    do: is_map(Map.get(socket.assigns, :pending_configuration))
+
+  defp pop_pending_configuration(socket) do
+    pending = Map.get(socket.assigns, :pending_configuration)
+    {pending, assign(socket, :pending_configuration, nil)}
+  end
+
+  defp configure_timing_cycle(socket, _changed?, true, _had_configuration?, false) do
     socket
     |> clear_origin_state()
     |> begin_timing_cycle(:origin_switch)
   end
 
-  defp configure_timing_cycle(socket, true, false, true) do
-    case get_in(socket.assigns, [:timing_context, :cycle]) do
-      :origin_switch -> socket
-      _other_cycle -> begin_timing_cycle(socket, :reconnect)
-    end
-  end
+  defp configure_timing_cycle(socket, _changed?, true, _had_configuration?, true),
+    do: begin_timing_cycle(socket, :origin_switch)
 
-  defp configure_timing_cycle(socket, _changed?, _origin_changed?, _had_configuration?),
-    do: socket
+  defp configure_timing_cycle(socket, true, false, true, _origin_state_cleared?),
+    do: begin_timing_cycle(socket, :reconnect)
+
+  defp configure_timing_cycle(socket, true, false, false, _origin_state_cleared?),
+    do: begin_timing_cycle(socket, :cold)
+
+  defp configure_timing_cycle(
+         socket,
+         _changed?,
+         _origin_changed?,
+         _had_configuration?,
+         _origin_state_cleared?
+       ),
+       do: socket
 
   defp restore_configuration(socket, url, token, opts) do
     socket =
@@ -636,6 +807,7 @@ defmodule CaseinMob.SessionClient do
     socket
     |> assign(:url, url)
     |> assign(:token, token)
+    |> assign(:configured_origin_id, Keyword.get(opts, :origin_id))
   end
 
   # Pairing a second host can happen while the previous dashboard is still
@@ -876,16 +1048,16 @@ defmodule CaseinMob.SessionClient do
     end
   end
 
-  defp different_origin?(nil, _url), do: false
+  defp different_origin?(_current_origin_id, nil, _next_origin_id, _next_url), do: false
 
-  defp different_origin?(current_url, next_url) do
-    normalize_origin(current_url) != normalize_origin(next_url)
+  defp different_origin?(current_origin_id, _current_url, next_origin_id, _next_url)
+       when is_binary(current_origin_id) and current_origin_id != "" and
+              is_binary(next_origin_id) and next_origin_id != "" do
+    current_origin_id != next_origin_id
   end
 
-  defp normalize_origin(url) do
-    url
-    |> String.trim()
-    |> String.trim_trailing("/")
+  defp different_origin?(_current_origin_id, current_url, _next_origin_id, next_url) do
+    OriginIdentity.normalize_url(current_url) != OriginIdentity.normalize_url(next_url)
   end
 
   defp reset_join_statuses(socket) do
@@ -950,6 +1122,8 @@ defmodule CaseinMob.SessionClient do
         socket
 
       is_binary(socket.assigns.url) and is_binary(socket.assigns.token) ->
+        socket = ensure_reconnect_timing_context(socket)
+
         case request_reconnect(socket) do
           {:ok, socket} ->
             socket
@@ -975,24 +1149,42 @@ defmodule CaseinMob.SessionClient do
         assign(socket, :connecting?, true)
 
       {:error, reason} ->
-        Logger.warning("SessionClient connect failed: #{inspect(reason)}")
-        notify_all_status(socket, {:disconnected, classify_disconnect_reason(reason)})
+        reason_code = classify_disconnect_reason(reason)
+        Logger.warning("SessionClient connect failed reason_code=#{reason_code}")
+        notify_all_status(socket, {:disconnected, reason_code})
         socket
     end
   end
 
   defp request_reconnect(socket) do
     socket = refresh_reconnect_config(socket)
-    socket = timing_stage(socket, :reconnect_requested, outcome: :started)
 
     case reconnect(socket) do
-      {:ok, socket} -> {:ok, assign(socket, :connecting?, true)}
-      {:error, _reason} = error -> error
+      {:ok, socket} ->
+        {:ok,
+         socket
+         |> timing_stage(:reconnect_requested, outcome: :started)
+         |> assign(:connecting?, true)}
+
+      {:error, _reason} = error ->
+        error
     end
   end
 
+  defp reconnect_configured?(socket) do
+    is_binary(socket.assigns.url) and socket.assigns.url != "" and
+      is_binary(socket.assigns.token) and socket.assigns.token != "" and
+      not is_nil(socket.channel_config)
+  end
+
+  defp ensure_reconnect_timing_context(socket) do
+    if Map.get(socket.assigns, :reconnect_generation_required?, false),
+      do: begin_timing_cycle(socket, :reconnect),
+      else: socket
+  end
+
   defp maybe_push_registration(socket, topic, workspace_id, payload) do
-    if connected?(socket) and joined?(socket, topic) do
+    if outbound_ready?(socket, topic) do
       case push(socket, topic, "register_push", payload) do
         {:ok, ref} ->
           update_push_registration_refs(socket, ref, %{
@@ -1010,7 +1202,7 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp maybe_user_push_registration(socket, payload) do
-    if connected?(socket) and joined?(socket, @mobile_cards_topic) do
+    if outbound_ready?(socket, @mobile_cards_topic) do
       case push(socket, @mobile_cards_topic, "register_push", payload) do
         {:ok, ref} ->
           update_push_registration_refs(socket, ref, %{
@@ -1025,6 +1217,10 @@ defmodule CaseinMob.SessionClient do
     else
       socket
     end
+  end
+
+  defp outbound_ready?(socket, topic) do
+    not pending_configuration?(socket) and connected?(socket) and joined?(socket, topic)
   end
 
   defp update_push_registration_refs(socket, ref, metadata) do
@@ -1133,6 +1329,7 @@ defmodule CaseinMob.SessionClient do
     socket
     |> assign(:timing_context, ConnectionTiming.new_context(cycle))
     |> assign(:render_ready_generation, nil)
+    |> assign(:reconnect_generation_required?, false)
   end
 
   defp ensure_timing_context(socket, fallback_cycle) do
