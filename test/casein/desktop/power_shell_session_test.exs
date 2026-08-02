@@ -34,6 +34,9 @@ defmodule Casein.Desktop.PowerShellSessionTest do
     assert {:error, :invalid_pane_target} =
              GenServer.call(pid, {:capture, pane_id <> "-unknown"})
 
+    assert {:error, :invalid_pane_target} =
+             GenServer.call(pid, {:input, pane_id <> "-unknown", "Write-Output unsafe\r"})
+
     assert {:error, :invalid_terminal_size} =
              GenServer.call(pid, {:resize, pane_id, 0, 30})
 
@@ -42,6 +45,7 @@ defmodule Casein.Desktop.PowerShellSessionTest do
 
     assert :ok = GenServer.call(pid, {:set_pane_role, pane_id, "agent"})
     assert :ok = GenServer.call(pid, {:resize, pane_id, 132, 44})
+    assert :ok = GenServer.call(pid, {:input, pane_id, "Write-Output targeted\r"})
     assert %{panes: [%{role: "agent", cols: 132, rows: 44}]} = GenServer.call(pid, :topology)
 
     assert {:ok, _term, pty, :running} = GenServer.call(pid, {:subscribe, self()})
