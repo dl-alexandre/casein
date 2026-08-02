@@ -86,8 +86,12 @@ All coordinator children use argv execution with `shell=False`, new process
 groups, a reduced environment, `/dev/null` for non-protocol output, disabled
 Python bytecode, and disabled core dumps. Only the fixed SSH bridge inherits
 `SSH_AUTH_SOCK`; native source, ADB, and signed iOS lifecycle children do not.
-Cleanup is bounded TERM followed by KILL, visits every coordinator-owned group
-even if an earlier child resists cleanup, and never targets an external process.
+Cleanup is bounded TERM followed by KILL, checks the process group independently
+of its leader, visits every coordinator-owned group even if an earlier child
+exits, resists cleanup, or raises, and never targets an external process. A
+deferred interrupt or any failed group cleanup prevents bridge submission and
+publication. Successful native cleanup is authoritative and precedes the
+one-shot bridge send.
 
 ## Failure and privacy semantics
 
@@ -103,18 +107,21 @@ or an output/status object containing a generation or device identity. Standard
 error is one fixed two-field status object. The published aggregates are
 checked again for secrets and generation values before their atomic reveal.
 
-The output root is opened with `O_NOFOLLOW` and pinned by directory descriptor
-for the entire publication. Both files and the staging directory are synced and
-permissioned before rename. If the post-rename root sync fails, the complete
-directory is atomically retired before a failure is reported; if retirement
-itself is impossible, the already-visible complete artifact is reported as
-published rather than returning a false negative.
+The output root is opened with `O_NOFOLLOW` during preflight and that same
+directory descriptor remains pinned for the entire run. It is the sole base for
+staging, file creation, rename, and root sync, so replacing the pathname cannot
+redirect publication. Both files and the staging directory are synced and
+permissioned before rename. The rename is the publication commit point: if the
+post-rename root sync fails or is interrupted, the already-visible complete
+artifact is truthfully reported as published. No result claims
+`published=false` while that artifact remains visible.
 
-Keyboard interrupt and SIGTERM share the same bounded retirement path. Before
-the one-shot send, bridge stdin is closed and the fence is aborted. During an
-uncertain finish, no second payload is ever sent; the owned bridge process is
-only retired, native groups are terminated, anonymous pipes are closed, and the
-in-memory generation vault is cleared.
+Keyboard interrupt and SIGTERM share the same exhaustive bounded cleanup path.
+Before the one-shot send, cleanup visits all owned process groups before the
+interrupt is returned, bridge stdin is closed, and the fence is aborted. During
+an uncertain finish, no second payload is ever sent; the owned bridge process
+is only retired, native groups are terminated, anonymous pipes are closed, and
+the in-memory generation vault is cleared.
 
 The fake-process contract suite invokes no SSH endpoint, device, Xcode build,
 ADB command, terminal, or log source:

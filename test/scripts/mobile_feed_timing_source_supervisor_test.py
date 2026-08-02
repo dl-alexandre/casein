@@ -224,6 +224,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
             command_runner=command_runner or FakeCommandRunner([]),
             downstream_status=downstream_status,
             kill_process_group=lambda pid, sig: kills.append((pid, sig)),
+            process_group_exists=lambda _pid: process._returncode is None,
         )
         stdout = output or io.BytesIO()
         stderr = io.StringIO()
@@ -577,6 +578,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
             line_reader_factory=lambda _stream: reader,
             command_runner=runner,
             kill_process_group=lambda _pid, _signal: None,
+            process_group_exists=lambda _pid: process._returncode is None,
         )
         stdout = io.BytesIO()
         stderr = io.StringIO()
@@ -642,6 +644,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
             command_runner=runner,
             downstream_status=completion_probe,
             kill_process_group=lambda child_pid, sig: kills.append((child_pid, sig)),
+            process_group_exists=lambda _pid: process._returncode is None,
         )
         stdout = io.BytesIO()
         stderr = io.StringIO()
@@ -705,6 +708,9 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
                 command_runner=runner,
                 kill_process_group=lambda child_pid, sig, kills=kills: kills.append(
                     (child_pid, sig)
+                ),
+                process_group_exists=lambda _pid, process=process: (
+                    process._returncode is None
                 ),
             )
             stderr = io.StringIO()
@@ -998,8 +1004,32 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         already_done._returncode = 0
         self.assertEqual(
             "not_needed",
-            source_module._terminate_process_group(already_done, lambda *_args: None),
+            source_module._terminate_process_group(
+                already_done,
+                lambda *_args: None,
+                lambda _pid: False,
+            ),
         )
+
+    def test_process_group_cleanup_terminates_descendants_after_leader_exit(self):
+        process = FakeProcess(pid=989, wait_outcomes=[])
+        process._returncode = 0
+        alive = {process.pid}
+        kills = []
+
+        def kill(process_group_id, signal_value):
+            kills.append((process_group_id, signal_value))
+            alive.discard(process_group_id)
+
+        result = source_module._terminate_process_group(
+            process,
+            kill,
+            lambda process_group_id: process_group_id in alive,
+        )
+
+        self.assertEqual("terminated", result)
+        self.assertEqual([(process.pid, signal.SIGTERM)], kills)
+        self.assertEqual(set(), alive)
 
     def test_hard_line_count_byte_prefix_and_framing_bounds(self):
         android = source_module.build_plan("android", ANDROID_SERIAL)

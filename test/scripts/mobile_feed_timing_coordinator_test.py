@@ -132,16 +132,24 @@ class SyntheticSource:
         malformed=False,
         success=True,
         events=None,
+        on_start=None,
+        processes=(),
     ):
         self.cycle = cycle
         self.generations = generations
         self.malformed = malformed
         self.success = success
         self.events = events
+        self.on_start = on_start
+        self.processes = tuple(processes)
 
-    def run(self, output, _latch, _vault, _registry):
+    def run(self, output, _latch, _vault, registry):
         if self.events is not None:
             self.events.append("source")
+        if self.on_start is not None:
+            self.on_start()
+        for process in self.processes:
+            registry.add(process)
         for index in range(1, self.generations + 1):
             lines = generation_markers(index, self.cycle)
             if self.malformed and index == self.generations:
@@ -280,6 +288,28 @@ class FakeWaitProcess:
         return outcome
 
 
+class FakeProcessGroups:
+    def __init__(self, alive=(), term_survivors=(), failures=None, events=None):
+        self.alive = set(alive)
+        self.term_survivors = set(term_survivors)
+        self.failures = dict(failures or {})
+        self.events = events
+        self.signals = []
+
+    def exists(self, process_group_id):
+        return process_group_id in self.alive
+
+    def kill(self, process_group_id, signal_value):
+        self.signals.append((process_group_id, signal_value))
+        if self.events is not None:
+            self.events.append(f"cleanup:{process_group_id}:{signal_value}")
+        failure = self.failures.get((process_group_id, signal_value))
+        if failure is not None:
+            raise failure
+        if signal_value == signal.SIGKILL or process_group_id not in self.term_survivors:
+            self.alive.discard(process_group_id)
+
+
 class FakeWriter:
     def __init__(self, *, partial=False, fail=False):
         self.partial = partial
@@ -364,11 +394,9 @@ class RootFsyncFailurePublisher(coordinator.AtomicAggregatePublisher):
         raise OSError("fixed")
 
 
-class UnrecoverableRootFsyncFailurePublisher(RootFsyncFailurePublisher):
-    def _retire_revealed(
-        self, _root_fd, _directory_fd, _final_name, _retired_name
-    ):
-        return False
+class DeletionFailureAfterRevealPublisher(RootFsyncFailurePublisher):
+    def _remove_private_directory(self, *_args):
+        raise OSError("fixed")
 
 
 class InterruptingRootFsyncPublisher(coordinator.AtomicAggregatePublisher):
@@ -581,35 +609,33 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                 self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
                 self.assertFalse(any(generation(i) in path.read_text() for i in range(1, 21)))
 
-    def test_post_reveal_fsync_failure_rolls_back_or_reports_published(self):
+    def test_post_reveal_fsync_and_deletion_failure_truthfully_report_published(self):
         with tempfile.TemporaryDirectory() as root:
-            bridge = FakeBridge(server_aggregate())
-            rollback_runner = coordinator.CohortCoordinator(
-                bridge_factory=lambda _config: bridge,
-                source_factory=lambda _config: SyntheticSource(),
-                publisher=RootFsyncFailurePublisher(),
-            )
-            rolled_back = rollback_runner.run(self.config(root))
-            self.assertEqual("publication_failed", rolled_back.status)
-            self.assertFalse(rolled_back.published)
-            self.assertEqual([], list(Path(root).iterdir()))
+            for publisher in (
+                RootFsyncFailurePublisher(),
+                DeletionFailureAfterRevealPublisher(),
+            ):
+                with self.subTest(publisher=type(publisher).__name__):
+                    run_root = Path(root) / type(publisher).__name__
+                    run_root.mkdir()
+                    runner = coordinator.CohortCoordinator(
+                        bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                        source_factory=lambda _config: SyntheticSource(),
+                        publisher=publisher,
+                    )
 
-            retained_runner = coordinator.CohortCoordinator(
-                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
-                source_factory=lambda _config: SyntheticSource(),
-                publisher=UnrecoverableRootFsyncFailurePublisher(),
-            )
-            retained = retained_runner.run(self.config(root))
-            self.assertEqual("complete", retained.status)
-            self.assertTrue(retained.published)
-            cohort_dirs = list(Path(root).iterdir())
-            self.assertEqual(1, len(cohort_dirs))
-            self.assertEqual(
-                {"native.json", "server.json"},
-                {path.name for path in cohort_dirs[0].iterdir()},
-            )
+                    outcome = runner.run(self.config(run_root))
 
-    def test_interrupt_after_reveal_retires_artifact_before_reporting(self):
+                    self.assertEqual("complete", outcome.status)
+                    self.assertTrue(outcome.published)
+                    cohort_dirs = list(run_root.iterdir())
+                    self.assertEqual(1, len(cohort_dirs))
+                    self.assertEqual(
+                        {"native.json", "server.json"},
+                        {path.name for path in cohort_dirs[0].iterdir()},
+                    )
+
+    def test_interrupt_after_reveal_truthfully_reports_visible_publication(self):
         with tempfile.TemporaryDirectory() as root:
             runner = coordinator.CohortCoordinator(
                 bridge_factory=lambda _config: FakeBridge(server_aggregate()),
@@ -619,9 +645,43 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
 
             outcome = runner.run(self.config(root))
 
-            self.assertEqual("interrupted", outcome.status)
-            self.assertFalse(outcome.published)
-            self.assertEqual([], list(Path(root).iterdir()))
+            self.assertEqual("complete", outcome.status)
+            self.assertTrue(outcome.published)
+            cohort_dirs = list(Path(root).iterdir())
+            self.assertEqual(1, len(cohort_dirs))
+            self.assertEqual(
+                {"native.json", "server.json"},
+                {path.name for path in cohort_dirs[0].iterdir()},
+            )
+
+    def test_pinned_output_root_cannot_be_redirected_after_preflight(self):
+        with tempfile.TemporaryDirectory() as parent:
+            output_root = Path(parent) / "output"
+            moved_root = Path(parent) / "pinned"
+            output_root.mkdir()
+
+            def replace_output_path():
+                output_root.rename(moved_root)
+                output_root.mkdir()
+
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(server_aggregate()),
+                source_factory=lambda _config: SyntheticSource(
+                    on_start=replace_output_path
+                ),
+            )
+
+            outcome = runner.run(self.config(output_root))
+
+            self.assertEqual("complete", outcome.status)
+            self.assertTrue(outcome.published)
+            self.assertEqual([], list(output_root.iterdir()))
+            cohort_dirs = list(moved_root.iterdir())
+            self.assertEqual(1, len(cohort_dirs))
+            self.assertEqual(
+                {"native.json", "server.json"},
+                {path.name for path in cohort_dirs[0].iterdir()},
+            )
 
     def test_output_root_symlink_is_rejected_before_bridge_or_source(self):
         with tempfile.TemporaryDirectory() as root:
@@ -873,15 +933,30 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
 
     def test_scoped_cleanup_escalates_term_then_kill(self):
         process = FakeWaitProcess([subprocess.TimeoutExpired("fixed", 1), 0])
-        kills = []
+        groups = FakeProcessGroups(
+            alive=(process.pid,), term_survivors=(process.pid,)
+        )
         result = coordinator._terminate_process_group(
-            process, lambda pid, sig: kills.append((pid, sig))
+            process, groups.kill, groups.exists
         )
         self.assertEqual("killed", result)
         self.assertEqual(
             [(process.pid, signal.SIGTERM), (process.pid, signal.SIGKILL)],
-            kills,
+            groups.signals,
         )
+
+    def test_scoped_cleanup_terminates_descendants_after_leader_exit(self):
+        process = FakeWaitProcess([], pid=703)
+        process.returncode = 0
+        groups = FakeProcessGroups(alive=(process.pid,))
+
+        result = coordinator._terminate_process_group(
+            process, groups.kill, groups.exists
+        )
+
+        self.assertEqual("terminated", result)
+        self.assertEqual([(process.pid, signal.SIGTERM)], groups.signals)
+        self.assertFalse(groups.exists(process.pid))
 
     def test_registry_cleanup_does_not_short_circuit_after_a_failed_child(self):
         first = FakeWaitProcess(
@@ -892,9 +967,12 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             pid=701,
         )
         second = FakeWaitProcess([0], pid=702)
-        kills = []
+        groups = FakeProcessGroups(
+            alive=(first.pid, second.pid), term_survivors=(first.pid,)
+        )
         registry = coordinator.ScopedProcessRegistry(
-            kill_process_group=lambda pid, sig: kills.append((pid, sig))
+            kill_process_group=groups.kill,
+            process_group_exists=groups.exists,
         )
         registry.add(first)
         registry.add(second)
@@ -906,8 +984,90 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                 (701, signal.SIGKILL),
                 (702, signal.SIGTERM),
             ],
-            kills,
+            groups.signals,
         )
+
+    def test_registry_defers_base_exception_until_every_child_was_visited(self):
+        first = FakeWaitProcess([0], pid=704)
+        second = FakeWaitProcess([0], pid=705)
+        groups = FakeProcessGroups(
+            alive=(first.pid, second.pid),
+            failures={(first.pid, signal.SIGTERM): KeyboardInterrupt()},
+        )
+        registry = coordinator.ScopedProcessRegistry(
+            kill_process_group=groups.kill,
+            process_group_exists=groups.exists,
+        )
+        registry.add(first)
+        registry.add(second)
+
+        with self.assertRaises(KeyboardInterrupt):
+            registry.terminate_all()
+
+        self.assertEqual(
+            [
+                (first.pid, signal.SIGTERM),
+                (second.pid, signal.SIGTERM),
+            ],
+            groups.signals,
+        )
+        self.assertFalse(groups.exists(second.pid))
+
+    def test_native_process_groups_are_authoritatively_cleaned_before_bridge_send(self):
+        with tempfile.TemporaryDirectory() as root:
+            events = []
+            process = FakeWaitProcess([0], pid=706)
+            groups = FakeProcessGroups(alive=(process.pid,), events=events)
+            bridge = FakeBridge(server_aggregate(), events=events)
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: bridge,
+                source_factory=lambda _config: SyntheticSource(
+                    events=events, processes=(process,)
+                ),
+                registry_factory=lambda: coordinator.ScopedProcessRegistry(
+                    kill_process_group=groups.kill,
+                    process_group_exists=groups.exists,
+                ),
+            )
+
+            outcome = runner.run(self.config(root))
+
+            self.assertEqual("complete", outcome.status)
+            cleanup_event = f"cleanup:{process.pid}:{signal.SIGTERM}"
+            self.assertLess(events.index(cleanup_event), events.index("finish"))
+            self.assertEqual(1, bridge.finish_calls)
+
+    def test_native_cleanup_failure_prevents_bridge_send_and_publication(self):
+        with tempfile.TemporaryDirectory() as root:
+            process = FakeWaitProcess(
+                [
+                    subprocess.TimeoutExpired("fixed", 1),
+                    subprocess.TimeoutExpired("fixed", 1),
+                ],
+                pid=707,
+            )
+            groups = FakeProcessGroups(
+                alive=(process.pid,), term_survivors=(process.pid,)
+            )
+            bridge = FakeBridge(server_aggregate())
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: bridge,
+                source_factory=lambda _config: SyntheticSource(
+                    processes=(process,)
+                ),
+                registry_factory=lambda: coordinator.ScopedProcessRegistry(
+                    kill_process_group=groups.kill,
+                    process_group_exists=groups.exists,
+                ),
+            )
+
+            outcome = runner.run(self.config(root))
+
+            self.assertEqual("source_failed", outcome.status)
+            self.assertFalse(outcome.published)
+            self.assertEqual(0, bridge.finish_calls)
+            self.assertTrue(bridge.aborted)
+            self.assertEqual([], list(Path(root).iterdir()))
 
     def test_only_bridge_child_environment_inherits_ssh_agent_socket(self):
         with mock.patch.dict(

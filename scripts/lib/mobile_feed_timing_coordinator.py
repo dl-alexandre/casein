@@ -598,36 +598,101 @@ def _safe_bridge_child_env() -> dict[str, str]:
 def _terminate_process_group(
     process: ProcessLike,
     kill_process_group: Callable[[int, int], None] = os.killpg,
+    process_group_exists: Callable[[int], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> str:
-    if process.poll() is not None:
-        return "not_needed"
+    group_exists = process_group_exists or _process_group_exists
+    leader_running = process.poll() is None
+    if not group_exists(process.pid):
+        return "failed" if leader_running else "not_needed"
+
     try:
         kill_process_group(process.pid, signal.SIGTERM)
-    except (OSError, ProcessLookupError):
+    except ProcessLookupError:
+        return "failed" if process.poll() is None else "not_needed"
+    except OSError:
         pass
-    try:
-        process.wait(timeout=PROCESS_TERM_TIMEOUT_SECONDS)
+
+    leader_term_timed_out = False
+    if leader_running:
+        try:
+            process.wait(timeout=PROCESS_TERM_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            leader_term_timed_out = True
+    if not leader_term_timed_out and _wait_for_process_group_exit(
+        process.pid,
+        PROCESS_TERM_TIMEOUT_SECONDS,
+        group_exists,
+        monotonic,
+        sleeper,
+    ):
         return "terminated"
-    except subprocess.TimeoutExpired:
-        pass
+
     try:
         kill_process_group(process.pid, signal.SIGKILL)
-    except (OSError, ProcessLookupError):
+    except ProcessLookupError:
+        if not group_exists(process.pid) and process.poll() is not None:
+            return "killed"
+    except OSError:
         pass
-    try:
-        process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
-        return "killed"
-    except subprocess.TimeoutExpired:
+
+    leader_kill_timed_out = False
+    if process.poll() is None:
+        try:
+            process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            leader_kill_timed_out = True
+    group_gone = _wait_for_process_group_exit(
+        process.pid,
+        PROCESS_KILL_TIMEOUT_SECONDS,
+        group_exists,
+        monotonic,
+        sleeper,
+    )
+    if leader_kill_timed_out or not group_gone or process.poll() is None:
         return "failed"
+    return "killed"
+
+
+def _process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _wait_for_process_group_exit(
+    process_group_id: int,
+    timeout: float,
+    process_group_exists: Callable[[int], bool],
+    monotonic: Callable[[], float],
+    sleeper: Callable[[float], None],
+) -> bool:
+    deadline = monotonic() + timeout
+    while process_group_exists(process_group_id):
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return False
+        sleeper(min(0.05, remaining))
+    return True
 
 
 class ScopedProcessRegistry:
     """Track only coordinator-spawned process groups for bounded cleanup."""
 
-    def __init__(self, kill_process_group: Callable[[int, int], None] = os.killpg):
+    def __init__(
+        self,
+        kill_process_group: Callable[[int, int], None] = os.killpg,
+        process_group_exists: Callable[[int], bool] = _process_group_exists,
+    ):
         self._lock = threading.Lock()
         self._processes: list[ProcessLike] = []
         self._kill_process_group = kill_process_group
+        self._process_group_exists = process_group_exists
 
     def add(self, process: ProcessLike) -> None:
         with self._lock:
@@ -637,12 +702,25 @@ class ScopedProcessRegistry:
         with self._lock:
             processes = list(self._processes)
         successful = True
+        interruption: KeyboardInterrupt | None = None
         for process in processes:
-            if (
-                _terminate_process_group(process, self._kill_process_group)
-                == "failed"
-            ):
+            try:
+                cleanup = _terminate_process_group(
+                    process,
+                    self._kill_process_group,
+                    self._process_group_exists,
+                )
+            except KeyboardInterrupt as error:
+                interruption = interruption or error
                 successful = False
+                continue
+            except BaseException:
+                successful = False
+                continue
+            if cleanup == "failed":
+                successful = False
+        if interruption is not None:
+            raise interruption
         return successful
 
     def __repr__(self) -> str:
@@ -913,6 +991,7 @@ class BridgeSession:
         selector_factory: Callable[[], selectors.BaseSelector] = selectors.DefaultSelector,
         read_fn: Callable[[int, int], bytes] = os.read,
         kill_process_group: Callable[[int, int], None] = os.killpg,
+        process_group_exists: Callable[[int], bool] = _process_group_exists,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._argv = build_bridge_argv(platform, cycle)
@@ -920,6 +999,7 @@ class BridgeSession:
         self._selector_factory = selector_factory
         self._read_fn = read_fn
         self._kill_process_group = kill_process_group
+        self._process_group_exists = process_group_exists
         self._monotonic = monotonic
         self._process: ProcessLike | None = None
         self._ready = False
@@ -1136,7 +1216,11 @@ class BridgeSession:
     def _terminate(self) -> None:
         process = self._process
         if process is not None:
-            _terminate_process_group(process, self._kill_process_group)
+            _terminate_process_group(
+                process,
+                self._kill_process_group,
+                self._process_group_exists,
+            )
 
     def __repr__(self) -> str:
         state = "new"
@@ -1392,20 +1476,42 @@ def validate_native_aggregate(
     return value
 
 
+@dataclass(slots=True, repr=False)
+class PinnedOutputRoot:
+    descriptor: int
+    closed: bool = False
+
+    def fileno(self) -> int:
+        if self.closed:
+            raise CoordinatorFailure("publication_failed")
+        return self.descriptor
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        _close_fd(self.descriptor)
+        self.closed = True
+
+    def __repr__(self) -> str:
+        return f"PinnedOutputRoot(closed={self.closed})"
+
+
 class AtomicAggregatePublisher:
     """Atomically reveal one new private directory containing two aggregates."""
 
-    def preflight(self, output_root: Path) -> None:
+    def preflight(self, output_root: Path) -> PinnedOutputRoot:
         descriptor = self._open_root(output_root)
         try:
             if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
                 raise CoordinatorFailure("publication_failed")
-        finally:
+            return PinnedOutputRoot(descriptor)
+        except BaseException:
             _close_fd(descriptor)
+            raise
 
     def publish(
         self,
-        output_root: Path,
+        output_root: PinnedOutputRoot,
         native: Mapping[str, object],
         server: Mapping[str, object],
         vault: TerminalGenerationVault,
@@ -1413,7 +1519,7 @@ class AtomicAggregatePublisher:
         token = secrets.token_hex(12)
         staging = f".casein-mobile-feed-timing-{token}.tmp"
         final = f"casein-mobile-feed-timing-{token}"
-        root_fd = self._open_root(output_root)
+        root_fd = output_root.fileno()
         staging_fd: int | None = None
         created = False
         revealed = False
@@ -1442,32 +1548,22 @@ class AtomicAggregatePublisher:
             revealed = True
             try:
                 self._fsync_root(root_fd)
-            except OSError:
-                if self._retire_revealed(
-                    root_fd, staging_fd, final, staging
-                ):
-                    revealed = False
-                    raise CoordinatorFailure("publication_failed") from None
-                # The private aggregate is already atomically visible. If an
-                # adversarial filesystem refuses both the durability sync and
-                # rollback, reporting published=false would be untrue.
+            except BaseException:
+                # Rename is the publication commit point. Once a complete,
+                # private artifact is visible, a later durability-sync or
+                # interruption cannot truthfully be reported as unpublished.
+                return
         except KeyboardInterrupt:
+            if revealed:
+                return
             if created:
                 self._remove_private_directory(root_fd, staging_fd, staging)
-            if revealed:
-                if not self._retire_revealed(
-                    root_fd, staging_fd, final, staging
-                ):
-                    return
             raise
         except Exception:
+            if revealed:
+                return
             if created:
                 self._remove_private_directory(root_fd, staging_fd, staging)
-            if revealed:
-                if not self._retire_revealed(
-                    root_fd, staging_fd, final, staging
-                ):
-                    return
             raise CoordinatorFailure("publication_failed") from None
         finally:
             if staging_fd is not None:
@@ -1475,10 +1571,6 @@ class AtomicAggregatePublisher:
                     os.close(staging_fd)
                 except OSError:
                     pass
-            try:
-                os.close(root_fd)
-            except OSError:
-                pass
 
     def _write_one(
         self,
@@ -1565,26 +1657,6 @@ class AtomicAggregatePublisher:
                 except OSError:
                     pass
 
-    def _retire_revealed(
-        self,
-        root_fd: int,
-        directory_fd: int,
-        final_name: str,
-        retired_name: str,
-    ) -> bool:
-        try:
-            os.replace(
-                final_name,
-                retired_name,
-                src_dir_fd=root_fd,
-                dst_dir_fd=root_fd,
-            )
-        except OSError:
-            return False
-        self._remove_private_directory(root_fd, directory_fd, retired_name)
-        return True
-
-
 class CohortCoordinator:
     def __init__(
         self,
@@ -1592,12 +1664,14 @@ class CohortCoordinator:
         bridge_factory: Callable[[CohortConfig], BridgeLike] | None = None,
         source_factory: Callable[[CohortConfig], SourceDriver] | None = None,
         publisher: AtomicAggregatePublisher | None = None,
+        registry_factory: Callable[[], ScopedProcessRegistry] | None = None,
     ) -> None:
         self._bridge_factory = bridge_factory or (
             lambda config: BridgeSession(config.platform, config.cycle)
         )
         self._source_factory = source_factory or PhysicalSourceDriver
         self._publisher = publisher or AtomicAggregatePublisher()
+        self._registry_factory = registry_factory or ScopedProcessRegistry
 
     def run(self, config: CohortConfig) -> RunOutcome:
         try:
@@ -1609,18 +1683,20 @@ class CohortCoordinator:
 
         latch = CompletionLatch()
         vault = TerminalGenerationVault()
-        registry = ScopedProcessRegistry()
+        registry = self._registry_factory()
         bridge: BridgeLike | None = None
         reader: BinaryIO | None = None
         writer: BinaryIO | None = None
         source_thread: threading.Thread | None = None
+        output_root: PinnedOutputRoot | None = None
         finish_attempted = False
         finish_completed = False
+        native_cleanup_complete = False
         generation_payload = b""
 
         try:
             try:
-                self._publisher.preflight(config.output_root)
+                output_root = self._publisher.preflight(config.output_root)
             except Exception:
                 raise CoordinatorFailure("publication_failed") from None
 
@@ -1707,6 +1783,10 @@ class CohortCoordinator:
             ):
                 raise CoordinatorFailure("source_failed")
 
+            if not registry.terminate_all():
+                raise CoordinatorFailure("source_failed")
+            native_cleanup_complete = True
+
             try:
                 bridge.assert_waiting()
             except Exception:
@@ -1721,7 +1801,7 @@ class CohortCoordinator:
             )
             matched = bool(server["cohort_match"])
             latch.mark_cohort(matched=matched)
-            self._publisher.publish(config.output_root, native, server, vault)
+            self._publisher.publish(output_root, native, server, vault)
             return _outcome("complete" if matched else "cohort_mismatch", True)
         except KeyboardInterrupt:
             if latch.cohort_state == "pending" and finish_attempted:
@@ -1741,10 +1821,14 @@ class CohortCoordinator:
             )
             return _outcome(status, False)
         finally:
-            try:
-                registry.terminate_all()
-            except BaseException:
-                pass
+            cleanup_interrupted = False
+            if not native_cleanup_complete:
+                try:
+                    registry.terminate_all()
+                except KeyboardInterrupt:
+                    cleanup_interrupted = True
+                except BaseException:
+                    pass
             _close_stream(reader)
             _close_stream(writer)
             if source_thread is not None and source_thread.is_alive():
@@ -1759,6 +1843,10 @@ class CohortCoordinator:
                 vault.clear()
             except BaseException:
                 pass
+            if output_root is not None:
+                output_root.close()
+            if cleanup_interrupted:
+                return _outcome("interrupted", False)
 
     def __repr__(self) -> str:
         return "CohortCoordinator(bridge=<factory>, source=<factory>, publisher=<private>)"
