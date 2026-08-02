@@ -527,7 +527,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
          @generation_count <- aggregate["expected_generation_count"],
          true <- valid_generation_set?(generations),
          {:ok, encoded} <- Jason.encode(aggregate),
-         true <- byte_size(encoded) <= @maximum_encoded_aggregate_bytes,
+         true <- encoded_aggregate_size_valid?(encoded),
          false <- String.contains?(encoded, cookie),
          false <- Enum.any?(generations, &String.contains?(encoded, &1)) do
       {:ok, encoded}
@@ -539,20 +539,29 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
   def encode_aggregate(_aggregate, _generations, _cookie, _platform, _cycle),
     do: {:error, :invalid_aggregate}
 
+  @doc false
+  @spec encoded_aggregate_size_valid?(term()) :: boolean()
+  def encoded_aggregate_size_valid?(encoded) when is_binary(encoded),
+    do: byte_size(encoded) <= @maximum_encoded_aggregate_bytes
+
+  def encoded_aggregate_size_valid?(_encoded), do: false
+
   defp aggregate_schema_valid?(aggregate) do
-    exact_keys?(aggregate, @aggregate_keys) and
-      aggregate["schema_version"] == 1 and
-      aggregate["component"] == "server" and
-      aggregate["platform"] in ["ios", "android"] and
-      aggregate["cycle"] in ["cold", "reconnect", "origin_switch"] and
-      aggregate["expected_generation_count"] == @generation_count and
-      bounded_count?(aggregate["observed_generation_count"]) and
-      is_boolean(aggregate["cohort_match"]) and
-      cohort_flag_consistent?(aggregate) and
-      stage_timings_valid?(aggregate["stage_timings"]) and
-      fixed_counts_valid?(aggregate["outcome_counts"], @outcome_names) and
-      fixed_counts_valid?(aggregate["reason_counts"], @reason_names) and
+    Enum.all?([
+      exact_keys?(aggregate, @aggregate_keys),
+      aggregate["schema_version"] == 1,
+      aggregate["component"] == "server",
+      aggregate["platform"] in ["ios", "android"],
+      aggregate["cycle"] in ["cold", "reconnect", "origin_switch"],
+      aggregate["expected_generation_count"] == @generation_count,
+      bounded_count?(aggregate["observed_generation_count"]),
+      is_boolean(aggregate["cohort_match"]),
+      cohort_flag_consistent?(aggregate),
+      stage_timings_valid?(aggregate["stage_timings"]),
+      fixed_counts_valid?(aggregate["outcome_counts"], @outcome_names),
+      fixed_counts_valid?(aggregate["reason_counts"], @reason_names),
       optional_measurements_valid?(aggregate["optional_measurements"])
+    ])
   end
 
   defp exact_keys?(map, expected) when is_map(map) do
@@ -578,15 +587,17 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
   defp stage_timing_valid?(timing) do
     exact_keys?(timing, @stage_timing_keys) and
       bounded_count?(timing["sample_count"]) and
-      duration_summary_valid?(timing["duration_ms"]) and
-      duration_summary_valid?(timing["elapsed_ms"])
+      duration_summary_valid?(timing["duration_ms"], timing["sample_count"]) and
+      duration_summary_valid?(timing["elapsed_ms"], timing["sample_count"])
   end
 
-  defp duration_summary_valid?(summary) do
+  defp duration_summary_valid?(summary, sample_count) do
     exact_keys?(summary, @summary_keys) and
-      Enum.all?(summary, fn {_key, value} ->
-        is_nil(value) or bounded_number?(value, @maximum_duration_ms)
-      end)
+      summary_values_valid?(
+        summary,
+        sample_count,
+        &bounded_number?(&1, @maximum_duration_ms)
+      )
   end
 
   defp fixed_counts_valid?(counts, expected_names) do
@@ -614,10 +625,9 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
 
   defp optional_summary_valid?(summary, maximum) do
     exact_keys?(summary, @optional_summary_keys) and
-      bounded_count?(summary["sample_count"]) and
-      Enum.all?(~w(min p50 p95 max), fn key ->
-        value = summary[key]
-        is_nil(value) or (is_integer(value) and value >= 0 and value <= maximum)
+      positive_bounded_count?(summary["sample_count"]) and
+      summary_values_valid?(summary, summary["sample_count"], fn value ->
+        is_integer(value) and value >= 0 and value <= maximum
       end)
   end
 
@@ -625,9 +635,47 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
     is_integer(count) and count >= 0 and count <= @maximum_aggregate_records
   end
 
+  defp positive_bounded_count?(count), do: bounded_count?(count) and count > 0
+
   defp bounded_number?(number, maximum) do
     is_number(number) and number >= 0 and number <= maximum
   end
+
+  defp summary_values_valid?(summary, 0, _validator) do
+    Enum.all?(~w(min p50 p95 max), &is_nil(summary[&1]))
+  end
+
+  defp summary_values_valid?(summary, sample_count, validator)
+       when is_integer(sample_count) and sample_count > 0 and is_function(validator, 1) do
+    minimum = summary["min"]
+    p50 = summary["p50"]
+    p95 = summary["p95"]
+    maximum = summary["max"]
+
+    Enum.all?([
+      validator.(minimum),
+      validator.(p50),
+      validator.(maximum),
+      p95_valid?(p95, sample_count, validator),
+      summary_order_valid?(minimum, p50, p95, maximum)
+    ])
+  end
+
+  defp summary_values_valid?(_summary, _sample_count, _validator), do: false
+
+  defp p95_valid?(nil, sample_count, _validator) when sample_count < 10, do: true
+  defp p95_valid?(value, sample_count, validator) when sample_count >= 10, do: validator.(value)
+  defp p95_valid?(_value, _sample_count, _validator), do: false
+
+  defp summary_order_valid?(minimum, p50, nil, maximum)
+       when is_number(minimum) and is_number(p50) and is_number(maximum),
+       do: minimum <= p50 and p50 <= maximum
+
+  defp summary_order_valid?(minimum, p50, p95, maximum)
+       when is_number(minimum) and is_number(p50) and is_number(p95) and is_number(maximum),
+       do: minimum <= p50 and p50 <= p95 and p95 <= maximum
+
+  defp summary_order_valid?(_minimum, _p50, _p95, _maximum), do: false
 
   defp valid_generation_set?(generations) do
     valid_generation_set?(generations, MapSet.new(), 0)

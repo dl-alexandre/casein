@@ -143,6 +143,31 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
     refute encoded =~ cookie
     refute Enum.any?(generations, &String.contains?(encoded, &1))
 
+    populated_aggregate =
+      aggregate
+      |> put_in(["stage_timings", "token_verified", "sample_count"], 10)
+      |> put_in(
+        ["stage_timings", "token_verified", "duration_ms"],
+        %{"min" => 1, "p50" => 2, "p95" => 4, "max" => 5}
+      )
+      |> put_in(
+        ["stage_timings", "token_verified", "elapsed_ms"],
+        %{"min" => 6, "p50" => 7, "p95" => 9, "max" => 10}
+      )
+      |> put_in(
+        ["optional_measurements", "card_count"],
+        %{"sample_count" => 10, "min" => 0, "p50" => 1, "p95" => 2, "max" => 3}
+      )
+
+    assert {:ok, _encoded} =
+             FeedTimingSoakBridge.encode_aggregate(
+               populated_aggregate,
+               generations,
+               cookie,
+               :ios,
+               :cold
+             )
+
     leaking_id =
       put_in(
         aggregate["stage_timings"]["token_verified"]["duration_ms"]["p50"],
@@ -157,15 +182,54 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
         "privacy-regression-sentinel"
       )
 
+    malformed_numeric_values =
+      for value <- [-1, true, :nan, "NaN", 86_400_001] do
+        put_in(
+          populated_aggregate["stage_timings"]["token_verified"]["duration_ms"]["max"],
+          value
+        )
+      end
+
     forbidden_nested_key =
       update_in(aggregate["stage_timings"]["token_verified"], fn timing ->
         Map.put(timing, "unexpected", 1)
       end)
 
-    malformed_number =
+    inconsistent_empty_summary =
       put_in(
         aggregate["stage_timings"]["token_verified"]["duration_ms"]["max"],
-        86_400_001
+        1
+      )
+
+    unordered_summary =
+      populated_aggregate
+      |> put_in(
+        ["stage_timings", "token_verified", "duration_ms"],
+        %{"min" => 3, "p50" => 2, "p95" => 4, "max" => 5}
+      )
+
+    missing_p95 =
+      put_in(
+        populated_aggregate["stage_timings"]["token_verified"]["duration_ms"]["p95"],
+        nil
+      )
+
+    premature_p95 =
+      aggregate
+      |> put_in(["stage_timings", "token_verified", "sample_count"], 1)
+      |> put_in(
+        ["stage_timings", "token_verified", "duration_ms"],
+        %{"min" => 1, "p50" => 1, "p95" => 1, "max" => 1}
+      )
+      |> put_in(
+        ["stage_timings", "token_verified", "elapsed_ms"],
+        %{"min" => 1, "p50" => 1, "p95" => nil, "max" => 1}
+      )
+
+    empty_optional_summary =
+      put_in(
+        aggregate["optional_measurements"]["card_count"],
+        %{"sample_count" => 0, "min" => nil, "p50" => nil, "p95" => nil, "max" => nil}
       )
 
     oversized_nested_map =
@@ -173,17 +237,24 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
         Map.put(measurements, String.duplicate("x", 70_000), %{})
       end)
 
-    for rejected <- [
-          leaking_id,
-          leaking_cookie,
-          arbitrary_nested_text,
-          forbidden_nested_key,
-          malformed_number,
-          oversized_nested_map,
-          %{aggregate | "platform" => "android"},
-          %{aggregate | "cycle" => "reconnect"},
-          Map.put(aggregate, "unexpected", true)
-        ] do
+    rejected_aggregates =
+      [
+        leaking_id,
+        leaking_cookie,
+        arbitrary_nested_text,
+        forbidden_nested_key,
+        inconsistent_empty_summary,
+        unordered_summary,
+        missing_p95,
+        premature_p95,
+        empty_optional_summary,
+        oversized_nested_map,
+        %{aggregate | "platform" => "android"},
+        %{aggregate | "cycle" => "reconnect"},
+        Map.put(aggregate, "unexpected", true)
+      ] ++ malformed_numeric_values
+
+    for rejected <- rejected_aggregates do
       assert {:error, :invalid_aggregate} =
                FeedTimingSoakBridge.encode_aggregate(
                  rejected,
@@ -193,6 +264,10 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
                  :cold
                )
     end
+
+    refute FeedTimingSoakBridge.encoded_aggregate_size_valid?(:not_binary)
+    assert FeedTimingSoakBridge.encoded_aggregate_size_valid?(String.duplicate("x", 65_536))
+    refute FeedTimingSoakBridge.encoded_aggregate_size_valid?(String.duplicate("x", 65_537))
   end
 
   test "target parser accepts only the canonical current-socket instance shape and safe host" do
