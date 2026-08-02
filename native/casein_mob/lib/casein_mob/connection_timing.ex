@@ -47,6 +47,8 @@ defmodule CaseinMob.ConnectionTiming do
     :database_ready,
     :root_started,
     :connect_requested,
+    :tcp_connect_started,
+    :tcp_connected,
     :transport_connected,
     :mobile_join_replied,
     :snapshot_received,

@@ -27,7 +27,7 @@ defmodule CaseinMob.MixProject do
        ref: "50724d53cca71f1f45124b554d53c6f438973b04",
        override: true},
       {:mob,
-       github: "dl-alexandre/mob", ref: "f8e296a4bf621bfb68d320eec9b69b0cb7636c8c", override: true},
+       github: "dl-alexandre/mob", ref: "dd6ab6159aca279fa04bd8c4fd1bd5b48a27c621", override: true},
       # GenericJam/mob_dev#24 supplies per-ABI external static archives for
       # project NIFs that resolve extern symbols at the native app link.
       {:mob_dev, "~> 0.6.23", only: :dev, runtime: false, override: true},

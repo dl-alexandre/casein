@@ -225,6 +225,7 @@ defmodule CaseinMob.SessionClientTest do
 
     closing_generation = socket.assigns.timing_context.generation
     assert socket.assigns.connecting?
+    assert socket.channel_config.mint_opts == [protocols: [:http1]]
 
     assert {:ok, reconnecting} = SessionClient.handle_disconnect(:closed, socket)
 
@@ -232,6 +233,7 @@ defmodule CaseinMob.SessionClientTest do
     refute next_generation == closing_generation
     assert reconnecting.assigns.timing_context.cycle == :reconnect
     assert reconnecting.assigns.connecting?
+    assert reconnecting.channel_config.mint_opts == [protocols: [:http1]]
 
     assert_receive {:feed_stage, _measurements,
                     %{
@@ -246,6 +248,97 @@ defmodule CaseinMob.SessionClientTest do
                       cycle: :reconnect,
                       connection_generation: ^next_generation
                     }}
+  end
+
+  test "secure reconnect refreshes the TCP timing target to the new generation" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:test_mode?, true)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast(
+               {:configure, "https://127.0.0.1:1", "token"},
+               socket
+             )
+
+    initial_generation = socket.assigns.timing_context.generation
+    initial_transport_opts = socket.channel_config.mint_opts[:transport_opts]
+
+    assert initial_transport_opts[:cb_info] ==
+             {CaseinMob.TimedTCP, :tcp, :tcp_closed, :tcp_error, :tcp_passive}
+
+    assert initial_transport_opts[:casein_timing] == {self(), initial_generation}
+
+    assert {:ok, reconnecting} = SessionClient.handle_disconnect(:closed, socket)
+    reconnect_generation = reconnecting.assigns.timing_context.generation
+    refute reconnect_generation == initial_generation
+
+    reconnect_transport_opts = reconnecting.channel_config.mint_opts[:transport_opts]
+    assert reconnect_transport_opts[:casein_timing] == {self(), reconnect_generation}
+
+    query = URI.decode_query(reconnecting.channel_config.uri.query)
+    assert query["connection_generation"] == reconnect_generation
+  end
+
+  test "only current-generation TCP observations advance timing" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_feed_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    socket = socket_with_subscribers(%{})
+    generation = socket.assigns.timing_context.generation
+    started_at = System.monotonic_time()
+
+    assert {:noreply, socket} =
+             SessionClient.handle_info(
+               {:casein_tcp_timing, generation, :tcp_connect_started, started_at},
+               socket
+             )
+
+    assert_receive {:feed_stage, _measurements,
+                    %{
+                      stage: :tcp_connect_started,
+                      outcome: :started,
+                      connection_generation: ^generation
+                    }}
+
+    connected_at = System.monotonic_time()
+
+    assert {:noreply, socket} =
+             SessionClient.handle_info(
+               {:casein_tcp_timing, generation, :tcp_connected, connected_at},
+               socket
+             )
+
+    assert_receive {:feed_stage, _measurements,
+                    %{
+                      stage: :tcp_connected,
+                      outcome: :succeeded,
+                      connection_generation: ^generation
+                    }}
+
+    assert {:noreply, ^socket} =
+             SessionClient.handle_info(
+               {:casein_tcp_timing, "AAAAAAAAAAAAAAAAAAAAAA", :tcp_connected,
+                System.monotonic_time()},
+               socket
+             )
+
+    assert {:noreply, _socket} =
+             SessionClient.handle_info(
+               {:casein_tcp_timing, generation, :tcp_connected, System.monotonic_time()},
+               socket
+             )
+
+    refute_receive {:feed_stage, _measurements, %{stage: :tcp_connected}}
   end
 
   test "mobile card stream reports disconnected then joined after recovery" do

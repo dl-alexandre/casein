@@ -601,6 +601,20 @@ defmodule CaseinMob.SessionClient do
     end
   end
 
+  def handle_info({:casein_tcp_timing, generation, stage, observed_at}, socket)
+      when stage in [:tcp_connect_started, :tcp_connected] and is_integer(observed_at) do
+    current_generation = get_in(socket.assigns, [:timing_context, :generation])
+
+    if generation == current_generation do
+      outcome = if stage == :tcp_connect_started, do: :started, else: :succeeded
+
+      observed_at = System.convert_time_unit(observed_at, :native, :microsecond)
+      {:noreply, timing_stage(socket, stage, observed_at: observed_at, outcome: outcome)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   # ── Internals ───────────────────────────────────────────────────────────────
@@ -1313,7 +1327,7 @@ defmodule CaseinMob.SessionClient do
 
     opts = [
       uri: uri,
-      mint_opts: mint_opts(uri)
+      mint_opts: mint_opts(uri, socket.assigns.timing_context)
     ]
 
     if Map.get(socket.assigns, :test_mode?, false) do
@@ -1359,19 +1373,37 @@ defmodule CaseinMob.SessionClient do
         socket.assigns.timing_context
       )
 
-    %{socket | channel_config: %{socket.channel_config | uri: URI.parse(uri)}}
+    %{
+      socket
+      | channel_config: %{
+          socket.channel_config
+          | uri: URI.parse(uri),
+            mint_opts: mint_opts(uri, socket.assigns.timing_context)
+        }
+    }
   end
 
-  defp mint_opts(uri) do
+  defp mint_opts(uri, timing_context) do
     opts = [protocols: [:http1]]
 
     if URI.parse(uri).scheme == "wss" do
-      case bundled_cacertfile() do
-        {:ok, path} -> Keyword.put(opts, :transport_opts, cacertfile: path)
-        :error -> opts
-      end
+      transport_opts =
+        [
+          cb_info: {CaseinMob.TimedTCP, :tcp, :tcp_closed, :tcp_error, :tcp_passive},
+          casein_timing: {self(), timing_context.generation}
+        ]
+        |> maybe_put_cacertfile()
+
+      Keyword.put(opts, :transport_opts, transport_opts)
     else
       opts
+    end
+  end
+
+  defp maybe_put_cacertfile(transport_opts) do
+    case bundled_cacertfile() do
+      {:ok, path} -> Keyword.put(transport_opts, :cacertfile, path)
+      :error -> transport_opts
     end
   end
 
