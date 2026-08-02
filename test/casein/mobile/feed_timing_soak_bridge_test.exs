@@ -145,15 +145,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
 
     populated_aggregate =
       aggregate
-      |> put_in(["stage_timings", "token_verified", "sample_count"], 10)
-      |> put_in(
-        ["stage_timings", "token_verified", "duration_ms"],
-        %{"min" => 1, "p50" => 2, "p95" => 4, "max" => 5}
-      )
-      |> put_in(
-        ["stage_timings", "token_verified", "elapsed_ms"],
-        %{"min" => 6, "p50" => 7, "p95" => 9, "max" => 10}
-      )
+      |> aggregate_with_records(10, false)
       |> put_in(
         ["optional_measurements", "card_count"],
         %{"sample_count" => 10, "min" => 0, "p50" => 1, "p95" => 2, "max" => 3}
@@ -216,14 +208,10 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
 
     premature_p95 =
       aggregate
-      |> put_in(["stage_timings", "token_verified", "sample_count"], 1)
+      |> aggregate_with_records(1, false)
       |> put_in(
         ["stage_timings", "token_verified", "duration_ms"],
         %{"min" => 1, "p50" => 1, "p95" => 1, "max" => 1}
-      )
-      |> put_in(
-        ["stage_timings", "token_verified", "elapsed_ms"],
-        %{"min" => 1, "p50" => 1, "p95" => nil, "max" => 1}
       )
 
     empty_optional_summary =
@@ -268,6 +256,67 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
     refute FeedTimingSoakBridge.encoded_aggregate_size_valid?(:not_binary)
     assert FeedTimingSoakBridge.encoded_aggregate_size_valid?(String.duplicate("x", 65_536))
     refute FeedTimingSoakBridge.encoded_aggregate_size_valid?(String.duplicate("x", 65_537))
+  end
+
+  test "aggregate encoder enforces exact cross-map matched-record invariants" do
+    generations = generations(61..80)
+    cookie = String.duplicate("c9", 24)
+    empty_partial = aggregate_fixture()
+
+    positive_partial =
+      empty_partial
+      |> aggregate_with_records(1, false)
+      |> put_in(
+        ["optional_measurements", "card_count"],
+        %{"sample_count" => 1, "min" => 1, "p50" => 1, "p95" => nil, "max" => 1}
+      )
+
+    positive_match =
+      empty_partial
+      |> aggregate_with_records(20, true)
+      |> put_in(
+        ["optional_measurements", "card_count"],
+        %{"sample_count" => 20, "min" => 1, "p50" => 2, "p95" => 3, "max" => 4}
+      )
+
+    for accepted <- [empty_partial, positive_partial, positive_match] do
+      assert {:ok, _encoded} =
+               FeedTimingSoakBridge.encode_aggregate(
+                 accepted,
+                 generations,
+                 cookie,
+                 :ios,
+                 :cold
+               )
+    end
+
+    stage_outcome_mismatch =
+      put_in(positive_match["stage_timings"]["token_verified"]["sample_count"], 19)
+
+    outcome_reason_mismatch = put_in(positive_match["outcome_counts"]["succeeded"], 19)
+    reason_stage_mismatch = put_in(positive_match["reason_counts"]["none"], 19)
+
+    optional_exceeds_total =
+      put_in(positive_match["optional_measurements"]["card_count"]["sample_count"], 21)
+
+    matched_with_too_few_records = aggregate_with_records(empty_partial, 19, true)
+
+    for rejected <- [
+          stage_outcome_mismatch,
+          outcome_reason_mismatch,
+          reason_stage_mismatch,
+          optional_exceeds_total,
+          matched_with_too_few_records
+        ] do
+      assert {:error, :invalid_aggregate} =
+               FeedTimingSoakBridge.encode_aggregate(
+                 rejected,
+                 generations,
+                 cookie,
+                 :ios,
+                 :cold
+               )
+    end
   end
 
   test "target parser accepts only the canonical current-socket instance shape and safe host" do
@@ -560,8 +609,8 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
       "platform" => "ios",
       "cycle" => "cold",
       "expected_generation_count" => 20,
-      "observed_generation_count" => 20,
-      "cohort_match" => true,
+      "observed_generation_count" => 0,
+      "cohort_match" => false,
       "stage_timings" =>
         Map.new(@stages, fn stage ->
           {stage,
@@ -575,6 +624,21 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
       "reason_counts" => Map.new(@reasons, &{&1, 0}),
       "optional_measurements" => %{}
     }
+  end
+
+  defp aggregate_with_records(aggregate, count, cohort_match)
+       when is_integer(count) and count > 0 and is_boolean(cohort_match) do
+    p95 = if count >= 10, do: 4, else: nil
+    summary = %{"min" => 1, "p50" => 2, "p95" => p95, "max" => 5}
+
+    aggregate
+    |> Map.put("observed_generation_count", if(cohort_match, do: 20, else: min(count, 20)))
+    |> Map.put("cohort_match", cohort_match)
+    |> put_in(["stage_timings", "token_verified", "sample_count"], count)
+    |> put_in(["stage_timings", "token_verified", "duration_ms"], summary)
+    |> put_in(["stage_timings", "token_verified", "elapsed_ms"], summary)
+    |> put_in(["outcome_counts", "succeeded"], count)
+    |> put_in(["reason_counts", "none"], count)
   end
 
   defp generation(index) do

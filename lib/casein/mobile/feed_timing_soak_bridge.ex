@@ -560,7 +560,8 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
       stage_timings_valid?(aggregate["stage_timings"]),
       fixed_counts_valid?(aggregate["outcome_counts"], @outcome_names),
       fixed_counts_valid?(aggregate["reason_counts"], @reason_names),
-      optional_measurements_valid?(aggregate["optional_measurements"])
+      optional_measurements_valid?(aggregate["optional_measurements"]),
+      cross_map_counts_valid?(aggregate)
     ])
   end
 
@@ -636,6 +637,59 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
   end
 
   defp positive_bounded_count?(count), do: bounded_count?(count) and count > 0
+
+  defp cross_map_counts_valid?(aggregate) do
+    with {:ok, stage_total} <-
+           aggregate_count_sum(aggregate["stage_timings"], &stage_sample_count/1),
+         {:ok, outcome_total} <-
+           aggregate_count_sum(aggregate["outcome_counts"], &fixed_count/1),
+         {:ok, reason_total} <-
+           aggregate_count_sum(aggregate["reason_counts"], &fixed_count/1),
+         true <- stage_total == outcome_total,
+         true <- outcome_total == reason_total,
+         true <-
+           optional_counts_within_total?(aggregate["optional_measurements"], stage_total),
+         true <- cohort_record_count_valid?(aggregate["cohort_match"], stage_total) do
+      true
+    else
+      _invalid_or_inconsistent -> false
+    end
+  end
+
+  defp aggregate_count_sum(map, extractor) when is_map(map) and is_function(extractor, 1) do
+    Enum.reduce_while(map, {:ok, 0}, fn {_key, value}, {:ok, total} ->
+      count = extractor.(value)
+
+      if bounded_count?(count) and total + count <= @maximum_aggregate_records do
+        {:cont, {:ok, total + count}}
+      else
+        {:halt, :error}
+      end
+    end)
+  end
+
+  defp aggregate_count_sum(_map, _extractor), do: :error
+
+  defp stage_sample_count(%{"sample_count" => count}), do: count
+  defp stage_sample_count(_timing), do: :invalid
+  defp fixed_count(count), do: count
+
+  defp optional_counts_within_total?(measurements, total)
+       when is_map(measurements) and is_integer(total) do
+    Enum.all?(measurements, fn
+      {_name, %{"sample_count" => sample_count}} ->
+        bounded_count?(sample_count) and sample_count <= total
+
+      _invalid_summary ->
+        false
+    end)
+  end
+
+  defp optional_counts_within_total?(_measurements, _total), do: false
+
+  defp cohort_record_count_valid?(true, total), do: total >= @generation_count
+  defp cohort_record_count_valid?(false, _total), do: true
+  defp cohort_record_count_valid?(_cohort_match, _total), do: false
 
   defp bounded_number?(number, maximum) do
     is_number(number) and number >= 0 and number <= maximum
