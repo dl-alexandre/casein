@@ -40,7 +40,38 @@ release_root="$(pwd -P)"
 start_erl_data="${release_root}/releases/start_erl.data"
 [ -r "${start_erl_data}" ] || failure
 
-IFS=' ' read -r _erts_vsn release_vsn _trailing <"${start_erl_data}" || failure
+if ! exec 4<"${start_erl_data}"; then
+  failure
+fi
+
+_erts_vsn=''
+release_vsn=''
+_trailing=''
+
+# dash returns non-zero when the final valid line reaches EOF without a
+# newline, even though read populated its fields. Accept only that populated
+# case, then prove there is no second record before using either field.
+if IFS=' ' read -r _erts_vsn release_vsn _trailing <&4; then
+  :
+elif [ -z "${_erts_vsn}" ] || [ -z "${release_vsn}" ]; then
+  failure
+fi
+
+_extra_record=''
+if IFS= read -r _extra_record <&4; then
+  failure
+fi
+[ -z "${_extra_record}" ] || failure
+
+if ! exec 4<&-; then
+  failure
+fi
+
+case "${_erts_vsn}" in
+  '' | *[!A-Za-z0-9._-]*) failure ;;
+esac
+
+[ -z "${_trailing}" ] || failure
 
 case "${release_vsn}" in
   '' | *[!A-Za-z0-9._-]*) failure ;;

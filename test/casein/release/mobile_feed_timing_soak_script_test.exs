@@ -121,7 +121,44 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
     end
   end
 
-  defp fake_release(fake_elixir_source) do
+  test "release metadata accepts one valid record with or without a trailing newline" do
+    expected = "{\"component\":\"server\",\"expected_generation_count\":20}\n"
+
+    for contents <- ["erts-15.0 0.1.0\n", "erts-15.0 0.1.0"] do
+      {release_root, script} = fake_release(immediate_success_fake_elixir(), contents)
+
+      assert {^expected, 0} =
+               System.cmd(script, ["ios", "cold"],
+                 cd: release_root,
+                 stderr_to_stdout: true
+               )
+    end
+  end
+
+  test "release metadata rejects empty, missing, malformed, unsafe, and extra fields" do
+    invalid_contents = [
+      "",
+      "\n",
+      "erts-15.0\n",
+      "erts/15.0 0.1.0\n",
+      "erts-15.0 ../0.1.0\n",
+      "erts-15.0 0.1.0 extra\n",
+      "erts-15.0 0.1.0\tunsafe\n",
+      "erts-15.0 0.1.0\nextra\n"
+    ]
+
+    for contents <- invalid_contents do
+      {release_root, script} = fake_release(immediate_success_fake_elixir(), contents)
+
+      assert {@fixed_error, 74} ==
+               System.cmd(script, ["android", "reconnect"],
+                 cd: release_root,
+                 stderr_to_stdout: true
+               )
+    end
+  end
+
+  defp fake_release(fake_elixir_source, start_erl_data \\ "erts-15.0 0.1.0\n") do
     root =
       System.tmp_dir!()
       |> Path.join("casein-mobile-feed-soak-#{System.unique_integer([:positive])}")
@@ -147,7 +184,7 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
     File.chmod!(credential_file, 0o600)
     File.chmod!(credential_dir, 0o500)
 
-    File.write!(Path.join(root, "releases/start_erl.data"), "erts-15.0 0.1.0\n")
+    File.write!(Path.join(root, "releases/start_erl.data"), start_erl_data)
     File.write!(Path.join(version_dir, "start_clean.boot"), "fixture")
     File.write!(Path.join(version_dir, "remote.vm.args"), "fixture")
 
@@ -208,6 +245,13 @@ defmodule Casein.Release.MobileFeedTimingSoakScriptTest do
       printf '%s\\n' '{"component":"server","expected_generation_count":20}'
       """
     )
+  end
+
+  defp immediate_success_fake_elixir do
+    """
+    #!/bin/sh
+    printf '%s\n' '{"component":"server","expected_generation_count":20}'
+    """
   end
 
   defp collect_port(port, output \\ "") do
