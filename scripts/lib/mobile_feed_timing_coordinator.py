@@ -26,7 +26,7 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO, Callable, Mapping, Protocol, Sequence, TextIO
 
@@ -100,6 +100,53 @@ STATUS_VALUES = frozenset(
         "internal_error",
     }
 )
+
+DIAGNOSTIC_PHASE_VALUES = frozenset(
+    {
+        "arguments",
+        "initialization",
+        "publication_preflight",
+        "bridge_ready",
+        "pipeline_setup",
+        "native_pipeline",
+        "source_join",
+        "native_cleanup",
+        "bridge_revalidate",
+        "bridge_finish",
+        "server_validate",
+        "publication",
+        "cleanup",
+    }
+)
+DIAGNOSTIC_SOURCE_VALUES = frozenset(
+    set(source_contract.STATUS_VALUES)
+    | {"not_started", "running", "complete", "failed"}
+)
+DIAGNOSTIC_ADAPTER_VALUES = frozenset(
+    {"not_started", "running", "complete", "incomplete", "invalid"}
+)
+SUPERVISOR_STATUS_KEYS = frozenset(
+    {
+        "supervisor",
+        "status",
+        "platform",
+        "lines_seen",
+        "markers_forwarded",
+        "status_lines_discarded",
+        "input_truncated",
+        "downstream_completion",
+        "source_exit",
+        "cleanup",
+    }
+)
+SUPERVISOR_DOWNSTREAM_VALUES = frozenset(
+    {"none", "probe", "epipe", "unverified_epipe"}
+)
+SUPERVISOR_SOURCE_EXIT_VALUES = frozenset({"unknown", "zero", "nonzero"})
+SUPERVISOR_CLEANUP_VALUES = frozenset(
+    {"not_needed", "terminated", "killed", "failed"}
+)
+SUPERVISOR_MAX_COUNT = source_contract.MAX_LINES + 1
 
 EXIT_CODES = {
     "complete": 0,
@@ -190,6 +237,42 @@ class CoordinatorFailure(Exception):
         return f"CoordinatorFailure(status={self.status!r})"
 
 
+@dataclass(frozen=True, slots=True)
+class FailureDiagnostic:
+    """One bounded, identity-free failure classification."""
+
+    phase: str
+    source: str
+    adapter: str
+    record_count: int
+    generation_count: int
+
+    def __post_init__(self) -> None:
+        if (
+            self.phase not in DIAGNOSTIC_PHASE_VALUES
+            or self.source not in DIAGNOSTIC_SOURCE_VALUES
+            or self.adapter not in DIAGNOSTIC_ADAPTER_VALUES
+            or type(self.record_count) is not int
+            or not 0 <= self.record_count <= MAX_AGGREGATE_RECORDS
+            or type(self.generation_count) is not int
+            or not 0 <= self.generation_count <= TARGET_GENERATIONS
+        ):
+            raise ValueError("invalid failure diagnostic")
+
+    def as_payload(self) -> dict[str, str | int]:
+        return {
+            "phase": self.phase,
+            "source": self.source,
+            "adapter": self.adapter,
+            "record_count": self.record_count,
+            "generation_count": self.generation_count,
+        }
+
+
+def _baseline_failure_diagnostic(phase: str) -> FailureDiagnostic:
+    return FailureDiagnostic(phase, "not_started", "not_started", 0, 0)
+
+
 class SafeArgumentParser(argparse.ArgumentParser):
     def error(self, _message: str) -> None:
         raise InvalidArguments
@@ -248,9 +331,14 @@ class RunOutcome:
     status: str
     exit_code: int
     published: bool
+    diagnostic: FailureDiagnostic | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if self.status not in STATUS_VALUES or self.exit_code != EXIT_CODES[self.status]:
+            raise ValueError("invalid fixed outcome")
+        if self.diagnostic is not None and not isinstance(
+            self.diagnostic, FailureDiagnostic
+        ):
             raise ValueError("invalid fixed outcome")
 
 
@@ -289,10 +377,14 @@ class PublicationReceipt:
             raise CoordinatorFailure("internal_error")
         self._committed = True
 
-    def outcome_or(self, fallback_status: str) -> RunOutcome:
+    def outcome_or(
+        self,
+        fallback_status: str,
+        diagnostic: FailureDiagnostic | None = None,
+    ) -> RunOutcome:
         if self._committed and self._success_status is not None:
             return _outcome(self._success_status, True)
-        return _outcome(fallback_status, False)
+        return _outcome(fallback_status, False, diagnostic)
 
     def __repr__(self) -> str:
         if self._committed:
@@ -570,7 +662,10 @@ class FixedStatusSink:
     def write(self, payload: str) -> int:
         if self._status is not None or not isinstance(payload, str) or not payload.endswith("\n"):
             raise ValueError("invalid status")
-        if _SECRET_RE.search(payload) or _GENERATION_SEARCH_RE.search(payload):
+        if _SECRET_RE.search(payload) or (
+            self._component_key != "supervisor"
+            and _GENERATION_SEARCH_RE.search(payload)
+        ):
             raise ValueError("invalid status")
         try:
             parsed = json.loads(payload, object_pairs_hook=_strict_object)
@@ -584,6 +679,10 @@ class FixedStatusSink:
         status = parsed.get("status")
         if not isinstance(status, str) or status not in self._allowed_statuses:
             raise ValueError("invalid status")
+        if self._component_key == "supervisor" and not _valid_supervisor_status(
+            parsed
+        ):
+            raise ValueError("invalid status")
         self._status = status
         return len(payload)
 
@@ -596,6 +695,33 @@ class FixedStatusSink:
 
     def __repr__(self) -> str:
         return f"FixedStatusSink(status={self._status!r})"
+
+
+def _valid_supervisor_status(payload: Mapping[str, object]) -> bool:
+    if set(payload) == {"supervisor", "status"}:
+        return True
+    if set(payload) != SUPERVISOR_STATUS_KEYS:
+        return False
+    counts = (
+        payload.get("lines_seen"),
+        payload.get("markers_forwarded"),
+        payload.get("status_lines_discarded"),
+    )
+    if not all(
+        type(value) is int and 0 <= value <= SUPERVISOR_MAX_COUNT
+        for value in counts
+    ):
+        return False
+    lines_seen, markers_forwarded, status_lines_discarded = counts
+    return (
+        payload.get("platform") in PLATFORMS
+        and markers_forwarded <= lines_seen
+        and status_lines_discarded <= lines_seen
+        and type(payload.get("input_truncated")) is bool
+        and payload.get("downstream_completion") in SUPERVISOR_DOWNSTREAM_VALUES
+        and payload.get("source_exit") in SUPERVISOR_SOURCE_EXIT_VALUES
+        and payload.get("cleanup") in SUPERVISOR_CLEANUP_VALUES
+    )
 
 
 class NativeCollectorSink:
@@ -821,19 +947,15 @@ class TrackingProcessFactory:
         registry: ScopedProcessRegistry,
         *,
         process_factory: Callable[..., ProcessLike] = subprocess.Popen,
-        on_spawn: Callable[[tuple[str, ...]], None] | None = None,
     ) -> None:
         self._registry = registry
         self._process_factory = process_factory
-        self._on_spawn = on_spawn
 
     def __call__(self, argv: Sequence[str], **kwargs: object) -> ProcessLike:
         if kwargs.get("shell") is not False or kwargs.get("start_new_session") is not True:
             raise CoordinatorFailure("internal_error")
         process = self._process_factory(list(argv), **kwargs)
         self._registry.add(process)
-        if self._on_spawn is not None:
-            self._on_spawn(tuple(argv))
         return process
 
 
@@ -892,6 +1014,32 @@ class SourceDriver(Protocol):
     ) -> bool: ...
 
 
+def _source_diagnostic_status(
+    source_driver: SourceDriver | None,
+    source_success: bool | None,
+) -> str:
+    if source_driver is not None:
+        accessor = getattr(source_driver, "diagnostic_status", None)
+        if callable(accessor):
+            try:
+                value = accessor()
+            except Exception:
+                value = None
+            if isinstance(value, str) and value in DIAGNOSTIC_SOURCE_VALUES:
+                return value
+    if source_success is True:
+        return "complete"
+    if source_success is False:
+        return "failed"
+    return "running" if source_driver is not None else "not_started"
+
+
+def _bounded_diagnostic_count(value: object, maximum: int) -> int:
+    if type(value) is not int or value < 0:
+        return 0
+    return min(value, maximum)
+
+
 class PhysicalSourceDriver:
     """Run only the exact app-scoped lifecycle for one explicit device."""
 
@@ -911,6 +1059,19 @@ class PhysicalSourceDriver:
         self._process_factory = process_factory
         self._supervisor_factory = supervisor_factory
         self._json_runner_factory = json_runner_factory
+        self._diagnostic_lock = threading.Lock()
+        self._diagnostic_status = "not_started"
+
+    def diagnostic_status(self) -> str:
+        with self._diagnostic_lock:
+            return self._diagnostic_status
+
+    def _set_diagnostic_status(self, status: str) -> None:
+        safe_status = (
+            status if status in DIAGNOSTIC_SOURCE_VALUES else "internal_error"
+        )
+        with self._diagnostic_lock:
+            self._diagnostic_status = safe_status
 
     def run(
         self,
@@ -919,13 +1080,21 @@ class PhysicalSourceDriver:
         vault: TerminalGenerationVault,
         registry: ScopedProcessRegistry,
     ) -> bool:
+        self._set_diagnostic_status("running")
         try:
             if self._config.platform == "ios" and self._config.cycle == "cold":
-                return self._run_ios_cold(output, registry)
-            return self._run_continuous(output, latch, vault, registry)
+                result = self._run_ios_cold(output, registry)
+            else:
+                result = self._run_continuous(output, latch, vault, registry)
+            if not result and self.diagnostic_status() == "running":
+                self._set_diagnostic_status("failed")
+            return result
         except CoordinatorFailure:
+            if self.diagnostic_status() == "running":
+                self._set_diagnostic_status("failed")
             return False
         except Exception:
+            self._set_diagnostic_status("internal_error")
             return False
 
     def _run_ios_cold(
@@ -942,12 +1111,14 @@ class PhysicalSourceDriver:
         )
 
         for _index in range(TARGET_GENERATIONS):
+            self._set_diagnostic_status("running")
             status = FixedStatusSink("supervisor")
             supervisor = self._supervisor_factory(
                 process_factory=factory,
                 command_runner=lifecycle_runner,
             )
             result = supervisor.run(plan, output, status)
+            self._set_diagnostic_status(status.status or "internal_error")
             if result != 0 or status.status != "ios_cold_generation_complete":
                 return False
         return True
@@ -960,24 +1131,20 @@ class PhysicalSourceDriver:
         registry: ScopedProcessRegistry,
     ) -> bool:
         source_ready = threading.Event()
-        expected_android_source = (
-            source_contract.build_android_source_argv(self._config.device)
-            if self._config.platform == "android"
-            else None
-        )
-
-        def on_spawn(argv: tuple[str, ...]) -> None:
-            if expected_android_source is not None and argv == expected_android_source:
-                source_ready.set()
 
         factory = TrackingProcessFactory(
             registry,
             process_factory=self._process_factory,
-            on_spawn=on_spawn,
         )
         if self._config.platform == "android":
             plan = source_contract.build_plan("android", self._config.device)
-            line_reader_factory = source_contract.SelectorLineReader
+
+            def line_reader_factory(
+                stream: BinaryIO,
+            ) -> source_contract.SelectorLineReader:
+                reader = source_contract.SelectorLineReader(stream)
+                source_ready.set()
+                return reader
         else:
             if self._config.ios_pid is None:
                 return False
@@ -1001,6 +1168,8 @@ class PhysicalSourceDriver:
                 result["exit"] = supervisor.run(plan, output, status)
             except Exception:
                 result["exit"] = 70
+            finally:
+                self._set_diagnostic_status(status.status or "internal_error")
 
         source_thread = threading.Thread(
             target=supervise,
@@ -1830,11 +1999,18 @@ class CohortCoordinator:
     ) -> RunOutcome:
         receipt = receipt if receipt is not None else PublicationReceipt()
         if not isinstance(receipt, PublicationReceipt) or not receipt.claim():
-            return _outcome("internal_error", False)
+            return _outcome(
+                "internal_error",
+                False,
+                _baseline_failure_diagnostic("initialization"),
+            )
         try:
             return self._run(config, receipt)
         except KeyboardInterrupt:
-            return receipt.outcome_or("interrupted")
+            return receipt.outcome_or(
+                "interrupted",
+                _baseline_failure_diagnostic("initialization"),
+            )
 
     def _run(
         self,
@@ -1844,9 +2020,15 @@ class CohortCoordinator:
         try:
             disable_process_artifacts()
         except KeyboardInterrupt:
-            return receipt.outcome_or("interrupted")
+            return receipt.outcome_or(
+                "interrupted",
+                _baseline_failure_diagnostic("initialization"),
+            )
         except CoordinatorFailure:
-            return receipt.outcome_or("internal_error")
+            return receipt.outcome_or(
+                "internal_error",
+                _baseline_failure_diagnostic("initialization"),
+            )
 
         latch = CompletionLatch()
         vault = TerminalGenerationVault()
@@ -1855,11 +2037,33 @@ class CohortCoordinator:
         reader: BinaryIO | None = None
         writer: BinaryIO | None = None
         source_thread: threading.Thread | None = None
+        source_driver: SourceDriver | None = None
+        source_result: dict[str, bool | None] = {"success": None}
+        sink: NativeCollectorSink | None = None
+        adapter_status: FixedStatusSink | None = None
         output_root: PinnedOutputRoot | None = None
         finish_attempted = False
         finish_completed = False
         native_cleanup_complete = False
         generation_payload = b""
+        phase = "publication_preflight"
+
+        def diagnostic(phase_override: str | None = None) -> FailureDiagnostic:
+            adapter_value = "not_started"
+            if adapter_status is not None:
+                adapter_value = adapter_status.status or "running"
+            return FailureDiagnostic(
+                phase_override or phase,
+                _source_diagnostic_status(
+                    source_driver, source_result.get("success")
+                ),
+                adapter_value,
+                _bounded_diagnostic_count(
+                    sink.lines if sink is not None else 0,
+                    MAX_AGGREGATE_RECORDS,
+                ),
+                _bounded_diagnostic_count(vault.count, TARGET_GENERATIONS),
+            )
 
         try:
             try:
@@ -1867,6 +2071,7 @@ class CohortCoordinator:
             except Exception:
                 raise CoordinatorFailure("publication_failed") from None
 
+            phase = "bridge_ready"
             try:
                 bridge = self._bridge_factory(config)
                 bridge.open()
@@ -1874,6 +2079,7 @@ class CohortCoordinator:
             except Exception:
                 raise CoordinatorFailure("bridge_not_ready") from None
 
+            phase = "pipeline_setup"
             read_fd: int | None = None
             write_fd: int | None = None
             try:
@@ -1887,8 +2093,6 @@ class CohortCoordinator:
                 _close_fd(read_fd)
                 _close_fd(write_fd)
                 raise CoordinatorFailure("pipeline_failed") from None
-
-            source_result: dict[str, bool | None] = {"success": None}
 
             def run_source() -> None:
                 try:
@@ -1910,6 +2114,7 @@ class CohortCoordinator:
             except Exception:
                 raise CoordinatorFailure("pipeline_failed") from None
 
+            phase = "native_pipeline"
             try:
                 collector = collector_contract.Collector(
                     config.platform, config.cycle
@@ -1920,23 +2125,36 @@ class CohortCoordinator:
                     config.platform, config.cycle
                 )
                 adapter_exit = adapter.run(reader, sink, adapter_status)
+
+                if adapter_status.status == "invalid":
+                    raise CoordinatorFailure("pipeline_failed")
+                if adapter_exit != 0 or adapter_status.status != "complete":
+                    source_thread.join(SOURCE_JOIN_TIMEOUT_SECONDS)
+                    if (
+                        not source_thread.is_alive()
+                        and source_result["success"] is False
+                    ):
+                        raise CoordinatorFailure("source_failed")
+                    raise CoordinatorFailure("pipeline_failed")
+                if vault.count != TARGET_GENERATIONS:
+                    raise CoordinatorFailure("pipeline_failed")
+
                 native = validate_native_aggregate(
                     collector.report(), config.platform, config.cycle
                 )
-                if (
-                    adapter_exit != 0
-                    or adapter_status.status != "complete"
-                    or vault.count != TARGET_GENERATIONS
-                ):
-                    raise CoordinatorFailure("pipeline_failed")
                 latch.mark_pipeline_complete()
+            except CoordinatorFailure:
+                if latch.pipeline_state == "pending":
+                    latch.mark_pipeline_failed()
+                raise
             except Exception:
                 if latch.pipeline_state == "pending":
                     latch.mark_pipeline_failed()
-                raise CoordinatorFailure("pipeline_failed")
+                raise CoordinatorFailure("pipeline_failed") from None
             finally:
                 _close_stream(reader)
 
+            phase = "source_join"
             source_thread.join(SOURCE_JOIN_TIMEOUT_SECONDS)
             if source_thread.is_alive():
                 registry.terminate_all()
@@ -1950,19 +2168,23 @@ class CohortCoordinator:
             ):
                 raise CoordinatorFailure("source_failed")
 
+            phase = "native_cleanup"
             if not registry.terminate_all():
                 raise CoordinatorFailure("source_failed")
             native_cleanup_complete = True
 
+            phase = "bridge_revalidate"
             try:
                 bridge.assert_waiting()
             except Exception:
                 raise CoordinatorFailure("bridge_not_ready") from None
             generation_payload = vault.seal_payload()
+            phase = "bridge_finish"
             finish_attempted = True
             server_raw = bridge.finish(generation_payload)
             finish_completed = True
             generation_payload = b""
+            phase = "server_validate"
             server = validate_server_aggregate(
                 server_raw, config.platform, config.cycle
             )
@@ -1970,16 +2192,17 @@ class CohortCoordinator:
             latch.mark_cohort(matched=matched)
             success_status = "complete" if matched else "cohort_mismatch"
             receipt.prepare(success_status)
+            phase = "publication"
             self._publisher.publish(output_root, native, server, vault, receipt)
-            return receipt.outcome_or("publication_failed")
+            return receipt.outcome_or("publication_failed", diagnostic())
         except KeyboardInterrupt:
             if latch.cohort_state == "pending" and finish_attempted:
                 latch.mark_cohort(matched=None)
-            return receipt.outcome_or("interrupted")
+            return receipt.outcome_or("interrupted", diagnostic())
         except CoordinatorFailure as failure:
             if latch.cohort_state == "pending" and finish_attempted:
                 latch.mark_cohort(matched=None)
-            return receipt.outcome_or(failure.status)
+            return receipt.outcome_or(failure.status, diagnostic())
         except Exception:
             if latch.cohort_state == "pending" and finish_attempted:
                 latch.mark_cohort(matched=None)
@@ -1988,10 +2211,11 @@ class CohortCoordinator:
                 if finish_attempted and not finish_completed
                 else "internal_error"
             )
-            return receipt.outcome_or(status)
+            return receipt.outcome_or(status, diagnostic())
         finally:
             cleanup_interrupted = False
             cleanup_failed = False
+            cleanup_diagnostic = diagnostic("cleanup")
             if not native_cleanup_complete:
                 try:
                     registry.terminate_all()
@@ -2024,17 +2248,27 @@ class CohortCoordinator:
             if receipt.committed:
                 return receipt.outcome_or("internal_error")
             if cleanup_interrupted:
-                return receipt.outcome_or("interrupted")
+                return receipt.outcome_or("interrupted", cleanup_diagnostic)
             if cleanup_failed:
-                return receipt.outcome_or("internal_error")
+                return receipt.outcome_or("internal_error", cleanup_diagnostic)
 
     def __repr__(self) -> str:
         return "CohortCoordinator(bridge=<factory>, source=<factory>, publisher=<private>)"
 
 
-def _outcome(status: str, published: bool) -> RunOutcome:
+def _outcome(
+    status: str,
+    published: bool,
+    diagnostic: FailureDiagnostic | None = None,
+) -> RunOutcome:
     safe_status = status if status in STATUS_VALUES else "internal_error"
-    return RunOutcome(safe_status, EXIT_CODES[safe_status], published)
+    safe_diagnostic = diagnostic if isinstance(diagnostic, FailureDiagnostic) else None
+    return RunOutcome(
+        safe_status,
+        EXIT_CODES[safe_status],
+        published,
+        None if published else safe_diagnostic,
+    )
 
 
 def disable_process_artifacts() -> None:
@@ -2055,14 +2289,32 @@ def _parser() -> SafeArgumentParser:
     return parser
 
 
-def _fixed_status(output: TextIO, status: str) -> None:
+def _fixed_status(
+    output: TextIO,
+    status: str,
+    diagnostic: FailureDiagnostic | None = None,
+) -> None:
     safe_status = status if status in STATUS_VALUES else "internal_error"
     payload = {"coordinator": COORDINATOR_NAME, "status": safe_status}
+    if safe_status not in {"complete", "cohort_mismatch"}:
+        safe_diagnostic = (
+            diagnostic
+            if isinstance(diagnostic, FailureDiagnostic)
+            else _baseline_failure_diagnostic("initialization")
+        )
+        payload.update(safe_diagnostic.as_payload())
     try:
         output.write(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
         output.flush()
     except (BrokenPipeError, OSError, ValueError):
         return
+
+
+def _emit_outcome_status(output: TextIO, outcome: RunOutcome) -> None:
+    if outcome.diagnostic is None:
+        _fixed_status(output, outcome.status)
+    else:
+        _fixed_status(output, outcome.status, outcome.diagnostic)
 
 
 def _interrupt_on_signal(
@@ -2102,7 +2354,11 @@ def _run_entrypoint(
             ios_pid=args.ios_pid,
         )
     except (CoordinatorFailure, InvalidArguments, ValueError, TypeError):
-        _fixed_status(sys.stderr, "invalid_arguments")
+        _fixed_status(
+            sys.stderr,
+            "invalid_arguments",
+            _baseline_failure_diagnostic("arguments"),
+        )
         return EXIT_CODES["invalid_arguments"]
 
     receipt = PublicationReceipt()
@@ -2122,16 +2378,28 @@ def _run_entrypoint(
                             )
                 outcome = CohortCoordinator().run(config, receipt)
             except KeyboardInterrupt:
-                outcome = receipt.outcome_or("interrupted")
+                outcome = receipt.outcome_or(
+                    "interrupted",
+                    _baseline_failure_diagnostic("initialization"),
+                )
             except Exception:
-                outcome = receipt.outcome_or("internal_error")
-            _fixed_status(sys.stderr, outcome.status)
+                outcome = receipt.outcome_or(
+                    "internal_error",
+                    _baseline_failure_diagnostic("initialization"),
+                )
+            _emit_outcome_status(sys.stderr, outcome)
         except KeyboardInterrupt:
-            outcome = receipt.outcome_or("interrupted")
-            _fixed_status(sys.stderr, outcome.status)
+            outcome = receipt.outcome_or(
+                "interrupted",
+                _baseline_failure_diagnostic("initialization"),
+            )
+            _emit_outcome_status(sys.stderr, outcome)
         except Exception:
-            outcome = receipt.outcome_or("internal_error")
-            _fixed_status(sys.stderr, outcome.status)
+            outcome = receipt.outcome_or(
+                "internal_error",
+                _baseline_failure_diagnostic("initialization"),
+            )
+            _emit_outcome_status(sys.stderr, outcome)
         return outcome.exit_code
     finally:
         if restore_signal_handlers and previous_handlers:

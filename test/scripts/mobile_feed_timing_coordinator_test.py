@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from collections import deque
 from pathlib import Path
@@ -175,6 +176,15 @@ class SyntheticSource:
 
     def __repr__(self):
         return "SyntheticSource(identity=<redacted>)"
+
+
+class ClassifiedSyntheticSource(SyntheticSource):
+    def __init__(self, *, diagnostic_status, **kwargs):
+        super().__init__(**kwargs)
+        self._diagnostic_status = diagnostic_status
+
+    def diagnostic_status(self):
+        return self._diagnostic_status
 
 
 class FakeBridge:
@@ -557,6 +567,86 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             self.assertEqual("source_failed", outcome.status)
             self.assertTrue(bridge.aborted)
             self.assertEqual(0, bridge.finish_calls)
+
+    def test_early_source_capability_eof_is_source_failed_with_bounded_diagnostic(self):
+        with tempfile.TemporaryDirectory() as root:
+            bridge = FakeBridge(server_aggregate())
+            source_driver = ClassifiedSyntheticSource(
+                diagnostic_status="source_capability_failed",
+                generations=0,
+                success=False,
+            )
+
+            outcome = self.run_cohort(root, bridge, source_driver)
+
+            self.assertEqual("source_failed", outcome.status)
+            self.assertEqual(
+                coordinator.FailureDiagnostic(
+                    "native_pipeline",
+                    "source_capability_failed",
+                    "incomplete",
+                    0,
+                    0,
+                ),
+                outcome.diagnostic,
+            )
+            status_output = io.StringIO()
+            coordinator._emit_outcome_status(status_output, outcome)
+            emitted = json.loads(status_output.getvalue())
+            self.assertEqual(
+                {
+                    "adapter",
+                    "coordinator",
+                    "generation_count",
+                    "phase",
+                    "record_count",
+                    "source",
+                    "status",
+                },
+                set(emitted),
+            )
+            self.assertNotIn(ANDROID_SERIAL, status_output.getvalue())
+            self.assertNotIn(generation(1), status_output.getvalue())
+            self.assertTrue(bridge.aborted)
+            self.assertEqual(0, bridge.finish_calls)
+
+    def test_invalid_pipeline_precedes_concurrent_source_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            bridge = FakeBridge(server_aggregate())
+            source_driver = ClassifiedSyntheticSource(
+                diagnostic_status="source_capability_failed",
+                malformed=True,
+                success=False,
+            )
+
+            outcome = self.run_cohort(root, bridge, source_driver)
+
+            self.assertEqual("pipeline_failed", outcome.status)
+            self.assertIsNotNone(outcome.diagnostic)
+            self.assertEqual("invalid", outcome.diagnostic.adapter)
+            self.assertEqual(19, outcome.diagnostic.generation_count)
+            self.assertLessEqual(
+                outcome.diagnostic.record_count,
+                coordinator.MAX_AGGREGATE_RECORDS,
+            )
+            self.assertTrue(bridge.aborted)
+            self.assertEqual(0, bridge.finish_calls)
+
+    def test_clean_partial_pipeline_from_successful_source_stays_pipeline_failed(self):
+        with tempfile.TemporaryDirectory() as root:
+            bridge = FakeBridge(server_aggregate())
+            source_driver = ClassifiedSyntheticSource(
+                diagnostic_status="complete",
+                generations=19,
+                success=True,
+            )
+
+            outcome = self.run_cohort(root, bridge, source_driver)
+
+            self.assertEqual("pipeline_failed", outcome.status)
+            self.assertEqual("incomplete", outcome.diagnostic.adapter)
+            self.assertEqual("complete", outcome.diagnostic.source)
+            self.assertEqual(19, outcome.diagnostic.generation_count)
 
     def test_source_factory_and_abort_failures_still_retire_the_fence(self):
         with tempfile.TemporaryDirectory() as root:
@@ -1075,12 +1165,12 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                         )
                         real_fixed_status = coordinator._fixed_status
 
-                        def signal_then_write(output, status):
+                        def signal_then_write(output, status, diagnostic=None):
                             nonlocal signaled
                             if not signaled:
                                 signaled = True
                                 signal.raise_signal(interrupt_signal)
-                            real_fixed_status(output, status)
+                            real_fixed_status(output, status, diagnostic)
 
                         argv = [
                             "--platform",
@@ -1131,9 +1221,9 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                     )
                     real_fixed_status = coordinator._fixed_status
 
-                    def write_then_signal(output, status):
+                    def write_then_signal(output, status, diagnostic=None):
                         nonlocal signaled
-                        real_fixed_status(output, status)
+                        real_fixed_status(output, status, diagnostic)
                         if not signaled:
                             signaled = True
                             signal.raise_signal(interrupt_signal)
@@ -1183,12 +1273,12 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                     signaled = False
                     real_fixed_status = coordinator._fixed_status
 
-                    def signal_then_write(output, status):
+                    def signal_then_write(output, status, diagnostic=None):
                         nonlocal signaled
                         if not signaled:
                             signaled = True
                             signal.raise_signal(interrupt_signal)
-                        real_fixed_status(output, status)
+                        real_fixed_status(output, status, diagnostic)
 
                     argv = [
                         "--platform",
@@ -1217,7 +1307,12 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                     )
                     self.assertEqual(
                         {
+                            "adapter": "not_started",
                             "coordinator": coordinator.COORDINATOR_NAME,
+                            "generation_count": 0,
+                            "phase": "initialization",
+                            "record_count": 0,
+                            "source": "not_started",
                             "status": "interrupted",
                         },
                         json.loads(stderr.getvalue()),
@@ -1362,7 +1457,12 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                     )
                     self.assertEqual(
                         {
+                            "adapter": "not_started",
                             "coordinator": coordinator.COORDINATOR_NAME,
+                            "generation_count": 0,
+                            "phase": "initialization",
+                            "record_count": 0,
+                            "source": "not_started",
                             "status": "interrupted",
                         },
                         json.loads(stderr.getvalue()),
@@ -1581,6 +1681,189 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             joined = repr([call[0] for call in runner.calls])
             self.assertNotIn("pm clear", joined)
             self.assertNotIn("uninstall", joined)
+
+    def test_android_cold_concurrent_source_ready_precedes_every_lifecycle_command(self):
+        with tempfile.TemporaryDirectory() as root:
+            events = []
+            source_can_finish = threading.Event()
+            commands_complete = threading.Event()
+            latch = coordinator.CompletionLatch()
+            vault = coordinator.TerminalGenerationVault()
+            result = {}
+
+            class ExitedSourceProcess:
+                pid = 741
+                stdin = None
+                stdout = None
+                stderr = None
+
+                def poll(self):
+                    return 0
+
+                def wait(self, timeout=None):
+                    return 0
+
+            def source_process_factory(_argv, **_kwargs):
+                events.append("source_process_created")
+                return ExitedSourceProcess()
+
+            class ConcurrentSupervisor:
+                def __init__(self, **kwargs):
+                    self.process_factory = kwargs["process_factory"]
+                    self.line_reader_factory = kwargs["line_reader_factory"]
+                    self.downstream_status = kwargs["downstream_status"]
+
+                def run(self, plan, _output, status):
+                    self.process_factory(
+                        plan.source_argv,
+                        shell=False,
+                        start_new_session=True,
+                    )
+                    read_fd, write_fd = os.pipe()
+                    read_stream = os.fdopen(read_fd, "rb", buffering=0)
+                    reader = None
+                    try:
+                        reader = self.line_reader_factory(read_stream)
+                        events.append("source_ready")
+                        self.assert_downstream_pending()
+                        if not source_can_finish.wait(2):
+                            raise AssertionError("source completion was not released")
+                        if self.downstream_status() != 0:
+                            raise AssertionError("pipeline completion was not visible")
+                        status.write(
+                            json.dumps(
+                                {
+                                    "supervisor": source.SUPERVISOR_NAME,
+                                    "status": "downstream_complete",
+                                }
+                            )
+                            + "\n"
+                        )
+                        return 0
+                    finally:
+                        if reader is not None:
+                            reader.close()
+                        read_stream.close()
+                        os.close(write_fd)
+
+                def assert_downstream_pending(self):
+                    if self.downstream_status() is not None:
+                        raise AssertionError("pipeline completed before lifecycle")
+
+            class ConcurrentCommandRunner:
+                def __init__(self, _factory):
+                    self.starts = 0
+
+                def run(self, argv, _timeout):
+                    if argv == coordinator.build_android_force_stop_argv(
+                        ANDROID_SERIAL
+                    ):
+                        events.append("force_stop")
+                        return
+                    if argv == coordinator.build_android_start_argv(ANDROID_SERIAL):
+                        self.starts += 1
+                        events.append("start")
+                        vault.add_terminal(generation(self.starts))
+                        if self.starts == coordinator.TARGET_GENERATIONS:
+                            commands_complete.set()
+                        return
+                    raise AssertionError("unexpected lifecycle command")
+
+            driver = coordinator.PhysicalSourceDriver(
+                self.config(root, cycle="cold"),
+                process_factory=source_process_factory,
+                supervisor_factory=ConcurrentSupervisor,
+            )
+            registry = coordinator.ScopedProcessRegistry(
+                kill_process_group=lambda _pid, _signal: None
+            )
+
+            def run_driver():
+                result["success"] = driver.run(
+                    io.BytesIO(), latch, vault, registry
+                )
+
+            with mock.patch.object(
+                coordinator,
+                "BoundedCommandRunner",
+                ConcurrentCommandRunner,
+            ):
+                worker = threading.Thread(target=run_driver)
+                worker.start()
+                self.assertTrue(commands_complete.wait(2))
+                self.assertEqual("source_process_created", events[0])
+                self.assertEqual("source_ready", events[1])
+                self.assertEqual(
+                    ["force_stop", "start"] * coordinator.TARGET_GENERATIONS,
+                    events[2:],
+                )
+                latch.mark_pipeline_complete()
+                source_can_finish.set()
+                worker.join(2)
+
+            self.assertFalse(worker.is_alive())
+            self.assertTrue(result["success"])
+            self.assertEqual("downstream_complete", driver.diagnostic_status())
+
+    def test_android_cold_source_capability_failure_never_starts_lifecycle(self):
+        with tempfile.TemporaryDirectory() as root:
+            for capability in ("missing_stdout", "invalid_reader"):
+                with self.subTest(capability=capability):
+                    command_runner_created = False
+                    stream = None if capability == "missing_stdout" else io.BytesIO()
+
+                    class IncapableSourceProcess:
+                        pid = 752
+                        stdin = None
+                        stdout = stream
+                        stderr = None
+
+                        def poll(self):
+                            return 0
+
+                        def wait(self, timeout=None):
+                            return 0
+
+                    def process_factory(_argv, **_kwargs):
+                        return IncapableSourceProcess()
+
+                    class ForbiddenCommandRunner:
+                        def __init__(self, _factory):
+                            nonlocal command_runner_created
+                            command_runner_created = True
+
+                    driver = coordinator.PhysicalSourceDriver(
+                        self.config(root, cycle="cold"),
+                        process_factory=process_factory,
+                    )
+                    registry = coordinator.ScopedProcessRegistry()
+
+                    with (
+                        mock.patch.object(
+                            coordinator,
+                            "SOURCE_READY_TIMEOUT_SECONDS",
+                            0,
+                        ),
+                        mock.patch.object(
+                            coordinator,
+                            "BoundedCommandRunner",
+                            ForbiddenCommandRunner,
+                        ),
+                    ):
+                        success = driver.run(
+                            io.BytesIO(),
+                            coordinator.CompletionLatch(),
+                            coordinator.TerminalGenerationVault(),
+                            registry,
+                        )
+
+                    self.assertFalse(success)
+                    self.assertFalse(command_runner_created)
+                    self.assertEqual(
+                        "source_capability_failed", driver.diagnostic_status()
+                    )
+                    if stream is not None:
+                        stream.close()
 
     def test_android_reconnect_runner_is_exact_serial_and_one_test_method(self):
         argv = coordinator.build_android_reconnect_runner_argv(ANDROID_SERIAL)
@@ -2279,7 +2562,15 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
         output = io.StringIO()
         coordinator._fixed_status(output, generation(1))
         self.assertEqual(
-            {"coordinator": coordinator.COORDINATOR_NAME, "status": "internal_error"},
+            {
+                "adapter": "not_started",
+                "coordinator": coordinator.COORDINATOR_NAME,
+                "generation_count": 0,
+                "phase": "initialization",
+                "record_count": 0,
+                "source": "not_started",
+                "status": "internal_error",
+            },
             json.loads(output.getvalue()),
         )
         self.assertNotIn(generation(1), output.getvalue())
@@ -2296,6 +2587,60 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                 + "\n"
             )
         self.assertNotIn(generation(1), repr(sink))
+
+        supervisor_sink = coordinator.FixedStatusSink("supervisor")
+        with self.assertRaises(ValueError):
+            supervisor_sink.write(
+                json.dumps(
+                    {
+                        "supervisor": source.SUPERVISOR_NAME,
+                        "status": "source_capability_failed",
+                        "unexpected": generation(1),
+                    }
+                )
+                + "\n"
+            )
+        self.assertIsNone(supervisor_sink.status)
+        self.assertNotIn(generation(1), repr(supervisor_sink))
+
+    def test_fixed_status_keeps_success_two_fields_and_failure_allowlisted(self):
+        diagnostic = coordinator.FailureDiagnostic(
+            "native_pipeline",
+            "source_capability_failed",
+            "incomplete",
+            7,
+            1,
+        )
+        success = io.StringIO()
+        failure = io.StringIO()
+
+        coordinator._fixed_status(success, "complete", diagnostic)
+        coordinator._fixed_status(failure, "source_failed", diagnostic)
+
+        self.assertEqual(
+            {"coordinator": coordinator.COORDINATOR_NAME, "status": "complete"},
+            json.loads(success.getvalue()),
+        )
+        self.assertEqual(
+            {
+                "coordinator": coordinator.COORDINATOR_NAME,
+                "status": "source_failed",
+                "phase": "native_pipeline",
+                "source": "source_capability_failed",
+                "adapter": "incomplete",
+                "record_count": 7,
+                "generation_count": 1,
+            },
+            json.loads(failure.getvalue()),
+        )
+        with self.assertRaises(ValueError):
+            coordinator.FailureDiagnostic(
+                generation(1), "failed", "invalid", 0, 0
+            )
+        with self.assertRaises(ValueError):
+            coordinator.FailureDiagnostic(
+                "native_pipeline", "failed", "invalid", 2_001, 0
+            )
 
     def test_invalid_output_root_fails_before_bridge_or_source(self):
         with tempfile.TemporaryDirectory() as root:
@@ -2316,6 +2661,39 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             self.assertEqual("publication_failed", outcome.status)
             self.assertFalse(bridge.opened)
             self.assertEqual(0, bridge.finish_calls)
+
+    def test_main_failure_output_is_fixed_identity_free_diagnostic(self):
+        with tempfile.TemporaryDirectory() as root:
+            missing = Path(root) / "missing"
+            stderr = io.StringIO()
+            argv = [
+                "--platform",
+                "android",
+                "--cycle",
+                "reconnect",
+                "--device",
+                ANDROID_SERIAL,
+                "--output-root",
+                os.fspath(missing),
+            ]
+
+            with mock.patch.object(coordinator.sys, "stderr", stderr):
+                exit_code = coordinator.main(argv)
+
+            self.assertEqual(coordinator.EXIT_CODES["publication_failed"], exit_code)
+            self.assertEqual(
+                {
+                    "adapter": "not_started",
+                    "coordinator": coordinator.COORDINATOR_NAME,
+                    "generation_count": 0,
+                    "phase": "publication_preflight",
+                    "record_count": 0,
+                    "source": "not_started",
+                    "status": "publication_failed",
+                },
+                json.loads(stderr.getvalue()),
+            )
+            self.assertNotIn(ANDROID_SERIAL, stderr.getvalue())
 
     def test_disable_artifacts_sets_bytecode_and_zero_core_limit(self):
         coordinator.disable_process_artifacts()

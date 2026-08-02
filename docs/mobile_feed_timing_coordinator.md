@@ -108,9 +108,11 @@ coordinator does not reuse the fence or generation set.
 
 The coordinator never uses `tee`, a shell pipeline, a raw log capture, a pane,
 the operator terminal, a credential-bearing log, a general device-log export,
-or an output/status object containing a generation or device identity. Standard
-error is one fixed two-field status object. The published aggregates are
-checked again for secrets and generation values before their atomic reveal.
+or an output/status object containing a generation or device identity. On
+success, standard error is the fixed two-field coordinator/status object. On
+failure, it adds only the bounded allowlisted `phase`, `source`, `adapter`,
+`record_count`, and `generation_count` diagnostics. The published aggregates
+are checked again for secrets and generation values before their atomic reveal.
 
 The output root is opened with `O_NOFOLLOW` during preflight and that same
 directory descriptor remains pinned for the entire run. It is the sole base for
