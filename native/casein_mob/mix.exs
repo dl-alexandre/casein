@@ -28,9 +28,14 @@ defmodule CaseinMob.MixProject do
        override: true},
       {:mob,
        github: "dl-alexandre/mob", ref: "dd6ab6159aca279fa04bd8c4fd1bd5b48a27c621", override: true},
-      # GenericJam/mob_dev#24 supplies per-ABI external static archives for
-      # project NIFs that resolve extern symbols at the native app link.
-      {:mob_dev, "~> 0.6.23", only: :dev, runtime: false, override: true},
+      # Fork exact head for GenericJam/mob_dev#43: make Android native deploys
+      # update-only and freeze the selected build target across the deploy.
+      {:mob_dev,
+       git: "https://github.com/dl-alexandre/mob_dev.git",
+       ref: "721edb100fb0459bfc46d9dc175ff70241a0f9f9",
+       only: :dev,
+       runtime: false,
+       override: true},
       {:ecto_sqlite3, "~> 0.18"},
       # Phoenix Channel client for the session companion — connects to the
       # Casein host's `/socket` UserSocket over WSS and joins `session:<id>`.
