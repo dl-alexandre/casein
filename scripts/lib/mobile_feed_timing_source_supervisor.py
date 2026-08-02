@@ -117,6 +117,7 @@ class ProcessLike(Protocol):
 ProcessFactory = Callable[..., ProcessLike]
 DownstreamStatus = Callable[[], int | None]
 KillProcessGroup = Callable[[int, int], None]
+ProcessGroupExists = Callable[[int], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,12 +330,14 @@ class BoundedSubprocessJSONRunner:
         read_fn: Callable[[int, int], bytes] = os.read,
         monotonic: Callable[[], float] = time.monotonic,
         kill_process_group: KillProcessGroup = os.killpg,
+        process_group_exists: ProcessGroupExists | None = None,
     ):
         self._process_factory = process_factory
         self._selector_factory = selector_factory
         self._read_fn = read_fn
         self._monotonic = monotonic
         self._kill_process_group = kill_process_group
+        self._process_group_exists = process_group_exists or _process_group_exists
 
     def run_json(self, argv: tuple[str, ...]) -> Mapping[str, object]:
         process = self._process_factory(
@@ -350,7 +353,11 @@ class BoundedSubprocessJSONRunner:
         )
         stdout = process.stdout
         if stdout is None:
-            _terminate_process_group(process, self._kill_process_group)
+            _terminate_process_group(
+                process,
+                self._kill_process_group,
+                self._process_group_exists,
+            )
             raise SourceFailure("source_capability_failed")
 
         try:
@@ -368,11 +375,19 @@ class BoundedSubprocessJSONRunner:
                 raise SourceFailure("source_capability_failed")
             return payload
         except (ReadTimeout, subprocess.TimeoutExpired):
-            _terminate_process_group(process, self._kill_process_group)
+            _terminate_process_group(
+                process,
+                self._kill_process_group,
+                self._process_group_exists,
+            )
             raise SourceFailure("source_capability_failed") from None
         except SourceFailure:
             if process.poll() is None:
-                _terminate_process_group(process, self._kill_process_group)
+                _terminate_process_group(
+                    process,
+                    self._kill_process_group,
+                    self._process_group_exists,
+                )
             raise
         finally:
             try:
@@ -435,15 +450,18 @@ class SourceSupervisor:
         command_runner: CommandRunner | None = None,
         downstream_status: DownstreamStatus | None = None,
         kill_process_group: KillProcessGroup = os.killpg,
+        process_group_exists: ProcessGroupExists | None = None,
     ):
         self._process_factory = process_factory
         self._line_reader_factory = line_reader_factory
         self._command_runner = command_runner or BoundedSubprocessJSONRunner(
             process_factory=process_factory,
             kill_process_group=kill_process_group,
+            process_group_exists=process_group_exists,
         )
         self._downstream_status = downstream_status
         self._kill_process_group = kill_process_group
+        self._process_group_exists = process_group_exists or _process_group_exists
         self.lines_seen = 0
         self.input_bytes = 0
         self.markers_forwarded = 0
@@ -695,7 +713,11 @@ class SourceSupervisor:
         return returncode
 
     def _cleanup_process(self, process: ProcessLike) -> str:
-        cleanup = _terminate_process_group(process, self._kill_process_group)
+        cleanup = _terminate_process_group(
+            process,
+            self._kill_process_group,
+            self._process_group_exists,
+        )
         returncode = process.poll()
         if returncode is not None:
             self.source_exit = "zero" if returncode == 0 else "nonzero"
@@ -796,28 +818,96 @@ def _safe_child_env() -> dict[str, str]:
 
 
 def _terminate_process_group(
-    process: ProcessLike, kill_process_group: KillProcessGroup
+    process: ProcessLike,
+    kill_process_group: KillProcessGroup,
+    process_group_exists: ProcessGroupExists | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> str:
-    if process.poll() is not None:
-        return "not_needed"
+    group_exists = process_group_exists or _process_group_exists
+    leader_running = process.poll() is None
+    if not leader_running:
+        # A numeric PGID is not an owned capability after its tracked leader
+        # exits. It may already refer to an unrelated, reused process group.
+        return "failed" if group_exists(process.pid) else "not_needed"
+    if not group_exists(process.pid):
+        return "failed"
+
     try:
         kill_process_group(process.pid, signal.SIGTERM)
-    except (OSError, ProcessLookupError):
+    except ProcessLookupError:
+        if process.poll() is None:
+            return "failed"
+        return "failed" if group_exists(process.pid) else "not_needed"
+    except OSError:
         pass
+
     try:
         process.wait(timeout=PROCESS_TERM_TIMEOUT_SECONDS)
-        return "terminated"
     except subprocess.TimeoutExpired:
         pass
+    else:
+        return "failed" if group_exists(process.pid) else "terminated"
+
+    # Revalidate the tracked child identity immediately before escalation. A
+    # surviving numeric group after leader exit is ambiguous and must not be
+    # signalled.
+    if process.poll() is not None:
+        return "failed" if group_exists(process.pid) else "terminated"
+    if not group_exists(process.pid):
+        return "failed"
+
     try:
         kill_process_group(process.pid, signal.SIGKILL)
-    except (OSError, ProcessLookupError):
+    except ProcessLookupError:
+        if process.poll() is None:
+            return "failed"
+        return "failed" if group_exists(process.pid) else "killed"
+    except OSError:
         pass
-    try:
-        process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
+
+    leader_kill_timed_out = False
+    if process.poll() is None:
+        try:
+            process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            leader_kill_timed_out = True
+    group_gone = _wait_for_process_group_exit(
+        process.pid,
+        PROCESS_KILL_TIMEOUT_SECONDS,
+        group_exists,
+        monotonic,
+        sleeper,
+    )
+    if leader_kill_timed_out or not group_gone or process.poll() is None:
         return "failed"
     return "killed"
+
+
+def _process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _wait_for_process_group_exit(
+    process_group_id: int,
+    timeout: float,
+    process_group_exists: ProcessGroupExists,
+    monotonic: Callable[[], float],
+    sleeper: Callable[[float], None],
+) -> bool:
+    deadline = monotonic() + timeout
+    while process_group_exists(process_group_id):
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return False
+        sleeper(min(0.05, remaining))
+    return True
 
 
 def _suppress_failed_output(output: BinaryIO) -> None:
