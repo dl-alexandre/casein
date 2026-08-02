@@ -37,5 +37,8 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   and ConPTY start while retaining the plan for explicit finish/handoff cleanup.
 - **Landed:** PR #542 requires native provider input to resolve and validate the
   exact application-owned pane target before writing to ConPTY.
-- **Current slice:** connect that transaction to the application-owned native
+- **Landed:** PR #547 connects that transaction to the application-owned native
   session entry point, including agent-role topology reporting and failure handoff.
+- **Current slice:** introduce independently supervised native pane owners with
+  stable identity and deterministic ConPTY process-tree cleanup before replacing
+  the singleton session projection.
