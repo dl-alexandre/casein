@@ -777,6 +777,33 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         self.assertEqual("nonzero", result["report"]["source_exit"])
         self.assertEqual([], result["kills"])
 
+    def test_ios_cold_completed_source_with_unknown_final_exit_fails_closed(self):
+        terminal = marker_line(stage="first_cards_render_ready")
+        process = FakeProcess(
+            pid=30_002,
+            wait_outcomes=[0],
+            poll_outcomes=[None, 0, None, 0],
+        )
+        runner = FakeCommandRunner(
+            [devicectl_success(PID), devicectl_success()]
+        )
+
+        result = self.run_supervisor(
+            source_module.build_plan(
+                "ios", IOS_UDID, ios_suspended_launch=True
+            ),
+            [f"[connected:{IOS_UDID}]\n".encode(), terminal],
+            process=process,
+            command_runner=runner,
+        )
+
+        self.assertEqual(3, result["status"])
+        self.assertEqual(terminal, result["stdout"].getvalue())
+        self.assertEqual("source_capability_failed", result["report"]["status"])
+        self.assertEqual("not_needed", result["report"]["cleanup"])
+        self.assertEqual("unknown", result["report"]["source_exit"])
+        self.assertEqual([], result["kills"])
+
     def test_devicectl_json_pid_is_strict_and_resume_must_match(self):
         valid = source_module.IOSLifecycle(
             FakeCommandRunner([devicectl_success(PID)])

@@ -559,14 +559,17 @@ class SourceSupervisor:
                 ):
                     exited_before_cleanup = process.poll()
                     self.cleanup = self._cleanup_process(process)
-                    source_exited_nonzero = (
+                    source_exit_failed_or_unverified = (
                         exited_before_cleanup is not None
                         and exited_before_cleanup != 0
                     ) or (
                         self.cleanup == "not_needed"
-                        and self.source_exit == "nonzero"
+                        and self.source_exit != "zero"
                     )
-                    if self.cleanup == "failed" or source_exited_nonzero:
+                    if (
+                        self.cleanup == "failed"
+                        or source_exit_failed_or_unverified
+                    ):
                         status, exit_code = "source_capability_failed", 3
                     else:
                         status, exit_code = "ios_cold_generation_complete", 0
