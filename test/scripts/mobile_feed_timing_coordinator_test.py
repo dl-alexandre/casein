@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from collections import deque
 from pathlib import Path
@@ -1725,211 +1726,227 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
         latch.mark_cohort(matched=None)
         self.assertEqual("failed", latch.cohort_state)
 
-    def test_android_cold_lifecycle_is_exact_package_only_force_stop_start_order(self):
+    def test_android_cold_uses_twenty_fresh_sources_and_never_force_stops_one(self):
         with tempfile.TemporaryDirectory() as root:
-            config = self.config(root, cycle="cold")
-            driver = coordinator.PhysicalSourceDriver(config)
-            runner = FakeCommandRunner()
+            events: list[str] = []
+            command_calls: list[tuple[str, ...]] = []
+            source_outputs: list[object] = []
+            state = {"source_live": False, "starts": 0, "killed_by_force_stop": 0}
             vault = coordinator.TerminalGenerationVault()
-            for index in range(1, 21):
-                vault.add_terminal(generation(index))
-            driver._run_android_cold(runner, vault)
-            self.assertEqual(40, len(runner.calls))
-            for offset in range(0, 40, 2):
-                self.assertEqual(
-                    coordinator.build_android_force_stop_argv(ANDROID_SERIAL),
-                    runner.calls[offset][0],
-                )
-                self.assertEqual(
-                    coordinator.build_android_start_argv(ANDROID_SERIAL),
-                    runner.calls[offset + 1][0],
-                )
-            joined = repr([call[0] for call in runner.calls])
-            self.assertNotIn("pm clear", joined)
-            self.assertNotIn("uninstall", joined)
 
-    def test_android_cold_concurrent_source_ready_precedes_every_lifecycle_command(self):
-        with tempfile.TemporaryDirectory() as root:
-            events = []
-            source_can_finish = threading.Event()
-            commands_complete = threading.Event()
-            latch = coordinator.CompletionLatch()
-            vault = coordinator.TerminalGenerationVault()
-            result = {}
-
-            class ExitedSourceProcess:
-                pid = 741
-                stdin = None
-                stdout = None
-                stderr = None
-
-                def poll(self):
-                    return 0
-
-                def wait(self, timeout=None):
-                    return 0
-
-            def source_process_factory(_argv, **_kwargs):
-                events.append("source_process_created")
-                return ExitedSourceProcess()
-
-            class ConcurrentSupervisor:
+            class PerGenerationSupervisor:
                 def __init__(self, **kwargs):
-                    self.process_factory = kwargs["process_factory"]
-                    self.line_reader_factory = kwargs["line_reader_factory"]
+                    self.source_ready = kwargs["source_ready"]
                     self.downstream_status = kwargs["downstream_status"]
 
                 def run(self, plan, _output, status):
-                    self.process_factory(
-                        plan.source_argv,
-                        shell=False,
-                        start_new_session=True,
-                    )
-                    read_fd, write_fd = os.pipe()
-                    read_stream = os.fdopen(read_fd, "rb", buffering=0)
-                    reader = None
-                    try:
-                        reader = self.line_reader_factory(read_stream)
-                        events.append("source_ready")
-                        self.assert_downstream_pending()
-                        if not source_can_finish.wait(2):
-                            raise AssertionError("source completion was not released")
-                        if self.downstream_status() != 0:
-                            raise AssertionError("pipeline completion was not visible")
-                        status.write(
-                            json.dumps(
-                                {
-                                    "supervisor": source.SUPERVISOR_NAME,
-                                    "status": "downstream_complete",
-                                }
-                            )
-                            + "\n"
+                    self.assert_android_plan(plan)
+                    source_outputs.append(_output)
+                    if state["source_live"]:
+                        raise AssertionError("a previous source was still live")
+                    state["source_live"] = True
+                    events.append("source_started")
+                    self.source_ready()
+                    events.append("source_ready")
+                    deadline = time.monotonic() + 2
+                    while self.downstream_status() != 0:
+                        if time.monotonic() >= deadline:
+                            raise AssertionError("terminal acceptance was not released")
+                        threading.Event().wait(0.001)
+                    events.append("source_closed")
+                    state["source_live"] = False
+                    status.write(
+                        json.dumps(
+                            {
+                                "supervisor": source.SUPERVISOR_NAME,
+                                "status": "downstream_complete",
+                            }
                         )
-                        return 0
-                    finally:
-                        if reader is not None:
-                            reader.close()
-                        read_stream.close()
-                        os.close(write_fd)
+                        + "\n"
+                    )
+                    return 0
 
-                def assert_downstream_pending(self):
-                    if self.downstream_status() is not None:
-                        raise AssertionError("pipeline completed before lifecycle")
+                def assert_android_plan(self, plan):
+                    self_outer.assertEqual("android", plan.platform)
+                    self_outer.assertEqual(
+                        source.build_android_source_argv(ANDROID_SERIAL),
+                        plan.source_argv,
+                    )
 
-            class ConcurrentCommandRunner:
+            self_outer = self
+
+            class OrderedCommandRunner:
                 def __init__(self, _factory):
-                    self.starts = 0
+                    return None
 
                 def run(self, argv, _timeout):
+                    command_calls.append(argv)
                     if argv == coordinator.build_android_force_stop_argv(
                         ANDROID_SERIAL
                     ):
                         events.append("force_stop")
+                        if state["source_live"]:
+                            state["killed_by_force_stop"] += 1
+                            state["source_live"] = False
                         return
                     if argv == coordinator.build_android_start_argv(ANDROID_SERIAL):
-                        self.starts += 1
-                        events.append("start")
-                        vault.add_terminal(generation(self.starts))
-                        if self.starts == coordinator.TARGET_GENERATIONS:
-                            commands_complete.set()
+                        if not state["source_live"]:
+                            raise AssertionError("app launched without a ready source")
+                        state["starts"] += 1
+                        events.append("app_start")
+                        vault.add_terminal(generation(state["starts"]))
+                        events.append("terminal_accepted")
                         return
                     raise AssertionError("unexpected lifecycle command")
 
             driver = coordinator.PhysicalSourceDriver(
                 self.config(root, cycle="cold"),
-                process_factory=source_process_factory,
-                supervisor_factory=ConcurrentSupervisor,
+                supervisor_factory=PerGenerationSupervisor,
             )
-            registry = coordinator.ScopedProcessRegistry(
-                kill_process_group=lambda _pid, _signal: None
-            )
-
-            def run_driver():
-                result["success"] = driver.run(
-                    io.BytesIO(), latch, vault, registry
-                )
-
+            output = io.BytesIO()
             with mock.patch.object(
-                coordinator,
-                "BoundedCommandRunner",
-                ConcurrentCommandRunner,
+                coordinator, "BoundedCommandRunner", OrderedCommandRunner
             ):
-                worker = threading.Thread(target=run_driver)
-                worker.start()
-                self.assertTrue(commands_complete.wait(2))
-                self.assertEqual("source_process_created", events[0])
-                self.assertEqual("source_ready", events[1])
-                self.assertEqual(
-                    ["force_stop", "start"] * coordinator.TARGET_GENERATIONS,
-                    events[2:],
+                success = driver.run(
+                    output,
+                    coordinator.CompletionLatch(),
+                    vault,
+                    coordinator.ScopedProcessRegistry(),
                 )
-                latch.mark_pipeline_complete()
-                source_can_finish.set()
-                worker.join(2)
 
-            self.assertFalse(worker.is_alive())
-            self.assertTrue(result["success"])
+            expected_generation = [
+                "force_stop",
+                "source_started",
+                "source_ready",
+                "app_start",
+                "terminal_accepted",
+                "source_closed",
+            ]
+            self.assertTrue(success, (events, driver.diagnostic_status()))
+            self.assertEqual(
+                expected_generation * coordinator.TARGET_GENERATIONS, events
+            )
+            self.assertEqual(0, state["killed_by_force_stop"])
+            self.assertFalse(state["source_live"])
+            self.assertEqual(coordinator.TARGET_GENERATIONS, len(source_outputs))
+            self.assertTrue(all(item is output for item in source_outputs))
+            self.assertEqual(coordinator.TARGET_GENERATIONS, vault.count)
+            self.assertEqual(40, len(command_calls))
+            self.assertEqual(
+                [
+                    item
+                    for _index in range(coordinator.TARGET_GENERATIONS)
+                    for item in (
+                        coordinator.build_android_force_stop_argv(ANDROID_SERIAL),
+                        coordinator.build_android_start_argv(ANDROID_SERIAL),
+                    )
+                ],
+                command_calls,
+            )
+            joined = repr(command_calls)
+            self.assertNotIn("pm clear", joined)
+            self.assertNotIn("uninstall", joined)
             self.assertEqual("downstream_complete", driver.diagnostic_status())
 
-    def test_android_cold_source_capability_failure_never_starts_lifecycle(self):
+    def test_android_cold_failures_cleanup_once_and_never_retry(self):
         with tempfile.TemporaryDirectory() as root:
-            for capability in ("missing_stdout", "invalid_reader"):
-                with self.subTest(capability=capability):
-                    command_runner_created = False
-                    stream = None if capability == "missing_stdout" else io.BytesIO()
+            for failure_mode in ("readiness", "start", "terminal", "cleanup"):
+                with self.subTest(failure_mode=failure_mode):
+                    events: list[str] = []
+                    abort_source = threading.Event()
+                    vault = coordinator.TerminalGenerationVault()
 
-                    class IncapableSourceProcess:
-                        pid = 752
-                        stdin = None
-                        stdout = stream
-                        stderr = None
+                    class FailingRegistry:
+                        def add(self, _process):
+                            return None
 
-                        def poll(self):
-                            return 0
+                        def terminate_all(self):
+                            events.append("cleanup")
+                            abort_source.set()
+                            return failure_mode != "cleanup"
 
-                        def wait(self, timeout=None):
-                            return 0
+                    class AdversarialSupervisor:
+                        def __init__(self, **kwargs):
+                            self.source_ready = kwargs["source_ready"]
+                            self.downstream_status = kwargs["downstream_status"]
 
-                    def process_factory(_argv, **_kwargs):
-                        return IncapableSourceProcess()
+                        def run(self, _plan, _output, status):
+                            events.append("source_started")
+                            if failure_mode == "readiness":
+                                status_value = "source_capability_failed"
+                            else:
+                                self.source_ready()
+                                events.append("source_ready")
+                                if failure_mode == "terminal":
+                                    abort_source.wait(2)
+                                elif failure_mode in {"start", "cleanup"}:
+                                    abort_source.wait(2)
+                                status_value = "source_capability_failed"
+                            events.append("source_closed")
+                            status.write(
+                                json.dumps(
+                                    {
+                                        "supervisor": source.SUPERVISOR_NAME,
+                                        "status": status_value,
+                                    }
+                                )
+                                + "\n"
+                            )
+                            return 3
 
-                    class ForbiddenCommandRunner:
+                    class AdversarialCommandRunner:
                         def __init__(self, _factory):
-                            nonlocal command_runner_created
-                            command_runner_created = True
+                            return None
+
+                        def run(self, argv, _timeout):
+                            if argv == coordinator.build_android_force_stop_argv(
+                                ANDROID_SERIAL
+                            ):
+                                events.append("force_stop")
+                                return
+                            if argv == coordinator.build_android_start_argv(
+                                ANDROID_SERIAL
+                            ):
+                                events.append("app_start")
+                                if failure_mode in {"start", "cleanup"}:
+                                    raise coordinator.CoordinatorFailure(
+                                        "source_failed"
+                                    )
+                                return
+                            raise AssertionError("unexpected lifecycle command")
 
                     driver = coordinator.PhysicalSourceDriver(
                         self.config(root, cycle="cold"),
-                        process_factory=process_factory,
+                        supervisor_factory=AdversarialSupervisor,
                     )
-                    registry = coordinator.ScopedProcessRegistry()
-
                     with (
                         mock.patch.object(
                             coordinator,
-                            "SOURCE_READY_TIMEOUT_SECONDS",
-                            0,
+                            "BoundedCommandRunner",
+                            AdversarialCommandRunner,
                         ),
                         mock.patch.object(
-                            coordinator,
-                            "BoundedCommandRunner",
-                            ForbiddenCommandRunner,
+                            coordinator, "SOURCE_READY_TIMEOUT_SECONDS", 0.05
+                        ),
+                        mock.patch.object(
+                            coordinator, "ANDROID_COMMAND_TIMEOUT_SECONDS", 0
                         ),
                     ):
                         success = driver.run(
                             io.BytesIO(),
                             coordinator.CompletionLatch(),
-                            coordinator.TerminalGenerationVault(),
-                            registry,
+                            vault,
+                            FailingRegistry(),
                         )
 
                     self.assertFalse(success)
-                    self.assertFalse(command_runner_created)
-                    self.assertEqual(
-                        "source_capability_failed", driver.diagnostic_status()
-                    )
-                    if stream is not None:
-                        stream.close()
+                    self.assertEqual(1, events.count("force_stop"))
+                    self.assertLessEqual(events.count("app_start"), 1)
+                    self.assertEqual(1, events.count("source_started"))
+                    self.assertEqual(1, events.count("source_closed"))
+                    self.assertEqual(1, events.count("cleanup"))
+                    self.assertEqual(0, vault.count)
+                    self.assertNotIn("downstream_complete", events)
 
     def test_android_reconnect_runner_is_exact_serial_and_one_test_method(self):
         argv = coordinator.build_android_reconnect_runner_argv(ANDROID_SERIAL)

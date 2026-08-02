@@ -1084,6 +1084,8 @@ class PhysicalSourceDriver:
         try:
             if self._config.platform == "ios" and self._config.cycle == "cold":
                 result = self._run_ios_cold(output, registry)
+            elif self._config.platform == "android" and self._config.cycle == "cold":
+                result = self._run_android_cold(output, vault, registry)
             else:
                 result = self._run_continuous(output, latch, vault, registry)
             if not result and self.diagnostic_status() == "running":
@@ -1138,13 +1140,6 @@ class PhysicalSourceDriver:
         )
         if self._config.platform == "android":
             plan = source_contract.build_plan("android", self._config.device)
-
-            def line_reader_factory(
-                stream: BinaryIO,
-            ) -> source_contract.SelectorLineReader:
-                reader = source_contract.SelectorLineReader(stream)
-                source_ready.set()
-                return reader
         else:
             if self._config.ios_pid is None:
                 plan = source_contract.build_plan(
@@ -1156,8 +1151,6 @@ class PhysicalSourceDriver:
                 plan = source_contract.build_plan(
                     "ios", self._config.device, ios_pid=self._config.ios_pid
                 )
-            line_reader_factory = source_contract.SelectorLineReader
-
         status = FixedStatusSink("supervisor")
         result: dict[str, object] = {"exit": None}
 
@@ -1165,13 +1158,8 @@ class PhysicalSourceDriver:
             try:
                 supervisor = self._supervisor_factory(
                     process_factory=factory,
-                    line_reader_factory=line_reader_factory,
                     downstream_status=latch.downstream_status,
-                    source_ready=(
-                        source_ready.set
-                        if self._config.platform == "ios"
-                        else None
-                    ),
+                    source_ready=source_ready.set,
                 )
                 result["exit"] = supervisor.run(plan, output, status)
             except Exception:
@@ -1193,9 +1181,7 @@ class PhysicalSourceDriver:
 
         command_runner = BoundedCommandRunner(factory)
         try:
-            if self._config.platform == "android" and self._config.cycle == "cold":
-                self._run_android_cold(command_runner, vault)
-            elif self._config.platform == "android":
+            if self._config.platform == "android":
                 command_runner.run(
                     build_android_reconnect_runner_argv(self._config.device),
                     ANDROID_RECONNECT_TIMEOUT_SECONDS,
@@ -1226,20 +1212,88 @@ class PhysicalSourceDriver:
 
     def _run_android_cold(
         self,
-        command_runner: BoundedCommandRunner,
+        output: BinaryIO,
         vault: TerminalGenerationVault,
-    ) -> None:
+        registry: ScopedProcessRegistry,
+    ) -> bool:
+        factory = TrackingProcessFactory(
+            registry,
+            process_factory=self._process_factory,
+        )
+        command_runner = BoundedCommandRunner(factory)
+        plan = source_contract.build_plan("android", self._config.device)
+
         for index in range(1, TARGET_GENERATIONS + 1):
             command_runner.run(
                 build_android_force_stop_argv(self._config.device),
                 ANDROID_COMMAND_TIMEOUT_SECONDS,
             )
-            command_runner.run(
-                build_android_start_argv(self._config.device),
-                ANDROID_COMMAND_TIMEOUT_SECONDS,
+
+            source_ready = threading.Event()
+            terminal_accepted = threading.Event()
+            status = FixedStatusSink("supervisor")
+            result: dict[str, object] = {"exit": None}
+
+            def supervise_generation() -> None:
+                try:
+                    supervisor = self._supervisor_factory(
+                        process_factory=factory,
+                        downstream_status=(
+                            lambda: 0 if terminal_accepted.is_set() else None
+                        ),
+                        source_ready=source_ready.set,
+                    )
+                    result["exit"] = supervisor.run(plan, output, status)
+                except Exception:
+                    result["exit"] = 70
+                finally:
+                    self._set_diagnostic_status(
+                        status.status or "internal_error"
+                    )
+
+            source_thread = threading.Thread(
+                target=supervise_generation,
+                name="casein-mobile-timing-android-cold-source",
+                daemon=True,
             )
-            if not vault.wait_for_count(index, ANDROID_COMMAND_TIMEOUT_SECONDS):
-                raise CoordinatorFailure("source_failed")
+            source_thread.start()
+
+            try:
+                if not source_ready.wait(SOURCE_READY_TIMEOUT_SECONDS):
+                    raise CoordinatorFailure("source_failed")
+                if not source_thread.is_alive():
+                    raise CoordinatorFailure("source_failed")
+
+                command_runner.run(
+                    build_android_start_argv(self._config.device),
+                    ANDROID_COMMAND_TIMEOUT_SECONDS,
+                )
+                if not vault.wait_for_count(
+                    index, ANDROID_COMMAND_TIMEOUT_SECONDS
+                ):
+                    raise CoordinatorFailure("source_failed")
+
+                terminal_accepted.set()
+                source_thread.join(SOURCE_JOIN_TIMEOUT_SECONDS)
+                if (
+                    source_thread.is_alive()
+                    or result["exit"] != 0
+                    or status.status != "downstream_complete"
+                ):
+                    raise CoordinatorFailure("source_failed")
+            except BaseException:
+                cleanup_complete = False
+                try:
+                    cleanup_complete = registry.terminate_all()
+                finally:
+                    source_thread.join(SOURCE_JOIN_TIMEOUT_SECONDS)
+                    if source_thread.is_alive() or not cleanup_complete:
+                        self._set_diagnostic_status(
+                            "source_capability_failed"
+                        )
+                raise
+
+        return True
 
 
 class BridgeSession:

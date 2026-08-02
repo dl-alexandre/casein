@@ -34,6 +34,7 @@ SUPERVISOR_NAME = "casein_mobile_feed_timing_source_supervisor"
 ANDROID_PACKAGE = "com.example.casein_mob"
 IOS_BUNDLE_ID = "com.alexandrefamilyfarm.casein-mob"
 MARKER = b"mobile_feed_stage "
+ANDROID_READY_FRAME = b"casein_mobile_feed_source_ready\n"
 
 MAX_LINE_BYTES = 1_024
 MAX_INPUT_BYTES = 10 * 1_024 * 1_024
@@ -42,16 +43,20 @@ MAX_IOS_PREFIX_BYTES = 768
 MAX_COMMAND_JSON_BYTES = 16 * 1_024
 COMMAND_TIMEOUT_SECONDS = 35.0
 IOS_READY_TIMEOUT_SECONDS = 10.0
+ANDROID_READY_TIMEOUT_SECONDS = 10.0
 DOWNSTREAM_POLL_SECONDS = 0.25
 PROCESS_TERM_TIMEOUT_SECONDS = 1.0
 PROCESS_KILL_TIMEOUT_SECONDS = 1.0
 MAX_PID = 2_147_483_647
 
 ANDROID_REMOTE_COMMAND = (
-    f"exec run-as {ANDROID_PACKAGE} "
-    "logcat -b main -v raw -T 1 "
-    "--regex='^mobile_feed_stage[ ]connection_generation=' "
-    "'Elixir:I' '*:S'"
+    f"exec run-as {ANDROID_PACKAGE} sh -c '"
+    "logcat -b main -d -t 1 >/dev/null 2>&1 || exit 1; "
+    'printf "%s\\n" casein_mobile_feed_source_ready; '
+    "exec logcat -b main -v raw -T 1 "
+    '--regex="^mobile_feed_stage[ ]connection_generation=" '
+    '"Elixir:I" "*:S"'
+    "'"
 )
 
 _ANDROID_SERIAL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -498,17 +503,19 @@ class SourceSupervisor:
                 raise SourceFailure("source_capability_failed")
             reader = self._line_reader_factory(stdout)
 
-            if plan.platform == "ios":
+            if plan.platform == "android":
+                self._consume_android_ready(reader)
+            else:
                 self._consume_ios_connected(reader, plan.device_id)
                 if plan.ios_launch_mode is not None:
                     IOSLifecycle(self._command_runner).resume(plan.device_id, pid)
-                if self._source_ready is not None:
-                    self._source_ready()
+            if self._source_ready is not None:
+                self._source_ready()
 
             while True:
                 if self._downstream_status is not None and self._verified_downstream_success():
                     self.cleanup = self._cleanup_process(process)
-                    if self.cleanup == "failed":
+                    if not self._cleanup_proves_source_closed():
                         status, exit_code = "source_capability_failed", 3
                     else:
                         self.downstream_completion = "probe"
@@ -546,7 +553,7 @@ class SourceSupervisor:
                     _suppress_failed_output(output)
                     cleanup = self._cleanup_process(process)
                     self.cleanup = cleanup
-                    if cleanup == "failed":
+                    if not self._cleanup_proves_source_closed():
                         status, exit_code = "source_capability_failed", 3
                     elif self._verified_downstream_success():
                         self.downstream_completion = "epipe"
@@ -560,7 +567,7 @@ class SourceSupervisor:
                         _suppress_failed_output(output)
                         cleanup = self._cleanup_process(process)
                         self.cleanup = cleanup
-                        if cleanup == "failed":
+                        if not self._cleanup_proves_source_closed():
                             status, exit_code = "source_capability_failed", 3
                         elif self._verified_downstream_success():
                             self.downstream_completion = "epipe"
@@ -673,6 +680,16 @@ class SourceSupervisor:
             raise SourceFailure("source_capability_failed")
         self.status_lines_discarded += 1
 
+    def _consume_android_ready(self, reader: SelectorLineReader) -> None:
+        try:
+            raw_line = reader.readline(ANDROID_READY_TIMEOUT_SECONDS)
+        except ReadTimeout:
+            raise SourceFailure("source_capability_failed") from None
+        if raw_line != ANDROID_READY_FRAME:
+            raise SourceFailure("source_capability_failed")
+        self._account_line(raw_line)
+        self.status_lines_discarded += 1
+
     def _account_line(self, raw_line: bytes) -> None:
         self.lines_seen += 1
         self.input_bytes += len(raw_line)
@@ -736,6 +753,11 @@ class SourceSupervisor:
         except Exception:
             return False
         return type(status) is int and status == 0
+
+    def _cleanup_proves_source_closed(self) -> bool:
+        if self.cleanup in {"terminated", "killed"}:
+            return True
+        return self.cleanup == "not_needed" and self.source_exit == "zero"
 
     def _write_status(self, output: TextIO, platform: str, status: str) -> None:
         payload = {
