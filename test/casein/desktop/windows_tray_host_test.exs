@@ -292,4 +292,15 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert smoke =~ "Malformed-state recovery install exited with $LASTEXITCODE"
     assert smoke =~ "Recovery install did not restore current release identity"
   end
+
+  test "verified installer cleans only owned interrupted staging directories" do
+    installer = File.read!(@installer)
+    smoke = File.read!(@package_smoke)
+
+    assert installer =~ "function Remove-AbandonedReleaseStages"
+    assert installer =~ "\\.staging-[0-9]+$"
+    assert installer =~ "Remove-AbandonedReleaseStages -ReleasesRoot $releasesRoot"
+    assert smoke =~ "interrupted.staging-4242"
+    assert smoke =~ "Installer left interrupted staging data behind"
+  end
 end

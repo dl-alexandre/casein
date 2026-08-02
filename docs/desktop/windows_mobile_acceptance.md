@@ -124,7 +124,8 @@ disabled, then removes the invalid PID and runtime-status markers without
 reporting the runtime as ready. The same smoke proves the stable launcher fails
 closed on malformed `current.json`, does not disclose the disposable local data
 root through acceptance evidence, and a verified package atomically restores valid installed-release state.
-Interrupted install staging remains a separate acceptance gap.
+It also removes only abandoned install staging directories with the owned
+`*.staging-<PID>` shape before a verified reinstall.
 
 The current repository-gap subtraction and sequencing record is
 [`windows_acceptance_gap_audit.md`](windows_acceptance_gap_audit.md). Keep that
