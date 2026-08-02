@@ -379,13 +379,21 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert {:ok, first_reply, first_socket} =
              join_mobile(user_id,
                role: :admin,
-               assigns: %{mobile_origin_id: origin_id, mobile_platform: "ios"}
+               assigns: %{
+                 device_link_id: "device-link-ios",
+                 mobile_origin_id: origin_id,
+                 mobile_platform: "ios"
+               }
              )
 
     assert {:ok, second_reply, second_socket} =
              join_mobile(user_id,
                role: :admin,
-               assigns: %{mobile_origin_id: origin_id, mobile_platform: "android"}
+               assigns: %{
+                 device_link_id: "device-link-android",
+                 mobile_origin_id: origin_id,
+                 mobile_platform: "android"
+               }
              )
 
     assert [first_wire_card] = first_reply.cards
@@ -1134,6 +1142,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
   test "continue_task delivers only its fixed intent to the exact agent and replays once", %{
     workspace_root: workspace_root
   } do
+    sentinel = "CLIENT-FREE-FORM-MUST-NOT-BE-DELIVERED"
     user_id = unique_id("dev")
     workspace_id = unique_id("ws")
     run_id = unique_id("run")
@@ -1166,7 +1175,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
         "action" => "continue_task",
         "origin_id" => "origin-local",
         "request_id" => "continue-task-once",
-        "payload" => %{}
+        "payload" => %{"message" => sentinel, "note" => sentinel}
       })
 
     ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
@@ -1187,6 +1196,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id,
                     "Continue with the current task.", [target: ^pane_id, submit: true]}
 
+    refute_receive {:fake_tmux_paste_text, _, _, ^sentinel, _}, 100
     refute_receive {:fake_tmux_paste_text, ^tmux_session, "%1", _, _}, 100
     refute_receive {:fake_tmux_paste_text, ^tmux_session, "%3", _, _}, 100
 
@@ -1195,16 +1205,30 @@ defmodule CaseinWeb.MobileUserChannelTest do
     refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
 
     assert %{action_id: "follow_up", result: %{"requested_action_id" => "continue_task"}} =
+             outcome =
              Repo.get_by!(ActionOutcome,
                user_id: user_id,
                request_id: "continue-task-once",
                status: "accepted"
              )
+
+    refute Jason.encode!(outcome.result) =~ sentinel
+
+    audit =
+      workspace_id
+      |> Audit.recent_for(20)
+      |> Enum.find(
+        &(&1.action == "mobile.intervention" and &1.metadata["action_id"] == "continue_task")
+      )
+
+    assert audit.metadata["outcome"] == "succeeded"
+    refute Jason.encode!(audit.metadata) =~ sentinel
   end
 
   test "summarize_blocker delivers only its fixed intent to the exact agent and replays once", %{
     workspace_root: workspace_root
   } do
+    sentinel = "CLIENT-BLOCKER-TEXT-MUST-NOT-BE-DELIVERED"
     user_id = unique_id("dev")
     workspace_id = unique_id("ws")
     run_id = unique_id("run")
@@ -1252,7 +1276,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
         "action" => "summarize_blocker",
         "origin_id" => "origin-local",
         "request_id" => "summarize-blocker-once",
-        "payload" => %{}
+        "payload" => %{"message" => sentinel, "note" => sentinel}
       })
 
     ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
@@ -1274,6 +1298,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
                     "Summarize the blocker and the decision you need from me.",
                     [target: ^pane_id, submit: true]}
 
+    refute_receive {:fake_tmux_paste_text, _, _, ^sentinel, _}, 100
     refute_receive {:fake_tmux_paste_text, ^tmux_session, "%1", _, _}, 100
     refute_receive {:fake_tmux_paste_text, ^tmux_session, "%3", _, _}, 100
 
@@ -1285,11 +1310,25 @@ defmodule CaseinWeb.MobileUserChannelTest do
              action_id: "follow_up",
              result: %{"requested_action_id" => "summarize_blocker"}
            } =
+             outcome =
              Repo.get_by!(ActionOutcome,
                user_id: user_id,
                request_id: "summarize-blocker-once",
                status: "accepted"
              )
+
+    refute Jason.encode!(outcome.result) =~ sentinel
+
+    audit =
+      workspace_id
+      |> Audit.recent_for(20)
+      |> Enum.find(
+        &(&1.action == "mobile.intervention" and
+            &1.metadata["action_id"] == "summarize_blocker")
+      )
+
+    assert audit.metadata["outcome"] == "succeeded"
+    refute Jason.encode!(audit.metadata) =~ sentinel
   end
 
   test "tampered origin and replaced or non-agent pane cannot mutate", %{
