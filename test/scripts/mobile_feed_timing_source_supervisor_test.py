@@ -99,15 +99,21 @@ class FakeProcess:
         *,
         pid: int = 700,
         wait_outcomes: list[int | Exception] | None = None,
+        poll_outcomes: list[int | None] | None = None,
         stdout: object | None = None,
     ):
         self.pid = pid
         self.stdout = stdout if stdout is not None else io.BytesIO()
         self._wait_outcomes = deque(wait_outcomes or [0])
+        self._poll_outcomes = (
+            deque(poll_outcomes) if poll_outcomes is not None else None
+        )
         self._returncode: int | None = None
         self.wait_timeouts: list[float | None] = []
 
     def poll(self) -> int | None:
+        if self._poll_outcomes:
+            self._returncode = self._poll_outcomes.popleft()
         return self._returncode
 
     def wait(self, timeout: float | None = None) -> int:
@@ -743,6 +749,33 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         adapter_report = json.loads(adapter.stderr)
         self.assertEqual("complete", adapter_report["status"])
         self.assertEqual(20, adapter_report["terminal_generations"])
+
+    def test_ios_cold_terminal_race_with_natural_nonzero_exit_fails_closed(self):
+        terminal = marker_line(stage="first_cards_render_ready")
+        process = FakeProcess(
+            pid=30_001,
+            wait_outcomes=[0],
+            poll_outcomes=[None, 9, 9, 9],
+        )
+        runner = FakeCommandRunner(
+            [devicectl_success(PID), devicectl_success()]
+        )
+
+        result = self.run_supervisor(
+            source_module.build_plan(
+                "ios", IOS_UDID, ios_suspended_launch=True
+            ),
+            [f"[connected:{IOS_UDID}]\n".encode(), terminal],
+            process=process,
+            command_runner=runner,
+        )
+
+        self.assertEqual(3, result["status"])
+        self.assertEqual(terminal, result["stdout"].getvalue())
+        self.assertEqual("source_capability_failed", result["report"]["status"])
+        self.assertEqual("not_needed", result["report"]["cleanup"])
+        self.assertEqual("nonzero", result["report"]["source_exit"])
+        self.assertEqual([], result["kills"])
 
     def test_devicectl_json_pid_is_strict_and_resume_must_match(self):
         valid = source_module.IOSLifecycle(
