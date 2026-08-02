@@ -403,13 +403,24 @@ defmodule Casein.Mobile.FeedTimingSoakBridge do
 
   defp validate_cookie(_cookie), do: {:error, :invalid_credential}
 
-  defp cookie_bytes_valid?(<<>>), do: true
+  defp cookie_bytes_valid?(cookie),
+    do: urlsafe_cookie_bytes_valid?(cookie) or standard_cookie_bytes_valid?(cookie)
 
-  defp cookie_bytes_valid?(<<byte, rest::binary>>)
+  defp urlsafe_cookie_bytes_valid?(<<>>), do: true
+
+  defp urlsafe_cookie_bytes_valid?(<<byte, rest::binary>>)
        when byte in ?A..?Z or byte in ?a..?z or byte in ?0..?9 or byte in [?_, ?-],
-       do: cookie_bytes_valid?(rest)
+       do: urlsafe_cookie_bytes_valid?(rest)
 
-  defp cookie_bytes_valid?(_invalid), do: false
+  defp urlsafe_cookie_bytes_valid?(_invalid), do: false
+
+  defp standard_cookie_bytes_valid?(<<>>), do: true
+
+  defp standard_cookie_bytes_valid?(<<byte, rest::binary>>)
+       when byte in ?A..?Z or byte in ?a..?z or byte in ?0..?9 or byte in [?+, ?/],
+       do: standard_cookie_bytes_valid?(rest)
+
+  defp standard_cookie_bytes_valid?(_invalid), do: false
 
   defp hostname_valid?(hostname) when byte_size(hostname) in 1..63 do
     hostname

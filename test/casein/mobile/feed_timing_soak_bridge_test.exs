@@ -90,6 +90,37 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
     end)
   end
 
+  test "cookie parser accepts hex or one unpadded Base64 alphabet without mixing" do
+    accepted = [
+      String.duplicate("a7", 24),
+      String.duplicate("Ab_9-", 10),
+      String.duplicate("Ab+/", 12),
+      String.duplicate("A", 32),
+      String.duplicate("+/", 64)
+    ]
+
+    Enum.each(accepted, fn cookie ->
+      assert {:ok, ^cookie} =
+               FeedTimingSoakBridge.parse_cookie("RELEASE_COOKIE=#{cookie}\n")
+    end)
+
+    invalid_alphabet = [
+      String.duplicate("A", 31),
+      String.duplicate("A", 129),
+      String.duplicate("A", 30) <> "_+",
+      String.duplicate("A", 30) <> "-/",
+      "=" <> String.duplicate("A", 31),
+      String.duplicate("A", 16) <> "=" <> String.duplicate("A", 16),
+      String.duplicate("A", 31) <> "=",
+      String.duplicate("A", 30) <> "=="
+    ]
+
+    Enum.each(invalid_alphabet, fn cookie ->
+      assert {:error, :invalid_credential} =
+               FeedTimingSoakBridge.parse_cookie("RELEASE_COOKIE=#{cookie}\n")
+    end)
+  end
+
   test "credential stat requires one private regular file without assuming a numeric owner" do
     private = %File.Stat{type: :regular, links: 1, mode: 0o100600, uid: 1_001, gid: 1_001}
 
