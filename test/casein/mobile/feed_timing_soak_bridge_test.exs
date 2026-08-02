@@ -109,6 +109,8 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
       String.duplicate("A", 129),
       String.duplicate("A", 30) <> "_+",
       String.duplicate("A", 30) <> "-/",
+      String.duplicate("A", 16) <> " " <> String.duplicate("A", 16),
+      String.duplicate("A", 16) <> "\t" <> String.duplicate("A", 16),
       "=" <> String.duplicate("A", 31),
       String.duplicate("A", 16) <> "=" <> String.duplicate("A", 16),
       String.duplicate("A", 31) <> "=",

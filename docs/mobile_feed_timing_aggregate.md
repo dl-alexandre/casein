@@ -83,7 +83,8 @@ dump. Its single literal assignment must contain 32–128 bytes in the existing
 hex/Base64url or unpadded standard Base64 alphabets; standard `+` and `/` bytes
 are accepted without mixing them with URL-safe `_` or `-`. Padding remains
 rejected so every bounded maintenance reader preserves the identical value.
-Quotes, whitespace, controls, and neighboring values are rejected without
-reflection. Moving the cookie into a dedicated systemd credential would
-further reduce file scope, but is a separate host-hardening change rather than
-a requirement of this bridge.
+Quotes, whitespace, and controls in the cookie are rejected. Ordinary
+unrelated neighboring assignments are ignored without reflection. Moving the
+cookie into a dedicated systemd credential would further reduce file scope,
+but is a separate host-hardening change rather than a requirement of this
+bridge.
