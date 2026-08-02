@@ -1010,6 +1010,45 @@ defmodule CaseinMob.SessionClientTest do
     refute_receive {:mobile_cards_status, :joined}
   end
 
+  test "boolean versions never establish or mutate the mobile snapshot baseline" do
+    topic = "mobile:user:me"
+    socket = socket_with_subscriber(topic, self())
+
+    socket =
+      Enum.reduce([true, false], socket, fn version, socket ->
+        invalid = mobile_snapshot(socket, version, [%{"id" => "must-not-leak"}])
+
+        assert {:ok, rejected} = SessionClient.handle_join(topic, invalid, socket)
+        assert rejected.assigns.accepted_mobile_snapshot_version == nil
+        assert rejected.assigns.accepted_mobile_snapshot_origin_id == nil
+        assert rejected.assigns.topic_snapshots == %{}
+        refute_receive {:mobile_cards_snapshot, _payload}
+        refute_receive {:mobile_cards_status, :joined}
+        rejected
+      end)
+
+    baseline = mobile_snapshot(socket, 6, [%{"id" => "accepted"}])
+    assert {:ok, socket} = SessionClient.handle_join(topic, baseline, socket)
+    assert socket.assigns.topic_snapshots[topic]["cards"] == baseline["cards"]
+    assert_receive {:mobile_cards_snapshot, received}
+    assert received["cards"] == baseline["cards"]
+    assert_receive {:mobile_cards_status, :joined}
+
+    accepted_cache = socket.assigns.topic_snapshots
+
+    Enum.reduce([true, false], socket, fn version, socket ->
+      invalid = mobile_snapshot(socket, version, [%{"id" => "must-not-replace"}])
+
+      assert {:ok, rejected} = SessionClient.handle_join(topic, invalid, socket)
+      assert rejected.assigns.accepted_mobile_snapshot_version == 6
+      assert rejected.assigns.accepted_mobile_snapshot_origin_id == "origin-1"
+      assert rejected.assigns.topic_snapshots == accepted_cache
+      refute_receive {:mobile_cards_snapshot, _payload}
+      refute_receive {:mobile_cards_status, :joined}
+      rejected
+    end)
+  end
+
   test "lower versions preserve the accepted cache while equal versions refresh metadata" do
     socket = socket_with_subscriber("mobile:user:me", self())
     baseline = mobile_snapshot(socket, 8, [], %{"live_work" => %{"status" => "hydrating"}})
@@ -1111,6 +1150,70 @@ defmodule CaseinMob.SessionClientTest do
     assert recovered.assigns.accepted_mobile_snapshot_version == 1
     assert_receive {:mobile_cards_snapshot, _payload}
     assert_receive {:mobile_cards_status, :joined}
+  end
+
+  test "a stale handle_join reply cannot establish or mutate the reconnect baseline" do
+    topic = "mobile:user:me"
+
+    socket =
+      socket_with_subscriber(topic, self())
+      |> Socket.assign(:test_mode?, true)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast(
+               {:configure, "http://127.0.0.1:1", "token"},
+               socket
+             )
+
+    old_context = socket.assigns.timing_context
+
+    assert {:ok, reconnecting} = SessionClient.handle_disconnect(:closed, socket)
+    assert_receive {:mobile_cards_status, :disconnected}
+    assert {:ok, reconnected} = SessionClient.handle_connect(reconnecting)
+
+    new_context = reconnected.assigns.timing_context
+    refute new_context.generation == old_context.generation
+    assert new_context.cycle == :reconnect
+
+    # Keep the new generation's origin and cycle valid so the old generation
+    # is the only fence responsible for rejecting this delayed join reply.
+    stale_reply =
+      reconnected
+      |> mobile_snapshot(99, [%{"id" => "stale-old-generation"}])
+      |> Map.put("connection_generation", old_context.generation)
+
+    assert stale_reply["connection_generation"] == old_context.generation
+    assert stale_reply["connection_cycle"] == Atom.to_string(new_context.cycle)
+    assert stale_reply["origin"]["id"] == "origin-1"
+
+    assert {:ok, reconnected} = SessionClient.handle_join(topic, stale_reply, reconnected)
+    assert reconnected.assigns.accepted_mobile_snapshot_version == nil
+    assert reconnected.assigns.accepted_mobile_snapshot_origin_id == nil
+    assert reconnected.assigns.topic_snapshots == %{}
+    refute_receive {:mobile_cards_snapshot, _payload}
+    refute_receive {:mobile_cards_status, :joined}
+
+    current_reply = mobile_snapshot(reconnected, 1, [%{"id" => "current-generation"}])
+    assert current_reply["connection_generation"] == new_context.generation
+    assert current_reply["connection_cycle"] == Atom.to_string(new_context.cycle)
+    assert current_reply["origin"] == stale_reply["origin"]
+
+    assert {:ok, accepted} = SessionClient.handle_join(topic, current_reply, reconnected)
+    assert accepted.assigns.accepted_mobile_snapshot_version == 1
+    assert accepted.assigns.accepted_mobile_snapshot_origin_id == "origin-1"
+    assert accepted.assigns.topic_snapshots[topic]["cards"] == current_reply["cards"]
+    assert_receive {:mobile_cards_snapshot, received}
+    assert received["cards"] == current_reply["cards"]
+    assert_receive {:mobile_cards_status, :joined}
+
+    accepted_cache = accepted.assigns.topic_snapshots
+
+    assert {:ok, rejected} = SessionClient.handle_join(topic, stale_reply, accepted)
+    assert rejected.assigns.accepted_mobile_snapshot_version == 1
+    assert rejected.assigns.accepted_mobile_snapshot_origin_id == "origin-1"
+    assert rejected.assigns.topic_snapshots == accepted_cache
+    refute_receive {:mobile_cards_snapshot, _payload}
+    refute_receive {:mobile_cards_status, :joined}
   end
 
   test "mismatched connection cycle and origin are rejected before cache or notify" do
