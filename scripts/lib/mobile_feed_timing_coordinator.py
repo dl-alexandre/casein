@@ -278,6 +278,23 @@ class SafeArgumentParser(argparse.ArgumentParser):
         raise InvalidArguments
 
 
+class StoreOnceAction(argparse.Action):
+    """Store one scalar option while rejecting duplicate spellings."""
+
+    def __call__(
+        self,
+        _parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: object,
+        _option_string: str | None = None,
+    ) -> None:
+        seen_attribute = f"_{self.dest}_seen"
+        if getattr(namespace, seen_attribute, False):
+            raise InvalidArguments
+        setattr(namespace, seen_attribute, True)
+        setattr(namespace, self.dest, values)
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class CohortConfig:
     platform: str
@@ -298,16 +315,20 @@ class CohortConfig:
                 if self.ios_pid is not None:
                     raise InvalidArguments
             else:
-                source_contract.build_plan(
-                    "ios",
-                    self.device,
-                    ios_suspended_launch=self.cycle == "cold",
-                    ios_pid=self.ios_pid if self.cycle == "reconnect" else None,
-                )
                 if self.cycle == "cold" and self.ios_pid is not None:
                     raise InvalidArguments
-                if self.cycle == "reconnect" and self.ios_pid is None:
-                    raise InvalidArguments
+                if self.cycle == "cold":
+                    source_contract.build_plan(
+                        "ios", self.device, ios_suspended_launch=True
+                    )
+                elif self.ios_pid is None:
+                    source_contract.build_plan(
+                        "ios", self.device, ios_suspended_continuous=True
+                    )
+                else:
+                    source_contract.build_plan(
+                        "ios", self.device, ios_pid=self.ios_pid
+                    )
         except (
             source_contract.InvalidArguments,
             source_contract.SourceFailure,
@@ -983,27 +1004,6 @@ class BoundedCommandRunner:
             raise CoordinatorFailure("source_failed")
 
 
-class IOSReadyLineReader:
-    """Signal only after the exact source-supervisor connected frame is read."""
-
-    def __init__(self, stream: BinaryIO, udid: str, ready: threading.Event):
-        self._reader = source_contract.SelectorLineReader(stream)
-        self._expected = f"[connected:{udid}]\n".encode("ascii")
-        self._ready = ready
-        self._first = True
-
-    def readline(self, timeout: float | None = None) -> bytes:
-        line = self._reader.readline(timeout)
-        if self._first:
-            self._first = False
-            if line == self._expected:
-                self._ready.set()
-        return line
-
-    def close(self) -> None:
-        self._reader.close()
-
-
 class SourceDriver(Protocol):
     def run(
         self,
@@ -1147,13 +1147,16 @@ class PhysicalSourceDriver:
                 return reader
         else:
             if self._config.ios_pid is None:
-                return False
-            plan = source_contract.build_plan(
-                "ios", self._config.device, ios_pid=self._config.ios_pid
-            )
-            line_reader_factory = lambda stream: IOSReadyLineReader(
-                stream, self._config.device, source_ready
-            )
+                plan = source_contract.build_plan(
+                    "ios",
+                    self._config.device,
+                    ios_suspended_continuous=True,
+                )
+            else:
+                plan = source_contract.build_plan(
+                    "ios", self._config.device, ios_pid=self._config.ios_pid
+                )
+            line_reader_factory = source_contract.SelectorLineReader
 
         status = FixedStatusSink("supervisor")
         result: dict[str, object] = {"exit": None}
@@ -1164,6 +1167,11 @@ class PhysicalSourceDriver:
                     process_factory=factory,
                     line_reader_factory=line_reader_factory,
                     downstream_status=latch.downstream_status,
+                    source_ready=(
+                        source_ready.set
+                        if self._config.platform == "ios"
+                        else None
+                    ),
                 )
                 result["exit"] = supervisor.run(plan, output, status)
             except Exception:
@@ -2285,7 +2293,7 @@ def _parser() -> SafeArgumentParser:
     parser.add_argument("--cycle", required=True, choices=CYCLES)
     parser.add_argument("--device", required=True)
     parser.add_argument("--output-root", required=True, type=Path)
-    parser.add_argument("--ios-pid", type=int)
+    parser.add_argument("--ios-pid", type=int, action=StoreOnceAction)
     return parser
 
 

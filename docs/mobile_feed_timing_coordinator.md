@@ -24,17 +24,26 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/lib/mobile_feed_timing_coordinator.py 
   --output-root "$EXISTING_PRIVATE_AGGREGATE_ROOT"
 ```
 
-iOS reconnect additionally requires the already-running production app's exact
-numeric PID. The coordinator never discovers a PID by process name:
+iOS reconnect normally omits `--ios-pid`. The source supervisor launches the
+production app start-stopped, accepts only the strict numeric PID returned by
+that exact launch, attaches the allowlisted marker source to that PID, waits for
+the exact source-attachment-ready frame, resumes that same PID, and only then
+releases the coordinator's source-ready gate so the lifecycle runner can start:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/lib/mobile_feed_timing_coordinator.py \
   --platform ios \
   --cycle reconnect \
   --device "$EXACT_IOS_UDID" \
-  --ios-pid "$EXACT_RUNNING_PID" \
   --output-root "$EXISTING_PRIVATE_AGGREGATE_ROOT"
 ```
+
+`--ios-pid "$EXACT_RUNNING_PID"` remains an optional attach-only mode when the
+running production app PID has already been independently provenance-bound.
+It never performs a process-name search or connected-device fallback. An
+explicitly supplied `--ios-pid` with no value, or with a malformed, boolean,
+zero, oversized, duplicate, or mismatched PID, fails closed without starting
+the lifecycle runner.
 
 iOS cold runs omit `--ios-pid`; each of the twenty generations uses the source
 supervisor's reviewed start-stopped → PID-scoped attachment → resume lifecycle.
@@ -48,9 +57,12 @@ supervisor's reviewed start-stopped → PID-scoped attachment → resume lifecyc
    release helper emits it as the first stdout frame only after opening the
    recorder fence. Any partial, malformed, extra, stderr, timeout, or early-exit
    frame fails before device work.
-4. Start the app-scoped source. Markers flow through an anonymous bounded pipe
-   into `StreamAdapter`, then directly through an in-memory sink into
-   `Collector`. The sink keeps no records or log lines.
+4. Start the app-scoped source. For primary iOS reconnect, source readiness is
+   not signaled until start-stopped launch, strict PID extraction, PID-scoped
+   attachment, and same-PID resume have all succeeded; only then may the signed
+   lifecycle runner start. Markers flow through an anonymous bounded pipe into
+   `StreamAdapter`, then directly through an in-memory sink into `Collector`.
+   The sink keeps no records or log lines.
 5. Retain only the raw generation from each accepted terminal
    `first_cards_render_ready` marker. The adapter and collector retain only
    their independent HMAC surrogates.
@@ -78,11 +90,15 @@ supervisor's reviewed start-stopped → PID-scoped attachment → resume lifecyc
   explicit serial.
 - iOS cold uses twenty independent reviewed start-stopped source-supervisor
   plans. No UI runner is involved.
-- iOS reconnect attaches the continuous PID-scoped source, then invokes only
-  `native/casein_mob/ios/run_feed_lifecycle_soak.sh <UDID>`. That reviewed
-  runner owns the exact test plan/method, 20 no-relaunch repetitions, signing
-  requirements, disabled diagnostics/capture/coverage, suppressed child
-  output, and trap-cleaned ephemeral artifacts.
+- iOS reconnect normally uses one reviewed continuous start-stopped source
+  plan: strict launch PID, PID-scoped source attachment, exact readiness,
+  same-PID resume, then
+  `native/casein_mob/ios/run_feed_lifecycle_soak.sh <UDID>`. Supplying an
+  independently provenance-bound `--ios-pid` selects attach-only mode without
+  weakening readiness or adding lookup fallback. The reviewed runner owns the
+  exact test plan/method, 20 no-relaunch repetitions, signing requirements,
+  disabled diagnostics/capture/coverage, suppressed child output, and
+  trap-cleaned ephemeral artifacts.
 
 All coordinator children use argv execution with `shell=False`, new process
 groups, a reduced environment, `/dev/null` for non-protocol output, disabled

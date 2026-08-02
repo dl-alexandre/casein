@@ -212,6 +212,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         process: FakeProcess | None = None,
         command_runner: FakeCommandRunner | None = None,
         downstream_status=None,
+        source_ready=None,
         output=None,
     ):
         process = process or FakeProcess()
@@ -223,6 +224,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
             line_reader_factory=lambda _stream: reader,
             command_runner=command_runner or FakeCommandRunner([]),
             downstream_status=downstream_status,
+            source_ready=source_ready,
             kill_process_group=lambda pid, sig: kills.append((pid, sig)),
             process_group_exists=lambda _pid: process._returncode is None,
         )
@@ -577,6 +579,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
             process_factory=factory,
             line_reader_factory=lambda _stream: reader,
             command_runner=runner,
+            source_ready=lambda: events.append("ready"),
             kill_process_group=lambda _pid, _signal: None,
             process_group_exists=lambda _pid: process._returncode is None,
         )
@@ -592,7 +595,7 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
         )
 
         self.assertEqual(2, status)
-        self.assertEqual(["launch", "source_spawned", "resume"], events)
+        self.assertEqual(["launch", "source_spawned", "resume", "ready"], events)
         self.assertEqual(
             source_module.build_ios_launch_suspended_argv(IOS_UDID), runner.calls[0]
         )
@@ -602,6 +605,43 @@ class MobileFeedTimingSourceSupervisorTest(unittest.TestCase):
             factory.calls[0][0],
         )
         self.assertEqual(marker_line(), stdout.getvalue())
+
+    def test_ios_source_ready_is_after_validated_resume_and_never_on_failure(self):
+        connected = f"[connected:{IOS_UDID}]\n".encode()
+        failures = (
+            source_module.SourceFailure("source_capability_failed"),
+            devicectl_success(PID + 1),
+        )
+
+        for resume_result in failures:
+            with self.subTest(resume_result=type(resume_result).__name__):
+                events: list[str] = []
+                runner = FakeCommandRunner(
+                    [devicectl_success(PID), resume_result], events
+                )
+                result = self.run_supervisor(
+                    source_module.build_plan(
+                        "ios", IOS_UDID, ios_suspended_continuous=True
+                    ),
+                    [connected],
+                    command_runner=runner,
+                    source_ready=lambda: events.append("ready"),
+                )
+
+                self.assertEqual(3, result["status"])
+                self.assertEqual(["launch", "resume"], events)
+                self.assertEqual(2, len(runner.calls))
+
+    def test_explicit_ios_pid_signals_ready_only_after_exact_attachment(self):
+        events: list[str] = []
+        result = self.run_supervisor(
+            source_module.build_plan("ios", IOS_UDID, ios_pid=PID),
+            [f"[connected:{IOS_UDID}]\n".encode(), b""],
+            source_ready=lambda: events.append("ready"),
+        )
+
+        self.assertEqual(2, result["status"])
+        self.assertEqual(["ready"], events)
 
     def test_ios_continuous_launch_forwards_initial_cold_then_reconnect_until_probe(self):
         launch_payload = devicectl_success(PID)

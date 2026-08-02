@@ -292,6 +292,72 @@ class FakeJSONRunnerFactory:
         return object()
 
 
+class FakeIOSContinuousSupervisorFactory:
+    def __init__(self, events, *, ready=True):
+        self.events = events
+        self.ready = ready
+        self.plans = []
+        self.kwargs = []
+
+    def __call__(self, **kwargs):
+        self.kwargs.append(kwargs)
+        owner = self
+
+        class Supervisor:
+            def run(self, plan, output, status):
+                owner.plans.append(plan)
+                if plan.ios_launch_mode == "continuous":
+                    owner.events.extend(("launch", "attach", "resume"))
+                else:
+                    owner.events.append("attach")
+                if not owner.ready:
+                    status.write(
+                        json.dumps(
+                            {
+                                "supervisor": source.SUPERVISOR_NAME,
+                                "status": "source_capability_failed",
+                            }
+                        )
+                        + "\n"
+                    )
+                    return 3
+
+                kwargs["source_ready"]()
+                owner.events.append("ready")
+                owner.events.append("cold_markers")
+                for line in generation_markers(100, "cold"):
+                    output.write(line)
+                owner.events.append("twenty_reconnect_generations")
+                for index in range(1, 21):
+                    for line in generation_markers(index, "reconnect"):
+                        output.write(line)
+                output.flush()
+                status.write(
+                    json.dumps(
+                        {
+                            "supervisor": source.SUPERVISOR_NAME,
+                            "status": "downstream_complete",
+                        }
+                    )
+                    + "\n"
+                )
+                return 0
+
+        return Supervisor()
+
+
+class RecordingLifecycleProcessFactory:
+    def __init__(self, events, process=None):
+        self.events = events
+        self.process = process or FakeWaitProcess([0], pid=711)
+        self.calls = []
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append((tuple(argv), kwargs))
+        self.events.append("runner")
+        return self.process
+
+
 class FakeWaitProcess:
     def __init__(self, waits, pid=700):
         self.pid = pid
@@ -1911,6 +1977,231 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             self.assertTrue(all(plan.device_id == IOS_UDID for plan in supervisors.plans))
             self.assertEqual(1, len(json_runners.kwargs))
 
+    def test_ios_reconnect_without_external_pid_uses_one_ready_continuous_source(self):
+        with tempfile.TemporaryDirectory() as root:
+            events = []
+            supervisors = FakeIOSContinuousSupervisorFactory(events)
+            processes = RecordingLifecycleProcessFactory(events)
+            bridge = FakeBridge(
+                server_aggregate(platform="ios", cycle="reconnect")
+            )
+            config = coordinator.CohortConfig(
+                platform="ios",
+                cycle="reconnect",
+                device=IOS_UDID,
+                output_root=Path(root),
+            )
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: bridge,
+                source_factory=lambda source_config: coordinator.PhysicalSourceDriver(
+                    source_config,
+                    process_factory=processes,
+                    supervisor_factory=supervisors,
+                ),
+                registry_factory=lambda: coordinator.ScopedProcessRegistry(
+                    kill_process_group=lambda _pid, _signal: None,
+                    process_group_exists=lambda _pid: False,
+                ),
+            )
+
+            outcome = runner.run(config)
+
+            self.assertEqual(coordinator.RunOutcome("complete", 0, True), outcome)
+            self.assertEqual(1, len(supervisors.plans))
+            plan = supervisors.plans[0]
+            self.assertEqual("continuous", plan.ios_launch_mode)
+            self.assertIsNone(plan.ios_pid)
+            self.assertEqual((), plan.source_argv)
+            self.assertLess(events.index("resume"), events.index("ready"))
+            self.assertLess(events.index("ready"), events.index("runner"))
+            self.assertLess(
+                events.index("cold_markers"),
+                events.index("twenty_reconnect_generations"),
+            )
+            self.assertEqual(1, len(processes.calls))
+            self.assertEqual(
+                coordinator.build_ios_reconnect_runner_argv(IOS_UDID),
+                processes.calls[0][0],
+            )
+            command_text = " ".join(processes.calls[0][0])
+            for forbidden in ("pgrep", "pidof", "process list", "ps "):
+                self.assertNotIn(forbidden, command_text)
+
+    def test_ios_reconnect_explicit_pid_remains_exact_running_attach(self):
+        with tempfile.TemporaryDirectory() as root:
+            events = []
+            supervisors = FakeIOSContinuousSupervisorFactory(events)
+            processes = RecordingLifecycleProcessFactory(events)
+            config = coordinator.CohortConfig(
+                platform="ios",
+                cycle="reconnect",
+                device=IOS_UDID,
+                output_root=Path(root),
+                ios_pid=IOS_PID,
+            )
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: FakeBridge(
+                    server_aggregate(platform="ios", cycle="reconnect")
+                ),
+                source_factory=lambda source_config: coordinator.PhysicalSourceDriver(
+                    source_config,
+                    process_factory=processes,
+                    supervisor_factory=supervisors,
+                ),
+                registry_factory=lambda: coordinator.ScopedProcessRegistry(
+                    kill_process_group=lambda _pid, _signal: None,
+                    process_group_exists=lambda _pid: False,
+                ),
+            )
+
+            outcome = runner.run(config)
+
+            self.assertEqual("complete", outcome.status)
+            self.assertEqual(IOS_PID, supervisors.plans[0].ios_pid)
+            self.assertIsNone(supervisors.plans[0].ios_launch_mode)
+            self.assertEqual(
+                [
+                    "attach",
+                    "ready",
+                    "cold_markers",
+                    "twenty_reconnect_generations",
+                    "runner",
+                ],
+                events,
+            )
+
+    def test_ios_resume_failure_starts_zero_lifecycle_runners(self):
+        with tempfile.TemporaryDirectory() as root:
+            events = []
+            supervisors = FakeIOSContinuousSupervisorFactory(
+                events, ready=False
+            )
+            processes = RecordingLifecycleProcessFactory(events)
+            config = coordinator.CohortConfig(
+                platform="ios",
+                cycle="reconnect",
+                device=IOS_UDID,
+                output_root=Path(root),
+            )
+            driver = coordinator.PhysicalSourceDriver(
+                config,
+                process_factory=processes,
+                supervisor_factory=supervisors,
+            )
+            registry = coordinator.ScopedProcessRegistry(
+                kill_process_group=lambda _pid, _signal: None,
+                process_group_exists=lambda _pid: False,
+            )
+
+            with mock.patch.object(
+                coordinator, "SOURCE_READY_TIMEOUT_SECONDS", 0
+            ):
+                result = driver._run_continuous(
+                    io.BytesIO(),
+                    coordinator.CompletionLatch(),
+                    coordinator.TerminalGenerationVault(),
+                    registry,
+                )
+
+            self.assertFalse(result)
+            self.assertEqual([], processes.calls)
+            self.assertNotIn("runner", events)
+
+    def test_ios_continuous_cleanup_failure_prevents_publication(self):
+        with tempfile.TemporaryDirectory() as root:
+            events = []
+            process = FakeWaitProcess([0], pid=712)
+            groups = FakeProcessGroups(alive=(process.pid,))
+            supervisors = FakeIOSContinuousSupervisorFactory(events)
+            processes = RecordingLifecycleProcessFactory(events, process)
+            bridge = FakeBridge(
+                server_aggregate(platform="ios", cycle="reconnect")
+            )
+            config = coordinator.CohortConfig(
+                platform="ios",
+                cycle="reconnect",
+                device=IOS_UDID,
+                output_root=Path(root),
+            )
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: bridge,
+                source_factory=lambda source_config: coordinator.PhysicalSourceDriver(
+                    source_config,
+                    process_factory=processes,
+                    supervisor_factory=supervisors,
+                ),
+                registry_factory=lambda: coordinator.ScopedProcessRegistry(
+                    kill_process_group=groups.kill,
+                    process_group_exists=groups.exists,
+                ),
+            )
+
+            outcome = runner.run(config)
+
+            self.assertEqual("source_failed", outcome.status)
+            self.assertFalse(outcome.published)
+            self.assertEqual(0, bridge.finish_calls)
+            self.assertTrue(bridge.aborted)
+            self.assertEqual([], list(Path(root).iterdir()))
+
+    def test_ios_pid_inputs_fail_closed_and_duplicate_cli_is_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            invalid_pids = (
+                True,
+                False,
+                0,
+                -1,
+                source.MAX_PID + 1,
+                "42",
+                1.5,
+            )
+            for pid in invalid_pids:
+                with self.subTest(pid=repr(pid)):
+                    with self.assertRaises(coordinator.InvalidArguments):
+                        coordinator.CohortConfig(
+                            platform="ios",
+                            cycle="reconnect",
+                            device=IOS_UDID,
+                            output_root=Path(root),
+                            ios_pid=pid,
+                        )
+
+            base = [
+                "--platform",
+                "ios",
+                "--cycle",
+                "reconnect",
+                "--device",
+                IOS_UDID,
+                "--output-root",
+                root,
+            ]
+            for malformed in ("true", "0", str(source.MAX_PID + 1)):
+                with self.subTest(malformed=malformed):
+                    with self.assertRaises(
+                        (coordinator.InvalidArguments, source.SourceFailure)
+                    ):
+                        args = coordinator._parser().parse_args(
+                            base + ["--ios-pid", malformed]
+                        )
+                        coordinator.CohortConfig(
+                            platform=args.platform,
+                            cycle=args.cycle,
+                            device=args.device,
+                            output_root=args.output_root,
+                            ios_pid=args.ios_pid,
+                        )
+
+            with self.assertRaises(coordinator.InvalidArguments):
+                coordinator._parser().parse_args(
+                    base
+                    + [
+                        "--ios-pid",
+                        str(IOS_PID),
+                        f"--ios-pid={IOS_PID}",
+                    ]
+                )
+
     def test_no_platform_or_device_defaults_or_origin_switch_fallback(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaises(coordinator.InvalidArguments):
@@ -1920,13 +2211,13 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                     device=ANDROID_SERIAL,
                     output_root=Path(root),
                 )
-            with self.assertRaises(coordinator.InvalidArguments):
-                coordinator.CohortConfig(
-                    platform="ios",
-                    cycle="reconnect",
-                    device=IOS_UDID,
-                    output_root=Path(root),
-                )
+            ios_reconnect = coordinator.CohortConfig(
+                platform="ios",
+                cycle="reconnect",
+                device=IOS_UDID,
+                output_root=Path(root),
+            )
+            self.assertIsNone(ios_reconnect.ios_pid)
             with self.assertRaises(coordinator.InvalidArguments):
                 coordinator.CohortConfig(
                     platform="android",
