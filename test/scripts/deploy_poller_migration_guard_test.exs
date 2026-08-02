@@ -150,6 +150,7 @@ defmodule Scripts.DeployPollerMigrationGuardTest do
     env = [
       {"PATH", "#{fixture.fake_bin}:#{System.get_env("PATH")}"},
       {"CASEIN_POLLER_SELFUPDATED", "1"},
+      {"CASEIN_POLLER_ROOT", fixture.root},
       {"CASEIN_POLLER_CADDY_LIB", Path.join(fixture.root, "scripts/lib/caddy-upstream.sh")},
       {"CASEIN_ENV_FILE", fixture.env_file},
       {"CASEIN_DEPLOY_ROOT", fixture.deploy_root},
