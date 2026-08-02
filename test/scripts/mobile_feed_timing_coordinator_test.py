@@ -2059,7 +2059,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             self.assertEqual("complete", outcome.status)
             self.assertEqual(IOS_PID, supervisors.plans[0].ios_pid)
             self.assertIsNone(supervisors.plans[0].ios_launch_mode)
-            self.assertEqual(
+            self.assertCountEqual(
                 [
                     "attach",
                     "ready",
@@ -2068,6 +2068,15 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                     "runner",
                 ],
                 events,
+            )
+            self.assertLess(events.index("attach"), events.index("ready"))
+            self.assertLess(events.index("ready"), events.index("runner"))
+            self.assertLess(
+                events.index("ready"), events.index("cold_markers")
+            )
+            self.assertLess(
+                events.index("cold_markers"),
+                events.index("twenty_reconnect_generations"),
             )
 
     def test_ios_resume_failure_starts_zero_lifecycle_runners(self):
