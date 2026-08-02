@@ -67,8 +67,6 @@ defmodule CaseinMob.AppTimingTest do
 
     on_exit(fn -> :telemetry.detach(telemetry_id) end)
 
-    ConnectionTiming.start_boot()
-
     [
       {{:ok, :resolved}, :succeeded, :dns_resolved},
       {{:skip, :ip_literal}, :skipped, :dns_ip_literal},
@@ -77,6 +75,13 @@ defmodule CaseinMob.AppTimingTest do
       {{:error, {:raw, "must-not-appear"}}, :failed, :dns_resolution_failed}
     ]
     |> Enum.each(fn {result, expected_outcome, expected_reason} ->
+      # Each case models one real cold-start generation. DNS is a lifecycle
+      # stage and duplicate callbacks within a generation are intentionally
+      # suppressed.
+      ConnectionTiming.start_boot()
+
+      assert_receive {:connection_stage, _measurements, %{stage: :app_start}}
+
       :ok =
         ConnectionTiming.boot_stage(
           :dns_ready,

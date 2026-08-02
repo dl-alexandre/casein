@@ -69,6 +69,185 @@ defmodule CaseinMob.SessionClientTest do
     assert_receive {:session_status, "ws-1", {:disconnected, :network_unavailable}}
   end
 
+  test "disconnect is recorded on the closing generation without inventing an idle reconnect" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_feed_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    socket = socket_with_subscribers(%{})
+    closing_generation = socket.assigns.timing_context.generation
+
+    assert {:ok, disconnected} = SessionClient.handle_disconnect(:closed, socket)
+
+    assert disconnected.assigns.timing_context.generation == closing_generation
+    assert disconnected.assigns.timing_context.cycle == :cold
+
+    assert_receive {:feed_stage, _measurements,
+                    %{
+                      stage: :disconnected,
+                      cycle: :cold,
+                      connection_generation: ^closing_generation
+                    }}
+  end
+
+  test "a watched socket without transport configuration does not invent a reconnect" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_feed_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, "http://127.0.0.1:1")
+      |> Socket.assign(:token, "token")
+
+    assert socket.channel_config == nil
+    closing_generation = socket.assigns.timing_context.generation
+
+    assert {:ok, disconnected} = SessionClient.handle_disconnect(:closed, socket)
+
+    assert disconnected.assigns.timing_context.generation == closing_generation
+    assert disconnected.assigns.timing_context.cycle == :cold
+    refute disconnected.assigns.connecting?
+
+    assert_receive {:feed_stage, _measurements,
+                    %{
+                      stage: :disconnected,
+                      cycle: :cold,
+                      connection_generation: ^closing_generation
+                    }}
+
+    refute_receive {:feed_stage, _measurements, %{stage: :connect_requested}}
+  end
+
+  test "watching after an idle disconnect starts a fresh reconnect generation" do
+    socket = socket_with_subscribers(%{}) |> Socket.assign(:test_mode?, true)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast(
+               {:configure, "http://127.0.0.1:1", "token"},
+               socket
+             )
+
+    closing_generation = socket.assigns.timing_context.generation
+    assert {:ok, idle} = SessionClient.handle_disconnect(:closed, socket)
+    assert idle.assigns.timing_context.generation == closing_generation
+
+    assert {:noreply, reconnecting} =
+             SessionClient.handle_cast({:watch_mobile_cards, self()}, idle)
+
+    reconnect_generation = reconnecting.assigns.timing_context.generation
+    refute reconnect_generation == closing_generation
+    assert reconnecting.assigns.timing_context.cycle == :reconnect
+    assert reconnecting.assigns.connecting?
+
+    query = URI.decode_query(reconnecting.channel_config.uri.query)
+    assert query["connection_generation"] == reconnect_generation
+    assert query["connection_cycle"] == "reconnect"
+  end
+
+  test "watching after an expired idle disconnect still starts a fresh reconnect generation" do
+    socket = socket_with_subscribers(%{}) |> Socket.assign(:test_mode?, true)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast(
+               {:configure, "http://127.0.0.1:1", "token"},
+               socket
+             )
+
+    closing_context = socket.assigns.timing_context
+    max_elapsed_microseconds = 2_147_483_647 * 1_000
+
+    expired_context = %{
+      closing_context
+      | started_at: closing_context.started_at - max_elapsed_microseconds - 1
+    }
+
+    socket = Socket.assign(socket, :timing_context, expired_context)
+    closing_generation = expired_context.generation
+
+    assert {:ok, idle} = SessionClient.handle_disconnect(:closed, socket)
+    assert idle.assigns.timing_context.generation == closing_generation
+    refute MapSet.member?(idle.assigns.timing_context.seen_stages, :disconnected)
+    assert idle.assigns.reconnect_generation_required?
+
+    assert {:noreply, reconnecting} =
+             SessionClient.handle_cast({:watch_mobile_cards, self()}, idle)
+
+    reconnect_generation = reconnecting.assigns.timing_context.generation
+    refute reconnect_generation == closing_generation
+    assert reconnecting.assigns.timing_context.cycle == :reconnect
+    refute reconnecting.assigns.reconnect_generation_required?
+    assert reconnecting.assigns.connecting?
+
+    query = URI.decode_query(reconnecting.channel_config.uri.query)
+    assert query["connection_generation"] == reconnect_generation
+    assert query["connection_cycle"] == "reconnect"
+  end
+
+  test "a requested reconnect closes the old generation before starting the new one" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_feed_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:test_mode?, true)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast(
+               {:configure, "http://127.0.0.1:1", "token"},
+               socket
+             )
+
+    closing_generation = socket.assigns.timing_context.generation
+    assert socket.assigns.connecting?
+
+    assert {:ok, reconnecting} = SessionClient.handle_disconnect(:closed, socket)
+
+    next_generation = reconnecting.assigns.timing_context.generation
+    refute next_generation == closing_generation
+    assert reconnecting.assigns.timing_context.cycle == :reconnect
+    assert reconnecting.assigns.connecting?
+
+    assert_receive {:feed_stage, _measurements,
+                    %{
+                      stage: :disconnected,
+                      cycle: :cold,
+                      connection_generation: ^closing_generation
+                    }}
+
+    assert_receive {:feed_stage, _measurements,
+                    %{
+                      stage: :connect_requested,
+                      cycle: :reconnect,
+                      connection_generation: ^next_generation
+                    }}
+  end
+
   test "mobile card stream reports disconnected then joined after recovery" do
     socket = socket_with_subscriber("mobile:user:me", self())
 
@@ -342,7 +521,7 @@ defmodule CaseinMob.SessionClientTest do
 
     assert {:noreply, socket} =
              SessionClient.handle_cast(
-               {:configure, "http://127.0.0.1:1", "new-token"},
+               {:activate_origin, "http://127.0.0.1:1", "new-token"},
                socket
              )
 
@@ -356,6 +535,17 @@ defmodule CaseinMob.SessionClientTest do
     assert socket.assigns.accepted_mobile_snapshot_origin_id == nil
     assert socket.assigns.timing_context.cycle == :origin_switch
     refute socket.assigns.timing_context.generation == prior_generation
+    origin_switch_generation = socket.assigns.timing_context.generation
+
+    assert {:noreply, reactivated} =
+             SessionClient.handle_cast(
+               {:activate_origin, "http://127.0.0.1:1", "new-token"},
+               socket
+             )
+
+    assert reactivated.assigns.timing_context.cycle == :origin_switch
+    assert reactivated.assigns.timing_context.generation == origin_switch_generation
+    assert reactivated.assigns.pending_configuration.force_reconnect?
 
     assert_receive {:mobile_cards_status, :disconnected}
     assert_receive {:push_registration_status, :user, {:error, :host_switched}}
@@ -363,11 +553,54 @@ defmodule CaseinMob.SessionClientTest do
     assert_receive {:card_action_result, "needs_review:old-ws:run-1", {:error, :host_switched}}
   end
 
+  test "stable origin identity distinguishes saved origins sharing one endpoint" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, "https://shared.example")
+      |> Socket.assign(:token, "shared-token")
+      |> Socket.assign(:configured_origin_id, "origin-old")
+
+    prior_generation = socket.assigns.timing_context.generation
+
+    assert {:noreply, switched} =
+             SessionClient.handle_cast(
+               {:activate_origin, "https://shared.example", "shared-token", "origin-new"},
+               socket
+             )
+
+    assert switched.assigns.configured_origin_id == "origin-new"
+    assert switched.assigns.subscribers == %{}
+    assert switched.assigns.timing_context.cycle == :origin_switch
+    refute switched.assigns.timing_context.generation == prior_generation
+  end
+
+  test "canonical URL fallback treats equivalent endpoint forms as one origin" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, "https://EXAMPLE.com:443/socket/websocket?old=1")
+      |> Socket.assign(:token, "same-token")
+      |> Socket.assign(:configured_origin_id, nil)
+
+    prior_generation = socket.assigns.timing_context.generation
+
+    assert {:noreply, reactivated} =
+             SessionClient.handle_cast(
+               {:activate_origin, "https://example.com", "same-token"},
+               socket
+             )
+
+    assert reactivated.assigns.subscribers["mobile:user:me"] == MapSet.new([self()])
+    assert reactivated.assigns.timing_context.cycle == :reconnect
+    refute reactivated.assigns.timing_context.generation == prior_generation
+  end
+
   test "explicitly activating the current origin preserves watchers and requests fresh connection" do
     socket =
       socket_with_subscriber("mobile:user:me", self())
       |> Socket.assign(:url, "http://127.0.0.1:1")
       |> Socket.assign(:token, "same-token")
+
+    prior_generation = socket.assigns.timing_context.generation
 
     assert {:noreply, socket} =
              SessionClient.handle_cast(
@@ -379,6 +612,235 @@ defmodule CaseinMob.SessionClientTest do
     assert socket.assigns.url == "http://127.0.0.1:1"
     assert socket.assigns.token == "same-token"
     assert socket.assigns.connecting?
+    assert socket.assigns.timing_context.cycle == :reconnect
+    refute socket.assigns.timing_context.generation == prior_generation
+    reconnect_generation = socket.assigns.timing_context.generation
+
+    assert {:noreply, reactivated} =
+             SessionClient.handle_cast(
+               {:activate_origin, "http://127.0.0.1:1", "same-token"},
+               socket
+             )
+
+    # The first asynchronous open is still pending, so a second activation is
+    # serialized instead of creating a concurrent Slipstream connection.
+    assert reactivated.assigns.timing_context.generation == reconnect_generation
+    assert reactivated.assigns.pending_configuration.force_reconnect?
+  end
+
+  test "intentional reconfigure waits for the closing transport before rotating generation" do
+    telemetry_id = {__MODULE__, self(), make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:casein, :mobile, :feed, :stage],
+        &__MODULE__.handle_feed_stage/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, "https://example.com")
+      |> Socket.assign(:token, "old-token")
+      |> Socket.assign(:configured_origin_id, "origin-1")
+      |> Socket.assign(:connecting?, false)
+      |> Map.put(:channel_pid, self())
+
+    closing_generation = socket.assigns.timing_context.generation
+
+    assert {:noreply, queued} =
+             SessionClient.handle_cast(
+               {:activate_origin, "https://example.com", "new-token", "origin-1"},
+               socket
+             )
+
+    assert queued.assigns.timing_context.generation == closing_generation
+    assert queued.assigns.pending_configuration.token == "new-token"
+    assert queued.assigns.connecting?
+
+    assert_receive {:__slipstream_command__, %Slipstream.Commands.CloseConnection{}}
+    refute_receive {:feed_stage, _measurements, %{stage: :connect_requested}}
+
+    closed =
+      Slipstream.Socket.apply_event(
+        queued,
+        %Slipstream.Events.ChannelClosed{reason: :client_disconnect_requested}
+      )
+
+    assert {:ok, reconnecting} =
+             SessionClient.handle_disconnect(:client_disconnect_requested, closed)
+
+    reconnect_generation = reconnecting.assigns.timing_context.generation
+    refute reconnect_generation == closing_generation
+    assert reconnecting.assigns.timing_context.cycle == :reconnect
+    assert reconnecting.assigns.pending_configuration == nil
+    assert reconnecting.assigns.connecting?
+    assert reconnecting.assigns.url == "https://example.com"
+    assert reconnecting.assigns.token == "new-token"
+
+    assert_receive {:feed_stage, _measurements,
+                    %{
+                      stage: :disconnected,
+                      connection_generation: ^closing_generation
+                    }}
+
+    assert_receive {:feed_stage, _measurements,
+                    %{
+                      stage: :connect_requested,
+                      connection_generation: ^reconnect_generation
+                    }}
+
+    refute_receive {:feed_stage, _measurements, %{stage: :connect_requested}}
+
+    query = URI.decode_query(reconnecting.channel_config.uri.query)
+    assert query["connection_generation"] == reconnect_generation
+    assert query["connection_cycle"] == "reconnect"
+  end
+
+  test "a queued origin switch makes old-origin snapshots unreadable before close" do
+    push_sink = start_push_sink(self())
+    old_snapshot = %{"version" => 7, "cards" => [%{"id" => "old-origin-card"}]}
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, "https://old.example")
+      |> Socket.assign(:token, "old-token")
+      |> Socket.assign(:configured_origin_id, "origin-old")
+      |> Socket.assign(:topic_snapshots, %{"mobile:user:me" => old_snapshot})
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:noreply, queued} =
+             SessionClient.handle_cast(
+               {:activate_origin, "https://new.example", "new-token", "origin-new"},
+               socket
+             )
+
+    assert queued.assigns.subscribers == %{}
+    assert queued.assigns.topic_snapshots == %{}
+    assert queued.assigns.pending_configuration.origin_changed?
+    assert queued.assigns.pending_configuration.origin_state_cleared?
+    assert_receive {:mobile_cards_status, :disconnected}
+    assert_receive {:connection_command, %Slipstream.Commands.CloseConnection{}}
+
+    assert {:noreply, waiting} =
+             SessionClient.handle_cast({:watch_mobile_cards, self()}, queued)
+
+    assert {:noreply, waiting} =
+             SessionClient.handle_cast({:watch, "old-workspace", self()}, waiting)
+
+    assert waiting.assigns.subscribers["mobile:user:me"] == MapSet.new([self()])
+    assert waiting.assigns.subscribers["session:old-workspace"] == MapSet.new([self()])
+    refute_receive {:mobile_cards_snapshot, ^old_snapshot}
+    refute_receive {:mobile_cards_status, :joined}
+    refute_receive {:__slipstream_command__, %Slipstream.Commands.JoinTopic{}}
+
+    assert {:noreply, waiting} =
+             SessionClient.handle_cast(
+               {:card_action, "old-card", "approve", nil, "origin-old"},
+               waiting
+             )
+
+    assert {:noreply, ^waiting} =
+             SessionClient.handle_cast({:mobile_observation, %{"event" => "resume"}}, waiting)
+
+    assert {:noreply, ^waiting} =
+             SessionClient.handle_cast({:attention_viewed, %{"marker" => 9}}, waiting)
+
+    assert {:noreply, ^waiting} =
+             SessionClient.handle_cast(
+               {:register_push, "old-workspace", "push-token", "ios"},
+               waiting
+             )
+
+    assert {:noreply, ^waiting} =
+             SessionClient.handle_cast({:register_user_push, "push-token", "ios"}, waiting)
+
+    assert_receive {:card_action_result, "old-card", {:error, :not_connected}}
+    refute_receive {:push_message, %Slipstream.Commands.PushMessage{}}
+
+    assert {:ok, waiting} =
+             SessionClient.handle_message(
+               "mobile:user:me",
+               "cards_snapshot",
+               mobile_snapshot(waiting, 8),
+               waiting
+             )
+
+    assert {:ok, waiting} =
+             SessionClient.handle_message(
+               "session:old-workspace",
+               "snapshot",
+               %{"private" => "old-origin-state"},
+               waiting
+             )
+
+    assert waiting.assigns.topic_snapshots == %{}
+    refute_receive {:mobile_cards_snapshot, _payload}
+    refute_receive {:session_snapshot, "old-workspace", _payload}
+  end
+
+  test "latest configuration replaces a pending origin switch even when returning to current" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, "https://a.example")
+      |> Socket.assign(:token, "token-a")
+      |> Socket.assign(:configured_origin_id, "origin-a")
+      |> Map.put(:channel_pid, self())
+
+    assert {:noreply, pending_b} =
+             SessionClient.handle_cast(
+               {:activate_origin, "https://b.example", "token-b", "origin-b"},
+               socket
+             )
+
+    assert pending_b.assigns.pending_configuration.origin_id == "origin-b"
+    assert_receive {:__slipstream_command__, %Slipstream.Commands.CloseConnection{}}
+
+    assert {:noreply, pending_b} =
+             SessionClient.handle_cast({:watch_mobile_cards, self()}, pending_b)
+
+    assert {:noreply, pending_b} =
+             SessionClient.handle_cast({:watch, "workspace-b", self()}, pending_b)
+
+    assert Map.has_key?(pending_b.assigns.subscribers, "mobile:user:me")
+    assert Map.has_key?(pending_b.assigns.subscribers, "session:workspace-b")
+
+    assert {:noreply, pending_a} =
+             SessionClient.handle_cast(
+               {:configure, "https://a.example", "token-a", "origin-a"},
+               pending_b
+             )
+
+    assert pending_a.assigns.pending_configuration.origin_id == "origin-a"
+    assert pending_a.assigns.pending_configuration.url == "https://a.example"
+    assert pending_a.assigns.pending_configuration.force_reconnect?
+    refute pending_a.assigns.pending_configuration.origin_changed?
+    assert pending_a.assigns.pending_configuration.origin_state_cleared?
+    assert pending_a.assigns.subscribers == %{}
+    refute_receive {:__slipstream_command__, %Slipstream.Commands.CloseConnection{}}
+
+    closed =
+      Slipstream.Socket.apply_event(
+        pending_a,
+        %Slipstream.Events.ChannelClosed{reason: :client_disconnect_requested}
+      )
+
+    assert {:ok, reconnecting_a} =
+             SessionClient.handle_disconnect(:client_disconnect_requested, closed)
+
+    assert reconnecting_a.assigns.pending_configuration == nil
+    assert reconnecting_a.assigns.configured_origin_id == "origin-a"
+    assert reconnecting_a.assigns.url == "https://a.example"
+    assert reconnecting_a.assigns.token == "token-a"
+    assert reconnecting_a.assigns.timing_context.cycle == :reconnect
+
+    query = URI.decode_query(reconnecting_a.channel_config.uri.query)
+    assert query["connection_cycle"] == "reconnect"
   end
 
   test "a card action reply notifies subscribers with the result" do
@@ -491,7 +953,15 @@ defmodule CaseinMob.SessionClientTest do
   end
 
   test "disconnect rejects its window and reconnect accepts a lower new baseline" do
-    socket = socket_with_subscriber("mobile:user:me", self())
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:test_mode?, true)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast(
+               {:configure, "http://127.0.0.1:1", "token"},
+               socket
+             )
 
     assert {:ok, socket} =
              SessionClient.handle_join("mobile:user:me", mobile_snapshot(socket, 9), socket)
@@ -603,7 +1073,16 @@ defmodule CaseinMob.SessionClientTest do
 
     on_exit(fn -> :telemetry.detach(telemetry_id) end)
 
-    socket = socket_with_subscriber("mobile:user:me", self())
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:test_mode?, true)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast(
+               {:configure, "http://127.0.0.1:1", "token"},
+               socket
+             )
+
     generation = socket.assigns.timing_context.generation
 
     assert {:noreply, socket} =
@@ -683,6 +1162,8 @@ defmodule CaseinMob.SessionClientTest do
     |> Socket.assign(:url, nil)
     |> Socket.assign(:token, nil)
     |> Socket.assign(:connecting?, false)
+    |> Socket.assign(:reconnect_generation_required?, false)
+    |> Socket.assign(:pending_configuration, nil)
     |> Socket.assign(:push_registration_refs, %{})
     |> Socket.assign(:card_action_refs, %{})
     |> Socket.assign(:timing_context, timing_context)
@@ -710,5 +1191,23 @@ defmodule CaseinMob.SessionClientTest do
 
   def handle_feed_stage(_event, measurements, metadata, subscriber) do
     send(subscriber, {:feed_stage, measurements, metadata})
+  end
+
+  defp start_push_sink(subscriber) do
+    start_supervised!({Task, fn -> push_sink_loop(subscriber) end})
+  end
+
+  defp push_sink_loop(subscriber) do
+    receive do
+      {:"$gen_call", from,
+       {:__slipstream_command__, %Slipstream.Commands.PushMessage{} = command}} ->
+        send(subscriber, {:push_message, command})
+        GenServer.reply(from, "push-ref")
+        push_sink_loop(subscriber)
+
+      {:__slipstream_command__, command} ->
+        send(subscriber, {:connection_command, command})
+        push_sink_loop(subscriber)
+    end
   end
 end

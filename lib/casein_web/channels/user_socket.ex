@@ -93,12 +93,9 @@ defmodule CaseinWeb.UserSocket do
          |> assign(:mobile_feed_timing, timing)}
 
       _ ->
-        _timing =
-          FeedTiming.emit(timing, :token_verified,
-            outcome: :failed,
-            reason_code: :invalid_token
-          )
-
+        # Unauthenticated callers choose the generation query value. Do not
+        # let rejected tokens inject attacker-correlated rows into the bounded
+        # authenticated feed cohort.
         :error
     end
   end

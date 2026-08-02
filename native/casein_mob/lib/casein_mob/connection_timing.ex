@@ -56,6 +56,13 @@ defmodule CaseinMob.ConnectionTiming do
     :no_configuration,
     :disconnected
   ]
+  # A connection generation has one lifecycle path, but it can legitimately
+  # receive equal-version refreshes and multiple rejected snapshots. Keep
+  # snapshot observations repeatable while suppressing duplicate lifecycle
+  # callbacks from native or transport races.
+  @one_shot_stages MapSet.new(
+                     @stages -- [:snapshot_received, :snapshot_accepted, :snapshot_rejected]
+                   )
   @stage_aliases %{
     configuration_restored: :profile_restored,
     dns_ready: :dns_resolved,
@@ -68,7 +75,8 @@ defmodule CaseinMob.ConnectionTiming do
           generation: String.t(),
           cycle: cycle(),
           started_at: integer(),
-          last_at: integer()
+          last_at: integer(),
+          seen_stages: MapSet.t(atom())
         }
 
   @spec start_boot() :: integer()
@@ -129,25 +137,23 @@ defmodule CaseinMob.ConnectionTiming do
       generation: new_generation(),
       cycle: cycle,
       started_at: now,
-      last_at: now
+      last_at: now,
+      seen_stages: MapSet.new()
     }
   end
 
   @spec record(context(), atom(), keyword()) :: context()
   def record(context, stage, opts \\ [])
 
-  def record(
-        %{generation: generation, cycle: cycle, started_at: started_at, last_at: last_at} =
-          context,
-        stage,
-        opts
-      )
-      when is_binary(generation) and cycle in @cycles and is_integer(started_at) and
-             is_integer(last_at) do
+  def record(context, stage, opts) when is_map(context) and is_list(opts) do
     stage = Map.get(@stage_aliases, stage, stage)
 
-    if stage in @stages do
-      observed_at = Keyword.get(opts, :observed_at, now())
+    with true <- valid_context?(context),
+         true <- stage in @stages,
+         false <- duplicate_stage?(context, stage),
+         observed_at when is_integer(observed_at) <- Keyword.get(opts, :observed_at, now()),
+         true <- valid_observation?(context, observed_at) do
+      %{started_at: started_at, last_at: last_at} = context
       measurements = measurements(opts, observed_at, started_at, last_at)
       metadata = metadata(context, stage, opts)
 
@@ -156,7 +162,7 @@ defmodule CaseinMob.ConnectionTiming do
       emit_log(
         metadata.platform,
         metadata.connection_generation,
-        cycle,
+        metadata.cycle,
         stage,
         measurements.duration_ms,
         measurements.elapsed_ms,
@@ -164,11 +170,16 @@ defmodule CaseinMob.ConnectionTiming do
         metadata.reason_code
       )
 
-      %{context | last_at: observed_at}
-    else
       context
+      |> Map.put(:last_at, observed_at)
+      |> mark_stage_seen(stage)
+    else
+      _invalid_or_duplicate ->
+        context
     end
   end
+
+  def record(context, _stage, _opts), do: context
 
   @doc """
   Attach an in-memory timing context to an accepted snapshot.
@@ -282,8 +293,48 @@ defmodule CaseinMob.ConnectionTiming do
 
   defp valid_generation(_value), do: nil
 
+  defp valid_context?(
+         %{
+           generation: generation,
+           cycle: cycle,
+           started_at: started_at,
+           last_at: last_at
+         } = context
+       ) do
+    seen_stages = Map.get(context, :seen_stages, MapSet.new())
+
+    is_binary(generation) and valid_generation(generation) == generation and cycle in @cycles and
+      is_integer(started_at) and is_integer(last_at) and last_at >= started_at and
+      valid_seen_stages?(seen_stages)
+  end
+
+  defp valid_context?(_context), do: false
+
+  defp valid_seen_stages?(%MapSet{map: map}) when is_map(map) do
+    Enum.all?(Map.keys(map), &(&1 in @stages))
+  end
+
+  defp valid_seen_stages?(_seen_stages), do: false
+
+  defp valid_observation?(%{started_at: started_at, last_at: last_at}, observed_at) do
+    duration = observed_at - last_at
+    elapsed = observed_at - started_at
+    max_microseconds = @max_native_timing_ms * 1_000
+
+    duration >= 0 and elapsed >= duration and elapsed <= max_microseconds
+  end
+
+  defp duplicate_stage?(context, stage) do
+    stage in @one_shot_stages and
+      MapSet.member?(Map.get(context, :seen_stages, MapSet.new()), stage)
+  end
+
+  defp mark_stage_seen(context, stage) do
+    Map.update(context, :seen_stages, MapSet.new([stage]), &MapSet.put(&1, stage))
+  end
+
   defp emit_log(
-         :ios,
+         platform,
          generation,
          cycle,
          stage,
@@ -291,7 +342,8 @@ defmodule CaseinMob.ConnectionTiming do
          elapsed_ms,
          outcome,
          reason_code
-       ) do
+       )
+       when platform in [:ios, :android] do
     if valid_native_stage_envelope?(generation, duration_ms, elapsed_ms) do
       emit_native_stage(
         native_nif(),
@@ -338,37 +390,26 @@ defmodule CaseinMob.ConnectionTiming do
          outcome,
          reason_code
        ) do
-    :ok =
-      nif.log_mobile_feed_stage(
-        generation,
-        cycle,
-        stage,
-        duration_ms,
-        elapsed_ms,
-        outcome,
-        reason_code
-      )
+    case nif.log_mobile_feed_stage(
+           generation,
+           cycle,
+           stage,
+           duration_ms,
+           elapsed_ms,
+           outcome,
+           reason_code
+         ) do
+      :ok -> :ok
+      _unexpected -> :ok
+    end
 
     :ok
   rescue
-    error in UndefinedFunctionError ->
-      if missing_native_call?(error, nif, :log_mobile_feed_stage, 7) do
-        :ok
-      else
-        reraise(error, __STACKTRACE__)
-      end
-
-    # Rescue normalization includes built-in exception structs for Erlang errors.
-    # Only the exact loader errors below are softened; everything else reraises.
-    error ->
-      if nif_not_loaded?(error) do
-        :ok
-      else
-        reraise(error, __STACKTRACE__)
-      end
+    # Timing is observational. Native sink failures must never interrupt the
+    # authoritative feed or expose an exception that may contain endpoint data.
+    _error -> :ok
   catch
-    :exit, :nif_not_loaded -> :ok
-    :exit, {:nif_not_loaded, _detail} -> :ok
+    _kind, _reason -> :ok
   end
 
   defp platform do
@@ -385,43 +426,15 @@ defmodule CaseinMob.ConnectionTiming do
       _ -> :unknown
     end
   rescue
-    error in UndefinedFunctionError ->
-      if missing_native_call?(error, nif, :platform, 0) do
-        :unknown
-      else
-        reraise(error, __STACKTRACE__)
-      end
-
-    error ->
-      if nif_not_loaded?(error) do
-        :unknown
-      else
-        reraise(error, __STACKTRACE__)
-      end
+    # Platform detection is telemetry-only and cannot block feed startup.
+    _error -> :unknown
   catch
-    :exit, :nif_not_loaded -> :unknown
-    :exit, {:nif_not_loaded, _detail} -> :unknown
+    _kind, _reason -> :unknown
   end
 
   defp native_nif do
     Application.get_env(:casein_mob, :connection_timing_native_nif, :mob_nif)
   end
-
-  defp missing_native_call?(
-         %UndefinedFunctionError{} = error,
-         expected_module,
-         expected_function,
-         expected_arity
-       ) do
-    error.module == expected_module and error.function == expected_function and
-      error.arity == expected_arity
-  end
-
-  defp nif_not_loaded?(%ErlangError{original: original}) do
-    original in [:not_loaded, :nif_not_loaded]
-  end
-
-  defp nif_not_loaded?(_error), do: false
 
   defp valid_native_stage_envelope?(generation, duration_ms, elapsed_ms) do
     is_binary(generation) and valid_generation(generation) == generation and
@@ -440,7 +453,6 @@ defmodule CaseinMob.ConnectionTiming do
 
   defp milliseconds(microseconds) when is_integer(microseconds) do
     microseconds
-    |> max(0)
     |> Kernel./(1_000)
     |> Float.round(3)
   end
