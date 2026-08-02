@@ -102,6 +102,32 @@ def generation_markers(index: int, cycle: str) -> list[bytes]:
     ]
 
 
+def supervisor_status(
+    status: str,
+    *,
+    platform: str,
+    source_phase: str,
+) -> str:
+    return (
+        json.dumps(
+            {
+                "supervisor": source.SUPERVISOR_NAME,
+                "status": status,
+                "platform": platform,
+                "lines_seen": 0,
+                "markers_forwarded": 0,
+                "status_lines_discarded": 0,
+                "input_truncated": False,
+                "downstream_completion": "none",
+                "source_exit": "unknown",
+                "cleanup": "not_needed",
+                "source_phase": source_phase,
+            }
+        )
+        + "\n"
+    )
+
+
 def summary(value=None):
     return {"min": value, "p50": value, "p95": value, "max": value}
 
@@ -180,12 +206,22 @@ class SyntheticSource:
 
 
 class ClassifiedSyntheticSource(SyntheticSource):
-    def __init__(self, *, diagnostic_status, **kwargs):
+    def __init__(
+        self,
+        *,
+        diagnostic_status,
+        diagnostic_source_phase="not_started",
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._diagnostic_status = diagnostic_status
+        self._diagnostic_source_phase = diagnostic_source_phase
 
     def diagnostic_status(self):
         return self._diagnostic_status
+
+    def diagnostic_source_phase(self):
+        return self._diagnostic_source_phase
 
 
 class FakeBridge:
@@ -271,13 +307,11 @@ class FakeColdSupervisorFactory:
             def run(self, plan, _output, status):
                 owner.plans.append(plan)
                 status.write(
-                    json.dumps(
-                        {
-                            "supervisor": source.SUPERVISOR_NAME,
-                            "status": "ios_cold_generation_complete",
-                        }
+                    supervisor_status(
+                        "ios_cold_generation_complete",
+                        platform="ios",
+                        source_phase="complete",
                     )
-                    + "\n"
                 )
                 return 0
 
@@ -313,13 +347,11 @@ class FakeIOSContinuousSupervisorFactory:
                     owner.events.append("attach")
                 if not owner.ready:
                     status.write(
-                        json.dumps(
-                            {
-                                "supervisor": source.SUPERVISOR_NAME,
-                                "status": "source_capability_failed",
-                            }
+                        supervisor_status(
+                            "source_capability_failed",
+                            platform="ios",
+                            source_phase="resume",
                         )
-                        + "\n"
                     )
                     return 3
 
@@ -334,13 +366,11 @@ class FakeIOSContinuousSupervisorFactory:
                         output.write(line)
                 output.flush()
                 status.write(
-                    json.dumps(
-                        {
-                            "supervisor": source.SUPERVISOR_NAME,
-                            "status": "downstream_complete",
-                        }
+                    supervisor_status(
+                        "downstream_complete",
+                        platform="ios",
+                        source_phase="complete",
                     )
-                    + "\n"
                 )
                 return 0
 
@@ -640,6 +670,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
             bridge = FakeBridge(server_aggregate())
             source_driver = ClassifiedSyntheticSource(
                 diagnostic_status="source_capability_failed",
+                diagnostic_source_phase="early_exit",
                 generations=0,
                 success=False,
             )
@@ -651,6 +682,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                 coordinator.FailureDiagnostic(
                     "native_pipeline",
                     "source_capability_failed",
+                    "early_exit",
                     "incomplete",
                     0,
                     0,
@@ -668,12 +700,68 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                     "phase",
                     "record_count",
                     "source",
+                    "source_phase",
                     "status",
                 },
                 set(emitted),
             )
             self.assertNotIn(ANDROID_SERIAL, status_output.getvalue())
             self.assertNotIn(generation(1), status_output.getvalue())
+            self.assertTrue(bridge.aborted)
+            self.assertEqual(0, bridge.finish_calls)
+
+    def test_one_generation_source_failure_preserves_phase_and_count(self):
+        with tempfile.TemporaryDirectory() as root:
+            bridge = FakeBridge(server_aggregate())
+            config = self.config(root, cycle="cold")
+
+            class OneGenerationFailureSupervisor:
+                def __init__(self, **kwargs):
+                    self.source_ready = kwargs["source_ready"]
+
+                def run(self, _plan, output, status):
+                    self.source_ready()
+                    for line in generation_markers(1, "cold"):
+                        output.write(line)
+                        output.flush()
+                    status.write(
+                        supervisor_status(
+                            "source_capability_failed",
+                            platform="android",
+                            source_phase="early_exit",
+                        )
+                    )
+                    return 3
+
+            class NoopCommandRunner:
+                def __init__(self, _factory):
+                    return None
+
+                def run(self, _argv, _timeout):
+                    return None
+
+            source_driver = coordinator.PhysicalSourceDriver(
+                config,
+                supervisor_factory=OneGenerationFailureSupervisor,
+            )
+            runner = coordinator.CohortCoordinator(
+                bridge_factory=lambda _config: bridge,
+                source_factory=lambda _config: source_driver,
+            )
+
+            with mock.patch.object(
+                coordinator, "BoundedCommandRunner", NoopCommandRunner
+            ):
+                outcome = runner.run(config)
+
+            self.assertEqual("source_failed", outcome.status)
+            self.assertEqual(1, outcome.diagnostic.generation_count)
+            self.assertEqual("early_exit", outcome.diagnostic.source_phase)
+            status_output = io.StringIO()
+            coordinator._emit_outcome_status(status_output, outcome)
+            emitted = json.loads(status_output.getvalue())
+            self.assertEqual(1, emitted["generation_count"])
+            self.assertEqual("early_exit", emitted["source_phase"])
             self.assertTrue(bridge.aborted)
             self.assertEqual(0, bridge.finish_calls)
 
@@ -1380,6 +1468,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                             "phase": "initialization",
                             "record_count": 0,
                             "source": "not_started",
+                            "source_phase": "not_started",
                             "status": "interrupted",
                         },
                         json.loads(stderr.getvalue()),
@@ -1530,6 +1619,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                             "phase": "initialization",
                             "record_count": 0,
                             "source": "not_started",
+                            "source_phase": "not_started",
                             "status": "interrupted",
                         },
                         json.loads(stderr.getvalue()),
@@ -1756,13 +1846,11 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                     events.append("source_closed")
                     state["source_live"] = False
                     status.write(
-                        json.dumps(
-                            {
-                                "supervisor": source.SUPERVISOR_NAME,
-                                "status": "downstream_complete",
-                            }
+                        supervisor_status(
+                            "downstream_complete",
+                            platform="android",
+                            source_phase="complete",
                         )
-                        + "\n"
                     )
                     return 0
 
@@ -1884,13 +1972,15 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                                 status_value = "source_capability_failed"
                             events.append("source_closed")
                             status.write(
-                                json.dumps(
-                                    {
-                                        "supervisor": source.SUPERVISOR_NAME,
-                                        "status": status_value,
-                                    }
+                                supervisor_status(
+                                    status_value,
+                                    platform="android",
+                                    source_phase=(
+                                        "source_connected"
+                                        if failure_mode == "readiness"
+                                        else "stream"
+                                    ),
                                 )
-                                + "\n"
                             )
                             return 3
 
@@ -2886,6 +2976,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                 "phase": "initialization",
                 "record_count": 0,
                 "source": "not_started",
+                "source_phase": "not_started",
                 "status": "internal_error",
             },
             json.loads(output.getvalue()),
@@ -2920,10 +3011,46 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
         self.assertIsNone(supervisor_sink.status)
         self.assertNotIn(generation(1), repr(supervisor_sink))
 
+    def test_supervisor_status_phase_is_strict_and_carried_by_sink(self):
+        valid = json.loads(
+            supervisor_status(
+                "source_capability_failed",
+                platform="android",
+                source_phase="early_exit",
+            )
+        )
+        accepted = coordinator.FixedStatusSink("supervisor")
+        accepted.write(json.dumps(valid) + "\n")
+        self.assertEqual("source_capability_failed", accepted.status)
+        self.assertEqual("early_exit", accepted.source_phase)
+
+        malformed = []
+        missing = dict(valid)
+        missing.pop("source_phase")
+        malformed.append(json.dumps(missing) + "\n")
+        non_string = dict(valid, source_phase=1)
+        malformed.append(json.dumps(non_string) + "\n")
+        unknown = dict(valid, source_phase=generation(1))
+        malformed.append(json.dumps(unknown) + "\n")
+        extra = dict(valid, source_phase_extra="stream")
+        malformed.append(json.dumps(extra) + "\n")
+        duplicate = json.dumps(valid)[:-1] + ',"source_phase":"stream"}\n'
+        malformed.append(duplicate)
+
+        for payload in malformed:
+            with self.subTest(payload_kind=len(payload)):
+                rejected = coordinator.FixedStatusSink("supervisor")
+                with self.assertRaises(ValueError):
+                    rejected.write(payload)
+                self.assertIsNone(rejected.status)
+                self.assertIsNone(rejected.source_phase)
+                self.assertNotIn(generation(1), repr(rejected))
+
     def test_fixed_status_keeps_success_two_fields_and_failure_allowlisted(self):
         diagnostic = coordinator.FailureDiagnostic(
             "native_pipeline",
             "source_capability_failed",
+            "early_exit",
             "incomplete",
             7,
             1,
@@ -2944,6 +3071,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                 "status": "source_failed",
                 "phase": "native_pipeline",
                 "source": "source_capability_failed",
+                "source_phase": "early_exit",
                 "adapter": "incomplete",
                 "record_count": 7,
                 "generation_count": 1,
@@ -2952,11 +3080,19 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             coordinator.FailureDiagnostic(
-                generation(1), "failed", "invalid", 0, 0
+                generation(1), "failed", "stream", "invalid", 0, 0
             )
         with self.assertRaises(ValueError):
             coordinator.FailureDiagnostic(
-                "native_pipeline", "failed", "invalid", 2_001, 0
+                "native_pipeline", "failed", "stream", "invalid", 2_001, 0
+            )
+        with self.assertRaises(ValueError):
+            coordinator.FailureDiagnostic(
+                "native_pipeline", "failed", "unknown", "invalid", 0, 0
+            )
+        with self.assertRaises(ValueError):
+            coordinator.FailureDiagnostic(
+                "native_pipeline", "failed", [], "invalid", 0, 0
             )
 
     def test_invalid_output_root_fails_before_bridge_or_source(self):
@@ -3006,6 +3142,7 @@ class MobileFeedTimingCoordinatorTest(unittest.TestCase):
                     "phase": "publication_preflight",
                     "record_count": 0,
                     "source": "not_started",
+                    "source_phase": "not_started",
                     "status": "publication_failed",
                 },
                 json.loads(stderr.getvalue()),
