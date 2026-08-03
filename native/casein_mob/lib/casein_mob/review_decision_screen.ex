@@ -547,6 +547,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
           type: :text_field,
           props: %{
             test_id: "needs-me-reply",
+            accessibility_id: "needs-me-reply",
             accessibility_label: if(follow_up?, do: "Short follow-up", else: "Short reply"),
             value: assigns.note,
             placeholder:
@@ -639,6 +640,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
       type: :button,
       props: %{
         test_id: action_test_id(spec),
+        accessibility_id: action_test_id(spec),
         accessibility_label: action_label(spec),
         text: action_label(spec),
         background: :surface_raised,
@@ -673,6 +675,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
         type: if(vertical?, do: :column, else: :row),
         props: %{
           test_id: "needs-me-choice-group",
+          accessibility_id: "needs-me-choice-group",
           accessibility_label: "Available choices",
           fill_width: true,
           gap: 8
@@ -699,6 +702,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
         type: :button,
         props: %{
           test_id: "needs-me-confirm-#{get(spec, "id")}",
+          accessibility_id: "needs-me-confirm-#{get(spec, "id")}",
           accessibility_label: "Confirm #{action_label(spec)}",
           text: "Confirm #{action_label(spec)}",
           background: style_background(get(spec, "style")),
@@ -715,6 +719,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
         type: :button,
         props: %{
           test_id: "needs-me-cancel-confirmation",
+          accessibility_id: "needs-me-cancel-confirmation",
           accessibility_label: "Cancel confirmation",
           text: "Cancel",
           background: :surface_raised,
@@ -734,6 +739,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
       type: :button,
       props: %{
         test_id: action_test_id(spec),
+        accessibility_id: action_test_id(spec),
         accessibility_label: action_label(spec),
         text: action_label(spec),
         background: style_background(get(spec, "style")),
@@ -1238,6 +1244,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
       type: :column,
       props: %{
         test_id: "needs-me-state-#{assigns.action_state}",
+        accessibility_id: "needs-me-state-#{assigns.action_state}",
         accessibility_label: "Request state: #{label}",
         fill_width: true,
         background: color,

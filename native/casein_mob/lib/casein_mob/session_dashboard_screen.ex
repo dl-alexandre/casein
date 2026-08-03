@@ -1228,6 +1228,7 @@ defmodule CaseinMob.SessionDashboardScreen do
       type: :column,
       props: %{
         test_id: observer_card_test_id(card),
+        accessibility_id: observer_card_test_id(card),
         fill_width: true,
         background: :surface,
         padding: :space_md,
@@ -1705,7 +1706,11 @@ defmodule CaseinMob.SessionDashboardScreen do
 
     props =
       if Keyword.has_key?(opts, :test_id) do
-        Map.put(props, :test_id, Keyword.fetch!(opts, :test_id))
+        test_id = Keyword.fetch!(opts, :test_id)
+
+        props
+        |> Map.put(:test_id, test_id)
+        |> Map.put(:accessibility_id, test_id)
       else
         props
       end
