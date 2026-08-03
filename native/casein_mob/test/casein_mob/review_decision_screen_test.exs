@@ -133,6 +133,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert text(view) =~ "Add a short note first"
     assert assigns(view).submitted_action == nil
     assert find(view, :text_field).props.test_id == "needs-me-reply"
+    assert find(view, :text_field).props.accessibility_id == "needs-me-reply"
     assert find(view, :text_field).props.accessibility_label == "Short reply"
 
     view =
@@ -231,9 +232,11 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert reduce.props.fill_width == false
     assert reduce.props.test_id == "needs-me-action-choose_reduce_scope"
+    assert reduce.props.accessibility_id == "needs-me-action-choose_reduce_scope"
     assert reduce.props.accessibility_label == "Reduce scope"
     assert tests.props.fill_width == false
     assert tests.props.test_id == "needs-me-action-choose_add_tests"
+    assert tests.props.accessibility_id == "needs-me-action-choose_add_tests"
   end
 
   test "four long declared choices use reachable full-width vertical controls" do
@@ -285,6 +288,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     approve = find(view, :button, text: "Approve")
     assert approve.props.test_id == "needs-me-action-approve"
+    assert approve.props.accessibility_id == "needs-me-action-approve"
     assert approve.props.accessibility_label == "Approve"
   end
 

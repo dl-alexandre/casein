@@ -1202,11 +1202,15 @@ defmodule CaseinMob.SessionDashboardScreenTest do
 
     assert Enum.any?(columns, &(&1.props[:test_id] == "needs-me-card-sticky-direction"))
     assert Enum.any?(columns, &(&1.props[:test_id] == "needs-me-card-non-sticky"))
+    assert Enum.any?(columns, &(&1.props[:accessibility_id] == "needs-me-card-sticky-direction"))
+    assert Enum.any?(columns, &(&1.props[:accessibility_id] == "needs-me-card-non-sticky"))
 
     buttons = find_all(view, :button)
 
     assert Enum.any?(buttons, &(&1.props[:test_id] == "needs-me-open-sticky-direction"))
     assert Enum.any?(buttons, &(&1.props[:test_id] == "needs-me-open-non-sticky"))
+    assert Enum.any?(buttons, &(&1.props[:accessibility_id] == "needs-me-open-sticky-direction"))
+    assert Enum.any?(buttons, &(&1.props[:accessibility_id] == "needs-me-open-non-sticky"))
 
     rendered = text(view)
     {sticky_offset, _} = :binary.match(rendered, sticky["title"])
