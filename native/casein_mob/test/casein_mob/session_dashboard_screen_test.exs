@@ -500,6 +500,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
          {:ok,
           %{
             "status" => "accepted",
+            "card_id" => card["id"],
+            "action_id" => "resume",
             "idempotent" => false,
             "result" => %{
               "target" => "session_detail",
@@ -517,6 +519,34 @@ defmodule CaseinMob.SessionDashboardScreenTest do
              session_id: "run-9",
              source: :mobile_resume
            }
+  end
+
+  test "workspace idle Resume waits for an authoritative active-origin snapshot" do
+    origin_id = "origin-devbox"
+    put_origin_pairing(origin_id)
+    start_session_client_probe()
+    card = workspace_idle_card(origin_id)
+
+    snapshots = [
+      mobile_cards_snapshot(origin_id, [card]) |> Map.delete("live_work"),
+      mobile_cards_snapshot(origin_id, [card], "hydrating")
+    ]
+
+    Enum.each(snapshots, fn snapshot ->
+      view =
+        SessionDashboardScreen
+        |> mount_screen()
+        |> render_info({:mobile_cards_status, :joined})
+        |> render_info({:mobile_cards_snapshot, snapshot})
+        |> render_info({:tap, {:mobile_card_action, card["id"]}})
+
+      assert assigns(view).pending_resume_action == nil
+      refute navigated_to(view) == CaseinMob.SessionDetailScreen
+      assert SessionConfig.resume_context() == nil
+      assert text(view) =~ "Wait for authoritative refresh before resuming"
+    end)
+
+    refute_receive {:session_client_cast, {:card_action, _, "resume", _, _}}
   end
 
   test "workspace idle Resume coalesces duplicate taps and ignores unrelated action replies" do
@@ -560,6 +590,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
          {:ok,
           %{
             "status" => "accepted",
+            "card_id" => card["id"],
+            "action_id" => "resume",
             "idempotent" => true,
             "result" => %{
               "target" => "session_detail",
@@ -576,6 +608,50 @@ defmodule CaseinMob.SessionDashboardScreenTest do
              session_id: "run-9",
              source: :mobile_resume
            }
+  end
+
+  test "workspace idle Resume rejects missing or mismatched reply identity" do
+    origin_id = "origin-devbox"
+    put_origin_pairing(origin_id)
+    start_session_client_probe()
+    card = workspace_idle_card(origin_id)
+
+    accepted = %{
+      "status" => "accepted",
+      "card_id" => card["id"],
+      "action_id" => "resume",
+      "result" => %{
+        "target" => "session_detail",
+        "workspace_id" => "ws-1",
+        "session_id" => "run-9"
+      }
+    }
+
+    replies = [
+      Map.delete(accepted, "card_id"),
+      Map.delete(accepted, "action_id"),
+      Map.put(accepted, "card_id", "workspace_idle:ws-other:run-9"),
+      Map.put(accepted, "action_id", "other")
+    ]
+
+    Enum.each(replies, fn reply ->
+      view =
+        SessionDashboardScreen
+        |> mount_screen()
+        |> render_info({:mobile_cards_status, :joined})
+        |> render_info({:mobile_cards_snapshot, mobile_cards_snapshot(origin_id, [card])})
+        |> render_info({:tap, {:mobile_card_action, card["id"]}})
+
+      assert_receive {:session_client_cast,
+                      {:card_action, "workspace_idle:ws-1:run-9", "resume", %{}, ^origin_id}}
+
+      view = render_info(view, {:card_action_result, card["id"], {:ok, reply}})
+
+      assert assigns(view).pending_resume_action == nil
+      refute navigated_to(view) == CaseinMob.SessionDetailScreen
+      assert SessionConfig.resume_context() == nil
+      assert text(view) =~ "Resume target changed; nothing was opened"
+    end)
   end
 
   test "workspace idle Resume rejects malformed or internally mismatched session targets" do
@@ -662,6 +738,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
          {:ok,
           %{
             "status" => "accepted",
+            "card_id" => card["id"],
+            "action_id" => "resume",
             "result" => %{
               "target" => "session_detail",
               "workspace_id" => "ws-1",
@@ -687,6 +765,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
          {:ok,
           %{
             "status" => "accepted",
+            "card_id" => card["id"],
+            "action_id" => "resume",
             "result" => %{
               "target" => "session_detail",
               "workspace_id" => "ws-1",
@@ -699,6 +779,99 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     refute navigated_to(stale_view) == CaseinMob.SessionDetailScreen
     assert SessionConfig.resume_context() == nil
     assert text(stale_view) =~ "Resume request is stale; nothing was opened"
+  end
+
+  test "workspace idle Resume rejects an accepted reply after authority regresses" do
+    origin_id = "origin-devbox"
+    put_origin_pairing(origin_id)
+    start_session_client_probe()
+    card = workspace_idle_card(origin_id)
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_status, :joined})
+      |> render_info({:mobile_cards_snapshot, mobile_cards_snapshot(origin_id, [card])})
+      |> render_info({:tap, {:mobile_card_action, card["id"]}})
+
+    assert_receive {:session_client_cast,
+                    {:card_action, "workspace_idle:ws-1:run-9", "resume", %{}, ^origin_id}}
+
+    view =
+      render_info(
+        view,
+        {:mobile_cards_snapshot, mobile_cards_snapshot(origin_id, [card], "hydrating")}
+      )
+
+    assert assigns(view).pending_resume_action.card_id == card["id"]
+
+    view =
+      render_info(
+        view,
+        {:card_action_result, card["id"],
+         {:ok,
+          %{
+            "status" => "accepted",
+            "card_id" => card["id"],
+            "action_id" => "resume",
+            "result" => %{
+              "target" => "session_detail",
+              "workspace_id" => "ws-1",
+              "session_id" => "run-9"
+            }
+          }}}
+      )
+
+    assert assigns(view).pending_resume_action == nil
+    refute navigated_to(view) == CaseinMob.SessionDetailScreen
+    assert SessionConfig.resume_context() == nil
+    assert text(view) =~ "Resume cancelled; refresh is not authoritative"
+  end
+
+  test "workspace idle Resume rejects an accepted reply after card replacement" do
+    origin_id = "origin-devbox"
+    put_origin_pairing(origin_id)
+    start_session_client_probe()
+    card = workspace_idle_card(origin_id)
+
+    replacement =
+      card
+      |> Map.put("session_id", "run-10")
+      |> put_in(["resume", "locator", "session_id"], "run-10")
+      |> put_in(["actions", Access.at(0), "route", "session_id"], "run-10")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_status, :joined})
+      |> render_info({:mobile_cards_snapshot, mobile_cards_snapshot(origin_id, [card])})
+      |> render_info({:tap, {:mobile_card_action, card["id"]}})
+
+    assert_receive {:session_client_cast,
+                    {:card_action, "workspace_idle:ws-1:run-9", "resume", %{}, ^origin_id}}
+
+    view =
+      view
+      |> render_info({:mobile_cards_snapshot, mobile_cards_snapshot(origin_id, [replacement])})
+      |> render_info(
+        {:card_action_result, card["id"],
+         {:ok,
+          %{
+            "status" => "accepted",
+            "card_id" => card["id"],
+            "action_id" => "resume",
+            "result" => %{
+              "target" => "session_detail",
+              "workspace_id" => "ws-1",
+              "session_id" => "run-9"
+            }
+          }}}
+      )
+
+    assert assigns(view).pending_resume_action == nil
+    refute navigated_to(view) == CaseinMob.SessionDetailScreen
+    assert SessionConfig.resume_context() == nil
+    assert text(view) =~ "Resume target changed; nothing was opened"
   end
 
   test "workspace idle Resume cancels a pending open on disconnect" do
@@ -726,6 +899,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
          {:ok,
           %{
             "status" => "accepted",
+            "card_id" => card["id"],
+            "action_id" => "resume",
             "result" => %{
               "target" => "session_detail",
               "workspace_id" => "ws-1",
@@ -1403,6 +1578,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
          {:ok,
           %{
             "status" => "accepted",
+            "card_id" => card["id"],
+            "action_id" => "resume",
             "result" => %{
               "target" => "session_detail",
               "workspace_id" => "ws-1",
@@ -1910,9 +2087,10 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     })
   end
 
-  defp mobile_cards_snapshot(origin_id, cards) do
+  defp mobile_cards_snapshot(origin_id, cards, live_work_status \\ "authoritative") do
     %{
       "origin" => %{"id" => origin_id, "display_name" => "Devbox"},
+      "live_work" => %{"status" => live_work_status},
       "cards" => cards
     }
   end

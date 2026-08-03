@@ -2069,6 +2069,9 @@ defmodule CaseinMob.SessionDashboardScreen do
       status_state(socket.assigns.mobile_cards_status) != :joined ->
         Mob.Socket.assign(socket, :notice, "Reconnect and refresh before resuming")
 
+      not authoritative_mobile_cards?(socket) ->
+        Mob.Socket.assign(socket, :notice, "Wait for authoritative refresh before resuming")
+
       socket.assigns[:origin_id] != target.origin_id ->
         Mob.Socket.assign(socket, :notice, "Resume origin changed; nothing was opened")
 
@@ -2094,6 +2097,9 @@ defmodule CaseinMob.SessionDashboardScreen do
 
           status_state(socket.assigns.mobile_cards_status) != :joined ->
             {:handled, temporary_notice(socket, "Resume cancelled; reconnect and refresh")}
+
+          not authoritative_mobile_cards?(socket) ->
+            {:handled, temporary_notice(socket, "Resume cancelled; refresh is not authoritative")}
 
           socket.assigns[:origin_id] != pending.origin_id ->
             {:handled, temporary_notice(socket, "Resume origin changed; nothing was opened")}
@@ -2139,13 +2145,19 @@ defmodule CaseinMob.SessionDashboardScreen do
   defp accepted_resume_target?({:ok, payload}, pending) when is_map(payload) do
     result = get(payload, "result")
 
-    get(payload, "status") == "accepted" and is_map(result) and
+    get(payload, "status") == "accepted" and
+      get(payload, "card_id") == pending.card_id and
+      get(payload, "action_id") == pending.action_id and is_map(result) and
       get(result, "target") == "session_detail" and
       get(result, "workspace_id") == pending.workspace_id and
       get(result, "session_id") == pending.session_id
   end
 
   defp accepted_resume_target?(_result, _pending), do: false
+
+  defp authoritative_mobile_cards?(socket) do
+    authoritative_live_work_snapshot?(socket.assigns.mobile_cards_snapshot)
+  end
 
   defp same_resume_target?(left, right) do
     Enum.all?([:action_id, :card_id, :origin_id, :workspace_id, :session_id], fn key ->
