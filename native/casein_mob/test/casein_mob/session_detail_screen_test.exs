@@ -188,6 +188,26 @@ defmodule CaseinMob.SessionDetailScreenTest do
     refute text(view) =~ "recent unrelated command"
   end
 
+  test "targeted resume fails closed when the exact run identity is ambiguous" do
+    view =
+      SessionDetailScreen
+      |> mount_screen(%{workspace_id: "ws-1", session_id: "run-target"})
+      |> render_info(
+        {:session_snapshot, "ws-1",
+         run_snapshot(
+           run("run-target", "current duplicate command", "running"),
+           [run("run-target", "recent duplicate command", "succeeded")]
+         )}
+      )
+
+    assert_renderable(view)
+    assert text(view) =~ "Requested session unavailable"
+    assert text(view) =~ "Session run-target"
+    assert text(view) =~ "No other run was substituted"
+    refute text(view) =~ "current duplicate command"
+    refute text(view) =~ "recent duplicate command"
+  end
+
   test "targeted resume fails closed when a later snapshot replaces the exact run" do
     view =
       SessionDetailScreen
