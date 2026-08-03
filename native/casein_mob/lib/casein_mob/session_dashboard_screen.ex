@@ -54,6 +54,7 @@ defmodule CaseinMob.SessionDashboardScreen do
       |> Mob.Socket.assign(:push_registered_workspace_ids, MapSet.new())
       |> Mob.Socket.assign(:pending_notification_card_id, nil)
       |> Mob.Socket.assign(:pending_origin_resume, nil)
+      |> Mob.Socket.assign(:pending_resume_action, nil)
       |> Mob.Socket.assign(:pending_origin_switch_observation?, false)
       |> Mob.Socket.assign(:pending_refresh_failure_reported?, false)
       |> Mob.Socket.assign(:filter, :needs_action)
@@ -98,6 +99,7 @@ defmodule CaseinMob.SessionDashboardScreen do
     socket =
       socket
       |> maybe_report_refresh_failure(status)
+      |> maybe_cancel_pending_resume(status)
       |> maybe_clear_mobile_cards(status)
       |> Mob.Socket.assign(:mobile_cards_status, status)
       |> refresh_pairing_and_push()
@@ -226,8 +228,11 @@ defmodule CaseinMob.SessionDashboardScreen do
     {:noreply, Mob.Socket.assign(socket, :filter, key)}
   end
 
-  def handle_info({:card_action_result, _card_id, result}, socket) do
-    {:noreply, temporary_notice(socket, card_action_notice(result))}
+  def handle_info({:card_action_result, card_id, result}, socket) do
+    case complete_pending_resume_action(socket, card_id, result) do
+      {:handled, socket} -> {:noreply, socket}
+      :unhandled -> {:noreply, temporary_notice(socket, card_action_notice(result))}
+    end
   end
 
   def handle_info({:tap, {:retry, wid}}, socket) do
@@ -304,6 +309,7 @@ defmodule CaseinMob.SessionDashboardScreen do
      |> Mob.Socket.assign(:statuses, %{})
      |> clear_mobile_cards()
      |> Mob.Socket.assign(:mobile_cards_status, :disconnected)
+     |> Mob.Socket.assign(:pending_resume_action, nil)
      |> Mob.Socket.assign(:resume_context, nil)
      |> reset_push_state()
      |> Mob.Socket.assign(:notice, "Host removed")
@@ -1691,6 +1697,7 @@ defmodule CaseinMob.SessionDashboardScreen do
   defp switch_host(socket, origin_id) do
     Enum.each(socket.assigns.pinned, &SessionClient.unwatch(&1, self()))
     SessionClient.unwatch_mobile_cards(self())
+    socket = Mob.Socket.assign(socket, :pending_resume_action, nil)
 
     case SessionClient.activate_origin(origin_id) do
       :ok ->
@@ -1798,7 +1805,7 @@ defmodule CaseinMob.SessionDashboardScreen do
     end
   end
 
-  defp handle_live_mobile_card_action(socket, card) do
+  defp handle_live_mobile_card_action(socket, card, opts \\ []) do
     mark_attention_viewed(card)
 
     if needs_review_card?(card) or intervention_card?(card) do
@@ -1807,6 +1814,11 @@ defmodule CaseinMob.SessionDashboardScreen do
       |> Mob.Socket.push_screen(ReviewDecisionScreen, %{card: card})
     else
       case card_action_tap(card) do
+        {:resume, target} ->
+          dispatch_resume_action(socket, target,
+            source: Keyword.get(opts, :source, :mobile_resume)
+          )
+
         {:open, wid} ->
           open_workspace(socket, wid)
 
@@ -1817,7 +1829,11 @@ defmodule CaseinMob.SessionDashboardScreen do
           Mob.Socket.push_screen(socket, PairingScreen)
 
         nil ->
-          socket
+          if workspace_idle_card?(card) do
+            Mob.Socket.assign(socket, :notice, "Resume target is invalid; nothing was opened")
+          else
+            socket
+          end
       end
     end
   end
@@ -1847,6 +1863,7 @@ defmodule CaseinMob.SessionDashboardScreen do
     pending = %{
       origin_id: origin_id,
       card_id: get(card, "id"),
+      card_type: get(card, "type"),
       locator: card |> get("resume", %{}) |> get("locator", %{}),
       workspace_id: get(card, "workspace_id"),
       session_id: get(card, "session_id"),
@@ -1885,11 +1902,18 @@ defmodule CaseinMob.SessionDashboardScreen do
         card when is_map(card) ->
           observe_resume("locator_fallback", "succeeded", pending, fallback_level: "exact")
 
-          handle_live_mobile_card_action(socket, card)
+          handle_live_mobile_card_action(socket, card, source: :origin_resume)
 
         _ ->
           observe_resume("locator_fallback", "failed", pending, fallback_level: "exact")
-          open_locator_fallback(socket, pending)
+
+          if pending[:card_type] in ["workspace_idle", :workspace_idle] do
+            socket
+            |> Mob.Socket.assign(:pending_resume_action, nil)
+            |> Mob.Socket.assign(:notice, "Resume is no longer available after refresh")
+          else
+            open_locator_fallback(socket, pending)
+          end
       end
     else
       socket
@@ -1897,6 +1921,21 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp complete_pending_origin_resume(socket), do: socket
+
+  defp complete_pending_origin_resume(
+         %{assigns: %{pending_origin_resume: %{card_type: card_type}}} = socket,
+         payload
+       )
+       when card_type in ["workspace_idle", :workspace_idle] do
+    if authoritative_live_work_snapshot?(payload) do
+      complete_pending_origin_resume(socket)
+    else
+      socket
+    end
+  end
+
+  defp complete_pending_origin_resume(socket, _payload),
+    do: complete_pending_origin_resume(socket)
 
   defp open_locator_fallback(socket, pending) do
     locator = pending[:locator] || %{}
@@ -1930,18 +1969,188 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp live_card_action_tap(card) do
-    # Prefer the server's normalized navigation action route; fall back to the
-    # legacy `action.route` so older payloads still navigate.
-    route = navigation_route(card) || legacy_route(card)
-    workspace_id = get(route, "workspace_id") || get(card, "workspace_id")
+    case resume_action_target(card) do
+      {:ok, target} ->
+        {:resume, target}
 
-    case {get(route, "type"), workspace_id} do
-      {"retry_workspace", wid} when is_binary(wid) -> {:retry, wid}
-      {"pair_workspace", wid} when is_binary(wid) -> {:pair_again, wid}
-      {"session_detail", wid} when is_binary(wid) -> {:open, wid}
-      {_type, wid} when is_binary(wid) -> {:open, wid}
-      _ -> nil
+      :not_resume ->
+        # Prefer the normalized route; retain the legacy route only for older
+        # non-Resume payloads.
+        route = navigation_route(card) || legacy_route(card)
+        workspace_id = get(route, "workspace_id") || get(card, "workspace_id")
+
+        case {get(route, "type"), workspace_id} do
+          {"retry_workspace", wid} when is_binary(wid) -> {:retry, wid}
+          {"pair_workspace", wid} when is_binary(wid) -> {:pair_again, wid}
+          {"session_detail", wid} when is_binary(wid) -> {:open, wid}
+          {_type, wid} when is_binary(wid) -> {:open, wid}
+          _ -> nil
+        end
+
+      :invalid_resume ->
+        nil
     end
+  end
+
+  defp resume_action_target(card) do
+    if workspace_idle_card?(card) do
+      with "workspace_idle" <- get(card, "type"),
+           "workspace_idle" <- get(card, "kind"),
+           {:ok, card_id} <- exact_text(get(card, "id")),
+           {:ok, workspace_id} <- exact_text(get(card, "workspace_id")),
+           {:ok, session_id} <- exact_text(get(card, "session_id")),
+           {:ok, origin_id} <- card_origin_id(card),
+           {:ok, resume} <- exact_map(get(card, "resume")),
+           ^card_id <- get(resume, "card_id"),
+           {:ok, resume_origin} <- exact_map(get(resume, "origin")),
+           ^origin_id <- get(resume_origin, "id"),
+           {:ok, locator} <- exact_map(get(resume, "locator")),
+           ^origin_id <- get(locator, "origin_id"),
+           ^workspace_id <- get(locator, "workspace_id"),
+           ^session_id <- get(locator, "session_id"),
+           {:ok, action} <- exact_resume_action(card),
+           {:ok, route} <- exact_map(get(action, "route")),
+           "session_detail" <- get(route, "type"),
+           ^workspace_id <- get(route, "workspace_id"),
+           ^session_id <- get(route, "session_id") do
+        {:ok,
+         %{
+           action_id: "resume",
+           card_id: card_id,
+           origin_id: origin_id,
+           workspace_id: workspace_id,
+           session_id: session_id
+         }}
+      else
+        _mismatch -> :invalid_resume
+      end
+    else
+      :not_resume
+    end
+  end
+
+  defp workspace_idle_card?(card) do
+    get(card, "type") in ["workspace_idle", :workspace_idle] or
+      get(card, "kind") in ["workspace_idle", :workspace_idle]
+  end
+
+  defp card_origin_id(card) do
+    with {:ok, origin} <- exact_map(get(card, "origin")),
+         {:ok, origin_id} <- exact_text(get(origin, "id")) do
+      {:ok, origin_id}
+    end
+  end
+
+  defp exact_resume_action(card) do
+    actions =
+      card
+      |> get("actions")
+      |> List.wrap()
+      |> Enum.filter(&(is_map(&1) and get(&1, "id") == "resume"))
+
+    case actions do
+      [action] -> {:ok, action}
+      _other -> :error
+    end
+  end
+
+  defp exact_text(value) do
+    if present?(value), do: {:ok, value}, else: :error
+  end
+
+  defp exact_map(value) when is_map(value), do: {:ok, value}
+  defp exact_map(_value), do: :error
+
+  defp dispatch_resume_action(socket, target, opts) do
+    cond do
+      is_map(socket.assigns.pending_resume_action) ->
+        Mob.Socket.assign(socket, :notice, "Resume is already in progress")
+
+      status_state(socket.assigns.mobile_cards_status) != :joined ->
+        Mob.Socket.assign(socket, :notice, "Reconnect and refresh before resuming")
+
+      socket.assigns[:origin_id] != target.origin_id ->
+        Mob.Socket.assign(socket, :notice, "Resume origin changed; nothing was opened")
+
+      true ->
+        pending = Map.put(target, :source, Keyword.fetch!(opts, :source))
+        :ok = SessionClient.card_action(target.card_id, target.action_id, %{}, target.origin_id)
+
+        socket
+        |> Mob.Socket.assign(:pending_resume_action, pending)
+        |> Mob.Socket.assign(:notice, "Resume requested; verifying exact session")
+    end
+  end
+
+  defp complete_pending_resume_action(socket, card_id, result) do
+    case socket.assigns.pending_resume_action do
+      %{card_id: ^card_id} = pending ->
+        socket = Mob.Socket.assign(socket, :pending_resume_action, nil)
+        current_target = current_resume_target(socket, pending.card_id)
+
+        cond do
+          match?({:error, _reason}, result) ->
+            {:handled, temporary_notice(socket, card_action_notice(result))}
+
+          status_state(socket.assigns.mobile_cards_status) != :joined ->
+            {:handled, temporary_notice(socket, "Resume cancelled; reconnect and refresh")}
+
+          socket.assigns[:origin_id] != pending.origin_id ->
+            {:handled, temporary_notice(socket, "Resume origin changed; nothing was opened")}
+
+          current_target == :missing ->
+            {:handled, temporary_notice(socket, "Resume request is stale; nothing was opened")}
+
+          not current_resume_target_matches?(current_target, pending) ->
+            {:handled, temporary_notice(socket, "Resume target changed; nothing was opened")}
+
+          not accepted_resume_target?(result, pending) ->
+            {:handled, temporary_notice(socket, "Resume target changed; nothing was opened")}
+
+          true ->
+            {:handled,
+             open_resume_context(socket, %{
+               workspace_id: pending.workspace_id,
+               session_id: pending.session_id,
+               source: pending.source
+             })}
+        end
+
+      pending when is_map(pending) ->
+        {:handled, socket}
+
+      _other ->
+        :unhandled
+    end
+  end
+
+  defp current_resume_target(socket, card_id) do
+    case Map.get(socket.assigns.mobile_cards_by_id, card_id) do
+      card when is_map(card) -> resume_action_target(card)
+      _missing -> :missing
+    end
+  end
+
+  defp current_resume_target_matches?({:ok, current}, pending),
+    do: same_resume_target?(current, pending)
+
+  defp current_resume_target_matches?(_invalid_or_missing, _pending), do: false
+
+  defp accepted_resume_target?({:ok, payload}, pending) when is_map(payload) do
+    result = get(payload, "result")
+
+    get(payload, "status") == "accepted" and is_map(result) and
+      get(result, "target") == "session_detail" and
+      get(result, "workspace_id") == pending.workspace_id and
+      get(result, "session_id") == pending.session_id
+  end
+
+  defp accepted_resume_target?(_result, _pending), do: false
+
+  defp same_resume_target?(left, right) do
+    Enum.all?([:action_id, :card_id, :origin_id, :workspace_id, :session_id], fn key ->
+      Map.get(left, key) == Map.get(right, key)
+    end)
   end
 
   defp navigation_route(card) do
@@ -2038,13 +2247,14 @@ defmodule CaseinMob.SessionDashboardScreen do
         |> maybe_register_push_for_known_workspaces()
         |> observe_origin_switch_if_pending(origin_id)
         |> maybe_open_pending_notification()
-        |> complete_pending_origin_resume()
+        |> complete_pending_origin_resume(payload)
         |> report_first_cards_render_ready(payload, length(cards))
 
       {:error, reason} ->
         socket
         |> Mob.Socket.assign(:notice, origin_rejection_notice(reason))
         |> Mob.Socket.assign(:pending_origin_resume, nil)
+        |> Mob.Socket.assign(:pending_resume_action, nil)
     end
   end
 
@@ -2171,6 +2381,16 @@ defmodule CaseinMob.SessionDashboardScreen do
 
   defp maybe_clear_mobile_cards(socket, status) do
     if status_state(status) == :error, do: clear_mobile_cards(socket), else: socket
+  end
+
+  defp maybe_cancel_pending_resume(socket, status) do
+    if is_map(socket.assigns.pending_resume_action) and status_state(status) != :joined do
+      socket
+      |> Mob.Socket.assign(:pending_resume_action, nil)
+      |> Mob.Socket.assign(:notice, "Resume cancelled; reconnect and refresh")
+    else
+      socket
+    end
   end
 
   defp clear_mobile_cards(socket) do
