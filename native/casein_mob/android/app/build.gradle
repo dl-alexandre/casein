@@ -3,6 +3,15 @@ plugins {
     id 'kotlin-android'
 }
 
+def utilitySoakSourceFile = file(
+    'src/androidTest/java/com/example/casein_mob/CaseinUtilitySoakTest.kt'
+)
+def utilitySoakSourceSha256 = java.security.MessageDigest
+    .getInstance('SHA-256')
+    .digest(utilitySoakSourceFile.bytes)
+    .encodeHex()
+    .toString()
+
 if (file('google-services.json').exists()) {
     apply plugin: 'com.google.gms.google-services'
 }
@@ -58,6 +67,7 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders.caseinUtilitySoakSourceSha256 = utilitySoakSourceSha256
 
         buildConfigField "boolean", "CASEIN_FIREBASE_OPTIONS_CONFIGURED", firebaseConfigured.toString()
         buildConfigField "String", "CASEIN_FIREBASE_APPLICATION_ID", quoteBuildConfigString(firebaseApplicationId)

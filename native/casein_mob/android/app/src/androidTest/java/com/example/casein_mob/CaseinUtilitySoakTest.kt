@@ -1,5 +1,9 @@
 package com.example.casein_mob
 
+import android.app.Activity
+import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -7,6 +11,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -24,11 +29,49 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class CaseinUtilitySoakTest {
     private lateinit var device: UiDevice
+    private lateinit var watchdogThread: HandlerThread
+    private lateinit var watchdogHandler: Handler
+    private val watchdogAction = Runnable {
+        val result = Bundle().apply {
+            putString("casein_soak_watchdog", "expired")
+        }
+        InstrumentationRegistry.getInstrumentation().finish(
+            Activity.RESULT_CANCELED,
+            result
+        )
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
 
     @Before
     fun setUp() {
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        armWatchdog()
         device.wakeUp()
+    }
+
+    @After
+    fun disarmWatchdog() {
+        if (::watchdogHandler.isInitialized) {
+            watchdogHandler.removeCallbacks(watchdogAction)
+        }
+        if (::watchdogThread.isInitialized) {
+            watchdogThread.quitSafely()
+        }
+    }
+
+    private fun armWatchdog() {
+        val requestedTimeout =
+            InstrumentationRegistry.getArguments().getString(WATCHDOG_ARGUMENT)
+        assertTrue(
+            "device watchdog argument did not match the reviewed bound",
+            requestedTimeout == DEVICE_WATCHDOG_TIMEOUT_MS.toString()
+        )
+        watchdogThread = HandlerThread("casein-utility-watchdog").apply { start() }
+        watchdogHandler = Handler(watchdogThread.looper)
+        assertTrue(
+            "device watchdog could not be armed",
+            watchdogHandler.postDelayed(watchdogAction, DEVICE_WATCHDOG_TIMEOUT_MS)
+        )
     }
 
     @Test
@@ -292,6 +335,8 @@ class CaseinUtilitySoakTest {
         private const val CARD_STREAM_OFFLINE = "Card stream offline"
         private const val STALE_CARD_COPY = "Latest mobile cards may be stale"
         private const val READ_ONLY_CONTEXT = "Last known · Offline · Read-only"
+        private const val WATCHDOG_ARGUMENT = "casein_watchdog_ms"
+        private const val DEVICE_WATCHDOG_TIMEOUT_MS = 900_000L
         private const val UI_TIMEOUT_MS = 20_000L
         private const val FILTER_TIMEOUT_MS = 12_000L
         private const val OFFLINE_TIMEOUT_MS = 30_000L

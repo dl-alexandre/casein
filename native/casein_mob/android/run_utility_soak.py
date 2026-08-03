@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Bounded, privacy-safe host runner for the Android utility soak.
 
-The runner owns the disposable Android test-driver lifecycle. It validates the
-APK package, proves that the test package is initially absent, never mutates
-the base Casein package, and only removes a driver whose install this run
-attempted. Cleanup stops/removes/verifies the driver before Wi-Fi is restored
-and verified as the final device mutation.
+The runner owns the disposable Android test-driver lifecycle. It pins a signed
+APK by SHA-256, runner, target, and reviewed-source digest; proves that the test
+package is initially absent; and only removes a driver whose exact install this
+run proved successful. The installed package's exact on-device base APK digest
+must match the reviewed host digest before ownership or execution is allowed.
+Cleanup force-stops only the disposable driver and base Casein app, proves their
+instrumentation/processes are quiescent, then removes the driver before Wi-Fi
+can be restored. The base app is never cleared or uninstalled.
 
 One absolute 20-minute deadline covers preflight, driver installation,
 instrumentation, fixed-metric collection, and cleanup. The final 30 seconds of
@@ -17,15 +20,15 @@ reap. Only a bounded tail of stdout is retained. Serial numbers, argv, child
 output, exception text, APK paths, and UI content are never emitted.
 
 The in-test bounded-wait budget is derived from the reviewed Kotlin source at
-runtime. Shell commands, orientation changes, gestures, and input injection do
-not have independent test-side deadlines, so the host deadline is the actual
-finite cohort bound. ``before_cold_metric`` means no fixed milestone completed;
-the first fixed metric is deliberately emitted only after cold launch and the
-initial dashboard assertions.
+runtime. A 15-minute in-app watchdog precedes the host telemetry and cleanup
+boundaries. ``before_cold_metric`` means no fixed milestone completed; the first
+fixed metric is deliberately emitted only after cold launch and the initial
+dashboard assertions.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -35,14 +38,22 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+BASE_PACKAGE = "com.example.casein_mob"
 DRIVER_PACKAGE = "com.example.casein_mob.test"
-INSTRUMENTATION_RUNNER = DRIVER_PACKAGE + "/androidx.test.runner.AndroidJUnitRunner"
+EXPECTED_RUNNER_CLASS = "androidx.test.runner.AndroidJUnitRunner"
+INSTRUMENTATION_RUNNER = DRIVER_PACKAGE + "/" + EXPECTED_RUNNER_CLASS
+UTILITY_SOURCE_DIGEST_METADATA = (
+    "com.example.casein_mob.CASEIN_UTILITY_SOURCE_SHA256"
+)
+ANDROID_XML_NS = "http://schemas.android.com/apk/res/android"
 TEST_CLASS = (
     "com.example.casein_mob.CaseinUtilitySoakTest"
     "#canonicalProfileSurvivesLifecycleRotationAndOfflineRecovery"
@@ -56,11 +67,20 @@ WHOLE_RUN_TIMEOUT_MS = 1_200_000
 CLEANUP_RESERVE_MS = 120_000
 TELEMETRY_RESERVE_MS = 30_000
 WIFI_RESTORE_RESERVE_MS = 40_000
+DEVICE_WATCHDOG_TIMEOUT_MS = 900_000
+DEVICE_QUIESCENCE_RESERVE_MS = 60_000
+DEVICE_SHA256SUM = "/system/bin/sha256sum"
+QUIESCENCE_MAX_POLLS = 8
 MAX_CHILD_OUTPUT_BYTES = 64 * 1024
 CHILD_TERM_GRACE_SECONDS = 1.0
 CHILD_KILL_GRACE_SECONDS = 1.0
 
 SERIAL_PATTERN = re.compile(r"\A[A-Za-z0-9._:-]{1,128}\Z")
+SHA256_PATTERN = re.compile(r"\A[0-9a-fA-F]{64}\Z")
+INSTALLED_DRIVER_APK_PATTERN = re.compile(
+    r"\A/data/app/com\.example\.casein_mob\.test-"
+    r"[A-Za-z0-9_+=.-]{1,160}/base\.apk\Z"
+)
 FIXED_METRIC_PATTERN = re.compile(
     r"^(?P<epoch>\d+(?:\.\d+)?)\s+.*?casein_soak\s+"
     r"(?P<key>cold_launch_ms|warm_resume_ms|offline_recovery_ms)="
@@ -78,6 +98,9 @@ RESULT_KEYS = {
     "telemetry_reserve_ms",
     "explicit_wait_budget_ms",
     "safety_margin_ms",
+    "device_watchdog_timeout_ms",
+    "reviewed_apk_verified",
+    "cross_invocation_one_attempt",
     "last_stage",
     "failure_stage",
     "cold_launch_ms",
@@ -90,6 +113,7 @@ RESULT_KEYS = {
     "driver_installed",
     "driver_cleanup_attempted",
     "driver_cleaned",
+    "device_quiescent",
 }
 
 
@@ -97,6 +121,17 @@ RESULT_KEYS = {
 class CommandResult:
     returncode: int
     stdout: str = ""
+    stdout_truncated: bool = False
+
+
+@dataclass
+class BoundedCapture:
+    data: bytearray
+    total_bytes: int = 0
+
+    @property
+    def truncated(self) -> bool:
+        return self.total_bytes > len(self.data)
 
 
 @dataclass(frozen=True)
@@ -188,26 +223,27 @@ class SubprocessExecutor:
 
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
-        captured = bytearray()
+        capture = BoundedCapture(bytearray())
         eof = False
         soft_deadline = deadline - reserve
 
         try:
             completed, eof = self._stream_until(
-                process, selector, captured, eof, soft_deadline
+                process, selector, capture, eof, soft_deadline
             )
             if not completed:
-                self._terminate_group(process, selector, captured, eof, deadline)
-                raise CommandDeadlineExceeded(bytes(captured))
+                self._terminate_group(process, selector, capture, eof, deadline)
+                raise CommandDeadlineExceeded(bytes(capture.data))
 
             return CommandResult(
                 process.returncode if process.returncode is not None else 1,
-                _bounded_text(bytes(captured)),
+                _bounded_text(bytes(capture.data)),
+                capture.truncated,
             )
         except CommandDeadlineExceeded:
             raise
         except Exception:
-            self._terminate_group(process, selector, captured, eof, deadline)
+            self._terminate_group(process, selector, capture, eof, deadline)
             raise
         finally:
             selector.close()
@@ -217,7 +253,7 @@ class SubprocessExecutor:
         self,
         process: subprocess.Popen[bytes],
         selector: selectors.BaseSelector,
-        captured: bytearray,
+        capture: BoundedCapture,
         eof: bool,
         deadline: float,
     ) -> tuple[bool, bool]:
@@ -229,7 +265,10 @@ class SubprocessExecutor:
             for key, _mask in selector.select(min(0.05, remaining)):
                 chunk = os.read(key.fd, 16 * 1024)
                 if chunk:
-                    _append_bounded_tail(captured, chunk, self.max_capture_bytes)
+                    capture.total_bytes += len(chunk)
+                    _append_bounded_tail(
+                        capture.data, chunk, self.max_capture_bytes
+                    )
                 else:
                     eof = True
                     try:
@@ -243,7 +282,7 @@ class SubprocessExecutor:
         self,
         process: subprocess.Popen[bytes],
         selector: selectors.BaseSelector,
-        captured: bytearray,
+        capture: BoundedCapture,
         eof: bool,
         deadline: float,
     ) -> None:
@@ -252,13 +291,16 @@ class SubprocessExecutor:
             deadline - self.kill_grace_seconds,
             self.monotonic() + self.term_grace_seconds,
         )
-        completed, eof = self._stream_until(
-            process, selector, captured, eof, term_deadline
+        _completed, eof = self._stream_until(
+            process, selector, capture, eof, term_deadline
         )
 
-        if not completed:
-            self._signal_group(process.pid, signal.SIGKILL)
-            self._stream_until(process, selector, captured, eof, deadline)
+        # The leader and its stdout can both disappear while a descendant in
+        # the same private process group remains alive with stdio closed and
+        # SIGTERM ignored. Always kill the exact group after the TERM grace;
+        # leader/EOF completion is not cohort completion.
+        self._signal_group(process.pid, signal.SIGKILL)
+        self._stream_until(process, selector, capture, eof, deadline)
 
         if process.poll() is None:
             remaining = max(0.01, deadline - self.monotonic())
@@ -309,6 +351,9 @@ def _result(**updates: object) -> dict[str, object]:
         "telemetry_reserve_ms": TELEMETRY_RESERVE_MS,
         "explicit_wait_budget_ms": None,
         "safety_margin_ms": None,
+        "device_watchdog_timeout_ms": DEVICE_WATCHDOG_TIMEOUT_MS,
+        "reviewed_apk_verified": False,
+        "cross_invocation_one_attempt": "external",
         "last_stage": "not_started",
         "failure_stage": None,
         "cold_launch_ms": None,
@@ -321,6 +366,7 @@ def _result(**updates: object) -> dict[str, object]:
         "driver_installed": False,
         "driver_cleanup_attempted": False,
         "driver_cleaned": False,
+        "device_quiescent": False,
     }
     result.update(updates)
     if set(result) != RESULT_KEYS:
@@ -734,7 +780,7 @@ def _authorized_target(
         cap_ms=20_000,
         monotonic=monotonic,
     )
-    if result.returncode != 0:
+    if result.returncode != 0 or result.stdout_truncated:
         return False
 
     matches: list[str] = []
@@ -761,6 +807,8 @@ def _wifi_state(
         cap_ms=15_000,
         monotonic=monotonic,
     )
+    if result.stdout_truncated:
+        return None
     state = _bounded_text(result.stdout).strip()
     return state if result.returncode == 0 and state in {"0", "1"} else None
 
@@ -779,7 +827,9 @@ def _device_epoch(
         monotonic=monotonic,
     )
     try:
-        return float(_bounded_text(result.stdout).strip()) if result.returncode == 0 else None
+        if result.returncode != 0 or result.stdout_truncated:
+            return None
+        return float(_bounded_text(result.stdout).strip())
     except ValueError:
         return None
 
@@ -802,13 +852,39 @@ def _find_apkanalyzer() -> str | None:
     return None
 
 
-def _validated_driver_apk(
-    executor: object,
+def _find_apksigner() -> str | None:
+    discovered = shutil.which("apksigner")
+    if discovered:
+        return discovered
+
+    candidates: list[Path] = []
+    for variable in ("ANDROID_SDK_ROOT", "ANDROID_HOME"):
+        root = os.environ.get(variable)
+        if not root:
+            continue
+        candidates.extend((Path(root) / "build-tools").glob("*/apksigner"))
+    executable = [
+        candidate
+        for candidate in candidates
+        if candidate.is_file() and os.access(candidate, os.X_OK)
+    ]
+    if not executable:
+        return None
+
+    def version_key(candidate: Path) -> tuple[int, ...]:
+        return tuple(int(part) for part in re.findall(r"\d+", candidate.parent.name))
+
+    return str(max(executable, key=version_key))
+
+
+def _stage_exact_apk(
     driver_apk: str,
-    analyzer_locator: Callable[[], str | None],
-    deadline: float,
-    monotonic: Callable[[], float],
+    expected_apk_sha256: str,
+    staging_directory: str,
 ) -> str | None:
+    if not SHA256_PATTERN.fullmatch(expected_apk_sha256):
+        return None
+
     requested = Path(driver_apk)
     if not requested.is_absolute():
         return None
@@ -819,19 +895,154 @@ def _validated_driver_apk(
     if not resolved.is_file() or resolved.suffix.lower() != ".apk":
         return None
 
-    analyzer = analyzer_locator()
-    if not analyzer:
+    staged = Path(staging_directory) / "reviewed-driver.apk"
+    digest = hashlib.sha256()
+    try:
+        with resolved.open("rb") as source, staged.open("xb") as destination:
+            while chunk := source.read(1024 * 1024):
+                digest.update(chunk)
+                destination.write(chunk)
+    except OSError:
         return None
-    result = _stage_run(
+    if digest.hexdigest() != expected_apk_sha256.lower():
+        return None
+    return str(staged)
+
+
+def _manifest_matches_reviewed_contract(
+    manifest_text: str,
+    source_sha256: str,
+) -> bool:
+    if not SHA256_PATTERN.fullmatch(source_sha256):
+        return False
+    try:
+        root = ET.fromstring(manifest_text)
+    except ET.ParseError:
+        return False
+
+    android_name = f"{{{ANDROID_XML_NS}}}name"
+    android_target = f"{{{ANDROID_XML_NS}}}targetPackage"
+    android_value = f"{{{ANDROID_XML_NS}}}value"
+    if root.tag != "manifest" or root.attrib.get("package") != DRIVER_PACKAGE:
+        return False
+
+    instrumentations = root.findall("instrumentation")
+    if len(instrumentations) != 1:
+        return False
+    instrumentation = instrumentations[0]
+    if instrumentation.attrib.get(android_name) != EXPECTED_RUNNER_CLASS:
+        return False
+    if instrumentation.attrib.get(android_target) != BASE_PACKAGE:
+        return False
+
+    application = root.find("application")
+    if application is None:
+        return False
+    source_metadata = [
+        item
+        for item in application.findall("meta-data")
+        if item.attrib.get(android_name) == UTILITY_SOURCE_DIGEST_METADATA
+    ]
+    return (
+        len(source_metadata) == 1
+        and source_metadata[0].attrib.get(android_value) == source_sha256
+    )
+
+
+def _signature_output_valid(output: str) -> bool:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if not lines or lines[0] != "Verifies":
+        return False
+
+    scheme = re.compile(
+        r"Verified using v[0-9.]+ scheme(?: \([^)]*\))?: (true|false)"
+    )
+    source_stamp = re.compile(r"Verified for SourceStamp: (?:true|false)")
+    signer_count = re.compile(r"Number of signers: ([1-9][0-9]*)")
+    saw_verified_scheme = False
+    signer_rows = 0
+    for line in lines[1:]:
+        scheme_match = scheme.fullmatch(line)
+        if scheme_match:
+            saw_verified_scheme = (
+                saw_verified_scheme or scheme_match.group(1) == "true"
+            )
+            continue
+        if source_stamp.fullmatch(line):
+            continue
+        if signer_count.fullmatch(line):
+            signer_rows += 1
+            continue
+        return False
+    return saw_verified_scheme and signer_rows == 1
+
+
+def _validated_driver_apk(
+    executor: object,
+    driver_apk: str,
+    expected_apk_sha256: str,
+    source_sha256: str,
+    staging_directory: str,
+    analyzer_locator: Callable[[], str | None],
+    signer_locator: Callable[[], str | None],
+    deadline: float,
+    monotonic: Callable[[], float],
+) -> str | None:
+    staged = _stage_exact_apk(
+        driver_apk, expected_apk_sha256, staging_directory
+    )
+    if staged is None:
+        return None
+
+    analyzer = analyzer_locator()
+    signer = signer_locator()
+    if not analyzer or not signer:
+        return None
+
+    signature = _stage_run(
         executor,
-        [analyzer, "manifest", "application-id", str(resolved)],
+        [signer, "verify", "--verbose", staged],
         absolute_deadline=deadline,
         cap_ms=30_000,
         monotonic=monotonic,
     )
-    if result.returncode != 0 or _bounded_text(result.stdout).strip() != DRIVER_PACKAGE:
+    if (
+        signature.returncode != 0
+        or signature.stdout_truncated
+        or not _signature_output_valid(_bounded_text(signature.stdout))
+    ):
         return None
-    return str(resolved)
+
+    application_id = _stage_run(
+        executor,
+        [analyzer, "manifest", "application-id", staged],
+        absolute_deadline=deadline,
+        cap_ms=30_000,
+        monotonic=monotonic,
+    )
+    if (
+        application_id.returncode != 0
+        or application_id.stdout_truncated
+        or _bounded_text(application_id.stdout).strip() != DRIVER_PACKAGE
+    ):
+        return None
+
+    manifest = _stage_run(
+        executor,
+        [analyzer, "manifest", "print", staged],
+        absolute_deadline=deadline,
+        cap_ms=30_000,
+        monotonic=monotonic,
+    )
+    if (
+        manifest.returncode != 0
+        or manifest.stdout_truncated
+        or not _manifest_matches_reviewed_contract(
+            _bounded_text(manifest.stdout), source_sha256
+        )
+    ):
+        return None
+    return staged
 
 
 def _driver_present(
@@ -842,26 +1053,95 @@ def _driver_present(
 ) -> bool | None:
     result = _stage_run(
         executor,
-        _adb(serial, "shell", "pm", "path", DRIVER_PACKAGE),
+        _adb(serial, "shell", "pm", "list", "packages", DRIVER_PACKAGE),
         absolute_deadline=deadline,
         cap_ms=15_000,
         monotonic=monotonic,
     )
     if result.returncode != 0:
         return None
+    if result.stdout_truncated:
+        return None
     output = _bounded_text(result.stdout).strip()
     if not output:
         return False
-    lines = output.splitlines()
-    if all(re.fullmatch(r"package:\S+", line) for line in lines):
+    if output == f"package:{DRIVER_PACKAGE}":
         return True
     return None
+
+
+def _file_digest_matches(path: str, expected_sha256: str) -> bool:
+    if not SHA256_PATTERN.fullmatch(expected_sha256):
+        return False
+    digest = hashlib.sha256()
+    try:
+        with Path(path).open("rb") as artifact:
+            while chunk := artifact.read(1024 * 1024):
+                digest.update(chunk)
+    except OSError:
+        return False
+    return digest.hexdigest() == expected_sha256.lower()
+
+
+def _installed_driver_path(
+    executor: object,
+    serial: str,
+    deadline: float,
+    monotonic: Callable[[], float],
+) -> str | None:
+    result = _stage_run(
+        executor,
+        _adb(serial, "shell", "pm", "path", DRIVER_PACKAGE),
+        absolute_deadline=deadline,
+        cap_ms=15_000,
+        monotonic=monotonic,
+    )
+    if result.returncode != 0 or result.stdout_truncated:
+        return None
+    lines = _bounded_text(result.stdout).splitlines()
+    if len(lines) != 1 or not lines[0].startswith("package:"):
+        return None
+    installed_path = lines[0][len("package:") :]
+    return (
+        installed_path
+        if INSTALLED_DRIVER_APK_PATTERN.fullmatch(installed_path)
+        else None
+    )
+
+
+def _installed_driver_digest(
+    executor: object,
+    serial: str,
+    deadline: float,
+    monotonic: Callable[[], float],
+) -> str | None:
+    installed_path = _installed_driver_path(
+        executor, serial, deadline, monotonic
+    )
+    if installed_path is None:
+        return None
+    result = _stage_run(
+        executor,
+        _adb(serial, "shell", DEVICE_SHA256SUM, "-b", installed_path),
+        absolute_deadline=deadline,
+        cap_ms=30_000,
+        monotonic=monotonic,
+    )
+    if result.returncode != 0 or result.stdout_truncated:
+        return None
+    output = _bounded_text(result.stdout)
+    return (
+        output.rstrip("\n")
+        if re.fullmatch(r"[0-9a-f]{64}\n?", output)
+        else None
+    )
 
 
 def _install_driver(
     executor: object,
     serial: str,
     driver_apk: str,
+    expected_apk_sha256: str,
     deadline: float,
     monotonic: Callable[[], float],
 ) -> str:
@@ -873,18 +1153,25 @@ def _install_driver(
         monotonic=monotonic,
     )
     output = _bounded_text(result.stdout)
-    if result.returncode != 0:
+    if result.returncode != 0 or result.stdout_truncated:
         return (
             "ownership_conflict"
             if "INSTALL_FAILED_ALREADY_EXISTS" in output
-            else "failed"
+            else "ambiguous"
         )
+    if "Success" not in output:
+        return "ambiguous"
+    if _driver_present(executor, serial, deadline, monotonic) is not True:
+        return "ambiguous"
+    installed_digest = _installed_driver_digest(
+        executor, serial, deadline, monotonic
+    )
     if (
-        "Success" in output
-        and _driver_present(executor, serial, deadline, monotonic) is True
+        installed_digest is not None
+        and installed_digest == expected_apk_sha256.lower()
     ):
         return "installed"
-    return "failed"
+    return "ambiguous"
 
 
 def _fixed_metrics(
@@ -910,7 +1197,7 @@ def _fixed_metrics(
         cap_ms=30_000,
         monotonic=monotonic,
     )
-    if result.returncode != 0:
+    if result.returncode != 0 or result.stdout_truncated:
         return {}, False
 
     metrics: dict[str, int] = {}
@@ -964,18 +1251,125 @@ def _restore_wifi(
     deadline: float,
     monotonic: Callable[[], float],
     sleep: Callable[[float], None],
-) -> bool:
+) -> tuple[bool, bool]:
+    if _wifi_state(executor, serial, deadline, monotonic) == initial:
+        return False, True
+
     action = "enable" if initial == "1" else "disable"
-    _stage_run(
+    result = _stage_run(
         executor,
         _adb(serial, "shell", "svc", "wifi", action),
         absolute_deadline=deadline,
         cap_ms=30_000,
         monotonic=monotonic,
     )
+    if result.returncode != 0:
+        return True, False
     while monotonic() < deadline:
         if _wifi_state(executor, serial, deadline, monotonic) == initial:
+            return True, True
+        sleep(min(0.25, max(0.0, deadline - monotonic())))
+    return True, False
+
+
+def _no_active_instrumentation(
+    executor: object,
+    serial: str,
+    deadline: float,
+    monotonic: Callable[[], float],
+) -> bool | None:
+    for package in (BASE_PACKAGE, DRIVER_PACKAGE):
+        result = _stage_run(
+            executor,
+            _adb(
+                serial,
+                "shell",
+                "dumpsys",
+                "activity",
+                "processes",
+                package,
+            ),
+            absolute_deadline=deadline,
+            cap_ms=15_000,
+            monotonic=monotonic,
+        )
+        if result.returncode != 0 or result.stdout_truncated:
+            return None
+        state = _parse_instrumentation_quiescence(
+            _bounded_text(result.stdout)
+        )
+        if state is not True:
+            return state
+    return True
+
+
+def _parse_instrumentation_quiescence(output: str) -> bool | None:
+    lines = output.splitlines()
+    if not lines or not lines[0].startswith(
+        "ACTIVITY MANAGER RUNNING PROCESSES"
+    ):
+        return None
+    if "ActiveInstrumentation{" in output or INSTRUMENTATION_RUNNER in output:
+        return False
+    return True
+
+
+def _no_target_processes(
+    executor: object,
+    serial: str,
+    deadline: float,
+    monotonic: Callable[[], float],
+) -> bool | None:
+    # Android 9 toybox defines NAME as argv[0]; -w prevents package-name
+    # truncation from turning an active target into a false absence.
+    result = _stage_run(
+        executor,
+        _adb(serial, "shell", "ps", "-A", "-w", "-o", "NAME"),
+        absolute_deadline=deadline,
+        cap_ms=15_000,
+        monotonic=monotonic,
+    )
+    if result.returncode != 0 or result.stdout_truncated:
+        return None
+    return _parse_target_process_quiescence(_bounded_text(result.stdout))
+
+
+def _parse_target_process_quiescence(output: str) -> bool | None:
+    rows = [line.strip() for line in output.splitlines()]
+    if not rows or rows[0] != "NAME" or any(not row for row in rows):
+        return None
+    for process_name in rows[1:]:
+        if re.search(r"\s", process_name):
+            return None
+        if process_name in {BASE_PACKAGE, DRIVER_PACKAGE}:
+            return False
+        if process_name.startswith(BASE_PACKAGE + ":"):
+            return False
+        if process_name.startswith(DRIVER_PACKAGE + ":"):
+            return False
+    return True
+
+
+def _device_quiescent(
+    executor: object,
+    serial: str,
+    deadline: float,
+    monotonic: Callable[[], float],
+    sleep: Callable[[float], None],
+) -> bool:
+    for _attempt in range(QUIESCENCE_MAX_POLLS):
+        if monotonic() >= deadline:
+            return False
+        instrumentation = _no_active_instrumentation(
+            executor, serial, deadline, monotonic
+        )
+        processes = _no_target_processes(
+            executor, serial, deadline, monotonic
+        )
+        if instrumentation is True and processes is True:
             return True
+        if instrumentation is None or processes is None:
+            return False
         sleep(min(0.25, max(0.0, deadline - monotonic())))
     return False
 
@@ -985,41 +1379,57 @@ def _cleanup_driver(
     serial: str,
     deadline: float,
     monotonic: Callable[[], float],
-) -> bool:
+    sleep: Callable[[float], None],
+) -> tuple[bool, bool]:
+    for package in (DRIVER_PACKAGE, BASE_PACKAGE):
+        try:
+            _stage_run(
+                executor,
+                _adb(serial, "shell", "am", "force-stop", package),
+                absolute_deadline=deadline,
+                cap_ms=20_000,
+                monotonic=monotonic,
+            )
+        except Exception:
+            pass
+
     try:
-        _stage_run(
-            executor,
-            _adb(serial, "shell", "am", "force-stop", DRIVER_PACKAGE),
-            absolute_deadline=deadline,
-            cap_ms=20_000,
-            monotonic=monotonic,
+        quiescent = _device_quiescent(
+            executor, serial, deadline, monotonic, sleep
         )
     except Exception:
-        pass
+        quiescent = False
+    if not quiescent:
+        return False, False
+
     try:
-        _stage_run(
+        uninstall = _stage_run(
             executor,
             _adb(serial, "uninstall", DRIVER_PACKAGE),
             absolute_deadline=deadline,
             cap_ms=25_000,
             monotonic=monotonic,
         )
+        if uninstall.returncode != 0:
+            return False, True
+        return (
+            _driver_present(executor, serial, deadline, monotonic) is False,
+            True,
+        )
     except Exception:
-        pass
-    try:
-        return _driver_present(executor, serial, deadline, monotonic) is False
-    except Exception:
-        return False
+        return False, True
 
 
 def run_utility_soak(
     serial: str,
     driver_apk: str,
+    expected_apk_sha256: str,
     *,
     executor: object | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     analyzer_locator: Callable[[], str | None] = _find_apkanalyzer,
+    signer_locator: Callable[[], str | None] = _find_apksigner,
     utility_source: Path = UTILITY_TEST_SOURCE,
 ) -> dict[str, object]:
     """Run one whole bounded cohort and return only the fixed public schema."""
@@ -1052,6 +1462,8 @@ def run_utility_soak(
 
     wifi_baseline: str | None = None
     driver_owned = False
+    wifi_may_have_changed = False
+    staging_directory = None
     output = ""
     metrics: dict[str, int] = {}
 
@@ -1060,11 +1472,23 @@ def run_utility_soak(
         if wifi_baseline is None:
             raise RunFailure("wifi_state_unreadable", "preflight")
         outcome["wifi_initially_enabled"] = wifi_baseline == "1"
+        if wifi_baseline != "1":
+            raise RunFailure("wifi_initially_disabled", "preflight")
 
         try:
-            wait_budget = derive_wait_budget(utility_source.read_text(encoding="utf-8"))
+            source_bytes = utility_source.read_bytes()
+            source_text = source_bytes.decode("utf-8")
+            wait_budget = derive_wait_budget(source_text)
+            if (
+                _parse_kotlin_ms(
+                    source_text, "DEVICE_WATCHDOG_TIMEOUT_MS"
+                )
+                != DEVICE_WATCHDOG_TIMEOUT_MS
+            ):
+                raise ValueError("watchdog source mismatch")
         except (OSError, UnicodeError, ValueError):
             raise RunFailure("source_contract_invalid", "wait_budget") from None
+        source_sha256 = hashlib.sha256(source_bytes).hexdigest()
         safety_margin_ms = (
             WHOLE_RUN_TIMEOUT_MS
             - CLEANUP_RESERVE_MS
@@ -1082,15 +1506,23 @@ def run_utility_soak(
         if started_epoch is None:
             raise RunFailure("device_clock_unreadable", "preflight")
 
+        staging_directory = tempfile.TemporaryDirectory(
+            prefix="casein-utility-soak-"
+        )
         validated_apk = _validated_driver_apk(
             runner,
             driver_apk,
+            expected_apk_sha256,
+            source_sha256,
+            staging_directory.name,
             analyzer_locator,
+            signer_locator,
             telemetry_start,
             monotonic,
         )
         if validated_apk is None:
             raise RunFailure("driver_apk_invalid", "driver_preflight")
+        outcome["reviewed_apk_verified"] = True
 
         initial_driver_state = _driver_present(
             runner, serial, telemetry_start, monotonic
@@ -1100,22 +1532,45 @@ def run_utility_soak(
         if initial_driver_state:
             raise RunFailure("driver_preexisting", "driver_preflight")
 
+        # Re-read the private staged copy immediately before crossing the
+        # install boundary. The authoritative proof is still the on-device
+        # digest below; this check rejects an already-observable host swap
+        # without mutating the device.
+        if not _file_digest_matches(validated_apk, expected_apk_sha256):
+            raise RunFailure("driver_apk_invalid", "driver_preflight")
+
         outcome["driver_install_attempted"] = True
-        driver_owned = True
-        install_result = _install_driver(
-            runner, serial, validated_apk, telemetry_start, monotonic
-        )
+        try:
+            install_result = _install_driver(
+                runner,
+                serial,
+                validated_apk,
+                expected_apk_sha256,
+                telemetry_start,
+                monotonic,
+            )
+        except CommandDeadlineExceeded:
+            raise RunFailure(
+                "driver_install_ambiguous", "driver_install"
+            ) from None
         if install_result == "ownership_conflict":
-            driver_owned = False
             raise RunFailure("driver_ownership_conflict", "driver_install")
         if install_result != "installed":
-            raise RunFailure("driver_install_failed", "driver_install")
+            raise RunFailure("driver_install_ambiguous", "driver_install")
+        driver_owned = True
         outcome["driver_installed"] = True
+
+        device_guard_budget = (
+            DEVICE_WATCHDOG_TIMEOUT_MS + DEVICE_QUIESCENCE_RESERVE_MS
+        ) / 1_000
+        if telemetry_start - monotonic() < device_guard_budget:
+            raise RunFailure("watchdog_budget_exhausted", "instrumentation")
 
         timed_out = False
         execution_error = False
         returncode: int | None = None
         try:
+            wifi_may_have_changed = True
             instrument = runner.run(
                 _adb(
                     serial,
@@ -1127,6 +1582,12 @@ def run_utility_soak(
                     "-e",
                     "class",
                     TEST_CLASS,
+                    "-e",
+                    "timeout_msec",
+                    str(DEVICE_WATCHDOG_TIMEOUT_MS),
+                    "-e",
+                    "casein_watchdog_ms",
+                    str(DEVICE_WATCHDOG_TIMEOUT_MS),
                     INSTRUMENTATION_RUNNER,
                 ),
                 telemetry_start,
@@ -1193,17 +1654,21 @@ def run_utility_soak(
     finally:
         if driver_owned:
             outcome["driver_cleanup_attempted"] = True
-            outcome["driver_cleaned"] = _cleanup_driver(
+            cleaned, quiescent = _cleanup_driver(
                 runner,
                 serial,
                 hard_deadline - WIFI_RESTORE_RESERVE_MS / 1_000,
                 monotonic,
+                sleep,
             )
+            outcome["driver_cleaned"] = cleaned
+            outcome["device_quiescent"] = quiescent
 
-        if wifi_baseline is not None:
-            outcome["wifi_restore_attempted"] = True
+        if wifi_baseline is not None and not wifi_may_have_changed:
+            outcome["wifi_restored"] = True
+        elif wifi_baseline is not None and outcome["device_quiescent"]:
             try:
-                outcome["wifi_restored"] = _restore_wifi(
+                attempted, restored = _restore_wifi(
                     runner,
                     serial,
                     wifi_baseline,
@@ -1211,10 +1676,12 @@ def run_utility_soak(
                     monotonic,
                     sleep,
                 )
+                outcome["wifi_restore_attempted"] = attempted
+                outcome["wifi_restored"] = restored
             except Exception:
                 outcome["wifi_restored"] = False
 
-        wifi_failed = wifi_baseline is not None and not outcome["wifi_restored"]
+        wifi_failed = wifi_may_have_changed and not outcome["wifi_restored"]
         driver_failed = driver_owned and not outcome["driver_cleaned"]
         if wifi_failed or driver_failed:
             outcome["status"] = "cleanup_failed"
@@ -1226,6 +1693,17 @@ def run_utility_soak(
                 else "driver_cleanup"
             )
 
+        if staging_directory is not None:
+            try:
+                staging_directory.cleanup()
+            except Exception:
+                # Never allow a private temporary path or exception to escape
+                # the fixed result schema. Preserve any stronger device
+                # cleanup failure already recorded.
+                if outcome["status"] != "cleanup_failed":
+                    outcome["status"] = "cleanup_failed"
+                    outcome["failure_stage"] = "artifact_staging_cleanup"
+
         outcome["duration_ms"] = max(
             0, int((monotonic() - run_started) * 1_000)
         )
@@ -1235,11 +1713,20 @@ def run_utility_soak(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv if argv is None else argv)
-    result = (
-        run_utility_soak(args[1], args[2])
-        if len(args) == 3
-        else _result(status="invalid_target", failure_stage="preflight", duration_ms=0)
-    )
+    try:
+        result = (
+            run_utility_soak(args[1], args[2], args[3])
+            if len(args) == 4
+            else _result(
+                status="invalid_target",
+                failure_stage="preflight",
+                duration_ms=0,
+            )
+        )
+    except Exception:
+        result = _result(
+            status="runner_error", failure_stage="runner", duration_ms=0
+        )
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0 if result["status"] == "pass" else 74
 
