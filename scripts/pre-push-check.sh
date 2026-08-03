@@ -203,6 +203,21 @@ log "fetching Elixir dependencies"
 
 log "checking native plugin supply-chain signatures and committed manifest"
 (
+  # The deploy poller shares MIX_DEPS_PATH across clean root builds. Running
+  # the nested app against that same directory rewrites it to the native lock
+  # set, so the later root precommit sees lock mismatches. Keep a persistent,
+  # deterministic sibling cache for the native app; without an inherited
+  # cache, leave MIX_DEPS_PATH unset so Mix uses native/casein_mob/deps.
+  if [[ -n "${MIX_DEPS_PATH:-}" ]]; then
+    native_mix_deps_path="${MIX_DEPS_PATH%/}-casein-mob"
+    if [[ "${native_mix_deps_path}" != /* ]]; then
+      native_mix_deps_path="${ROOT}/${native_mix_deps_path}"
+    fi
+    export MIX_DEPS_PATH="${native_mix_deps_path}"
+  else
+    unset MIX_DEPS_PATH
+  fi
+
   cd native/casein_mob
   "${MIX[@]}" deps.get
   "${MIX[@]}" test test/casein_mob/plugin_supply_chain_test.exs
