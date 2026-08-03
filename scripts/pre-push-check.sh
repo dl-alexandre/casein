@@ -201,6 +201,14 @@ node .claude/skills/preview-ui-walk/references/selftest.mjs
 log "fetching Elixir dependencies"
 "${MIX[@]}" deps.get
 
+log "checking native plugin supply-chain signatures and committed manifest"
+(
+  cd native/casein_mob
+  "${MIX[@]}" deps.get
+  "${MIX[@]}" test test/casein_mob/plugin_supply_chain_test.exs
+  "${MIX[@]}" mob.regen_plugin_manifest --check
+)
+
 # precommit.ci owns the complete read-only Elixir gate used by deploy-devbox.yml.
 log "running read-only precommit checks"
 "${MIX[@]}" precommit.ci
