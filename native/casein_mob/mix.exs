@@ -28,11 +28,11 @@ defmodule CaseinMob.MixProject do
        override: true},
       {:mob,
        github: "dl-alexandre/mob", ref: "dd6ab6159aca279fa04bd8c4fd1bd5b48a27c621", override: true},
-      # Exact merged MobDev supply-chain head: native target discovery and
-      # versioned activated-plugin signature verification both fail closed.
+      # Exact merged MobDev authority head: native device work is serialized
+      # across one immutable payload and exact target identity, failing closed.
       {:mob_dev,
        git: "https://github.com/dl-alexandre/mob_dev.git",
-       ref: "7d3bfac0077fe5aceea10808f4ea9d8c71a92a3f",
+       ref: "96dccc4454e80c96b9a47f898faa081115f6f73a",
        only: [:dev, :test],
        runtime: false,
        override: true},

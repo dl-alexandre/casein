@@ -73,7 +73,7 @@ defmodule CaseinMob.PluginSupplyChainTest do
     assert File.read!(@committed_manifest) == fresh_bytes
   end
 
-  test "device-free fake adb makes exactly one scoped install attempt and rejects it" do
+  test "deprecated direct Android install fails before touching a device" do
     parent = self()
     apk = "/synthetic/casein.apk"
     serial = "synthetic-target"
@@ -83,16 +83,17 @@ defmodule CaseinMob.PluginSupplyChainTest do
       {"Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]", 1}
     end
 
-    ExUnit.CaptureIO.capture_io(fn ->
-      assert {:error,
-              %{
-                succeeded: [],
-                failed: [%{serial: ^serial, reason: :signature_mismatch}]
-              }} = NativeBuild.install_android_updates(apk, [serial], runner)
-    end)
+    # Keep the retired boundary covered without compiling a deprecated direct call.
+    assert {:error, :authoritative_transaction_required} =
+             apply(NativeBuild, :install_android_updates, [apk, [serial], runner])
 
-    assert_received {:synthetic_install_attempt, "adb", ["-s", ^serial, "install", "-r", ^apk]}
     refute_received {:synthetic_install_attempt, _, _}
+
+    assert {:failed, :signature_mismatch} =
+             NativeBuild.interpret_adb_update(
+               "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]",
+               1
+             )
   end
 
   defp activated_by_name do
