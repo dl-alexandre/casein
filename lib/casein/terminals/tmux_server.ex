@@ -15,7 +15,7 @@ defmodule Casein.Terminals.TmuxServer do
   |------|---------------|-------------------|
   | prod | `casein`      | `config/prod.exs` |
   | dev  | `casein_dev`  | `config/dev.exs`  |
-  | test | `casein_test` | `config/test.exs` |
+  | test | `casein_test_<os_pid>` | `config/test.exs`, suffixed per run in `test/test_helper.exs` |
 
   The labels must differ per env because the `:4000` dev server and the prod
   release run as the same user on the devbox — a shared label would put both on

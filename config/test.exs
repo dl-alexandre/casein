@@ -71,6 +71,8 @@ config :casein,
 # sessions on another server — on the devbox the prod release (`casein`) and the
 # :4000 dev server (`casein_dev`) also run here. Each env gets its own label so
 # the servers stay isolated; resolved by Casein.Terminals.TmuxServer.
+# `test/test_helper.exs` further suffixes this with the OS pid so two suites
+# running at once on the same box do not reap each other's server.
 config :casein, :tmux_server_label, "casein_test"
 # Never spawn the host tmux keepalive anchor during the test suite.
 config :casein, :tmux_host_anchor, false
