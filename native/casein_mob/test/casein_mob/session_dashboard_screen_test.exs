@@ -1169,6 +1169,51 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     refute text(view) =~ "Cached unresolved direction"
   end
 
+  test "sticky direction card and open control expose bounded XCUITest identifiers" do
+    SessionConfig.put_pairing("https://casein.test", "token")
+
+    sticky = %{
+      "id" => "direction:ws-1:run-1",
+      "type" => "clarification",
+      "kind" => "direction_required",
+      "sticky" => true,
+      "status" => "waiting",
+      "workspace_id" => "ws-1",
+      "title" => "Choose the next direction",
+      "attention" => %{"unresolved?" => true, "pin" => "needs_me"}
+    }
+
+    non_sticky = %{
+      "id" => "approval:ws-1:run-2",
+      "type" => "needs_review",
+      "kind" => "approval_required",
+      "status" => "waiting",
+      "workspace_id" => "ws-1",
+      "title" => "Review another request"
+    }
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_status, :joined})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => [non_sticky, sticky]}})
+
+    columns = find_all(view, :column)
+
+    assert Enum.any?(columns, &(&1.props[:test_id] == "needs-me-card-sticky-direction"))
+    assert Enum.any?(columns, &(&1.props[:test_id] == "needs-me-card-non-sticky"))
+
+    buttons = find_all(view, :button)
+
+    assert Enum.any?(buttons, &(&1.props[:test_id] == "needs-me-open-sticky-direction"))
+    assert Enum.any?(buttons, &(&1.props[:test_id] == "needs-me-open-non-sticky"))
+
+    rendered = text(view)
+    {sticky_offset, _} = :binary.match(rendered, sticky["title"])
+    {non_sticky_offset, _} = :binary.match(rendered, non_sticky["title"])
+    assert sticky_offset < non_sticky_offset
+  end
+
   test "authoritatively handled decision is released from Needs Me" do
     SessionConfig.put_pairing("https://casein.test", "token")
 

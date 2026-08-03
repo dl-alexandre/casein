@@ -99,6 +99,72 @@ final class CaseinMobSoakUITests: XCTestCase {
         )
     }
 
+    func testStickyDirectionChoiceResolvesAuthoritatively() throws {
+        let configuration = try NeedsMeDirectionConfiguration(
+            environment: ProcessInfo.processInfo.environment
+        )
+
+        guard app.state == .runningForeground else {
+            XCTFail("Casein must already be running in the foreground")
+            return
+        }
+        try requireCaseinAccessibility()
+
+        let needsMe = app.buttons["Needs Me"]
+        XCTAssertTrue(needsMe.waitForExistence(timeout: 10))
+        needsMe.tap()
+
+        let stickyCard = app.otherElements["needs-me-card-sticky-direction"].firstMatch
+        let directionTitle = app.staticTexts[configuration.directionTitle]
+        XCTAssertTrue(stickyCard.waitForExistence(timeout: 30), "Sticky direction card did not arrive")
+        XCTAssertTrue(directionTitle.waitForExistence(timeout: 5), "Configured direction title is absent")
+        XCTAssertTrue(
+            stickyCard.frame.intersects(directionTitle.frame),
+            "Configured title is not in the sticky direction card"
+        )
+
+        let nonStickyCard = app.otherElements["needs-me-card-non-sticky"].firstMatch
+        if nonStickyCard.exists {
+            XCTAssertLessThan(
+                stickyCard.frame.minY,
+                nonStickyCard.frame.minY,
+                "Sticky direction card must remain above non-sticky work"
+            )
+        }
+
+        let openDirection = app.buttons["needs-me-open-sticky-direction"]
+        XCTAssertTrue(openDirection.waitForExistence(timeout: 5))
+        XCTAssertTrue(openDirection.isHittable)
+        openDirection.tap()
+
+        let choices = configuration.choiceIDs.map { app.buttons["needs-me-action-\($0)"] }
+        for choice in choices {
+            XCTAssertTrue(
+                choice.waitForExistence(timeout: 10),
+                "Declared choice accessibility ID is absent"
+            )
+            XCTAssertTrue(choice.isHittable, "Declared choice is not hittable")
+        }
+        assertVisualOrder(choices)
+
+        let selectedChoice = app.buttons[
+            "needs-me-action-\(configuration.selectedChoiceID)"
+        ]
+        XCTAssertTrue(selectedChoice.exists, "Configured choice is not server-declared")
+        selectedChoice.tap()
+
+        let accepted = app.otherElements["needs-me-state-accepted"]
+        let resolved = app.otherElements["needs-me-state-resolved"]
+        XCTAssertTrue(
+            waitForAny([accepted, resolved], timeout: 15),
+            "Choice did not reach an accepted or resolved server state"
+        )
+        XCTAssertTrue(
+            resolved.waitForExistence(timeout: 30),
+            "Authoritative snapshot did not resolve the direction request"
+        )
+    }
+
     private func requireCaseinAccessibility(
         file: StaticString = #filePath,
         line: UInt = #line
@@ -110,6 +176,35 @@ final class CaseinMobSoakUITests: XCTestCase {
 
     private func authoritativeLiveText() -> XCUIElement {
         app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", " · Live")).firstMatch
+    }
+
+    private func assertVisualOrder(
+        _ elements: [XCUIElement],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for (earlier, later) in zip(elements, elements.dropFirst()) {
+            let earlierFrame = earlier.frame
+            let laterFrame = later.frame
+            let ordered = earlierFrame.minY < laterFrame.minY
+                || (abs(earlierFrame.minY - laterFrame.minY) <= 2
+                    && earlierFrame.minX < laterFrame.minX)
+            XCTAssertTrue(
+                ordered,
+                "Declared choices are out of server order",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    private func waitForAny(_ elements: [XCUIElement], timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if elements.contains(where: \.exists) { return true }
+            RunLoop.current.run(until: min(deadline, Date().addingTimeInterval(0.02)))
+        } while Date() < deadline
+        return elements.contains(where: \.exists)
     }
 
     private func waitForLandscape() -> Bool {
@@ -168,4 +263,71 @@ final class CaseinMobSoakUITests: XCTestCase {
         add(attachment)
     }
 
+}
+
+private struct NeedsMeDirectionConfiguration {
+    let directionTitle: String
+    let choiceIDs: [String]
+    let selectedChoiceID: String
+
+    init(environment: [String: String]) throws {
+        directionTitle = try Self.required("CASEIN_XCUITEST_DIRECTION_TITLE", in: environment)
+        selectedChoiceID = try Self.required(
+            "CASEIN_XCUITEST_DIRECTION_CHOICE_ID",
+            in: environment
+        )
+        choiceIDs = try Self.required(
+            "CASEIN_XCUITEST_DIRECTION_CHOICE_IDS",
+            in: environment
+        )
+        .split(separator: ",", omittingEmptySubsequences: false)
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        guard !choiceIDs.isEmpty, choiceIDs.allSatisfy(Self.validChoiceID) else {
+            throw ConfigurationError.invalidChoiceIDs
+        }
+        guard Set(choiceIDs).count == choiceIDs.count else {
+            throw ConfigurationError.duplicateChoiceIDs
+        }
+        guard choiceIDs.contains(selectedChoiceID) else {
+            throw ConfigurationError.selectedChoiceNotDeclared
+        }
+    }
+
+    private static func required(_ key: String, in environment: [String: String]) throws -> String {
+        guard let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            throw ConfigurationError.missing(key)
+        }
+        return value
+    }
+
+    private static func validChoiceID(_ value: String) -> Bool {
+        value.hasPrefix("choose_")
+            && value.unicodeScalars.allSatisfy {
+                CharacterSet.lowercaseLetters.contains($0)
+                    || CharacterSet.decimalDigits.contains($0)
+                    || $0 == "_"
+            }
+    }
+
+    private enum ConfigurationError: LocalizedError {
+        case missing(String)
+        case invalidChoiceIDs
+        case duplicateChoiceIDs
+        case selectedChoiceNotDeclared
+
+        var errorDescription: String? {
+            switch self {
+            case .missing(let key):
+                return "Missing required XCUITest environment variable \(key)"
+            case .invalidChoiceIDs:
+                return "Choice IDs must be comma-separated choose_* identifiers"
+            case .duplicateChoiceIDs:
+                return "Choice IDs must be unique"
+            case .selectedChoiceNotDeclared:
+                return "Selected choice must be present in declared choice IDs"
+            }
+        }
+    }
 }
