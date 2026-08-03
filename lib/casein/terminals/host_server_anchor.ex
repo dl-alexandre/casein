@@ -27,6 +27,7 @@ defmodule Casein.Terminals.HostServerAnchor do
 
   @anchor "__casein_keepalive"
   @candidate_dirs ["/opt/casein", "/"]
+  @stale_socket_marker "server exited unexpectedly"
 
   @doc """
   Idempotently ensure the host tmux server is running and rooted at a stable
@@ -89,21 +90,104 @@ defmodule Casein.Terminals.HostServerAnchor do
     _ -> false
   end
 
-  # sobelow_skip ["CI.System"]
   defp create_anchor(dir) do
-    # `-c dir` sets the session cwd; `cd: dir` on the spawn sets the *daemon's*
-    # cwd (the load-bearing part — the server inherits the spawning process's
-    # cwd, which is what got poisoned in the incident).
-    [cmd | args] = TmuxRunner.host_argv(["new-session", "-d", "-s", @anchor, "-c", dir])
-
-    case System.cmd(cmd, args, cd: dir, stderr_to_stdout: true) do
+    case spawn_anchor(dir) do
       {_, 0} ->
         Logger.info("host tmux anchor started (#{@anchor}) from #{dir}")
         :ok
 
       {out, code} ->
-        Logger.warning("host tmux anchor create failed (exit #{code}): #{String.trim(out)}")
-        :error
+        if stale_socket_failure?(out) do
+          retry_after_unlink(dir, out, code)
+        else
+          log_create_failure(out, code)
+        end
     end
+  end
+
+  # sobelow_skip ["CI.System"]
+  defp spawn_anchor(dir) do
+    # `-c dir` sets the session cwd; `cd: dir` on the spawn sets the *daemon's*
+    # cwd (the load-bearing part — the server inherits the spawning process's
+    # cwd, which is what got poisoned in the incident).
+    [cmd | args] = TmuxRunner.host_argv(["new-session", "-d", "-s", @anchor, "-c", dir])
+
+    System.cmd(cmd, args, cd: dir, stderr_to_stdout: true)
+  end
+
+  # A tmux server that dies without unlinking its socket leaves a file that every
+  # subsequent client connects to and is immediately dropped by, so `new-session`
+  # keeps failing with `server exited unexpectedly` forever — tmux never clears it
+  # itself (the 2026-08-03 devbox outage). Unlinking the orphan lets the next
+  # `new-session` bind a fresh socket.
+  #
+  # Only reachable when `new-session` already failed with that exact message, so
+  # there is no reachable server to strand: a healthy one would have succeeded. If
+  # a wedged server process is still alive it simply keeps an unlinked inode and
+  # stays unreachable, which it already was.
+  defp retry_after_unlink(dir, out, code) do
+    with path when is_binary(path) <- socket_path(),
+         true <- File.exists?(path),
+         :ok <- File.rm(path) do
+      Logger.warning("host tmux anchor: unlinked stale socket #{path}; retrying create")
+
+      case spawn_anchor(dir) do
+        {_, 0} ->
+          Logger.info("host tmux anchor recovered from stale socket (#{@anchor}) from #{dir}")
+          :ok
+
+        {retry_out, retry_code} ->
+          log_create_failure(retry_out, retry_code)
+      end
+    else
+      _ -> log_create_failure(out, code)
+    end
+  end
+
+  defp log_create_failure(out, code) do
+    Logger.warning("host tmux anchor create failed (exit #{code}): #{String.trim(out)}")
+    :error
+  end
+
+  @doc """
+  True when tmux's `new-session` output is the signature of an orphaned socket
+  file left behind by a server that is gone or unreachable.
+  """
+  @spec stale_socket_failure?(String.t()) :: boolean()
+  def stale_socket_failure?(out) when is_binary(out) do
+    String.contains?(String.downcase(out), @stale_socket_marker)
+  end
+
+  def stale_socket_failure?(_), do: false
+
+  @doc """
+  Path tmux uses for the configured server label, or `nil` for the default
+  server (whose socket this module must never remove).
+
+  Mirrors tmux's own rule: `$TMUX_TMPDIR` (default `/tmp`) + `tmux-<uid>/<label>`.
+  Args are injectable for tests.
+  """
+  @spec socket_path(String.t() | nil, String.t() | nil, String.t() | nil) :: String.t() | nil
+  def socket_path(
+        label \\ TmuxServer.label(),
+        tmpdir \\ System.get_env("TMUX_TMPDIR"),
+        uid \\ uid()
+      )
+
+  def socket_path(label, tmpdir, uid) when is_binary(label) and label != "" and is_binary(uid) do
+    base = if is_binary(tmpdir) and tmpdir != "", do: tmpdir, else: "/tmp"
+    Path.join([base, "tmux-#{uid}", label])
+  end
+
+  def socket_path(_, _, _), do: nil
+
+  # sobelow_skip ["CI.System"]
+  defp uid do
+    case System.cmd("id", ["-u"], stderr_to_stdout: true) do
+      {out, 0} -> String.trim(out)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
   end
 end
