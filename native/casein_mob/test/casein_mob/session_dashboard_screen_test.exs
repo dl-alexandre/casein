@@ -466,7 +466,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     assert text(view) =~ "Action failed: note required"
   end
 
-  test "workspace idle Resume dispatches the audited action and opens only the exact accepted session" do
+  test "workspace idle Resume follows the channel reply contract and opens only exact echoed identity" do
     origin_id = "origin-devbox"
     put_origin_pairing(origin_id)
     start_session_client_probe()

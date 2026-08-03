@@ -2242,6 +2242,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert [%{"id" => "resume", "route" => route}] = card.actions
     assert route.type == "session_detail"
     assert route.session_id == run_id
+    card_id = card.id
 
     ref =
       Phoenix.ChannelTest.push(
@@ -2254,8 +2255,29 @@ defmodule CaseinWeb.MobileUserChannelTest do
         })
       )
 
-    assert_reply ref, :ok, %{status: "accepted", idempotent: false, result: result}, 1_000
+    assert_reply ref, :ok, reply, 1_000
+
+    assert %{
+             status: "accepted",
+             card_id: ^card_id,
+             action_id: "resume",
+             idempotent: false,
+             result: result
+           } = reply
+
     assert result["session_id"] == run_id
+
+    assert %{
+             "status" => "accepted",
+             "card_id" => ^card_id,
+             "action_id" => "resume",
+             "idempotent" => false,
+             "result" => %{
+               "target" => "session_detail",
+               "workspace_id" => ^workspace_id,
+               "session_id" => ^run_id
+             }
+           } = reply |> Jason.encode!() |> Jason.decode!()
 
     # Navigation performs no run mutation and does not resolve the idle card.
     assert Ledger.timeline_for(workspace_id, run_id) == []
@@ -2279,7 +2301,15 @@ defmodule CaseinWeb.MobileUserChannelTest do
         })
       )
 
-    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    assert_reply ref,
+                 :ok,
+                 %{
+                   status: "accepted",
+                   card_id: ^card_id,
+                   action_id: "resume",
+                   idempotent: true
+                 },
+                 1_000
   end
 
   test "a recorded rejection does not block a corrected retry", %{workspace_root: workspace_root} do
