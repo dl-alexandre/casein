@@ -48,8 +48,8 @@ jobs:
         with:
           # Keep in sync with the toolchain in .tool-versions (what the devbox,
           # mise, and the self-hosted PR gate run).
-          elixir-version: "1.20.0"
-          otp-version: "28.5"
+          elixir-version: "1.20.2"
+          otp-version: "29.0.4"
 
       # Pinned to 3.7 so the :pty suite matches the devbox host (see
       # scripts/install-tmux.sh and docs/subsystems/tmux_37_cutover.md).
@@ -72,9 +72,9 @@ jobs:
           path: |
             deps
             _build
-          key: mix-${{ runner.os }}-1.20.0-28.5-${{ hashFiles('mix.lock') }}
+          key: mix-${{ runner.os }}-1.20.2-29.0.4-${{ hashFiles('mix.lock') }}
           restore-keys: |
-            mix-${{ runner.os }}-1.20.0-28.5-
+            mix-${{ runner.os }}-1.20.2-29.0.4-
 
       - name: Fetch dependencies
         run: mix deps.get

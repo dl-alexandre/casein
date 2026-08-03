@@ -17,7 +17,7 @@ cd "$ROOT"
 WS_NAME="${1:-${CASEIN_WORKSPACE_NAME:-}}"
 WS_ID="${2:-${CASEIN_WORKSPACE_ID:-}}"
 
-mise exec elixir@1.20.0-otp-28 erlang@28.5 -- mix run --no-start -e "
+mise exec elixir@1.20.2-otp-29 erlang@29.0.4 -- mix run --no-start -e "
 workspace =
   if \"${WS_NAME}\" != \"\" or \"${WS_ID}\" != \"\" do
     %{

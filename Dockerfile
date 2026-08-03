@@ -30,10 +30,13 @@
 # ---- Stage 1: build the release --------------------------------------
 # Builder and runtime share the same Debian release + build date so glibc
 # and friends match between the two images.
-ARG ELIXIR_VERSION=1.20.0
-ARG OTP_VERSION=28.5
+# hexpm/elixir publishes no 1.20.0 image built against OTP 29, and 29.0.4 is
+# only cut for the 20260713 Debian date — so the Elixir patch and Debian date
+# move with OTP here rather than independently.
+ARG ELIXIR_VERSION=1.20.2
+ARG OTP_VERSION=29.0.4
 ARG DEBIAN_RELEASE=bookworm
-ARG DEBIAN_DATE=20260610
+ARG DEBIAN_DATE=20260713
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
 ARG RUNNER_IMAGE="debian:${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
 ARG CASEIN_REPO_ADAPTER=postgres
