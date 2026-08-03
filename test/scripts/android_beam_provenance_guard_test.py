@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.util
 import io
@@ -46,7 +47,7 @@ def manifest(
 ) -> bytes:
     identities = identities or {}
     payloads = payloads or {}
-    return b"CASEIN_BEAMS_V3\n" + b"".join(
+    return b"CASEIN_BEAMS_V4\n" + b"".join(
         name.encode("ascii")
         + b"\t"
         + identities.get(name, installed_identity(name)).encode("ascii")
@@ -59,17 +60,47 @@ def manifest(
     ) + b"END\n"
 
 
+def encoded_path(path: Path) -> bytes:
+    return base64.urlsafe_b64encode(str(path).encode("ascii")).rstrip(b"=")
+
+
+def runtime_frame(
+    runtime: tuple[Path, ...],
+    eex: Path,
+    ssl: Path,
+    *,
+    crypto: bytes = b"REAL",
+) -> bytes:
+    return (
+        b"CASEIN_RUNTIME_BEAM_DIRS_V4\n"
+        + b"".join(b"RUNTIME\t" + encoded_path(path) + b"\n" for path in runtime)
+        + b"EEX\t"
+        + encoded_path(eex)
+        + b"\nSSL\t"
+        + encoded_path(ssl)
+        + b"\nCRYPTO\t"
+        + crypto
+        + b"\nEND\n"
+    )
+
+
 class FakeRunner:
     def __init__(
         self,
         manifest_result: guard.CommandResult,
         beams: dict[str, bytes | guard.CommandResult] | None = None,
+        runtime_result: guard.CommandResult | None = None,
     ) -> None:
         self.manifest_result = manifest_result
         self.beams = beams or {}
         self.calls: list[tuple[tuple[str, ...], dict[str, object]]] = []
+        self.runtime_calls: list[tuple[tuple[str, ...], dict[str, object]]] = []
+        self.runtime_result = runtime_result
 
     def run(self, argv: tuple[str, ...], **kwargs: object) -> guard.CommandResult:
+        if argv == guard.build_runtime_resolution_argv():
+            self.runtime_calls.append((argv, kwargs))
+            return self.runtime_result or guard.CommandResult("failed", 1)
         self.calls.append((argv, kwargs))
         if argv[-1] == guard._MANIFEST_SCRIPT:
             return self.manifest_result
@@ -116,14 +147,29 @@ class FakeProcess:
 class AndroidBeamProvenanceGuardTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name) / "casein_mob" / "ebin"
+        self.project_root = Path(self.temp.name) / "casein_mob"
+        self.build_root = self.project_root / "_build" / "dev" / "lib"
+        self.root = self.build_root / "casein_mob" / "ebin"
+        self.eex_root = Path(self.temp.name) / "toolchain" / "eex" / "ebin"
+        self.ssl_root = Path(self.temp.name) / "toolchain" / "ssl-11.0" / "ebin"
         self.root.mkdir(parents=True)
+        self.eex_root.mkdir(parents=True)
+        self.ssl_root.mkdir(parents=True)
         self.payloads = {
             "Elixir.CaseinMob.App.beam": b"beam-app-v1",
             "Elixir.CaseinMob.SessionClient.beam": b"beam-session-v1",
+            "Elixir.EEx.beam": b"e",
+            "ssl.beam": b"s",
         }
         for name, payload in self.payloads.items():
-            (self.root / name).write_bytes(payload)
+            target = (
+                self.eex_root
+                if name == "Elixir.EEx.beam"
+                else self.ssl_root
+                if name == "ssl.beam"
+                else self.root
+            )
+            (target / name).write_bytes(payload)
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -150,13 +196,35 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
                 ),
             ),
             beams if beams is not None else dict(self.payloads),
+            runtime_result=self.runtime_result(),
+        )
+
+    def runtime_result(
+        self,
+        *,
+        runtime: tuple[Path, ...] | None = None,
+        eex: Path | None = None,
+        ssl: Path | None = None,
+        crypto: bytes = b"REAL",
+    ) -> guard.CommandResult:
+        return guard.CommandResult(
+            "ok",
+            0,
+            runtime_frame(
+                runtime or (self.root,),
+                eex or self.eex_root,
+                ssl or self.ssl_root,
+                crypto=crypto,
+            ),
         )
 
     def verify(self, runner: object) -> guard.GuardResult:
+        if isinstance(runner, FakeRunner) and runner.runtime_result is None:
+            runner.runtime_result = self.runtime_result()
         return guard.verify_android_beam_provenance(
             SERIAL,
             PACKAGE,
-            self.root,
+            self.build_root,
             runner=runner,
         )
 
@@ -193,6 +261,15 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         runner = self.runner(*self.payloads)
         self.assertEqual("exact", self.verify(runner).status)
 
+        self.assertEqual(1, len(runner.runtime_calls))
+        runtime_argv, runtime_kwargs = runner.runtime_calls[0]
+        self.assertEqual(guard.build_runtime_resolution_argv(), runtime_argv)
+        self.assertEqual(self.project_root, runtime_kwargs["cwd"])
+        self.assertEqual({"MIX_ENV": "dev"}, runtime_kwargs["env_overrides"])
+        self.assertEqual(
+            guard.MAX_RUNTIME_RESOLUTION_BYTES, runtime_kwargs["stdout_limit"]
+        )
+
         for argv, kwargs in runner.calls:
             self.assertEqual(
                 (
@@ -223,13 +300,130 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         self.assertNotIn(SERIAL, guard._READ_SCRIPT)
         self.assertNotIn(PACKAGE, guard._READ_SCRIPT)
 
+    def test_runtime_resolution_keeps_hotpush_order_then_appends_eex_and_ssl(self) -> None:
+        dependency = self.build_root / "runtime_dep" / "ebin"
+        dependency.mkdir(parents=True)
+        frame = runtime_frame(
+            (dependency, self.root), self.eex_root, self.ssl_root
+        )
+
+        sources = guard._parse_runtime_sources(frame, self.build_root)
+
+        self.assertEqual("ok", sources.category)
+        self.assertEqual(
+            (dependency, self.root, self.eex_root, self.ssl_root), sources.roots
+        )
+
+    def test_runtime_resolution_failure_malformed_frame_and_crypto_shim_fail_closed(self) -> None:
+        cases = (
+            (guard.CommandResult("failed", 1, SECRET.encode()), "expected_runtime_resolution_failed"),
+            (guard.CommandResult("ok", 0, SECRET.encode()), "expected_runtime_resolution_malformed"),
+            (self.runtime_result(crypto=b"SHIM_REQUIRED"), "expected_runtime_unsupported"),
+        )
+        for runtime_result, expected_status in cases:
+            with self.subTest(status=expected_status):
+                runner = FakeRunner(
+                    guard.CommandResult("ok", 0, manifest(*self.payloads)),
+                    runtime_result=runtime_result,
+                )
+                result = guard.verify_android_beam_provenance(
+                    SERIAL, PACKAGE, self.build_root, runner=runner
+                )
+                self.assertEqual(expected_status, result.status)
+                self.assertEqual([], runner.calls)
+                self.assertNotIn(SECRET, json.dumps(result.public()))
+
+    def test_runtime_resolution_rejects_missing_duplicate_and_non_ascii_roots(self) -> None:
+        duplicate = runtime_frame(
+            (self.root, self.root), self.eex_root, self.ssl_root
+        )
+        missing_runtime = (
+            b"CASEIN_RUNTIME_BEAM_DIRS_V4\n"
+            + b"EEX\t"
+            + encoded_path(self.eex_root)
+            + b"\nSSL\t"
+            + encoded_path(self.ssl_root)
+            + b"\nCRYPTO\tREAL\nEND\n"
+        )
+        non_ascii_path = base64.urlsafe_b64encode(
+            "/tmp/non-ascii-\N{SNOWMAN}/ebin".encode("utf-8")
+        ).rstrip(b"=")
+        non_ascii = (
+            b"CASEIN_RUNTIME_BEAM_DIRS_V4\nRUNTIME\t"
+            + non_ascii_path
+            + b"\nEEX\t"
+            + encoded_path(self.eex_root)
+            + b"\nSSL\t"
+            + encoded_path(self.ssl_root)
+            + b"\nCRYPTO\tREAL\nEND\n"
+        )
+        for payload in (duplicate, missing_runtime, non_ascii):
+            with self.subTest(length=len(payload)):
+                self.assertEqual(
+                    "malformed",
+                    guard._parse_runtime_sources(payload, self.build_root).category,
+                )
+
+    def test_flattened_basename_collision_is_terminal_before_adb(self) -> None:
+        dependency = self.build_root / "runtime_dep" / "ebin"
+        dependency.mkdir(parents=True)
+        collision_name = sorted(self.payloads)[0]
+        (dependency / collision_name).write_bytes(b"other-reviewed-content")
+        runner = self.runner(*self.payloads)
+        runner.runtime_result = self.runtime_result(runtime=(self.root, dependency))
+
+        result = self.verify(runner)
+
+        self.assertEqual("expected_manifest_collision", result.status)
+        self.assertEqual([], runner.calls)
+
+    def test_selected_source_symlink_and_missing_auxiliary_root_fail_before_adb(self) -> None:
+        real_dependency = self.build_root / "real_dep" / "ebin"
+        real_dependency.mkdir(parents=True)
+        (real_dependency / "Elixir.RealDep.beam").write_bytes(b"dep")
+        linked_dependency = self.build_root / "linked_dep" / "ebin"
+        linked_dependency.parent.mkdir(parents=True)
+        linked_dependency.symlink_to(real_dependency, target_is_directory=True)
+        runner = self.runner(*self.payloads)
+        runner.runtime_result = self.runtime_result(runtime=(self.root, linked_dependency))
+        self.assertEqual("expected_manifest_symlink", self.verify(runner).status)
+        self.assertEqual([], runner.calls)
+
+        missing_eex = Path(self.temp.name) / "missing-toolchain" / "eex" / "ebin"
+        runner = self.runner(*self.payloads)
+        runner.runtime_result = self.runtime_result(eex=missing_eex)
+        self.assertEqual(
+            "expected_manifest_read_failed", self.verify(runner).status
+        )
+        self.assertEqual([], runner.calls)
+
+    def test_bounds_cover_current_runtime_but_remain_finite(self) -> None:
+        self.assertGreaterEqual(guard.MAX_BEAMS, 2000)
+        self.assertLessEqual(guard.MAX_BEAMS, 4096)
+        self.assertEqual(16 * 1024 * 1024, guard.MAX_BEAM_BYTES)
+        self.assertEqual(128 * 1024 * 1024, guard.MAX_AGGREGATE_BEAM_BYTES)
+        self.assertLessEqual(guard.MAX_SOURCE_DIRS, 512)
+
+    def test_fixed_device_shell_programs_pass_shell_syntax(self) -> None:
+        for program in (guard._MANIFEST_SCRIPT, guard._READ_SCRIPT):
+            with self.subTest(size=len(program)):
+                result = subprocess.run(
+                    ["sh", "-n", "-c", program],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode)
+
     def test_invalid_inputs_never_invoke_adb(self) -> None:
         runner = self.runner(*self.payloads)
         cases = (
-            ("serial;touch", PACKAGE, self.root),
-            (SERIAL, "com.example.other", self.root),
-            (SERIAL, PACKAGE, Path("casein_mob/ebin")),
-            (SERIAL, PACKAGE, self.root.parent),
+            ("serial;touch", PACKAGE, self.build_root),
+            (SERIAL, "com.example.other", self.build_root),
+            (SERIAL, PACKAGE, Path("_build/dev/lib")),
+            (SERIAL, PACKAGE, self.build_root.parent),
+            (SERIAL, PACKAGE, Path("/tmp/non-ascii-\N{SNOWMAN}/_build/dev/lib")),
         )
         for serial, package, root in cases:
             with self.subTest(root=root.name):
@@ -240,10 +434,10 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         self.assertEqual([], runner.calls)
 
     def test_local_root_symlink_is_invalid_input(self) -> None:
-        linked_parent = Path(self.temp.name) / "linked" / "casein_mob"
+        linked_parent = Path(self.temp.name) / "linked" / "_build" / "dev"
         linked_parent.mkdir(parents=True)
-        linked = linked_parent / "ebin"
-        linked.symlink_to(self.root, target_is_directory=True)
+        linked = linked_parent / "lib"
+        linked.symlink_to(self.build_root, target_is_directory=True)
         runner = self.runner(*self.payloads)
         self.assertEqual(
             "invalid_arguments",
@@ -343,14 +537,14 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         digest = b"0" * 64
         malformed = (
             b"",
-            b"CASEIN_BEAMS_V3\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nEND",
+            b"CASEIN_BEAMS_V4\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nEND",
             b"WRONG\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nEND\n",
-            b"CASEIN_BEAMS_V3\nEND\n",
-            b"CASEIN_BEAMS_V3\n\nEND\n",
-            b"CASEIN_BEAMS_V3\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nEND\ntrailing\n",
-            b"CASEIN_BEAMS_V3\nElixir.One.beam\nEND\n",
-            b"CASEIN_BEAMS_V3\nElixir.One.beam\tnot-an-identity\t" + digest + b"\nEND\n",
-            b"CASEIN_BEAMS_V3\nElixir.One.beam\t1:2:81a4:4:5:6\tnot-a-digest\nEND\n",
+            b"CASEIN_BEAMS_V4\nEND\n",
+            b"CASEIN_BEAMS_V4\n\nEND\n",
+            b"CASEIN_BEAMS_V4\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nEND\ntrailing\n",
+            b"CASEIN_BEAMS_V4\nElixir.One.beam\nEND\n",
+            b"CASEIN_BEAMS_V4\nElixir.One.beam\tnot-an-identity\t" + digest + b"\nEND\n",
+            b"CASEIN_BEAMS_V4\nElixir.One.beam\t1:2:81a4:4:5:6\tnot-a-digest\nEND\n",
         )
         for payload in malformed:
             with self.subTest(length=len(payload)):
@@ -367,9 +561,9 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         self.assertEqual("installed_manifest_duplicate", self.verify(runner).status)
 
         unsafe_payloads = (
-            b"CASEIN_BEAMS_V3\n../escape.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nEND\n",
-            b"CASEIN_BEAMS_V3\nbad name.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nEND\n",
-            b"CASEIN_BEAMS_V3\nElixir.Bad.\xff.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nEND\n",
+            b"CASEIN_BEAMS_V4\n../escape.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nEND\n",
+            b"CASEIN_BEAMS_V4\nbad name.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nEND\n",
+            b"CASEIN_BEAMS_V4\nElixir.Bad.\xff.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nEND\n",
         )
         for payload in unsafe_payloads:
             with self.subTest(payload=payload[:20]):
@@ -380,9 +574,10 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
 
     def test_manifest_name_count_and_payload_caps_are_rejected(self) -> None:
         names = tuple(f"Elixir.Module{index}.beam" for index in range(3))
-        runner = FakeRunner(guard.CommandResult("ok", 0, manifest(*names)))
         with mock.patch.object(guard, "MAX_BEAMS", 2):
-            self.assertEqual("installed_manifest_limited", self.verify(runner).status)
+            self.assertEqual(
+                "limited", guard._parse_installed_manifest(manifest(*names)).category
+            )
 
         runner = FakeRunner(guard.CommandResult("ok", 0, manifest(*self.payloads)))
         with mock.patch.object(guard, "MAX_MANIFEST_BYTES", 8):
@@ -506,12 +701,22 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         for path in self.root.glob("*.beam"):
             path.unlink()
         (self.root / "Elixir.A.beam").write_bytes(b"a")
+        small = {
+            "Elixir.A.beam": b"a",
+            "Elixir.EEx.beam": b"e",
+            "ssl.beam": b"s",
+        }
         name = "Elixir.A.beam"
+        installed = dict(small)
+        installed[name] = b"x" * 9
         runner = self.runner(
-            name,
-            beams={name: b"x" * 9},
-            identities={name: installed_identity(name, size=1)},
-            manifest_payloads={name: b"a"},
+            *small,
+            beams=installed,
+            identities={
+                beam_name: installed_identity(beam_name, size=len(payload))
+                for beam_name, payload in small.items()
+            },
+            manifest_payloads=small,
         )
         with mock.patch.object(guard, "MAX_BEAM_BYTES", 8):
             result = self.verify(runner)
@@ -533,10 +738,10 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
             path.unlink()
         small = {
             "Elixir.A.beam": b"a",
-            "Elixir.B.beam": b"b",
+            "Elixir.EEx.beam": b"e",
+            "ssl.beam": b"s",
         }
-        for name, payload in small.items():
-            (self.root / name).write_bytes(payload)
+        (self.root / "Elixir.A.beam").write_bytes(b"a")
         installed = dict(small)
         installed["Elixir.A.beam"] = b"1234"
         identities = {
@@ -561,10 +766,16 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         self.assertNotIn(SECRET, json.dumps(result.public()))
 
     def test_cli_emits_exactly_one_fixed_json_line_without_reflection(self) -> None:
-        secret_parent = Path(self.temp.name) / SECRET / "casein_mob" / "ebin"
-        secret_parent.mkdir(parents=True)
-        (secret_parent / "Elixir.App.beam").write_bytes(b"beam")
-        runner = FakeRunner(guard.CommandResult("failed", 1, SECRET.encode()))
+        secret_build_root = (
+            Path(self.temp.name) / SECRET / "casein_mob" / "_build" / "dev" / "lib"
+        )
+        secret_ebin = secret_build_root / "casein_mob" / "ebin"
+        secret_ebin.mkdir(parents=True)
+        (secret_ebin / "Elixir.App.beam").write_bytes(b"beam")
+        runner = FakeRunner(
+            guard.CommandResult("failed", 1, SECRET.encode()),
+            runtime_result=self.runtime_result(runtime=(secret_ebin,)),
+        )
         output = io.StringIO()
 
         exit_code = guard.main(
@@ -573,8 +784,8 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
                 SERIAL,
                 "--package",
                 PACKAGE,
-                "--expected-ebin-root",
-                str(secret_parent),
+                "--expected-build-lib-root",
+                str(secret_build_root),
             ],
             runner=runner,
             output=output,
@@ -600,7 +811,7 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         )
         self.assertNotIn(SERIAL, raw)
         self.assertNotIn(PACKAGE, raw)
-        self.assertNotIn(str(secret_parent), raw)
+        self.assertNotIn(str(secret_build_root), raw)
         self.assertNotIn(SECRET, raw)
 
     def test_invalid_cli_arguments_do_not_reflect_values(self) -> None:

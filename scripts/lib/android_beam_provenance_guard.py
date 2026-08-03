@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Fail closed unless installed Android app BEAMs match a reviewed ebin tree.
+"""Fail closed unless installed Android app BEAMs match a reviewed runtime build.
 
 The guard is read-only and intentionally narrow.  It compares the regular,
-non-symlink ``*.beam`` files in one explicit local ``casein_mob/ebin`` directory
-with the flat app BEAM directory owned by the fixed Android package.  Child
-output, identifiers, paths, filenames, file bytes, and digests never cross the
-public boundary: stdout is exactly one fixed-schema JSON classification.
+non-symlink ``*.beam`` files selected by ``MobDev.HotPush.runtime_beam_dirs/0``
+plus the EEx and SSL roots appended by ``MobDev.Deployer`` with the flat app
+BEAM directory owned by the fixed Android package.  Child output, identifiers,
+paths, filenames, file bytes, and digests never cross the public boundary:
+stdout is exactly one fixed-schema JSON classification.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import hmac
 import json
@@ -34,12 +36,16 @@ SCHEMA_VERSION = 1
 ANDROID_PACKAGE = "com.example.casein_mob"
 INSTALLED_BEAM_DIR = "files/otp/casein_mob"
 
-MAX_BEAMS = 64
+MAX_BEAMS = 4096
+MAX_SOURCE_DIRS = 512
 MAX_BEAM_NAME_BYTES = 128
+MAX_SOURCE_NAME_BYTES = 128
+MAX_SOURCE_PATH_BYTES = 4096
 MAX_INSTALLED_IDENTITY_BYTES = 96
-MAX_MANIFEST_BYTES = 16 * 1024
+MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+MAX_RUNTIME_RESOLUTION_BYTES = 64 * 1024
 MAX_BEAM_BYTES = 16 * 1024 * 1024
-MAX_AGGREGATE_BEAM_BYTES = 64 * 1024 * 1024
+MAX_AGGREGATE_BEAM_BYTES = 128 * 1024 * 1024
 READ_CHUNK_BYTES = 64 * 1024
 COMMAND_TIMEOUT_SECONDS = 60.0
 PROCESS_TERM_TIMEOUT_SECONDS = 1.0
@@ -48,20 +54,42 @@ POLL_SECONDS = 0.05
 
 _SERIAL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _BEAM_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,122}\.beam$")
+_SOURCE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _INSTALLED_IDENTITY_RE = re.compile(
     r"^[0-9]+:[0-9]+:[0-9a-f]+:[0-9]+:-?[0-9]+:-?[0-9]+$"
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
-_MANIFEST_HEADER = b"CASEIN_BEAMS_V3"
+_MANIFEST_HEADER = b"CASEIN_BEAMS_V4"
 _MANIFEST_END = b"END"
+_RUNTIME_HEADER = b"CASEIN_RUNTIME_BEAM_DIRS_V4"
+
+_RUNTIME_DIRS_ELIXIR = r"""
+encode = fn value -> Base.url_encode64(value, padding: false) end
+runtime = MobDev.HotPush.runtime_beam_dirs()
+eex = Path.join(to_string(:code.lib_dir(:eex)), "ebin")
+ssl = Path.join(to_string(:code.lib_dir(:ssl)), "ebin")
+cache = Path.join([System.user_home!(), ".mob", "cache"])
+real_crypto =
+  Path.wildcard(Path.join([cache, "otp-*", "lib", "crypto-*", "ebin", "crypto.beam"]))
+  |> Enum.any?()
+
+IO.binwrite("CASEIN_RUNTIME_BEAM_DIRS_V4\n")
+Enum.each(runtime, fn path ->
+  IO.binwrite(["RUNTIME\t", encode.(Path.expand(path)), "\n"])
+end)
+IO.binwrite(["EEX\t", encode.(Path.expand(eex)), "\n"])
+IO.binwrite(["SSL\t", encode.(Path.expand(ssl)), "\n"])
+IO.binwrite(["CRYPTO\t", if(real_crypto, do: "REAL", else: "SHIM_REQUIRED"), "\n"])
+IO.binwrite("END\n")
+"""
 
 # The script is fixed program text.  The serial and package are separate,
 # validated argv elements; no caller value is interpolated into this program.
 _MANIFEST_SCRIPT = f"""\
 dir='{INSTALLED_BEAM_DIR}'
 [ -d \"$dir\" ] || exit 41
-printf 'CASEIN_BEAMS_V3\\n'
+printf 'CASEIN_BEAMS_V4\\n'
 count=0
 found=0
 for path in \"$dir\"/*.beam \"$dir\"/.*.beam; do
@@ -119,6 +147,10 @@ STATUSES = frozenset(
         "expected_manifest_invalid_entry",
         "expected_manifest_limited",
         "expected_manifest_read_failed",
+        "expected_manifest_collision",
+        "expected_runtime_resolution_failed",
+        "expected_runtime_resolution_malformed",
+        "expected_runtime_unsupported",
         "installed_manifest_failed",
         "installed_manifest_missing",
         "installed_manifest_invalid_entry",
@@ -169,6 +201,8 @@ class CommandRunner(Protocol):
         *,
         stdout_limit: int,
         timeout_seconds: float,
+        cwd: Path | None = None,
+        env_overrides: Mapping[str, str] | None = None,
     ) -> CommandResult: ...
 
 
@@ -208,6 +242,12 @@ class LocalManifest:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class RuntimeSources:
+    category: str
+    roots: tuple[Path, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class InstalledEntry:
     identity: str
     digest: bytes
@@ -242,9 +282,16 @@ class SubprocessCommandRunner:
         *,
         stdout_limit: int,
         timeout_seconds: float,
+        cwd: Path | None = None,
+        env_overrides: Mapping[str, str] | None = None,
     ) -> CommandResult:
         if not argv or stdout_limit <= 0 or timeout_seconds <= 0:
             return CommandResult("failed")
+
+        environment = None
+        if env_overrides:
+            environment = os.environ.copy()
+            environment.update(env_overrides)
 
         try:
             process = subprocess.Popen(
@@ -255,6 +302,8 @@ class SubprocessCommandRunner:
                 close_fds=True,
                 start_new_session=True,
                 shell=False,
+                cwd=cwd,
+                env=environment,
             )
         except (OSError, ValueError):
             return CommandResult("failed")
@@ -402,10 +451,25 @@ def build_read_argv(
     )
 
 
+def build_runtime_resolution_argv() -> tuple[str, ...]:
+    return (
+        "mise",
+        "exec",
+        "--",
+        "mix",
+        "run",
+        "--no-start",
+        "--no-compile",
+        "--no-deps-check",
+        "-e",
+        _RUNTIME_DIRS_ELIXIR,
+    )
+
+
 def verify_android_beam_provenance(
     serial: str,
     package: str,
-    expected_ebin_root: Path,
+    expected_build_lib_root: Path,
     *,
     runner: CommandRunner | None = None,
 ) -> GuardResult:
@@ -415,7 +479,7 @@ def verify_android_beam_provenance(
         return _verify_android_beam_provenance(
             serial,
             package,
-            expected_ebin_root,
+            expected_build_lib_root,
             runner=runner,
         )
     except Exception:
@@ -425,7 +489,7 @@ def verify_android_beam_provenance(
 def _verify_android_beam_provenance(
     serial: str,
     package: str,
-    expected_ebin_root: Path,
+    expected_build_lib_root: Path,
     *,
     runner: CommandRunner | None = None,
 ) -> GuardResult:
@@ -433,11 +497,22 @@ def _verify_android_beam_provenance(
     runner = runner or SubprocessCommandRunner()
     try:
         build_manifest_argv(serial, package)
-        expected_ebin_root = _validate_expected_ebin_root(expected_ebin_root)
+        expected_build_lib_root = _validate_expected_build_lib_root(
+            expected_build_lib_root
+        )
     except (InvalidArguments, OSError, ValueError):
         return GuardResult("invalid_arguments")
 
-    expected = _read_local_manifest(expected_ebin_root)
+    sources = _resolve_runtime_sources(expected_build_lib_root, runner)
+    if sources.category != "ok":
+        status = {
+            "failed": "expected_runtime_resolution_failed",
+            "malformed": "expected_runtime_resolution_malformed",
+            "unsupported": "expected_runtime_unsupported",
+        }.get(sources.category, "internal_error")
+        return GuardResult(status)
+
+    expected = _read_flat_local_manifest(sources.roots)
     if expected.category != "ok":
         status = {
             "missing": "expected_manifest_missing",
@@ -446,6 +521,7 @@ def _verify_android_beam_provenance(
             "invalid_entry": "expected_manifest_invalid_entry",
             "limited": "expected_manifest_limited",
             "read_failed": "expected_manifest_read_failed",
+            "collision": "expected_manifest_collision",
         }.get(expected.category, "internal_error")
         return GuardResult(status)
 
@@ -553,46 +629,220 @@ def _read_installed_manifest(
     return ("ok", manifest)
 
 
-def _read_local_manifest(root: Path) -> LocalManifest:
+def _resolve_runtime_sources(
+    build_lib_root: Path,
+    runner: CommandRunner,
+) -> RuntimeSources:
+    result = runner.run(
+        build_runtime_resolution_argv(),
+        stdout_limit=MAX_RUNTIME_RESOLUTION_BYTES,
+        timeout_seconds=COMMAND_TIMEOUT_SECONDS,
+        cwd=build_lib_root.parent.parent.parent,
+        env_overrides={"MIX_ENV": "dev"},
+    )
+    if result.category != "ok" or result.returncode != 0:
+        return RuntimeSources("failed")
+    return _parse_runtime_sources(result.stdout, build_lib_root)
+
+
+def _parse_runtime_sources(payload: bytes, build_lib_root: Path) -> RuntimeSources:
+    if (
+        not payload
+        or len(payload) > MAX_RUNTIME_RESOLUTION_BYTES
+        or not payload.endswith(b"\n")
+    ):
+        return RuntimeSources("malformed")
+    lines = payload.split(b"\n")
+    if (
+        len(lines) < 7
+        or lines[0] != _RUNTIME_HEADER
+        or lines[-2] != _MANIFEST_END
+        or lines[-1] != b""
+        or any(not line for line in lines[1:-2])
+    ):
+        return RuntimeSources("malformed")
+
+    runtime: list[Path] = []
+    eex: Path | None = None
+    ssl: Path | None = None
+    crypto: bytes | None = None
+    stage = "runtime"
+    for line in lines[1:-2]:
+        fields = line.split(b"\t")
+        if len(fields) != 2:
+            return RuntimeSources("malformed")
+        tag, encoded = fields
+        if tag == b"RUNTIME" and stage == "runtime":
+            path = _decode_source_path(encoded)
+            if path is None or not _runtime_source_path_valid(path, build_lib_root):
+                return RuntimeSources("malformed")
+            runtime.append(path)
+            continue
+        if tag == b"EEX" and stage == "runtime" and runtime:
+            eex = _decode_source_path(encoded)
+            stage = "eex"
+            continue
+        if tag == b"SSL" and stage == "eex":
+            ssl = _decode_source_path(encoded)
+            stage = "ssl"
+            continue
+        if tag == b"CRYPTO" and stage == "ssl":
+            crypto = encoded
+            stage = "crypto"
+            continue
+        return RuntimeSources("malformed")
+
+    if (
+        stage != "crypto"
+        or eex is None
+        or ssl is None
+        or not _auxiliary_source_path_valid(eex, "eex")
+        or not _auxiliary_source_path_valid(ssl, "ssl")
+    ):
+        return RuntimeSources("malformed")
+    if crypto != b"REAL":
+        return RuntimeSources("unsupported")
+
+    roots = tuple(runtime) + (eex, ssl)
+    if len(roots) > MAX_SOURCE_DIRS or len(set(roots)) != len(roots):
+        return RuntimeSources("malformed")
+    return RuntimeSources("ok", roots)
+
+
+def _decode_source_path(encoded: bytes) -> Path | None:
+    if not encoded or len(encoded) > MAX_SOURCE_PATH_BYTES * 2:
+        return None
+    try:
+        padded = encoded + b"=" * ((4 - len(encoded) % 4) % 4)
+        raw = base64.b64decode(padded, altchars=b"-_", validate=True)
+        if len(raw) > MAX_SOURCE_PATH_BYTES:
+            return None
+        text = raw.decode("ascii")
+    except (ValueError, UnicodeDecodeError):
+        return None
+    path = Path(text)
+    if not path.is_absolute() or "\x00" in text:
+        return None
+    return path
+
+
+def _runtime_source_path_valid(path: Path, build_lib_root: Path) -> bool:
+    if path.name != "ebin" or path.parent.parent != build_lib_root:
+        return False
+    source_name = path.parent.name
+    try:
+        encoded = source_name.encode("ascii")
+    except UnicodeEncodeError:
+        return False
+    return (
+        len(encoded) <= MAX_SOURCE_NAME_BYTES
+        and _SOURCE_NAME_RE.fullmatch(source_name) is not None
+        and path == build_lib_root / source_name / "ebin"
+    )
+
+
+def _auxiliary_source_path_valid(path: Path, expected_name: str) -> bool:
+    if path.name != "ebin" or not path.is_absolute():
+        return False
+    source_name = path.parent.name
+    try:
+        source_name.encode("ascii")
+    except UnicodeEncodeError:
+        return False
+    return source_name == expected_name or source_name.startswith(expected_name + "-")
+
+
+def _read_flat_local_manifest(roots: tuple[Path, ...]) -> LocalManifest:
+    if not roots or len(roots) > MAX_SOURCE_DIRS:
+        return LocalManifest("missing", {})
+
+    opened: list[tuple[Path, int, FileIdentity]] = []
+    snapshots: list[Mapping[str, FileIdentity]] = []
     digests: dict[str, bytes] = {}
-    root_flags = os.O_RDONLY
-    if hasattr(os, "O_DIRECTORY"):
-        root_flags |= os.O_DIRECTORY
-    if hasattr(os, "O_NOFOLLOW"):
-        root_flags |= os.O_NOFOLLOW
+    seen_names: set[str] = set()
+    aggregate = 0
+    count = 0
     try:
-        root_fd = os.open(root, root_flags)
-    except OSError:
-        return LocalManifest("read_failed", {})
-
-    try:
-        root_info = os.fstat(root_fd)
-        if not stat.S_ISDIR(root_info.st_mode):
-            return LocalManifest("read_failed", {})
-
-        category, identities = _snapshot_local_beams(root_fd)
-        if category != "ok":
-            return LocalManifest(category, {})
-
-        for name in sorted(identities):
-            category, digest = _hash_local_beam(root_fd, name, identities[name])
-            if category != "ok" or digest is None:
+        for root in roots:
+            category, opened_root = _open_local_source(root)
+            if category != "ok" or opened_root is None:
                 return LocalManifest(category, {})
-            digests[name] = digest
+            opened.append((root, *opened_root))
 
-        closing_category, closing_identities = _snapshot_local_beams(root_fd)
-        if closing_category != "ok":
-            return LocalManifest(closing_category, {})
-        if closing_identities != identities:
-            return LocalManifest("read_failed", {})
+        for _root, root_fd, _identity in opened:
+            category, identities = _snapshot_local_beams(root_fd)
+            if category != "ok":
+                return LocalManifest(category, {})
+            for name, identity in identities.items():
+                if name in seen_names:
+                    return LocalManifest("collision", {})
+                seen_names.add(name)
+                count += 1
+                aggregate += identity.size
+                if count > MAX_BEAMS or aggregate > MAX_AGGREGATE_BEAM_BYTES:
+                    return LocalManifest("limited", {})
+            snapshots.append(identities)
+
+        for (_root, root_fd, _identity), identities in zip(opened, snapshots):
+            for name in sorted(identities):
+                category, digest = _hash_local_beam(root_fd, name, identities[name])
+                if category != "ok" or digest is None:
+                    return LocalManifest(category, {})
+                digests[name] = digest
+
+        for (root, root_fd, root_identity), opening in zip(opened, snapshots):
+            closing_category, closing = _snapshot_local_beams(root_fd)
+            if closing_category != "ok" or closing != opening:
+                return LocalManifest("read_failed", {})
+            try:
+                closing_root = root.lstat()
+            except OSError:
+                return LocalManifest("read_failed", {})
+            if _file_identity(closing_root) != root_identity:
+                return LocalManifest("read_failed", {})
     except OSError:
         return LocalManifest("read_failed", {})
     finally:
-        os.close(root_fd)
+        for _root, root_fd, _identity in opened:
+            os.close(root_fd)
 
     if not digests:
         return LocalManifest("missing", {})
     return LocalManifest("ok", digests)
+
+
+def _open_local_source(
+    root: Path,
+) -> tuple[str, tuple[int, FileIdentity] | None]:
+    try:
+        parent_info = root.parent.lstat()
+        root_info = root.lstat()
+    except OSError:
+        return ("read_failed", None)
+    if stat.S_ISLNK(parent_info.st_mode) or stat.S_ISLNK(root_info.st_mode):
+        return ("symlink", None)
+    if not stat.S_ISDIR(parent_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+        return ("invalid_entry", None)
+
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    root_fd: int | None = None
+    try:
+        root_fd = os.open(root, flags)
+        opened_info = os.fstat(root_fd)
+    except OSError:
+        if root_fd is not None:
+            os.close(root_fd)
+        return ("read_failed", None)
+    assert root_fd is not None
+    identity = _file_identity(root_info)
+    if not stat.S_ISDIR(opened_info.st_mode) or _file_identity(opened_info) != identity:
+        os.close(root_fd)
+        return ("read_failed", None)
+    return ("ok", (root_fd, identity))
 
 
 def _snapshot_local_beams(root_fd: int) -> tuple[str, Mapping[str, FileIdentity]]:
@@ -765,12 +1015,18 @@ def _validate_installed_identity(identity: str) -> int:
     return int(identity.split(":", 4)[3])
 
 
-def _validate_expected_ebin_root(root: Path) -> Path:
+def _validate_expected_build_lib_root(root: Path) -> Path:
+    try:
+        encoded_root = str(root).encode("ascii") if isinstance(root, Path) else b""
+    except UnicodeEncodeError as exc:
+        raise InvalidArguments from exc
     if (
         not isinstance(root, Path)
         or not root.is_absolute()
-        or root.name != "ebin"
-        or root.parent.name != "casein_mob"
+        or len(encoded_root) > MAX_SOURCE_PATH_BYTES
+        or root.name != "lib"
+        or root.parent.name != "dev"
+        or root.parent.parent.name != "_build"
     ):
         raise InvalidArguments
     info = root.lstat()
@@ -783,7 +1039,7 @@ def _parser() -> SafeArgumentParser:
     parser = SafeArgumentParser(add_help=False)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--package", required=True)
-    parser.add_argument("--expected-ebin-root", required=True)
+    parser.add_argument("--expected-build-lib-root", required=True)
     return parser
 
 
@@ -799,7 +1055,7 @@ def main(
         result = verify_android_beam_provenance(
             args.serial,
             args.package,
-            Path(args.expected_ebin_root),
+            Path(args.expected_build_lib_root),
             runner=runner,
         )
     except (InvalidArguments, OSError, ValueError):
