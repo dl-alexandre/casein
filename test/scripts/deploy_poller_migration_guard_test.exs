@@ -158,7 +158,14 @@ defmodule Scripts.DeployPollerMigrationGuardTest do
       {"CASEIN_DEPLOY_CACHE_ROOT", fixture.cache_root},
       {"CASEIN_DEPLOY_LOCK", fixture.lock},
       {"CASEIN_CURRENT_SOCK", fixture.socket},
-      {"CASEIN_LAST_DEPLOY_FILE", fixture.last_deploy_file}
+      {"CASEIN_LAST_DEPLOY_FILE", fixture.last_deploy_file},
+      # `System.cmd/3` merges this list into the caller's environment, so the
+      # attended override (`CASEIN_ALLOW_MIGRATION_DEPLOY=1 bash scripts/deploy-poller.sh`)
+      # would otherwise reach the poller under test and disable the very guard
+      # these tests assert on — turning the refusal cases green-to-red for the
+      # operator running exactly the documented deploy command. Pin it off;
+      # a test that wants the override passes it through `extra_env`.
+      {"CASEIN_ALLOW_MIGRATION_DEPLOY", "0"}
     ]
 
     System.cmd("bash", [Path.join(fixture.root, "scripts/deploy-poller.sh")],
