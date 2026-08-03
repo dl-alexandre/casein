@@ -112,6 +112,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.Browse do
     MapSet.new(identifiers ++ workspace_segments)
   end
 
+  @doc """
+  Configured workspaces root, without probing the filesystem.
+
+  `root/0` confirms the directory exists, which is right for building the Browse
+  tier but too expensive to repeat once per workspace while sorting the rail.
+  Ownership matching only needs the prefix to strip.
+  """
+  @spec owner_root() :: String.t() | nil
+  def owner_root do
+    case PathResolver.root() do
+      root when is_binary(root) and root != "" -> Path.expand(root)
+      _ -> nil
+    end
+  end
+
   @doc "Identity tokens used to match a viewer's own top-level directory."
   @spec viewer_identifiers(map() | nil) :: [String.t()]
   def viewer_identifiers(user) when is_map(user) do

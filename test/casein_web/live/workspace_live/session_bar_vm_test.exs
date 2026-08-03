@@ -494,6 +494,25 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert ["ws-cur", "ws-mine", "ws-zoe", "ws-none"] == Enum.map(sorted, & &1.id)
     end
 
+    test "partition_viewer_workspaces claims unowned workspaces under the viewer's path" do
+      Casein.ProcessEnv.put(:workspaces_root, "/data/workspaces")
+      on_exit(fn -> Casein.ProcessEnv.delete(:workspaces_root) end)
+
+      summaries = [
+        %{id: "ws-home", name: "dev_ide", path: "/data/workspaces/dalexandre/dev_ide"},
+        %{id: "ws-slug", name: "audit", path: "/data/workspaces/dalexandre-audit"},
+        %{id: "ws-theirs", name: "parity", path: "/data/workspaces/sconde-facility-parity"},
+        %{id: "ws-lookalike", name: "other", path: "/data/workspaces/dalexandrew-test"},
+        %{id: "ws-outside", name: "elsewhere", path: "/opt/casein/deploy-build"}
+      ]
+
+      {mine, others} =
+        SessionBarVM.partition_viewer_workspaces(summaries, %{email: "dalexandre@milcgroup.com"})
+
+      assert Enum.map(mine, & &1.id) == ["ws-home", "ws-slug"]
+      assert Enum.map(others, & &1.id) == ["ws-theirs", "ws-lookalike", "ws-outside"]
+    end
+
     test "sort_workspace_summaries_for_sidebar leaves order untouched with no viewer identity" do
       summaries = [
         %{id: "ws-cur", name: "current", user: "dalexandre"},

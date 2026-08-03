@@ -407,8 +407,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   @spec partition_viewer_workspaces([map()], map() | nil) :: {[map()], [map()]}
   def partition_viewer_workspaces(summaries, viewer) when is_list(summaries) do
     case Browse.viewer_identifiers(viewer) do
-      [] -> {[], summaries}
-      identifiers -> Enum.split_with(summaries, &owned_by?(&1, identifiers))
+      [] ->
+        {[], summaries}
+
+      identifiers ->
+        root = Browse.owner_root()
+        Enum.split_with(summaries, &owned_by?(&1, identifiers, root))
     end
   end
 
@@ -421,9 +425,50 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     end
   end
 
-  defp owned_by?(summary, identifiers) do
+  defp owned_by?(summary, identifiers), do: owned_by?(summary, identifiers, Browse.owner_root())
+
+  defp owned_by?(summary, identifiers, root) do
+    explicit_owner_match?(summary, identifiers) or
+      path_owner_match?(summary, identifiers, root)
+  end
+
+  defp explicit_owner_match?(summary, identifiers) do
     owner = Map.get(summary, :user) || Map.get(summary, "user")
     is_binary(owner) and owner != "" and String.downcase(owner) in identifiers
+  end
+
+  # Only workspaces the manager provisioned carry a `user`; everything attached
+  # from disk has `user: nil`, which used to drop the viewer's own checkouts into
+  # "Other workspaces" alongside every other developer's. Fall back to the
+  # convention the Browse tier already relies on: the first path segment under
+  # the workspaces root belongs to its owner, either exactly (`…/dalexandre/dev_ide`)
+  # or as an `<owner>-<slug>` directory (`…/dalexandre-audit`). Matching the
+  # segment rather than a prefix of it keeps `…/dalexandrew-test` someone else's.
+  defp path_owner_match?(summary, identifiers, root) do
+    case owner_segment(summary, root) do
+      segment when is_binary(segment) ->
+        Enum.any?(identifiers, &(segment == &1 or String.starts_with?(segment, &1 <> "-")))
+
+      _ ->
+        false
+    end
+  end
+
+  defp owner_segment(summary, root) when is_binary(root) do
+    with path when is_binary(path) and path != "" <- summary_path(summary),
+         true <- String.starts_with?(path, root <> "/"),
+         [segment | _] <- path |> Path.relative_to(root) |> Path.split() do
+      String.downcase(segment)
+    else
+      _ -> nil
+    end
+  end
+
+  defp owner_segment(_summary, _root), do: nil
+
+  defp summary_path(summary) do
+    Map.get(summary, :path) || Map.get(summary, "path") || Map.get(summary, :host_path) ||
+      Map.get(summary, "host_path")
   end
 
   defp sort_workspace_summaries_list(summaries, :recency), do: summaries

@@ -80,6 +80,56 @@ defmodule Casein.Runtimes.EctoAdapter do
     |> Enum.map(&to_runtime/1)
   end
 
+  # One row per worktree path, newest first. `DISTINCT ON` collapses duplicate
+  # rows in the database rather than paging them into the application, so a
+  # workspace with a long runtime history still returns its *current* worktrees.
+  @agent_worktree_limit 500
+
+  @impl true
+  def list_agent_worktree_runtimes(workspace_id, opts \\ [])
+
+  def list_agent_worktree_runtimes(workspace_id, opts) when is_binary(workspace_id) do
+    RuntimeRow
+    |> where([r], r.workspace_id == ^workspace_id)
+    |> where([r], r.isolation_mode == "worktree")
+    |> where([r], r.status not in ["cleaned", "expired"])
+    |> where([r], not is_nil(r.worktree_path))
+    |> agent_worktree_scope(Keyword.get(opts, :latest_per_path, true))
+    |> Repo.all()
+    |> Enum.map(&to_runtime/1)
+  end
+
+  def list_agent_worktree_runtimes(_workspace_id, _opts), do: []
+
+  defp agent_worktree_scope(query, true) do
+    query
+    |> distinct([r], r.worktree_path)
+    |> order_by([r], asc: r.worktree_path, desc: r.created_at)
+    |> limit(@agent_worktree_limit)
+  end
+
+  defp agent_worktree_scope(query, _latest_per_path?) do
+    order_by(query, [r], desc: r.created_at)
+  end
+
+  @active_runtime_statuses ~w(active bound provisioned)
+
+  @impl true
+  def count_runtimes_by_workspace_ids([]), do: %{}
+
+  def count_runtimes_by_workspace_ids(workspace_ids) when is_list(workspace_ids) do
+    RuntimeRow
+    |> where([r], r.workspace_id in ^workspace_ids)
+    |> group_by([r], r.workspace_id)
+    |> select([r], %{
+      workspace_id: r.workspace_id,
+      total: count(r.id),
+      active: filter(count(r.id), r.status in ^@active_runtime_statuses)
+    })
+    |> Repo.all()
+    |> Map.new(fn row -> {row.workspace_id, %{total: row.total, active: row.active}} end)
+  end
+
   @impl true
   def list_runtimes_by_workspace_ids([]), do: []
 
