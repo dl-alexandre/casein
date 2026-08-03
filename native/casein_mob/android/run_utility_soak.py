@@ -1109,12 +1109,12 @@ def _installed_driver_path(
     )
 
 
-def _installed_driver_digest(
+def _installed_driver_identity(
     executor: object,
     serial: str,
     deadline: float,
     monotonic: Callable[[], float],
-) -> str | None:
+) -> tuple[str, str] | None:
     installed_path = _installed_driver_path(
         executor, serial, deadline, monotonic
     )
@@ -1130,11 +1130,12 @@ def _installed_driver_digest(
     if result.returncode != 0 or result.stdout_truncated:
         return None
     output = _bounded_text(result.stdout)
-    return (
+    digest = (
         output.rstrip("\n")
         if re.fullmatch(r"[0-9a-f]{64}\n?", output)
         else None
     )
+    return (installed_path, digest) if digest is not None else None
 
 
 def _install_driver(
@@ -1144,7 +1145,7 @@ def _install_driver(
     expected_apk_sha256: str,
     deadline: float,
     monotonic: Callable[[], float],
-) -> str:
+) -> tuple[str, str | None]:
     result = _stage_run(
         executor,
         _adb(serial, "install", "--no-streaming", "-t", driver_apk),
@@ -1155,23 +1156,26 @@ def _install_driver(
     output = _bounded_text(result.stdout)
     if result.returncode != 0 or result.stdout_truncated:
         return (
-            "ownership_conflict"
-            if "INSTALL_FAILED_ALREADY_EXISTS" in output
-            else "ambiguous"
+            (
+                "ownership_conflict"
+                if "INSTALL_FAILED_ALREADY_EXISTS" in output
+                else "ambiguous"
+            ),
+            None,
         )
     if "Success" not in output:
-        return "ambiguous"
+        return "ambiguous", None
     if _driver_present(executor, serial, deadline, monotonic) is not True:
-        return "ambiguous"
-    installed_digest = _installed_driver_digest(
+        return "ambiguous", None
+    installed_identity = _installed_driver_identity(
         executor, serial, deadline, monotonic
     )
     if (
-        installed_digest is not None
-        and installed_digest == expected_apk_sha256.lower()
+        installed_identity is not None
+        and installed_identity[1] == expected_apk_sha256.lower()
     ):
-        return "installed"
-    return "ambiguous"
+        return "installed", installed_identity[0]
+    return "ambiguous", None
 
 
 def _fixed_metrics(
@@ -1377,11 +1381,34 @@ def _device_quiescent(
 def _cleanup_driver(
     executor: object,
     serial: str,
+    installed_apk_path: str,
+    expected_apk_sha256: str,
     deadline: float,
     monotonic: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> tuple[bool, bool]:
+    def reviewed_driver_still_installed() -> bool:
+        try:
+            installed_identity = _installed_driver_identity(
+                executor, serial, deadline, monotonic
+            )
+        except Exception:
+            return False
+        return (
+            INSTALLED_DRIVER_APK_PATTERN.fullmatch(installed_apk_path)
+            is not None
+            and SHA256_PATTERN.fullmatch(expected_apk_sha256) is not None
+            and installed_identity
+            == (installed_apk_path, expected_apk_sha256.lower())
+        )
+
     for package in (DRIVER_PACKAGE, BASE_PACKAGE):
+        # Ownership is re-proved with read-only package-path and digest queries
+        # immediately before every cleanup mutation. Any package replacement,
+        # disappearance, malformed/truncated reply, or query failure leaves both
+        # the driver and base app untouched from this point forward.
+        if not reviewed_driver_still_installed():
+            return False, False
         try:
             _stage_run(
                 executor,
@@ -1401,6 +1428,11 @@ def _cleanup_driver(
         quiescent = False
     if not quiescent:
         return False, False
+
+    # Quiescence is established before this read-only revalidation and remains
+    # the required gate for uninstalling the exact reviewed driver.
+    if not reviewed_driver_still_installed():
+        return False, True
 
     try:
         uninstall = _stage_run(
@@ -1462,6 +1494,7 @@ def run_utility_soak(
 
     wifi_baseline: str | None = None
     driver_owned = False
+    owned_driver_apk_path: str | None = None
     wifi_may_have_changed = False
     staging_directory = None
     output = ""
@@ -1541,7 +1574,7 @@ def run_utility_soak(
 
         outcome["driver_install_attempted"] = True
         try:
-            install_result = _install_driver(
+            install_status, installed_apk_path = _install_driver(
                 runner,
                 serial,
                 validated_apk,
@@ -1553,10 +1586,11 @@ def run_utility_soak(
             raise RunFailure(
                 "driver_install_ambiguous", "driver_install"
             ) from None
-        if install_result == "ownership_conflict":
+        if install_status == "ownership_conflict":
             raise RunFailure("driver_ownership_conflict", "driver_install")
-        if install_result != "installed":
+        if install_status != "installed" or installed_apk_path is None:
             raise RunFailure("driver_install_ambiguous", "driver_install")
+        owned_driver_apk_path = installed_apk_path
         driver_owned = True
         outcome["driver_installed"] = True
 
@@ -1568,6 +1602,7 @@ def run_utility_soak(
 
         timed_out = False
         execution_error = False
+        output_truncated = False
         returncode: int | None = None
         try:
             wifi_may_have_changed = True
@@ -1593,6 +1628,7 @@ def run_utility_soak(
                 telemetry_start,
             )
             output = _bounded_text(instrument.stdout)
+            output_truncated = instrument.stdout_truncated
             returncode = instrument.returncode
             outcome["test_completed"] = True
         except CommandDeadlineExceeded as timeout:
@@ -1623,6 +1659,7 @@ def run_utility_soak(
         )
         passed = (
             outcome["test_completed"]
+            and not output_truncated
             and returncode == 0
             and "OK (1 test)" in output
             and "FAILURES!!!" not in output
@@ -1636,6 +1673,11 @@ def run_utility_soak(
             )
         elif execution_error:
             outcome.update(status="runner_error", failure_stage="instrumentation")
+        elif output_truncated:
+            outcome.update(
+                status="test_failed",
+                failure_stage="instrumentation_output_truncated",
+            )
         elif not passed:
             outcome.update(
                 status="test_failed",
@@ -1657,6 +1699,8 @@ def run_utility_soak(
             cleaned, quiescent = _cleanup_driver(
                 runner,
                 serial,
+                owned_driver_apk_path or "",
+                expected_apk_sha256,
                 hard_deadline - WIFI_RESTORE_RESERVE_MS / 1_000,
                 monotonic,
                 sleep,

@@ -77,6 +77,7 @@ class FakeExecutor:
             "/data/app/com.example.casein_mob.test-synthetic1/base.apk"
         )
         self.installed_digest: str | None = None
+        self.installed_digest_queries = 0
         self.calls: list[tuple[tuple[str, ...], float]] = []
 
     @property
@@ -253,7 +254,13 @@ class FakeExecutor:
             "-b",
             self.installed_path,
         ):
+            self.installed_digest_queries += 1
             digest = self.installed_digest or "0" * 64
+            if (
+                self.mode == "cleanup_identity_swap"
+                and self.installed_digest_queries > 1
+            ):
+                digest = "0" * 64
             output = f"{digest}\n"
             if self.mode == "installed_digest_malformed":
                 output = f"SHA256 ({self.installed_path}) = {digest}\n"
@@ -279,7 +286,14 @@ class FakeExecutor:
             if self.mode != "active_target_process":
                 self.target_process_active = False
             self.wifi = "0"
-            return self.result(stdout="OK (1 test)\nINSTRUMENTATION_CODE: -1\n")
+            if self.mode == "cleanup_path_swap":
+                self.installed_path = (
+                    "/data/app/com.example.casein_mob.test-synthetic2/base.apk"
+                )
+            return self.result(
+                stdout="OK (1 test)\nINSTRUMENTATION_CODE: -1\n",
+                stdout_truncated=self.mode == "instrument_stdout_truncated",
+            )
 
         if "logcat" in command:
             if self.mode == "metric_timeout":
@@ -948,6 +962,63 @@ class AndroidUtilitySoakRunnerTest(unittest.TestCase):
                 for command in executor.commands
             )
         )
+
+    def test_instrumentation_truncated_stdout_can_never_pass(self):
+        serial, _clock, executor, result = self.run_fake(
+            "instrument_stdout_truncated"
+        )
+
+        self.assertEqual("test_failed", result["status"])
+        self.assertEqual(
+            "instrumentation_output_truncated", result["failure_stage"]
+        )
+        self.assertTrue(result["test_completed"])
+        self.assertTrue(result["driver_cleaned"])
+        self.assertTrue(result["wifi_restored"])
+        self.assertEqual(set(RUNNER.RESULT_KEYS), set(result))
+        encoded = json.dumps(result, sort_keys=True)
+        self.assertNotIn(serial, encoded)
+        self.assertNotIn("OK (1 test)", encoded)
+
+    def test_cleanup_identity_swap_fails_closed_before_any_mutation(self):
+        for mode in ("cleanup_identity_swap", "cleanup_path_swap"):
+            with self.subTest(mode=mode):
+                serial, _clock, executor, result = self.run_fake(mode)
+
+                self.assertEqual("cleanup_failed", result["status"])
+                self.assertEqual(
+                    "wifi_restore_and_driver_cleanup",
+                    result["failure_stage"],
+                )
+                self.assertTrue(result["driver_cleanup_attempted"])
+                self.assertFalse(result["driver_cleaned"])
+                self.assertFalse(result["device_quiescent"])
+                self.assertFalse(result["wifi_restored"])
+                self.assertTrue(executor.driver_present)
+                self.assertEqual(2, executor.installed_digest_queries)
+                self.assertFalse(
+                    any(
+                        command[-3:]
+                        in {
+                            ("am", "force-stop", RUNNER.DRIVER_PACKAGE),
+                            ("am", "force-stop", RUNNER.BASE_PACKAGE),
+                        }
+                        or command[-2:]
+                        == ("uninstall", RUNNER.DRIVER_PACKAGE)
+                        for command in executor.commands
+                    )
+                )
+                self.assertIn(
+                    (*RUNNER._adb(
+                        serial,
+                        "shell",
+                        RUNNER.DEVICE_SHA256SUM,
+                        "-b",
+                        executor.installed_path,
+                    ),),
+                    executor.commands,
+                )
+                self.assertEqual(set(RUNNER.RESULT_KEYS), set(result))
 
     def test_preexisting_or_unknown_driver_fails_closed_without_mutation(self):
         expected = {
