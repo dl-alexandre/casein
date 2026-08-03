@@ -110,6 +110,8 @@ defmodule CaseinWeb.MobileUserChannel do
          {:ok,
           %{
             status: "accepted",
+            card_id: result.card_id,
+            action_id: result.action_id,
             idempotent: result.idempotent,
             result: result.result,
             snapshot: render_snapshot(UserObserver.snapshot(user_id), socket)
