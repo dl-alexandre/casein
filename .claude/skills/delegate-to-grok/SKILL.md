@@ -42,21 +42,19 @@ ends with ` - grok`) that is:
 
 ### Spawn fresh (preferred when reuse is ambiguous)
 
-From the primary checkout on the devbox:
+Invoke the Casein-owned helper, even when the orchestrator is working in a
+different product repository:
 
 ```bash
 bash /data/workspaces/dalexandre/casein/scripts/spawn-agent-worker.sh grok <task-slug> <session>
 ```
 
-Or from any checkout with env resolved:
-
-```bash
-bash scripts/spawn-agent-worker.sh grok <task-slug> <session>
-```
-
 Stdout is the new `pane_id` (e.g. `%255`). The helper unsets
-`CASEIN_AGENT_WORKTREE_PATH` from tmux session env so each spawn creates a fresh
-worktree — without that, workers reuse the orchestrator's checkout.
+`CASEIN_AGENT_WORKTREE_PATH`, sources the orchestrator's materialized workspace
+environment in the new tmux window, and uses Casein's launcher to create a fresh
+worktree for the product checkout. Do not invoke a product-local
+`scripts/launch-casein-agent.sh`; product repos are not expected to carry Casein
+host infrastructure.
 
 Wait until the worker is at prompt:
 
@@ -211,7 +209,7 @@ the materialized MCP, and the agent-state hook:
 
 ```bash
 tmux respawn-pane -k -t <worker_pane> -c <worker-worktree-path> \
-  "bash -lc 'cd \"<worker-worktree-path>\" && CASEIN_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" CASEIN_AGENT_TASK=<task-slug> exec bash scripts/launch-casein-agent.sh grok'"
+  "bash -lc 'cd \"<worker-worktree-path>\" && CASEIN_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" CASEIN_AGENT_TASK=<task-slug> exec bash /data/workspaces/dalexandre/casein/scripts/launch-casein-agent.sh grok'"
 ```
 
 Use **`launch-casein-agent.sh`**, not `spawn-agent-worker.sh` (§2): the launcher

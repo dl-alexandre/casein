@@ -68,6 +68,25 @@ spawn_worker_window_name() {
   printf 'worker-%s\n' "$(spawn_worker_sanitize_slug "$slug")"
 }
 
+# Resolve the generated, workspace-scoped environment file that a fresh tmux
+# window must source before entering the managed launcher. tmux windows inherit
+# the server's environment, not the orchestrating shell's current exports, so
+# relying on inherited CASEIN_* values can bind the worker to an old session (or
+# leave it unpaired entirely).
+spawn_worker_resolve_env_file() {
+  local candidate
+
+  for candidate in \
+    "${CASEIN_AGENT_ENV_FILE:-}" \
+    "${CASEIN_AGENT_MCP_HOME:-}/env.sh"; do
+    [[ -n "$candidate" && -r "$candidate" ]] || continue
+    realpath -m "$candidate"
+    return 0
+  done
+
+  return 1
+}
+
 # Resolve the primary (main) working tree for a candidate checkout.
 #
 # In an agent's environment CASEIN_CHECKOUT points at *that agent's own* linked
@@ -132,12 +151,29 @@ fi
 # worker must branch off the primary repo, not launch inside it.
 CHECKOUT="$(spawn_worker_resolve_primary_checkout "$CHECKOUT")"
 
+LAUNCHER="${ROOT}/scripts/launch-casein-agent.sh"
+if [[ ! -f "$LAUNCHER" ]]; then
+  echo "error: Casein launcher not found at ${LAUNCHER}" >&2
+  exit 1
+fi
+
+ENV_FILE="$(spawn_worker_resolve_env_file)" || {
+  echo "error: workspace pairing env not found — run scripts/materialize-agent-mcp.sh first" >&2
+  exit 1
+}
+
 if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   echo "error: tmux session not found: ${SESSION}" >&2
   exit 1
 fi
 
 WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
+# Source the orchestrator's resolved workspace pairing before launch. A fresh
+# tmux window otherwise sees only the tmux server's potentially stale env. Pin
+# the explicit target session after sourcing because an older env.sh may have
+# been materialized for another session; launch-casein-agent.sh then normalizes
+# the tmux socket and rebinds MCP URLs to the actual new pane.
+#
 # Clear stale worktree pointers and pin CASEIN_CHECKOUT to the primary so each
 # spawn gets a fresh agent/<runtime>/<slug>-<stamp> worktree off the primary
 # checkout. Both matter: launch-casein-agent.sh keys worktree creation off the
@@ -146,11 +182,13 @@ WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
 # agent_worktree_ensure refuse to adopt whatever tree the launcher lands in
 # (the cwd heuristic has proven unreliable from nested worktrees) and always
 # branch a fresh one — so a worker can never operate in a shared checkout.
-LAUNCH_CMD="cd $(printf '%q' "$CHECKOUT") && unset CASEIN_AGENT_WORKTREE_PATH CASEIN_WORKTREE CASEIN_GIT_DIR && export CASEIN_CHECKOUT=$(printf '%q' "$CHECKOUT") CASEIN_AGENT_FORCE_FRESH_WORKTREE=1 && CASEIN_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "${CHECKOUT}/scripts/launch-casein-agent.sh") $(printf '%q' "$RUNTIME")"
+# The launcher is Casein infrastructure and deliberately comes from ROOT, not
+# the product checkout (which generally has no launch-casein-agent.sh).
+LAUNCH_CMD="source $(printf '%q' "$ENV_FILE") && export CASEIN_TMUX_SESSION=$(printf '%q' "$SESSION") && unset CASEIN_TMUX_SOCKET_RESOLVED CASEIN_AGENT_WORKTREE_PATH CASEIN_WORKTREE CASEIN_GIT_DIR CASEIN_SCRIPTS && cd $(printf '%q' "$CHECKOUT") && export CASEIN_CHECKOUT=$(printf '%q' "$CHECKOUT") CASEIN_AGENT_FORCE_FRESH_WORKTREE=1 && CASEIN_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "$LAUNCHER") $(printf '%q' "$RUNTIME")"
 
 if [[ "${CASEIN_SPAWN_DRY_RUN:-0}" == "1" ]]; then
-  printf 'session=%s\ncheckout=%s\nwindow=%s\nlaunch=%s\n' \
-    "$SESSION" "$CHECKOUT" "$WINDOW_NAME" "$LAUNCH_CMD"
+  printf 'session=%s\ncheckout=%s\nenv_file=%s\nlauncher=%s\nwindow=%s\nlaunch=%s\n' \
+    "$SESSION" "$CHECKOUT" "$ENV_FILE" "$LAUNCHER" "$WINDOW_NAME" "$LAUNCH_CMD"
   exit 0
 fi
 
