@@ -53,7 +53,27 @@ defmodule Casein.Terminals.BackendTest do
     command = to_string(command)
     assert command =~ "ssh -tt"
     assert command =~ "dev@example.test"
-    assert command =~ "tmux new-session -A -s session-1"
+    # Always isolated on the labeled server (issue #556); label comes from env config.
+    assert command =~ ~r/tmux(?: -L \S+)? new-session -A -s session-1/
+  end
+
+  test "remote spawn_spec uses the configured labeled tmux server (-L)" do
+    previous = Application.get_env(:casein, :tmux_server_label)
+    Application.put_env(:casein, :tmux_server_label, "casein")
+
+    on_exit(fn ->
+      case previous do
+        nil -> Application.delete_env(:casein, :tmux_server_label)
+        value -> Application.put_env(:casein, :tmux_server_label, value)
+      end
+    end)
+
+    assert {:ok, %Backend.SpawnSpec{command: command}} =
+             TmuxBackend.spawn_spec({:remote, "box", "/srv/app"}, "casein_ws_main")
+
+    command = to_string(command)
+    assert command =~ "tmux -L casein new-session -A -s casein_ws_main"
+    refute command =~ ~r/exec tmux new-session/
   end
 
   test "tmux backend rejects unknown location types" do
