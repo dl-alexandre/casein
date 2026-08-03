@@ -7,11 +7,18 @@ defmodule CaseinWeb.TerminalBoundaryLiveTest do
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.MemoryAdapter
 
-  setup do
+  setup context do
     unique = System.unique_integer([:positive])
     workspace_id = "ws-#{unique}"
     workspace_name = "alpha-#{unique}"
     workspace_root = Path.join(System.tmp_dir!(), "casein-terminal-live-#{unique}")
+
+    tmux_shim_cleanup =
+      unless context[:tmux], do: Casein.Test.TmuxExecutableShim.install!()
+
+    if is_function(tmux_shim_cleanup, 0) do
+      on_exit(:tmux_executable_shim, tmux_shim_cleanup)
+    end
 
     workspace_path = Path.join(workspace_root, workspace_id)
     File.mkdir_p!(workspace_path)

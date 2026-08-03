@@ -28,7 +28,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
 
   @tmux_available System.find_executable("tmux") != nil
 
-  setup do
+  setup context do
     workspace_root = Path.join(System.tmp_dir!(), "casein-pane-split-live")
     workspace_path = Path.join(workspace_root, "ws-1")
     workspace_name = "alpha-#{System.unique_integer([:positive, :monotonic])}"
@@ -39,6 +39,13 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
     prev_default = Application.get_env(:casein, :default_workspace_mode)
     prev_overrides = Application.get_env(:casein, :workspace_modes)
     prev_pane_backend = Application.get_env(:casein, :ghostty_pane_backend)
+
+    tmux_shim_cleanup =
+      unless context[:tmux], do: Casein.Test.TmuxExecutableShim.install!()
+
+    if is_function(tmux_shim_cleanup, 0) do
+      on_exit(:tmux_executable_shim, tmux_shim_cleanup)
+    end
 
     Application.put_env(:casein, :workspaces_root, workspace_root)
     Application.put_env(:casein, :default_workspace_mode, :review)
@@ -77,11 +84,35 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
   end
 
   describe "initial pane state" do
+    test "pane readiness rejects handles whose processes already exited" do
+      dead_pid = spawn(fn -> :ok end)
+      ref = Process.monitor(dead_pid)
+      assert_receive {:DOWN, ^ref, :process, ^dead_pid, :normal}
+
+      state = %{
+        socket: %{
+          assigns: %{
+            pane_data: %{
+              "pane-1" => %{worker: dead_pid, ghostty_term: dead_pid, ghostty_pty: dead_pid}
+            }
+          }
+        }
+      }
+
+      view_pid = start_supervised!({Agent, fn -> state end})
+
+      assert_raise ExUnit.AssertionError, ~r/pane worker handles did not become ready/, fn ->
+        await_live_pane_handles!(%{pid: view_pid}, "pane-1", timeout_ms: 0)
+      end
+    end
+
     test "raw mode seeds one Ghostty attachment and exposes tmux split controls", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/workspaces/ws-1")
 
       assert html =~ ~s(phx-click="split_right")
       assert html =~ ~s(phx-click="split_down")
+
+      await_live_pane_handles!(view, "pane-1")
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert assigns.terminal_mode == :raw
@@ -1277,6 +1308,26 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
     render_async(view, 15_000)
   end
 
+  defp await_live_pane_handles!(view, pane_id, opts \\ []) do
+    Casein.Test.Eventually.await(
+      fn ->
+        case :sys.get_state(view.pid).socket.assigns.pane_data[pane_id] do
+          %{worker: worker, ghostty_term: term, ghostty_pty: pty} ->
+            live_pid?(worker) and live_pid?(term) and live_pid?(pty)
+
+          _ ->
+            false
+        end
+      end,
+      timeout_ms: Keyword.get(opts, :timeout_ms, 5_000),
+      interval_ms: 20,
+      message: "pane worker handles did not become ready for #{pane_id}"
+    )
+  end
+
+  defp live_pid?(pid) when is_pid(pid), do: Process.alive?(pid)
+  defp live_pid?(_), do: false
+
   # The mount-time eager Ghostty worker start is async; poll until the pane has
   # live handles (or give up) so tests that nil/clear those handles aren't raced
   # by a worker that starts afterwards.
@@ -1352,7 +1403,9 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
 
   defp kill_tmux_session(session) when is_binary(session) do
     _ =
-      System.cmd("tmux", Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+      System.cmd(
+        Casein.Terminals.TmuxExecutable.resolve(),
+        Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
         stderr_to_stdout: true
       )
 
@@ -1365,7 +1418,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
     with true <- @tmux_available,
          {sessions, 0} <-
            System.cmd(
-             "tmux",
+             Casein.Terminals.TmuxExecutable.resolve(),
              Casein.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"]
            ) do
       sessions
