@@ -12,8 +12,7 @@ config :mob_dev,
   # generated Gradle applicationId explicitly:
   #
   #   MOB_BUNDLE_ID=com.example.casein_mob mix mob.deploy --native --device <serial>
-  bundle_id:
-    System.get_env("MOB_BUNDLE_ID") || "com.alexandrefamilyfarm.casein-mob",
+  bundle_id: System.get_env("MOB_BUNDLE_ID") || "com.alexandrefamilyfarm.casein-mob",
   # Path to the mob library repo (native source files for iOS/Android builds).
   mob_dir: Path.join(File.cwd!(), "deps/mob"),
 
@@ -43,12 +42,12 @@ config :mob_dev,
 # entirely (the native build shrinks and a clean rebuild prunes its artifacts).
 config :mob, :plugins, [:mob_camera, :mob_scanner, :mob_location, :mob_biometric, :mob_notify]
 
-# Trust gate for the first-party plugins. Each is signed in CI with the shared
-# mob release key; this is that key's public fingerprint. The build refuses an
-# ACTIVATED plugin whose signature doesn't verify against a trusted fingerprint
-# (tamper protection) — entries for plugins you haven't activated are simply
-# unused, so every official plugin is pre-trusted and "just works" the moment
-# you add it to deps + :plugins above. For your own/third-party plugins, run
+# Trust gate for the first-party plugins. Each entry pins the exact reviewed
+# author or controlled-fork key; the checksum-pinned Hex plugins share the mob
+# release key while the reviewed mob_notify fork uses its dedicated key. The
+# build refuses an ACTIVATED plugin whose signature doesn't verify against its
+# trusted fingerprint (tamper protection). Entries for inactive plugins are
+# unused. For your own/third-party plugins, run
 # `mix mob.plugin.trust <name>`, or `config :mob, :acknowledge_unsafe_plugins,
 # [...]` for an unsigned prototype.
 config :mob, :trusted_plugins, %{
@@ -56,7 +55,7 @@ config :mob, :trusted_plugins, %{
   mob_scanner: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg=",
   mob_location: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg=",
   mob_biometric: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg=",
-  mob_notify: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg=",
+  mob_notify: "ed25519:4/l+KAfhgFdCvwR77Bl6ECgOB2EuzVo3u3DntcHtHTE=",
   mob_bluetooth: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg=",
   mob_screencast: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg=",
   mob_photos: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg=",

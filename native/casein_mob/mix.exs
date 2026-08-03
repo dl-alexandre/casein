@@ -28,11 +28,11 @@ defmodule CaseinMob.MixProject do
        override: true},
       {:mob,
        github: "dl-alexandre/mob", ref: "dd6ab6159aca279fa04bd8c4fd1bd5b48a27c621", override: true},
-      # Exact merge for dl-alexandre/mob_dev#1: make explicit Android native
-      # deploys fail closed before deployment when the toolchain has no targets.
+      # Exact merged MobDev supply-chain head: native target discovery and
+      # versioned activated-plugin signature verification both fail closed.
       {:mob_dev,
        git: "https://github.com/dl-alexandre/mob_dev.git",
-       ref: "ebfc291ebbf6e3928ca92c23c08683fa771fabf1",
+       ref: "7d3bfac0077fe5aceea10808f4ea9d8c71a92a3f",
        only: [:dev, :test],
        runtime: false,
        override: true},
@@ -58,11 +58,11 @@ defmodule CaseinMob.MixProject do
       {:mob_scanner, "~> 0.1.1"},
       {:mob_location, "~> 0.1"},
       {:mob_biometric, "~> 0.1"},
-      # Exact reviewed fork head keeps the Android bridge host-agnostic while
-      # preserving mob_notify's published ~> 0.1.2 API contract.
+      # Exact reviewed signed-v2 fork merge keeps the Android bridge
+      # host-agnostic while preserving the published ~> 0.1.2 API contract.
       {:mob_notify,
        github: "dl-alexandre/mob_notify",
-       ref: "53696f3e264777803ee21a4a00cb2ddadb5b402c",
+       ref: "997b08c08346de7728a95bec306e96c812b92746",
        override: true},
       {:mob_themes, "~> 0.1"},
       # Code quality — Credo + ex_slop (catches AI-generated patterns

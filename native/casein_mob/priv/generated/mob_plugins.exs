@@ -3,29 +3,29 @@
 # The activated plugins' tier-3/4 contributions, read at boot by Mob.Plugins.
 # Regenerated whenever `config :mob, :plugins` changes (the deploy/regen hook).
 %{
+  composites: [],
+  default_style: :mob_themes,
+  lifecycle: [],
   nifs: [:mob_camera_nif, :mob_scanner_nif, :mob_location_nif,
    :mob_biometric_nif, :mob_notify_nif],
-  settings: [],
+  notification_handlers: [],
   screens: [
     %{
+      default_route: "/mob_camera/demo",
       module: MobCamera.DemoScreen,
-      plugin: :mob_camera,
-      default_route: "/mob_camera/demo"
+      plugin: :mob_camera
     },
     %{
+      default_route: "/mob_location/demo",
       module: MobLocation.DemoScreen,
-      plugin: :mob_location,
-      default_route: "/mob_location/demo"
+      plugin: :mob_location
     },
     %{
+      default_route: "/mob_biometric/demo",
       module: MobBiometric.DemoScreen,
-      plugin: :mob_biometric,
-      default_route: "/mob_biometric/demo"
+      plugin: :mob_biometric
     }
   ],
-  notification_handlers: [],
-  lifecycle: [],
-  styles: [%{name: :mob_themes, theme: MobThemes.Obsidian}],
-  default_style: :mob_themes,
-  composites: []
+  settings: [],
+  styles: [%{name: :mob_themes, theme: MobThemes.Obsidian}]
 }

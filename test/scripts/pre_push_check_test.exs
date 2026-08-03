@@ -45,4 +45,17 @@ defmodule Scripts.PrePushCheckTest do
     assert content =~ "log() { printf '>>> %s\\n' \"$*\"; GATE_CURRENT_STEP=\"$*\"; }"
     assert content =~ "failed_step=\"${GATE_CURRENT_STEP}\""
   end
+
+  test "pins the native plugin supply-chain verification commands" do
+    content = File.read!(@script)
+
+    assert content =~ """
+           (
+             cd native/casein_mob
+             "${MIX[@]}" deps.get
+             "${MIX[@]}" test test/casein_mob/plugin_supply_chain_test.exs
+             "${MIX[@]}" mob.regen_plugin_manifest --check
+           )
+           """
+  end
 end
