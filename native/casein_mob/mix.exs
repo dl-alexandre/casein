@@ -28,12 +28,12 @@ defmodule CaseinMob.MixProject do
        override: true},
       {:mob,
        github: "dl-alexandre/mob", ref: "dd6ab6159aca279fa04bd8c4fd1bd5b48a27c621", override: true},
-      # Fork exact head for GenericJam/mob_dev#43: make Android native deploys
-      # update-only and freeze the selected build target across the deploy.
+      # Exact merge for dl-alexandre/mob_dev#1: make explicit Android native
+      # deploys fail closed before deployment when the toolchain has no targets.
       {:mob_dev,
        git: "https://github.com/dl-alexandre/mob_dev.git",
-       ref: "721edb100fb0459bfc46d9dc175ff70241a0f9f9",
-       only: :dev,
+       ref: "ebfc291ebbf6e3928ca92c23c08683fa771fabf1",
+       only: [:dev, :test],
        runtime: false,
        override: true},
       {:ecto_sqlite3, "~> 0.18"},
