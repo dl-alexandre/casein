@@ -98,6 +98,51 @@ mapfile -t command < <(build_command) || {
   exit 127
 }
 
+# The preview inherits the *host cockpit's* environment (its systemd unit plus
+# EnvironmentFile=/etc/casein/casein.env). Two inherited families are actively
+# dangerous once we start a dev server from a different checkout:
+#
+#   CASEIN_HTTP_SOCKET — config/runtime.exs binds the endpoint to this unix
+#     socket and ignores $PORT, in :dev as well as :prod. A preview that
+#     inherits it squats the *production* socket instead of listening on
+#     $port: prod traffic gets served by a dev build of whatever branch the
+#     checkout is on (dev config keeps WorkspaceSource.Local, so every manager
+#     deep link 404s and terminals fall back to the $HOME scratch PTY), and
+#     the next real deploy dies with :eaddrinuse. Exactly what happened on
+#     2026-07-29 — a preview from an agent worktree held
+#     /run/casein/instances/<uuid>.sock for ~45 minutes.
+#   RELEASE_* — point at /opt/casein/release (sys.config, vm.args, node name,
+#     cookie). `mix phx.server` in another checkout must not boot from the
+#     release's config or claim its distribution node name.
+#
+# CASEIN_INSTANCE_UUID / CASEIN_GIT_REVISION identify the deployed instance;
+# a preview inheriting them misreports itself as that instance to the
+# deployment registry and to SessionOwner's superseded-instance check.
+scrubbed_env=(
+  CASEIN_GIT_REVISION
+  CASEIN_HTTP_SOCKET
+  CASEIN_INSTANCE_UUID
+  RELEASE_BOOT_SCRIPT
+  RELEASE_BOOT_SCRIPT_CLEAN
+  RELEASE_COMMAND
+  RELEASE_COOKIE
+  RELEASE_DISTRIBUTION
+  RELEASE_MODE
+  RELEASE_NAME
+  RELEASE_NODE
+  RELEASE_PROG
+  RELEASE_REMOTE_VM_ARGS
+  RELEASE_ROOT
+  RELEASE_SYS_CONFIG
+  RELEASE_TMP
+  RELEASE_VM_ARGS
+)
+
+env_prefix=(env)
+for scrubbed in "${scrubbed_env[@]}"; do
+  env_prefix+=(-u "$scrubbed")
+done
+
 app_pid=""
 proxy_pid=""
 cleanup() {
@@ -115,12 +160,15 @@ fi
 
 {
   echo ">>> runtime preview cwd=$cwd port=$port socket=$socket"
+  printf '>>> scrubbed inherited env:'
+  printf ' %s' "${scrubbed_env[@]}"
+  printf '\n'
   printf '>>> command:'
   printf ' %q' "${command[@]}"
   printf '\n'
 } >> "$logf"
 
-PORT="$port" "${command[@]}" >> "$logf" 2>&1 &
+"${env_prefix[@]}" "PORT=$port" "${command[@]}" >> "$logf" 2>&1 &
 app_pid="$!"
 
 if wait_for_port; then
