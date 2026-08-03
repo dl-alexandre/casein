@@ -182,6 +182,7 @@ defmodule Casein.Mobile.AttentionInbox do
     lifecycle = lifecycle(Enum.reverse(lifecycle_transitions))
     latest = latest_transition(card, lifecycle)
     ranking = ranking(card, resume, latest)
+    unresolved? = unresolved_needs_me?(card, ranking)
     unread_count = Keyword.get(opts, :unread_count, length(unread))
 
     %{
@@ -193,6 +194,11 @@ defmodule Casein.Mobile.AttentionInbox do
       reason_code: ranking.reason_code,
       explanation: ranking.explanation,
       required_decision: ranking.required_decision,
+      # This is deliberately independent of the read cursor. Viewing only
+      # acknowledges delivery; an authoritative handled/resolved card state (or
+      # removal from the observer) is what releases a Needs Me request.
+      unresolved?: unresolved?,
+      pin: if(unresolved?, do: "needs_me", else: nil),
       notify: ranking.notify,
       changed_at: transition_value(latest, :occurred_at) || card.updated_at,
       notification_group: "#{origin_id}:#{key(card)}:#{ranking.reason_code}",
@@ -445,6 +451,14 @@ defmodule Casein.Mobile.AttentionInbox do
       required_decision: required_decision,
       notify: notify
     }
+  end
+
+  defp unresolved_needs_me?(card, _ranking) do
+    type = normalized(Map.get(card, :type))
+    status = normalized(Map.get(card, :status))
+
+    type in ~w(clarification needs_review) and
+      status not in ~w(resolved done handled dismissed)
   end
 
   defp reason_code(_card, event_action, resume) do

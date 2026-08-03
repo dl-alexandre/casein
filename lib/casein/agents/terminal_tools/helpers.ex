@@ -377,6 +377,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
              "terminal_report_worktree",
              "terminal_report_agent_state",
              "terminal_request_clarification",
+             "terminal_request_human_input",
              "gate_report"
            ] do
     %{

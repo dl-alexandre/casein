@@ -120,13 +120,20 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
   end
 
   test "request changes requires and trims a short note" do
-    view =
+    initial =
       ReviewDecisionScreen
       |> mount_screen(%{card: review_card()})
       |> authoritative_refresh(review_card())
-      |> render_info({:tap, {:action, "request_changes"}})
+
+    assert find(initial, :button, text: "Request changes").props.disabled == false
+    refute find(initial, :text_field)
+
+    view = render_info(initial, {:tap, {:action, "request_changes"}})
 
     assert text(view) =~ "Add a short note first"
+    assert assigns(view).submitted_action == nil
+    assert find(view, :text_field).props.test_id == "needs-me-reply"
+    assert find(view, :text_field).props.accessibility_label == "Short reply"
 
     view =
       view
@@ -151,6 +158,136 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert assigns(view).submitted_action == nil
   end
 
+  test "renders explicit pending, accepted, resolved, stale, and offline states" do
+    card = intervention_card()
+
+    pending =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+
+    assert assigns(pending).action_state == :pending
+    assert text(pending) =~ "Sending"
+
+    accepted =
+      render_info(
+        pending,
+        {:card_action_result, card["id"], {:ok, %{"result" => %{"confirmation" => "Delivered."}}}}
+      )
+
+    assert assigns(accepted).action_state == :accepted
+    assert text(accepted) =~ "Accepted"
+
+    resolved = render_info(accepted, {:mobile_cards_snapshot, %{"cards" => []}})
+    assert assigns(resolved).action_state == :resolved
+    assert text(resolved) =~ "Resolved"
+
+    stale =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert assigns(stale).action_state == :stale
+    assert text(stale) =~ "Stale"
+
+    offline =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> render_info({:mobile_cards_status, {:disconnected, :network_unavailable}})
+
+    assert assigns(offline).action_state == :offline
+    assert text(offline) =~ "Offline"
+  end
+
+  test "direction choices render as compact semantic chips with stable identifiers" do
+    card =
+      put_in(intervention_card(), ["actions"], [
+        %{
+          "id" => "choose_reduce_scope",
+          "label" => "Reduce scope",
+          "revision" => "revision-1",
+          "style" => "default",
+          "input" => []
+        },
+        %{
+          "id" => "choose_add_tests",
+          "label" => "Add tests",
+          "revision" => "revision-1",
+          "style" => "chip",
+          "input" => []
+        }
+      ])
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+
+    reduce = find(view, :button, text: "Reduce scope")
+    tests = find(view, :button, text: "Add tests")
+
+    assert reduce.props.fill_width == false
+    assert reduce.props.test_id == "needs-me-action-choose_reduce_scope"
+    assert reduce.props.accessibility_label == "Reduce scope"
+    assert tests.props.fill_width == false
+    assert tests.props.test_id == "needs-me-action-choose_add_tests"
+  end
+
+  test "four long declared choices use reachable full-width vertical controls" do
+    labels = [
+      "Keep every compatibility adapter",
+      "Migrate all callers in this change",
+      "Split the rollout into two reviews",
+      "Pause and document the tradeoff"
+    ]
+
+    actions =
+      labels
+      |> Enum.with_index(1)
+      |> Enum.map(fn {label, index} ->
+        %{
+          "id" => "choose_#{index}",
+          "label" => label,
+          "revision" => "revision-1",
+          "style" => "chip",
+          "input" => []
+        }
+      end)
+
+    card = put_in(intervention_card(), ["actions"], actions)
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+
+    Enum.each(labels, fn label ->
+      control = find(view, :button, text: label)
+      assert control.props.fill_width == true
+      assert control.props.height == 44.0
+      assert control.props.disabled == false
+    end)
+  end
+
+  test "reply field is conditional when several actions have different input needs" do
+    view = mount_screen(ReviewDecisionScreen, %{card: review_card()})
+    refute find(view, :text_field)
+
+    view =
+      view
+      |> authoritative_refresh(review_card())
+      |> render_info({:tap, {:action, "request_changes"}})
+
+    assert find(view, :text_field)
+
+    approve = find(view, :button, text: "Approve")
+    assert approve.props.test_id == "needs-me-action-approve"
+    assert approve.props.accessibility_label == "Approve"
+  end
+
   test "a missing authoritative card expires the screen instead of enabling stale retry" do
     view =
       ReviewDecisionScreen
@@ -170,6 +307,50 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     view = render_info(view, {:tap, {:action, "follow_up"}})
     assert assigns(view).submitted_action == nil
+  end
+
+  test "same-id snapshot collisions fail stale without replacing immutable request identity" do
+    card = review_card()
+
+    for collision <- [
+          put_in(card, ["origin", "id"], "origin-other"),
+          Map.put(card, "session_id", "run-other"),
+          put_in(card, ["actions", Access.at(0), "revision"], "replacement-revision")
+        ] do
+      view =
+        ReviewDecisionScreen
+        |> mount_screen(%{card: card})
+        |> authoritative_refresh(card)
+        |> render_info({:mobile_cards_snapshot, %{"cards" => [collision]}})
+
+      assert assigns(view).action_state == :stale
+      assert assigns(view).authoritative? == false
+      assert assigns(view).card["origin"]["id"] == "origin-local"
+      assert assigns(view).card["session_id"] == "run-1"
+      assert text(view) =~ "request identity changed"
+      refute find(view, :button, text: "Approve")
+    end
+  end
+
+  test "valid authoritative refresh clears a stale collision banner" do
+    card = review_card()
+    collision = put_in(card, ["origin", "id"], "origin-other")
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:mobile_cards_snapshot, %{"cards" => [collision]}})
+
+    assert assigns(view).action_state == :stale
+
+    view = render_info(view, {:mobile_cards_snapshot, %{"cards" => [card]}})
+
+    assert assigns(view).action_state == :idle
+    assert assigns(view).authoritative? == true
+    assert assigns(view).card_expired == false
+    refute text(view) =~ "request identity changed"
+    assert find(view, :button, text: "Approve").props.disabled == false
   end
 
   test "renders explicit intervention context, short follow-up, and PWA escalation" do
@@ -537,6 +718,8 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: review_card()})
+      |> authoritative_refresh(review_card())
+      |> render_info({:tap, {:action, "request_changes"}})
       |> render_info({:change, :note, long_note})
 
     assert String.length(assigns(view).note) == 280

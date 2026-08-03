@@ -10,10 +10,10 @@ defmodule Casein.Agents.TerminalToolsActionTest do
   alias Casein.Agents.TerminalTools
 
   describe "definitions/0" do
-    test "exposes 19 terminal tools plus annotation tools" do
+    test "exposes 20 terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 21
+      assert length(names) == 22
 
       for expected <- [
             "terminal_list_sessions",
@@ -33,6 +33,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_report_worktree",
             "terminal_report_agent_state",
             "terminal_request_clarification",
+            "terminal_request_human_input",
             "terminal_wait_agent_state",
             "gate_report",
             "annotation_list",
@@ -40,6 +41,26 @@ defmodule Casein.Agents.TerminalToolsActionTest do
           ] do
         assert expected in names
       end
+    end
+
+    test "typed human input declares bounded server-authored request fields" do
+      tool = definition("terminal_request_human_input")
+
+      assert tool.parameters.required == [
+               "workspace_id",
+               "session",
+               "pane",
+               "request_id",
+               "agent_session_id",
+               "kind",
+               "prompt"
+             ]
+
+      assert tool.parameters.properties.kind.enum == ["clarification", "direction", "blocker"]
+      assert tool.parameters.properties.choices.maxItems == 4
+      assert tool.metadata.mutation? == true
+      assert tool.metadata.capabilities == [:terminal_metadata]
+      refute :raw_terminal_input in Map.get(tool.metadata, :policy_tags, [])
     end
 
     test "file_open_in_pane requires workspace_id and path on the wire" do
