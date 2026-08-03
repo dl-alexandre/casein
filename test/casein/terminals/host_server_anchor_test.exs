@@ -72,6 +72,50 @@ defmodule Casein.Terminals.HostServerAnchorTest do
     end
   end
 
+  describe "stale_socket_failure?/1" do
+    test "true for the orphaned-socket signature tmux emits" do
+      assert HostServerAnchor.stale_socket_failure?("server exited unexpectedly")
+    end
+
+    test "true regardless of case or surrounding output" do
+      assert HostServerAnchor.stale_socket_failure?("error: Server Exited Unexpectedly\n")
+    end
+
+    test "false for unrelated tmux failures" do
+      refute HostServerAnchor.stale_socket_failure?("duplicate session: __casein_keepalive")
+      refute HostServerAnchor.stale_socket_failure?("no server running on /tmp/tmux-1001/casein")
+      refute HostServerAnchor.stale_socket_failure?("")
+    end
+
+    test "false for non-binary output" do
+      refute HostServerAnchor.stale_socket_failure?(nil)
+    end
+  end
+
+  describe "socket_path/3" do
+    test "defaults to /tmp/tmux-<uid>/<label>" do
+      assert HostServerAnchor.socket_path("casein", nil, "1001") == "/tmp/tmux-1001/casein"
+    end
+
+    test "honors TMUX_TMPDIR, still appending tmux-<uid>" do
+      assert HostServerAnchor.socket_path("casein", "/run/tmux", "1001") ==
+               "/run/tmux/tmux-1001/casein"
+    end
+
+    test "treats an empty TMUX_TMPDIR as unset" do
+      assert HostServerAnchor.socket_path("casein", "", "1001") == "/tmp/tmux-1001/casein"
+    end
+
+    test "nil for the default (unlabeled) server so its socket is never removed" do
+      assert HostServerAnchor.socket_path(nil, nil, "1001") == nil
+      assert HostServerAnchor.socket_path("", nil, "1001") == nil
+    end
+
+    test "nil when the uid could not be resolved" do
+      assert HostServerAnchor.socket_path("casein", nil, nil) == nil
+    end
+  end
+
   defp restore(key, nil), do: Application.delete_env(:casein, key)
   defp restore(key, val), do: Application.put_env(:casein, key, val)
 end
