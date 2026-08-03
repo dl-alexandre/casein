@@ -1091,12 +1091,20 @@ defmodule CaseinMob.SessionDashboardScreen do
     rank = get(attention, "rank", 0)
 
     {
-      if(unresolved_needs_me?(card), do: 0, else: 1),
+      sticky_rank(card),
       attention_priority_rank(get(attention, "priority") || get(card, "priority")),
       if(is_integer(rank), do: rank * -1, else: 0),
       attention_recency_rank(card),
       to_string(get(attention, "identity") || get(card, "qualified_id") || get(card, "id"))
     }
+  end
+
+  defp sticky_rank(card) do
+    cond do
+      get(card, "sticky") == true -> 0
+      unresolved_needs_me?(card) -> 1
+      true -> 2
+    end
   end
 
   # New snapshots carry the server-owned sticky bit and attention pin. The
@@ -1181,6 +1189,23 @@ defmodule CaseinMob.SessionDashboardScreen do
 
   defp timestamp_rank(_value), do: 0
 
+  defp observer_card_test_id(card) do
+    if sticky_direction_card?(card),
+      do: "needs-me-card-sticky-direction",
+      else: "needs-me-card-non-sticky"
+  end
+
+  defp observer_card_action_test_id(card) do
+    if sticky_direction_card?(card),
+      do: "needs-me-open-sticky-direction",
+      else: "needs-me-open-non-sticky"
+  end
+
+  defp sticky_direction_card?(card) do
+    get(card, "sticky") == true and get(card, "kind") == "direction_required" and
+      unresolved_needs_me?(card)
+  end
+
   defp card_action_notice({:ok, _result}), do: "Action accepted"
   defp card_action_notice({:error, reason}), do: "Action failed: #{humanize_reason(reason)}"
 
@@ -1201,7 +1226,13 @@ defmodule CaseinMob.SessionDashboardScreen do
 
     %{
       type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
+      props: %{
+        test_id: observer_card_test_id(card),
+        fill_width: true,
+        background: :surface,
+        padding: :space_md,
+        gap: 8
+      },
       children:
         [
           %{
@@ -1239,7 +1270,8 @@ defmodule CaseinMob.SessionDashboardScreen do
             :primary,
             fill_width: true,
             text_color: :on_primary,
-            disabled: not tappable?
+            disabled: not tappable?,
+            test_id: observer_card_action_test_id(card)
           )
         ]
         |> Enum.reject(&is_nil/1)
@@ -1667,6 +1699,13 @@ defmodule CaseinMob.SessionDashboardScreen do
     props =
       if Keyword.has_key?(opts, :fill_width) do
         Map.put(props, :fill_width, Keyword.fetch!(opts, :fill_width))
+      else
+        props
+      end
+
+    props =
+      if Keyword.has_key?(opts, :test_id) do
+        Map.put(props, :test_id, Keyword.fetch!(opts, :test_id))
       else
         props
       end
