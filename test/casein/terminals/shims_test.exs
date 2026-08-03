@@ -507,6 +507,134 @@ defmodule Casein.Terminals.ShimsTest do
     assert String.trim(out) == casein_shim
   end
 
+  describe "tmux session env hydration" do
+    # `tmux set-environment` only reaches panes created after the call, so a
+    # pane whose shell started before PaneEnv pushed the workspace env keeps the
+    # server's global env (no CASEIN_WORKSPACE_ID, global admin token) and every
+    # agent launcher refuses to start. Shell integration must pull the session
+    # table in itself.
+    setup %{tmp: tmp} do
+      fake_bin = Path.join(tmp, "fake-tmux-bin")
+      File.mkdir_p!(fake_bin)
+      {:ok, fake_bin: fake_bin}
+    end
+
+    test "sourcing shell integration imports CASEIN_* from the session table",
+         %{fake_bin: fake_bin} do
+      Shims.materialize!()
+
+      write_fake_tmux!(fake_bin, """
+      CASEIN_WORKSPACE_ID=ws-123
+      CASEIN_WORKSPACE_NAME=dalexandre-devide
+      CASEIN_TERMINAL_MCP_URL=http://127.0.0.1:4000/api/terminals/mcp?workspace_id=ws-123
+      """)
+
+      out =
+        source_integration(
+          fake_bin,
+          Shims.shell_integration_path(),
+          ~s(echo "$CASEIN_WORKSPACE_NAME|$CASEIN_WORKSPACE_ID|$CASEIN_TERMINAL_MCP_URL")
+        )
+
+      assert String.trim(out) ==
+               "dalexandre-devide|ws-123|http://127.0.0.1:4000/api/terminals/mcp?workspace_id=ws-123"
+    end
+
+    test "hydration ignores non-CASEIN vars, honours removals, and never evaluates values",
+         %{fake_bin: fake_bin} do
+      Shims.materialize!()
+
+      # PATH must stay owned by the integration's own prepend logic, and a
+      # value containing shell metacharacters must arrive literally — the
+      # importer assigns, it never evals.
+      write_fake_tmux!(fake_bin, """
+      CASEIN_WORKSPACE_ID=ws-123
+      CASEIN_QUOTED=a b'c"d$(touch #{Path.join(System.tmp_dir!(), "casein-hydration-pwned")})
+      -CASEIN_STALE
+      PATH=/hijacked
+      NOT_CASEIN=nope
+      """)
+
+      out =
+        source_integration(
+          fake_bin,
+          Shims.shell_integration_path(),
+          ~s|echo "stale=${CASEIN_STALE-UNSET} other=${NOT_CASEIN-UNSET}"; | <>
+            ~s|echo "quoted=$CASEIN_QUOTED"; case ":$PATH:" in *:/hijacked:*) echo BAD;; *) echo path-ok;; esac|
+        )
+
+      refute File.exists?(Path.join(System.tmp_dir!(), "casein-hydration-pwned"))
+      assert out =~ "stale=UNSET other=UNSET"
+      assert out =~ ~s(quoted=a b'c"d$\(touch)
+      assert out =~ "path-ok"
+      refute out =~ "BAD"
+    end
+
+    test "shell integration is a no-op outside tmux", %{fake_bin: fake_bin} do
+      Shims.materialize!()
+      write_fake_tmux!(fake_bin, "CASEIN_WORKSPACE_ID=ws-123")
+
+      {out, 0} =
+        System.cmd(
+          bash!(),
+          [
+            "-c",
+            """
+            export PATH=#{shell_quote(fake_bin)}:/usr/bin:/bin
+            unset TMUX
+            export CASEIN_SHELL_INTEGRATION_SKIP_RC=1
+            source #{shell_quote(Shims.shell_integration_path())}
+            echo "id=${CASEIN_WORKSPACE_ID-UNSET}"
+            """
+          ],
+          stderr_to_stdout: true
+        )
+
+      assert String.trim(out) == "id=UNSET"
+    end
+
+    test "prompt hook retries until the session env is populated", %{fake_bin: fake_bin, tmp: tmp} do
+      Shims.materialize!()
+
+      # Model the pane-create race: the first `show-environment` (shell init)
+      # runs before PaneEnv pushed anything; the next one — at the first prompt
+      # — sees the workspace vars.
+      flag = Path.join(tmp, "paired")
+      path = Path.join(fake_bin, "tmux")
+
+      File.write!(path, """
+      #!/bin/sh
+      [ "$1" = "show-environment" ] || exit 0
+      if [ -f #{shell_quote(flag)} ]; then
+        echo CASEIN_WORKSPACE_ID=ws-123
+      fi
+      """)
+
+      File.chmod!(path, 0o755)
+
+      out =
+        source_integration(
+          fake_bin,
+          Shims.shell_integration_path(),
+          """
+          echo "before=${CASEIN_WORKSPACE_ID-UNSET}"
+          touch #{shell_quote(flag)}
+          __casein_sync_session_env_if_pending
+          echo "after=${CASEIN_WORKSPACE_ID-UNSET}"
+          rm -f #{shell_quote(flag)}
+          __casein_sync_session_env_if_pending
+          echo "sticky=${CASEIN_WORKSPACE_ID-UNSET}"
+          """
+        )
+
+      assert out =~ "before=UNSET"
+      assert out =~ "after=ws-123"
+      # Once paired, the hook stops calling tmux — a later empty table must not
+      # strip a working pane's env back out.
+      assert out =~ "sticky=ws-123"
+    end
+  end
+
   test "prompt-end marker in PS1 expands to escape bytes without a stray bracket", %{tmp: tmp} do
     Shims.materialize!()
 
@@ -840,6 +968,41 @@ defmodule Casein.Terminals.ShimsTest do
       source = System.find_executable(name) || raise "missing executable for test: #{name}"
       File.ln_s!(source, Path.join(dir, name))
     end)
+  end
+
+  defp write_fake_tmux!(dir, show_environment_output) do
+    path = Path.join(dir, "tmux")
+
+    File.write!(path, """
+    #!/bin/sh
+    [ "$1" = "show-environment" ] || exit 0
+    cat <<'CASEIN_FAKE_TMUX'
+    #{show_environment_output}
+    CASEIN_FAKE_TMUX
+    """)
+
+    File.chmod!(path, 0o755)
+    path
+  end
+
+  defp source_integration(fake_bin, script, probe) do
+    {out, 0} =
+      System.cmd(
+        bash!(),
+        [
+          "-c",
+          """
+          export PATH=#{shell_quote(fake_bin)}:/usr/bin:/bin
+          export TMUX=fake,1,0
+          export CASEIN_SHELL_INTEGRATION_SKIP_RC=1
+          source #{shell_quote(script)}
+          #{probe}
+          """
+        ],
+        stderr_to_stdout: true
+      )
+
+    out
   end
 
   defp bash!, do: System.find_executable("bash") || raise("missing bash")
