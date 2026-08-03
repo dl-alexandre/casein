@@ -11,7 +11,7 @@ defmodule Casein.Export.WorkspaceStatus do
     * Proposal diffs are NOT included; only metadata + analysis risk.
   """
 
-  alias Casein.Agents.{MCPUrls, TidewaveMCP}
+  alias Casein.Agents.{GrokCapabilityPolicy, MCPUrls, TidewaveMCP}
   alias Casein.Previews
   alias Casein.Audit
   alias Casein.Deployment.{Health, Registry}
@@ -49,6 +49,10 @@ defmodule Casein.Export.WorkspaceStatus do
             workspace: summary(record),
             mode: %{value: mode, source: mode_source},
             db_isolation: db_isolation_payload(record),
+            # What spawn-agent-worker.sh preflights: whether a managed Grok pane
+            # launched right now would get a writable sandbox. Frozen at leader
+            # start, so a spawn into a locked workspace is dead on arrival.
+            agent_write: GrokCapabilityPolicy.agent_write_summary(record.external_id),
             git: git_summary(record),
             agent_capabilities: agent_capabilities(record),
             preview_environments: preview_environments_payload(),

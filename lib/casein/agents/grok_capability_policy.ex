@@ -116,6 +116,38 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
   def write_unlocked?(workspace_id) when is_binary(workspace_id), do: write_enabled?(workspace_id)
   def write_unlocked?(_), do: false
 
+  @doc """
+  Operator-facing summary of whether agent write is available right now.
+
+  `write_enabled` is the *same* predicate `launch-casein-agent.sh` resolves when
+  it picks a managed Grok leader's bwrap sandbox base, so every surface that
+  reports it (the workspace status API, `terminal_context`) agrees with the
+  sandbox a pane launched now would actually get. `unlock_status` is reported
+  alongside it because the two can diverge: a live unlock still yields
+  `write_enabled: false` when the workspace is not in manual mode or its DB
+  isolation is `shared_stage`/`unsafe`, and telling an operator to re-grant in
+  that case sends them down a dead end.
+  """
+  @spec agent_write_summary(String.t()) :: %{
+          write_enabled: boolean(),
+          unlock_status: String.t(),
+          unlock_until: String.t() | nil
+        }
+  def agent_write_summary(workspace_id) when is_binary(workspace_id) do
+    {status, until} =
+      case Workspaces.agent_write_unlock_for(workspace_id) do
+        {:active, until, _by} -> {"active", until}
+        :expired -> {"expired", nil}
+        :inactive -> {"inactive", nil}
+      end
+
+    %{
+      write_enabled: write_unlocked?(workspace_id),
+      unlock_status: status,
+      unlock_until: until && DateTime.to_iso8601(until)
+    }
+  end
+
   defp allowed_tools(write_enabled) do
     definitions()
     |> Enum.group_by(fn {surface, _tool} -> surface end, fn {_surface, tool} -> tool end)

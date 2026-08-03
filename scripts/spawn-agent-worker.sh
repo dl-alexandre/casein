@@ -68,6 +68,108 @@ spawn_worker_window_name() {
   printf 'worker-%s\n' "$(spawn_worker_sanitize_slug "$slug")"
 }
 
+# A managed Grok worker's bwrap sandbox base is chosen once, when its leader
+# starts, from the workspace's agent-write unlock — and is then frozen for the
+# pane's life. Spawning while locked therefore produces a pane that reaches a
+# normal prompt but cannot write its worktree, resolve DNS, or start the BEAM;
+# re-granting the unlock afterwards does not free it, only a relaunch does.
+# launch-casein-agent.sh warns about this, but the warning is one stderr line at
+# startup that scrolls away, so whole fan-outs have been spawned dead and
+# rediscovered by failure. Refuse to open the window instead.
+#
+# Fails *open* when the answer is inconclusive (no token, no API base, endpoint
+# unreachable or unparseable): a degraded control plane must not make spawning
+# impossible, and the launcher's own announce still fires in that case. Only a
+# definitive "locked" blocks.
+spawn_worker_grok_write_state() {
+  local token="${CASEIN_API_TOKEN:-}" workspace="${CASEIN_WORKSPACE_ID:-}"
+  local base response state
+
+  # Same resolution order as grok_capability_api_base in launch-casein-agent.sh,
+  # so the preflight asks exactly the control plane the launcher would.
+  base="${CASEIN_API_BASE_URL:-${CASEIN_URL:-}}"
+  if [[ -z "$base" && -n "${CASEIN_TERMINAL_MCP_URL:-}" ]]; then
+    base="${CASEIN_TERMINAL_MCP_URL%%/api/terminals/mcp*}"
+  fi
+
+  if [[ -z "$base" || -z "$token" || -z "$workspace" ]]; then
+    printf 'unknown\n'
+    return 0
+  fi
+
+  response="$(curl --max-time 5 -fsS \
+    -H "authorization: Bearer ${token}" \
+    "${base%/}/api/workspaces/${workspace}/status" 2>/dev/null)" || {
+    printf 'unknown\n'
+    return 0
+  }
+
+  state="$(printf '%s' "$response" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print("unknown"); raise SystemExit(0)
+agent_write = data.get("agent_write")
+if not isinstance(agent_write, dict) or "write_enabled" not in agent_write:
+    print("unknown"); raise SystemExit(0)
+if agent_write["write_enabled"]:
+    print("unlocked"); raise SystemExit(0)
+# write_enabled can be false with a live unlock: the workspace may not be in
+# manual mode, or its DB isolation may be shared_stage/unsafe. Do not call that
+# an expired unlock — the operator would re-grant and get nowhere.
+status = agent_write.get("unlock_status")
+print(status if status in ("inactive", "expired") else "blocked-by-workspace-policy")
+' 2>/dev/null)" || {
+    printf 'unknown\n'
+    return 0
+  }
+
+  printf '%s\n' "${state:-unknown}"
+}
+
+spawn_worker_preflight_grok_write() {
+  local state
+  state="$(spawn_worker_grok_write_state)"
+
+  case "$state" in
+    unlocked)
+      return 0
+      ;;
+    unknown)
+      warn_degraded "could not confirm this workspace's agent-write unlock; if the worker comes up read-only, re-grant agent write and relaunch it"
+      return 0
+      ;;
+  esac
+
+  cat >&2 <<EOF
+error: refusing to spawn a Grok worker — agent write is unavailable (${state}).
+error:   The worker would get a READ-ONLY sandbox: it would reach a normal prompt but
+error:   could not write its worktree, reach the network, or run mix. That state is
+error:   frozen at launch, so re-granting the unlock later would not free this pane.
+EOF
+
+  if [[ "$state" == "blocked-by-workspace-policy" ]]; then
+    cat >&2 <<'EOF'
+error:   The unlock itself is active — the block is elsewhere: the workspace is not in
+error:   manual mode, or its DB isolation is shared_stage/unsafe. Re-granting the
+error:   unlock will not help; resolve that first.
+EOF
+  else
+    cat >&2 <<'EOF'
+error:   Fix: re-grant agent write for the workspace in the Casein UI, then spawn again.
+EOF
+  fi
+
+  cat >&2 <<EOF
+error:   For write work right now, spawn a codex worker instead — it is not gated:
+error:     bash scripts/spawn-agent-worker.sh codex ${TASK_SLUG:-<slug>}
+error:   To spawn a deliberately read-only Grok worker anyway, set
+error:   CASEIN_SPAWN_ALLOW_READ_ONLY=1.
+EOF
+  exit 3
+}
+
 # Resolve the generated, workspace-scoped environment file that a fresh tmux
 # window must source before entering the managed launcher. tmux windows inherit
 # the server's environment, not the orchestrating shell's current exports, so
@@ -165,6 +267,10 @@ ENV_FILE="$(spawn_worker_resolve_env_file)" || {
 if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   echo "error: tmux session not found: ${SESSION}" >&2
   exit 1
+fi
+
+if [[ "$RUNTIME" == "grok" && "${CASEIN_SPAWN_ALLOW_READ_ONLY:-0}" != "1" ]]; then
+  spawn_worker_preflight_grok_write
 fi
 
 WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
