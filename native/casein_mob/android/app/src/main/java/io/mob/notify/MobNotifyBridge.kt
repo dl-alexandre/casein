@@ -55,6 +55,10 @@ object MobNotifyBridge : io.mob.plugin.MobActivityAware {
     // refreshed tokens flow through the host MobFirebaseService → core thunk.
     @JvmStatic external fun nativeDeliverNotifyPushToken(pid: Long, token: String)
 
+    // {:push_token_error, :android, reason} — registration failures belong to
+    // this plugin-owned JNI seam so the bridge never depends on a host package.
+    @JvmStatic external fun nativeDeliverNotifyPushTokenError(pid: Long, reason: String)
+
     @JvmStatic fun register() = nativeRegister()
 
     override fun setActivity(activity: Activity) {
@@ -63,12 +67,7 @@ object MobNotifyBridge : io.mob.plugin.MobActivityAware {
 
     private fun deliverPushTokenError(pid: Long, reason: String) {
         android.util.Log.w("MobNotify", "Push token fetch failed: $reason")
-        com.example.casein_mob.MobBridge.nativeDeliverAtom3(
-            pid,
-            "push_token_error",
-            "android",
-            reason
-        )
+        nativeDeliverNotifyPushTokenError(pid, reason)
     }
 
     // Parse the opts JSON and delegate to MobNotifySchedules.schedule, which
