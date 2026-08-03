@@ -114,26 +114,16 @@ final class CaseinMobSoakUITests: XCTestCase {
         XCTAssertTrue(needsMe.waitForExistence(timeout: 10))
         needsMe.tap()
 
-        let stickyCard = app.otherElements["needs-me-card-sticky-direction"].firstMatch
         let directionTitle = app.staticTexts[configuration.directionTitle]
-        XCTAssertTrue(stickyCard.waitForExistence(timeout: 30), "Sticky direction card did not arrive")
-        XCTAssertTrue(directionTitle.waitForExistence(timeout: 5), "Configured direction title is absent")
-        XCTAssertTrue(
-            stickyCard.frame.intersects(directionTitle.frame),
-            "Configured title is not in the sticky direction card"
-        )
-
-        let nonStickyCard = app.otherElements["needs-me-card-non-sticky"].firstMatch
-        if nonStickyCard.exists {
-            XCTAssertLessThan(
-                stickyCard.frame.minY,
-                nonStickyCard.frame.minY,
-                "Sticky direction card must remain above non-sticky work"
-            )
-        }
-
         let openDirection = app.buttons["needs-me-open-sticky-direction"]
-        XCTAssertTrue(openDirection.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            openDirection.waitForExistence(timeout: 30),
+            "Sticky direction request open control did not arrive"
+        )
+        XCTAssertTrue(directionTitle.waitForExistence(timeout: 5), "Configured direction title is absent")
+        // Column containers are not native AX elements in Mob. Sticky pinning and
+        // relative card order remain covered by the server/native render unit tests;
+        // physical readiness is asserted through this bounded interactive control.
         XCTAssertTrue(openDirection.isHittable)
         openDirection.tap()
 
