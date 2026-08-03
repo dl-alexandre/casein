@@ -15,7 +15,13 @@ defmodule CaseinMob.MobDevNativeDeployContractTest do
     # An unavailable Android toolchain contributes no native build result.
     outcome = NativeBuild.build_outcome([])
 
-    assert outcome == %{ok?: false, android_serials: []}
+    assert outcome == %{
+             ok?: false,
+             android_device_disposition: :not_attempted,
+             android_serials: [],
+             android_deploy_lock: nil,
+             android_payload_plan: nil
+           }
 
     assert_raise Mix.Error, "Native build failed", fn ->
       ExUnit.CaptureIO.capture_io(fn ->
