@@ -44,20 +44,45 @@ def manifest(
     *names: str,
     identities: dict[str, str] | None = None,
     payloads: dict[str, bytes] | None = None,
+    status: bytes = b"OK",
 ) -> bytes:
     identities = identities or {}
     payloads = payloads or {}
-    return b"CASEIN_BEAMS_V4\n" + b"".join(
+    return b"CASEIN_BEAMS_V5\n" + b"".join(
         name.encode("ascii")
         + b"\t"
-        + identities.get(name, installed_identity(name)).encode("ascii")
+        + identities.get(
+            name,
+            installed_identity(
+                name,
+                size=len(payloads.get(name, ("fixture:" + name).encode("ascii"))),
+            ),
+        ).encode("ascii")
         + b"\t"
         + hashlib.sha256(
             payloads.get(name, ("fixture:" + name).encode("ascii"))
         ).hexdigest().encode("ascii")
         + b"\n"
         for name in names
-    ) + b"END\n"
+    ) + b"STATUS\t" + status + b"\nEND\n"
+
+
+def read_frame(payload: bytes = b"", *, status: bytes = b"OK") -> bytes:
+    if status == b"OK":
+        return (
+            b"CASEIN_BEAM_READ_V1\nDATA\n"
+            + payload
+            + b"\nSTATUS\tOK\nEND\n"
+        )
+    if payload:
+        return (
+            b"CASEIN_BEAM_READ_V1\nDATA\n"
+            + payload
+            + b"\nSTATUS\t"
+            + status
+            + b"\nEND\n"
+        )
+    return b"CASEIN_BEAM_READ_V1\nSTATUS\t" + status + b"\nEND\n"
 
 
 def encoded_path(path: Path) -> bytes:
@@ -107,12 +132,23 @@ class FakeRunner:
         value = self.beams.get(argv[-2], guard.CommandResult("ok", 41))
         if isinstance(value, guard.CommandResult):
             return value
-        return guard.CommandResult("ok", 0, value)
+        return guard.CommandResult("ok", 0, read_frame(value))
 
 
 class RaisingRunner:
     def run(self, _argv: tuple[str, ...], **_kwargs: object) -> guard.CommandResult:
         raise RuntimeError(SECRET)
+
+
+class BoundaryRunner:
+    def __init__(self, runtime_result: guard.CommandResult) -> None:
+        self.runtime_result = runtime_result
+        self.subprocess_runner = guard.SubprocessCommandRunner()
+
+    def run(self, argv: tuple[str, ...], **kwargs: object) -> guard.CommandResult:
+        if argv == guard.build_runtime_resolution_argv():
+            return self.runtime_result
+        return self.subprocess_runner.run(argv, **kwargs)
 
 
 class ChangingManifestRunner(FakeRunner):
@@ -218,6 +254,81 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
             ),
         )
 
+    def fake_adb_environment(self, label: str) -> tuple[Path, dict[str, str]]:
+        fake_root = Path(self.temp.name) / f"fake-android-{label}"
+        fake_bin = Path(self.temp.name) / f"fake-android-tools-{label}"
+        fake_root.mkdir()
+        fake_bin.mkdir()
+
+        programs = {
+            "adb": f"#!{sys.executable}\n"
+            + """import os
+import subprocess
+import sys
+
+args = sys.argv[1:]
+if len(args) < 9 or args[3:8] != ["exec-out", "run-as", "com.example.casein_mob", "sh", "-c"]:
+    raise SystemExit(2)
+mode = os.environ.get("CASEIN_FAKE_ADB_MODE", "execute")
+if mode == "empty":
+    raise SystemExit(0)
+if mode == "truncated":
+    sys.stdout.buffer.write(b"CASEIN_BEAMS_V5\\n")
+    raise SystemExit(0)
+completed = subprocess.run(
+    ["/bin/sh", "-c", args[8], *args[9:]],
+    cwd=os.environ["CASEIN_FAKE_DEVICE_ROOT"],
+    env=os.environ.copy(),
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
+    check=False,
+)
+sys.stdout.buffer.write(completed.stdout)
+# Android 9 raw exec-out reports only the host-side stream result.
+raise SystemExit(0)
+""",
+            "stat": f"#!{sys.executable}\n"
+            + """import os
+import sys
+
+if os.environ.get("CASEIN_FAKE_STAT_MODE") == "fail":
+    raise SystemExit(1)
+target = sys.argv[-1]
+info = os.fstat(3) if target == "/proc/self/fd/3" else os.stat(target)
+sys.stdout.write(f"9:{info.st_ino}:81a4:{info.st_size}:0:0\\n")
+""",
+            "sha256sum": f"#!{sys.executable}\n"
+            + """import hashlib
+import os
+import sys
+
+if os.environ.get("CASEIN_FAKE_SHA_MODE") == "fail":
+    raise SystemExit(1)
+sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest() + "  -\\n")
+""",
+            "cat": f"#!{sys.executable}\n"
+            + """import os
+import sys
+
+payload = sys.stdin.buffer.read()
+if os.environ.get("CASEIN_FAKE_CAT_MODE") == "partial":
+    sys.stdout.buffer.write(payload[: max(1, len(payload) // 2)])
+    raise SystemExit(1)
+sys.stdout.buffer.write(payload)
+""",
+        }
+        for name, program in programs.items():
+            executable = fake_bin / name
+            executable.write_text(program, encoding="utf-8")
+            executable.chmod(0o755)
+
+        environment = {
+            "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+            "CASEIN_FAKE_DEVICE_ROOT": str(fake_root),
+        }
+        return fake_root, environment
+
     def verify(self, runner: object) -> guard.GuardResult:
         if isinstance(runner, FakeRunner) and runner.runtime_result is None:
             runner.runtime_result = self.runtime_result()
@@ -292,7 +403,7 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
             expected_limit = (
                 guard.MAX_MANIFEST_BYTES
                 if argv[-1] == guard._MANIFEST_SCRIPT
-                else guard.MAX_BEAM_BYTES
+                else guard.MAX_BEAM_BYTES + guard.READ_FRAME_OVERHEAD_BYTES
             )
             self.assertEqual(expected_limit, kwargs["stdout_limit"])
         self.assertNotIn(SERIAL, guard._MANIFEST_SCRIPT)
@@ -416,6 +527,115 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
                 )
                 self.assertEqual(0, result.returncode)
 
+    def test_android9_shaped_fake_adb_exec_out_boundary_is_exact(self) -> None:
+        fake_root, environment = self.fake_adb_environment("exact")
+        installed_root = fake_root / guard.INSTALLED_BEAM_DIR
+        installed_root.mkdir(parents=True)
+        for name, payload in self.payloads.items():
+            (installed_root / name).write_bytes(payload)
+
+        runner = BoundaryRunner(self.runtime_result())
+        with mock.patch.dict(os.environ, environment):
+            result = self.verify(runner)
+
+        self.assertEqual("exact", result.status)
+        self.assertTrue(result.exact)
+
+    def test_fake_adb_host_zero_requires_complete_framed_remote_status(self) -> None:
+        fake_root, environment = self.fake_adb_environment("failures")
+        runner = BoundaryRunner(self.runtime_result())
+
+        for mode in ("empty", "truncated"):
+            with self.subTest(mode=mode), mock.patch.dict(
+                os.environ,
+                {**environment, "CASEIN_FAKE_ADB_MODE": mode},
+            ):
+                self.assertEqual(
+                    "installed_manifest_malformed", self.verify(runner).status
+                )
+
+        with mock.patch.dict(os.environ, environment):
+            self.assertEqual("installed_manifest_missing", self.verify(runner).status)
+
+        installed_root = fake_root / guard.INSTALLED_BEAM_DIR
+        installed_root.mkdir(parents=True)
+        for name, payload in self.payloads.items():
+            (installed_root / name).write_bytes(payload)
+
+        cases = (
+            ("CASEIN_FAKE_STAT_MODE", "fail", "installed_manifest_changed"),
+            ("CASEIN_FAKE_SHA_MODE", "fail", "installed_manifest_failed"),
+            ("CASEIN_FAKE_CAT_MODE", "partial", "installed_beam_failed"),
+        )
+        for variable, value, status in cases:
+            with self.subTest(variable=variable), mock.patch.dict(
+                os.environ,
+                {**environment, variable: value},
+            ):
+                self.assertEqual(status, self.verify(runner).status)
+
+    def test_read_frame_is_size_delimited_and_terminal(self) -> None:
+        payload = b"beam\x00bytes\nSTATUS\tOK\nEND\ninside"
+        self.assertEqual(
+            guard.InstalledRead("ok", payload),
+            guard._parse_installed_read(read_frame(payload), len(payload)),
+        )
+
+        malformed = (
+            b"",
+            b"CASEIN_BEAM_READ_V1\n",
+            b"CASEIN_BEAM_READ_V1\nDATA\nabc",
+            b"CASEIN_BEAM_READ_V1\nSTATUS\tUNKNOWN\nEND\n",
+            read_frame(b"abc") + b"trailing",
+            read_frame(b"abc") + b"STATUS\tOK\nEND\n",
+        )
+        for frame in malformed:
+            with self.subTest(length=len(frame)):
+                self.assertNotEqual(
+                    "ok", guard._parse_installed_read(frame, 3).category
+                )
+
+        self.assertEqual(
+            "size_mismatch",
+            guard._parse_installed_read(read_frame(b"short"), 6).category,
+        )
+        self.assertEqual(
+            "changed",
+            guard._parse_installed_read(
+                read_frame(payload, status=b"CHANGED"), len(payload)
+            ).category,
+        )
+        self.assertEqual(
+            "read_failed",
+            guard._parse_installed_read(
+                read_frame(b"partial", status=b"READ_FAILED"), len(payload)
+            ).category,
+        )
+
+    def test_malformed_read_frames_stop_production_flow_without_retry(self) -> None:
+        first_name = sorted(self.payloads)[0]
+        payload = self.payloads[first_name]
+        malformed = (
+            b"CASEIN_BEAM_READ_V1\nDATA\n" + payload,
+            b"CASEIN_BEAM_READ_V1\nDATA\n" + payload + b"\nEND\n",
+            b"CASEIN_BEAM_READ_V1\nSTATUS\tUNKNOWN\nEND\n",
+            read_frame(payload) + b"STATUS\tOK\nEND\n",
+            read_frame(payload) + b"trailing-" + SECRET.encode(),
+            read_frame(payload[:-1]),
+        )
+        for frame in malformed:
+            with self.subTest(length=len(frame)):
+                beams: dict[str, bytes | guard.CommandResult] = dict(self.payloads)
+                beams[first_name] = guard.CommandResult("ok", 0, frame)
+                runner = self.runner(*self.payloads, beams=beams)
+
+                result = self.verify(runner)
+
+                self.assertEqual("installed_beam_invalid", result.status)
+                self.assertFalse(result.exact)
+                self.assertEqual(2, len(runner.calls))
+                self.assertNotIn(SECRET, json.dumps(result.public()))
+
     def test_invalid_inputs_never_invoke_adb(self) -> None:
         runner = self.runner(*self.payloads)
         cases = (
@@ -512,16 +732,17 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
             self.assertEqual("expected_manifest_limited", self.verify(runner).status)
         self.assertEqual([], runner.calls)
 
-    def test_installed_manifest_subprocess_and_device_entry_failures_are_fixed(self) -> None:
+    def test_installed_manifest_transport_and_framed_device_failures_are_fixed(self) -> None:
         cases = (
             (guard.CommandResult("failed", 1, SECRET.encode()), "installed_manifest_failed"),
             (guard.CommandResult("timeout", None, SECRET.encode()), "installed_manifest_failed"),
             (guard.CommandResult("output_limit", None, SECRET.encode()), "installed_manifest_limited"),
-            (guard.CommandResult("ok", 41, SECRET.encode()), "installed_manifest_missing"),
-            (guard.CommandResult("ok", 42, SECRET.encode()), "installed_manifest_invalid_entry"),
-            (guard.CommandResult("ok", 43, SECRET.encode()), "installed_manifest_limited"),
-            (guard.CommandResult("ok", 44, SECRET.encode()), "installed_manifest_missing"),
-            (guard.CommandResult("ok", 45, SECRET.encode()), "installed_manifest_changed"),
+            (guard.CommandResult("ok", 41, manifest(status=b"MISSING")), "installed_manifest_failed"),
+            (guard.CommandResult("ok", 0, manifest(status=b"MISSING")), "installed_manifest_missing"),
+            (guard.CommandResult("ok", 0, manifest(status=b"INVALID")), "installed_manifest_invalid_entry"),
+            (guard.CommandResult("ok", 0, manifest(status=b"LIMITED")), "installed_manifest_limited"),
+            (guard.CommandResult("ok", 0, manifest(status=b"CHANGED")), "installed_manifest_changed"),
+            (guard.CommandResult("ok", 0, manifest(status=b"HASH_FAILED")), "installed_manifest_failed"),
         )
         for command, status in cases:
             with self.subTest(status=status, code=command.returncode):
@@ -537,14 +758,18 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         digest = b"0" * 64
         malformed = (
             b"",
-            b"CASEIN_BEAMS_V4\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nEND",
-            b"WRONG\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nEND\n",
-            b"CASEIN_BEAMS_V4\nEND\n",
-            b"CASEIN_BEAMS_V4\n\nEND\n",
-            b"CASEIN_BEAMS_V4\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nEND\ntrailing\n",
-            b"CASEIN_BEAMS_V4\nElixir.One.beam\nEND\n",
-            b"CASEIN_BEAMS_V4\nElixir.One.beam\tnot-an-identity\t" + digest + b"\nEND\n",
-            b"CASEIN_BEAMS_V4\nElixir.One.beam\t1:2:81a4:4:5:6\tnot-a-digest\nEND\n",
+            b"CASEIN_BEAMS_V5\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nSTATUS\tOK\nEND",
+            b"WRONG\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nSTATUS\tOK\nEND\n",
+            b"CASEIN_BEAMS_V5\nEND\n",
+            b"CASEIN_BEAMS_V5\nSTATUS\tOK\nEND\n",
+            b"CASEIN_BEAMS_V5\n\nSTATUS\tOK\nEND\n",
+            b"CASEIN_BEAMS_V5\nElixir.One.beam\t1:2:81a4:4:5:6\t" + digest + b"\nSTATUS\tOK\nEND\ntrailing\n",
+            b"CASEIN_BEAMS_V5\nElixir.One.beam\nSTATUS\tOK\nEND\n",
+            b"CASEIN_BEAMS_V5\nElixir.One.beam\tnot-an-identity\t" + digest + b"\nSTATUS\tOK\nEND\n",
+            b"CASEIN_BEAMS_V5\nElixir.One.beam\t1:2:81a4:4:5:6\tnot-a-digest\nSTATUS\tOK\nEND\n",
+            b"CASEIN_BEAMS_V5\nSTATUS\tMISSING\nSTATUS\tMISSING\nEND\n",
+            b"CASEIN_BEAMS_V5\nSTATUS\tUNKNOWN\nEND\n",
+            b"CASEIN_BEAMS_V5\nSTATUS\tMISSING\nEND\nSTATUS\tMISSING\nEND\n",
         )
         for payload in malformed:
             with self.subTest(length=len(payload)):
@@ -561,9 +786,9 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
         self.assertEqual("installed_manifest_duplicate", self.verify(runner).status)
 
         unsafe_payloads = (
-            b"CASEIN_BEAMS_V4\n../escape.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nEND\n",
-            b"CASEIN_BEAMS_V4\nbad name.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nEND\n",
-            b"CASEIN_BEAMS_V4\nElixir.Bad.\xff.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nEND\n",
+            b"CASEIN_BEAMS_V5\n../escape.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nSTATUS\tOK\nEND\n",
+            b"CASEIN_BEAMS_V5\nbad name.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nSTATUS\tOK\nEND\n",
+            b"CASEIN_BEAMS_V5\nElixir.Bad.\xff.beam\t1:2:81a4:4:5:6\t" + b"0" * 64 + b"\nSTATUS\tOK\nEND\n",
         )
         for payload in unsafe_payloads:
             with self.subTest(payload=payload[:20]):
@@ -600,7 +825,7 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
     def test_digest_mismatch_stops_without_retry_or_hash_reflection(self) -> None:
         first_name = sorted(self.payloads)[0]
         changed = dict(self.payloads)
-        changed[first_name] = b"changed-" + SECRET.encode()
+        changed[first_name] = b"x" * len(self.payloads[first_name])
         runner = self.runner(*reversed(tuple(self.payloads)), beams=changed)
 
         result = self.verify(runner)
@@ -616,10 +841,25 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
     def test_installed_read_failures_are_fixed_and_not_retried(self) -> None:
         first_name = sorted(self.payloads)[0]
         cases = (
-            (guard.CommandResult("ok", 41, SECRET.encode()), "installed_beam_missing"),
             (
-                guard.CommandResult("ok", 42, SECRET.encode()),
+                guard.CommandResult("ok", 0, read_frame(status=b"MISSING")),
+                "installed_beam_missing",
+            ),
+            (
+                guard.CommandResult("ok", 0, read_frame(status=b"INVALID")),
                 "installed_beam_invalid_entry",
+            ),
+            (
+                guard.CommandResult("ok", 0, read_frame(status=b"LIMITED")),
+                "installed_beam_limited",
+            ),
+            (
+                guard.CommandResult("ok", 0, read_frame(b"partial", status=b"READ_FAILED")),
+                "installed_beam_failed",
+            ),
+            (
+                guard.CommandResult("ok", 41, read_frame(status=b"MISSING")),
+                "installed_beam_failed",
             ),
             (guard.CommandResult("failed", 1, SECRET.encode()), "installed_beam_failed"),
             (guard.CommandResult("timeout", None, SECRET.encode()), "installed_beam_failed"),
@@ -642,7 +882,11 @@ class AndroidBeamProvenanceGuardTest(unittest.TestCase):
     def test_installed_path_identity_and_closing_snapshot_changes_fail(self) -> None:
         first_name = sorted(self.payloads)[0]
         beams = dict(self.payloads)
-        beams[first_name] = guard.CommandResult("ok", 45, self.payloads[first_name])
+        beams[first_name] = guard.CommandResult(
+            "ok",
+            0,
+            read_frame(self.payloads[first_name], status=b"CHANGED"),
+        )
         runner = self.runner(*self.payloads, beams=beams)
         result = self.verify(runner)
         self.assertEqual("installed_beam_changed", result.status)

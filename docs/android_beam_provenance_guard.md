@@ -69,18 +69,32 @@ The guard:
 4. Runs device commands only as argv scoped to
    `adb --exit-on-write-error -s SERIAL exec-out run-as
    com.example.casein_mob ...`. There is no discovery, alternate device,
-   package fallback, root path, or device mutation.
+   package fallback, root path, or device mutation. Android raw `exec-out` does
+   not carry a trustworthy remote shell exit status, so device classifications
+   never depend on the host process return code. Each fixed remote program
+   emits its semantic result in a bounded terminal status record instead; a
+   nonzero host return code remains a transport failure.
 5. Reads a fixed framed opening manifest of names, bounded file-identity tokens,
-   and SHA-256 digests from `files/otp/casein_mob`, rejecting truncation,
-   malformed frames, duplicates, unsafe names, non-regular entries, symlinks,
-   path/descriptor identity changes, and count/output overages.
+   and SHA-256 digests from `files/otp/casein_mob`. The frame starts with
+   `CASEIN_BEAMS_V5`, ends with exactly one terminal
+   `STATUS<TAB>{OK|MISSING|INVALID|LIMITED|CHANGED|HASH_FAILED}` record and one
+   `END` record, and permits no bytes after `END`. Missing, duplicated, unknown,
+   truncated, or misplaced status records fail as malformed. The guard also
+   rejects malformed entries, duplicates, unsafe names, non-regular entries,
+   symlinks, path/descriptor identity changes, and count/output overages.
 6. Requires exact installed/local basename-set equality before reading installed
    BEAM bytes, and requires each opening-manifest digest to equal the reviewed
    local digest.
 7. Opens each installed entry on a private shell descriptor, requires its
    identity to equal the opening-manifest identity, and sandwiches the bounded
-   read between pathname/descriptor identity checks. A symlink or regular-file
-   swap makes that one read fail; no file is retried.
+   read between pathname/descriptor identity checks. Its private read frame is
+   `CASEIN_BEAM_READ_V1`, `DATA`, the byte-exact BEAM payload, then exactly one
+   terminal status and `END`. On success, the manifest-declared identity size
+   is the payload boundary, so arbitrary BEAM bytes cannot forge or hide the
+   success trailer. A non-success trailer may follow no bytes or a bounded
+   partial/full read as appropriate. Missing, truncated, duplicated, unknown,
+   trailing, or wrong-length frames fail closed. A symlink or regular-file swap
+   makes that one read fail; no file is retried.
 8. Requires every locally computed installed digest to equal the reviewed digest,
    then obtains a closing strict manifest and requires its complete
    name-to-identity-and-digest map to equal the opening installed manifest.
@@ -103,13 +117,14 @@ The process emits exactly one compact JSON line with fixed keys:
 - `beam_digest_match`
 - `exact`
 
-`status` is a fixed enum. Output never includes the device serial, package,
-local or installed paths, source roots, BEAM filenames, child output, file
-bytes, digests, or exception text. Child stderr is discarded and child stdout
-is held only in bounded memory. Resolver failure, crypto-shim mode, subprocess
-timeout, output truncation, local or device races, collisions, missing/extra
-entries, malformed data, and internal exceptions all fail closed with nonzero
-exit status.
+`status` is a fixed enum. Remote frame tokens map only to those fixed public
+classifications; frame contents are never reflected. Output never includes the
+device serial, package, local or installed paths, source roots, BEAM filenames,
+child output, file bytes, digests, or exception text. Child stderr is discarded
+and child stdout is held only in bounded memory. Resolver failure, crypto-shim
+mode, subprocess timeout, output truncation, local or device races, collisions,
+missing/extra entries, malformed data, and internal exceptions all fail closed
+with nonzero exit status.
 
 The guard is read-only: it does not compile, generate a crypto shim, install,
 uninstall, clear, launch, stop, pair, write, rename, or delete app/device data.
