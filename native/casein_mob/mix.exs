@@ -58,7 +58,12 @@ defmodule CaseinMob.MixProject do
       {:mob_scanner, "~> 0.1.1"},
       {:mob_location, "~> 0.1"},
       {:mob_biometric, "~> 0.1"},
-      {:mob_notify, "~> 0.1.2"},
+      # Exact reviewed fork head keeps the Android bridge host-agnostic while
+      # preserving mob_notify's published ~> 0.1.2 API contract.
+      {:mob_notify,
+       github: "dl-alexandre/mob_notify",
+       ref: "53696f3e264777803ee21a4a00cb2ddadb5b402c",
+       override: true},
       {:mob_themes, "~> 0.1"},
       # Code quality — Credo + ex_slop (catches AI-generated patterns
       # like blanket rescue, narrator docs, redundant Enum chains, etc).
