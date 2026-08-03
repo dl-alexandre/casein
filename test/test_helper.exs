@@ -29,6 +29,22 @@ for var <- ~w(CASEIN_GROK_BUNDLE_ROOT CASEIN_GROK_LEADER_ROOT) do
   System.delete_env(var)
 end
 
+# One tmux server per test VM. `config/test.exs` pins the label to a fixed
+# `casein_test`, which is correct for isolating the suite from live sessions but
+# NOT for isolating concurrent suites from each other: this box routinely runs
+# several at once (the deploy poller's gate, the self-hosted PR-gate runner, and
+# an agent's local run all share it). They landed on one server, and the first
+# to finish ran `kill-server` — see the reaping below — out from under the
+# others. The victims surfaced it as `server exited unexpectedly` and
+# `:start_failed, :pty_unavailable` in the live-tmux tests
+# (workspace_pane_split_test.exs, workspace_live_test.exs), i.e. a red gate on a
+# green tree. Suffixing with the OS pid makes the label unique among *live*
+# runs, which is exactly the property the reaping needs. Applied before the app
+# starts so `Casein.Terminals.TmuxServer.label/0` reads the per-run value.
+if is_binary(Application.get_env(:casein, :tmux_server_label)) do
+  Application.put_env(:casein, :tmux_server_label, "casein_test_#{System.pid()}")
+end
+
 ExUnit.start(
   exclude: [:pty, :tmux, :tidewave_available, :preview_e2e],
   max_cases: 4,
@@ -93,7 +109,15 @@ ExUnit.after_suite(fn _result ->
       end)
     end
 
-    _ = System.cmd(tmux, ["-L", "casein_test", "kill-server"], stderr_to_stdout: true)
+    # Reap this run's own server only — a hardcoded label here would both miss
+    # the per-run server and kill a concurrent suite's.
+    case Casein.Terminals.TmuxServer.label() do
+      label when is_binary(label) ->
+        _ = System.cmd(tmux, ["-L", label, "kill-server"], stderr_to_stdout: true)
+
+      _ ->
+        :ok
+    end
   end
 
   :ok
