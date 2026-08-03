@@ -18,6 +18,8 @@ defmodule Casein.Mobile.Intervention do
   alias Casein.Workspaces
 
   @follow_up_max_length 280
+  @choice_max_length 60
+  @choice_limit 4
   @excerpt_lines 8
   # Full-screen agent TUIs commonly leave a block of blank rows below the last
   # rendered message. Capture enough bounded scrollback to reach meaningful
@@ -30,6 +32,7 @@ defmodule Casein.Mobile.Intervention do
     "summarize_blocker" => "Summarize the blocker and the decision you need from me."
   }
   @delivery_action_ids ["follow_up" | Map.keys(@intent_messages)]
+  @choice_action_prefix "choose_"
 
   @doc """
   Project the privacy-safe intervention contract from typed card metadata.
@@ -109,10 +112,40 @@ defmodule Casein.Mobile.Intervention do
 
     case map_value(card, :type) do
       type when type in [:clarification, "clarification"] ->
-        [action_spec(revision)]
+        needs_me_action_specs(card, revision)
 
       _other ->
         resume_action_specs(ResumeCard.project(card), revision)
+    end
+  end
+
+  defp needs_me_action_specs(card, revision) do
+    context = map_value(card, :context)
+    request_kind = map_value(context, :request_kind) || "clarification"
+    choices = map_value(context, :choices) || []
+
+    case validated_declared_choices(request_kind, choices) do
+      {:ok, []} ->
+        [action_spec(revision)]
+
+      {:ok, choices} ->
+        choices
+        |> Enum.with_index(1)
+        |> Enum.map(fn {choice, index} ->
+          %{
+            id: @choice_action_prefix <> Integer.to_string(index),
+            label: choice,
+            style: "chip",
+            destructive?: false,
+            confirmation: nil,
+            input: [],
+            server_message: choice_message(request_kind, choice)
+          }
+          |> maybe_put_revision(revision)
+        end)
+
+      :error ->
+        []
     end
   end
 
@@ -157,16 +190,23 @@ defmodule Casein.Mobile.Intervention do
   end
 
   @spec available_action(map(), String.t()) :: {:ok, map()} | {:error, atom()}
-  def available_action(card, action_id) when action_id in @delivery_action_ids do
-    with %{actions: actions} <- project(card),
+  def available_action(card, action_id) when action_id in @delivery_action_ids,
+    do: fetch_available_action(card, action_id)
+
+  def available_action(card, @choice_action_prefix <> _ = action_id),
+    do: fetch_available_action(card, action_id)
+
+  def available_action(_card, _action_id), do: {:error, :unsupported_action}
+
+  defp fetch_available_action(card, action_id) do
+    with true <- complete_candidate?(card),
+         actions when actions != [] <- action_specs(card),
          action when not is_nil(action) <- Enum.find(actions, &(&1.id == action_id)) do
       {:ok, action}
     else
       _ -> {:error, :intervention_unavailable}
     end
   end
-
-  def available_action(_card, _action_id), do: {:error, :unsupported_action}
 
   @doc """
   Revalidate the current exact target without reading terminal content.
@@ -193,7 +233,7 @@ defmodule Casein.Mobile.Intervention do
 
   @spec delivery_action_id?(String.t()) :: boolean()
   def delivery_action_id?(action_id) when is_binary(action_id),
-    do: action_id in @delivery_action_ids
+    do: action_id in @delivery_action_ids or String.starts_with?(action_id, @choice_action_prefix)
 
   def delivery_action_id?(_action_id), do: false
 
@@ -219,6 +259,10 @@ defmodule Casein.Mobile.Intervention do
        |> Map.put("confirmation", confirmation(action_id))}
     end
   end
+
+  def deliver(card, %{id: @choice_action_prefix <> _, server_message: message}, _validated)
+      when is_binary(message),
+      do: send_follow_up(card, message)
 
   def deliver(_card, _spec, _validated), do: {:error, :unsupported_action}
 
@@ -456,6 +500,32 @@ defmodule Casein.Mobile.Intervention do
       input: []
     }
   end
+
+  defp choice_message("blocker", choice), do: "Use this recovery action: " <> choice
+  defp choice_message(_request_kind, choice), do: "Selected direction: " <> choice
+
+  defp validated_declared_choices("clarification", []), do: {:ok, []}
+
+  defp validated_declared_choices(kind, choices)
+       when kind in ["direction", "blocker"] and is_list(choices) do
+    minimum = if(kind == "direction", do: 2, else: 1)
+
+    if length(choices) in minimum..@choice_limit and
+         Enum.uniq(choices) == choices and
+         Enum.all?(choices, &valid_choice?/1),
+       do: {:ok, choices},
+       else: :error
+  end
+
+  defp validated_declared_choices(_request_kind, _choices), do: :error
+
+  defp valid_choice?(choice) when is_binary(choice) do
+    String.valid?(choice) and choice != "" and String.trim(choice) == choice and
+      String.length(choice) <= @choice_max_length and
+      not Regex.match?(~r/[\x00-\x1F\x7F]/u, choice)
+  end
+
+  defp valid_choice?(_choice), do: false
 
   defp confirmation("continue_task"), do: "Continue request delivered to the exact agent."
   defp confirmation("address_review"), do: "Review request delivered to the exact agent."

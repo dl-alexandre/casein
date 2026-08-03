@@ -172,6 +172,40 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
     end
   end
 
+  @doc "Create a durable typed Needs Me request for an exact role-marked agent pane."
+  @spec request_human_input(map()) :: {:ok, map()} | {:error, term()}
+  def request_human_input(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_or_default_arg(params),
+         {:ok, pane_id} <- string_arg(params, "pane"),
+         {:ok, request_id} <- string_arg(params, "request_id"),
+         {:ok, agent_session_id} <- string_arg(params, "agent_session_id"),
+         {:ok, kind} <- string_arg(params, "kind"),
+         {:ok, prompt} <- string_arg(params, "prompt"),
+         {:ok, event, status} <-
+           Clarification.request(%{
+             workspace_id: workspace_id,
+             tmux_session_id: session,
+             pane_id: pane_id,
+             request_id: request_id,
+             agent_session_id: agent_session_id,
+             request_kind: kind,
+             question: prompt,
+             choices: Map.get(params, "choices") || Map.get(params, :choices) || []
+           }) do
+      {:ok,
+       %{
+         request_event_id: event.id,
+         revision: event.id,
+         kind: kind,
+         session: session,
+         target: pane_id,
+         target_role: "agent",
+         status: if(status == :inserted, do: "created", else: "duplicate")
+       }}
+    end
+  end
+
   # Runtime-agnostic `working` edge: dispatching work into the agent pane means
   # the agent is working, regardless of whether its runtime reports state
   # hooks. Codex has no turn-start notify event, so without this its panes sit

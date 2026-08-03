@@ -23,7 +23,9 @@ defmodule CaseinMob.ReviewDecisionScreen do
       socket
       |> Mob.Socket.assign(:card, card)
       |> Mob.Socket.assign(:note, "")
+      |> Mob.Socket.assign(:selected_action, nil)
       |> Mob.Socket.assign(:submitted_action, nil)
+      |> Mob.Socket.assign(:action_state, :idle)
       |> Mob.Socket.assign(:pending_confirmation, nil)
       |> Mob.Socket.assign(:feed_joined?, false)
       |> Mob.Socket.assign(:fresh_card?, false)
@@ -64,6 +66,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
       |> Mob.Socket.assign(:feed_joined?, feed_joined?)
       |> Mob.Socket.assign(:fresh_card?, fresh_card?)
       |> Mob.Socket.assign(:authoritative?, authoritative?)
+      |> assign_connection_state(status)
       |> maybe_clear_confirmation(authoritative?)
       |> maybe_assign_connection_message(status)
 
@@ -75,20 +78,37 @@ defmodule CaseinMob.ReviewDecisionScreen do
 
     case Enum.find(get(payload, "cards", []), &(get(&1, "id") == card_id)) do
       card when is_map(card) ->
-        authoritative? = socket.assigns.feed_joined?
+        if refresh_identity_matches?(socket.assigns.card, card) do
+          authoritative? = socket.assigns.feed_joined?
 
-        {:noreply,
-         socket
-         |> Mob.Socket.assign(:card, card)
-         |> Mob.Socket.assign(:fresh_card?, true)
-         |> Mob.Socket.assign(:authoritative?, authoritative?)
-         |> Mob.Socket.assign(:card_expired, false)}
+          {:noreply,
+           socket
+           |> Mob.Socket.assign(:card, card)
+           |> Mob.Socket.assign(:fresh_card?, true)
+           |> Mob.Socket.assign(:authoritative?, authoritative?)
+           |> Mob.Socket.assign(:card_expired, false)
+           |> maybe_clear_stale_message()
+           |> maybe_restore_idle_state()}
+        else
+          {:noreply,
+           socket
+           |> Mob.Socket.assign(:fresh_card?, false)
+           |> Mob.Socket.assign(:authoritative?, false)
+           |> Mob.Socket.assign(:action_state, :stale)
+           |> Mob.Socket.assign(:card_expired, true)
+           |> Mob.Socket.assign(:pending_confirmation, nil)
+           |> Mob.Socket.assign(
+             :message,
+             "This request identity changed. Return to Action Center to refresh."
+           )}
+        end
 
       _missing ->
         socket =
           socket
           |> Mob.Socket.assign(:fresh_card?, false)
           |> Mob.Socket.assign(:authoritative?, false)
+          |> Mob.Socket.assign(:action_state, resolved_or_stale_state(socket))
           |> Mob.Socket.assign(:pending_confirmation, nil)
 
         if intervention_action_id?(socket.assigns.submitted_action) or
@@ -113,6 +133,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
       socket =
         socket
         |> Mob.Socket.assign(:message, result_message(result))
+        |> Mob.Socket.assign(:action_state, result_state(result))
         |> handle_action_result(result)
 
       {:noreply, socket}
@@ -171,6 +192,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
                   intervention_context_card(assigns.card),
                   evidence_card(assigns.card),
                   decision_context_card(assigns.card),
+                  state_banner(assigns),
                   note_card(assigns),
                   message(assigns.message),
                   action_bar(assigns),
@@ -488,15 +510,24 @@ defmodule CaseinMob.ReviewDecisionScreen do
   defp note_card(%{card_expired: true}), do: nil
 
   defp note_card(assigns) do
-    if any_note_input?(card_actions(assigns.card)), do: note_field(assigns)
+    case reply_action(assigns) do
+      spec when is_map(spec) -> note_field(assigns, spec)
+      _ -> nil
+    end
   end
 
-  defp any_note_input?(actions) do
-    Enum.any?(actions, &(input_fields(&1) != []))
+  defp reply_action(assigns) do
+    actions = card_actions(assigns.card)
+
+    Enum.find(actions, &(get(&1, "id") == assigns.selected_action and input_fields(&1) != [])) ||
+      case actions do
+        [spec] -> if(input_fields(spec) != [], do: spec)
+        _ -> nil
+      end
   end
 
-  defp note_field(assigns) do
-    follow_up? = follow_up_action?(assigns.card)
+  defp note_field(assigns, spec) do
+    follow_up? = get(spec, "id") == "follow_up"
     remaining = max_input_length(assigns.card) - String.length(assigns.note)
 
     %{
@@ -515,6 +546,8 @@ defmodule CaseinMob.ReviewDecisionScreen do
         %{
           type: :text_field,
           props: %{
+            test_id: "needs-me-reply",
+            accessibility_label: if(follow_up?, do: "Short follow-up", else: "Short reply"),
             value: assigns.note,
             placeholder:
               if(follow_up?,
@@ -575,16 +608,23 @@ defmodule CaseinMob.ReviewDecisionScreen do
           [body_text("No actions available for this card.")]
 
         {false, nil, specs} ->
-          Enum.map(specs, fn spec ->
-            disabled? =
-              not assigns.authoritative? or submitted? or invalid_card? or
-                not intervention_action_contract_valid?(assigns.card, spec) or
-                action_disabled?(spec, assigns.note) or
-                (assigns.intervention_completed and intervention_action?(spec))
+          {chips, buttons} = Enum.split_with(specs, &choice_action?/1)
 
-            action_control(spec, disabled?)
-          end)
-          |> List.flatten()
+          chip_controls = choice_controls(chips, assigns, submitted?, invalid_card?)
+
+          button_controls =
+            Enum.map(buttons, fn spec ->
+              disabled? =
+                not assigns.authoritative? or submitted? or invalid_card? or
+                  not intervention_action_contract_valid?(assigns.card, spec) or
+                  action_disabled?(spec, assigns.note, assigns.selected_action) or
+                  (assigns.intervention_completed and intervention_action?(spec))
+
+              action_control(spec, disabled?)
+            end)
+            |> List.flatten()
+
+          chip_controls ++ button_controls
       end
 
     %{
@@ -592,6 +632,58 @@ defmodule CaseinMob.ReviewDecisionScreen do
       props: %{fill_width: true, gap: 8},
       children: Enum.reject(children, &is_nil/1)
     }
+  end
+
+  defp action_chip(spec, disabled?) do
+    %{
+      type: :button,
+      props: %{
+        test_id: action_test_id(spec),
+        accessibility_label: action_label(spec),
+        text: action_label(spec),
+        background: :surface_raised,
+        text_color: :on_surface,
+        fill_width: false,
+        padding: :space_sm,
+        height: 44.0,
+        disabled: disabled?,
+        on_tap: {self(), {:action, get(spec, "id")}}
+      },
+      children: []
+    }
+  end
+
+  defp choice_controls([], _assigns, _submitted?, _invalid_card?), do: []
+
+  defp choice_controls(chips, assigns, submitted?, invalid_card?) do
+    controls =
+      Enum.map(chips, fn spec ->
+        disabled? =
+          not assigns.authoritative? or submitted? or invalid_card? or
+            not intervention_action_contract_valid?(assigns.card, spec) or
+            (assigns.intervention_completed and intervention_action?(spec))
+
+        action_chip(spec, disabled?)
+      end)
+
+    vertical? = length(chips) > 2 or Enum.any?(chips, &(String.length(action_label(&1)) > 18))
+
+    [
+      %{
+        type: if(vertical?, do: :column, else: :row),
+        props: %{
+          test_id: "needs-me-choice-group",
+          accessibility_label: "Available choices",
+          fill_width: true,
+          gap: 8
+        },
+        children:
+          if(vertical?,
+            do: Enum.map(controls, &put_in(&1, [:props, :fill_width], true)),
+            else: controls
+          )
+      }
+    ]
   end
 
   defp confirmation_controls(spec, authoritative?) do
@@ -606,6 +698,8 @@ defmodule CaseinMob.ReviewDecisionScreen do
       %{
         type: :button,
         props: %{
+          test_id: "needs-me-confirm-#{get(spec, "id")}",
+          accessibility_label: "Confirm #{action_label(spec)}",
           text: "Confirm #{action_label(spec)}",
           background: style_background(get(spec, "style")),
           text_color: style_text_color(get(spec, "style")),
@@ -620,6 +714,8 @@ defmodule CaseinMob.ReviewDecisionScreen do
       %{
         type: :button,
         props: %{
+          test_id: "needs-me-cancel-confirmation",
+          accessibility_label: "Cancel confirmation",
           text: "Cancel",
           background: :surface_raised,
           text_color: :on_surface,
@@ -637,6 +733,8 @@ defmodule CaseinMob.ReviewDecisionScreen do
     %{
       type: :button,
       props: %{
+        test_id: action_test_id(spec),
+        accessibility_label: action_label(spec),
         text: action_label(spec),
         background: style_background(get(spec, "style")),
         text_color: style_text_color(get(spec, "style")),
@@ -683,7 +781,9 @@ defmodule CaseinMob.ReviewDecisionScreen do
             Mob.Socket.assign(socket, :message, "Action unavailable. Refresh required.")
 
           requires_note?(spec) and String.trim(socket.assigns.note) == "" ->
-            Mob.Socket.assign(socket, :message, "Add a short note first")
+            socket
+            |> Mob.Socket.assign(:selected_action, action_id)
+            |> Mob.Socket.assign(:message, "Add a short note first")
 
           true ->
             maybe_confirm(socket, spec)
@@ -746,6 +846,76 @@ defmodule CaseinMob.ReviewDecisionScreen do
     end
   end
 
+  defp assign_connection_state(socket, status) do
+    if status_state(status) in [:disconnected, :error] do
+      Mob.Socket.assign(socket, :action_state, :offline)
+    else
+      socket
+    end
+  end
+
+  defp maybe_restore_idle_state(
+         %{
+           assigns: %{action_state: state, authoritative?: true}
+         } = socket
+       )
+       when state in [:offline, :stale] do
+    Mob.Socket.assign(socket, :action_state, :idle)
+  end
+
+  defp maybe_restore_idle_state(socket), do: socket
+
+  defp maybe_clear_stale_message(%{assigns: %{action_state: :stale}} = socket),
+    do: Mob.Socket.assign(socket, :message, nil)
+
+  defp maybe_clear_stale_message(socket), do: socket
+
+  defp resolved_or_stale_state(socket) do
+    if intervention_action_id?(socket.assigns.submitted_action) or
+         socket.assigns.intervention_completed or socket.assigns.action_state == :accepted,
+       do: :resolved,
+       else: :stale
+  end
+
+  defp result_state({:ok, _result}), do: :accepted
+
+  defp result_state({:error, reason})
+       when reason in [
+              "card_not_found",
+              :card_not_found,
+              "action_revision_stale",
+              :action_revision_stale,
+              "intervention_target_missing",
+              :intervention_target_missing,
+              "intervention_target_stale",
+              :intervention_target_stale,
+              "intervention_target_role_mismatch",
+              :intervention_target_role_mismatch,
+              "intervention_unavailable",
+              :intervention_unavailable,
+              "card_already_intervened",
+              :card_already_intervened
+            ],
+       do: :stale
+
+  defp result_state({:error, _reason}), do: :idle
+
+  defp refresh_identity_matches?(current, incoming) do
+    get(current, "id") == get(incoming, "id") and
+      get(current, "session_id") == get(incoming, "session_id") and
+      get(get(current, "origin", %{}), "id") == get(get(incoming, "origin", %{}), "id") and
+      action_revisions(current) != [] and action_revisions(current) == action_revisions(incoming)
+  end
+
+  defp action_revisions(card) do
+    card
+    |> card_actions()
+    |> Enum.map(&get(&1, "revision"))
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
   defp status_state({state, _reason}) when state in [:joined, :connecting, :disconnected, :error],
     do: state
 
@@ -767,7 +937,9 @@ defmodule CaseinMob.ReviewDecisionScreen do
       )
 
       socket
+      |> Mob.Socket.assign(:selected_action, action_id)
       |> Mob.Socket.assign(:submitted_action, action_id)
+      |> Mob.Socket.assign(:action_state, :pending)
       |> Mob.Socket.assign(:message, "#{action_label(spec)} sent")
     else
       Mob.Socket.assign(socket, :message, "Review card unavailable")
@@ -811,8 +983,8 @@ defmodule CaseinMob.ReviewDecisionScreen do
     Enum.any?(input_fields(spec), &(get(&1, "required") in [true, "true"]))
   end
 
-  defp action_disabled?(spec, note) do
-    requires_note?(spec) and String.trim(note) == ""
+  defp action_disabled?(spec, note, selected_action) do
+    requires_note?(spec) and get(spec, "id") == selected_action and String.trim(note) == ""
   end
 
   defp action_label(spec) do
@@ -822,9 +994,12 @@ defmodule CaseinMob.ReviewDecisionScreen do
     end
   end
 
-  defp follow_up_action?(card) do
-    Enum.any?(card_actions(card), &(get(&1, "id") == "follow_up"))
+  defp choice_action?(spec) do
+    get(spec, "style") == "chip" or
+      (is_binary(get(spec, "id")) and String.starts_with?(get(spec, "id"), "choose_"))
   end
+
+  defp action_test_id(spec), do: "needs-me-action-#{get(spec, "id") || "unknown"}"
 
   defp max_input_length(card) do
     card
@@ -914,7 +1089,8 @@ defmodule CaseinMob.ReviewDecisionScreen do
   defp intervention_action?(spec), do: intervention_action_id?(get(spec, "id"))
 
   defp intervention_action_id?(action_id) do
-    action_id in ["follow_up", "continue_task", "address_review", "summarize_blocker"]
+    action_id in ["follow_up", "continue_task", "address_review", "summarize_blocker"] or
+      (is_binary(action_id) and String.starts_with?(action_id, "choose_"))
   end
 
   defp observe_intervention(socket, result) do
@@ -923,7 +1099,9 @@ defmodule CaseinMob.ReviewDecisionScreen do
          "continue_task",
          "address_review",
          "summarize_blocker"
-       ] do
+       ] or
+         (is_binary(socket.assigns.submitted_action) and
+            String.starts_with?(socket.assigns.submitted_action, "choose_")) do
       SessionClient.mobile_observation(%{
         "event" => "intervention",
         "outcome" => if(match?({:ok, _}, result), do: "succeeded", else: "failed"),
@@ -1032,6 +1210,48 @@ defmodule CaseinMob.ReviewDecisionScreen do
         padding: :space_sm
       },
       children: []
+    }
+  end
+
+  defp state_banner(%{action_state: :idle}), do: nil
+
+  defp state_banner(assigns) do
+    {label, detail, color} =
+      case assigns.action_state do
+        :pending ->
+          {"Sending", "Waiting for the server to accept this action.", :amber_400}
+
+        :accepted ->
+          {"Accepted", "Waiting for an authoritative card update.", :primary}
+
+        :offline ->
+          {"Offline", "Actions are read-only until reconnection and refresh.", :surface_raised}
+
+        :stale ->
+          {"Stale", "This request changed. Return to Action Center to refresh.", :surface_raised}
+
+        :resolved ->
+          {"Resolved", "This request is no longer awaiting action.", :primary}
+      end
+
+    %{
+      type: :column,
+      props: %{
+        test_id: "needs-me-state-#{assigns.action_state}",
+        accessibility_label: "Request state: #{label}",
+        fill_width: true,
+        background: color,
+        padding: :space_sm,
+        gap: 3
+      },
+      children: [
+        %{
+          type: :text,
+          props: %{text: label, text_color: :on_surface, font_weight: "bold"},
+          children: []
+        },
+        body_text(detail)
+      ]
     }
   end
 

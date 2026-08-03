@@ -1005,6 +1005,96 @@ defmodule Casein.Agents.TerminalToolsTest do
     end
   end
 
+  describe "terminal_request_human_input" do
+    test "creates durable direction and blocker requests with declared actions" do
+      session = agent_pair_session!()
+      prepare_local_workspace!()
+
+      :ok =
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :blocked, nil,
+          agent_session_id: "agent-task-human-input"
+        )
+
+      direction = %{
+        "workspace_id" => "alpha",
+        "session" => session,
+        "pane" => "%2",
+        "request_id" => "human-direction-request-1",
+        "agent_session_id" => "agent-task-human-input",
+        "kind" => "direction",
+        "prompt" => "Which compatible path should I take?",
+        "choices" => ["Keep compatibility", "Migrate callers"]
+      }
+
+      assert {:ok, %{status: "created", kind: "direction"} = created} =
+               TerminalTools.invoke("terminal_request_human_input", direction)
+
+      assert {:ok, %{status: "duplicate", request_event_id: event_id}} =
+               TerminalTools.invoke("terminal_request_human_input", direction)
+
+      assert event_id == created.request_event_id
+
+      assert [event] =
+               AgentEvents.recent_for("alpha")
+               |> Enum.filter(&(&1.event_type == "agent.clarification_requested"))
+
+      assert event.payload["request_kind"] == "direction"
+      assert event.payload["response_kind"] == "choice"
+      assert event.payload["choices"] == ["Keep compatibility", "Migrate callers"]
+      refute Map.has_key?(created, :prompt)
+      refute Map.has_key?(created, :choices)
+
+      assert {:error, :idempotency_key_reused} =
+               TerminalTools.invoke(
+                 "terminal_request_human_input",
+                 %{direction | "choices" => ["Keep compatibility", "Stop work"]}
+               )
+
+      assert {:error, :choices_required} =
+               TerminalTools.invoke(
+                 "terminal_request_human_input",
+                 %{
+                   direction
+                   | "request_id" => "human-blocker-request-1",
+                     "kind" => "blocker",
+                     "choices" => []
+                 }
+               )
+
+      assert {:error, :duplicate_choices} =
+               TerminalTools.invoke(
+                 "terminal_request_human_input",
+                 %{
+                   direction
+                   | "request_id" => "human-direction-request-2",
+                     "choices" => ["Same", "Same"]
+                 }
+               )
+    end
+
+    test "clarification compatibility remains free-text and rejects choice injection" do
+      session = agent_pair_session!()
+      prepare_local_workspace!()
+
+      :ok =
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :blocked, nil,
+          agent_session_id: "agent-task-human-clarification"
+        )
+
+      assert {:error, :choices_not_allowed} =
+               TerminalTools.invoke("terminal_request_human_input", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "pane" => "%2",
+                 "request_id" => "human-clarification-request-1",
+                 "agent_session_id" => "agent-task-human-clarification",
+                 "kind" => "clarification",
+                 "prompt" => "What value should I use?",
+                 "choices" => ["client-injected-action"]
+               })
+    end
+  end
+
   describe "terminal_wait_agent_state" do
     test "include_answer returns the final assistant message when done" do
       session = agent_pair_session!()

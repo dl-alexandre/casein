@@ -88,6 +88,9 @@ defmodule Casein.Mobile.Card do
     workspace_id = require_string!(attrs, :workspace_id)
     session_id = require_string!(attrs, :session_id)
 
+    request_kind = attrs[:request_kind] || attrs["request_kind"] || "clarification"
+    choices = attrs[:choices] || attrs["choices"] || []
+
     base(
       :clarification,
       %{
@@ -98,15 +101,17 @@ defmodule Casein.Mobile.Card do
         session_id: session_id,
         priority: :high,
         status: "waiting",
-        kind: "clarification_required",
-        title: "Agent needs clarification",
+        kind: request_kind <> "_required",
+        title: needs_me_title(request_kind),
         body: optional_string(attrs[:question] || attrs["question"]),
         action: %{label: "Respond", route: {:session_detail, workspace_id, session_id}},
         actions: [],
         context: %{
           session_id: session_id,
           task_ref: attrs[:task_ref] || attrs["task_ref"],
-          locator: attrs[:locator] || attrs["locator"]
+          locator: attrs[:locator] || attrs["locator"],
+          request_kind: request_kind,
+          choices: choices
         },
         meta: %{
           run_phase: "waiting",
@@ -114,12 +119,18 @@ defmodule Casein.Mobile.Card do
             attrs[:clarification_event_id] || attrs["clarification_event_id"],
           clarification_request_id:
             attrs[:clarification_request_id] || attrs["clarification_request_id"],
+          request_kind: request_kind,
+          choices: choices,
           last_activity_at: attrs[:last_activity_at] || attrs["last_activity_at"]
         },
         now: now
       }
     )
   end
+
+  defp needs_me_title("direction"), do: "Choose a direction"
+  defp needs_me_title("blocker"), do: "Agent is blocked"
+  defp needs_me_title(_kind), do: "Agent needs clarification"
 
   @spec needs_review(map(), DateTime.t()) :: t() | nil
   def needs_review(attrs, now \\ DateTime.utc_now()) when is_map(attrs) do

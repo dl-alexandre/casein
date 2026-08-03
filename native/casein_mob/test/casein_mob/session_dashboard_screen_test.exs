@@ -1097,6 +1097,113 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     assert newer_offset < older_offset
   end
 
+  test "unresolved Needs Me stays pinned above Live after viewing in an inactive-origin cache" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-b",
+      display_name: "Other origin",
+      url: "https://other.test",
+      token: "other-token"
+    })
+
+    unresolved = %{
+      "id" => "cached-direction",
+      "qualified_id" => "origin-b:cached-direction",
+      "type" => "clarification",
+      "kind" => "direction_required",
+      "status" => "waiting",
+      "priority" => "low",
+      "workspace_id" => "ws-cached",
+      "title" => "Cached unresolved direction",
+      "origin" => %{"id" => "origin-b", "display_name" => "Other origin"},
+      "attention" => %{
+        "identity" => "origin-b:ws-cached:session:run-1",
+        "priority" => "low",
+        "rank" => 1,
+        "required_decision" => "Choose",
+        "unresolved?" => true,
+        "pin" => "needs_me",
+        "since_viewed" => %{"count" => 0, "viewed_through_marker" => 42}
+      }
+    }
+
+    assert :ok =
+             SessionConfig.cache_cards("origin-b", [unresolved], "2026-07-28T08:00:00Z")
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-a",
+      display_name: "Active origin",
+      url: "https://active.test",
+      token: "active-token"
+    })
+
+    live = %{
+      "id" => "live-run",
+      "type" => "in_progress",
+      "kind" => "in_progress",
+      "status" => "running",
+      "priority" => "normal",
+      "workspace_id" => "ws-live",
+      "title" => "Live work",
+      "resume" => %{"state" => "working"},
+      "attention" => %{
+        "identity" => "origin-a:ws-live:session:run-2",
+        "priority" => "low",
+        "rank" => 120,
+        "since_viewed" => %{"count" => 0}
+      }
+    }
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_snapshot, %{"cards" => [live]}})
+
+    rendered = text(view)
+    assert rendered =~ "Cached unresolved direction"
+    refute rendered =~ "Live work"
+    assert rendered =~ "Cached"
+    assert rendered =~ "Read-only"
+
+    view = render_info(view, {:tap, {:filter, :running}})
+    assert text(view) =~ "Live work"
+    refute text(view) =~ "Cached unresolved direction"
+  end
+
+  test "authoritatively handled decision is released from Needs Me" do
+    SessionConfig.put_pairing("https://casein.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "handled-direction",
+               "type" => "clarification",
+               "kind" => "direction_required",
+               "status" => "handled",
+               "workspace_id" => "ws-1",
+               "title" => "Handled direction",
+               "attention" => %{
+                 "required_decision" => "Choose",
+                 "unresolved?" => false,
+                 "pin" => nil
+               },
+               "resume" => %{"state" => "completed"}
+             }
+           ]
+         }}
+      )
+
+    assert text(view) =~ "Nothing needs you"
+    refute text(view) =~ "Handled direction"
+
+    view = render_info(view, {:tap, {:filter, :done}})
+    assert text(view) =~ "Handled direction"
+  end
+
   test "mobile cards can render without pinned workspaces" do
     SessionConfig.put_pairing("https://casein.test", "token")
 

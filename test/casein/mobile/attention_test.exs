@@ -54,6 +54,8 @@ defmodule Casein.Mobile.AttentionTest do
     assert ordered == [review.id, failed.id, working.id]
     assert AttentionInbox.project(review).reason_code == "review_requested"
     assert AttentionInbox.project(review).required_decision == "Review"
+    assert AttentionInbox.project(review).unresolved?
+    assert AttentionInbox.project(review).pin == "needs_me"
     assert AttentionInbox.project(review).notify
     refute AttentionInbox.project(working).notify
 
@@ -72,6 +74,70 @@ defmodule Casein.Mobile.AttentionTest do
              {-projection.rank, card.id}
            end)
            |> Enum.map(& &1.workspace_id) == ["ws-a", "ws-b"]
+  end
+
+  test "viewed and handled are distinct for unresolved Needs Me pinning" do
+    review =
+      Card.needs_review(
+        %{user_id: "dev", workspace_id: "ws-review", session_id: "run", review_count: 1},
+        @now
+      )
+
+    viewed_cursor = %{through_transition_id: 41}
+
+    transition = %{
+      id: 41,
+      event_action: "run.approval_requested",
+      state: "needs_attention",
+      phase: "review",
+      occurred_at: @now
+    }
+
+    viewed = AttentionInbox.project(review, [transition], viewed_cursor, "origin-a")
+    assert viewed.since_viewed.count == 0
+    assert viewed.unresolved?
+    assert viewed.pin == "needs_me"
+    assert viewed.identity == "origin-a:#{AttentionInbox.key(review)}"
+
+    handled = AttentionInbox.project(%{review | status: "handled"}, [], nil, "origin-a")
+    refute handled.unresolved?
+    assert handled.pin == nil
+  end
+
+  test "generic failure, outcome, and deploy decisions never receive a Needs Me pin" do
+    failed =
+      Card.outcome(
+        %{user_id: "dev", workspace_id: "ws-failed", session_id: "run", outcome: :failed},
+        @now
+      )
+
+    completed =
+      Card.outcome(
+        %{user_id: "dev", workspace_id: "ws-complete", session_id: "run", outcome: :succeeded},
+        @now
+      )
+
+    deploy_failed =
+      AttentionInbox.project(failed, [
+        %{
+          id: 1,
+          event_action: "deploy.failed",
+          state: "failed",
+          phase: "deploying",
+          reason_code: "deployment_failed",
+          occurred_at: @now
+        }
+      ])
+
+    for projection <- [
+          AttentionInbox.project(failed),
+          AttentionInbox.project(completed),
+          deploy_failed
+        ] do
+      assert is_binary(projection.required_decision)
+      refute projection.unresolved?
+      assert projection.pin == nil
+    end
   end
 
   test "since-viewed exact markers do not swallow a later event" do

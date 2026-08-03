@@ -1054,12 +1054,11 @@ defmodule CaseinMob.SessionDashboardScreen do
   # Segment classification reads the normalized `kind`/`status`, falling back to
   # the legacy `type` for compatibility.
   defp card_segment(card) do
-    required_decision = card |> get("attention", %{}) |> get("required_decision")
     resume_state = card |> get("resume", %{}) |> get("state") |> to_string()
     kind = to_string(get(card, "kind") || get(card, "type") || "")
     status = to_string(get(card, "status") || "")
 
-    if is_binary(required_decision) and required_decision != "" do
+    if unresolved_needs_me?(card) do
       :needs_action
     else
       case resume_segment(resume_state) do
@@ -1092,11 +1091,61 @@ defmodule CaseinMob.SessionDashboardScreen do
     rank = get(attention, "rank", 0)
 
     {
+      if(unresolved_needs_me?(card), do: 0, else: 1),
       attention_priority_rank(get(attention, "priority") || get(card, "priority")),
       if(is_integer(rank), do: rank * -1, else: 0),
       attention_recency_rank(card),
       to_string(get(attention, "identity") || get(card, "qualified_id") || get(card, "id"))
     }
+  end
+
+  # New snapshots carry the server-owned sticky bit and attention pin. The
+  # required-decision fallback keeps previously cached snapshots ordered during
+  # a rolling client/server upgrade without turning "viewed" into "handled".
+  defp unresolved_needs_me?(card) do
+    attention = get(card, "attention", %{})
+    required_decision = get(attention, "required_decision")
+    status = to_string(get(card, "status") || "")
+    kind = to_string(get(card, "kind") || "")
+    type = to_string(get(card, "type") || "")
+    terminal? = status in ["resolved", "done", "handled", "dismissed"]
+
+    cond do
+      get(card, "sticky") == true ->
+        true
+
+      get(attention, "unresolved?") == true ->
+        true
+
+      get(attention, "pin") == "needs_me" ->
+        true
+
+      Map.has_key?(attention, "unresolved?") ->
+        false
+
+      terminal? ->
+        false
+
+      is_binary(required_decision) and required_decision != "" ->
+        true
+
+      # Inactive-origin caches intentionally omit the attention object. These
+      # bounded server-declared kinds/statuses preserve pinning without caching
+      # actions or inventing authority on-device.
+      type in ["clarification", "needs_review"] ->
+        true
+
+      kind in [
+        "clarification_required",
+        "direction_required",
+        "blocker_required",
+        "approval_required"
+      ] ->
+        true
+
+      true ->
+        false
+    end
   end
 
   defp attention_recency_rank(card) do

@@ -17,6 +17,9 @@ defmodule Casein.Mobile.Clarification do
   @request_type "agent.clarification_requested"
   @resolved_type "agent.clarification_resolved"
   @question_max 200
+  @choice_max 60
+  @choice_limit 4
+  @request_kinds ~w(clarification direction blocker)
   @open_limit 250
   @id_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9._:-]{7,239}\z/
 
@@ -37,6 +40,8 @@ defmodule Casein.Mobile.Clarification do
          {:ok, expected_agent_session_id} <- identifier(attrs, :agent_session_id),
          {:ok, request_id} <- identifier(attrs, :request_id),
          {:ok, question} <- validate_question(value(attrs, :question)),
+         {:ok, request_kind} <- validate_request_kind(value(attrs, :request_kind)),
+         {:ok, choices} <- validate_choices(value(attrs, :choices), request_kind),
          {:ok, target} <-
            Intervention.validate_agent_task_target(
              workspace_id,
@@ -67,7 +72,9 @@ defmodule Casein.Mobile.Clarification do
             "origin_id" => Origin.id(),
             "request_id" => request_id,
             "question" => question,
-            "response_kind" => "short_text"
+            "request_kind" => request_kind,
+            "response_kind" => response_kind(request_kind, choices),
+            "choices" => choices
           }
         })
 
@@ -76,6 +83,11 @@ defmodule Casein.Mobile.Clarification do
           audit("mobile.clarification_requested", event)
           broadcast({:clarification_requested, event})
           inserted
+
+        {:ok, event, :duplicate} = duplicate ->
+          if duplicate_matches?(event, request_kind, question, choices),
+            do: duplicate,
+            else: {:error, :idempotency_key_reused}
 
         other ->
           other
@@ -131,6 +143,13 @@ defmodule Casein.Mobile.Clarification do
   end
 
   @spec open_for_workspace(String.t()) :: [AgentEvent.t()]
+  @doc """
+  Returns the newest unresolved request for each exact agent-session/pane target.
+
+  A newer request on the same target supersedes an older unresolved request;
+  resolution remains bound to the exact durable request event id. Requests from
+  another origin are never projected into the current origin.
+  """
   def open_for_workspace(workspace_id) when is_binary(workspace_id) do
     AgentEvents.list_open_clarifications(
       workspace_id,
@@ -138,6 +157,7 @@ defmodule Casein.Mobile.Clarification do
       @resolved_type,
       limit: @open_limit
     )
+    |> Enum.filter(&(payload(&1, "origin_id") == Origin.id()))
   end
 
   @spec card(AgentEvent.t(), String.t(), String.t()) :: Card.t()
@@ -150,6 +170,8 @@ defmodule Casein.Mobile.Clarification do
         workspace_name: workspace_name,
         session_id: event.agent_session_id,
         question: payload(event, "question"),
+        request_kind: payload(event, "request_kind") || "clarification",
+        choices: payload(event, "choices") || [],
         task_ref: %{type: "agent_task", id: event.agent_session_id},
         locator: %{
           tmux_session: event.tmux_session_id,
@@ -181,6 +203,56 @@ defmodule Casein.Mobile.Clarification do
   end
 
   defp validate_question(_question), do: {:error, :question_required}
+
+  defp validate_request_kind(nil), do: {:ok, "clarification"}
+
+  defp validate_request_kind(kind) when kind in @request_kinds, do: {:ok, kind}
+  defp validate_request_kind(_kind), do: {:error, :invalid_request_kind}
+
+  defp validate_choices(nil, kind) when kind in ["direction", "blocker"],
+    do: {:error, :choices_required}
+
+  defp validate_choices(nil, _kind), do: {:ok, []}
+
+  defp validate_choices(choices, kind) when is_list(choices) do
+    sanitized = Enum.map(choices, &sanitize_choice/1)
+    valid_choices = for {:ok, choice} <- sanitized, do: choice
+    unique_choices = Enum.uniq(valid_choices)
+
+    cond do
+      kind == "clarification" and choices != [] -> {:error, :choices_not_allowed}
+      length(choices) > @choice_limit -> {:error, :too_many_choices}
+      Enum.any?(sanitized, &match?({:error, _}, &1)) -> {:error, :invalid_choice}
+      length(unique_choices) != length(valid_choices) -> {:error, :duplicate_choices}
+      kind == "direction" and length(unique_choices) < 2 -> {:error, :choices_required}
+      kind == "blocker" and unique_choices == [] -> {:error, :choices_required}
+      true -> {:ok, unique_choices}
+    end
+  end
+
+  defp validate_choices(_choices, _kind), do: {:error, :invalid_choices}
+
+  defp sanitize_choice(choice) when is_binary(choice) do
+    choice = choice |> Sanitizer.redact_text() |> String.trim()
+
+    if choice != "" and String.length(choice) <= @choice_max and
+         not Regex.match?(~r/[\x00-\x1F\x7F]/u, choice),
+       do: {:ok, choice},
+       else: {:error, :invalid_choice}
+  end
+
+  defp sanitize_choice(_choice), do: {:error, :invalid_choice}
+
+  defp response_kind("direction", [_ | _]), do: "choice"
+  defp response_kind("blocker", [_ | _]), do: "choice"
+  defp response_kind(_kind, _choices), do: "short_text"
+
+  defp duplicate_matches?(event, request_kind, question, choices) do
+    payload(event, "origin_id") == Origin.id() and
+      payload(event, "request_kind") in [nil, request_kind] and
+      payload(event, "question") == question and
+      (payload(event, "choices") || []) == choices
+  end
 
   defp identifier(attrs, key) do
     case value(attrs, key) do
