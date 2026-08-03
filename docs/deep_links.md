@@ -74,6 +74,7 @@ a raw shell. A stray `?mode=raw` from an old link is silently ignored.
 
 | Surface | URL scope |
 |---------|-----------|
+| Web Push notification click | `?session=` plus whatever the card's locator carried (`window`, `pane`, `tmux_session`, `tab`); an alert with no session uses `?drawer=notifications`. Built by `Casein.Push.WebLink` — native pushes keep the `casein://` scheme, browsers get this. |
 | Session copy (picker, workspace index) | `?session=` only |
 | Window copy (picker row) | `?session=&window=` |
 | Full view (`C-b y`, leader copy-link) | session + window + pane + zoom when set |
