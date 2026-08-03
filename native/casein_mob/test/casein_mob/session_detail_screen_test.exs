@@ -114,6 +114,127 @@ defmodule CaseinMob.SessionDetailScreenTest do
            }
   end
 
+  test "targeted resume selects the exact current run and displays its identity" do
+    target_session_id = "run-target-" <> String.duplicate("x", 50)
+
+    view =
+      SessionDetailScreen
+      |> mount_screen(%{
+        workspace_id: "ws-1",
+        session_id: target_session_id,
+        source: :mobile_resume
+      })
+      |> render_info(
+        {:session_snapshot, "ws-1",
+         run_snapshot(
+           run(target_session_id, "target command", "succeeded"),
+           [run("run-other", "unrelated command", "failed")]
+         )}
+      )
+
+    assert_renderable(view)
+    assert assigns(view).target_session_id == target_session_id
+    assert text(view) =~ "Resumed session"
+    assert text(view) =~ "Session #{String.slice(target_session_id, 0, 39)}..."
+    refute text(view) =~ target_session_id
+    assert text(view) =~ "target command"
+    refute text(view) =~ "unrelated command"
+  end
+
+  test "targeted resume selects an exact recent run instead of the newer current run" do
+    view =
+      SessionDetailScreen
+      |> mount_screen(%{workspace_id: "ws-1", session_id: "run-target"})
+      |> render_info(
+        {:session_snapshot, "ws-1",
+         run_snapshot(
+           run("run-newer", "newer unrelated command", "running"),
+           [
+             run("run-target", "exact recent command", "succeeded"),
+             run("run-other", "other recent command", "failed")
+           ]
+         )}
+      )
+
+    assert_renderable(view)
+    assert text(view) =~ "Resumed session"
+    assert text(view) =~ "Session run-target"
+    assert text(view) =~ "exact recent command"
+    refute text(view) =~ "newer unrelated command"
+    refute text(view) =~ "other recent command"
+  end
+
+  test "targeted resume fails closed when the exact run is absent" do
+    target_session_id = "run-missing-" <> String.duplicate("y", 50)
+
+    view =
+      SessionDetailScreen
+      |> mount_screen(%{workspace_id: "ws-1", session_id: target_session_id})
+      |> render_info(
+        {:session_snapshot, "ws-1",
+         run_snapshot(
+           run("run-current", "current unrelated command", "running"),
+           [run("run-recent", "recent unrelated command", "succeeded")]
+         )}
+      )
+
+    assert_renderable(view)
+    assert text(view) =~ "Requested session unavailable"
+    assert text(view) =~ "Session #{String.slice(target_session_id, 0, 39)}..."
+    refute text(view) =~ target_session_id
+    assert text(view) =~ "partial or this session was replaced"
+    assert text(view) =~ "No other run was substituted"
+    refute text(view) =~ "current unrelated command"
+    refute text(view) =~ "recent unrelated command"
+  end
+
+  test "targeted resume fails closed when a later snapshot replaces the exact run" do
+    view =
+      SessionDetailScreen
+      |> mount_screen(%{workspace_id: "ws-1", session_id: "run-target"})
+      |> render_info(
+        {:session_snapshot, "ws-1",
+         run_snapshot(run("run-target", "original target command", "succeeded"), [])}
+      )
+
+    assert text(view) =~ "original target command"
+
+    view =
+      render_info(
+        view,
+        {:session_snapshot, "ws-1",
+         run_snapshot(run("run-replacement", "replacement command", "running"), [])}
+      )
+
+    assert_renderable(view)
+    assert text(view) =~ "Requested session unavailable"
+    assert text(view) =~ "Session run-target"
+    refute text(view) =~ "original target command"
+    refute text(view) =~ "replacement command"
+  end
+
+  test "workspace detail without a target session preserves the generic overview" do
+    view =
+      SessionDetailScreen
+      |> mount_screen(%{workspace_id: "ws-1"})
+      |> render_info(
+        {:session_snapshot, "ws-1",
+         run_snapshot(
+           run("run-current", "current workspace command", "running"),
+           [run("run-recent", "recent workspace command", "succeeded")]
+         )}
+      )
+
+    assert_renderable(view)
+    assert assigns(view).target_session_id == nil
+    assert text(view) =~ "Current run"
+    assert text(view) =~ "current workspace command"
+    assert text(view) =~ "Recent runs"
+    assert text(view) =~ "recent workspace command"
+    refute text(view) =~ "Resumed session"
+    refute text(view) =~ "Requested session unavailable"
+  end
+
   test "pin and unpin update device-local workspace pins" do
     view = mount_screen(SessionDetailScreen, %{workspace_id: "ws-1"})
 
@@ -222,5 +343,20 @@ defmodule CaseinMob.SessionDetailScreenTest do
     assert text(view) =~ "preview_open"
     assert text(view) =~ "preview mcp"
     assert text(view) =~ "error"
+  end
+
+  defp run(id, command_id, status) do
+    %{"id" => id, "command_id" => command_id, "status" => status}
+  end
+
+  defp run_snapshot(current_run, recent_runs) do
+    %{
+      "mode" => "review",
+      "pending_reviews" => 0,
+      "current_run" => current_run,
+      "recent_runs" => recent_runs,
+      "recent_audit" => [],
+      "active_agents" => []
+    }
   end
 end
