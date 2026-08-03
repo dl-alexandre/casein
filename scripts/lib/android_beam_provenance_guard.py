@@ -43,6 +43,7 @@ MAX_SOURCE_NAME_BYTES = 128
 MAX_SOURCE_PATH_BYTES = 4096
 MAX_INSTALLED_IDENTITY_BYTES = 96
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+READ_FRAME_OVERHEAD_BYTES = 256
 MAX_RUNTIME_RESOLUTION_BYTES = 64 * 1024
 MAX_BEAM_BYTES = 16 * 1024 * 1024
 MAX_AGGREGATE_BEAM_BYTES = 128 * 1024 * 1024
@@ -60,8 +61,22 @@ _INSTALLED_IDENTITY_RE = re.compile(
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
-_MANIFEST_HEADER = b"CASEIN_BEAMS_V4"
+_MANIFEST_HEADER = b"CASEIN_BEAMS_V5"
 _MANIFEST_END = b"END"
+_MANIFEST_STATUS_TAG = b"STATUS"
+_MANIFEST_STATUSES = frozenset(
+    {b"OK", b"MISSING", b"INVALID", b"LIMITED", b"CHANGED", b"HASH_FAILED"}
+)
+_READ_HEADER = b"CASEIN_BEAM_READ_V1\n"
+_READ_DATA = b"DATA\n"
+_READ_STATUS_RECORDS = {
+    b"OK": b"STATUS\tOK\nEND\n",
+    b"MISSING": b"STATUS\tMISSING\nEND\n",
+    b"INVALID": b"STATUS\tINVALID\nEND\n",
+    b"LIMITED": b"STATUS\tLIMITED\nEND\n",
+    b"CHANGED": b"STATUS\tCHANGED\nEND\n",
+    b"READ_FAILED": b"STATUS\tREAD_FAILED\nEND\n",
+}
 _RUNTIME_HEADER = b"CASEIN_RUNTIME_BEAM_DIRS_V4"
 
 _RUNTIME_DIRS_ELIXIR = r"""
@@ -87,54 +102,79 @@ IO.binwrite("END\n")
 # The script is fixed program text.  The serial and package are separate,
 # validated argv elements; no caller value is interpolated into this program.
 _MANIFEST_SCRIPT = f"""\
+exec 2>/dev/null
+finish() {{
+  printf 'STATUS\\t%s\\nEND\\n' "$1"
+  exit 0
+}}
 dir='{INSTALLED_BEAM_DIR}'
-[ -d \"$dir\" ] || exit 41
-printf 'CASEIN_BEAMS_V4\\n'
+printf 'CASEIN_BEAMS_V5\\n' || exit 0
+[ -d \"$dir\" ] || finish MISSING
 count=0
 found=0
 for path in \"$dir\"/*.beam \"$dir\"/.*.beam; do
   [ -e \"$path\" ] || [ -L \"$path\" ] || continue
   found=1
-  [ -f \"$path\" ] && [ ! -L \"$path\" ] || exit 42
+  [ -f \"$path\" ] && [ ! -L \"$path\" ] || finish INVALID
   count=$((count + 1))
-  [ \"$count\" -le {MAX_BEAMS} ] || exit 43
+  [ \"$count\" -le {MAX_BEAMS} ] || finish LIMITED
   name=${{path##*/}}
-  before=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || exit 45
-  exec 3<\"$path\" || exit 45
-  opened=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || exit 45
-  after_open=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || exit 45
-  [ -f \"$path\" ] && [ ! -L \"$path\" ] || exit 45
-  [ \"$before\" = \"$opened\" ] && [ \"$after_open\" = \"$opened\" ] || exit 45
-  digest_line=$(sha256sum <&3) || exit 46
+  before=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish CHANGED
+  exec 3<\"$path\" || finish CHANGED
+  opened=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || finish CHANGED
+  after_open=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish CHANGED
+  [ -f \"$path\" ] && [ ! -L \"$path\" ] || finish CHANGED
+  [ \"$before\" = \"$opened\" ] && [ \"$after_open\" = \"$opened\" ] || finish CHANGED
+  digest_line=$(sha256sum <&3) || finish HASH_FAILED
   digest=${{digest_line%% *}}
-  after_hash=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || exit 45
-  after_path=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || exit 45
-  [ -f \"$path\" ] && [ ! -L \"$path\" ] || exit 45
-  [ \"$opened\" = \"$after_hash\" ] && [ \"$after_path\" = \"$opened\" ] || exit 45
+  after_hash=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || finish CHANGED
+  after_path=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish CHANGED
+  [ -f \"$path\" ] && [ ! -L \"$path\" ] || finish CHANGED
+  [ \"$opened\" = \"$after_hash\" ] && [ \"$after_path\" = \"$opened\" ] || finish CHANGED
   exec 3<&-
   printf '%s\\t%s\\t%s\\n' \"$name\" \"$opened\" \"$digest\"
 done
-[ \"$found\" -eq 1 ] || exit 44
-printf 'END\\n'
+[ \"$found\" -eq 1 ] || finish MISSING
+finish OK
 """
 
 _READ_SCRIPT = f"""\
+exec 2>/dev/null
+finish() {{
+  printf 'STATUS\\t%s\\nEND\\n' "$1"
+  exit 0
+}}
+finish_data() {{
+  printf '\\nSTATUS\\t%s\\nEND\\n' "$1"
+  exit 0
+}}
 dir='{INSTALLED_BEAM_DIR}'
 path="$dir/$1"
 expected="$2"
-[ -e \"$path\" ] || [ -L \"$path\" ] || exit 41
-[ -f \"$path\" ] && [ ! -L \"$path\" ] || exit 42
-before=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || exit 41
-exec 3<\"$path\" || exit 41
-opened=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || exit 42
-after_open=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || exit 45
-[ -f \"$path\" ] && [ ! -L \"$path\" ] || exit 45
-[ \"$expected\" = \"$before\" ] && [ \"$before\" = \"$opened\" ] && [ \"$after_open\" = \"$opened\" ] || exit 45
-cat <&3 || exit 46
-after_read=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || exit 45
-after_path=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || exit 45
-[ -f \"$path\" ] && [ ! -L \"$path\" ] || exit 45
-[ \"$opened\" = \"$after_read\" ] && [ \"$after_path\" = \"$opened\" ] || exit 45
+printf 'CASEIN_BEAM_READ_V1\\n' || exit 0
+[ -e \"$path\" ] || [ -L \"$path\" ] || finish MISSING
+[ -f \"$path\" ] && [ ! -L \"$path\" ] || finish INVALID
+rest=${{expected#*:}}
+rest=${{rest#*:}}
+rest=${{rest#*:}}
+expected_size=${{rest%%:*}}
+[ \"$expected_size\" -gt 0 ] && [ \"$expected_size\" -le {MAX_BEAM_BYTES} ] || finish LIMITED
+before=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish MISSING
+exec 3<\"$path\" || finish MISSING
+opened=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || finish INVALID
+after_open=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish CHANGED
+[ -f \"$path\" ] && [ ! -L \"$path\" ] || finish CHANGED
+[ \"$expected\" = \"$before\" ] &&
+  [ \"$before\" = \"$opened\" ] &&
+  [ \"$after_open\" = \"$opened\" ] || finish CHANGED
+printf 'DATA\\n' || exit 0
+cat <&3 || finish_data READ_FAILED
+after_read=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || finish_data CHANGED
+after_path=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish_data CHANGED
+[ -f \"$path\" ] && [ ! -L \"$path\" ] || finish_data CHANGED
+[ \"$opened\" = \"$after_read\" ] && [ \"$after_path\" = \"$opened\" ] || finish_data CHANGED
+exec 3<&-
+finish_data OK
 """
 
 STATUSES = frozenset(
@@ -261,6 +301,12 @@ class InstalledManifest:
     @property
     def names(self) -> frozenset[str]:
         return frozenset(self.entries)
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class InstalledRead:
+    category: str
+    payload: bytes = b""
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -545,6 +591,9 @@ def _verify_android_beam_provenance(
 
     installed_total = 0
     for beam_name in sorted(expected_names):
+        expected_size = _validate_installed_identity(
+            installed.entries[beam_name].identity
+        )
         read_result = runner.run(
             build_read_argv(
                 serial,
@@ -552,7 +601,7 @@ def _verify_android_beam_provenance(
                 beam_name,
                 installed.entries[beam_name].identity,
             ),
-            stdout_limit=MAX_BEAM_BYTES,
+            stdout_limit=MAX_BEAM_BYTES + READ_FRAME_OVERHEAD_BYTES,
             timeout_seconds=COMMAND_TIMEOUT_SECONDS,
         )
         if read_result.category == "output_limit":
@@ -560,23 +609,33 @@ def _verify_android_beam_provenance(
         if read_result.category != "ok":
             return GuardResult("installed_beam_failed", **matched)
         if read_result.returncode != 0:
-            status = {
-                41: "installed_beam_missing",
-                42: "installed_beam_invalid_entry",
-                45: "installed_beam_changed",
-                46: "installed_beam_failed",
-            }.get(read_result.returncode, "installed_beam_failed")
-            return GuardResult(status, **matched)
-        if len(read_result.stdout) > MAX_BEAM_BYTES:
-            return GuardResult("installed_beam_limited", **matched)
-        if not read_result.stdout:
-            return GuardResult("installed_beam_invalid", **matched)
+            return GuardResult("installed_beam_failed", **matched)
 
-        installed_total += len(read_result.stdout)
+        installed_read = _parse_installed_read(read_result.stdout, expected_size)
+        if installed_read.category == "size_mismatch":
+            if (
+                installed_total + len(installed_read.payload)
+                > MAX_AGGREGATE_BEAM_BYTES
+            ):
+                return GuardResult("installed_beam_limited", **matched)
+            return GuardResult("installed_beam_invalid", **matched)
+        if installed_read.category != "ok":
+            status = {
+                "missing": "installed_beam_missing",
+                "invalid_entry": "installed_beam_invalid_entry",
+                "limited": "installed_beam_limited",
+                "changed": "installed_beam_changed",
+                "read_failed": "installed_beam_failed",
+                "malformed": "installed_beam_invalid",
+            }.get(installed_read.category, "internal_error")
+            return GuardResult(status, **matched)
+
+        installed_total += len(installed_read.payload)
         if installed_total > MAX_AGGREGATE_BEAM_BYTES:
             return GuardResult("installed_beam_limited", **matched)
         if not hmac.compare_digest(
-            hashlib.sha256(read_result.stdout).digest(), expected.digests[beam_name]
+            hashlib.sha256(installed_read.payload).digest(),
+            expected.digests[beam_name],
         ):
             return GuardResult("beam_digest_mismatch", **matched)
 
@@ -608,18 +667,16 @@ def _read_installed_manifest(
     if result.category != "ok":
         return ("installed_manifest_failed", None)
     if result.returncode != 0:
-        status = {
-            41: "installed_manifest_missing",
-            42: "installed_manifest_invalid_entry",
-            43: "installed_manifest_limited",
-            44: "installed_manifest_missing",
-            45: "installed_manifest_changed",
-        }.get(result.returncode, "installed_manifest_failed")
-        return (status, None)
+        return ("installed_manifest_failed", None)
 
     manifest = _parse_installed_manifest(result.stdout)
     if manifest.category != "ok":
         status = {
+            "remote_missing": "installed_manifest_missing",
+            "remote_invalid": "installed_manifest_invalid_entry",
+            "remote_limited": "installed_manifest_limited",
+            "remote_changed": "installed_manifest_changed",
+            "remote_hash_failed": "installed_manifest_failed",
             "malformed": "installed_manifest_malformed",
             "duplicate": "installed_manifest_duplicate",
             "unsafe_name": "installed_manifest_unsafe_name",
@@ -931,14 +988,27 @@ def _parse_installed_manifest(payload: bytes) -> InstalledManifest:
     if not payload or len(payload) > MAX_MANIFEST_BYTES or not payload.endswith(b"\n"):
         return InstalledManifest("malformed", {})
     lines = payload.split(b"\n")
-    if len(lines) < 4 or lines[0] != _MANIFEST_HEADER or lines[-2] != _MANIFEST_END:
+    if (
+        len(lines) < 4
+        or lines[0] != _MANIFEST_HEADER
+        or lines[-2] != _MANIFEST_END
+        or lines[-1] != b""
+    ):
         return InstalledManifest("malformed", {})
-    if lines[-1] != b"" or any(not line for line in lines[1:-2]):
+    if any(not line for line in lines[1:-2]):
         return InstalledManifest("malformed", {})
+    status_fields = lines[-3].split(b"\t")
+    if (
+        len(status_fields) != 2
+        or status_fields[0] != _MANIFEST_STATUS_TAG
+        or status_fields[1] not in _MANIFEST_STATUSES
+    ):
+        return InstalledManifest("malformed", {})
+    remote_status = status_fields[1]
 
     entries: dict[str, InstalledEntry] = {}
     aggregate_size = 0
-    for encoded_entry in lines[1:-2]:
+    for encoded_entry in lines[1:-3]:
         fields = encoded_entry.split(b"\t")
         if len(fields) != 3:
             return InstalledManifest("malformed", {})
@@ -972,9 +1042,84 @@ def _parse_installed_manifest(payload: bytes) -> InstalledManifest:
             return InstalledManifest("limited", {})
         entries[name] = InstalledEntry(identity, bytes.fromhex(digest_text))
 
-    if not entries:
+    if remote_status == b"OK" and not entries:
         return InstalledManifest("malformed", {})
-    return InstalledManifest("ok", entries)
+    category = {
+        b"OK": "ok",
+        b"MISSING": "remote_missing",
+        b"INVALID": "remote_invalid",
+        b"LIMITED": "remote_limited",
+        b"CHANGED": "remote_changed",
+        b"HASH_FAILED": "remote_hash_failed",
+    }[remote_status]
+    return InstalledManifest(category, entries)
+
+
+def _parse_installed_read(payload: bytes, expected_size: int) -> InstalledRead:
+    if (
+        not payload
+        or not isinstance(expected_size, int)
+        or expected_size <= 0
+        or expected_size > MAX_BEAM_BYTES
+        or len(payload) > MAX_BEAM_BYTES + READ_FRAME_OVERHEAD_BYTES
+        or not payload.startswith(_READ_HEADER)
+    ):
+        category = (
+            "limited"
+            if isinstance(expected_size, int) and expected_size > MAX_BEAM_BYTES
+            else "malformed"
+        )
+        return InstalledRead(category)
+
+    matching_statuses = [
+        status
+        for status, record in _READ_STATUS_RECORDS.items()
+        if payload.endswith(record)
+    ]
+    if len(matching_statuses) != 1:
+        return InstalledRead("malformed")
+    remote_status = matching_statuses[0]
+    record = _READ_STATUS_RECORDS[remote_status]
+    prefix = payload[: -len(record)]
+
+    if remote_status == b"OK":
+        data_prefix = _READ_HEADER + _READ_DATA
+        if not prefix.startswith(data_prefix) or not prefix.endswith(b"\n"):
+            return InstalledRead("malformed")
+        beam = prefix[len(data_prefix) : -1]
+        if len(beam) > MAX_BEAM_BYTES:
+            return InstalledRead("limited")
+        if len(beam) != expected_size:
+            return InstalledRead("size_mismatch", beam)
+        return InstalledRead("ok", beam)
+
+    before_data = prefix == _READ_HEADER
+    after_data = prefix.startswith(_READ_HEADER + _READ_DATA) and prefix.endswith(b"\n")
+    partial_size = (
+        len(prefix) - len(_READ_HEADER) - len(_READ_DATA) - 1
+        if after_data
+        else -1
+    )
+    if remote_status in {b"MISSING", b"INVALID", b"LIMITED"}:
+        if not before_data:
+            return InstalledRead("malformed")
+    elif remote_status == b"CHANGED":
+        if not before_data and not (after_data and 0 <= partial_size <= expected_size):
+            return InstalledRead("malformed")
+    elif remote_status == b"READ_FAILED":
+        if not after_data or not 0 <= partial_size <= expected_size:
+            return InstalledRead("malformed")
+    else:
+        return InstalledRead("malformed")
+
+    category = {
+        b"MISSING": "missing",
+        b"INVALID": "invalid_entry",
+        b"LIMITED": "limited",
+        b"CHANGED": "changed",
+        b"READ_FAILED": "read_failed",
+    }[remote_status]
+    return InstalledRead(category)
 
 
 def _validate_serial(serial: str) -> None:
