@@ -125,6 +125,14 @@ defmodule Casein.Workspaces.State do
   review-agent run to self-apply its own proposal without a per-change human
   click (`Casein.Proposals.AutoApply`). Never permanent — always has an
   expiry — and always attributable to the human who granted it.
+
+  The audit event is emitted **here**, not in the caller. It used to live in the
+  LiveView handler, which meant every other caller granted silently: two grants
+  observed on 2026-08-03 both came from an out-of-band console call, and only
+  one of them bothered to hand-write its own audit row (the other left the
+  workspace unlocked for three hours with no trace). A control whose whole point
+  is being time-boxed and attributable cannot depend on each caller
+  remembering to say so.
   """
   @spec grant_agent_write_unlock(String.t(), DateTime.t(), String.t()) ::
           {:ok, WorkspaceRecord.t()} | {:error, term()}
@@ -140,12 +148,33 @@ defmodule Casein.Workspaces.State do
              last_seen_at: now
          }) do
       {:ok, _record} = ok ->
+        audit_agent_write_unlock_granted(external_id, until, granted_by, now)
         broadcast_agent_write_unlock_changed(external_id, until, granted_by)
         ok
 
       other ->
         other
     end
+  end
+
+  defp audit_agent_write_unlock_granted(external_id, until, granted_by, now) do
+    _ =
+      Casein.Audit.emit!(%{
+        action: "workspace.agent_write_unlock_granted",
+        workspace_id: external_id,
+        actor_id: granted_by,
+        target_type: "workspace",
+        target_ref: external_id,
+        metadata: %{
+          "until" => DateTime.to_iso8601(until),
+          # Rounded, not floored: the caller computed `until` from its own
+          # `utc_now()` a few microseconds before ours, so a requested 30 min
+          # floors to 29 and misreports what the operator actually granted.
+          "minutes" => round(DateTime.diff(until, now, :second) / 60)
+        }
+      })
+
+    :ok
   end
 
   @doc "The kill switch — clears the unlock immediately, effective for the next completed run."

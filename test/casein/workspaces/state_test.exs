@@ -170,6 +170,31 @@ defmodule Casein.Workspaces.StateTest do
     assert_receive {:agent_write_unlock_changed, "abc", ^until, "alice"}
   end
 
+  # The audit used to be emitted by the LiveView handler, so any other caller
+  # granted silently. Both grants observed on 2026-08-03 came from an
+  # out-of-band console call; one hand-wrote its own audit row and the other
+  # left the workspace unlocked for three hours with no trace at all. Emitting
+  # from the domain function is what makes "always attributable" true.
+  test "grant_agent_write_unlock audits every caller, not just the LiveView" do
+    Casein.Audit.MemoryAdapter.clear()
+    {:ok, _} = State.sync(ws(%{}))
+
+    until = DateTime.add(DateTime.utc_now(), 1800, :second)
+    {:ok, _} = State.grant_agent_write_unlock("abc", until, "console@example.com")
+
+    events =
+      Casein.Audit.list([])
+      |> Enum.filter(&(&1.action == "workspace.agent_write_unlock_granted"))
+
+    assert [event] = events
+    assert event.actor_id == "console@example.com"
+    assert event.workspace_id == "abc"
+    assert event.metadata["until"] == DateTime.to_iso8601(until)
+    # Derived from the deadline, so it survives callers that never had a
+    # "minutes" form field to pass along.
+    assert event.metadata["minutes"] == 30
+  end
+
   test "grant_agent_write_unlock creates a record when none exists yet" do
     until = DateTime.add(DateTime.utc_now(), 3600, :second)
     {:ok, r} = State.grant_agent_write_unlock("brand-new", until, "bob")
