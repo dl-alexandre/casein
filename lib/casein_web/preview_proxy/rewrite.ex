@@ -16,10 +16,72 @@ defmodule CaseinWeb.PreviewProxy.Rewrite do
     cross-origin-embedder-policy cross-origin-opener-policy cross-origin-resource-policy
   )
 
+  @default_session_cookie_key "_casein_key"
+
+  @doc """
+  Casein's own session cookie name.
+
+  The proxy serves workspace apps from the *cockpit origin*, so this one cookie
+  is the boundary between "the previewed app's state" and "the operator's Casein
+  session". It must never travel in either direction.
+  """
+  @spec session_cookie_key() :: String.t()
+  def session_cookie_key do
+    Application.get_env(:casein, :session_cookie_key, @default_session_cookie_key)
+  end
+
   @doc "True when a response header must not be forwarded to the browser."
   @spec droppable_header?(String.t()) :: boolean()
   def droppable_header?(name) when is_binary(name),
     do: String.downcase(name) in @drop_resp_headers
+
+  @doc """
+  True when an upstream `set-cookie` would write Casein's own session cookie.
+
+  A previewed app is arbitrary user-controlled code served from the cockpit
+  origin, so letting it emit `Set-Cookie: _casein_key=...; Path=/` is session
+  fixation — and since Phoenix keeps the CSRF token inside the session, a
+  fixated session also carries a valid CSRF token. Every other cookie is still
+  forwarded; previewed apps legitimately rely on their own.
+  """
+  @spec session_set_cookie?(String.t()) :: boolean()
+  def session_set_cookie?(value) when is_binary(value) do
+    cookie_name(value) == session_cookie_key()
+  end
+
+  def session_set_cookie?(_value), do: false
+
+  @doc """
+  Strip Casein's session cookie from an outbound `Cookie` header value.
+
+  Returns `nil` when nothing survives, so the caller can drop the header
+  entirely rather than forward an empty one. Any other cookie the browser holds
+  for this origin is preserved, which is what makes cookie-backed previewed apps
+  keep working.
+  """
+  @spec scrub_request_cookie(String.t()) :: String.t() | nil
+  def scrub_request_cookie(value) when is_binary(value) do
+    key = session_cookie_key()
+
+    value
+    |> String.split(";")
+    |> Enum.reject(fn pair -> String.trim(pair) |> cookie_name() == key end)
+    |> Enum.map_join("; ", &String.trim/1)
+    |> case do
+      "" -> nil
+      scrubbed -> scrubbed
+    end
+  end
+
+  def scrub_request_cookie(_value), do: nil
+
+  defp cookie_name(pair) when is_binary(pair) do
+    pair
+    |> String.split("=", parts: 2)
+    |> List.first()
+    |> to_string()
+    |> String.trim()
+  end
 
   @doc """
   Filter and normalize upstream response headers for re-serving.
@@ -35,6 +97,9 @@ defmodule CaseinWeb.PreviewProxy.Rewrite do
     |> Enum.flat_map(fn {k, v} ->
       name = String.downcase(k)
       Enum.map(header_values(v), &{name, &1})
+    end)
+    |> Enum.reject(fn {name, value} ->
+      name == "set-cookie" and session_set_cookie?(value)
     end)
   end
 

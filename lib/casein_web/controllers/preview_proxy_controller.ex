@@ -317,9 +317,22 @@ defmodule CaseinWeb.PreviewProxyController do
     headers =
       conn.req_headers
       |> Enum.reject(fn {name, _value} -> drop_request_header?(name) end)
-      |> Enum.map(fn
-        {"host", _value} -> {"host", "127.0.0.1"}
-        header -> header
+      |> Enum.flat_map(fn
+        {"host", _value} ->
+          [{"host", "127.0.0.1"}]
+
+        # The previewed app is arbitrary user-controlled code served from the
+        # cockpit origin, so it must not receive the operator's Casein session
+        # cookie. Every other cookie is forwarded, so cookie-backed previewed
+        # apps keep working.
+        {"cookie", value} ->
+          case Rewrite.scrub_request_cookie(value) do
+            nil -> []
+            scrubbed -> [{"cookie", scrubbed}]
+          end
+
+        header ->
+          [header]
       end)
 
     [{"accept-encoding", "identity"} | headers]
