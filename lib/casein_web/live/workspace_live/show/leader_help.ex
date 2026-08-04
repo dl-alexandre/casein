@@ -71,7 +71,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             <.cheat_row keys="0–9" desc="jump to window 0–9" />
             <.cheat_row keys="," desc="rename this window" />
             <.cheat_row keys="$" desc="rename this session" />
-            <.cheat_row keys="&" desc="close this window" />
+            <.cheat_row keys="&" desc="close this window (undoable — see the toast)" />
+            <.cheat_row keys="r" desc="restore the window you just closed" />
             <.cheat_row keys="y" desc="copy a link to this session and window" />
             <.cheat_row keys="d" desc="return to the workspace shell" />
             <div class="font-semibold text-base-content/60 col-span-2 mt-2">Panes</div>
