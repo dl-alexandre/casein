@@ -556,6 +556,91 @@ PY
   printf '%s\n' "$parsed"
 }
 
+# Refresh the persistent OAuth store and print one refreshable credential.
+#
+# The store is host-global: every managed Grok launch on this box refreshes the
+# same ~/.grok/auth.json, and its refresh token rotates on use. Workers spawned
+# together therefore race one token — the losers present an already-rotated
+# credential, and Grok answers a failed refresh by deleting the store outright.
+# That demotes "expired, refresh it" into "signed out", which no unattended
+# launch can recover from. Serialize the refresh so only one launch rotates,
+# and snapshot the store so a failed refresh leaves it no worse than it found
+# it.
+grok_refresh_persistent_auth() {
+  local grok_bin="$1"
+  local auth_path backup_dir backup lock_file refresh_fd provider_auth restore_tmp
+
+  auth_path="${HOME}/.grok/auth.json"
+  backup_dir="${CASEIN_GROK_AUTH_BACKUP_DIR:-${HOME}/.casein/grok-auth-backups}"
+  lock_file="${backup_dir}/refresh.lock"
+
+  if [[ -L "$backup_dir" ]]; then
+    echo "error: managed Grok auth backup dir is a symlink" >&2
+    return 1
+  fi
+  if ! mkdir -p "$backup_dir" || ! chmod 700 "$backup_dir"; then
+    echo "error: could not prepare the managed Grok auth backup dir" >&2
+    return 1
+  fi
+
+  exec {refresh_fd}>>"$lock_file" || return 1
+  chmod 600 "$lock_file" 2>/dev/null || true
+  if ! flock -w 30 "$refresh_fd"; then
+    echo "error: timed out waiting for the Grok credential refresh lock" >&2
+    return 1
+  fi
+
+  # A launch that queued behind another one usually needs no probe at all: the
+  # holder ahead of it already rotated the shared credential.
+  if provider_auth="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" auth-json 2>/dev/null)"; then
+    printf '%s\n' "$provider_auth"
+    return 0
+  fi
+
+  backup=""
+  if [[ -f "$auth_path" && ! -L "$auth_path" ]]; then
+    backup="$(mktemp "${backup_dir}/auth.XXXXXX")" || return 1
+    chmod 600 "$backup"
+    cat "$auth_path" >"$backup" || { rm -f "$backup"; backup=""; }
+  fi
+
+  # Refresh persistent OAuth only in this trusted launcher process. The managed
+  # process receives one refreshable credential through Grok's read-only
+  # GROK_AUTH seam; neither the host auth store nor the managed auth sentinel is
+  # model-readable.
+  if command -v timeout >/dev/null 2>&1; then
+    env -u GROK_HOME -u GROK_AUTH -u GROK_AUTH_PATH \
+      -u GROK_AUTH_PROVIDER_COMMAND -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY \
+      -u CASEIN_API_TOKEN -u CASEIN_ADMIN_API_TOKEN \
+      -u CASEIN_WORKSPACE_API_TOKENS \
+      timeout --kill-after=2 30 "$grok_bin" --no-auto-update models \
+      >/dev/null 2>&1 || true
+  fi
+
+  # The deletion this guard exists for. Put the snapshot back so the credential
+  # is merely expired rather than gone, leaving a later launch — or the operator
+  # sign-in below — something to rotate.
+  if [[ -n "$backup" && ! -e "$auth_path" ]]; then
+    restore_tmp="$(mktemp "${HOME}/.grok/.auth.XXXXXX")" &&
+      chmod 600 "$restore_tmp" &&
+      cat "$backup" >"$restore_tmp" &&
+      mv -f "$restore_tmp" "$auth_path" &&
+      echo "warning: the Grok credential refresh deleted ${auth_path}; restored the pre-refresh snapshot" >&2
+  fi
+  rm -f "$backup"
+
+  if provider_auth="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" auth-json)"; then
+    printf '%s\n' "$provider_auth"
+    return 0
+  fi
+
+  echo "error: managed Grok could not obtain refreshable OAuth with at least ten minutes remaining; set CASEIN_GROK_XAI_API_KEY for dedicated API-key auth" >&2
+  # The shim resolves `grok` back to this launcher, which would sign in against
+  # the managed home instead of the persistent store. Name the real binary.
+  echo "hint: to sign in from a headless box, run: ${grok_bin} login --device-auth" >&2
+  return 1
+}
+
 grok_prepare_managed_home() {
   local socket="$1" grok_bin="$2" reuse="${3:-false}"
   local leader_id managed_root managed_home provider_auth home_action
@@ -575,22 +660,9 @@ grok_prepare_managed_home() {
     export CASEIN_GROK_PROVIDER_AUTH_MODE="api-key"
   elif ! provider_auth="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" auth-json \
       2>/dev/null)"; then
-    # Refresh persistent OAuth only in this trusted launcher process when the
-    # selected credential is near expiry. The managed process receives one
-    # refreshable credential through Grok's read-only GROK_AUTH seam; neither
-    # the host auth store nor the managed auth sentinel is model-readable.
-    if command -v timeout >/dev/null 2>&1; then
-      env -u GROK_HOME -u GROK_AUTH -u GROK_AUTH_PATH \
-        -u GROK_AUTH_PROVIDER_COMMAND -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY \
-        -u CASEIN_API_TOKEN -u CASEIN_ADMIN_API_TOKEN \
-        -u CASEIN_WORKSPACE_API_TOKENS \
-        timeout --kill-after=2 30 "$grok_bin" --no-auto-update models \
-        >/dev/null 2>&1 || true
-    fi
-    provider_auth="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" auth-json)" || {
-      echo "error: managed Grok could not obtain refreshable OAuth with at least ten minutes remaining; set CASEIN_GROK_XAI_API_KEY for dedicated API-key auth" >&2
-      return 1
-    }
+    # The selected credential is missing or near expiry. Refreshing is a
+    # serialized, snapshot-guarded operation on the host-global auth store.
+    provider_auth="$(grok_refresh_persistent_auth "$grok_bin")" || return 1
     export GROK_AUTH="$provider_auth"
     unset XAI_API_KEY GROK_CODE_XAI_API_KEY
     export CASEIN_GROK_PROVIDER_AUTH_MODE="oauth-inline-refresh"
@@ -681,6 +753,7 @@ grok_install_sandbox_profile() {
     "$bootstrap_file" \
     "${HOME}/.casein/agent-mcp" \
     "${HOME}/.casein/grok-launcher-secrets" \
+    "${CASEIN_GROK_AUTH_BACKUP_DIR:-${HOME}/.casein/grok-auth-backups}" \
     "${HOME}/.casein/grok-leaders/*/capability" \
     "${HOME}/.casein/workspace-api-tokens.json" \
     "${HOME}/.casein/agent-auth" \
