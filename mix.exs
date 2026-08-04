@@ -18,9 +18,11 @@ defmodule Casein.MixProject do
         plt_add_apps: [:mix, :ex_unit],
         plt_file: {:no_warn, "priv/plts/dialyzer.plt"}
       ],
-      # Ratchet, not target: suite covered 68.4% when this was set (2026-06).
+      # Ratchet, not target: suite measured 79.91% on 2026-08-03 (was 68.4% when
+      # the floor was first set at 66 in 2026-06, so it had drifted ~14 points
+      # behind reality and stopped ratcheting anything).
       # Raise the floor as coverage improves; never lower it.
-      test_coverage: [summary: [threshold: 66]],
+      test_coverage: [summary: [threshold: 78]],
       releases: [
         casein: [
           include_executables_for: [:unix, :windows],
@@ -133,7 +135,12 @@ defmodule Casein.MixProject do
     if native_windows?() do
       {:ghostty, path: "casein_ghostty_windows", override: true}
     else
-      {:ghostty, "~> 0.4"}
+      # Patch-only. `~> 0.4` permitted a jump to 0.5.0, and pre-1.0 minors are
+      # breaking by convention — on the terminal engine, unreviewed. There are
+      # three copies of this project in the repo (this NIF, the vendored JS fork
+      # in assets/vendor/ghostty, and casein_ghostty_windows' version literal),
+      # so a bump is a coordinated change, not a routine `deps.update`.
+      {:ghostty, "~> 0.4.9"}
     end
   end
 
