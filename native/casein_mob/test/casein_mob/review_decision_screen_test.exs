@@ -622,7 +622,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     refute text(view) =~ "expired or was removed"
   end
 
-  test "resolved then offline remains offline when a late success arrives" do
+  test "resolved then offline retains late trusted success through authoritative recovery" do
     card = intervention_card()
 
     view =
@@ -649,6 +649,17 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert text(view) =~ "Connection lost"
     refute text(view) =~ "Delivered."
     assert_state_leaf(view, :offline, "Offline")
+
+    view =
+      view
+      |> render_info({:mobile_cards_status, :joined})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :resolved
+    assert text(view) =~ "Delivered."
+    refute text(view) =~ "Connection lost"
+    assert_state_leaf(view, :resolved, "Resolved")
   end
 
   test "resolved request remains resolved after a late already-intervened error" do

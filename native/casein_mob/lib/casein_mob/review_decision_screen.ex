@@ -27,6 +27,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
       |> Mob.Socket.assign(:submitted_action, nil)
       |> Mob.Socket.assign(:action_state, :idle)
       |> Mob.Socket.assign(:authoritative_terminal_state, nil)
+      |> Mob.Socket.assign(:trusted_confirmation, nil)
       |> Mob.Socket.assign(:pending_confirmation, nil)
       |> Mob.Socket.assign(:feed_joined?, false)
       |> Mob.Socket.assign(:fresh_card?, false)
@@ -168,6 +169,12 @@ defmodule CaseinMob.ReviewDecisionScreen do
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp preserve_intervention_confirmation(
+         %{assigns: %{intervention_completed: true, trusted_confirmation: confirmation}} = socket
+       )
+       when is_binary(confirmation) and confirmation != "",
+       do: Mob.Socket.assign(socket, :message, confirmation)
 
   defp preserve_intervention_confirmation(%{assigns: %{intervention_completed: true}} = socket),
     do: socket
@@ -1108,11 +1115,12 @@ defmodule CaseinMob.ReviewDecisionScreen do
     Mob.Socket.assign(socket, :submitted_action, nil)
   end
 
-  defp handle_action_result(socket, {:ok, _result}) do
+  defp handle_action_result(socket, {:ok, result}) do
     if intervention_action_id?(socket.assigns.submitted_action) do
       socket
       |> Mob.Socket.assign(:submitted_action, nil)
       |> Mob.Socket.assign(:intervention_completed, true)
+      |> Mob.Socket.assign(:trusted_confirmation, result_message({:ok, result}))
     else
       socket
     end
