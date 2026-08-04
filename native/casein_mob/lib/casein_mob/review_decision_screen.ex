@@ -116,7 +116,8 @@ defmodule CaseinMob.ReviewDecisionScreen do
           |> Mob.Socket.assign(:pending_confirmation, nil)
 
         if intervention_action_id?(socket.assigns.submitted_action) or
-             socket.assigns.intervention_completed do
+             socket.assigns.intervention_completed or
+             socket.assigns.authoritative_terminal_state == :resolved do
           {:noreply,
            socket
            |> Mob.Socket.assign(:card_expired, false)
@@ -888,6 +889,9 @@ defmodule CaseinMob.ReviewDecisionScreen do
     do: Mob.Socket.assign(socket, :message, nil)
 
   defp maybe_clear_stale_message(socket), do: socket
+
+  defp resolved_or_stale_state(%{assigns: %{authoritative_terminal_state: :resolved}}),
+    do: :resolved
 
   defp resolved_or_stale_state(socket) do
     if intervention_action_id?(socket.assigns.submitted_action) or

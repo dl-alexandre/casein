@@ -682,6 +682,38 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     assert_state_leaf(view, :resolved, "Resolved")
   end
 
+  test "resolved then offline retains resolution through a late error and recovery" do
+    card = intervention_card()
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+      |> render_info({:mobile_cards_status, {:disconnected, :network_unavailable}})
+      |> render_info({:card_action_result, card["id"], {:error, "card_already_intervened"}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :offline
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).intervention_completed == false
+    assert text(view) =~ "Connection lost"
+
+    view =
+      view
+      |> render_info({:mobile_cards_status, :joined})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :resolved
+    assert assigns(view).card_expired == false
+    assert text(view) =~ "Request resolved. Waiting for delivery confirmation."
+    refute text(view) =~ "Connection lost"
+    assert_state_leaf(view, :resolved, "Resolved")
+  end
+
   test "stale request identity cannot be regressed by a late success" do
     card = intervention_card()
     collision = put_in(card, ["actions", Access.at(0), "revision"], "replacement-revision")
