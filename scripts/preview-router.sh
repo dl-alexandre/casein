@@ -30,6 +30,12 @@ ROUTE_COUNT_FILE="$ROUTER_DIR/route-count"
 LISTEN="${CASEIN_PREVIEW_ROUTER_LISTEN:-:41080}"
 ADMIN="${CASEIN_PREVIEW_ROUTER_ADMIN:-127.0.0.1:41081}"
 DOMAIN="${CASEIN_PREVIEW_DOMAIN:-devbox.milcgroup.com}"
+# Upstreams for the two gates in front of own-origin preview panes. Overridable
+# so the route can be exercised against stubs, and so a non-prod devbox can point
+# at its own identity proxy and Casein socket.
+IDENTITY_UPSTREAM="${CASEIN_PREVIEW_IDENTITY_UPSTREAM:-127.0.0.1:4180}"
+AUTHZ_UPSTREAM="${CASEIN_PREVIEW_AUTHZ_UPSTREAM:-unix//run/casein/current.sock}"
+LOGIN_URL="${CASEIN_PREVIEW_LOGIN_URL:-https://devbox.milcgroup.com/oauth2/start}"
 
 mkdir -p "$ROUTER_DIR"
 json_get() { sed -n "s/.*\"$2\":\"\\([^\"]*\\)\".*/\\1/p" "$1"; }
@@ -44,6 +50,53 @@ record_active() {
   [ "$status" = running ] || return 1
   pid_alive "$pid" || return 1
   [ -z "$socket" ] || [ -S "$socket" ]
+}
+
+# Own-origin preview panes: pv-<port>-<workspace>.<domain> -> 127.0.0.1:<port>.
+#
+# This is a STATIC route — the port and workspace live in the hostname, so a
+# preview opening or closing never needs a config reload, and the router keeps no
+# registry for panes.
+#
+# It exists because the alternative, Casein's /preview-proxy/<ws>/<port>/ path
+# prefix, permanently breaks LiveView: the client reports window.location.href on
+# every channel join, the proxied app's router has no route for a prefixed path,
+# and the rejected join makes the client fall back to a full page request in an
+# endless ~1s reload loop. On its own origin the app sees its real path.
+#
+# Two gates run before anything reaches a loopback port, because the ports behind
+# this route are other people's dev servers:
+#   1. oauth2-proxy establishes identity (and sets X-Auth-Request-Email);
+#   2. Casein decides whether THIS viewer may reach THIS workspace's port, using
+#      the same gate as the path proxy (Casein.Previews.Access). Being signed in
+#      is not sufficient.
+emit_preview_pane_route() {
+  local domain_re
+  domain_re="$(printf '%s' "$DOMAIN" | sed 's/\./\\./g')"
+
+  cat <<EOF
+    @preview_pane header_regexp preview_pane Host ^pv-(?P<port>[0-9]{1,5})-(?P<ws>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\.${domain_re}\$
+    handle @preview_pane {
+        forward_auth ${IDENTITY_UPSTREAM} {
+            uri /oauth2/auth
+            copy_headers X-Auth-Request-User X-Auth-Request-Email
+            @unauthorized status 401 403
+            handle_response @unauthorized {
+                redir ${LOGIN_URL}?rd={scheme}://{host}{uri}
+            }
+        }
+        forward_auth ${AUTHZ_UPSTREAM} {
+            uri /api/previews/authz
+        }
+        reverse_proxy 127.0.0.1:{re.preview_pane.port} {
+            # The pane embeds this origin in an iframe, so upstream frame-blocking
+            # must not survive the hop. Only the framing controls are dropped; the
+            # rest of the app's CSP is left intact.
+            header_down -X-Frame-Options
+            header_down Content-Security-Policy "frame-ancestors[^;]*;?\\s*" ""
+        }
+    }
+EOF
 }
 
 generate() {
@@ -76,6 +129,7 @@ generate() {
       printf '    handle @%s {\n        reverse_proxy %s\n    }\n' "$id" "$upstream"
       n=$((n+1))
     done
+    emit_preview_pane_route
     echo '    handle {'
     echo '        respond "No active preview environment for {host}" 404'
     echo '    }'

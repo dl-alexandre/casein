@@ -39,9 +39,7 @@ defmodule CaseinWeb.PreviewProxyController do
 
   require Logger
 
-  alias Casein.PreviewPanes
-  alias Casein.Previews
-  alias Casein.Workspaces
+  alias Casein.Previews.Access
   alias CaseinWeb.PreviewProxy.Rewrite
   alias CaseinWeb.PreviewProxy.WebSocketBridge
 
@@ -61,9 +59,9 @@ defmodule CaseinWeb.PreviewProxyController do
   def proxy(conn, %{"workspace_id" => workspace_id, "port" => port_str} = params) do
     path_parts = Map.get(params, "path", [])
 
-    with {:ok, port} <- parse_port(port_str),
-         {:ok, workspace} <- load_authorized(conn, workspace_id),
-         true <- port_allowed?(port, workspace_id, workspace) do
+    with {:ok, port} <- Access.validate_port(port_str),
+         {:ok, _workspace} <-
+           Access.authorize(conn.assigns[:current_user], workspace_id, port) do
       if websocket_upgrade?(conn) do
         upgrade_tunnel(conn, port, path_parts, workspace_id)
       else
@@ -71,71 +69,17 @@ defmodule CaseinWeb.PreviewProxyController do
         fetch_and_stream(conn, upstream, workspace_id, port)
       end
     else
-      :forbidden -> conn |> put_status(403) |> text("Forbidden")
-      {:error, :bad_port} -> conn |> put_status(400) |> text("Invalid port")
-      false -> conn |> put_status(403) |> text("Port not allowed for this workspace")
-      _ -> conn |> put_status(404) |> text("Not found")
-    end
-  end
+      :forbidden ->
+        conn |> put_status(403) |> text("Forbidden")
 
-  defp load_authorized(conn, workspace_id) do
-    viewer = conn.assigns[:current_user]
-    auth = viewer && Map.get(viewer, :email)
+      {:error, :bad_port} ->
+        conn |> put_status(400) |> text("Invalid port")
 
-    case Workspaces.get(workspace_id, auth) do
-      {:ok, workspace} ->
-        if Workspaces.viewer_terminal_owner?(workspace, viewer || %{}),
-          do: {:ok, workspace},
-          else: :forbidden
+      {:error, :port_not_allowed} ->
+        conn |> put_status(403) |> text("Port not allowed for this workspace")
 
-      # Don't distinguish "not found" from "not yours" — avoid leaking existence.
       _ ->
-        :forbidden
-    end
-  end
-
-  defp parse_port(port_str) do
-    case Integer.parse(port_str) do
-      {port, ""} when port > 0 and port < 65_536 -> {:ok, port}
-      _ -> {:error, :bad_port}
-    end
-  end
-
-  defp port_allowed?(port, workspace_id, workspace) do
-    Previews.workspace_owned_port?(port, workspace) or
-      registered_preview_port?(workspace_id, port)
-  end
-
-  defp registered_preview_port?(workspace_id, port) do
-    workspace_id
-    |> PreviewPanes.list_for_workspace()
-    |> Enum.any?(fn registration ->
-      preview_port(registration.url) == port or preview_port(registration.display_url) == port
-    end)
-  end
-
-  defp preview_port(url) when is_binary(url) do
-    case URI.parse(url) do
-      %URI{port: port} when is_integer(port) -> port
-      %URI{path: "/preview-proxy/" <> _ = path} -> preview_proxy_port(path)
-      _ -> nil
-    end
-  end
-
-  defp preview_port(_), do: nil
-
-  defp preview_proxy_port(path) do
-    case String.split(path, "/", parts: 5) do
-      ["", "preview-proxy", _workspace_id, port, _rest] -> parse_proxy_port(port)
-      ["", "preview-proxy", _workspace_id, port] -> parse_proxy_port(port)
-      _ -> nil
-    end
-  end
-
-  defp parse_proxy_port(port) do
-    case Integer.parse(port) do
-      {port, ""} -> port
-      _ -> nil
+        conn |> put_status(404) |> text("Not found")
     end
   end
 

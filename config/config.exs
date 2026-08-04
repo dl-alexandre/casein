@@ -233,10 +233,23 @@ config :casein, :preview_router_admin_port, 41_081
 # workspace loopback dev server, so it stays opt-in until vetted. `max_per_workspace`
 # bounds concurrent long-lived tunnels per workspace.
 config :casein, :preview_proxy_hmr,
-  enabled: false,
+  enabled: true,
   max_per_workspace: 8,
   handshake_timeout_ms: 5_000,
   idle_timeout_ms: 60_000
+
+# Own-origin previews: serve a workspace's loopback dev server from
+# `pv-<port>-<workspace>.<domain>` instead of the `/preview-proxy/<ws>/<port>/`
+# path prefix. The prefix breaks LiveView permanently — the client reports
+# `window.location.href` on every channel join and the proxied app's router has
+# no route for a prefixed path, so the rejected join makes the client fall back
+# to a full page request in a loop. See `Casein.Previews.OwnOrigin`.
+#
+# Opt-in: it needs the edge `pv-*` route (scripts/preview-router.sh) to be live,
+# so it stays off until that is deployed. Off, previews keep using the path proxy.
+config :casein, :preview_own_origin,
+  enabled: false,
+  domain: "devbox.milcgroup.com"
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

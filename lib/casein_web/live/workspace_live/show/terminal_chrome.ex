@@ -12,6 +12,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
 
   import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
+  alias Casein.Previews.OwnOrigin
   alias Casein.Terminals
   alias Casein.Terminals.PaneInteraction
   alias Casein.Terminals.PaneState
@@ -1528,17 +1529,30 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   end
 
   @doc """
-  True when the pane is served through the reverse proxy (`/preview-proxy/...`).
-  Proxied previews re-serve an external app's HTML from Casein's own origin, so
-  they can bypass upstream frame-blocking headers.
+  True when the pane is reached through Casein's preview routing rather than
+  directly — either the `/preview-proxy/...` path prefix or an own-origin
+  `pv-<port>-<workspace>` host. Both let a workspace app be framed despite
+  upstream frame-blocking headers.
   """
-  def preview_proxied?(%{display_url: url}) when is_binary(url),
-    do: String.starts_with?(url, "/preview-proxy/")
+  def preview_proxied?(%{display_url: url}) when is_binary(url), do: proxied_url?(url)
 
-  def preview_proxied?(%{"display_url" => url}) when is_binary(url),
-    do: String.starts_with?(url, "/preview-proxy/")
+  def preview_proxied?(%{"display_url" => url}) when is_binary(url), do: proxied_url?(url)
 
   def preview_proxied?(_), do: false
+
+  defp proxied_url?(url) do
+    String.starts_with?(url, "/preview-proxy/") or own_origin_url?(url)
+  end
+
+  defp own_origin_url?(url) do
+    case URI.parse(url) do
+      %URI{host: host} when is_binary(host) ->
+        match?({:ok, _}, OwnOrigin.parse_host(host))
+
+      _ ->
+        false
+    end
+  end
 
   @doc """
   iframe `sandbox` for a preview pane.

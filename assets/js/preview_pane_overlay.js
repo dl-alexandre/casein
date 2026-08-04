@@ -555,10 +555,16 @@ export const PreviewPaneOverlay = {
     active.dispatchEvent(new win.KeyboardEvent("keyup", opts))
   },
 
+  // Driving the operator's own frame only works while it is same-origin, which
+  // is true for `/preview-proxy/...` panes and false for own-origin `pv-*` ones
+  // (Casein.Previews.OwnOrigin). Cross-origin is therefore an EXPECTED outcome,
+  // not a fault: the error is acked back and the server falls back to the
+  // headless control session, which reaches the page directly. Reporting a
+  // distinct reason is what lets that fallback be told apart from a real failure.
   iframeDocument() {
     try {
       const doc = this.iframe?.contentDocument
-      if (!doc) throw new Error("iframe_unavailable")
+      if (!doc) throw new Error("cross_origin_blocked")
       return doc
     } catch (err) {
       throw new Error("cross_origin_blocked", { cause: err })
