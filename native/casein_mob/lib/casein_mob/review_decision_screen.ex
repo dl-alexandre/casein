@@ -184,7 +184,11 @@ defmodule CaseinMob.ReviewDecisionScreen do
     do:
       Mob.Socket.assign(socket, :message, "Request resolved. Waiting for delivery confirmation.")
 
-  def render(assigns) do
+  # `gap:` is not read by either native renderer — CaseinMob.Layout rewrites it
+  # into the real Spacer nodes they do honor. See that module for why.
+  def render(assigns), do: CaseinMob.Layout.materialize(build_view(assigns))
+
+  defp build_view(assigns) do
     %{
       type: :column,
       props: %{background: :background, fill_width: true, fill_height: true},

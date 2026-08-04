@@ -33,7 +33,11 @@ defmodule CaseinMob.FilesScreen do
     {:ok, request_list(socket, ".")}
   end
 
-  def render(assigns) do
+  # `gap:` is not read by either native renderer — CaseinMob.Layout rewrites it
+  # into the real Spacer nodes they do honor. See that module for why.
+  def render(assigns), do: CaseinMob.Layout.materialize(build_view(assigns))
+
+  defp build_view(assigns) do
     %{
       type: :column,
       props: %{background: @bg, padding: 6, gap: 6, fill_width: true, fill_height: true},
