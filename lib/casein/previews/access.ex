@@ -96,26 +96,40 @@ defmodule Casein.Previews.Access do
   @doc """
   Port a preview registration URL points at.
 
-  Registrations store either a direct loopback URL, a `/preview-proxy/<ws>/<port>`
-  path, or an own-origin `pv-<port>-<ws>` host, so all three shapes resolve here.
+  Registrations store a direct loopback URL, a `/preview-proxy/<ws>/<port>` path,
+  or an own-origin `pv-<port>-<ws>` host, so all three shapes resolve here.
+
+  Order matters. The routed shapes are checked *before* the URI's own port,
+  because `URI.parse/1` fills in the scheme default: an absolute proxy URL like
+  `https://casein.example/preview-proxy/<ws>/4003/` parses as port 443, and
+  answering 443 here would both deny the real port and quietly nominate
+  `127.0.0.1:443` as a registered preview port. The URI port is only trusted for
+  a URL that carries no routing of its own.
   """
   @spec preview_port(term()) :: pos_integer() | nil
   def preview_port(url) when is_binary(url) do
-    case URI.parse(url) do
-      %URI{host: host} when is_binary(host) -> host_port(host) || uri_port(url)
-      %URI{path: "/preview-proxy/" <> _ = path} -> preview_proxy_port(path)
-      _ -> nil
-    end
+    uri = URI.parse(url)
+
+    routed_port(uri) || explicit_uri_port(url, uri)
   end
 
   def preview_port(_url), do: nil
 
-  defp uri_port(url) do
-    case URI.parse(url) do
-      %URI{port: port} when is_integer(port) -> port
-      _ -> nil
-    end
+  defp routed_port(%URI{host: host, path: path}) do
+    (is_binary(host) and host_port(host)) || proxy_path_port(path)
   end
+
+  defp proxy_path_port("/preview-proxy/" <> _ = path), do: preview_proxy_port(path)
+  defp proxy_path_port(_path), do: nil
+
+  # `URI.parse/1` supplies the scheme's default port even when the URL never
+  # named one, so only accept a port the authority actually spelled out.
+  defp explicit_uri_port(url, %URI{port: port, host: host})
+       when is_integer(port) and is_binary(host) do
+    if String.contains?(url, "#{host}:#{port}"), do: port
+  end
+
+  defp explicit_uri_port(_url, _uri), do: nil
 
   defp host_port(host) do
     case OwnOrigin.parse_host(host) do
