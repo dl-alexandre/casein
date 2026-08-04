@@ -171,6 +171,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(pending).action_state == :pending
     assert text(pending) =~ "Sending"
+    assert_state_leaf(pending, :pending, "Sending")
 
     accepted =
       render_info(
@@ -180,10 +181,12 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(accepted).action_state == :accepted
     assert text(accepted) =~ "Accepted"
+    assert_state_leaf(accepted, :accepted, "Accepted")
 
     resolved = render_info(accepted, {:mobile_cards_snapshot, %{"cards" => []}})
     assert assigns(resolved).action_state == :resolved
     assert text(resolved) =~ "Resolved"
+    assert_state_leaf(resolved, :resolved, "Resolved")
 
     stale =
       ReviewDecisionScreen
@@ -193,6 +196,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(stale).action_state == :stale
     assert text(stale) =~ "Stale"
+    assert_state_leaf(stale, :stale, "Stale")
 
     offline =
       ReviewDecisionScreen
@@ -201,6 +205,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(offline).action_state == :offline
     assert text(offline) =~ "Offline"
+    assert_state_leaf(offline, :offline, "Offline")
   end
 
   test "direction choices render as compact semantic chips with stable identifiers" do
@@ -596,8 +601,10 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view = render_info(view, {:mobile_cards_snapshot, %{"cards" => []}})
 
     assert assigns(view).submitted_action == "follow_up"
+    assert assigns(view).action_state == :resolved
     assert assigns(view).card_expired == false
     assert text(view) =~ "Request resolved. Waiting for delivery confirmation."
+    assert_state_leaf(view, :resolved, "Resolved")
     assert find(view, :button, text: "Send follow-up").props.disabled == true
 
     view =
@@ -609,8 +616,131 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(view).submitted_action == nil
     assert assigns(view).intervention_completed == true
+    assert assigns(view).action_state == :resolved
     assert text(view) =~ "Follow-up delivered to the exact agent."
+    assert_state_leaf(view, :resolved, "Resolved")
     refute text(view) =~ "expired or was removed"
+  end
+
+  test "resolved then offline retains late trusted success through authoritative recovery" do
+    card = intervention_card()
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+      |> render_info({:mobile_cards_status, {:disconnected, :network_unavailable}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :offline
+
+    view =
+      render_info(
+        view,
+        {:card_action_result, card["id"], {:ok, %{"result" => %{"confirmation" => "Delivered."}}}}
+      )
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :offline
+    assert assigns(view).intervention_completed == true
+    assert text(view) =~ "Connection lost"
+    refute text(view) =~ "Delivered."
+    assert_state_leaf(view, :offline, "Offline")
+
+    view =
+      view
+      |> render_info({:mobile_cards_status, :joined})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :resolved
+    assert text(view) =~ "Delivered."
+    refute text(view) =~ "Connection lost"
+    assert_state_leaf(view, :resolved, "Resolved")
+  end
+
+  test "resolved request remains resolved after a late already-intervened error" do
+    card = intervention_card()
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+      |> render_info({:card_action_result, card["id"], {:error, "card_already_intervened"}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :resolved
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).card_expired == false
+    assert text(view) =~ "Request resolved"
+    assert_state_leaf(view, :resolved, "Resolved")
+  end
+
+  test "resolved then offline retains resolution through a late error and recovery" do
+    card = intervention_card()
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+      |> render_info({:mobile_cards_status, {:disconnected, :network_unavailable}})
+      |> render_info({:card_action_result, card["id"], {:error, "card_already_intervened"}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :offline
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).intervention_completed == false
+    assert text(view) =~ "Connection lost"
+
+    view =
+      view
+      |> render_info({:mobile_cards_status, :joined})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :resolved
+    assert assigns(view).card_expired == false
+    assert text(view) =~ "Request resolved. Waiting for delivery confirmation."
+    refute text(view) =~ "Connection lost"
+    assert_state_leaf(view, :resolved, "Resolved")
+  end
+
+  test "stale request identity cannot be regressed by a late success" do
+    card = intervention_card()
+    collision = put_in(card, ["actions", Access.at(0), "revision"], "replacement-revision")
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => [collision]}})
+
+    assert assigns(view).authoritative_terminal_state == :stale
+    assert assigns(view).action_state == :stale
+
+    view =
+      render_info(
+        view,
+        {:card_action_result, card["id"], {:ok, %{"result" => %{"confirmation" => "Delivered."}}}}
+      )
+
+    assert assigns(view).authoritative_terminal_state == :stale
+    assert assigns(view).action_state == :stale
+    assert assigns(view).intervention_completed == false
+    assert text(view) =~ "request identity changed"
+    refute text(view) =~ "Delivered."
+    assert_state_leaf(view, :stale, "Stale")
   end
 
   test "a resolved snapshot preserves an already confirmed intervention" do
@@ -826,6 +956,15 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view
     |> render_info({:mobile_cards_status, :joined})
     |> render_info({:mobile_cards_snapshot, %{"cards" => [card]}})
+  end
+
+  defp assert_state_leaf(view, state, label) do
+    leaf = find(view, :text, text: label)
+    id = "needs-me-state-#{state}"
+
+    assert leaf.props.test_id == id
+    assert leaf.props.accessibility_id == id
+    assert leaf.props.accessibility_label == "Request state: #{label}"
   end
 
   defp intervention_card do

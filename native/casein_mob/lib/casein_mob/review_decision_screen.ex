@@ -26,6 +26,8 @@ defmodule CaseinMob.ReviewDecisionScreen do
       |> Mob.Socket.assign(:selected_action, nil)
       |> Mob.Socket.assign(:submitted_action, nil)
       |> Mob.Socket.assign(:action_state, :idle)
+      |> Mob.Socket.assign(:authoritative_terminal_state, nil)
+      |> Mob.Socket.assign(:trusted_confirmation, nil)
       |> Mob.Socket.assign(:pending_confirmation, nil)
       |> Mob.Socket.assign(:feed_joined?, false)
       |> Mob.Socket.assign(:fresh_card?, false)
@@ -94,7 +96,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
            socket
            |> Mob.Socket.assign(:fresh_card?, false)
            |> Mob.Socket.assign(:authoritative?, false)
-           |> Mob.Socket.assign(:action_state, :stale)
+           |> assign_authoritative_terminal_state(:stale)
            |> Mob.Socket.assign(:card_expired, true)
            |> Mob.Socket.assign(:pending_confirmation, nil)
            |> Mob.Socket.assign(
@@ -104,15 +106,18 @@ defmodule CaseinMob.ReviewDecisionScreen do
         end
 
       _missing ->
+        terminal_state = resolved_or_stale_state(socket)
+
         socket =
           socket
           |> Mob.Socket.assign(:fresh_card?, false)
           |> Mob.Socket.assign(:authoritative?, false)
-          |> Mob.Socket.assign(:action_state, resolved_or_stale_state(socket))
+          |> assign_authoritative_terminal_state(terminal_state)
           |> Mob.Socket.assign(:pending_confirmation, nil)
 
         if intervention_action_id?(socket.assigns.submitted_action) or
-             socket.assigns.intervention_completed do
+             socket.assigns.intervention_completed or
+             socket.assigns.authoritative_terminal_state == :resolved do
           {:noreply,
            socket
            |> Mob.Socket.assign(:card_expired, false)
@@ -129,11 +134,12 @@ defmodule CaseinMob.ReviewDecisionScreen do
   def handle_info({:card_action_result, card_id, result}, socket) do
     if card_id == get(socket.assigns.card, "id") do
       observe_intervention(socket, result)
+      result_state = result_state(socket, result)
 
       socket =
         socket
-        |> Mob.Socket.assign(:message, result_message(result))
-        |> Mob.Socket.assign(:action_state, result_state(result))
+        |> Mob.Socket.assign(:message, result_message(socket, result, result_state))
+        |> assign_result_state(result_state)
         |> handle_action_result(result)
 
       {:noreply, socket}
@@ -164,6 +170,12 @@ defmodule CaseinMob.ReviewDecisionScreen do
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp preserve_intervention_confirmation(
+         %{assigns: %{intervention_completed: true, trusted_confirmation: confirmation}} = socket
+       )
+       when is_binary(confirmation) and confirmation != "",
+       do: Mob.Socket.assign(socket, :message, confirmation)
 
   defp preserve_intervention_confirmation(%{assigns: %{intervention_completed: true}} = socket),
     do: socket
@@ -866,7 +878,9 @@ defmodule CaseinMob.ReviewDecisionScreen do
          } = socket
        )
        when state in [:offline, :stale] do
-    Mob.Socket.assign(socket, :action_state, :idle)
+    socket
+    |> Mob.Socket.assign(:action_state, :idle)
+    |> Mob.Socket.assign(:authoritative_terminal_state, nil)
   end
 
   defp maybe_restore_idle_state(socket), do: socket
@@ -876,6 +890,9 @@ defmodule CaseinMob.ReviewDecisionScreen do
 
   defp maybe_clear_stale_message(socket), do: socket
 
+  defp resolved_or_stale_state(%{assigns: %{authoritative_terminal_state: :resolved}}),
+    do: :resolved
+
   defp resolved_or_stale_state(socket) do
     if intervention_action_id?(socket.assigns.submitted_action) or
          socket.assigns.intervention_completed or socket.assigns.action_state == :accepted,
@@ -883,9 +900,20 @@ defmodule CaseinMob.ReviewDecisionScreen do
        else: :stale
   end
 
-  defp result_state({:ok, _result}), do: :accepted
+  # Connection status is presentation state; a late success must not make an
+  # offline screen appear actionable or erase an authoritative terminal state.
+  defp result_state(%{assigns: %{action_state: :offline}}, _result), do: :offline
 
-  defp result_state({:error, reason})
+  defp result_state(
+         %{assigns: %{authoritative_terminal_state: state}},
+         _result
+       )
+       when state in [:resolved, :stale],
+       do: state
+
+  defp result_state(_socket, {:ok, _result}), do: :accepted
+
+  defp result_state(_socket, {:error, reason})
        when reason in [
               "card_not_found",
               :card_not_found,
@@ -904,7 +932,36 @@ defmodule CaseinMob.ReviewDecisionScreen do
             ],
        do: :stale
 
-  defp result_state({:error, _reason}), do: :idle
+  defp result_state(_socket, {:error, _reason}), do: :idle
+
+  defp result_message(socket, _result, :offline), do: socket.assigns.message
+
+  defp result_message(
+         %{assigns: %{authoritative_terminal_state: :stale}} = socket,
+         {:ok, _result},
+         :stale
+       ),
+       do: socket.assigns.message
+
+  defp result_message(
+         %{assigns: %{authoritative_terminal_state: :resolved}} = socket,
+         {:error, _reason},
+         :resolved
+       ),
+       do: socket.assigns.message
+
+  defp result_message(_socket, result, _state), do: result_message(result)
+
+  defp assign_result_state(socket, state) when state in [:resolved, :stale],
+    do: assign_authoritative_terminal_state(socket, state)
+
+  defp assign_result_state(socket, state), do: Mob.Socket.assign(socket, :action_state, state)
+
+  defp assign_authoritative_terminal_state(socket, state) when state in [:resolved, :stale] do
+    socket
+    |> Mob.Socket.assign(:action_state, state)
+    |> Mob.Socket.assign(:authoritative_terminal_state, state)
+  end
 
   defp refresh_identity_matches?(current, incoming) do
     get(current, "id") == get(incoming, "id") and
@@ -1055,14 +1112,29 @@ defmodule CaseinMob.ReviewDecisionScreen do
     get(get(card, "intervention", %{}), "pwa_url") || get(card, "pwa_url")
   end
 
-  defp handle_action_result(socket, {:ok, _result}) do
+  defp handle_action_result(
+         %{assigns: %{authoritative_terminal_state: :stale}} = socket,
+         {:ok, _result}
+       ) do
+    Mob.Socket.assign(socket, :submitted_action, nil)
+  end
+
+  defp handle_action_result(socket, {:ok, result}) do
     if intervention_action_id?(socket.assigns.submitted_action) do
       socket
       |> Mob.Socket.assign(:submitted_action, nil)
       |> Mob.Socket.assign(:intervention_completed, true)
+      |> Mob.Socket.assign(:trusted_confirmation, result_message({:ok, result}))
     else
       socket
     end
+  end
+
+  defp handle_action_result(
+         %{assigns: %{authoritative_terminal_state: :resolved}} = socket,
+         {:error, _reason}
+       ) do
+    Mob.Socket.assign(socket, :submitted_action, nil)
   end
 
   defp handle_action_result(socket, {:error, reason}) do
@@ -1243,9 +1315,6 @@ defmodule CaseinMob.ReviewDecisionScreen do
     %{
       type: :column,
       props: %{
-        test_id: "needs-me-state-#{assigns.action_state}",
-        accessibility_id: "needs-me-state-#{assigns.action_state}",
-        accessibility_label: "Request state: #{label}",
         fill_width: true,
         background: color,
         padding: :space_sm,
@@ -1254,7 +1323,14 @@ defmodule CaseinMob.ReviewDecisionScreen do
       children: [
         %{
           type: :text,
-          props: %{text: label, text_color: :on_surface, font_weight: "bold"},
+          props: %{
+            test_id: "needs-me-state-#{assigns.action_state}",
+            accessibility_id: "needs-me-state-#{assigns.action_state}",
+            accessibility_label: "Request state: #{label}",
+            text: label,
+            text_color: :on_surface,
+            font_weight: "bold"
+          },
           children: []
         },
         body_text(detail)

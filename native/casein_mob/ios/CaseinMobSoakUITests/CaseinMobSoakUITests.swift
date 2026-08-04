@@ -143,8 +143,8 @@ final class CaseinMobSoakUITests: XCTestCase {
         XCTAssertTrue(selectedChoice.exists, "Configured choice is not server-declared")
         selectedChoice.tap()
 
-        let accepted = app.otherElements["needs-me-state-accepted"]
-        let resolved = app.otherElements["needs-me-state-resolved"]
+        let accepted = app.staticTexts["needs-me-state-accepted"]
+        let resolved = app.staticTexts["needs-me-state-resolved"]
         XCTAssertTrue(
             waitForAny([accepted, resolved], timeout: 15),
             "Choice did not reach an accepted or resolved server state"
