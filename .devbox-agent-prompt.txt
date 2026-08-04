@@ -16,6 +16,7 @@ source /data/workspaces/dalexandre/casein/.devbox-agent.env
 3. Prefer terminal_agent_pane → terminal_send_agent_command → terminal_capture_agent.
 4. Never use terminal_send_command without an explicit agent pane id.
 5. For UI work: preview_open_current_workspace, or preview_resolve_workspace/preview_surfaces → preview_open_app or preview_open_localhost. Use default_headers for forward-auth previews.
+5b. To preview your OWN dev server, start it with preview_ensure_server_here — not a hand-rolled `PORT=<n> mix phx.server`. That allocates a runtime-owned port and records it against the workspace, so the preview survives a Casein restart; a hand-picked port is only authorized while its pane registration is live and is refused for a minute or two after every deploy. If you must pick one, use the workspace's declared ports.http.
 6. Observe with preview_observe/preview_observe_live; dom_summary.visible_text is available for quick checks; close with preview_close.
 
 ## Current engineering backlog

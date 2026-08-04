@@ -300,6 +300,32 @@ Agent workflow:
 
 Starter prompt for external agents: `.devbox-agent-prompt.txt` (expand vars after `source .devbox-agent.env`).
 
+### Previewing your own dev server — start it with `preview_ensure_server_here`
+
+Do **not** hand-roll `PORT=<n> mix phx.server` and then point a preview at it. Use
+`preview_ensure_server_here`, which allocates a runtime-owned port (41050-41079),
+records it against the workspace, and sets `PORT` for the launched server.
+
+Why it matters: reaching a loopback port through a preview is gated on that port
+being *owned* by the workspace — either declared in the workspace's `ports` map,
+detected into `detected_ports`, or vouched for by a **live pane registration**. A
+hand-picked port qualifies only by that last route, and the registration lives in
+an in-memory registry that starts empty on boot (`Casein.PreviewPanes` does not
+rehydrate from its DB rows). So a hand-rolled port is refused for the first minute
+or two after every Casein deploy, until the pane re-registers. A runtime-owned or
+declared port has no such window.
+
+If you must pick the port yourself, use the workspace's declared `ports.http`.
+
+Previews are served from their own origin — `pv-<port>-<workspace>.devbox.milcgroup.com`,
+not a path prefix. That is deliberate and load-bearing for LiveView: under the old
+`/preview-proxy/<ws>/<port>/` prefix the client reported a prefixed
+`window.location.href` on every channel join, the proxied app's router could not
+match it, and the rejected join made the client fall back to a full page request
+with no backoff — an endless ~1s reload loop. See `Casein.Previews.OwnOrigin`.
+Two gates sit in front of every preview origin: identity (oauth2-proxy), then
+`Casein.Previews.Access` for workspace + port. Being signed in is not sufficient.
+
 ### MCP client injection (Grok, Claude, Codex, OpenCode)
 
 Casein **hosts** the MCP servers; each agent runtime must **register** them as a

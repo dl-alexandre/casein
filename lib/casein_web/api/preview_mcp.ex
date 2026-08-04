@@ -44,7 +44,15 @@ defmodule CaseinWeb.API.PreviewMCP do
     tmux_session = default_tmux_session(opts)
 
     MCPWorkspaceScope.scoped_instructions(
-      "Preview control tools for the current workspace. Call preview_surfaces " <>
+      "Preview control tools for the current workspace. " <>
+        "To put YOUR OWN dev server behind a preview, start it with " <>
+        "preview_ensure_server_here rather than launching `PORT=<n> mix phx.server` " <>
+        "yourself: that allocates a runtime-owned port and records it against the " <>
+        "workspace, so the preview keeps working across a Casein restart. A " <>
+        "hand-picked port is only authorized while its pane registration is live, " <>
+        "and is refused for a few minutes after every deploy. If you must choose a " <>
+        "port, use the workspace's declared ports.http. " <>
+        "Call preview_surfaces " <>
         "to list named surfaces (manager URLs, host loopback Casein, and " <>
         "terminal-detected localhost ports), then preview_open_here, preview_open_app, or " <>
         "preview_open_localhost to start a session. Loopback surfaces are liveness-probed " <>
