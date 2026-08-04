@@ -2402,6 +2402,14 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "home"            -> Icons.Filled.Home
         "expand_more"     -> Icons.Filled.ExpandMore
         "expand_less"     -> Icons.Filled.ExpandLess
+        // iOS (sfSymbolName) has mapped these since the icon node landed, and
+        // materialIconForLogical below already uses both for tab bars — they
+        // were simply missing from the icon-node map, so an <Icon name="qr_code">
+        // fell through to a question mark on Android only.
+        "qr_code"         -> Icons.Filled.QrCode
+        "history"         -> Icons.Filled.History
+        "link"            -> Icons.Filled.Link
+        "list"            -> Icons.Filled.List
         else              -> Icons.Filled.QuestionMark
     }
 

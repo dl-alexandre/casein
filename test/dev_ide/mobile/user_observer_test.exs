@@ -220,7 +220,48 @@ defmodule DevIDE.Mobile.UserObserverTest do
 
     :ok = UserObserver.watch_workspace(user_id, "ws-1")
 
-    for status <- [:succeeded, :failed, :timed_out] do
+    run_id = "run-succeeded"
+
+    Ledger.run_started(%{
+      workspace_id: "ws-1",
+      actor_id: "agent",
+      run_id: run_id,
+      command_id: "compile",
+      command_line: "mix test"
+    })
+
+    assert_receive {:mobile_cards_snapshot, %{cards: [card]}}, 1_000
+    assert card.type == :in_progress
+    assert card.workspace_id == "ws-1"
+    assert card.workspace_name == "alpha"
+    assert card.session_id == run_id
+    assert card.title == "Running: mix test"
+    assert card.meta.run_phase == "executing"
+
+    Ledger.run_finished(:succeeded, %{
+      workspace_id: "ws-1",
+      actor_id: "agent",
+      run_id: run_id,
+      command_id: "compile"
+    })
+
+    assert_receive {:mobile_cards_snapshot, %{cards: []}}, 1_000
+  end
+
+  test "a failed or timed-out run leaves an actionable failure card" do
+    user_id = unique_user()
+    prepare_user(user_id)
+
+    State.sync(%Workspace{id: "ws-1", name: "alpha", user: "dev", path: System.tmp_dir!()})
+
+    :ok = UserObserver.watch_workspace(user_id, "ws-1")
+
+    # The finish event carries `command_id` (not the full command line), so the
+    # failure card is titled after it.
+    for {status, expected_title} <- [
+          {:failed, "compile failed"},
+          {:timed_out, "compile timed out"}
+        ] do
       run_id = "run-#{status}"
 
       Ledger.run_started(%{
@@ -231,15 +272,40 @@ defmodule DevIDE.Mobile.UserObserverTest do
         command_line: "mix test"
       })
 
-      assert_receive {:mobile_cards_snapshot, %{cards: [card]}}, 1_000
-      assert card.type == :in_progress
-      assert card.workspace_id == "ws-1"
-      assert card.workspace_name == "alpha"
-      assert card.session_id == run_id
-      assert card.title == "Running: mix test"
-      assert card.meta.run_phase == "executing"
+      assert_receive {:mobile_cards_snapshot, %{cards: [%{type: :in_progress}]}}, 1_000
 
       Ledger.run_finished(status, %{
+        workspace_id: "ws-1",
+        actor_id: "agent",
+        run_id: run_id,
+        command_id: "compile"
+      })
+
+      # The in_progress card is replaced by a failure card rather than by
+      # nothing — before this the failure vanished from the phone entirely.
+      # Removal and insertion broadcast separately, so match on the snapshot
+      # that carries the failure rather than on the first one to arrive.
+      assert_receive {:mobile_cards_snapshot, %{cards: [%{type: :run_failed} = card]}}, 1_000
+      assert card.session_id == run_id
+      assert card.priority == :high
+      assert card.kind == "run_failed"
+      assert card.title == expected_title
+
+      assert Enum.any?(card.actions, &(&1.id == "ask_agent_to_fix"))
+      assert Enum.any?(card.actions, &(&1.id == "open"))
+
+      # Re-running the same session clears the stale failure.
+      Ledger.run_started(%{
+        workspace_id: "ws-1",
+        actor_id: "agent",
+        run_id: run_id,
+        command_id: "compile",
+        command_line: "mix test"
+      })
+
+      assert_receive {:mobile_cards_snapshot, %{cards: [%{type: :in_progress}]}}, 1_000
+
+      Ledger.run_finished(:succeeded, %{
         workspace_id: "ws-1",
         actor_id: "agent",
         run_id: run_id,

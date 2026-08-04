@@ -16,7 +16,7 @@ defmodule DevideMob.MobileDogfoodFlowTest do
   test "first-run pairing through dashboard supervision and recovery" do
     dashboard = mount_screen(SessionDashboardScreen)
 
-    assert_renderable(dashboard)
+    assert_renderable(dashboard, extra: [:icon])
     assert text(dashboard) =~ "Not paired yet"
 
     pair_cta = find(dashboard, :button, text: "+ Pair workspace")
@@ -33,7 +33,7 @@ defmodule DevideMob.MobileDogfoodFlowTest do
       )
       |> render_info({:tap, :pair})
 
-    assert_renderable(pairing)
+    assert_renderable(pairing, extra: [:icon])
     assert text(pairing) =~ "Paired successfully"
     assert find(pairing, :button, text: "Continue")
     assert SessionConfig.pairing() == {:ok, "https://devide.test", "token"}
@@ -64,12 +64,13 @@ defmodule DevideMob.MobileDogfoodFlowTest do
 
     assert MapSet.member?(assigns(dashboard).push_registered_workspace_ids, @workspace_id)
 
-    assert_renderable(dashboard)
+    assert_renderable(dashboard, extra: [:icon])
     assert text(dashboard) =~ "Live"
     assert text(dashboard) =~ "Running mix test"
     assert text(dashboard) =~ "1 agent active"
 
-    review_cta = find(dashboard, :button, text: "3 items need review")
+    assert find(dashboard, :text, text: "3 items need review")
+    review_cta = find(dashboard, :box, on_tap: {self(), {:open, @workspace_id}})
     assert {_pid, {:open, @workspace_id}} = review_cta.props.on_tap
 
     dashboard = render_info(dashboard, {:tap, {:open, @workspace_id}})
@@ -81,12 +82,12 @@ defmodule DevideMob.MobileDogfoodFlowTest do
       |> render_info({:session_snapshot, @workspace_id, active_snapshot()})
       |> render_info({:session_status, @workspace_id, :joined})
 
-    assert_renderable(detail)
+    assert_renderable(detail, extra: [:icon])
     assert text(detail) =~ "Workspace status"
     assert text(detail) =~ "Live"
     assert text(detail) =~ "Current run"
     assert text(detail) =~ "mix test"
-    assert text(detail) =~ "Recent activity"
+    assert text(detail) =~ "Work log"
     assert text(detail) =~ "policy review required"
     assert text(detail) =~ "Active agents"
     assert text(detail) =~ "reviewer"

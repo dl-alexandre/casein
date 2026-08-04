@@ -16,6 +16,7 @@ defmodule DevideMob.PairingScreen do
   alias DevideMob.SessionClient
   alias DevideMob.SessionConfig
   alias DevideMob.SessionDashboardScreen
+  alias DevideMob.UI
 
   @success_delay_ms 900
 
@@ -253,16 +254,21 @@ defmodule DevideMob.PairingScreen do
       type: :column,
       props: %{background: :background, fill_width: true, fill_height: true},
       children: [
-        header(),
+        UI.header("Pair workspace",
+          subtitle: "Connect this phone to a dev_ide workspace",
+          leading: UI.icon_button("back", {self(), :back}, label: "Back", background: :surface)
+        ),
         %{
           type: :scroll,
           props: %{fill_width: true, weight: 1},
           children: [
-            %{
-              type: :column,
-              props: %{fill_width: true, padding: :space_md, gap: 10},
-              children: content(assigns)
-            }
+            UI.stack(content(assigns),
+              gap: 12,
+              padding_left: 16,
+              padding_right: 16,
+              padding_top: 16,
+              padding_bottom: 28
+            )
           ]
         }
       ]
@@ -308,79 +314,42 @@ defmodule DevideMob.PairingScreen do
   defp content(assigns) do
     [
       qr_section(),
-      paste_section(assigns),
+      message_card(assigns),
       manual_section(assigns),
-      helper_line("Pairs to one workspace at a time.")
+      UI.meta("Pairs to one workspace at a time.")
     ]
     |> Enum.reject(&is_nil/1)
   end
 
+  # The QR path is the fast one, so it gets the hero treatment: the primary
+  # action, and paste as its quieter sibling right underneath.
   defp qr_section do
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 6},
-      children: [
-        %{
-          type: :button,
-          props: %{
-            text: "Scan QR code",
-            fill_width: true,
-            background: :primary,
-            text_color: :on_primary,
-            padding: :space_md,
-            height: 48.0,
-            on_tap: {self(), :scan_qr}
-          },
-          children: []
-        },
-        %{
-          type: :text,
-          props: %{
-            text: "Use the web cockpit QR code. Paste still works below.",
-            text_color: :muted,
-            text_size: :sm
-          },
-          children: []
-        }
-      ]
-    }
-  end
-
-  defp paste_section(assigns) do
-    %{
-      type: :column,
-      props: %{fill_width: true, gap: 6},
-      children:
-        [
-          %{
-            type: :button,
-            props: %{
-              text: "Paste & pair",
-              fill_width: true,
-              background: :surface_raised,
-              text_color: :on_surface,
-              padding: :space_md,
-              height: 48.0,
-              on_tap: {self(), :paste_clipboard}
-            },
-            children: []
-          },
-          message_text(assigns)
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
+    UI.card(
+      [
+        UI.box([UI.icon("qr_code", text_size: 32, text_color: :primary)],
+          align: "center",
+          fill_width: true,
+          padding_top: 4,
+          padding_bottom: 4
+        ),
+        UI.title("Scan the cockpit QR", text_align: :center, fill_width: true),
+        UI.body("Open /pair in the web cockpit and point your camera at the code.",
+          text_color: :muted,
+          text_align: :center,
+          fill_width: true
+        ),
+        UI.button("Scan QR code", {self(), :scan_qr}, :primary),
+        UI.button("Paste & pair", {self(), :paste_clipboard}, :secondary)
+      ],
+      gap: 10,
+      padding: 16
+    )
   end
 
   defp manual_section(assigns) do
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
-      children: [
-        %{
-          type: :text,
-          props: %{text: "Have a pairing code?", text_color: :on_surface, font_weight: "bold"},
-          children: []
-        },
+    UI.card(
+      [
+        UI.section_label("Have a pairing code?"),
         %{
           type: :text_field,
           props: %{
@@ -388,126 +357,60 @@ defmodule DevideMob.PairingScreen do
             placeholder: "Enter pairing code",
             keyboard: :default,
             return_key: :done,
+            background: :surface_raised,
+            text_color: :on_surface,
+            placeholder_color: :muted,
+            border_color: :border,
+            corner_radius: :radius_md,
+            padding: 12,
             on_change: {self(), :code},
             on_submit: {self(), :pair}
           },
           children: []
         },
-        %{
-          type: :button,
-          props: %{
-            text: "Pair",
-            fill_width: true,
-            background: :surface_raised,
-            text_color: :on_surface,
-            padding: :space_sm,
-            height: 44.0,
-            disabled: String.trim(assigns.code) == "",
-            on_tap: {self(), :pair}
-          },
-          children: []
-        }
-      ]
-    }
+        UI.button("Pair", {self(), :pair}, :secondary, disabled: String.trim(assigns.code) == "")
+      ],
+      gap: 10
+    )
   end
 
   defp state_panel(title, body, indicator, action_label, action) do
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_lg, gap: 10},
-      children:
-        [
-          indicator_node(indicator),
-          %{
-            type: :text,
-            props: %{text: title, text_color: :on_surface, text_size: :lg, font_weight: "bold"},
-            children: []
-          },
-          %{
-            type: :text,
-            props: %{text: body, text_color: :muted, text_size: :sm},
-            children: []
-          },
-          action_label &&
-            %{
-              type: :button,
-              props: %{
-                text: action_label,
-                fill_width: true,
-                background: :surface_raised,
-                text_color: :on_surface,
-                padding: :space_sm,
-                height: 44.0,
-                on_tap: {self(), action}
-              },
-              children: []
-            }
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
+    UI.card(
+      [
+        indicator_node(indicator),
+        UI.title(title, text_size: :lg),
+        UI.body(body, text_color: :muted),
+        action_label && UI.button(action_label, {self(), action}, :secondary)
+      ],
+      gap: 12,
+      padding: 20
+    )
   end
 
   defp indicator_node(:progress), do: %{type: :progress, props: %{color: :primary}, children: []}
 
   defp indicator_node(:check) do
-    %{
-      type: :text,
-      props: %{text: "✓", text_color: :green_400, text_size: :xl, text_align: "center"},
-      children: []
-    }
+    UI.icon("check", text_size: 28, text_color: UI.tone_fg(:done))
   end
 
-  defp helper_line(text) do
-    %{type: :text, props: %{text: text, text_color: :muted, text_size: :xs}, children: []}
+  defp message_card(%{message: nil}), do: nil
+
+  defp message_card(%{state: :error, message: message}) do
+    UI.tinted(
+      [
+        UI.row(
+          [
+            UI.icon("warning", text_color: UI.tone_fg(:failed), text_size: 15),
+            UI.body(message, weight: 1)
+          ],
+          gap: 8
+        )
+      ],
+      :failed
+    )
   end
 
-  defp message_text(%{message: nil}), do: nil
-
-  defp message_text(%{state: :error, message: message}) do
-    %{
-      type: :text,
-      props: %{text: message, text_color: :red_400, text_size: :sm},
-      children: []
-    }
-  end
-
-  defp message_text(%{message: message}) do
-    %{
-      type: :text,
-      props: %{text: message, text_color: :muted, text_size: :sm},
-      children: []
-    }
-  end
-
-  defp header do
-    %{
-      type: :row,
-      props: %{fill_width: true, background: :primary, padding: :space_sm, gap: 8},
-      children: [
-        %{
-          type: :button,
-          props: %{
-            text: "Back",
-            background: :surface_raised,
-            text_color: :on_surface,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :back}
-          },
-          children: []
-        },
-        %{
-          type: :text,
-          props: %{
-            text: "Pair workspace",
-            text_size: :lg,
-            text_color: :on_primary,
-            font_weight: "bold",
-            weight: 1
-          },
-          children: []
-        }
-      ]
-    }
+  defp message_card(%{message: message}) do
+    UI.tinted([UI.body(message)], :neutral)
   end
 end

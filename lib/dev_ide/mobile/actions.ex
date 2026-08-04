@@ -23,7 +23,7 @@ defmodule DevIDE.Mobile.Actions do
 
   import Ecto.Query, only: [from: 2]
 
-  alias DevIDE.Mobile.{ActionOutcome, Card, UserObserver}
+  alias DevIDE.Mobile.{ActionOutcome, AgentInstructions, Card, UserObserver}
   alias DevIde.Repo
   alias DevIDE.Runs.Ledger
   alias DevIDE.Workspaces
@@ -152,10 +152,78 @@ defmodule DevIDE.Mobile.Actions do
   # --- Steps 4 + 5: persist, apply, audit (atomic on the outcome) ---------
 
   defp commit(context, card, spec, validated, request_id) do
-    if Card.navigation_action?(spec) do
-      commit_navigation(context, card, spec, request_id)
-    else
-      commit_mutation(context, card, spec, validated, request_id)
+    cond do
+      Card.navigation_action?(spec) ->
+        commit_navigation(context, card, spec, request_id)
+
+      Card.instruction_action?(spec) ->
+        commit_instruction(context, card, spec, validated, request_id)
+
+      true ->
+        commit_mutation(context, card, spec, validated, request_id)
+    end
+  end
+
+  # Instruction action: paste the *server-authored* prompt into the workspace's
+  # agent pane. The client submits only the action id and an optional note, so a
+  # phone can never dictate arbitrary text through a card — free text goes
+  # through the channel's `agent_instruction` event instead, which is gated the
+  # same way. No card lock: the failure card stays until the run state changes.
+  defp commit_instruction(context, card, spec, validated, request_id) do
+    text = instruction_text(spec, validated)
+
+    case AgentInstructions.send(context, %{
+           "workspace_id" => card.workspace_id,
+           "text" => text
+         }) do
+      {:ok, summary} ->
+        outcome_attrs = %{
+          request_id: request_id,
+          user_id: context.user_id,
+          card_id: card.id,
+          action_id: spec.id,
+          resource_type: resource_field(card, :type),
+          resource_id: resource_field(card, :id),
+          device_link_id: Map.get(context, :device_link_id),
+          platform: Map.get(context, :platform),
+          status: "instructed",
+          result: %{
+            "tmux_session" => summary.tmux_session,
+            "pane_id" => summary.pane_id,
+            "submitted" => summary.submitted
+          }
+        }
+
+        case %ActionOutcome{} |> ActionOutcome.changeset(outcome_attrs) |> Repo.insert() do
+          {:ok, outcome} ->
+            {:ok,
+             %{
+               status: "accepted",
+               action_id: spec.id,
+               card_id: card.id,
+               result: outcome.result,
+               idempotent: false
+             }}
+
+          {:error, changeset} ->
+            if constraint_violation?(
+                 changeset,
+                 :mobile_action_outcomes_user_request_active_index
+               ),
+               do: replay(context.user_id, request_id),
+               else: {:error, :conflict}
+        end
+
+      {:error, reason} ->
+        record_rejection(context, card.id, spec.id, request_id, reason)
+        {:error, reason}
+    end
+  end
+
+  defp instruction_text(spec, validated) do
+    case Map.get(validated, :note) do
+      note when is_binary(note) and note != "" -> spec.instruction <> "\n\n" <> note
+      _ -> spec.instruction
     end
   end
 
@@ -260,6 +328,45 @@ defmodule DevIDE.Mobile.Actions do
       end
 
     %{"event_id" => event && event.id, "action" => action_id}
+    |> Map.merge(deliver_requested_changes(context, card, action_id, note))
+  end
+
+  # "Request changes" and "Deny" emit the same denial event; the difference is
+  # what the agent is told. Deny is a full stop. Request changes hands the note
+  # to the agent so it can act on it — otherwise the words only ever reach the
+  # audit log, and the button promises something the product doesn't do.
+  #
+  # Delivery is deliberately BEST EFFORT and happens after the decision is
+  # already recorded: the denial is authoritative, and a workspace whose agent
+  # pane has already exited (common — the run just got blocked) must not turn a
+  # valid decision into an error. The outcome records whether the note landed so
+  # the phone can say so.
+  defp deliver_requested_changes(context, card, "request_changes", note)
+       when is_binary(note) and note != "" do
+    case AgentInstructions.send(context, %{
+           "workspace_id" => card.workspace_id,
+           "text" => requested_changes_prompt(card, note)
+         }) do
+      {:ok, summary} ->
+        %{"note_delivered" => true, "note_target" => summary.pane_id}
+
+      {:error, reason} ->
+        %{"note_delivered" => false, "note_undelivered_reason" => to_string(reason)}
+    end
+  end
+
+  defp deliver_requested_changes(_context, _card, _action_id, _note), do: %{}
+
+  # Server-authored framing plus the user's note, the same split the card-level
+  # instruction actions use: the phone supplies words, not the whole prompt.
+  defp requested_changes_prompt(card, note) do
+    subject =
+      case meta_value(card, :command_id) do
+        command when is_binary(command) and command != "" -> "`#{command}`"
+        _ -> "the run awaiting review"
+      end
+
+    "Changes requested from mobile on #{subject}. It was not approved.\n\n#{note}"
   end
 
   # Mobile audit metadata (P2-T4). `mobile_action` is retained for backward
@@ -316,7 +423,7 @@ defmodule DevIDE.Mobile.Actions do
   end
 
   defp replay_existing(%ActionOutcome{status: status} = outcome)
-       when status in ["accepted", "navigated"] do
+       when status in ["accepted", "navigated", "instructed"] do
     {:ok,
      %{
        status: "accepted",

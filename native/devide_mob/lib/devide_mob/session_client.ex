@@ -31,6 +31,7 @@ defmodule DevideMob.SessionClient do
   use Slipstream
   require Logger
 
+  alias DevideMob.Outbox
   alias DevideMob.SessionConfig
   alias Slipstream.Socket
 
@@ -91,6 +92,41 @@ defmodule DevideMob.SessionClient do
   end
 
   @doc """
+  Send a free-text instruction to a workspace's agent pane.
+
+  The server resolves which tmux pane it lands in and audits the send (see
+  `DevIDE.Mobile.AgentInstructions`); the phone only supplies the text. The
+  reply arrives as `{:agent_instruction_result, workspace_id, result}` on
+  `subscriber`.
+  """
+  @spec send_instruction(String.t(), String.t(), keyword()) :: :ok
+  def send_instruction(workspace_id, text, opts \\ [])
+      when is_binary(workspace_id) and is_binary(text) do
+    cast(
+      {:agent_instruction, workspace_id, text, Keyword.get(opts, :submit, true),
+       Keyword.get(opts, :subscriber, self())}
+    )
+  end
+
+  @doc """
+  Retry everything queued in `DevideMob.Outbox`. Called automatically when the
+  card stream rejoins; exposed for a manual "retry now" tap.
+  """
+  @spec flush_outbox(pid()) :: :ok
+  def flush_outbox(subscriber \\ self()) do
+    cast({:flush_outbox, subscriber})
+  end
+
+  @doc """
+  Ask which agent panes this device may address in `workspace_id`. The reply
+  arrives as `{:agent_targets, workspace_id, result}` on `subscriber`.
+  """
+  @spec fetch_agent_targets(String.t(), pid()) :: :ok
+  def fetch_agent_targets(workspace_id, subscriber \\ self()) when is_binary(workspace_id) do
+    cast({:agent_targets, workspace_id, subscriber})
+  end
+
+  @doc """
   Register this device's OS push token for a workspace. Prefer the user-level
   mobile card stream when joined, with the workspace session channel retained as
   a fallback for older flows. The server stores it and pushes alerts even when
@@ -130,6 +166,7 @@ defmodule DevideMob.SessionClient do
       |> assign(:connecting?, false)
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
+      |> assign(:agent_request_refs, %{})
 
     socket =
       case SessionConfig.pairing() do
@@ -196,13 +233,64 @@ defmodule DevideMob.SessionClient do
   defp handle_card_action_reply(ref, reply, socket) do
     case pop_card_action(socket, ref) do
       {nil, socket} ->
-        {:ok, socket}
+        handle_agent_request_reply(ref, reply, socket)
 
       {%{card_id: card_id}, socket} ->
         notify_card_action_result(socket, card_id, card_action_result(reply))
         {:ok, socket}
     end
   end
+
+  defp handle_agent_request_reply(ref, reply, socket) do
+    case pop_agent_request(socket, ref) do
+      {nil, socket} ->
+        {:ok, socket}
+
+      {%{reply: tag, workspace_id: workspace_id, subscriber: subscriber} = metadata, socket} ->
+        result = card_action_result(reply)
+        send(subscriber, {tag, workspace_id, settle_outbox(metadata[:request_id], result)})
+        {:ok, socket}
+    end
+  end
+
+  # Translate a raw reply into the outbox-aware result the screens render:
+  # accepted entries are dropped, transient failures stay queued, and an entry
+  # that has exhausted its attempts is reported as given up.
+  defp settle_outbox(nil, result), do: result
+
+  defp settle_outbox(request_id, {:ok, _payload} = result) do
+    Outbox.ack(request_id)
+    result
+  end
+
+  defp settle_outbox(request_id, {:error, reason} = result) do
+    if permanent_instruction_error?(reason) do
+      Outbox.ack(request_id)
+      result
+    else
+      case Outbox.fail(request_id) do
+        {:retrying, entry} -> {:queued, %{reason: reason, attempts: entry.attempts}}
+        {:dropped, _entry} -> {:error, reason}
+        :unknown -> result
+      end
+    end
+  end
+
+  # A rejected instruction is the user's problem to fix, not the network's:
+  # retrying it would only paste the same rejected text again.
+  defp permanent_instruction_error?(reason)
+       when reason in [
+              "empty_instruction",
+              "instruction_too_long",
+              "invalid_payload",
+              "unauthorized",
+              "workspace_scope_mismatch",
+              "workspace_not_found",
+              "unknown_target"
+            ],
+       do: true
+
+  defp permanent_instruction_error?(_reason), do: false
 
   @impl Slipstream
   def handle_topic_close(topic, reason, socket) do
@@ -219,10 +307,13 @@ defmodule DevideMob.SessionClient do
     notify_pending_push_registrations(socket, {:error, status})
     notify_pending_card_actions(socket, {:error, status})
 
+    notify_pending_agent_requests(socket, {:error, status})
+
     socket =
       socket
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
+      |> assign(:agent_request_refs, %{})
 
     # Reconnect with backoff while we still have credentials and watchers.
     if socket.assigns.url && map_size(socket.assigns.subscribers) > 0 do
@@ -307,6 +398,32 @@ defmodule DevideMob.SessionClient do
       notify_card_action_result(socket, card_id, {:error, :not_connected})
       {:noreply, socket}
     end
+  end
+
+  def handle_cast({:agent_instruction, workspace_id, text, submit?, subscriber}, socket) do
+    # Queue first, send second: an instruction that never reaches the server is
+    # still the user's, and the entry is what makes the retry idempotent.
+    entry = Outbox.enqueue(workspace_id, text, submit: submit?)
+
+    {:noreply, deliver_instruction(socket, entry, subscriber)}
+  end
+
+  def handle_cast({:flush_outbox, subscriber}, socket) do
+    socket =
+      Enum.reduce(Outbox.list(), socket, fn entry, acc ->
+        deliver_instruction(acc, entry, subscriber)
+      end)
+
+    {:noreply, socket}
+  end
+
+  def handle_cast({:agent_targets, workspace_id, subscriber}, socket) do
+    {:noreply,
+     push_agent_request(socket, "agent_targets", %{workspace_id: workspace_id}, %{
+       reply: :agent_targets,
+       workspace_id: workspace_id,
+       subscriber: subscriber
+     })}
   end
 
   def handle_cast({:register_push, workspace_id, token, platform}, socket) do
@@ -479,6 +596,48 @@ defmodule DevideMob.SessionClient do
     {metadata, assign(socket, :push_registration_refs, refs)}
   end
 
+  defp deliver_instruction(socket, entry, subscriber) do
+    payload = %{
+      workspace_id: entry.workspace_id,
+      text: entry.text,
+      submit: entry.submit,
+      request_id: entry.request_id
+    }
+
+    push_agent_request(socket, "agent_instruction", payload, %{
+      reply: :agent_instruction_result,
+      workspace_id: entry.workspace_id,
+      request_id: entry.request_id,
+      subscriber: subscriber
+    })
+  end
+
+  # Agent instruction / target requests share the card-action reply plumbing but
+  # answer the *requesting* screen rather than every subscriber: only the screen
+  # that typed the instruction cares about the outcome.
+  defp push_agent_request(socket, event, payload, metadata) do
+    if connected?(socket) and joined?(socket, @mobile_cards_topic) do
+      case push(socket, @mobile_cards_topic, event, payload) do
+        {:ok, ref} ->
+          refs = socket.assigns[:agent_request_refs] || %{}
+          assign(socket, :agent_request_refs, Map.put(refs, ref, metadata))
+
+        {:error, reason} ->
+          send(metadata.subscriber, {metadata.reply, metadata.workspace_id, {:error, reason}})
+          socket
+      end
+    else
+      send(metadata.subscriber, {metadata.reply, metadata.workspace_id, {:error, :not_connected}})
+      socket
+    end
+  end
+
+  defp pop_agent_request(socket, ref) do
+    refs = socket.assigns[:agent_request_refs] || %{}
+    {metadata, refs} = Map.pop(refs, ref)
+    {metadata, assign(socket, :agent_request_refs, refs)}
+  end
+
   defp track_card_action(socket, ref, card_id) do
     refs = socket.assigns[:card_action_refs] || %{}
     assign(socket, :card_action_refs, Map.put(refs, ref, %{card_id: card_id}))
@@ -643,6 +802,14 @@ defmodule DevideMob.SessionClient do
   defp push_registration_key(%{scope: :user}), do: :user
   defp push_registration_key(%{workspace_id: workspace_id}), do: workspace_id
 
+  defp notify_pending_agent_requests(socket, result) do
+    (socket.assigns[:agent_request_refs] || %{})
+    |> Map.values()
+    |> Enum.each(fn %{reply: tag, workspace_id: workspace_id, subscriber: subscriber} ->
+      send(subscriber, {tag, workspace_id, result})
+    end)
+  end
+
   defp notify_pending_card_actions(socket, result) do
     (socket.assigns[:card_action_refs] || %{})
     |> Map.values()
@@ -665,6 +832,8 @@ defmodule DevideMob.SessionClient do
 
   defp notify_joined(socket, topic, reply) do
     if mobile_cards_topic?(topic) do
+      # Anything typed while the channel was down goes out now.
+      if Outbox.list() != [], do: flush_outbox(self())
       notify(socket, topic, {:mobile_cards_snapshot, reply})
       notify(socket, topic, {:mobile_cards_status, :joined})
     end

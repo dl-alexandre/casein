@@ -244,6 +244,9 @@ defmodule DevIDE.Terminals.AgentPromptSender do
             "pane" => pane,
             "tool" => "send_agent_prompt"
           })
+          # Caller-supplied provenance (e.g. a mobile send stamping origin,
+          # device link, and platform) so the ledger can tell who typed this.
+          |> Map.merge(caller_metadata(opts))
 
         Audit.emit!(%{
           workspace_id: workspace_id,
@@ -282,6 +285,16 @@ defmodule DevIDE.Terminals.AgentPromptSender do
 
   defp activity_status(:attention), do: :error
   defp activity_status(_status), do: :ok
+
+  defp caller_metadata(opts) do
+    case Keyword.get(opts, :metadata) do
+      %{} = metadata ->
+        Map.new(metadata, fn {key, value} -> {to_string(key), value} end)
+
+      _ ->
+        %{}
+    end
+  end
 
   defp audit_actor_id(opts) do
     case Keyword.get(opts, :actor_id) do

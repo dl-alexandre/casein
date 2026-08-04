@@ -13,6 +13,7 @@ defmodule DevideMob.SessionDashboardScreen do
   use Mob.Screen
 
   alias DevideMob.SessionConfig
+  alias DevideMob.UI
   alias DevideMob.SessionClient
   alias DevideMob.SessionDetailScreen
   alias DevideMob.PairingScreen
@@ -20,12 +21,9 @@ defmodule DevideMob.SessionDashboardScreen do
 
   @transition_notice_ms 1_600
 
-  @card_segments [
-    {:needs_action, "Needs Action"},
-    {:running, "Running"},
-    {:failed, "Failed"},
-    {:done, "Done"}
-  ]
+  # How many settled/failed cards the "Recent" tier shows before it collapses.
+  @recent_preview_limit 3
+  @snooze_seconds 3_600
   @push_token_timeout_ms 15_000
   @dev_notification_env "DEVIDE_MOB_DEV_NOTIFICATION_JSON"
 
@@ -51,7 +49,8 @@ defmodule DevideMob.SessionDashboardScreen do
       |> Mob.Socket.assign(:push_user_registration_pending?, false)
       |> Mob.Socket.assign(:push_registered_workspace_ids, MapSet.new())
       |> Mob.Socket.assign(:pending_notification_card_id, nil)
-      |> Mob.Socket.assign(:filter, :needs_action)
+      |> Mob.Socket.assign(:snoozed, SessionConfig.snoozed_cards())
+      |> Mob.Socket.assign(:show_all_recent, false)
       |> Mob.Socket.assign(:notice, nil)
       |> Mob.Socket.assign(:menu_workspace, nil)
       |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
@@ -234,8 +233,34 @@ defmodule DevideMob.SessionDashboardScreen do
     {:noreply, handle_mobile_card_action(socket, card)}
   end
 
-  def handle_info({:tap, {:filter, key}}, socket) do
-    {:noreply, Mob.Socket.assign(socket, :filter, key)}
+  # An inline decision submits the server-authored action id straight from the
+  # card, without opening the review screen.
+  def handle_info({:tap, {:inline_card_action, card_id, action_id}}, socket)
+      when is_binary(card_id) and is_binary(action_id) do
+    SessionClient.card_action(card_id, action_id)
+
+    {:noreply,
+     temporary_notice(socket, "#{inline_action_label(socket, card_id, action_id)} sent")}
+  end
+
+  def handle_info({:tap, :show_all_recent}, socket) do
+    {:noreply, Mob.Socket.assign(socket, :show_all_recent, true)}
+  end
+
+  # Snoozing is device-local and self-expiring: it quiets a card for an hour, it
+  # never resolves it. The server's view of the work is untouched.
+  def handle_info({:tap, {:snooze, card_id}}, socket) when is_binary(card_id) do
+    SessionConfig.snooze_card(card_id, @snooze_seconds)
+
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:snoozed, SessionConfig.snoozed_cards())
+     |> temporary_notice("Snoozed for 1 hour")}
+  end
+
+  def handle_info({:tap, :unsnooze_all}, socket) do
+    SessionConfig.unsnooze_all()
+    {:noreply, Mob.Socket.assign(socket, :snoozed, SessionConfig.snoozed_cards())}
   end
 
   def handle_info({:card_action_result, _card_id, result}, socket) do
@@ -328,6 +353,10 @@ defmodule DevideMob.SessionDashboardScreen do
   def handle_info(_message, socket), do: {:noreply, socket}
 
   # ── Render ──────────────────────────────────────────────────────────────────
+  #
+  # Layout is deliberately built from `UI` primitives rather than raw nodes:
+  # `gap:` is a no-op in both native renderers, and only Box/Button round their
+  # corners, so hand-rolled spacing and rounding silently degrade on device.
 
   def render(assigns) do
     %{
@@ -335,17 +364,19 @@ defmodule DevideMob.SessionDashboardScreen do
       props: %{background: :background, fill_width: true, fill_height: true},
       children:
         [
-          header(),
+          header(assigns),
           notice(assigns.notice),
           %{
             type: :scroll,
             props: %{fill_width: true, weight: 1},
             children: [
-              %{
-                type: :column,
-                props: %{fill_width: true, padding: :space_md, gap: 10},
-                children: dashboard_body(assigns)
-              }
+              UI.stack(dashboard_body(assigns),
+                gap: 12,
+                padding_left: 16,
+                padding_right: 16,
+                padding_top: 12,
+                padding_bottom: 28
+              )
             ]
           }
         ]
@@ -353,145 +384,128 @@ defmodule DevideMob.SessionDashboardScreen do
     }
   end
 
-  defp header do
-    %{
-      type: :row,
-      props: %{fill_width: true, background: :primary, padding: :space_sm, gap: 8},
-      children: [
-        %{
-          type: :text,
-          props: %{
-            text: "Action Center",
-            text_size: :xl,
-            text_color: :on_primary,
-            weight: 1,
-            font_weight: "bold"
-          },
-          children: []
-        },
-        %{
-          type: :button,
-          props: %{
-            text: "+ Pair",
-            background: :surface_raised,
-            text_color: :on_surface,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :pair_device}
-          },
-          children: []
-        },
-        %{
-          type: :button,
-          props: %{
-            text: "...",
-            background: :surface_raised,
-            text_color: :on_surface,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :root_menu}
-          },
-          children: []
-        }
+  defp header(assigns) do
+    UI.header("Action Center",
+      subtitle: header_subtitle(assigns),
+      actions: [
+        UI.icon_button("qr_code", {self(), :pair_device}, label: "Pair workspace"),
+        UI.icon_button("more", {self(), :root_menu}, label: "More")
       ]
-    }
+    )
   end
+
+  # One line that answers "is this phone connected, and to what?" — the detail
+  # (full URL, push diagnostics) lives in the footer, out of the content's way.
+  defp header_subtitle(%{paired?: true} = assigns) do
+    workspaces = assigns |> mobile_cards() |> Enum.map(&get(&1, "workspace_id")) |> Enum.uniq()
+    count = workspaces |> Enum.reject(&is_nil/1) |> length()
+    host = assigns[:host_url] |> to_string() |> String.replace(~r{^https?://}, "")
+
+    case count do
+      0 -> host
+      n -> "#{host} · #{n} #{plural(n, "workspace", "workspaces")}"
+    end
+  end
+
+  defp header_subtitle(_assigns), do: "Not paired"
 
   defp dashboard_body(%{pinned: [], paired?: false}) do
     [
-      empty_state(
-        "Not paired yet",
-        "Pair this phone with a workspace to watch runs, reviews, and agent activity from anywhere.",
-        "+ Pair workspace",
-        :pair_device
+      UI.card(
+        [
+          UI.empty_state(
+            "Not paired yet",
+            "Pair this phone with a workspace to watch runs, reviews, and agent activity from anywhere.",
+            icon: "qr_code",
+            cta: "+ Pair workspace",
+            on_tap: {self(), :pair_device}
+          )
+        ],
+        padding: 4
       )
     ]
   end
 
   defp dashboard_body(%{pinned: [], paired?: true} = assigns) do
-    [paired_summary(assigns)] ++
-      mobile_cards_status_banner(assigns) ++
+    mobile_cards_status_banner(assigns) ++
       push_status_banner(assigns) ++
+      resume_row(assigns) ++
       observer_section(assigns) ++
-      empty_workspace_state(mobile_cards(assigns))
+      empty_workspace_state(mobile_cards(assigns)) ++
+      [paired_footer(assigns)]
   end
 
   defp dashboard_body(assigns) do
-    ([paired_summary(assigns)] ++
-       mobile_cards_status_banner(assigns) ++
+    (mobile_cards_status_banner(assigns) ++
        push_status_banner(assigns) ++
+       resume_row(assigns) ++
        observer_section(assigns) ++
+       [UI.section_label("Pinned workspaces")] ++
        Enum.map(assigns.pinned, fn wid ->
          card(wid, Map.get(assigns.snapshots, wid), Map.get(assigns.statuses, wid, :connecting))
-       end))
+       end) ++
+       [paired_footer(assigns)])
     |> Enum.reject(&is_nil/1)
   end
 
-  defp paired_summary(%{paired?: true, host_url: host_url} = assigns) do
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_sm, gap: 4},
-      children: [
-        %{
-          type: :row,
-          props: %{fill_width: true, gap: 4},
-          children:
+  # Pairing state and push diagnostics: real information, but not the reason
+  # anyone opens this screen. It sits at the bottom in muted type.
+  defp paired_footer(%{paired?: true, host_url: host_url} = assigns) do
+    UI.stack(
+      [
+        UI.divider(),
+        UI.row(
+          [
+            UI.meta("Paired to #{host_url}", weight: 1),
+            UI.button("Unpair", {self(), :unpair}, :ghost, fill_width: false)
+          ],
+          gap: 8
+        ),
+        UI.meta(push_debug_line(assigns))
+      ],
+      gap: 8,
+      padding_top: 8
+    )
+  end
+
+  defp paired_footer(_assigns), do: nil
+
+  defp resume_row(%{resume_context: %{workspace_id: workspace_id}} = assigns)
+       when is_binary(workspace_id) do
+    [
+      UI.card(
+        [
+          UI.row(
             [
-              %{
-                type: :text,
-                props: %{
-                  text: "Paired to #{host_url}",
-                  text_color: :muted,
-                  text_size: :sm,
-                  weight: 1
-                },
-                children: []
-              },
-              resume_button(assigns[:resume_context]),
-              %{
-                type: :button,
-                props: %{
-                  text: "Unpair",
-                  background: :surface_raised,
-                  text_color: :on_surface,
-                  padding: :space_sm,
-                  on_tap: {self(), :unpair}
-                },
-                children: []
-              }
-            ]
-            |> Enum.reject(&is_nil/1)
-        },
-        %{
-          type: :text,
-          props: %{
-            text: push_debug_line(assigns),
-            text_color: :muted,
-            text_size: :xs
-          },
-          children: []
-        }
-      ]
-    }
+              UI.stack(
+                [
+                  UI.meta("Last session"),
+                  UI.body(resume_label(assigns[:resume_context]), font_weight: "semibold")
+                ],
+                gap: 2,
+                weight: 1
+              ),
+              UI.button("Resume", {self(), :resume_last_session}, :secondary, fill_width: false)
+            ],
+            gap: 8
+          )
+        ],
+        padding: 12
+      )
+    ]
   end
 
-  defp paired_summary(_assigns), do: nil
+  defp resume_row(_assigns), do: []
 
-  defp resume_button(%{workspace_id: workspace_id}) when is_binary(workspace_id) do
-    %{
-      type: :button,
-      props: %{
-        text: "Resume",
-        background: :surface_raised,
-        text_color: :on_surface,
-        padding: :space_sm,
-        on_tap: {self(), :resume_last_session}
-      },
-      children: []
-    }
+  defp resume_label(%{workspace_id: workspace_id} = context) do
+    case Map.get(context, :session_id) do
+      session_id when is_binary(session_id) ->
+        "#{display_workspace(workspace_id)} · #{truncate(session_id, 18)}"
+
+      _ ->
+        display_workspace(workspace_id)
+    end
   end
-
-  defp resume_button(_context), do: nil
 
   defp push_debug_line(assigns) do
     token? = if assigns[:push_token], do: "yes", else: "no"
@@ -525,34 +539,7 @@ defmodule DevideMob.SessionDashboardScreen do
         []
 
       {title, body} ->
-        [
-          %{
-            type: :column,
-            props: %{
-              fill_width: true,
-              background: status_color(status),
-              padding: :space_sm,
-              gap: 2
-            },
-            children: [
-              %{
-                type: :text,
-                props: %{
-                  text: title,
-                  text_color: :on_surface,
-                  text_size: :sm,
-                  font_weight: "bold"
-                },
-                children: []
-              },
-              %{
-                type: :text,
-                props: %{text: body, text_color: :on_surface, text_size: :xs},
-                children: []
-              }
-            ]
-          }
-        ]
+        [banner(status_tone(status), banner_icon(status), title, body)]
     end
   end
 
@@ -564,34 +551,41 @@ defmodule DevideMob.SessionDashboardScreen do
         []
 
       {title, body} ->
-        [
-          %{
-            type: :column,
-            props: %{fill_width: true, background: :surface_raised, padding: :space_sm, gap: 2},
-            children: [
-              %{
-                type: :text,
-                props: %{
-                  text: title,
-                  text_color: :on_surface,
-                  text_size: :sm,
-                  font_weight: "bold"
-                },
-                children: []
-              },
-              %{
-                type: :text,
-                props: %{text: body, text_color: :muted, text_size: :xs},
-                children: []
-              }
-              | push_status_actions(status)
-            ]
-          }
-        ]
+        [banner(:neutral, "info", title, body, push_status_actions(status))]
     end
   end
 
   defp push_status_banner(_assigns), do: []
+
+  defp banner(tone, icon, title, body, extra \\ []) do
+    UI.tinted(
+      [
+        UI.row(
+          [
+            UI.icon(icon, text_color: UI.tone_fg(tone), text_size: 15),
+            UI.text(title,
+              text_size: :sm,
+              font_weight: "semibold",
+              text_color: :on_surface,
+              weight: 1
+            )
+          ],
+          gap: 8
+        ),
+        UI.meta(body)
+      ] ++ extra,
+      tone,
+      gap: 6
+    )
+  end
+
+  defp banner_icon(status) do
+    case status_state(status) do
+      :error -> "error"
+      :disconnected -> "warning"
+      _ -> "info"
+    end
+  end
 
   defp push_status_copy(:native_unavailable, reason) do
     {"Push notifications unavailable", push_unavailable_body(reason)}
@@ -610,17 +604,13 @@ defmodule DevideMob.SessionDashboardScreen do
 
   defp push_status_actions(:permission_denied) do
     [
-      %{
-        type: :row,
-        props: %{fill_width: true, gap: 8},
-        children: [
-          action_button("Open Settings", :open_notification_settings, :primary,
-            weight: 2,
-            text_color: :on_primary
-          ),
-          action_button("Retry", :retry_push_permission, :surface, weight: 1)
-        ]
-      }
+      UI.row(
+        [
+          UI.button("Open Settings", {self(), :open_notification_settings}, :primary, weight: 2),
+          UI.button("Retry", {self(), :retry_push_permission}, :secondary, weight: 1)
+        ],
+        gap: 8
+      )
     ]
   end
 
@@ -755,308 +745,78 @@ defmodule DevideMob.SessionDashboardScreen do
     end
   end
 
-  defp empty_state(title, body, cta, tap, footnote \\ nil) do
-    %{
-      type: :column,
-      props: %{fill_width: true, padding: :space_lg, gap: 10},
-      children:
-        [
-          %{
-            type: :text,
-            props: %{text: title, text_color: :on_surface, text_size: :lg, font_weight: "bold"},
-            children: []
-          },
-          %{
-            type: :text,
-            props: %{text: body, text_color: :muted, text_size: :sm},
-            children: []
-          },
-          footnote &&
-            %{
-              type: :text,
-              props: %{text: footnote, text_color: :muted, text_size: :xs},
-              children: []
-            },
-          %{
-            type: :button,
-            props: %{
-              text: cta,
-              fill_width: true,
-              background: :primary,
-              text_color: :on_primary,
-              padding: :space_md,
-              on_tap: {self(), tap}
-            },
-            children: []
-          }
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
-  end
+  # ── Workspace card ──────────────────────────────────────────────────────────
 
   defp card(wid, snap, status) do
     state = card_state(snap, status)
     pending = pending_count(snap)
 
-    %{
-      type: :column,
-      props: %{
-        fill_width: true,
-        background: :surface,
-        padding: :space_md,
-        padding_bottom: :space_sm,
-        gap: 8
-      },
-      children:
-        [
-          card_header(wid, status),
-          primary_status(state, snap, status),
-          review_callout(wid, pending),
-          run_progress_line(snap),
-          agents_line(snap),
-          secondary_context(state, snap),
-          card_actions(wid, state, status)
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
+    UI.card(
+      [
+        card_header(wid, status),
+        primary_status(state, snap, status),
+        review_callout(wid, pending),
+        meta_lines(state, snap),
+        card_actions(wid, state, status)
+      ],
+      tone: state_tone(state)
+    )
   end
-
-  # Action-first section: segmented filter + priority-sorted cards for the active
-  # segment, with an actionable empty state when the segment is clear.
-  defp observer_section(assigns) do
-    active = Map.get(assigns, :filter, :needs_action)
-
-    body =
-      case filtered_sorted_cards(assigns, active) do
-        [] -> [filter_empty_state(active)]
-        cards -> Enum.map(cards, &observer_card/1)
-      end
-
-    [filter_segments(active) | body]
-  end
-
-  defp filtered_sorted_cards(assigns, active) do
-    assigns
-    |> mobile_cards()
-    |> Enum.filter(&(card_segment(&1) == active))
-    |> Enum.sort_by(&priority_rank/1)
-  end
-
-  defp mobile_cards(assigns) do
-    assigns |> Map.get(:mobile_cards, []) |> Enum.filter(&is_map/1)
-  end
-
-  defp filter_segments(active) do
-    %{
-      type: :row,
-      props: %{fill_width: true, gap: 6},
-      children:
-        Enum.map(@card_segments, fn {key, label} ->
-          selected? = key == active
-
-          %{
-            type: :button,
-            props: %{
-              text: label,
-              weight: 1,
-              height: 40.0,
-              padding: :space_sm,
-              text_size: :sm,
-              background: if(selected?, do: :primary, else: :surface_raised),
-              text_color: if(selected?, do: :on_primary, else: :on_surface),
-              on_tap: {self(), {:filter, key}}
-            },
-            children: []
-          }
-        end)
-    }
-  end
-
-  defp filter_empty_state(:needs_action),
-    do: empty_notice("Nothing needs your action", "Approvals and blocked runs land here.")
-
-  defp filter_empty_state(:running),
-    do: empty_notice("No running work", "Active runs and agents appear here while they work.")
-
-  defp filter_empty_state(:failed),
-    do: empty_notice("No failures", "Connection issues and failed runs surface here.")
-
-  defp filter_empty_state(:done),
-    do: empty_notice("Nothing here yet", "Idle workspaces and finished work land here.")
-
-  defp empty_notice(title, body) do
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 4},
-      children: [
-        %{
-          type: :text,
-          props: %{text: title, text_color: :on_surface, font_weight: "bold"},
-          children: []
-        },
-        %{type: :text, props: %{text: body, text_color: :muted, text_size: :sm}, children: []}
-      ]
-    }
-  end
-
-  # Segment classification reads the normalized `kind`/`status`, falling back to
-  # the legacy `type` for compatibility.
-  defp card_segment(card) do
-    kind = to_string(get(card, "kind") || get(card, "type") || "")
-    status = to_string(get(card, "status") || "")
-
-    cond do
-      kind in ["approval_required", "needs_review"] -> :needs_action
-      kind == "in_progress" -> :running
-      kind == "connection_issue" -> :failed
-      kind == "workspace_idle" -> :done
-      status in ["resolved", "done"] -> :done
-      true -> :needs_action
-    end
-  end
-
-  defp priority_rank(card) do
-    case to_string(get(card, "priority") || "") do
-      "high" -> 0
-      "normal" -> 1
-      "low" -> 2
-      _ -> 3
-    end
-  end
-
-  defp card_action_notice({:ok, _result}), do: "Action accepted"
-  defp card_action_notice({:error, reason}), do: "Action failed: #{humanize_reason(reason)}"
-
-  defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
-  defp humanize_reason(reason), do: inspect(reason)
-
-  defp observer_card(card) do
-    workspace_id = get(card, "workspace_id")
-    card_id = get(card, "id")
-    tappable? = is_binary(card_id) and not is_nil(card_action_tap(card))
-
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
-      children:
-        [
-          %{
-            type: :row,
-            props: %{fill_width: true, gap: 8},
-            children: [
-              %{
-                type: :text,
-                props: %{
-                  text: get(card, "title", "Mobile update"),
-                  text_color: :on_surface,
-                  text_size: :lg,
-                  font_weight: "bold",
-                  weight: 1
-                },
-                children: []
-              },
-              chip(card_type_label(get(card, "type")), card_priority_color(get(card, "priority")))
-            ]
-          },
-          card_body(card),
-          workspace_id && muted_line("Workspace #{display_workspace(workspace_id)}"),
-          action_button(
-            action_label(card),
-            {:mobile_card_action, card_id},
-            :primary,
-            weight: 1,
-            text_color: :on_primary,
-            disabled: not tappable?
-          )
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
-  end
-
-  defp empty_workspace_state([]) do
-    [
-      empty_state(
-        "No workspace pinned",
-        "This phone is paired to your account, but you haven't pinned a workspace yet.",
-        "+ Pair workspace",
-        :pair_device,
-        "Currently supports one workspace at a time."
-      )
-    ]
-  end
-
-  defp empty_workspace_state(_cards), do: []
-
-  defp card_body(card) do
-    case get(card, "body") do
-      body when is_binary(body) and body != "" ->
-        %{type: :text, props: %{text: body, text_color: :muted, text_size: :sm}, children: []}
-
-      _ ->
-        nil
-    end
-  end
-
-  defp action_label(card) do
-    if needs_review_card?(card) do
-      "Review"
-    else
-      case get(get(card, "action"), "label") do
-        label when is_binary(label) and label != "" -> label
-        _ -> "Open"
-      end
-    end
-  end
-
-  defp card_type_label(type) do
-    type
-    |> to_string()
-    |> String.replace("_", " ")
-  end
-
-  defp card_priority_color("high"), do: :amber_400
-  defp card_priority_color(:high), do: :amber_400
-  defp card_priority_color(_priority), do: :surface_raised
 
   defp card_header(wid, status) do
-    %{
-      type: :row,
-      props: %{fill_width: true, gap: 8},
-      children: [
-        %{
-          type: :text,
-          props: %{
-            text: display_workspace(wid),
-            text_color: :on_surface,
-            font_weight: "bold",
-            weight: 1
-          },
-          children: []
-        },
+    UI.row(
+      [
+        UI.dot(state_tone(status_state(status))),
+        UI.text(display_workspace(wid),
+          text_color: :on_surface,
+          font_weight: "semibold",
+          text_size: :sm,
+          weight: 1
+        ),
         status_pill(wid, status)
-      ]
-    }
+      ],
+      gap: 8
+    )
   end
 
-  defp notice(nil), do: nil
+  defp status_pill(wid, status) do
+    tone = state_tone(status_state(status))
 
-  defp notice(message) do
-    %{
-      type: :text,
-      props: %{
-        text: message,
-        fill_width: true,
-        background: :surface_raised,
-        text_color: :on_surface,
-        text_size: :sm,
-        padding: :space_sm
-      },
-      children: []
-    }
+    case status_state(status) do
+      state when state in [:disconnected, :error] ->
+        # Tappable: a bad status is also the retry affordance, so it gets a
+        # full 44pt target rather than a decorative pill.
+        %{
+          type: :button,
+          props: %{
+            text: status_label(status),
+            background: UI.tone_tint(tone),
+            text_color: UI.tone_fg(tone),
+            text_size: :xs,
+            font_weight: "semibold",
+            corner_radius: :radius_pill,
+            fill_width: false,
+            padding_left: 12,
+            padding_right: 12,
+            height: 44.0,
+            on_tap: {self(), {:retry, wid}}
+          },
+          children: []
+        }
+
+      _ ->
+        UI.chip(status_label(status), tone)
+    end
   end
 
   defp primary_status(:connecting, _snap, _status) do
-    connecting_status_block("Connecting...", "Joining workspace feed")
+    UI.row(
+      [
+        UI.spinner(),
+        UI.stack([UI.title("Connecting"), UI.meta("Joining workspace feed")], gap: 2, weight: 1)
+      ],
+      gap: 10
+    )
   end
 
   defp primary_status(:offline, snap, status) do
@@ -1089,98 +849,68 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp status_block(title, subtitle) do
-    %{
-      type: :column,
-      props: %{fill_width: true, gap: 2},
-      children:
-        [
-          %{
-            type: :text,
-            props: %{text: title, text_color: :on_surface, text_size: :lg, font_weight: "bold"},
-            children: []
-          },
-          subtitle &&
-            %{
-              type: :text,
-              props: %{text: subtitle, text_color: :muted, text_size: :sm},
-              children: []
-            }
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
-  end
-
-  defp connecting_status_block(title, subtitle) do
-    %{
-      type: :column,
-      props: %{fill_width: true, gap: 4},
-      children: [
-        %{
-          type: :row,
-          props: %{fill_width: true, gap: 8},
-          children: [
-            %{type: :progress, props: %{color: :primary}, children: []},
-            %{
-              type: :text,
-              props: %{text: title, text_color: :on_surface, text_size: :lg, font_weight: "bold"},
-              children: []
-            }
-          ]
-        },
-        %{
-          type: :text,
-          props: %{text: subtitle, text_color: :muted, text_size: :sm},
-          children: []
-        }
-      ]
-    }
+    UI.stack([UI.title(title), UI.body(subtitle, text_color: :muted)], gap: 3)
   end
 
   defp review_callout(wid, count) when count > 0 do
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :amber_400, padding: :space_sm, gap: 2},
-      children: [
-        %{
-          type: :button,
-          props: %{
-            text: "#{count} #{plural(count, "item", "items")} need review",
-            fill_width: true,
-            background: :amber_400,
-            text_color: :on_surface,
-            text_size: :lg,
-            font_weight: "bold",
-            padding: 0,
-            on_tap: {self(), {:open, wid}}
-          },
-          children: []
-        },
-        %{
-          type: :text,
-          props: %{
-            text: "Review required before work continues",
-            text_color: :on_surface,
-            text_size: :sm
-          },
-          children: []
-        }
-      ]
-    }
+    UI.tinted(
+      [
+        UI.row(
+          [
+            UI.icon("warning", text_color: UI.tone_fg(:attention), text_size: 15),
+            UI.text("#{count} #{plural(count, "item", "items")} need review",
+              text_size: :sm,
+              font_weight: "semibold",
+              text_color: UI.tone_fg(:attention),
+              weight: 1
+            )
+          ],
+          gap: 8
+        ),
+        UI.meta("Review required before work continues")
+      ],
+      :attention,
+      gap: 4,
+      padding: 10,
+      on_tap: {self(), {:open, wid}}
+    )
   end
 
   defp review_callout(_wid, _count), do: nil
 
-  defp run_progress_line(snap) do
+  # Run / agent / activity context, collapsed into one muted line so the card
+  # stays scannable instead of becoming a wall of grey text.
+  defp meta_lines(state, snap) do
+    [
+      run_progress_text(snap),
+      agents_text(snap),
+      secondary_context(state, snap)
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> nil
+      parts -> UI.meta(Enum.join(parts, " · "))
+    end
+  end
+
+  defp run_progress_text(snap) do
     case current_run(snap) do
       %{} = run ->
-        muted_line("Run #{run_status_label(run)} · #{run_time_label(run)}")
+        status = run_status_label(run)
+        time = run_time_label(run)
+
+        # `run_time_label/1` names the timestamp it found ("started 4m ago"),
+        # which is usually the status again — don't say it twice.
+        if String.starts_with?(time, status),
+          do: "Run #{time}",
+          else: "Run #{status} · #{time}"
 
       _ ->
         nil
     end
   end
 
-  defp agents_line(snap) do
+  defp agents_text(snap) do
     agents =
       snap
       |> get("active_agents", [])
@@ -1188,50 +918,34 @@ defmodule DevideMob.SessionDashboardScreen do
       |> Enum.filter(&is_map/1)
 
     case agents do
-      [] ->
-        nil
-
-      _ ->
-        muted_line("Agents: #{agent_names(agents)}")
+      [] -> nil
+      _ -> "Agents: #{agent_names(agents)}"
     end
   end
 
   defp secondary_context(:error, _snap), do: nil
   defp secondary_context(:offline, _snap), do: nil
-
-  defp secondary_context(_state, snap) do
-    muted_line(last_activity_label(snap))
-  end
-
-  defp muted_line(text) do
-    %{
-      type: :text,
-      props: %{text: text, text_color: :muted, text_size: :xs},
-      children: []
-    }
-  end
+  defp secondary_context(_state, snap), do: last_activity_label(snap)
 
   defp card_actions(wid, :connecting, _status) do
-    %{
-      type: :row,
-      props: %{fill_width: true, gap: 8},
-      children: [
-        action_button("Open", {:open, wid}, :surface, weight: 3, disabled: true),
-        action_button("...", {:menu, wid}, :surface, weight: 1)
-      ]
-    }
+    UI.row(
+      [
+        UI.button("Open", {self(), {:open, wid}}, :secondary, weight: 3, disabled: true),
+        overflow_button(wid)
+      ],
+      gap: 8
+    )
   end
 
   defp card_actions(wid, :offline, _status) do
-    %{
-      type: :row,
-      props: %{fill_width: true, gap: 8},
-      children: [
-        action_button("Retry", {:retry, wid}, :primary, weight: 2, text_color: :on_primary),
-        action_button("Open", {:open, wid}, :surface_raised, weight: 2),
-        action_button("...", {:menu, wid}, :surface, weight: 1)
-      ]
-    }
+    UI.row(
+      [
+        UI.button("Retry", {self(), {:retry, wid}}, :primary, weight: 2),
+        UI.button("Open", {self(), {:open, wid}}, :secondary, weight: 2),
+        overflow_button(wid)
+      ],
+      gap: 8
+    )
   end
 
   defp card_actions(wid, :error, status) do
@@ -1239,9 +953,9 @@ defmodule DevideMob.SessionDashboardScreen do
       case status_reason(status) do
         :workspace_not_found ->
           [
-            action_button("Unpin", {:unpin, wid}, :primary, weight: 2, text_color: :on_primary),
-            action_button("Pair again", {:pair_again, wid}, :surface_raised, weight: 2),
-            action_button("...", {:menu, wid}, :surface, weight: 1)
+            UI.button("Unpin", {self(), {:unpin, wid}}, :primary, weight: 2),
+            UI.button("Pair again", {self(), {:pair_again, wid}}, :secondary, weight: 2),
+            overflow_button(wid)
           ]
 
         reason
@@ -1252,97 +966,575 @@ defmodule DevideMob.SessionDashboardScreen do
                :token_revoked
              ] ->
           [
-            action_button("Pair again", {:pair_again, wid}, :primary,
-              weight: 2,
-              text_color: :on_primary
-            ),
-            action_button("Retry", {:retry, wid}, :surface_raised, weight: 2),
-            action_button("...", {:menu, wid}, :surface, weight: 1)
+            UI.button("Pair again", {self(), {:pair_again, wid}}, :primary, weight: 2),
+            UI.button("Retry", {self(), {:retry, wid}}, :secondary, weight: 2),
+            overflow_button(wid)
           ]
 
         _ ->
           [
-            action_button("Retry", {:retry, wid}, :primary, weight: 2, text_color: :on_primary),
-            action_button("Pair again", {:pair_again, wid}, :surface_raised, weight: 2),
-            action_button("...", {:menu, wid}, :surface, weight: 1)
+            UI.button("Retry", {self(), {:retry, wid}}, :primary, weight: 2),
+            UI.button("Pair again", {self(), {:pair_again, wid}}, :secondary, weight: 2),
+            overflow_button(wid)
           ]
       end
 
-    %{
-      type: :row,
-      props: %{fill_width: true, gap: 8},
-      children: children
-    }
+    UI.row(children, gap: 8)
   end
 
   defp card_actions(wid, _state, _status) do
+    UI.row(
+      [
+        UI.button("Open", {self(), {:open, wid}}, :primary, weight: 3),
+        overflow_button(wid)
+      ],
+      gap: 8
+    )
+  end
+
+  defp overflow_button(wid) do
+    UI.icon_button("more", {self(), {:menu, wid}},
+      label: "Workspace menu",
+      background: :surface_raised
+    )
+  end
+
+  # ── Attention tiers ─────────────────────────────────────────────────────────
+  #
+  # Three sections in one scroll rather than four exclusive filter segments.
+  # Under segments, a failed run was invisible while you were reading "Needs
+  # Action" — nothing actionable should ever be hidden behind a tab. The tail
+  # ("Recent") is the only thing that collapses, and only past a few rows.
+  #
+  #   Needs you — blocked on you, sorted by how long you've been the bottleneck
+  #   Running   — work in flight, newest first
+  #   Recent    — failures and settled work, newest first, capped
+  #
+  # Cards move between tiers on their own as their state changes.
+
+  defp observer_section(assigns) do
+    now = now_unix()
+    tiers = tiered_cards(assigns, now)
+    snoozed = snoozed_cards(assigns)
+
+    [
+      tier_section(:needs_you, tiers.needs_you, assigns, now),
+      tier_section(:running, tiers.running, assigns, now),
+      tier_section(:recent, tiers.recent, assigns, now),
+      snoozed_footer(snoozed)
+    ]
+    |> List.flatten()
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp tiered_cards(assigns, now) do
+    visible =
+      assigns
+      |> mobile_cards()
+      |> Enum.reject(&snoozed_card?(assigns, &1))
+
     %{
-      type: :row,
-      props: %{fill_width: true, gap: 8},
-      children: [
-        action_button("Open", {:open, wid}, :primary, weight: 3, text_color: :on_primary),
-        action_button("...", {:menu, wid}, :surface, weight: 1)
-      ]
+      # Longest wait first: the point of this tier is "who has been waiting on
+      # me the longest", not "what happened most recently".
+      needs_you:
+        visible
+        |> Enum.filter(&(card_tier(&1) == :needs_you))
+        |> Enum.sort_by(&{priority_rank(&1), -waiting_seconds(&1, now)}),
+      running:
+        visible
+        |> Enum.filter(&(card_tier(&1) == :running))
+        |> Enum.sort_by(&(-card_updated_unix(&1))),
+      recent:
+        visible
+        |> Enum.filter(&(card_tier(&1) == :recent))
+        |> Enum.sort_by(&{priority_rank(&1), -card_updated_unix(&1)})
     }
   end
 
-  defp action_button(label, tap, background, opts) do
-    %{
-      type: :button,
-      props: %{
-        text: label,
-        weight: Keyword.get(opts, :weight, 1),
-        background: background,
-        text_color: Keyword.get(opts, :text_color, :on_surface),
-        padding: :space_sm,
-        height: 44.0,
-        disabled: Keyword.get(opts, :disabled, false),
-        on_tap: {self(), tap}
-      },
-      children: []
-    }
+  defp tier_section(tier, cards, assigns, now) do
+    expanded? = tier != :recent or Map.get(assigns, :show_all_recent, false)
+    shown = if expanded?, do: cards, else: Enum.take(cards, @recent_preview_limit)
+    hidden = length(cards) - length(shown)
+
+    body =
+      case shown do
+        [] -> [tier_empty_state(tier)]
+        cards -> Enum.map(cards, &observer_card(&1, now))
+      end
+
+    [tier_heading(tier, length(cards)) | body] ++ [show_more_button(tier, hidden)]
   end
 
-  defp status_pill(wid, status) do
-    case status_state(status) do
-      state when state in [:disconnected, :error] ->
-        %{
-          type: :button,
-          props: %{
-            text: status_label(status),
-            background: status_color(status),
-            text_color: :on_surface,
-            text_size: :xs,
-            padding_left: :space_sm,
-            padding_right: :space_sm,
-            padding_top: 8,
-            padding_bottom: 8,
-            height: 44.0,
-            on_tap: {self(), {:retry, wid}}
-          },
-          children: []
-        }
+  defp tier_heading(tier, 0), do: UI.section_label(tier_label(tier))
 
-      _ ->
-        chip(status_label(status), status_color(status))
+  defp tier_heading(tier, count),
+    do: UI.section_label("#{tier_label(tier)} · #{count}")
+
+  defp tier_label(:needs_you), do: "Needs you"
+  defp tier_label(:running), do: "Running"
+  defp tier_label(:recent), do: "Recent"
+
+  defp show_more_button(:recent, hidden) when hidden > 0 do
+    UI.button("Show #{hidden} more", {self(), :show_all_recent}, :ghost)
+  end
+
+  defp show_more_button(_tier, _hidden), do: nil
+
+  defp tier_empty_state(:needs_you),
+    do: empty_notice("Nothing needs your action", "Approvals and blocked runs land here.")
+
+  defp tier_empty_state(:running),
+    do: empty_notice("No running work", "Active runs and agents appear here while they work.")
+
+  defp tier_empty_state(:recent), do: nil
+
+  # Which tier a card belongs to. `kind`/`status` are the normalized server
+  # fields; `type` is the legacy fallback.
+  defp card_tier(card) do
+    kind = to_string(get(card, "kind") || get(card, "type") || "")
+    status = to_string(get(card, "status") || "")
+
+    cond do
+      kind in ["approval_required", "needs_review"] -> :needs_you
+      kind == "in_progress" -> :running
+      status in ["resolved", "done"] -> :recent
+      true -> :recent
     end
   end
 
-  defp chip(text, color) do
-    %{
-      type: :text,
-      props: %{
-        text: text,
-        text_size: :xs,
-        text_color: :on_surface,
-        background: color,
-        padding_left: :space_sm,
-        padding_right: :space_sm,
-        padding_top: 4,
-        padding_bottom: 4
-      },
-      children: []
-    }
+  # ── Snooze ──────────────────────────────────────────────────────────────────
+  #
+  # Device-local and self-expiring (see `SessionConfig.snooze_card/3`): the
+  # server owns what is true, the phone owns what it wants to be bothered about
+  # right now. A snoozed card is never *deleted* — it comes back on its own.
+
+  defp snoozed_card?(assigns, card) do
+    case get(card, "id") do
+      id when is_binary(id) -> Map.has_key?(snoozed_map(assigns), id)
+      _ -> false
+    end
+  end
+
+  defp snoozed_cards(assigns) do
+    ids = snoozed_map(assigns)
+
+    assigns
+    |> mobile_cards()
+    |> Enum.filter(fn card ->
+      case get(card, "id") do
+        id when is_binary(id) -> Map.has_key?(ids, id)
+        _ -> false
+      end
+    end)
+  end
+
+  defp snoozed_map(assigns), do: Map.get(assigns, :snoozed, %{})
+
+  defp snoozed_footer([]), do: nil
+
+  defp snoozed_footer(cards) do
+    count = length(cards)
+
+    UI.row(
+      [
+        UI.meta("#{count} snoozed #{plural(count, "card", "cards")}", weight: 1),
+        UI.button("Show", {self(), :unsnooze_all}, :ghost, fill_width: false)
+      ],
+      gap: 8
+    )
+  end
+
+  # ── Waiting time ────────────────────────────────────────────────────────────
+  #
+  # Blocked work reports how long *you* have been the bottleneck, not when the
+  # last message arrived. "Waiting 2h" is a different call to action than
+  # "updated 2h ago".
+
+  defp waiting_seconds(card, now) do
+    case card_created_unix(card) do
+      nil -> 0
+      created -> max(now - created, 0)
+    end
+  end
+
+  defp waiting_label(card, now) do
+    case card_created_unix(card) do
+      nil -> nil
+      _created -> "Waiting #{duration_label(waiting_seconds(card, now))}"
+    end
+  end
+
+  defp duration_label(seconds) when seconds < 60, do: "#{max(seconds, 1)}s"
+  defp duration_label(seconds) when seconds < 3_600, do: "#{div(seconds, 60)}m"
+  defp duration_label(seconds) when seconds < 86_400, do: "#{div(seconds, 3_600)}h"
+  defp duration_label(seconds), do: "#{div(seconds, 86_400)}d"
+
+  defp card_created_unix(card), do: card |> get("created_at") |> to_unix()
+  defp card_updated_unix(card), do: card |> get("updated_at") |> to_unix() || 0
+
+  defp to_unix(value) when is_binary(value) do
+    case parse_datetime(value) do
+      {:ok, datetime} -> DateTime.to_unix(datetime)
+      :error -> nil
+    end
+  end
+
+  defp to_unix(%DateTime{} = value), do: DateTime.to_unix(value)
+  defp to_unix(value) when is_integer(value), do: value
+  defp to_unix(_value), do: nil
+
+  defp now_unix, do: DateTime.utc_now() |> DateTime.to_unix()
+
+  defp mobile_cards(assigns) do
+    assigns |> Map.get(:mobile_cards, []) |> Enum.filter(&is_map/1)
+  end
+
+  defp empty_notice(title, body) do
+    UI.card(
+      [
+        UI.row(
+          [
+            UI.icon("check", text_color: UI.tone_fg(:done), text_size: 16),
+            UI.text(title, text_size: :sm, font_weight: "semibold", text_color: :on_surface)
+          ],
+          gap: 8
+        ),
+        UI.meta(body)
+      ],
+      gap: 6,
+      padding: 14
+    )
+  end
+
+  defp priority_rank(card) do
+    case to_string(get(card, "priority") || "") do
+      "high" -> 0
+      "normal" -> 1
+      "low" -> 2
+      _ -> 3
+    end
+  end
+
+  defp inline_action_label(socket, card_id, action_id) do
+    socket.assigns.mobile_cards_by_id
+    |> Map.get(card_id, %{})
+    |> get("actions")
+    |> List.wrap()
+    |> Enum.filter(&is_map/1)
+    |> Enum.find(&(get(&1, "id") == action_id))
+    |> case do
+      nil -> String.replace(action_id, "_", " ")
+      spec -> spec_label(spec)
+    end
+  end
+
+  defp card_action_notice({:ok, _result}), do: "Action accepted"
+  defp card_action_notice({:error, reason}), do: "Action failed: #{humanize_reason(reason)}"
+
+  defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
+  defp humanize_reason(reason), do: inspect(reason)
+
+  defp observer_card(card, now) do
+    tone = card_tone(card)
+
+    UI.card(
+      [
+        UI.row(
+          [
+            UI.dot(tone),
+            UI.chip(card_type_label(get(card, "type")), tone),
+            priority_chip(get(card, "priority")),
+            waiting_chip(card, now)
+          ],
+          gap: 6
+        ),
+        UI.title(get(card, "title", "Mobile update")),
+        UI.body(card_body_text(card), text_color: :muted),
+        command_line(card),
+        card_meta_line(card),
+        card_action_row(card)
+      ],
+      tone: tone
+    )
+  end
+
+  # The blocked-time chip only makes sense where you are the bottleneck; on a
+  # running or settled card it would just be a second timestamp.
+  defp waiting_chip(card, now) do
+    if card_tier(card) == :needs_you do
+      case waiting_label(card, now) do
+        nil -> nil
+        label -> UI.chip(label, :neutral)
+      end
+    end
+  end
+
+  # The command itself, not just "1 item needs review". A one-tap approve is
+  # only safe if the card says what is being approved.
+  defp command_line(card) do
+    case card_command(card) do
+      nil ->
+        nil
+
+      command ->
+        UI.box(
+          [UI.text(command, text_size: :xs, text_color: :on_surface, font_weight: "medium")],
+          background: :surface_raised,
+          corner_radius: :radius_sm,
+          padding_left: 10,
+          padding_right: 10,
+          padding_top: 8,
+          padding_bottom: 8
+        )
+    end
+  end
+
+  defp card_command(card) do
+    [
+      get(get(card, "meta"), "command"),
+      get(get(card, "meta"), "command_id"),
+      get(get(card, "context"), "command_id")
+    ]
+    |> Enum.find(&(is_binary(&1) and &1 != ""))
+    |> case do
+      nil -> nil
+      command -> truncate(command, 60)
+    end
+  end
+
+  defp card_meta_line(card) do
+    workspace_id = get(card, "workspace_id")
+
+    [
+      workspace_id && "Workspace #{display_workspace(workspace_id)}",
+      updated_label(card)
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> nil
+      parts -> UI.meta(Enum.join(parts, " · "))
+    end
+  end
+
+  defp updated_label(card) do
+    case get(card, "updated_at") do
+      value when is_binary(value) -> "updated #{relative_time(value)}"
+      _ -> nil
+    end
+  end
+
+  # Decisions the server already authored (approve / deny / ask agent to fix)
+  # are offered on the card itself. Anything that needs typing — a note, a
+  # confirmation — still routes into the review screen, so a mis-tap can't
+  # deny a run.
+  defp card_action_row(card) do
+    card_id = get(card, "id")
+    tappable? = is_binary(card_id) and not is_nil(card_action_tap(card))
+    inline = inline_actions(card)
+
+    open_button =
+      UI.button(
+        action_label(card),
+        {self(), {:mobile_card_action, card_id}},
+        open_variant(inline),
+        disabled: not tappable?,
+        weight: 1
+      )
+
+    snooze = snooze_button(card)
+
+    case inline do
+      [] ->
+        UI.row(Enum.reject([open_button, snooze], &is_nil/1), gap: 8)
+
+      specs ->
+        variants = inline_variants(specs)
+
+        UI.stack(
+          [
+            UI.row(
+              specs
+              |> Enum.zip(variants)
+              |> Enum.map(fn {spec, variant} ->
+                UI.button(
+                  spec_label(spec),
+                  {self(), {:inline_card_action, card_id, get(spec, "id")}},
+                  variant,
+                  weight: 1
+                )
+              end),
+              gap: 8
+            ),
+            UI.row(Enum.reject([open_button, snooze], &is_nil/1), gap: 8)
+          ],
+          gap: 8
+        )
+    end
+  end
+
+  defp snooze_button(card) do
+    case get(card, "id") do
+      id when is_binary(id) ->
+        UI.icon_button("history", {self(), {:snooze, id}},
+          label: "Snooze for an hour",
+          background: :surface_raised
+        )
+
+      _ ->
+        nil
+    end
+  end
+
+  # Inline-able: a server action that needs no input and no confirmation.
+  defp inline_actions(card) do
+    card
+    |> get("actions")
+    |> List.wrap()
+    |> Enum.filter(&is_map/1)
+    |> Enum.filter(fn spec ->
+      is_binary(get(spec, "id")) and
+        is_nil(get(spec, "route")) and
+        is_nil(get(spec, "confirmation")) and
+        required_inputs(spec) == []
+    end)
+    |> Enum.take(2)
+  end
+
+  defp required_inputs(spec) do
+    spec
+    |> get("input", [])
+    |> List.wrap()
+    |> Enum.filter(&is_map/1)
+    |> Enum.filter(&(get(&1, "required") == true))
+  end
+
+  defp spec_label(spec) do
+    case get(spec, "label") do
+      label when is_binary(label) and label != "" -> label
+      _ -> get(spec, "id") |> to_string() |> String.replace("_", " ")
+    end
+  end
+
+  # Every card should have exactly one obvious answer. If the server didn't
+  # mark any inline action primary (a lone "Ask agent to fix", say), promote the
+  # first one rather than leaving a row of identical grey buttons.
+  defp inline_variants(specs) do
+    variants = Enum.map(specs, &spec_variant/1)
+
+    if :primary in variants do
+      variants
+    else
+      List.replace_at(variants, 0, :primary)
+    end
+  end
+
+  defp spec_variant(spec) do
+    cond do
+      get(spec, "destructive?") == true -> :danger
+      get(spec, "style") == "destructive" -> :danger
+      get(spec, "style") == "primary" -> :primary
+      true -> :secondary
+    end
+  end
+
+  # With inline decisions present the navigation action steps down a level:
+  # the decision is the point of the card, not "open".
+  defp open_variant([]), do: :primary
+  defp open_variant(_inline), do: :secondary
+
+  defp priority_chip(priority) when priority in ["high", :high],
+    do: UI.chip("high", :attention)
+
+  defp priority_chip(_priority), do: nil
+
+  defp empty_workspace_state([]) do
+    [
+      UI.card(
+        [
+          UI.empty_state(
+            "No workspace pinned",
+            "This phone is paired to your account, but you haven't pinned a workspace yet.",
+            icon: "add",
+            footnote: "Currently supports one workspace at a time.",
+            cta: "+ Pair workspace",
+            on_tap: {self(), :pair_device}
+          )
+        ],
+        padding: 4
+      )
+    ]
+  end
+
+  defp empty_workspace_state(_cards), do: []
+
+  defp card_body_text(card) do
+    case get(card, "body") do
+      body when is_binary(body) and body != "" -> body
+      _ -> nil
+    end
+  end
+
+  defp action_label(card) do
+    if needs_review_card?(card) do
+      "Review"
+    else
+      case get(get(card, "action"), "label") do
+        label when is_binary(label) and label != "" -> label
+        _ -> "Open"
+      end
+    end
+  end
+
+  defp card_type_label(type) do
+    type
+    |> to_string()
+    |> String.replace("_", " ")
+  end
+
+  # A card's tone is its kind: approvals demand attention, runs are in flight,
+  # connection issues and failed runs are failures, idle workspaces are settled.
+  defp card_tone(card) do
+    case to_string(get(card, "kind") || get(card, "type") || "") do
+      kind when kind in ["approval_required", "needs_review"] -> :attention
+      "in_progress" -> :running
+      kind when kind in ["connection_issue", "run_failed"] -> :failed
+      _ -> :done
+    end
+  end
+
+  defp state_tone(:needs_review), do: :attention
+  defp state_tone(:running), do: :running
+  defp state_tone(:error), do: :failed
+  # Offline is a warning, not a failure: the work is fine, the phone's view of
+  # it is stale.
+  defp state_tone(:offline), do: :attention
+  defp state_tone(:disconnected), do: :attention
+  defp state_tone(:connecting), do: :neutral
+  defp state_tone(:joined), do: :done
+  defp state_tone(_state), do: :neutral
+
+  defp status_tone(status) do
+    case status_state(status) do
+      :joined -> :done
+      :connecting -> :neutral
+      :disconnected -> :attention
+      :error -> :failed
+      _ -> :neutral
+    end
+  end
+
+  defp notice(nil), do: nil
+
+  defp notice(message) do
+    UI.box(
+      [UI.text(message, text_color: :on_surface, text_size: :sm)],
+      background: :surface_raised,
+      fill_width: true,
+      padding_left: 16,
+      padding_right: 16,
+      padding_top: 10,
+      padding_bottom: 10
+    )
   end
 
   defp assign_pairing(socket) do
@@ -2053,16 +2245,6 @@ defmodule DevideMob.SessionDashboardScreen do
       {:error, :workspace_unavailable} -> "Unavailable"
       {:error, _} -> "Error"
       _ -> "Unknown"
-    end
-  end
-
-  defp status_color(status) do
-    case status_state(status) do
-      :joined -> :green_400
-      :connecting -> :amber_400
-      :disconnected -> :surface_raised
-      :error -> :red_400
-      _ -> :surface_raised
     end
   end
 

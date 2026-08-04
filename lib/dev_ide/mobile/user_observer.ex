@@ -260,12 +260,38 @@ defmodule DevIDE.Mobile.UserObserver do
       last_activity_at: event.inserted_at
     })
     |> Card.in_progress(event.inserted_at)
-    |> then(&upsert_card(state, &1, event.action))
+    |> then(fn card ->
+      state
+      |> remove_card(:run_failed, event_card_attrs(state.user_id, event), event.action)
+      |> upsert_card(card, event.action)
+    end)
   end
 
   defp handle_audit_event(state, %Event{} = event)
-       when event.action in ["run.succeeded", "run.failed", "run.timed_out"] do
-    remove_card(state, :in_progress, event_card_attrs(state.user_id, event), event.action)
+       when event.action in ["run.failed", "run.timed_out"] do
+    attrs = event_card_attrs(state.user_id, event)
+
+    state
+    |> remove_card(:in_progress, attrs, event.action)
+    |> upsert_card(
+      attrs
+      |> Map.merge(%{
+        command: meta(event, "command_line") || meta(event, "command_id"),
+        outcome: if(event.action == "run.timed_out", do: "timed_out", else: "failed"),
+        exit_code: meta(event, "exit_code"),
+        failed_at: event.inserted_at
+      })
+      |> Card.run_failed(event.inserted_at),
+      event.action
+    )
+  end
+
+  defp handle_audit_event(state, %Event{action: "run.succeeded"} = event) do
+    attrs = event_card_attrs(state.user_id, event)
+
+    state
+    |> remove_card(:in_progress, attrs, event.action)
+    |> remove_card(:run_failed, attrs, event.action)
   end
 
   defp handle_audit_event(state, _event), do: state

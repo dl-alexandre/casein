@@ -10,5 +10,5 @@ defmodule DevIDE.Mobile do
 
   use Boundary,
     deps: [DevIDE, DevIde.Repo],
-    exports: [Card, UserObserver, Actions, ActionOutcome]
+    exports: [Card, UserObserver, Actions, ActionOutcome, AgentInstructions]
 end

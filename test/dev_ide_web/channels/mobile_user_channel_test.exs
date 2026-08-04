@@ -775,6 +775,215 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     assert_reply ref, :error, %{reason: "card_not_found"}, 1_000
   end
 
+  test "agent_instruction refuses a workspace this device is not scoped to", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    other_workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    create_workspace(workspace_root, other_workspace_id, user_id)
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{pairing_workspace_id: workspace_id}
+             )
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "agent_instruction", %{
+        "workspace_id" => other_workspace_id,
+        "text" => "do something"
+      })
+
+    assert_reply ref, :error, %{reason: "workspace_scope_mismatch"}, 1_000
+  end
+
+  test "agent_instruction rejects an empty instruction", %{workspace_root: workspace_root} do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "agent_instruction", %{
+        "workspace_id" => workspace_id,
+        "text" => "   "
+      })
+
+    assert_reply ref, :error, %{reason: "empty_instruction"}, 1_000
+  end
+
+  test "agent_targets reports the addressable panes and the size limit", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+
+    ref = Phoenix.ChannelTest.push(socket, "agent_targets", %{"workspace_id" => workspace_id})
+
+    # No tmux session exists for this workspace in the test environment, so the
+    # list is empty — the contract under test is the gate and the envelope.
+    assert_reply ref, :ok, %{targets: [], max_bytes: max_bytes}, 1_000
+    assert max_bytes > 0
+  end
+
+  test "request_changes hands the note to the agent pane; deny does not", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    deny_run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    session = seed_agent_pane(workspace_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      review_count: 1,
+      command_id: "mix deploy --prod"
+    })
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => "needs_review:#{workspace_id}:#{run_id}",
+        "action" => "request_changes",
+        "payload" => %{"note" => "Use a narrower scope."}
+      })
+
+    assert_reply ref, :ok, %{status: "accepted", result: result}, 1_000
+    assert result["note_delivered"] == true
+
+    assert_receive {:fake_tmux_paste_text, ^session, _pane, pasted, _opts}, 1_000
+    assert pasted =~ "Use a narrower scope."
+    # Server-authored framing tells the agent this was a rejection, not an
+    # approval with commentary.
+    assert pasted =~ "Changes requested from mobile"
+    assert pasted =~ "mix deploy --prod"
+
+    # The decision itself is still a denial in the ledger.
+    assert [%{action: "run.approval_denied"} | _] = Ledger.timeline_for(workspace_id, run_id)
+
+    # Deny is a full stop: its note (if any) is audit-only.
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: deny_run_id,
+      review_count: 1,
+      command_id: "mix deploy --prod"
+    })
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => "needs_review:#{workspace_id}:#{deny_run_id}",
+        "action" => "deny",
+        "payload" => %{"note" => "No."}
+      })
+
+    assert_reply ref, :ok, %{status: "accepted", result: deny_result}, 1_000
+    refute Map.has_key?(deny_result, "note_delivered")
+    refute_receive {:fake_tmux_paste_text, _session, _pane, _text, _opts}, 200
+  end
+
+  test "a change request stands even when the agent pane is gone", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      review_count: 1,
+      command_id: "compile"
+    })
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => "needs_review:#{workspace_id}:#{run_id}",
+        "action" => "request_changes",
+        "payload" => %{"note" => "Please add the missing test."}
+      })
+
+    # Delivery is best effort; the decision is authoritative and must not fail
+    # with it. The outcome records that the note did not land.
+    assert_reply ref, :ok, %{status: "accepted", result: result}, 1_000
+    assert result["note_delivered"] == false
+    assert result["note_undelivered_reason"] == "agent_pane_not_found"
+
+    assert [%{action: "run.approval_denied"} = denied] = Ledger.timeline_for(workspace_id, run_id)
+    assert denied.metadata["note"] == "Please add the missing test."
+  end
+
+  # A role-marked agent pane in a tmux session named for this workspace, so
+  # `AgentInstructions` can resolve a delivery target.
+  defp seed_agent_pane(workspace_id) do
+    session = DevIDE.Terminals.tmux_session_name(workspace_id, "agent")
+
+    prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [
+        %{
+          id: "@1",
+          index: 0,
+          name: "work",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%2",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "bash",
+          current_path: "/workspace",
+          role: "agent"
+        }
+      ]
+    })
+
+    on_exit(fn ->
+      restore_env(:tmux_adapter, prev_adapter)
+      restore_fake(:fake_tmux_test_pid, prev_pid)
+      restore_fake(:fake_tmux_windows, prev_windows)
+      restore_fake(:fake_tmux_panes, prev_panes)
+    end)
+
+    session
+  end
+
+  defp restore_fake(key, nil), do: TmuxCtl.Test.FakeState.delete(key)
+  defp restore_fake(key, value), do: TmuxCtl.Test.FakeState.put(key, value)
+
   defp prepare_user(user_id) do
     on_exit(fn -> UserObserver.stop(user_id) end)
     {:ok, _pid} = UserObserver.ensure_started(user_id)

@@ -6,7 +6,8 @@ defmodule DevIDE.Mobile.Card do
   shaping, ids, dedupe keys, timestamps, and ordering.
   """
 
-  @type card_type :: :needs_review | :in_progress | :connection_issue | :workspace_idle
+  @type card_type ::
+          :needs_review | :in_progress | :connection_issue | :workspace_idle | :run_failed
   @type priority :: :high | :normal | :low
 
   @type action :: %{
@@ -239,6 +240,114 @@ defmodule DevIDE.Mobile.Card do
     end
   end
 
+  @doc """
+  A run that failed or timed out.
+
+  Until this existed the observer only *removed* the in-progress card on
+  `run.failed`, so a failure left nothing behind on the phone — the app's
+  "Failed" filter could never fill. The card offers the usual navigation plus a
+  server-authored instruction action, so a failure can be handed straight back
+  to the agent from a notification.
+  """
+  @spec run_failed(map(), DateTime.t()) :: t()
+  def run_failed(attrs, now \\ DateTime.utc_now()) when is_map(attrs) do
+    user_id = require_string!(attrs, :user_id)
+    workspace_id = require_string!(attrs, :workspace_id)
+    session_id = optional_string(attrs[:session_id] || attrs["session_id"])
+
+    command =
+      optional_string(
+        attrs[:command] || attrs["command"] || attrs[:command_id] || attrs["command_id"]
+      )
+
+    outcome = outcome(attrs)
+    exit_code = attrs[:exit_code] || attrs["exit_code"]
+    reason = attrs[:reason] || attrs["reason"]
+
+    base(
+      :run_failed,
+      %{
+        user_id: user_id,
+        workspace_id: workspace_id,
+        workspace_name: workspace_name(attrs, workspace_id),
+        session_id: session_id,
+        priority: :high,
+        status: "failed",
+        context: %{session_id: session_id, command_id: command},
+        actions: [
+          navigation_action_spec("open", "View", {:session_detail, workspace_id, session_id}),
+          fix_instruction_spec(command, outcome, exit_code, reason)
+        ],
+        title: run_failed_title(command, outcome),
+        body: run_failed_body(exit_code, reason),
+        action: %{label: "View", route: {:session_detail, workspace_id, session_id}},
+        meta: %{
+          command_id: command,
+          outcome: outcome,
+          exit_code: exit_code,
+          reason: reason,
+          failed_at: attrs[:failed_at] || attrs["failed_at"],
+          last_activity_at: attrs[:last_activity_at] || attrs["last_activity_at"]
+        },
+        now: now
+      }
+    )
+  end
+
+  defp outcome(attrs) do
+    case attrs[:outcome] || attrs["outcome"] do
+      value when value in ["timed_out", :timed_out] -> "timed_out"
+      _ -> "failed"
+    end
+  end
+
+  defp run_failed_title(nil, "timed_out"), do: "Run timed out"
+  defp run_failed_title(nil, _outcome), do: "Run failed"
+  defp run_failed_title(command, "timed_out"), do: "#{command} timed out"
+  defp run_failed_title(command, _outcome), do: "#{command} failed"
+
+  defp run_failed_body(nil, nil), do: "The run stopped before it finished"
+  defp run_failed_body(nil, reason), do: "Reason: #{reason}"
+  defp run_failed_body(exit_code, nil), do: "Exit code #{exit_code}"
+  defp run_failed_body(exit_code, reason), do: "Exit code #{exit_code} · #{reason}"
+
+  # A server-authored instruction: the client shows the label and submits the
+  # id; the prompt text is composed here so a phone can never dictate what gets
+  # typed into an agent pane beyond its own optional note.
+  defp fix_instruction_spec(command, outcome, exit_code, reason) do
+    %{
+      id: "ask_agent_to_fix",
+      label: "Ask agent to fix",
+      style: "default",
+      destructive?: false,
+      confirmation: nil,
+      input: [%{name: :note, type: :text, required: false, max_length: @review_note_max_length}],
+      instruction: fix_instruction_text(command, outcome, exit_code, reason)
+    }
+  end
+
+  defp fix_instruction_text(command, outcome, exit_code, reason) do
+    verb = if outcome == "timed_out", do: "timed out", else: "failed"
+
+    [
+      "The run #{command || "in this workspace"} #{verb}",
+      exit_code && "with exit code #{exit_code}",
+      reason && "(#{reason})"
+    ]
+    |> Enum.reject(&(&1 in [nil, false]))
+    |> Enum.join(" ")
+    |> Kernel.<>(". Investigate the failure and fix it.")
+  end
+
+  @doc """
+  True when an action spec carries a server-authored agent instruction. Such
+  actions paste `spec.instruction` into the workspace's agent pane instead of
+  mutating a run.
+  """
+  @spec instruction_action?(action_spec() | map()) :: boolean()
+  def instruction_action?(%{instruction: instruction}) when is_binary(instruction), do: true
+  def instruction_action?(_spec), do: false
+
   @spec key(t() | map()) :: {String.t(), String.t(), String.t() | nil, card_type()}
   def key(%{user_id: user_id, workspace_id: workspace_id, session_id: session_id, type: type}) do
     {user_id, workspace_id, session_id, type}
@@ -425,6 +534,7 @@ defmodule DevIDE.Mobile.Card do
   defp default_kind(:in_progress), do: "in_progress"
   defp default_kind(:connection_issue), do: "connection_issue"
   defp default_kind(:workspace_idle), do: "workspace_idle"
+  defp default_kind(:run_failed), do: "run_failed"
 
   defp binary_session(value) when is_binary(value) do
     case String.trim(value) do

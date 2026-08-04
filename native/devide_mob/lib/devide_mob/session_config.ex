@@ -19,6 +19,8 @@ defmodule DevideMob.SessionConfig do
   @pairing_key :session_pairing
   @pinned_key :session_pinned_workspaces
   @resume_key :session_resume_context
+  @snoozed_key :session_snoozed_cards
+  @outbox_key :session_instruction_outbox
 
   @doc "Returns `{:ok, url, token}` if a pairing exists, else `:error`."
   @spec pairing() :: {:ok, String.t(), String.t()} | :error
@@ -46,8 +48,93 @@ defmodule DevideMob.SessionConfig do
   def clear_all do
     clear_pairing()
     Mob.State.put(@pinned_key, [])
+    Mob.State.put(@snoozed_key, %{})
+    Mob.State.put(@outbox_key, [])
     clear_resume_context()
     :ok
+  end
+
+  # ── Snoozed cards ───────────────────────────────────────────────────────────
+  #
+  # Device-local, deliberately: the server owns what is true, the phone owns
+  # what it wants to be bothered about. A snooze is a `card_id => unix seconds`
+  # entry that expires on its own, so a stale snooze can never permanently hide
+  # work.
+
+  @doc "Card ids currently snoozed on this device, with expired entries dropped."
+  @spec snoozed_cards(integer()) :: %{String.t() => integer()}
+  def snoozed_cards(now \\ System.os_time(:second)) do
+    @snoozed_key
+    |> safe_get(%{})
+    |> case do
+      map when is_map(map) -> map
+      _ -> %{}
+    end
+    |> Enum.reject(fn {_card_id, until} -> not is_integer(until) or until <= now end)
+    |> Map.new()
+  end
+
+  @spec snoozed?(String.t(), integer()) :: boolean()
+  def snoozed?(card_id, now \\ System.os_time(:second)) when is_binary(card_id) do
+    Map.has_key?(snoozed_cards(now), card_id)
+  end
+
+  @doc "Snooze `card_id` for `seconds`. Returns the expiry."
+  @spec snooze_card(String.t(), pos_integer(), integer()) :: integer()
+  def snooze_card(card_id, seconds, now \\ System.os_time(:second))
+      when is_binary(card_id) and is_integer(seconds) and seconds > 0 do
+    until = now + seconds
+    Mob.State.put(@snoozed_key, Map.put(snoozed_cards(now), card_id, until))
+    until
+  end
+
+  @spec unsnooze_card(String.t()) :: :ok
+  def unsnooze_card(card_id) when is_binary(card_id) do
+    Mob.State.put(@snoozed_key, Map.delete(snoozed_cards(), card_id))
+    :ok
+  end
+
+  @spec unsnooze_all() :: :ok
+  def unsnooze_all do
+    Mob.State.put(@snoozed_key, %{})
+    :ok
+  end
+
+  # ── Instruction outbox ──────────────────────────────────────────────────────
+
+  @doc "Queued agent instructions waiting for the channel to come back."
+  @spec outbox() :: [map()]
+  def outbox do
+    case safe_get(@outbox_key, []) do
+      list when is_list(list) -> list
+      _ -> []
+    end
+  end
+
+  @spec put_outbox([map()]) :: :ok
+  def put_outbox(entries) when is_list(entries) do
+    safe_put(@outbox_key, entries)
+  end
+
+  # `Mob.State` is DETS-backed and is not open in every context that reaches
+  # here — the channel client runs before/without a screen in tests, and on
+  # device it must not take the socket down if storage is unavailable. Reads
+  # degrade to the default; writes degrade to a no-op.
+  defp safe_get(key, default) do
+    Mob.State.get(key, default)
+  rescue
+    _ -> default
+  catch
+    _, _ -> default
+  end
+
+  defp safe_put(key, value) do
+    Mob.State.put(key, value)
+    :ok
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
   end
 
   @doc "Workspace ids pinned to the dashboard."

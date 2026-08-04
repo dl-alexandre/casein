@@ -9,6 +9,7 @@ defmodule DevideMob.ReviewDecisionScreen do
   use Mob.Screen
 
   alias DevideMob.SessionClient
+  alias DevideMob.UI
 
   @max_note_length 280
 
@@ -56,84 +57,48 @@ defmodule DevideMob.ReviewDecisionScreen do
       type: :column,
       props: %{background: :background, fill_width: true, fill_height: true},
       children: [
-        header(),
+        UI.header("Review request",
+          leading: UI.icon_button("back", {self(), :back}, label: "Back", background: :surface)
+        ),
         %{
           type: :scroll,
           props: %{fill_width: true, weight: 1},
           children: [
-            %{
-              type: :column,
-              props: %{fill_width: true, padding: :space_md, gap: 10},
-              children:
-                [
-                  summary_card(assigns.card),
-                  context_card(assigns.card),
-                  decision_context_card(assigns.card),
-                  note_card(assigns),
-                  message(assigns.message),
-                  action_bar(assigns)
-                ]
-                |> Enum.reject(&is_nil/1)
-            }
+            UI.stack(
+              [
+                summary_card(assigns.card),
+                context_card(assigns.card),
+                decision_context_card(assigns.card),
+                note_card(assigns),
+                message(assigns.message),
+                action_bar(assigns)
+              ],
+              gap: 12,
+              padding_left: 16,
+              padding_right: 16,
+              padding_top: 12,
+              padding_bottom: 28
+            )
           ]
         }
       ]
     }
   end
 
-  defp header do
-    %{
-      type: :row,
-      props: %{fill_width: true, background: :primary, padding: :space_sm, gap: 8},
-      children: [
-        %{
-          type: :button,
-          props: %{
-            text: "Back",
-            background: :surface_raised,
-            text_color: :on_surface,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :back}
-          },
-          children: []
-        },
-        %{
-          type: :text,
-          props: %{
-            text: "Review request",
-            text_size: :lg,
-            text_color: :on_primary,
-            font_weight: "bold",
-            weight: 1
-          },
-          children: []
-        }
-      ]
-    }
-  end
-
   defp summary_card(card) do
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
-      children:
-        [
-          %{
-            type: :text,
-            props: %{
-              text: get(card, "title", "Review needed"),
-              text_color: :on_surface,
-              text_size: :lg,
-              font_weight: "bold"
-            },
-            children: []
-          },
-          body_text(get(card, "body")),
-          badge_line(card)
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
+    UI.card(
+      [
+        badge_line(card),
+        UI.text(get(card, "title", "Review needed"),
+          text_size: :xl,
+          font_weight: "bold",
+          text_color: :on_surface
+        ),
+        body_text(get(card, "body"))
+      ],
+      tone: :attention,
+      gap: 10
+    )
   end
 
   defp context_card(card) do
@@ -153,22 +118,7 @@ defmodule DevideMob.ReviewDecisionScreen do
       |> Enum.reject(fn {_label, value} -> blank?(value) end)
       |> Enum.map(fn {label, value} -> context_row(label, value) end)
 
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
-      children: [
-        %{
-          type: :text,
-          props: %{
-            text: "Context",
-            text_color: :on_surface,
-            font_weight: "bold"
-          },
-          children: []
-        }
-        | rows
-      ]
-    }
+    UI.card([UI.section_label("Context") | rows], gap: 10)
   end
 
   defp decision_context_card(card) do
@@ -193,22 +143,7 @@ defmodule DevideMob.ReviewDecisionScreen do
     if sections == [] do
       nil
     else
-      %{
-        type: :column,
-        props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
-        children: [
-          %{
-            type: :text,
-            props: %{
-              text: "Decision context",
-              text_color: :on_surface,
-              font_weight: "bold"
-            },
-            children: []
-          }
-          | sections
-        ]
-      }
+      UI.card([UI.section_label("Decision context") | sections], gap: 12)
     end
   end
 
@@ -218,22 +153,7 @@ defmodule DevideMob.ReviewDecisionScreen do
     if blank?(text) do
       nil
     else
-      %{
-        type: :column,
-        props: %{fill_width: true, gap: 3},
-        children: [
-          %{
-            type: :text,
-            props: %{text: label, text_color: :muted, text_size: :xs},
-            children: []
-          },
-          %{
-            type: :text,
-            props: %{text: text, text_color: :on_surface, text_size: :sm},
-            children: []
-          }
-        ]
-      }
+      UI.stack([UI.meta(label), UI.body(text)], gap: 4)
     end
   end
 
@@ -248,15 +168,9 @@ defmodule DevideMob.ReviewDecisionScreen do
   defp note_field(assigns) do
     remaining = @max_note_length - String.length(assigns.note)
 
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
-      children: [
-        %{
-          type: :text,
-          props: %{text: "Note", text_color: :on_surface, font_weight: "bold"},
-          children: []
-        },
+    UI.card(
+      [
+        UI.section_label("Note"),
         %{
           type: :text_field,
           props: %{
@@ -264,21 +178,26 @@ defmodule DevideMob.ReviewDecisionScreen do
             placeholder: "Add a short note for request changes",
             keyboard: :default,
             return_key: :done,
+            background: :surface_raised,
+            text_color: :on_surface,
+            placeholder_color: :muted,
+            border_color: :border,
+            corner_radius: :radius_md,
+            padding: 12,
             on_change: {self(), :note}
           },
           children: []
         },
-        %{
-          type: :text,
-          props: %{text: "#{remaining} characters left", text_color: :muted, text_size: :xs},
-          children: []
-        }
-      ]
-    }
+        UI.meta("#{remaining} characters left")
+      ],
+      gap: 8
+    )
   end
 
   # Data-driven: buttons come from the card's server-authored `actions` specs, so
-  # the client no longer hardcodes approve/deny/request_changes.
+  # the client no longer hardcodes approve/deny/request_changes. The first
+  # primary-styled action carries full weight; the rest are quieter, so the
+  # screen has one obvious answer and no accidental taps.
   defp action_bar(assigns) do
     actions = card_actions(assigns.card)
     submitted? = is_binary(assigns.submitted_action)
@@ -287,7 +206,7 @@ defmodule DevideMob.ReviewDecisionScreen do
     children =
       case actions do
         [] ->
-          [body_text("No actions available for this card.")]
+          [UI.card([body_text("No actions available for this card.")], padding: 14)]
 
         specs ->
           Enum.map(specs, fn spec ->
@@ -296,29 +215,21 @@ defmodule DevideMob.ReviewDecisionScreen do
           end)
       end
 
-    %{
-      type: :column,
-      props: %{fill_width: true, gap: 8},
-      children: Enum.reject(children, &is_nil/1)
-    }
+    UI.stack(Enum.reject(children, &is_nil/1), gap: 8)
   end
 
   defp action_button(spec, disabled?) do
-    %{
-      type: :button,
-      props: %{
-        text: action_label(spec),
-        background: style_background(get(spec, "style")),
-        text_color: style_text_color(get(spec, "style")),
-        weight: 1,
-        padding: :space_sm,
-        height: 44.0,
-        disabled: disabled?,
-        on_tap: {self(), {:action, get(spec, "id")}}
-      },
-      children: []
-    }
+    UI.button(
+      action_label(spec),
+      {self(), {:action, get(spec, "id")}},
+      action_variant(get(spec, "style")),
+      disabled: disabled?
+    )
   end
+
+  defp action_variant("primary"), do: :primary
+  defp action_variant("danger"), do: :danger
+  defp action_variant(_style), do: :ghost
 
   defp submit_action(socket, action_id) do
     case find_action(socket.assigns.card, action_id) do
@@ -384,63 +295,50 @@ defmodule DevideMob.ReviewDecisionScreen do
     end
   end
 
-  defp style_background("primary"), do: :primary
-  defp style_background(_style), do: :surface_raised
-
-  defp style_text_color("primary"), do: :on_primary
-  defp style_text_color(_style), do: :on_surface
+  # "Request changes" both denies the run and hands the note to the agent, and
+  # that delivery is best effort — say which happened rather than a flat
+  # "accepted", so nobody assumes the agent read a note it never got.
+  defp result_message({:ok, result}) when is_map(result) do
+    case note_delivery(result) do
+      true -> "Changes requested — your note went to the agent"
+      false -> "Changes requested — the agent was unreachable, so the note is in the audit log"
+      nil -> "Action accepted"
+    end
+  end
 
   defp result_message({:ok, _result}), do: "Action accepted"
   defp result_message({:error, reason}), do: "Action failed: #{humanize_reason(reason)}"
+
+  # Read with `Map.get/2` rather than the `||`-chained `get/3` below: the
+  # interesting value here is `false`, which that helper would swallow.
+  defp note_delivery(result) do
+    inner = Map.get(result, "result") || Map.get(result, :result) || %{}
+
+    case Map.get(inner, "note_delivered", Map.get(inner, :note_delivered)) do
+      value when is_boolean(value) -> value
+      _ -> nil
+    end
+  end
 
   defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
   defp humanize_reason(reason), do: inspect(reason)
 
   defp context_row(label, value) do
-    %{
-      type: :column,
-      props: %{fill_width: true, gap: 2},
-      children: [
-        %{type: :text, props: %{text: label, text_color: :muted, text_size: :xs}, children: []},
-        %{
-          type: :text,
-          props: %{text: to_string(value), text_color: :on_surface, text_size: :sm},
-          children: []
-        }
-      ]
-    }
+    UI.stack([UI.meta(label), UI.body(to_string(value))], gap: 3)
   end
 
   defp badge_line(card) do
-    %{
-      type: :row,
-      props: %{fill_width: true, gap: 8},
-      children: [
-        chip("needs review", :amber_400),
-        chip(get(card, "priority", "high"), :surface_raised)
-      ]
-    }
-  end
-
-  defp chip(text, color) do
-    %{
-      type: :text,
-      props: %{
-        text: to_string(text),
-        text_size: :xs,
-        text_color: :on_surface,
-        background: color,
-        padding_left: :space_sm,
-        padding_right: :space_sm,
-        padding_top: 6,
-        padding_bottom: 6
-      },
-      children: []
-    }
+    UI.row(
+      [
+        UI.chip("needs review", :attention),
+        UI.chip(to_string(get(card, "priority", "high")), :neutral)
+      ],
+      gap: 6
+    )
   end
 
   defp body_text(value) when is_binary(value) and value != "" do
-    %{type: :text, props: %{text: value, text_color: :muted, text_size: :sm}, children: []}
+    UI.body(value, text_color: :muted)
   end
 
   defp body_text(_value), do: nil
@@ -448,18 +346,15 @@ defmodule DevideMob.ReviewDecisionScreen do
   defp message(nil), do: nil
 
   defp message(value) do
-    %{
-      type: :text,
-      props: %{
-        text: value,
-        fill_width: true,
-        background: :surface_raised,
-        text_color: :on_surface,
-        text_size: :sm,
-        padding: :space_sm
-      },
-      children: []
-    }
+    UI.tinted([UI.body(value)], message_tone(value), padding: 12)
+  end
+
+  defp message_tone(value) do
+    cond do
+      String.contains?(value, "failed") -> :failed
+      String.contains?(value, "accepted") -> :done
+      true -> :neutral
+    end
   end
 
   defp workspace_label(card) do

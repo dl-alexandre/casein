@@ -6,7 +6,7 @@ defmodule DevideMob.ReviewDecisionScreenTest do
   test "renders review context and decision actions" do
     view = mount_screen(ReviewDecisionScreen, %{card: review_card()})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Review request"
     assert text(view) =~ "4 items need review"
     assert text(view) =~ "Review required before work continues"
@@ -171,5 +171,49 @@ defmodule DevideMob.ReviewDecisionScreenTest do
         ]
       }
     }
+  end
+
+  test "a change request reports whether the note reached the agent" do
+    view = mount_screen(ReviewDecisionScreen, %{card: review_card()})
+
+    delivered =
+      render_info(
+        view,
+        {:card_action_result, "needs_review:ws-1:run-1",
+         {:ok, %{"status" => "accepted", "result" => %{"note_delivered" => true}}}}
+      )
+
+    assert text(delivered) =~ "your note went to the agent"
+
+    undelivered =
+      render_info(
+        view,
+        {:card_action_result, "needs_review:ws-1:run-1",
+         {:ok,
+          %{
+            "status" => "accepted",
+            "result" => %{
+              "note_delivered" => false,
+              "note_undelivered_reason" => "agent_pane_not_found"
+            }
+          }}}
+      )
+
+    # The decision still stood; only the delivery failed, and the copy says so
+    # instead of claiming success.
+    assert text(undelivered) =~ "the agent was unreachable"
+    assert text(undelivered) =~ "audit log"
+  end
+
+  test "an action with no note delivery keeps the plain acknowledgement" do
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: review_card()})
+      |> render_info(
+        {:card_action_result, "needs_review:ws-1:run-1",
+         {:ok, %{"status" => "accepted", "result" => %{"action" => "approve"}}}}
+      )
+
+    assert text(view) =~ "Action accepted"
   end
 end

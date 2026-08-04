@@ -19,10 +19,12 @@ defmodule DevideMob.SessionDashboardScreenTest do
   test "renders root header actions without back chrome" do
     view = mount_screen(SessionDashboardScreen)
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Action Center"
-    assert find(view, :button, text: "+ Pair")
-    assert find(view, :button, text: "...")
+    # Header actions are icon buttons (pair / overflow) carrying accessibility
+    # labels — no text buttons, and still no back or home chrome at the root.
+    assert find(view, :icon, name: "qr_code", text: "Pair workspace")
+    assert find(view, :icon, name: "more", text: "More")
     refute find(view, :button, text: "Back")
     refute find(view, :button, text: "Home")
   end
@@ -30,7 +32,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
   test "not paired empty state invites pairing" do
     view = mount_screen(SessionDashboardScreen)
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Not paired yet"
     assert text(view) =~ "Pair this phone with a workspace"
     assert find(view, :button, text: "+ Pair workspace")
@@ -41,7 +43,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
 
     view = mount_screen(SessionDashboardScreen)
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Paired to https://devide.test"
     assert text(view) =~ "Card stream connecting"
     assert text(view) =~ "No workspace pinned"
@@ -244,7 +246,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
       |> mount_screen()
       |> render_info({:mobile_cards_status, {:disconnected, :network_unavailable}})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert assigns(view).mobile_cards_status == {:disconnected, :network_unavailable}
     assert text(view) =~ "Card stream offline"
     assert text(view) =~ "Network unavailable"
@@ -301,7 +303,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
     refute text(view) =~ "1 item needs review"
   end
 
-  test "segmented filters switch which cards are shown" do
+  test "attention tiers show blocked and running work in one scroll" do
     SessionConfig.put_pairing("https://devide.test", "token")
     SessionConfig.pin_workspace("ws-1")
 
@@ -327,21 +329,159 @@ defmodule DevideMob.SessionDashboardScreenTest do
                "priority" => "normal",
                "workspace_id" => "ws-1",
                "title" => "Running mix test"
+             },
+             %{
+               "id" => "run_failed:ws-1:run-3",
+               "type" => "run_failed",
+               "kind" => "run_failed",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "mix format failed"
              }
            ]
          }}
       )
 
-    assert find(view, :button, text: "Needs Action")
-    assert find(view, :button, text: "Running")
+    assert_renderable(view, extra: [:icon])
 
-    # Default segment surfaces the actionable card and hides the running one.
+    # Nothing actionable is hidden behind a tab: all three tiers render at once.
+    assert text(view) =~ "Needs you"
+    assert text(view) =~ "Running"
+    assert text(view) =~ "Recent"
     assert text(view) =~ "Needs review now"
-    refute text(view) =~ "Running mix test"
-
-    view = render_info(view, {:tap, {:filter, :running}})
     assert text(view) =~ "Running mix test"
-    refute text(view) =~ "Needs review now"
+    assert text(view) =~ "mix format failed"
+  end
+
+  test "the Needs you tier is ordered by how long you have been the bottleneck" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    now = DateTime.utc_now()
+    recent = now |> DateTime.add(-120, :second) |> DateTime.to_iso8601()
+    old = now |> DateTime.add(-7_200, :second) |> DateTime.to_iso8601()
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:new",
+               "kind" => "approval_required",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "Newer request",
+               "created_at" => recent
+             },
+             %{
+               "id" => "needs_review:ws-1:old",
+               "kind" => "approval_required",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "Older request",
+               "created_at" => old
+             }
+           ]
+         }}
+      )
+
+    rendered = text(view)
+    assert rendered =~ "Waiting 2h"
+    assert rendered =~ "Waiting 2m"
+
+    # Longest wait first — the opposite of a recency sort.
+    assert :binary.match(rendered, "Older request") < :binary.match(rendered, "Newer request")
+  end
+
+  test "a blocked card shows the command it is asking about" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "kind" => "approval_required",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "1 item needs review",
+               "meta" => %{"command_id" => "mix deploy --prod"}
+             }
+           ]
+         }}
+      )
+
+    assert text(view) =~ "mix deploy --prod"
+  end
+
+  test "snoozing hides a card locally and it can be brought back" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "run_failed:ws-1:run-3",
+               "kind" => "run_failed",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "mix format failed"
+             }
+           ]
+         }}
+      )
+
+    assert text(view) =~ "mix format failed"
+
+    view = render_info(view, {:tap, {:snooze, "run_failed:ws-1:run-3"}})
+
+    refute text(view) =~ "mix format failed"
+    assert text(view) =~ "1 snoozed card"
+    # The server's view is untouched — only this device stops asking.
+    assert SessionConfig.snoozed?("run_failed:ws-1:run-3")
+
+    view = render_info(view, {:tap, :unsnooze_all})
+
+    assert text(view) =~ "mix format failed"
+    refute SessionConfig.snoozed?("run_failed:ws-1:run-3")
+  end
+
+  test "the Recent tier collapses past a few rows" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    cards =
+      for index <- 1..5 do
+        %{
+          "id" => "run_failed:ws-1:run-#{index}",
+          "kind" => "run_failed",
+          "priority" => "normal",
+          "workspace_id" => "ws-1",
+          "title" => "failure #{index}"
+        }
+      end
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_snapshot, %{"cards" => cards}})
+
+    assert find(view, :button, text: "Show 2 more")
+    refute text(view) =~ "failure 5"
+
+    view = render_info(view, {:tap, :show_all_recent})
+
+    assert text(view) =~ "failure 5"
+    refute find(view, :button, text: "Show 2 more")
   end
 
   test "a card action result surfaces a notice" do
@@ -784,12 +924,104 @@ defmodule DevideMob.SessionDashboardScreenTest do
       |> render_info({:session_snapshot, "ws-1", snapshot(%{"pending_reviews" => 4})})
       |> render_info({:session_status, "ws-1", :joined})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Live"
     assert text(view) =~ "Review required before work continues"
-    assert find(view, :button, text: "4 items need review")
+    assert find(view, :text, text: "4 items need review")
     assert find(view, :button, text: "Open")
-    assert find(view, :button, text: "...")
+    assert find(view, :icon, name: "more", text: "Workspace menu")
+  end
+
+  test "server-authored decisions are offered inline on the card" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "kind" => "approval_required",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "1 item needs review",
+               "actions" => [
+                 %{"id" => "approve", "label" => "Approve", "style" => "primary", "input" => []},
+                 %{
+                   "id" => "request_changes",
+                   "label" => "Request changes",
+                   "style" => "default",
+                   "input" => [%{"name" => "note", "required" => true}]
+                 },
+                 %{
+                   "id" => "deny",
+                   "label" => "Deny",
+                   "style" => "destructive",
+                   "confirmation" => "Deny this run?",
+                   "input" => []
+                 }
+               ]
+             }
+           ]
+         }}
+      )
+
+    assert_renderable(view, extra: [:icon])
+
+    # Approve needs no input and no confirmation, so it is one tap on the card.
+    assert find(view, :button, text: "Approve")
+
+    # A required note and a confirmation both still route through the review
+    # screen rather than firing from a single tap.
+    refute find(view, :button, text: "Request changes")
+    refute find(view, :button, text: "Deny")
+    assert find(view, :button, text: "Review")
+  end
+
+  test "an inline decision dispatches the server action id and confirms" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "run_failed:ws-1:run-9",
+               "type" => "run_failed",
+               "kind" => "run_failed",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "mix test failed",
+               "actions" => [
+                 %{
+                   "id" => "ask_agent_to_fix",
+                   "label" => "Ask agent to fix",
+                   "style" => "default",
+                   "input" => [%{"name" => "note", "required" => false}]
+                 }
+               ]
+             }
+           ]
+         }}
+      )
+
+    assert find(view, :button, text: "Ask agent to fix")
+
+    view =
+      render_info(
+        view,
+        {:tap, {:inline_card_action, "run_failed:ws-1:run-9", "ask_agent_to_fix"}}
+      )
+
+    assert text(view) =~ "Ask agent to fix sent"
+    refute navigated_to(view)
   end
 
   test "review callout routes to workspace detail" do
@@ -838,10 +1070,13 @@ defmodule DevideMob.SessionDashboardScreenTest do
       |> mount_screen()
       |> render_info({:session_status, "ws-1", :disconnected})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert find(view, :button, text: "Offline")
     assert find(view, :button, text: "Offline").props.height == 44.0
-    assert find(view, :button, text: "Offline").props.background == :surface_raised
+
+    assert find(view, :button, text: "Offline").props.background ==
+             DevideMob.UI.tone_tint(:attention)
+
     assert text(view) =~ "Last seen unknown"
     assert text(view) =~ "Workspace may be offline or network changed"
     assert find(view, :button, text: "Retry")
@@ -858,7 +1093,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
       |> mount_screen()
       |> render_info({:session_status, "ws-1", {:disconnected, :network_unavailable}})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert find(view, :button, text: "Network")
     assert find(view, :button, text: "Network").props.height == 44.0
     assert text(view) =~ "Network unavailable"
@@ -899,10 +1134,13 @@ defmodule DevideMob.SessionDashboardScreenTest do
       |> mount_screen()
       |> render_info({:session_status, "ws-1", :error})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert find(view, :button, text: "Error")
     assert find(view, :button, text: "Error").props.height == 44.0
-    assert find(view, :button, text: "Error").props.background == :red_400
+
+    assert find(view, :button, text: "Error").props.background ==
+             DevideMob.UI.tone_tint(:failed)
+
     assert text(view) =~ "Could not join session"
     assert text(view) =~ "Pairing may have expired or token is invalid"
     assert find(view, :button, text: "Retry")
@@ -918,7 +1156,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
       |> mount_screen()
       |> render_info({:session_status, "ws-1", {:error, :unauthorized}})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert find(view, :button, text: "Auth")
     assert find(view, :button, text: "Auth").props.height == 44.0
     assert text(view) =~ "Pairing needs attention"
@@ -936,7 +1174,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
       |> mount_screen()
       |> render_info({:session_status, "ws-1", {:error, :workspace_not_found}})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert find(view, :button, text: "Missing")
     assert find(view, :button, text: "Missing").props.height == 44.0
     assert text(view) =~ "Workspace not found"

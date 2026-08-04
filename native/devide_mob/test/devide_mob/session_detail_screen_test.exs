@@ -15,9 +15,9 @@ defmodule DevideMob.SessionDetailScreenTest do
       |> mount_screen(%{workspace_id: "ws-1"})
       |> render_info({:session_status, "ws-1", :disconnected})
 
-    assert_renderable(view)
-    assert find(view, :button, text: "Back")
-    assert length(find_all(view, :button, text: "Back")) == 1
+    assert_renderable(view, extra: [:icon])
+    assert find(view, :icon, name: "back", text: "Back")
+    assert length(find_all(view, :icon, name: "back")) == 1
     assert text(view) =~ "Session offline"
     assert text(view) =~ "Offline"
     assert find(view, :button, text: "Retry")
@@ -31,7 +31,7 @@ defmodule DevideMob.SessionDetailScreenTest do
       |> mount_screen(%{workspace_id: "ws-1"})
       |> render_info({:session_status, "ws-1", {:disconnected, :network_unavailable}})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Network unavailable"
     assert text(view) =~ "cannot reach the DevIDE host"
     assert text(view) =~ "Network"
@@ -44,7 +44,7 @@ defmodule DevideMob.SessionDetailScreenTest do
       |> mount_screen(%{workspace_id: "ws-1"})
       |> render_info({:session_status, "ws-1", {:error, :unauthorized}})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Pairing needs attention"
     assert text(view) =~ "access was revoked"
     assert text(view) =~ "Auth"
@@ -63,7 +63,7 @@ defmodule DevideMob.SessionDetailScreenTest do
       |> mount_screen(%{workspace_id: "ws-1"})
       |> render_info({:session_status, "ws-1", {:error, :workspace_not_found}})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Workspace not found"
     assert text(view) =~ "deleted or moved"
     assert text(view) =~ "Missing"
@@ -141,7 +141,7 @@ defmodule DevideMob.SessionDetailScreenTest do
       |> mount_screen(%{workspace_id: "ws-1"})
       |> render_info({:session_snapshot, "ws-1", snapshot})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "manual review required"
 
     activity =
@@ -202,7 +202,7 @@ defmodule DevideMob.SessionDetailScreenTest do
       |> mount_screen(%{workspace_id: "ws-1"})
       |> render_info({:session_snapshot, "ws-1", snapshot})
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Now"
     assert text(view) =~ "1 active run"
     assert text(view) =~ "2 agents"
@@ -213,7 +213,8 @@ defmodule DevideMob.SessionDetailScreenTest do
     assert text(view) =~ "Protocol mcp"
     assert text(view) =~ "Assignment assign-1"
     assert text(view) =~ "Safe action safe-test"
-    assert text(view) =~ "Recent runs"
+    # Runs and audit rows now share one reverse-chronological work log.
+    assert text(view) =~ "Work log"
     assert text(view) =~ "mix format"
     assert text(view) =~ "succeeded"
     assert text(view) =~ "terminal_send_command"
@@ -222,5 +223,114 @@ defmodule DevideMob.SessionDetailScreenTest do
     assert text(view) =~ "preview_open"
     assert text(view) =~ "preview mcp"
     assert text(view) =~ "error"
+  end
+
+  describe "instructing the agent" do
+    test "the composer only appears when the workspace has agents in flight" do
+      idle =
+        SessionDetailScreen
+        |> mount_screen(%{workspace_id: "ws-1"})
+        |> render_info({:session_snapshot, "ws-1", %{"mode" => "agent", "active_agents" => []}})
+
+      refute text(idle) =~ "Instruct the agent"
+
+      busy =
+        SessionDetailScreen
+        |> mount_screen(%{workspace_id: "ws-1"})
+        |> render_info(
+          {:session_snapshot, "ws-1",
+           %{"mode" => "agent", "active_agents" => [%{"tool" => "claude"}]}}
+        )
+
+      assert_renderable(busy, extra: [:icon])
+      assert text(busy) =~ "Instruct the agent"
+      assert find(busy, :button, text: "Send to agent")
+      assert find(busy, :text, text: "Run tests")
+    end
+
+    test "an empty instruction is refused before it reaches the channel" do
+      view =
+        SessionDetailScreen
+        |> mount_screen(%{workspace_id: "ws-1"})
+        |> render_info({:session_snapshot, "ws-1", %{"active_agents" => [%{"tool" => "claude"}]}})
+        |> render_info({:change, :instruction, "   "})
+        |> render_info({:tap, :send_instruction})
+
+      assert assigns(view).instruction_state == :idle
+      assert text(view) =~ "Type an instruction first"
+    end
+
+    test "sending shows progress, then the server's outcome" do
+      view =
+        SessionDetailScreen
+        |> mount_screen(%{workspace_id: "ws-1"})
+        |> render_info({:session_snapshot, "ws-1", %{"active_agents" => [%{"tool" => "claude"}]}})
+        |> render_info({:change, :instruction, "run the failing test again"})
+        |> render_info({:tap, :send_instruction})
+
+      assert assigns(view).instruction_state == :sending
+      assert text(view) =~ "Pasting into the agent pane"
+      assert find(view, :button, text: "Sending...").props.disabled
+
+      view = render_info(view, {:agent_instruction_result, "ws-1", {:ok, %{"submitted" => true}}})
+
+      assert assigns(view).instruction_state == :idle
+      # Cleared, so the next instruction starts from an empty field.
+      assert assigns(view).instruction == ""
+      assert text(view) =~ "Sent to the agent"
+    end
+
+    test "an instruction typed offline is queued, shown, and retryable" do
+      view =
+        SessionDetailScreen
+        |> mount_screen(%{workspace_id: "ws-1"})
+        |> render_info({:session_snapshot, "ws-1", %{"active_agents" => [%{"tool" => "claude"}]}})
+        |> render_info({:change, :instruction, "look at the failing spec"})
+        |> render_info({:tap, :send_instruction})
+
+      # The channel client is not running in this test, so the send never
+      # reaches a server — exactly the offline case.
+      DevideMob.Outbox.enqueue("ws-1", "look at the failing spec")
+
+      view =
+        render_info(
+          view,
+          {:agent_instruction_result, "ws-1", {:queued, %{reason: :not_connected, attempts: 1}}}
+        )
+
+      assert text(view) =~ "Queued — it will send when the phone reconnects"
+      # Accepted from the user's point of view: the field clears.
+      assert assigns(view).instruction == ""
+      assert assigns(view).queued_instructions == 1
+      assert text(view) =~ "1 instruction waiting to send"
+      assert find(view, :button, text: "Retry")
+
+      view = render_info(view, {:tap, :retry_outbox})
+      assert text(view) =~ "Retrying queued instructions"
+    end
+
+    test "a failure explains itself in the composer" do
+      view =
+        SessionDetailScreen
+        |> mount_screen(%{workspace_id: "ws-1"})
+        |> render_info({:session_snapshot, "ws-1", %{"active_agents" => [%{"tool" => "claude"}]}})
+        |> render_info({:change, :instruction, "hello"})
+        |> render_info({:tap, :send_instruction})
+        |> render_info({:agent_instruction_result, "ws-1", {:error, "agent_pane_not_found"}})
+
+      assert text(view) =~ "no agent pane is running in this workspace"
+      # The text survives a failed send so it can be retried.
+      assert assigns(view).instruction == "hello"
+    end
+
+    test "a quick reply sends without typing" do
+      view =
+        SessionDetailScreen
+        |> mount_screen(%{workspace_id: "ws-1"})
+        |> render_info({:session_snapshot, "ws-1", %{"active_agents" => [%{"tool" => "claude"}]}})
+        |> render_info({:tap, {:quick_reply, "Run the test suite and report what fails."}})
+
+      assert assigns(view).instruction_state == :sending
+    end
   end
 end

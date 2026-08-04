@@ -11,6 +11,7 @@ defmodule DevIdeWeb.MobileUserChannel do
   use Phoenix.Channel
 
   alias DevIDE.Mobile.Actions
+  alias DevIDE.Mobile.AgentInstructions
   alias DevIDE.Mobile.UserObserver
   alias DevIDE.Push
   alias DevIDE.Workspaces
@@ -109,6 +110,48 @@ defmodule DevIdeWeb.MobileUserChannel do
   def handle_in("unregister_push", %{"token" => token}, socket) when is_binary(token) do
     Push.unregister(token)
     {:reply, :ok, socket}
+  end
+
+  # Free-text instruction from a paired phone into the workspace's agent pane.
+  # Same authorization gate as `watch_workspace`/`card_action`; the target pane
+  # is resolved server-side (see DevIDE.Mobile.AgentInstructions) and the send
+  # is audited with mobile provenance.
+  def handle_in("agent_instruction", %{"workspace_id" => workspace_id} = params, socket)
+      when is_binary(workspace_id) do
+    user = socket.assigns[:current_user] || %{}
+
+    with :ok <- authorize_workspace(socket, user, workspace_id),
+         {:ok, summary} <-
+           AgentInstructions.send(action_context(socket, socket.assigns.mobile_user_id), params) do
+      {:reply, {:ok, summary}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, error_payload(reason)}, socket}
+    end
+  end
+
+  def handle_in("agent_instruction", _params, socket) do
+    {:reply, {:error, %{reason: "invalid_payload"}}, socket}
+  end
+
+  # The agent panes this phone may address, so the client can offer a picker
+  # when a workspace runs more than one agent session.
+  def handle_in("agent_targets", %{"workspace_id" => workspace_id}, socket)
+      when is_binary(workspace_id) do
+    user = socket.assigns[:current_user] || %{}
+
+    case authorize_workspace(socket, user, workspace_id) do
+      :ok ->
+        {:reply,
+         {:ok,
+          %{
+            workspace_id: workspace_id,
+            max_bytes: AgentInstructions.max_bytes(),
+            targets: AgentInstructions.targets(workspace_id)
+          }}, socket}
+
+      {:error, reason} ->
+        {:reply, {:error, error_payload(reason)}, socket}
+    end
   end
 
   def handle_in(_event, _params, socket), do: {:noreply, socket}

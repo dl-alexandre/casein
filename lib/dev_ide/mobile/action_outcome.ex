@@ -21,7 +21,12 @@ defmodule DevIDE.Mobile.ActionOutcome do
   # "accepted" — a mutating action was applied (locks the card via the partial
   #   unique index). "navigated" — a route-only action recorded for audit (no
   #   lock, so it can recur). "rejected" — validation/authorization failure.
-  @statuses ~w(accepted navigated rejected)
+  # "instructed" is a *successful* outcome that mutated no run: the action
+  # pasted a server-authored prompt into an agent pane. It participates in the
+  # (user, request_id) dedupe index like any success, but deliberately not in
+  # the accepted-per-card guard — asking an agent to look at a failure again is
+  # not a run resolution.
+  @statuses ~w(accepted navigated instructed rejected)
 
   schema "mobile_action_outcomes" do
     field :request_id, :string

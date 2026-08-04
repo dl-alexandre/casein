@@ -5,17 +5,35 @@ defmodule DevideMob.SessionDetailScreen do
   live `DevIDE.Session.Snapshot`: mode + connection status, the current run,
   recent policy/audit activity, and active agents.
 
-  Pure projection consumer — it never mutates session state (that stays on the
-  runtime, gated by policy). Snapshot payloads arrive JSON-decoded, so map keys
-  and enum values are strings ("review", "deny", ...).
+  Snapshot payloads arrive JSON-decoded, so map keys and enum values are
+  strings ("review", "deny", ...).
+
+  The one thing this screen *does* send is an agent instruction: free text (or
+  a quick reply) typed here is pushed to the workspace's agent pane through
+  `DevideMob.SessionClient.send_instruction/3`. The server resolves the target
+  pane and audits the send — the phone never names a pane. Everything else here
+  stays a read-only projection; run state is mutated only through policy-gated
+  card actions.
   """
   use Mob.Screen
 
+  alias DevideMob.Outbox
   alias DevideMob.PairingScreen
   alias DevideMob.SessionConfig
+  alias DevideMob.UI
   alias DevideMob.SessionClient
 
   @transition_notice_ms 1_600
+  @instruction_max_length 4_000
+
+  # One tap covers the instructions worth giving from a phone; anything longer
+  # is faster to type in the cockpit.
+  @quick_replies [
+    {"Continue", "Continue with the plan."},
+    {"Run tests", "Run the test suite and report what fails."},
+    {"Explain", "Explain what you are doing and why, briefly."},
+    {"Stop", "Stop what you are doing and wait for instructions."}
+  ]
 
   def mount(params, _session, socket) do
     workspace_id = params[:workspace_id] || params["workspace_id"]
@@ -36,6 +54,13 @@ defmodule DevideMob.SessionDetailScreen do
       |> Mob.Socket.assign(
         :pinned?,
         is_binary(workspace_id) and SessionConfig.pinned?(workspace_id)
+      )
+      |> Mob.Socket.assign(:instruction, "")
+      |> Mob.Socket.assign(:instruction_state, :idle)
+      |> Mob.Socket.assign(:instruction_notice, nil)
+      |> Mob.Socket.assign(
+        :queued_instructions,
+        if(is_binary(workspace_id), do: Outbox.count(workspace_id), else: 0)
       )
 
     {:ok, socket}
@@ -100,6 +125,40 @@ defmodule DevideMob.SessionDetailScreen do
     {:noreply, Mob.Socket.push_screen(socket, PairingScreen)}
   end
 
+  # ── Instructing the agent ───────────────────────────────────────────────────
+
+  def handle_info({:change, :instruction, value}, socket) when is_binary(value) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:instruction, String.slice(value, 0, @instruction_max_length))
+     |> Mob.Socket.assign(:instruction_notice, nil)}
+  end
+
+  def handle_info({:tap, :send_instruction}, socket) do
+    {:noreply, send_instruction(socket, socket.assigns.instruction)}
+  end
+
+  def handle_info({:tap, {:quick_reply, text}}, socket) when is_binary(text) do
+    {:noreply, send_instruction(socket, text)}
+  end
+
+  def handle_info(
+        {:agent_instruction_result, wid, result},
+        %{assigns: %{workspace_id: wid}} = socket
+      ) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:instruction_state, :idle)
+     |> Mob.Socket.assign(:instruction_notice, instruction_notice(result))
+     |> Mob.Socket.assign(:queued_instructions, Outbox.count(wid))
+     |> clear_instruction_on_success(result)}
+  end
+
+  def handle_info({:tap, :retry_outbox}, socket) do
+    SessionClient.flush_outbox(self())
+    {:noreply, Mob.Socket.assign(socket, :instruction_notice, "Retrying queued instructions...")}
+  end
+
   def handle_info({:clear_notice, message}, %{assigns: %{notice: message}} = socket) do
     {:noreply, Mob.Socket.assign(socket, :notice, nil)}
   end
@@ -107,6 +166,62 @@ defmodule DevideMob.SessionDetailScreen do
   def handle_info({:clear_notice, _message}, socket), do: {:noreply, socket}
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp send_instruction(socket, text) do
+    workspace_id = socket.assigns.workspace_id
+    trimmed = String.trim(text || "")
+
+    cond do
+      not is_binary(workspace_id) ->
+        socket
+
+      trimmed == "" ->
+        Mob.Socket.assign(socket, :instruction_notice, "Type an instruction first")
+
+      socket.assigns.instruction_state == :sending ->
+        socket
+
+      true ->
+        SessionClient.send_instruction(workspace_id, trimmed, subscriber: self())
+
+        socket
+        |> Mob.Socket.assign(:instruction_state, :sending)
+        |> Mob.Socket.assign(:instruction_notice, nil)
+    end
+  end
+
+  # A queued instruction is *accepted* from the user's point of view — the text
+  # is safely in the outbox, so the field clears just as it would on a send.
+  defp clear_instruction_on_success(socket, {:ok, _payload}),
+    do: Mob.Socket.assign(socket, :instruction, "")
+
+  defp clear_instruction_on_success(socket, {:queued, _details}),
+    do: Mob.Socket.assign(socket, :instruction, "")
+
+  defp clear_instruction_on_success(socket, _result), do: socket
+
+  defp instruction_notice({:ok, payload}) when is_map(payload) do
+    case Map.get(payload, "submitted") do
+      false -> "Pasted into the agent pane — press Enter there to send"
+      _ -> "Sent to the agent"
+    end
+  end
+
+  defp instruction_notice({:ok, _payload}), do: "Sent to the agent"
+
+  defp instruction_notice({:queued, _details}),
+    do: "Queued — it will send when the phone reconnects"
+
+  defp instruction_notice({:error, reason}), do: "Could not send: #{instruction_error(reason)}"
+
+  defp instruction_error("agent_pane_not_found"),
+    do: "no agent pane is running in this workspace"
+
+  defp instruction_error("instruction_too_long"), do: "that instruction is too long"
+  defp instruction_error("unauthorized"), do: "this device is not allowed to instruct that agent"
+  defp instruction_error(:not_connected), do: "the phone is offline"
+  defp instruction_error(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
+  defp instruction_error(reason), do: inspect(reason)
 
   # ── Render ──────────────────────────────────────────────────────────────────
 
@@ -122,17 +237,18 @@ defmodule DevideMob.SessionDetailScreen do
           type: :scroll,
           props: %{fill_width: true, weight: 1},
           children: [
-            %{
-              type: :column,
-              props: %{fill_width: true, padding: :space_md, gap: 10},
-              children:
-                [
-                  status_banner(snap, assigns.status),
-                  transition_notice(assigns.notice)
-                  | body(snap, assigns.status)
-                ]
-                |> Enum.reject(&is_nil/1)
-            }
+            UI.stack(
+              [
+                transition_notice(assigns.notice),
+                status_banner(snap, assigns.status)
+                | body(assigns, snap, assigns.status)
+              ],
+              gap: 12,
+              padding_left: 16,
+              padding_right: 16,
+              padding_top: 12,
+              padding_bottom: 20
+            )
           ]
         },
         pin_bar(assigns)
@@ -140,191 +256,261 @@ defmodule DevideMob.SessionDetailScreen do
     }
   end
 
-  defp body(nil, status) do
+  defp body(_assigns, nil, status) do
     case status_state(status) do
       state when state in [:disconnected, :error] -> recovery_panel(status)
       _ -> connecting_panel()
     end
   end
 
-  defp body(snap, _status) do
+  defp body(assigns, snap, _status) do
     [
       supervision_summary(snap),
+      instruction_card(assigns, snap),
       current_run_card(get(snap, "current_run")),
-      section_label("Recent runs"),
-      runs_section(get(snap, "recent_runs", [])),
-      section_label("Recent activity"),
-      activity_section(get(snap, "recent_audit", [])),
-      section_label("Active agents"),
-      agents_section(get(snap, "active_agents", []))
+      UI.section_label("Active agents"),
+      agents_section(get(snap, "active_agents", [])),
+      UI.section_label("Work log"),
+      work_log_section(snap)
     ]
   end
 
   defp recovery_panel(status) do
     [
-      %{
-        type: :column,
-        props: %{fill_width: true, background: :surface, padding: :space_lg, gap: 8},
-        children:
-          [
-            %{
-              type: :text,
-              props: %{
-                text: offline_title(status),
-                text_color: :on_surface,
+      UI.card(
+        [
+          UI.row(
+            [
+              UI.icon("warning", text_color: UI.tone_fg(:failed), text_size: 18),
+              UI.text(offline_title(status),
                 text_size: :lg,
-                font_weight: "bold"
-              },
-              children: []
-            },
-            %{
-              type: :text,
-              props: %{
-                text: problem_body(status),
-                text_color: :muted,
-                text_size: :sm
-              },
-              children: []
-            },
-            recovery_buttons(status)
-          ]
-          |> List.flatten()
-          |> Enum.reject(&is_nil/1)
-      }
+                font_weight: "semibold",
+                text_color: :on_surface,
+                weight: 1
+              )
+            ],
+            gap: 8
+          ),
+          UI.body(problem_body(status), text_color: :muted),
+          UI.row(List.flatten(recovery_buttons(status)), gap: 8)
+        ],
+        tone: :failed,
+        padding: 16
+      )
     ]
   end
 
   defp connecting_panel do
     [
-      %{
-        type: :column,
-        props: %{fill_width: true, background: :surface, padding: :space_lg, gap: 8},
-        children: [
-          %{type: :progress, props: %{color: :primary}, children: []},
-          %{
-            type: :text,
-            props: %{
-              text: "Connecting to session...",
-              text_color: :muted,
-              text_align: "center"
-            },
-            children: []
-          }
-        ]
-      }
+      UI.card(
+        [
+          UI.row(
+            [
+              UI.spinner(),
+              UI.body("Connecting to session...", text_color: :muted, weight: 1)
+            ],
+            gap: 10
+          )
+        ],
+        padding: 16
+      )
     ]
   end
 
   # ── Header ──────────────────────────────────────────────────────────────────
 
   defp top_header(workspace_id, status) do
-    %{
-      type: :row,
-      props: %{fill_width: true, background: :primary, padding: :space_sm, gap: 8},
-      children: [
-        %{
-          type: :button,
-          props: %{
-            text: "Back",
-            background: :surface_raised,
-            text_color: :on_surface,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :back}
-          },
-          children: []
-        },
-        %{
-          type: :text,
-          props: %{
-            text: display_workspace(workspace_id),
-            text_size: :lg,
-            text_color: :on_primary,
-            font_weight: "bold",
-            weight: 1
-          },
-          children: []
-        },
-        chip(status_label(status), status_color(status))
-      ]
-    }
+    UI.header(display_workspace(workspace_id),
+      leading: UI.icon_button("back", {self(), :back}, label: "Back", background: :surface),
+      actions: [UI.chip(status_label(status), status_tone(status))]
+    )
   end
 
+  # Mode and connection state — the two facts that decide whether anything else
+  # on this screen can be trusted.
   defp status_banner(snap, status) do
     mode = if snap, do: get(snap, "mode"), else: nil
 
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 6},
-      children: [
-        %{
-          type: :text,
-          props: %{
-            text: "Workspace status",
-            text_size: :sm,
-            text_color: :muted,
-            font_weight: "bold"
-          },
-          children: []
-        },
-        %{
-          type: :row,
-          props: %{fill_width: true, gap: 8, padding_top: :space_xs},
-          children: [
-            chip(mode_label(mode), mode_color(mode)),
-            chip(status_label(status), status_color(status))
-          ]
-        }
-      ]
-    }
+    UI.card(
+      [
+        UI.section_label("Workspace status"),
+        UI.row(
+          [
+            UI.chip(mode_label(mode), mode_tone(mode)),
+            UI.chip(status_label(status), status_tone(status))
+          ],
+          gap: 6
+        )
+      ],
+      gap: 8,
+      padding: 12
+    )
   end
 
   defp transition_notice(nil), do: nil
 
   defp transition_notice(message) do
-    %{
-      type: :text,
-      props: %{
-        text: message,
-        fill_width: true,
-        background: :surface_raised,
-        text_color: :on_surface,
-        text_size: :sm,
-        padding: :space_sm
-      },
-      children: []
-    }
+    UI.tinted([UI.body(message)], :neutral, padding: 10)
+  end
+
+  # ── Instructing the agent ───────────────────────────────────────────────────
+
+  # Only offered when the workspace actually has agents in flight: pasting into
+  # a workspace with no agent pane fails server-side, and an input that can only
+  # fail is worse than no input.
+  defp instruction_card(assigns, snap) do
+    agents = snap |> get("active_agents", []) |> List.wrap()
+
+    if agents == [] do
+      nil
+    else
+      UI.stack(
+        [UI.section_label("Instruct the agent"), instruction_body(assigns)],
+        gap: 8
+      )
+    end
+  end
+
+  defp instruction_body(assigns) do
+    sending? = assigns[:instruction_state] == :sending
+
+    UI.card(
+      [
+        quick_replies(sending?),
+        %{
+          type: :text_field,
+          props: %{
+            value: assigns[:instruction] || "",
+            placeholder: "Tell the agent what to do next",
+            keyboard: :default,
+            return_key: :send,
+            background: :surface_raised,
+            text_color: :on_surface,
+            placeholder_color: :muted,
+            border_color: :border,
+            corner_radius: :radius_md,
+            padding: 12,
+            on_change: {self(), :instruction},
+            on_submit: {self(), :send_instruction}
+          },
+          children: []
+        },
+        outbox_row(assigns),
+        instruction_status(assigns, sending?),
+        UI.button(
+          if(sending?, do: "Sending...", else: "Send to agent"),
+          {self(), :send_instruction},
+          :primary,
+          disabled: sending?
+        )
+      ],
+      gap: 10
+    )
+  end
+
+  # The queue is only worth mentioning when it has something in it — an empty
+  # outbox is the normal case and needs no chrome.
+  defp outbox_row(assigns) do
+    case assigns[:queued_instructions] || 0 do
+      0 ->
+        nil
+
+      count ->
+        UI.tinted(
+          [
+            UI.row(
+              [
+                UI.icon("history", text_color: UI.tone_fg(:attention), text_size: 14),
+                UI.body(
+                  "#{count} #{plural(count, "instruction", "instructions")} waiting to send",
+                  weight: 1
+                ),
+                UI.button("Retry", {self(), :retry_outbox}, :secondary, fill_width: false)
+              ],
+              gap: 8
+            )
+          ],
+          :attention,
+          padding: 10
+        )
+    end
+  end
+
+  defp instruction_status(_assigns, true) do
+    UI.row([UI.spinner(), UI.meta("Pasting into the agent pane", weight: 1)], gap: 8)
+  end
+
+  defp instruction_status(assigns, false) do
+    case assigns[:instruction_notice] do
+      notice when is_binary(notice) and notice != "" ->
+        UI.meta(notice, text_color: instruction_notice_color(notice))
+
+      _ ->
+        nil
+    end
+  end
+
+  defp instruction_notice_color("Could not send" <> _rest), do: UI.tone_fg(:failed)
+  defp instruction_notice_color("Type an instruction" <> _rest), do: UI.tone_fg(:attention)
+  defp instruction_notice_color("Queued" <> _rest), do: UI.tone_fg(:attention)
+  defp instruction_notice_color("Retrying" <> _rest), do: UI.tone_fg(:attention)
+  defp instruction_notice_color(_notice), do: UI.tone_fg(:done)
+
+  # Chips carry a tap here (unlike the decorative status chips), which is why
+  # they are the one place a chip gets an `on_tap`.
+  defp quick_replies(sending?) do
+    UI.row(
+      Enum.map(@quick_replies, fn {label, text} ->
+        UI.chip(label, :accent, on_tap: unless(sending?, do: {self(), {:quick_reply, text}}))
+      end),
+      gap: 6
+    )
   end
 
   # ── Current run ─────────────────────────────────────────────────────────────
 
   defp supervision_summary(snap) do
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 6},
-      children: [
-        %{
-          type: :text,
-          props: %{text: "Now", text_color: :muted, text_size: :sm, font_weight: "bold"},
-          children: []
-        },
-        %{
-          type: :text,
-          props: %{text: summary_line(snap), text_color: :on_surface, text_size: :lg},
-          children: []
-        }
-      ]
-    }
+    UI.card(
+      [
+        UI.section_label("Now"),
+        UI.row(
+          [
+            stat_tile(run_summary_count(get(snap, "current_run"))),
+            stat_tile(count_summary(get(snap, "active_agents", []), "agent", "agents")),
+            stat_tile(review_summary(get(snap, "pending_reviews", 0)))
+          ],
+          gap: 8
+        )
+      ],
+      gap: 10,
+      padding: 12
+    )
   end
 
-  defp summary_line(snap) do
-    [
-      run_summary_count(get(snap, "current_run")),
-      count_summary(get(snap, "active_agents", []), "agent", "agents"),
-      review_summary(get(snap, "pending_reviews", 0))
-    ]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.join(" · ")
+  # Splits "2 agents" into a big count and a small unit so the three tiles read
+  # as a dashboard at a glance instead of one long sentence.
+  defp stat_tile(text) do
+    {value, unit} =
+      case String.split(text, " ", parts: 2) do
+        [value, unit] -> {value, unit}
+        [value] -> {value, ""}
+      end
+
+    UI.box(
+      [
+        UI.stack(
+          [
+            UI.text(value, text_size: :xl, font_weight: "bold", text_color: :on_surface),
+            UI.meta(unit)
+          ],
+          gap: 2
+        )
+      ],
+      weight: 1,
+      background: :surface_raised,
+      corner_radius: :radius_md,
+      padding: 10
+    )
   end
 
   defp run_summary_count(%{} = run) do
@@ -345,152 +531,158 @@ defmodule DevideMob.SessionDetailScreen do
   defp review_summary(_count), do: "0 reviews"
 
   defp current_run_card(nil) do
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 6},
-      children: [
-        %{type: :text, props: %{text: "No active run", text_color: :muted}, children: []}
-      ]
-    }
+    UI.card([UI.body("No active run", text_color: :muted)], padding: 14)
   end
 
   defp current_run_card(run) do
     status = get(run, "status")
 
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 6},
-      children:
-        [
-          %{
-            type: :row,
-            props: %{fill_width: true, gap: 8},
-            children: [
-              %{
-                type: :text,
-                props: %{text: "Current run", text_color: :muted, text_size: :sm, weight: 1},
-                children: []
-              },
-              chip(run_status_label(run), run_status_color(status))
-            ]
-          },
-          maybe_text(run_title(run), :on_surface, :lg),
-          maybe_text(run_time_line(run), :muted, :xs),
-          maybe_text(run_context_line(run), :muted, :xs),
-          maybe_text(run_reference_line(run), :muted, :xs),
-          maybe_text(run_result_line(run), :muted, :xs)
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
+    UI.card(
+      [
+        UI.row(
+          [
+            UI.dot(run_status_tone(status)),
+            UI.meta("Current run", weight: 1),
+            UI.chip(run_status_label(run), run_status_tone(status))
+          ],
+          gap: 8
+        ),
+        UI.text(run_title(run), text_size: :lg, font_weight: "semibold", text_color: :on_surface),
+        detail_lines([
+          run_time_line(run),
+          run_context_line(run),
+          run_reference_line(run),
+          run_result_line(run)
+        ])
+      ],
+      tone: run_status_tone(status),
+      gap: 8
+    )
   end
 
-  # ── Recent runs ─────────────────────────────────────────────────────────────
-
-  defp runs_section([]), do: empty_row("No recent runs")
-
-  defp runs_section(runs) do
-    %{
-      type: :column,
-      props: %{fill_width: true},
-      children: runs |> List.wrap() |> Enum.take(4) |> Enum.map(&run_row/1)
-    }
+  defp detail_lines(lines) do
+    case lines |> Enum.reject(&(&1 in [nil, ""])) |> Enum.map(&to_string/1) do
+      [] -> nil
+      parts -> UI.stack(Enum.map(parts, &UI.meta/1), gap: 3)
+    end
   end
 
-  defp run_row(run) do
-    status = get(run, "status")
+  # ── Work log ────────────────────────────────────────────────────────────────
+  #
+  # Runs and policy decisions were two separate lists sorted independently, so
+  # "what happened here" meant reading both and interleaving them by eye. One
+  # reverse-chronological timeline answers it directly.
+  #
+  # Rendered through `LazyList` — a busy workspace's log is unbounded, and the
+  # eager Column built every row whether or not it was ever scrolled to.
 
-    %{
-      type: :column,
-      props: %{
-        fill_width: true,
-        background: :surface,
-        padding_top: 10,
-        padding_bottom: 10,
-        padding_left: :space_md,
-        padding_right: :space_md,
-        gap: 6
-      },
-      children:
-        [
-          %{
-            type: :row,
-            props: %{fill_width: true, gap: 8},
-            children: [
-              %{
-                type: :text,
-                props: %{text: run_title(run), text_color: :on_surface, weight: 1},
-                children: []
-              },
-              chip(run_status_label(run), run_status_color(status))
-            ]
-          },
-          maybe_text(run_time_line(run), :muted, :xs)
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
+  @work_log_limit 40
+
+  defp work_log_section(snap) do
+    case work_log_entries(snap) do
+      [] ->
+        empty_row("Nothing has happened here yet")
+
+      entries ->
+        %{
+          type: :lazy_list,
+          props: %{fill_width: true, id: :work_log},
+          children: Enum.map(entries, &work_log_row/1)
+        }
+    end
   end
 
-  # ── Recent activity ─────────────────────────────────────────────────────────
+  defp work_log_entries(snap) do
+    runs =
+      snap
+      |> get("recent_runs", [])
+      |> List.wrap()
+      |> Enum.filter(&is_map/1)
+      |> Enum.map(fn run ->
+        %{
+          kind: :run,
+          at: run_at(run),
+          title: run_title(run),
+          chip: run_status_label(run),
+          tone: run_status_tone(get(run, "status")),
+          detail: run_time_line(run)
+        }
+      end)
 
-  defp activity_section([]) do
-    empty_row("No recent activity")
+    audit =
+      snap
+      |> get("recent_audit", [])
+      |> List.wrap()
+      |> Enum.filter(&is_map/1)
+      |> Enum.map(fn row ->
+        decision = get(row, "decision")
+
+        %{
+          kind: :audit,
+          at: get(row, "at"),
+          title: get(row, "action", "—"),
+          chip: decision && to_string(decision),
+          tone: decision_tone(decision),
+          detail: maybe_string(get(row, "reason"))
+        }
+      end)
+
+    (runs ++ audit)
+    |> Enum.sort_by(&sort_key/1, :desc)
+    |> Enum.take(@work_log_limit)
   end
 
-  defp activity_section(rows) do
-    %{
-      type: :column,
-      props: %{fill_width: true},
-      children: Enum.map(rows, &activity_row/1)
-    }
+  # Undated entries sort last rather than crashing the comparison.
+  defp sort_key(%{at: at}) do
+    case at do
+      value when is_binary(value) ->
+        case DateTime.from_iso8601(value) do
+          {:ok, datetime, _offset} -> DateTime.to_unix(datetime)
+          _ -> 0
+        end
+
+      _ ->
+        0
+    end
   end
 
-  defp activity_row(row) do
-    decision = get(row, "decision")
-    color = decision_color(decision)
-    reason = get(row, "reason")
-
-    %{
-      type: :column,
-      props: %{
-        fill_width: true,
-        background: :surface,
-        padding_top: 10,
-        padding_bottom: 10,
-        padding_left: :space_md,
-        padding_right: :space_md,
-        gap: 8
-      },
-      children:
-        [
-          %{
-            type: :row,
-            props: %{fill_width: true, gap: 8},
-            children:
-              [
-                %{
-                  type: :text,
-                  props: %{text: get(row, "action", "—"), text_color: :on_surface, weight: 1},
-                  children: []
-                },
-                decision && chip(to_string(decision), color)
-              ]
-              |> Enum.reject(&is_nil/1)
-          },
-          reason_text(reason)
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
+  defp run_at(run) do
+    [
+      get(run, "finished_at"),
+      get(run, "started_at"),
+      get(run, "requested_at"),
+      get(run, "last_event_at")
+    ]
+    |> Enum.find(&present?/1)
   end
 
-  defp reason_text(nil), do: nil
-
-  defp reason_text(reason) do
-    %{
-      type: :text,
-      props: %{text: to_string(reason), text_size: :xs, text_color: :muted},
-      children: []
-    }
+  defp work_log_row(entry) do
+    UI.card(
+      [
+        UI.row(
+          [
+            UI.icon(work_log_icon(entry.kind), text_color: UI.tone_fg(entry.tone), text_size: 14),
+            UI.text(to_string(entry.title),
+              text_color: :on_surface,
+              text_size: :sm,
+              weight: 1
+            ),
+            entry.chip && UI.chip(entry.chip, entry.tone)
+          ],
+          gap: 8
+        ),
+        UI.meta(entry.detail || relative_at(entry.at))
+      ],
+      gap: 6,
+      padding: 12
+    )
   end
+
+  defp work_log_icon(:run), do: "history"
+  defp work_log_icon(_kind), do: "check"
+
+  defp relative_at(at) when is_binary(at), do: relative_time(at)
+  defp relative_at(_at), do: nil
 
   # ── Active agents ───────────────────────────────────────────────────────────
 
@@ -499,45 +691,31 @@ defmodule DevideMob.SessionDetailScreen do
   end
 
   defp agents_section(agents) do
-    %{
-      type: :column,
-      props: %{fill_width: true},
-      children: Enum.map(agents, &agent_row/1)
-    }
+    UI.stack(Enum.map(agents, &agent_row/1), gap: 8)
   end
 
   defp agent_row(agent) do
-    %{
-      type: :column,
-      props: %{
-        fill_width: true,
-        background: :surface,
-        padding_top: 10,
-        padding_bottom: 10,
-        padding_left: :space_md,
-        padding_right: :space_md,
-        gap: 6
-      },
-      children:
-        [
-          %{
-            type: :row,
-            props: %{fill_width: true, gap: 8},
-            children: [
-              %{
-                type: :text,
-                props: %{text: agent_title(agent), text_color: :on_surface, weight: 1},
-                children: []
-              },
-              chip(agent_status_label(agent), agent_status_color(get(agent, "status")))
-            ]
-          },
-          maybe_text(get(agent, "summary"), :muted, :sm),
-          maybe_text(agent_meta_line(agent), :muted, :xs)
-        ]
-        |> Enum.reject(&is_nil/1)
-    }
+    UI.card(
+      [
+        UI.row(
+          [
+            UI.dot(agent_status_tone(get(agent, "status"))),
+            UI.text(agent_title(agent), text_color: :on_surface, text_size: :sm, weight: 1),
+            UI.chip(agent_status_label(agent), agent_status_tone(get(agent, "status")))
+          ],
+          gap: 8
+        ),
+        UI.body(maybe_string(get(agent, "summary")), text_color: :muted),
+        UI.meta(maybe_string(agent_meta_line(agent)))
+      ],
+      gap: 6,
+      padding: 12
+    )
   end
+
+  defp maybe_string(nil), do: nil
+  defp maybe_string(""), do: nil
+  defp maybe_string(value), do: to_string(value)
 
   defp active_run?(%{} = run), do: get(run, "status") in ["started", "running", "queued"]
 
@@ -636,80 +814,28 @@ defmodule DevideMob.SessionDetailScreen do
 
   # ── Small components ────────────────────────────────────────────────────────
 
-  defp section_label(text) do
-    %{
-      type: :text,
-      props: %{
-        text: text,
-        text_size: :sm,
-        text_color: :muted,
-        padding_top: :space_sm,
-        padding_bottom: :space_xs
-      },
-      children: []
-    }
-  end
-
-  defp chip(text, color) do
-    %{
-      type: :text,
-      props: %{
-        text: text,
-        text_size: :xs,
-        text_color: :on_surface,
-        background: color,
-        padding_left: :space_sm,
-        padding_right: :space_sm,
-        padding_top: 4,
-        padding_bottom: 4
-      },
-      children: []
-    }
-  end
-
   defp empty_row(text) do
-    %{
-      type: :text,
-      props: %{text: text, text_color: :muted, padding: :space_md},
-      children: []
-    }
+    UI.card([UI.body(text, text_color: :muted)], padding: 14)
   end
 
-  defp maybe_text(nil, _color, _size), do: nil
-  defp maybe_text("", _color, _size), do: nil
-
-  defp maybe_text(text, color, size) do
-    %{
-      type: :text,
-      props: %{text: to_string(text), text_color: color, text_size: size},
-      children: []
-    }
-  end
-
+  # A persistent bottom bar: pinning is the one action that changes what the
+  # dashboard shows, so it stays reachable without scrolling back.
   defp pin_bar(assigns) do
     pin_label = if assigns.pinned?, do: "Unpin", else: "Pin"
     pin_tap = if assigns.pinned?, do: :unpin, else: :pin
 
-    %{
-      type: :column,
-      props: %{fill_width: true, background: :surface_raised, padding: :space_sm},
-      children: [
-        %{
-          type: :button,
-          props: %{
-            text: pin_label,
-            fill_width: true,
-            background: :surface,
-            text_color: :on_surface,
-            text_size: :lg,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), pin_tap}
-          },
-          children: []
-        }
-      ]
-    }
+    UI.stack(
+      [
+        UI.divider(),
+        UI.button(pin_label, {self(), pin_tap}, if(assigns.pinned?, do: :ghost, else: :primary))
+      ],
+      gap: 10,
+      background: :background,
+      padding_left: 16,
+      padding_right: 16,
+      padding_top: 10,
+      padding_bottom: 16
+    )
   end
 
   defp offline_title(status), do: problem_title(status)
@@ -778,11 +904,11 @@ defmodule DevideMob.SessionDetailScreen do
   defp mode_label(nil), do: "—"
   defp mode_label(mode), do: mode |> to_string() |> String.replace("_", " ")
 
-  defp mode_color("manual"), do: :blue_400
-  defp mode_color("review"), do: :amber_400
-  defp mode_color("agent_write_locked"), do: :muted
-  defp mode_color("shared_stage_guarded"), do: :red_400
-  defp mode_color(_), do: :surface_raised
+  defp mode_tone("manual"), do: :running
+  defp mode_tone("review"), do: :attention
+  defp mode_tone("agent_write_locked"), do: :neutral
+  defp mode_tone("shared_stage_guarded"), do: :failed
+  defp mode_tone(_), do: :neutral
 
   defp status_label(status) do
     case {status_state(status), status_reason(status)} do
@@ -799,42 +925,42 @@ defmodule DevideMob.SessionDetailScreen do
     end
   end
 
-  defp status_color(status) do
+  defp status_tone(status) do
     case status_state(status) do
-      :joined -> :green_400
-      :connecting -> :amber_400
-      :disconnected -> :surface_raised
-      :error -> :red_400
-      _ -> :surface_raised
+      :joined -> :done
+      :connecting -> :neutral
+      :disconnected -> :attention
+      :error -> :failed
+      _ -> :neutral
     end
   end
 
-  defp run_status_color("succeeded"), do: :green_400
-  defp run_status_color("started"), do: :amber_400
-  defp run_status_color("running"), do: :amber_400
-  defp run_status_color("queued"), do: :amber_400
-  defp run_status_color("approval_requested"), do: :amber_400
-  defp run_status_color("approval_granted"), do: :blue_400
-  defp run_status_color("approval_denied"), do: :red_400
-  defp run_status_color("timed_out"), do: :red_400
-  defp run_status_color("failed"), do: :red_400
-  defp run_status_color(_), do: :surface_raised
+  defp run_status_tone("succeeded"), do: :done
+  defp run_status_tone("started"), do: :running
+  defp run_status_tone("running"), do: :running
+  defp run_status_tone("queued"), do: :running
+  defp run_status_tone("approval_requested"), do: :attention
+  defp run_status_tone("approval_granted"), do: :done
+  defp run_status_tone("approval_denied"), do: :failed
+  defp run_status_tone("timed_out"), do: :failed
+  defp run_status_tone("failed"), do: :failed
+  defp run_status_tone(_), do: :neutral
 
-  defp agent_status_color("ok"), do: :green_400
-  defp agent_status_color(:ok), do: :green_400
-  defp agent_status_color("error"), do: :red_400
-  defp agent_status_color(:error), do: :red_400
-  defp agent_status_color(_), do: :surface_raised
+  defp agent_status_tone("ok"), do: :done
+  defp agent_status_tone(:ok), do: :done
+  defp agent_status_tone("error"), do: :failed
+  defp agent_status_tone(:error), do: :failed
+  defp agent_status_tone(_), do: :neutral
 
-  defp decision_color("deny"), do: :red_400
-  defp decision_color(:deny), do: :red_400
-  defp decision_color("allow"), do: :green_400
-  defp decision_color(:allow), do: :green_400
-  defp decision_color(_), do: :surface_raised
+  defp decision_tone("deny"), do: :failed
+  defp decision_tone(:deny), do: :failed
+  defp decision_tone("allow"), do: :done
+  defp decision_tone(:allow), do: :done
+  defp decision_tone(_), do: :neutral
 
   defp recovery_buttons(status) do
-    retry = recovery_button("Retry", :retry, :surface_raised, :on_surface)
-    pair_again = recovery_button("Pair again", :pair_again, :primary, :on_primary)
+    retry = UI.button("Retry", {self(), :retry}, :secondary, weight: 1)
+    pair_again = UI.button("Pair again", {self(), :pair_again}, :primary, weight: 1)
 
     case status_reason(status) do
       reason
@@ -844,22 +970,6 @@ defmodule DevideMob.SessionDetailScreen do
       _ ->
         [retry]
     end
-  end
-
-  defp recovery_button(label, tap, background, text_color) do
-    %{
-      type: :button,
-      props: %{
-        text: label,
-        fill_width: true,
-        background: background,
-        text_color: text_color,
-        padding: :space_sm,
-        height: 44.0,
-        on_tap: {self(), tap}
-      },
-      children: []
-    }
   end
 
   defp status_state({state, _reason}) when state in [:joined, :connecting, :disconnected, :error],

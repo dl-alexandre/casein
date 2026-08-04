@@ -1,7 +1,9 @@
 defmodule DevideMob.App do
   @moduledoc "Application entry point for DevideMob."
 
-  use Mob.App
+  # The brand theme is applied at boot (Mob.App calls Mob.Theme.set/1 for us).
+  # Without it every screen renders against Mob's neutral grey-and-blue base.
+  use Mob.App, theme: DevideMob.Theme
 
   @impl Mob.App
   def navigation(_platform) do
@@ -10,6 +12,13 @@ defmodule DevideMob.App do
 
   @impl Mob.App
   def on_start do
+    # Re-assert the brand theme. `use Mob.App, theme:` above sets it, but
+    # `Mob.Plugins.boot/1` runs afterwards and applies `config :mob,
+    # :default_style` from mob.exs (the mob_themes package), which clobbered it
+    # — the device booted rendering Obsidian violet instead of DevIDE indigo.
+    # on_start/0 is the last hook in Mob.App's boot sequence, so this wins.
+    Mob.Theme.set(DevideMob.Theme.dark())
+
     # Configure BEAM's DNS path so Req / Finch / Mint / `gen_tcp:connect/3`
     # with a hostname work on iOS without per-host setup. Flips the lookup
     # chain from the iOS-broken `:native` (inet_gethost port program) path

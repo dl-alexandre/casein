@@ -19,21 +19,21 @@ defmodule DevideMob.PairingScreenTest do
   test "renders top navigation chrome" do
     view = mount_screen(PairingScreen)
 
-    assert_renderable(view)
+    assert_renderable(view, extra: [:icon])
     assert text(view) =~ "Pair workspace"
-    assert find(view, :button, text: "Back")
+    assert find(view, :icon, name: "back", text: "Back")
     refute find(view, :button, text: "← Back")
   end
 
   test "renders QR-primary, paste fallback, and manual fallback sections" do
     view = mount_screen(PairingScreen)
 
-    assert text(view) =~ "Use the web cockpit QR code"
+    assert text(view) =~ "Open /pair in the web cockpit"
     assert find(view, :button, text: "Scan QR code")
     assert find(view, :button, text: "Scan QR code").props.background == :primary
     assert find(view, :button, text: "Paste & pair")
     assert find(view, :button, text: "Paste & pair").props.background == :surface_raised
-    assert find(view, :button, text: "Paste & pair").props.height == 48.0
+    assert find(view, :button, text: "Paste & pair").props.height == 44.0
     assert text(view) =~ "Have a pairing code?"
     assert find(view, :button, text: "Pair")
     assert find(view, :button, text: "Pair").props.height == 44.0

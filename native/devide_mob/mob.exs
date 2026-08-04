@@ -6,6 +6,18 @@
 
 import Config
 
+# ── Bundle id (machine-local) ────────────────────────────────────────────────
+# MobDev.Config.bundle_id/0 resolves ONE id for both platforms, preferring
+# ios/Info.plist. This project's ids necessarily differ — the iOS bundle id is
+# `com.alexandrefamilyfarm.devide-mob` and an Android applicationId cannot
+# contain a hyphen — so without an override every Android-side step (OTP push,
+# BEAM push, restart) targets a package that does not exist on the device and
+# is silently skipped.
+#
+# Set to the ANDROID package while deploying to Android; comment it out again
+# for iOS deploys, which need the Info.plist value.
+# config :mob_dev, bundle_id: "com.example.devide_mob"   # ← uncomment for ANDROID deploys
+
 config :mob_dev,
   # Path to the mob library repo (native source files for iOS/Android builds).
   mob_dir: Path.join(File.cwd!(), "deps/mob"),
