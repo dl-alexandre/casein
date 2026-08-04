@@ -171,6 +171,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(pending).action_state == :pending
     assert text(pending) =~ "Sending"
+    assert_state_leaf(pending, :pending, "Sending")
 
     accepted =
       render_info(
@@ -180,10 +181,12 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(accepted).action_state == :accepted
     assert text(accepted) =~ "Accepted"
+    assert_state_leaf(accepted, :accepted, "Accepted")
 
     resolved = render_info(accepted, {:mobile_cards_snapshot, %{"cards" => []}})
     assert assigns(resolved).action_state == :resolved
     assert text(resolved) =~ "Resolved"
+    assert_state_leaf(resolved, :resolved, "Resolved")
 
     stale =
       ReviewDecisionScreen
@@ -193,6 +196,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(stale).action_state == :stale
     assert text(stale) =~ "Stale"
+    assert_state_leaf(stale, :stale, "Stale")
 
     offline =
       ReviewDecisionScreen
@@ -201,6 +205,7 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(offline).action_state == :offline
     assert text(offline) =~ "Offline"
+    assert_state_leaf(offline, :offline, "Offline")
   end
 
   test "direction choices render as compact semantic chips with stable identifiers" do
@@ -596,8 +601,10 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view = render_info(view, {:mobile_cards_snapshot, %{"cards" => []}})
 
     assert assigns(view).submitted_action == "follow_up"
+    assert assigns(view).action_state == :resolved
     assert assigns(view).card_expired == false
     assert text(view) =~ "Request resolved. Waiting for delivery confirmation."
+    assert_state_leaf(view, :resolved, "Resolved")
     assert find(view, :button, text: "Send follow-up").props.disabled == true
 
     view =
@@ -609,7 +616,9 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
 
     assert assigns(view).submitted_action == nil
     assert assigns(view).intervention_completed == true
+    assert assigns(view).action_state == :resolved
     assert text(view) =~ "Follow-up delivered to the exact agent."
+    assert_state_leaf(view, :resolved, "Resolved")
     refute text(view) =~ "expired or was removed"
   end
 
@@ -826,6 +835,15 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     view
     |> render_info({:mobile_cards_status, :joined})
     |> render_info({:mobile_cards_snapshot, %{"cards" => [card]}})
+  end
+
+  defp assert_state_leaf(view, state, label) do
+    leaf = find(view, :text, text: label)
+    id = "needs-me-state-#{state}"
+
+    assert leaf.props.test_id == id
+    assert leaf.props.accessibility_id == id
+    assert leaf.props.accessibility_label == "Request state: #{label}"
   end
 
   defp intervention_card do

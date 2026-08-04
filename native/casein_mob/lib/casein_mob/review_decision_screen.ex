@@ -133,7 +133,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
       socket =
         socket
         |> Mob.Socket.assign(:message, result_message(result))
-        |> Mob.Socket.assign(:action_state, result_state(result))
+        |> Mob.Socket.assign(:action_state, result_state(socket, result))
         |> handle_action_result(result)
 
       {:noreply, socket}
@@ -883,9 +883,12 @@ defmodule CaseinMob.ReviewDecisionScreen do
        else: :stale
   end
 
-  defp result_state({:ok, _result}), do: :accepted
+  # A snapshot can authoritatively remove the request before its action reply
+  # reaches this screen. Do not regress that terminal state back to accepted.
+  defp result_state(%{assigns: %{action_state: :resolved}}, {:ok, _result}), do: :resolved
+  defp result_state(_socket, {:ok, _result}), do: :accepted
 
-  defp result_state({:error, reason})
+  defp result_state(_socket, {:error, reason})
        when reason in [
               "card_not_found",
               :card_not_found,
@@ -904,7 +907,7 @@ defmodule CaseinMob.ReviewDecisionScreen do
             ],
        do: :stale
 
-  defp result_state({:error, _reason}), do: :idle
+  defp result_state(_socket, {:error, _reason}), do: :idle
 
   defp refresh_identity_matches?(current, incoming) do
     get(current, "id") == get(incoming, "id") and
@@ -1243,9 +1246,6 @@ defmodule CaseinMob.ReviewDecisionScreen do
     %{
       type: :column,
       props: %{
-        test_id: "needs-me-state-#{assigns.action_state}",
-        accessibility_id: "needs-me-state-#{assigns.action_state}",
-        accessibility_label: "Request state: #{label}",
         fill_width: true,
         background: color,
         padding: :space_sm,
@@ -1254,7 +1254,14 @@ defmodule CaseinMob.ReviewDecisionScreen do
       children: [
         %{
           type: :text,
-          props: %{text: label, text_color: :on_surface, font_weight: "bold"},
+          props: %{
+            test_id: "needs-me-state-#{assigns.action_state}",
+            accessibility_id: "needs-me-state-#{assigns.action_state}",
+            accessibility_label: "Request state: #{label}",
+            text: label,
+            text_color: :on_surface,
+            font_weight: "bold"
+          },
           children: []
         },
         body_text(detail)
