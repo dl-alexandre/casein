@@ -43,6 +43,12 @@ export const SessionsPickerSidebar = {
   },
 
   updated() {
+    // The filter is client-only DOM state (row `display`, the query line), so a
+    // server patch — an activity tick, a session poll — reverts it within a
+    // frame and the rail silently un-filters under the user. Re-apply before
+    // the focus restore below, so it picks from the filtered set.
+    if (this._filter !== "") this.applyFilter()
+
     if (!this._refocus) return
     this._refocus = false
     if (this.el.contains(document.activeElement)) return // morphdom preserved it

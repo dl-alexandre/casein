@@ -43,7 +43,9 @@ defmodule CaseinWeb.DesktopSessionPickerTest do
 
     assert {:noreply, closed} = Show.handle_event("sidebar:toggle_sessions", %{}, opened)
     refute closed.assigns.sessions_sidebar_open?
-    assert closed.assigns.sessions_sidebar_tree == []
+    # The tree survives a close on purpose — it is the warm paint the next
+    # summon renders from, instead of a blank rail waiting on build_many/1.
+    assert closed.assigns.sessions_sidebar_tree != []
   end
 
   test "selecting the active desktop session closes the picker" do

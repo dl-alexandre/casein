@@ -502,8 +502,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   def sessions_sidebar(assigns) do
     ~H"""
+    <%!-- Deliberately not gated on `@tree != []`: the rail is the primary
+    session-switching surface, so summoning it must paint chrome immediately and
+    fill rows in as they arrive, never leave an empty column. --%>
     <nav
-      :if={@tree != []}
       id={"sessions-sidebar-" <> @workspace_id}
       data-sessions-picker-sidebar="true"
       data-shortcut="Ctrl + B, then S"
@@ -521,13 +523,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     >
       <div class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5">
         <span class="flex min-w-0 items-center gap-1.5">
-          <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+          <span class="text-[11px] font-semibold tracking-wide text-base-content/70">
             Sessions
           </span>
           <% liveness = SessionBarVM.tree_liveness_summary(@tree) %>
           <span
             :if={liveness.total > 0}
-            class="shrink-0 rounded-full bg-base-200 px-1.5 py-0.5 font-mono text-[9px] leading-none text-base-content/55"
+            class="shrink-0 rounded-full bg-base-200 px-1.5 py-0.5 font-mono text-[10px] leading-none tabular-nums text-base-content/70"
             title={"#{liveness.live} of #{liveness.total} workspaces have a live session"}
             aria-label={"#{liveness.live} of #{liveness.total} workspaces live"}
           >
@@ -552,13 +554,28 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
             }
           ></span>
         </span>
-        <span class="flex shrink-0 items-center gap-0.5">
+        <%!-- Sort keeps its word: the label *is* the current mode, and an icon
+        alone cannot say "Recent" vs "Name". Focus mode is a plain toggle, so it
+        reduces to an icon and drops the ambiguous "Focus"/"Chrome" wording. --%>
+        <span class="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            phx-click="sidebar:cycle_sessions_sort"
+            class="flex items-center gap-1 rounded border border-base-300/70 px-1.5 py-0.5 text-[10px] text-base-content/70 hover:bg-base-200 hover:text-base-content"
+            title={"Sorted by " <> SessionBarVM.sort_mode_label(@sort_mode) <> " — click to cycle"}
+            aria-label={
+              "Sorted by " <> SessionBarVM.sort_mode_label(@sort_mode) <> ", click to cycle"
+            }
+          >
+            <.icon name="hero-bars-arrow-down" class="size-3" />
+            {SessionBarVM.sort_mode_label(@sort_mode)}
+          </button>
           <button
             type="button"
             id={"sessions-focus-mode-" <> @workspace_id}
             phx-click="terminal:toggle_chrome"
             data-shortcut="Ctrl/Cmd + Shift + F"
-            class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+            class="flex items-center rounded p-1 text-base-content/60 hover:bg-base-200 hover:text-base-content"
             title={
               if(@chrome_visible?,
                 do: "Focus mode — hide header. Shortcut: Ctrl/Cmd + Shift + F",
@@ -568,23 +585,25 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
             aria-label={if(@chrome_visible?, do: "Enter focus mode", else: "Exit focus mode")}
             aria-pressed={to_string(not @chrome_visible?)}
           >
-            {if @chrome_visible?, do: "Focus", else: "Chrome"}
-          </button>
-          <button
-            type="button"
-            phx-click="sidebar:cycle_sessions_sort"
-            class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
-            title={"Sort: " <> SessionBarVM.sort_mode_label(@sort_mode) <> " (click to cycle)"}
-            aria-label={"Sort sessions by " <> SessionBarVM.sort_mode_label(@sort_mode)}
-          >
-            {SessionBarVM.sort_mode_label(@sort_mode)}
+            <.icon
+              name={
+                if(@chrome_visible?, do: "hero-arrows-pointing-in", else: "hero-arrows-pointing-out")
+              }
+              class="size-3.5"
+            />
           </button>
         </span>
       </div>
-      <div
-        data-picker-filter
-        class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
-      >
+      <div class="flex shrink-0 items-center gap-1.5 border-b border-base-300/70 px-2 py-1">
+        <.icon name="hero-funnel" class="size-3 shrink-0 text-base-content/50" />
+        <span
+          data-picker-filter
+          data-picker-filter-placeholder="Type to filter"
+          data-picker-filter-empty
+          class="min-w-0 truncate font-mono text-[11px] text-base-content/75"
+        >
+          Type to filter
+        </span>
       </div>
       <.sessions_needs_you_strip
         rows={@needs_you}
@@ -640,18 +659,34 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           rename_session_id={@rename_session_id}
         />
         <.sessions_sidebar_browse_node :for={node <- browse_nodes} node={node} depth={0} />
+        <%!-- Reached before the first summary build lands, and whenever a
+        filter matches nothing. Skeleton rows keep the rail from reading as
+        broken during the git-backed workspace scan. --%>
+        <div :if={@tree == []} class="flex flex-col gap-1 px-1 pt-1" aria-hidden="true">
+          <div
+            :for={width <- ["w-3/4", "w-1/2", "w-2/3"]}
+            class={["h-4 animate-pulse rounded bg-base-200", width]}
+          >
+          </div>
+        </div>
+        <p :if={@tree == []} class="px-2 pt-2 text-[11px] text-base-content/60">
+          Finding your sessions…
+        </p>
       </div>
-      <button
-        type="button"
-        phx-click="terminal:refresh_sessions"
-        class="shrink-0 border-t border-base-300/70 px-2 py-2 text-xs text-base-content/70 hover:bg-base-200"
-        title="Refresh workspaces and sessions"
-        aria-label="Refresh workspaces and sessions"
-      >
-        <span class="inline-flex items-center gap-1">
-          <.icon name="hero-arrow-path" class="size-3.5" /> Refresh
+      <div class="flex shrink-0 items-center justify-between gap-1 border-t border-base-300/70 px-2 py-1.5">
+        <span class="min-w-0 truncate font-mono text-[10px] text-base-content/60">
+          ↑↓ move · o open · l link
         </span>
-      </button>
+        <button
+          type="button"
+          phx-click="terminal:refresh_sessions"
+          class="flex shrink-0 items-center rounded p-1 text-base-content/60 hover:bg-base-200 hover:text-base-content"
+          title="Refresh workspaces and sessions"
+          aria-label="Refresh workspaces and sessions"
+        >
+          <.icon name="hero-arrow-path" class="size-3.5" />
+        </button>
+      </div>
     </nav>
     """
   end
@@ -860,9 +895,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   defp sessions_sidebar_section_header(assigns) do
     ~H"""
     <p class={[
-      "flex items-center justify-between px-2 pb-0.5 pt-1 text-[9px] font-semibold uppercase tracking-wide",
+      "flex items-center justify-between px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide",
       @attention? && "text-rose-500 dark:text-rose-300",
-      !@attention? && "text-base-content/40"
+      !@attention? && "text-base-content/60"
     ]}>
       <span>{@label}</span>
       <span :if={is_integer(@count)} class="font-mono opacity-70">{@count}</span>
@@ -1436,7 +1471,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
       <span
         :if={@session.id == @default_sid}
-        class="flex shrink-0 text-base-content/40"
+        class="flex shrink-0 text-base-content/55"
         title="Home session — your landing shell"
         aria-label="Home session"
       >
@@ -1474,7 +1509,24 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         aria-label={@session.activity_label}
       />
     </span>
+    <%!-- Second line, matching the workspace rows: session labels alone repeat
+    across workspaces, so the cwd/branch detail is what tells two "shell" rows
+    apart. Kept out of `data-picker-label` so type-to-filter still matches on
+    the name only. --%>
+    <span
+      :if={session_detail(@session) != ""}
+      class="max-w-full truncate font-mono text-[10px] text-base-content/60"
+    >
+      {session_detail(@session)}
+    </span>
     """
+  end
+
+  defp session_detail(session) do
+    case Map.get(session, :detail) do
+      detail when is_binary(detail) -> detail
+      _ -> ""
+    end
   end
 
   attr :node, :map, required: true
@@ -1699,23 +1751,30 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       }
     >
       <div class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5">
-        <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+        <span class="text-[11px] font-semibold tracking-wide text-base-content/70">
           Windows
         </span>
         <button
           type="button"
           phx-click="sidebar:cycle_windows_sort"
-          class="rounded px-1.5 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
-          title={"Sort: " <> SessionBarVM.sort_mode_label(@sort_mode) <> " (click to cycle)"}
-          aria-label={"Sort windows by " <> SessionBarVM.sort_mode_label(@sort_mode)}
+          class="flex items-center gap-1 rounded border border-base-300/70 px-1.5 py-0.5 text-[10px] text-base-content/70 hover:bg-base-200 hover:text-base-content"
+          title={"Sorted by " <> SessionBarVM.sort_mode_label(@sort_mode) <> " — click to cycle"}
+          aria-label={"Sorted by " <> SessionBarVM.sort_mode_label(@sort_mode) <> ", click to cycle"}
         >
+          <.icon name="hero-bars-arrow-down" class="size-3" />
           {SessionBarVM.sort_mode_label(@sort_mode)}
         </button>
       </div>
-      <div
-        data-picker-filter
-        class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
-      >
+      <div class="flex shrink-0 items-center gap-1.5 border-b border-base-300/70 px-2 py-1">
+        <.icon name="hero-funnel" class="size-3 shrink-0 text-base-content/50" />
+        <span
+          data-picker-filter
+          data-picker-filter-placeholder="Type to filter"
+          data-picker-filter-empty
+          class="min-w-0 truncate font-mono text-[11px] text-base-content/75"
+        >
+          Type to filter
+        </span>
       </div>
       <div class="min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-1 py-1.5">
         <%= for node <- @tree do %>
@@ -1797,19 +1856,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           <% end %>
         <% end %>
       </div>
-      <%= if @mutations_allowed? do %>
+      <div class="flex shrink-0 items-center justify-between gap-1 border-t border-base-300/70 px-2 py-1.5">
+        <span class="min-w-0 truncate font-mono text-[10px] text-base-content/60">
+          o open · l link · r rename · &amp; kill
+        </span>
         <button
+          :if={@mutations_allowed?}
           type="button"
           phx-click="tmux:new_window"
-          class="shrink-0 border-t border-base-300/70 px-2 py-2 text-xs text-base-content/70 hover:bg-base-200"
+          class="flex shrink-0 items-center rounded p-1 text-base-content/60 hover:bg-base-200 hover:text-base-content"
           title="New window · Ctrl + B c"
           aria-label="New tmux window"
         >
-          <span class="inline-flex items-center gap-1">
-            <.icon name="hero-plus" class="size-3.5" /> New window
-          </span>
+          <.icon name="hero-plus" class="size-3.5" />
         </button>
-      <% end %>
+      </div>
     </nav>
     """
   end

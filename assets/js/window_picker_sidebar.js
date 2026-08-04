@@ -41,6 +41,11 @@ export const WindowPickerSidebar = {
   },
 
   updated() {
+    // See SessionsPickerSidebar.updated: the filter is client-only DOM state
+    // and a server patch (topology version bump, activity tick) reverts it on
+    // the next frame unless it is re-applied.
+    if (this._filter !== "") this.applyFilter()
+
     if (!this._refocus) return
     this._refocus = false
     if (this.el.contains(document.activeElement)) return // morphdom preserved it

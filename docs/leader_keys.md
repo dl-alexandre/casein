@@ -68,13 +68,17 @@ on its own:
 | (focus)  | Focusing an entry previews its tmux target — a text capture rendered in a pane at the bottom of the menu (`terminal:picker_preview` reply, debounced 200ms, cached while the menu is open, session validated against the workspace tmux prefix) |
 | `o`      | Open the focused entry in a new browser tab (session and window pickers) |
 | `l`      | Copy the focused entry's shareable link (always includes `?session=`; window links also carry `&window=`) |
-| `r`      | Rename the focused entry inline — a top-level window row renames the window, a session row renames the session. Nested child rows (windows under a non-active session) are skipped, since rename targets the active session's tmux session |
-| `&`      | In the window picker, kill the focused top-level window after confirmation. Pane rows are ignored |
+| `r`      | **Windows rail only.** Rename the focused entry inline — a top-level window row renames the window. Nested child rows (windows under a non-active session) are skipped, since rename targets the active session's tmux session. The sessions rail has no `r`; rename a session with `C-b $` |
+| `&`      | **Windows rail only.** Kill the focused top-level window after confirmation. Pane rows are ignored |
 | `Enter`  | Attach the focused item (native button click)                        |
 | `Escape` | Close the picker from anywhere, including when focus has returned to the terminal |
 
-Each picker menu shows a footer hint: `↑↓ move · o open · l copy link · r rename`.
-The window picker adds `· & kill` when a focused window can be killed.
+Each rail carries a permanent footer hint and a filter line that reads
+`Type to filter` until the first keystroke — the rails are keyboard surfaces,
+so the keys have to be advertised on screen rather than only documented here.
+The hints list what each rail's hook actually implements: Sessions shows
+`↑↓ move · o open · l link`, Windows shows `o open · l link · r rename · & kill`
+(`r` and `&` are window-rail only; the sessions hook has no such bindings).
 
 Opening the picker (mouse or `C-b s`) auto-focuses the active session.
 Expansion state is client-side (`JS.toggle`); a LiveView re-render of the

@@ -99,9 +99,13 @@ export function applyTreePickerFilter(rootEl, query, {matches = matchesPickerFil
   const items = Array.from(rootEl.querySelectorAll("[data-picker-item]"))
   const display = rootEl.querySelector("[data-picker-filter]")
 
+  // The filter row is a permanent affordance, not a transient readout: hiding
+  // it until the first keystroke meant nothing on screen said the rails were
+  // type-to-filter. Empty state shows the row's own placeholder instead.
   if (display) {
-    display.textContent = query ? `filter: ${query}` : ""
-    display.style.display = query ? "block" : "none"
+    const placeholder = display.getAttribute?.("data-picker-filter-placeholder") || ""
+    display.textContent = query || placeholder
+    display.toggleAttribute?.("data-picker-filter-empty", !query)
   }
 
   if (normalized === "") {

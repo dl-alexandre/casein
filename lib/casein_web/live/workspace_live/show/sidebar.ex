@@ -85,21 +85,31 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
     end
   end
 
+  @doc """
+  Hide the rails without discarding what they know.
+
+  Closing used to reset every sidebar assign, so the next `C-b s` repainted from
+  an empty tree and waited on a fresh `SessionSummary.build_many/1` (a `git
+  branch` + `git status` per workspace) before showing a single row — and it
+  also threw away everything `warm_sessions/1` had just prefetched. The rail is
+  the primary session-switching surface, so the tree, the per-workspace session
+  cache, and the expansion state now survive a close and act as warm paint.
+  Live subscriptions stay up too, which keeps that cache honest while the rail
+  is hidden; reopening still refreshes, but it corrects an already-rendered list
+  instead of filling a blank one.
+
+  Still dropped on close: the windows tree (rebuilt from `tmux_window_tabs` on
+  open, so holding it would pin stale topology) and the Browse memo (a
+  filesystem scan that should not outlive the rail session).
+  """
   @spec close(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
   def close(socket) do
     socket
-    |> unsubscribe_all_sidebar_workspaces()
     |> assign_sidebar_mode(:closed)
-    |> assign(:sidebar_expanded_workspaces, MapSet.new())
     |> assign(:sidebar_expanded_windows, MapSet.new())
-    |> assign(:sidebar_expanded_dirs, MapSet.new())
-    |> assign(:sidebar_ws_sessions, %{})
-    |> assign(:sidebar_ws_warm_pending, MapSet.new())
     # Bound the Browse memo to one rail session: hot for the expand/collapse/sort
     # churn that motivated it, re-scanned the next time the rail is summoned.
     |> invalidate_browse_cache()
-    |> assign(:sidebar_ws_subscriptions, MapSet.new())
-    |> assign(:sessions_sidebar_tree, [])
     |> assign(:windows_sidebar_tree, [])
 
     # NB: the sort modes intentionally survive a close — reopening the rail keeps
@@ -628,12 +638,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
         MapSet.delete(socket.assigns.sidebar_ws_subscriptions, workspace_id)
       )
     end
-  end
-
-  defp unsubscribe_all_sidebar_workspaces(socket) do
-    Enum.reduce(socket.assigns.sidebar_ws_subscriptions, socket, fn workspace_id, sock ->
-      unsubscribe_sidebar_workspace(sock, workspace_id)
-    end)
   end
 
   defp ensure_current_workspace_summary(socket) do
