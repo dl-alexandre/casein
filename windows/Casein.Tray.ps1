@@ -139,15 +139,44 @@ function Save-CaseinSettings {
         Set-Content -LiteralPath $script:Paths.Settings -Encoding UTF8
 }
 
+function Resolve-CaseinTrustedLanProgram {
+    $releasePath = [IO.Path]::GetFullPath($script:Paths.ReleaseRoot).TrimEnd('\') + '\'
+    $program = Get-ChildItem -LiteralPath $script:Paths.ReleaseRoot -Directory -Filter 'erts-*' -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName 'bin\erl.exe' } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        Select-Object -First 1
+    if (-not $program) { return $null }
+
+    $resolved = [IO.Path]::GetFullPath([string]$program)
+    if (-not $resolved.StartsWith($releasePath, [StringComparison]::OrdinalIgnoreCase)) { return $null }
+    $resolved
+}
+
 function Read-CaseinTrustedLanState {
     if (-not (Test-Path -LiteralPath $script:Paths.TrustedLan)) {
-        return [pscustomobject]@{ enabled = $false }
+        return [pscustomobject]@{ enabled = $false; reconciliation_required = $false }
     }
     try {
-        Get-Content -Raw -LiteralPath $script:Paths.TrustedLan | ConvertFrom-Json
+        $state = Get-Content -Raw -LiteralPath $script:Paths.TrustedLan | ConvertFrom-Json
+        if ([bool]$state.enabled) {
+            $currentProgram = Resolve-CaseinTrustedLanProgram
+            $savedProgram = [string]$state.program
+            if (-not $currentProgram -or -not $savedProgram -or
+                -not ([IO.Path]::GetFullPath($savedProgram)).Equals($currentProgram, [StringComparison]::OrdinalIgnoreCase)) {
+                # A Windows Firewall program rule is bound to an exact executable path.
+                # Never expose the new release until elevation has moved that rule forward.
+                return [pscustomobject]@{
+                    enabled = $false
+                    reconciliation_required = $true
+                    previous_program = $savedProgram
+                }
+            }
+        }
+        $state | Add-Member -NotePropertyName reconciliation_required -NotePropertyValue $false -Force
+        $state
     } catch {
         Write-CaseinLog "Ignoring invalid Trusted LAN state: $($_.Exception.Message)"
-        [pscustomobject]@{ enabled = $false }
+        [pscustomobject]@{ enabled = $false; reconciliation_required = $false }
     }
 }
 
@@ -737,6 +766,20 @@ function Start-CaseinTray {
     $script:LifecycleMutation = $false
     Save-CaseinSettings $script:Port $script:LaunchAtSignIn
 
+    $trustedLanState = Read-CaseinTrustedLanState
+    if ([bool]$trustedLanState.reconciliation_required) {
+        try {
+            Write-CaseinLog 'Reconciling the Trusted LAN firewall rule with the installed release'
+            $trustedLanState = Set-CaseinTrustedLan $true $script:Port
+            Write-CaseinLog 'Trusted LAN firewall rule reconciled successfully'
+        } catch {
+            # Read-CaseinTrustedLanState keeps the runtime loopback-only until a
+            # later launch or an explicit menu action completes reconciliation.
+            Write-CaseinLog "Trusted LAN firewall reconciliation failed: $($_.Exception.Message)"
+            $trustedLanState = Read-CaseinTrustedLanState
+        }
+    }
+
     $runningIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(34, 197, 94))
     $stoppedIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(107, 114, 128))
     $errorIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(239, 68, 68))
@@ -759,7 +802,6 @@ function Start-CaseinTray {
     $supportItem = $menu.Items.Add('Create support bundle')
     $rotateTokensItem = $menu.Items.Add('Rotate local access tokens')
     $trustedLanItem = $menu.Items.Add('Trusted LAN access')
-    $trustedLanState = Read-CaseinTrustedLanState
     $trustedLanItem.Checked = [bool]$trustedLanState.enabled
     $copyLanUrlItem = $menu.Items.Add('Copy Trusted LAN URL')
     $copyLanUrlItem.Enabled = [bool]$trustedLanState.enabled
