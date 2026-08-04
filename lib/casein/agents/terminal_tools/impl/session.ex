@@ -1,6 +1,7 @@
 defmodule Casein.Agents.TerminalTools.Impl.Session do
   @moduledoc false
 
+  alias Casein.Agents.GrokCapabilityPolicy
   alias Casein.Agents.TerminalOutputFormat
   alias Casein.Operator.SituationServer
   alias Casein.Terminals.AgentState
@@ -16,6 +17,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   @active_pane_note "active_window_id/active_pane_id follow the attached operator's focus and " <>
                       "change when the operator switches windows. Anchor pane references to " <>
                       "caller.adjacent_panes (or an explicit pane id), not to the active pane."
+
+  @agent_write_blocked_note "Agent write is unavailable for this workspace, so a managed Grok " <>
+                              "pane launched now gets a READ-ONLY sandbox: no worktree writes, " <>
+                              "no child network, and the BEAM cannot start (mix will not run). " <>
+                              "A pane already running keeps the sandbox it launched with — " <>
+                              "re-granting does not free it, so relaunch the pane after the grant."
 
   @doc "List live Casein-managed tmux sessions."
   @spec list_sessions(map()) :: {:ok, map()}
@@ -52,6 +59,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
           }
           |> put_caller_anchor(snapshot, params)
           |> put_agent_pane_guidance(session, params)
+          |> put_agent_write(params)
           |> compact()
 
         {:ok, payload}
@@ -306,4 +314,46 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   end
 
   defp error_label(%{error: error}), do: to_string(error)
+
+  # A managed Grok pane's bwrap sandbox base is chosen once, when its leader
+  # starts, from this same predicate — and is then frozen for the pane's life
+  # while the MCP grant keeps re-intersecting per request. That asymmetry has
+  # repeatedly cost sessions: a pane launched while locked reaches a normal
+  # prompt but cannot write its worktree, resolve DNS, or start the BEAM, and
+  # re-granting the unlock does not free it. Orienting agents learn it here, on
+  # their first call, instead of by failing four minutes later.
+  defp put_agent_write(payload, params) do
+    case workspace_id(params) do
+      nil -> payload
+      workspace_id -> Map.put(payload, :agent_write, agent_write(workspace_id))
+    end
+  end
+
+  defp agent_write(workspace_id) do
+    summary = GrokCapabilityPolicy.agent_write_summary(workspace_id)
+
+    summary
+    |> Map.put(:note, agent_write_note(summary.write_enabled, summary.unlock_status))
+    |> compact()
+  end
+
+  defp agent_write_note(true, _status), do: nil
+
+  defp agent_write_note(false, status) do
+    @agent_write_blocked_note <> " " <> agent_write_remedy(status)
+  end
+
+  # `write_enabled` can be false while the unlock is live: the workspace may not
+  # be in manual mode, or its DB isolation may be shared_stage/unsafe. Saying
+  # "re-grant the unlock" there sends the operator down a dead end.
+  defp agent_write_remedy("active") do
+    "The unlock itself is active, so the block is elsewhere — the workspace is not in manual " <>
+      "mode, or its DB isolation is shared_stage/unsafe. Re-granting will not help; resolve " <>
+      "that first. For write work right now, use codex, which is not gated."
+  end
+
+  defp agent_write_remedy(_status) do
+    "An operator must re-grant agent write in the workspace UI. For write work right now, use " <>
+      "codex, which is not gated."
+  end
 end
