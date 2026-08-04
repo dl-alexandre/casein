@@ -12,6 +12,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   alias Casein.Integrations.Manager.Client
   alias Casein.Runs.Ledger
   alias Casein.Terminals.Templates
+  alias Casein.Terminals.WindowTrash
   alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
@@ -561,9 +562,18 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     |> element("#tmux-window--0 button[title='Close tmux window']")
     |> render_click()
 
-    assert_receive {:fake_tmux_kill_window, ^tmux_session, "@0"}
+    # The close is deferred: the window leaves the tab strip at once but tmux is
+    # untouched until the grace period expires, which is what makes undo able to
+    # bring it back with its processes still running.
+    refute_receive {:fake_tmux_kill_window, ^tmux_session, "@0"}
     assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:kill_window"})
+    assert_push_event(view, "window:trashed", %{"window_id" => "@0"})
     refute has_element?(view, "#tmux-window--0")
+
+    # Disarm the pending close so its timer cannot fire mid-suite and mutate
+    # shared tmux fixtures out from under a later test. The restore round trip
+    # itself is covered by WindowTrashTest, away from this test's timing.
+    WindowTrash.__reset__()
 
     render_hook(view, "sidebar:open", %{"mode" => "both"})
 

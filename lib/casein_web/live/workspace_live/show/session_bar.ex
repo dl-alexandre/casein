@@ -390,7 +390,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
                   type="button"
                   phx-click="tmux:kill_window"
                   phx-value-window-id={window.id}
-                  data-confirm="Kill this tmux window and everything running in it?"
                   class="rounded p-1 text-base-content/35 transition hover:bg-error/10 hover:text-error"
                   title="Close tmux window"
                   aria-label="Close tmux window"

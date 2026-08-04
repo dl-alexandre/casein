@@ -55,6 +55,8 @@ import {SessionsPickerSidebar} from "./sessions_picker_sidebar"
 import {WindowTabStrip} from "./window_tab_strip"
 import {HeaderOverflow} from "./header_overflow"
 import {copyInGesture} from "./clipboard_write.mjs"
+import {windowTrashToast} from "./window_trash_toast.mjs"
+import {showToast} from "./toast"
 import {
   canShareText,
   copyTextSync,
@@ -407,6 +409,35 @@ window.addEventListener("phx:clipboard:write", (e) => {
       }
     }
   )
+})
+
+// A window was closed. It is hidden but still alive in tmux for the grace
+// period, so offer the way back. The undo targets the window this toast names
+// rather than "the latest" — closing two in quick succession must not have the
+// first toast resurrect the second window.
+window.addEventListener("phx:window:trashed", (event) => {
+  const detail = event.detail || {}
+  const windowId = detail.window_id
+  const {message, actionLabel, durationMs} = windowTrashToast(detail)
+
+  showToast(message, {
+    kind: "info",
+    duration: durationMs,
+    actions: [
+      {
+        label: actionLabel,
+        onClick: () => {
+          if (!windowId || !window.liveSocket) return
+          window.liveSocket.execJS(
+            document.documentElement,
+            JSON.stringify([
+              ["push", {event: "tmux:restore_window", value: {"window-id": windowId}}]
+            ])
+          )
+        }
+      }
+    ]
+  })
 })
 
 window.addEventListener("phx:casein:reload_preview_iframes", (event) => {

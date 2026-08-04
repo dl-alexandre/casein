@@ -37,6 +37,8 @@ export const LEADER_ACTIONS = {
   x: "close-pane",
   q: "pane-overlay",
   ",": "rename-window",
+  // Undo the last window close while it is still in its grace period.
+  r: "restore-window",
   $: "rename-session",
   ArrowLeft: "pane-left",
   ArrowRight: "pane-right",

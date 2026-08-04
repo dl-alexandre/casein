@@ -11,6 +11,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   import Phoenix.LiveView
 
   alias Casein.Terminals
+  alias Casein.Terminals.WindowTrash
   alias Casein.Attention.Policy, as: AttentionPolicy
   alias Casein.Workspaces.Scratch
   alias CaseinWeb.WorkspaceLive.PaneHistoryWorker
@@ -372,14 +373,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
     {:noreply, TerminalState.refresh_tmux_topology(socket)}
   end
 
-  def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
-    if TerminalState.tmux_mutations_allowed?(socket) do
-      {:noreply,
-       socket
-       |> assign(:tmux_rename_window_id, window_id)
-       |> assign(:tmux_rename_session_id, nil)}
-    else
-      TerminalState.deny_tmux_mutation(socket)
+  def handle_event("tmux:rename_start", params, socket) do
+    cond do
+      not TerminalState.tmux_mutations_allowed?(socket) ->
+        TerminalState.deny_tmux_mutation(socket)
+
+      window_id = window_id_param(params) ->
+        {:noreply,
+         socket
+         |> assign(:tmux_rename_window_id, window_id)
+         |> assign(:tmux_rename_session_id, nil)}
+
+      true ->
+        {:noreply, socket}
     end
   end
 
@@ -560,31 +566,55 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
-  def handle_event("tmux:kill_window", %{"window-id" => window_id}, socket) do
+  # Closing a window does not kill it — it hides it from every viewer on the
+  # session and arms a grace-period timer (Casein.Terminals.WindowTrash). tmux
+  # is untouched until that timer fires, so the close can be taken back with
+  # the undo toast or `C-b r` and the window comes back with its processes
+  # intact. This is why there is no `data-confirm` on the close affordances:
+  # the undo window replaces the prompt.
+  def handle_event("tmux:kill_window", params, socket) do
+    case window_id_param(params) do
+      nil -> {:noreply, put_flash(socket, :error, "No window to close.")}
+      window_id -> trash_window(socket, window_id)
+    end
+  end
+
+  # Takes back a pending close. With an explicit id (the undo toast) it targets
+  # that window; without one (`C-b r`) it restores the most recent close on the
+  # session — a keystroke carries no id, and "undo" from a key means the last
+  # thing you did.
+  def handle_event("tmux:restore_window", params, socket) do
     if TerminalState.tmux_mutations_allowed?(socket) do
-      socket = TerminalState.refresh_tmux_topology(socket)
-      windows = socket.assigns[:tmux_windows] || []
+      session = socket.assigns.tmux_session
 
-      cond do
-        length(windows) <= 1 ->
-          {:noreply, put_flash(socket, :error, "Cannot close the last tmux window.")}
+      result =
+        case window_id_param(params) do
+          nil ->
+            WindowTrash.restore_latest(session)
 
-        not Enum.any?(windows, &(&1.id == window_id)) ->
-          {:noreply, put_flash(socket, :error, "Window no longer exists. Refreshed windows.")}
+          window_id ->
+            with {:ok, name} <- WindowTrash.restore(session, window_id),
+                 do: {:ok, window_id, name}
+        end
 
-        true ->
-          case TerminalState.tmux_adapter().kill_window(socket.assigns.tmux_session, window_id) do
-            :ok ->
-              {:noreply,
-               socket
-               |> assign(:tmux_rename_window_id, nil)
-               |> TerminalState.refresh_tmux_topology()
-               |> TerminalState.focus_active_terminal(%{"reason" => "tmux:kill_window"})}
+      case result do
+        {:ok, window_id, name} ->
+          # Bring the restored window back to the front: an undo that leaves you
+          # somewhere else has only half-worked.
+          _ = TerminalState.tmux_adapter().select_window(session, window_id)
 
-            {:error, reason} ->
-              socket = TerminalState.refresh_tmux_topology(socket)
-              {:noreply, put_flash(socket, :error, kill_window_error(reason))}
-          end
+          {:noreply,
+           socket
+           |> TerminalState.refresh_tmux_topology()
+           |> TerminalState.focus_active_terminal(%{"reason" => "tmux:restore_window"})
+           |> put_flash(:info, "Restored #{window_label(name)}.")}
+
+        {:error, :nothing_pending} ->
+          {:noreply, put_flash(socket, :error, "No recently closed window to restore.")}
+
+        {:error, :not_pending} ->
+          {:noreply,
+           put_flash(socket, :error, "That window is already gone — too late to restore it.")}
       end
     else
       TerminalState.deny_tmux_mutation(socket)
@@ -965,6 +995,80 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
 
   defp pluralize(1, singular), do: "1 " <> singular
   defp pluralize(count, singular), do: "#{count} " <> singular <> "s"
+
+  defp trash_window(socket, window_id) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      socket = TerminalState.refresh_tmux_topology(socket)
+      session = socket.assigns.tmux_session
+      # Already filtered to visible windows, so the last-window guard counts
+      # what the operator can actually see — trashing down to an empty tab
+      # strip is refused for the same reason tmux refuses to kill the last one.
+      windows = socket.assigns[:tmux_windows] || []
+      window = Enum.find(windows, &(&1.id == window_id))
+
+      cond do
+        length(windows) <= 1 ->
+          {:noreply, put_flash(socket, :error, "Cannot close the last tmux window.")}
+
+        is_nil(window) ->
+          {:noreply, put_flash(socket, :error, "Window no longer exists. Refreshed windows.")}
+
+        true ->
+          # Move tmux's own selection off the window before hiding it, or every
+          # viewer is left pointed at a window they can no longer see. This is
+          # the one tmux mutation a deferred close makes, and undo puts it back.
+          if socket.assigns[:tmux_active_window_id] == window_id do
+            case next_visible_window_id(windows, window_id) do
+              nil -> :ok
+              next_id -> TerminalState.tmux_adapter().select_window(session, next_id)
+            end
+          end
+
+          case WindowTrash.trash(session, window_id, Map.get(window, :name)) do
+            {:ok, grace_ms} ->
+              {:noreply,
+               socket
+               |> assign(:tmux_rename_window_id, nil)
+               |> TerminalState.refresh_tmux_topology()
+               |> TerminalState.focus_active_terminal(%{"reason" => "tmux:kill_window"})
+               |> push_event("window:trashed", %{
+                 "window_id" => window_id,
+                 "label" => window_label(Map.get(window, :name)),
+                 "grace_ms" => grace_ms
+               })}
+
+            {:error, reason} ->
+              socket = TerminalState.refresh_tmux_topology(socket)
+              {:noreply, put_flash(socket, :error, kill_window_error(reason))}
+          end
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  # tmux moves to the next window on kill; match that so a deferred close feels
+  # like the real one. Wraps to the previous window when closing the last tab.
+  defp next_visible_window_id(windows, window_id) do
+    case Enum.find_index(windows, &(&1.id == window_id)) do
+      nil ->
+        nil
+
+      index ->
+        neighbor = Enum.at(windows, index + 1) || Enum.at(windows, index - 1)
+        neighbor && neighbor.id
+    end
+  end
+
+  # The picker sidebar hook pushes `window_id`; the click affordances push
+  # `window-id` via phx-value. Accept both — they name the same thing, and a
+  # miss here used to be an unmatched clause that took the LiveView down.
+  defp window_id_param(%{"window-id" => id}) when is_binary(id) and id != "", do: id
+  defp window_id_param(%{"window_id" => id}) when is_binary(id) and id != "", do: id
+  defp window_id_param(_), do: nil
+
+  defp window_label(name) when is_binary(name) and name != "", do: "window “#{name}”"
+  defp window_label(_), do: "window"
 
   defp kill_window_error({code, message}) when is_binary(message) do
     if String.contains?(message, "can't kill last window") do

@@ -154,10 +154,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
           %{divider: true},
           %{
             id: "kill",
-            label: "Close window…",
+            label: "Close window",
             event: "tmux:kill_window",
             params: %{"window-id" => window_id},
-            confirm: "Kill this tmux window and everything running in it?",
             danger: true
           }
         ]

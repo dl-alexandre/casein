@@ -341,14 +341,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             phx-click="tmux:cycle_window"
             phx-value-dir="prev"
           ></button>
+          <%!-- No data-confirm: closing is deferred and undoable for a grace period,
+          so the undo toast (and C-b r) stands in for the prompt. --%>
           <button
             :if={@tmux_active_window_id}
             type="button"
             tabindex="-1"
             data-leader-action="kill-window"
-            data-confirm="Kill this tmux window and everything running in it?"
             phx-click="tmux:kill_window"
             phx-value-window-id={@tmux_active_window_id}
+          ></button>
+          <button
+            type="button"
+            tabindex="-1"
+            data-leader-action="restore-window"
+            phx-click="tmux:restore_window"
           ></button>
           <button
             :if={@tmux_active_window_id}

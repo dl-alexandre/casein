@@ -1025,6 +1025,18 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
+  # A window was hidden or brought back by someone on this session. tmux is
+  # unchanged either way, so the watcher has nothing to say — re-read topology
+  # so this viewer applies the new filter and the tab strip agrees with every
+  # other viewer's.
+  def handle_info({:window_trash_changed, session}, socket) do
+    if socket.assigns[:tmux_session] == session do
+      {:noreply, TerminalState.refresh_tmux_topology(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   # The topology watcher CRASHED. Its restart comes back with no registered
   # watchers and idle-stops a minute later, so without this the window list
   # would just quietly stop tracking tmux. Resubscribe: that restarts the
