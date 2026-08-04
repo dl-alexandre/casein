@@ -734,6 +734,7 @@ function Start-CaseinTray {
     $script:RecoveryAttempts = 0
     $script:NextRecoveryAt = [DateTime]::MinValue
     $script:LastFailedRuntimePid = 0
+    $script:LifecycleMutation = $false
     Save-CaseinSettings $script:Port $script:LaunchAtSignIn
 
     $runningIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(34, 197, 94))
@@ -876,10 +877,16 @@ function Start-CaseinTray {
     })
     $trustedLanItem.Add_Click({
         $trustedLanItem.Enabled = $false
+        $script:LifecycleMutation = $true
         try {
             $enable = -not $trustedLanItem.Checked
             Stop-CaseinRuntime $script:Port
             $state = Set-CaseinTrustedLan $enable $script:Port
+            # The elevated helper can remain open long enough for the recovery
+            # timer to observe the intentional stop. Stop any recovery-started
+            # loopback runtime after the new state is durable so the next start
+            # must rebuild its environment and bind the requested LAN address.
+            Stop-CaseinRuntime $script:Port
             $trustedLanItem.Checked = [bool]$state.enabled
             $copyLanUrlItem.Enabled = [bool]$state.enabled
             if (-not (Start-CaseinRuntime $script:Port)) {
@@ -896,6 +903,7 @@ function Start-CaseinTray {
             $tray.ShowBalloonTip(5000, 'Trusted LAN change failed', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Error)
             if (-not (Test-CaseinReady $script:Port)) { Start-CaseinRuntime $script:Port | Out-Null }
         } finally {
+            $script:LifecycleMutation = $false
             $trustedLanItem.Enabled = $true
         }
     })
@@ -926,10 +934,12 @@ function Start-CaseinTray {
             $tray.Text = 'Casein - Stopped'
             $tray.Icon = $errorIcon
             $openItem.Enabled = $false
-            [void](Observe-CaseinRuntimeFailure)
-            Clear-CaseinStaleRuntimeState $script:Port | Out-Null
+            if (-not $script:LifecycleMutation) {
+                [void](Observe-CaseinRuntimeFailure)
+                Clear-CaseinStaleRuntimeState $script:Port | Out-Null
+            }
 
-            if ($script:RecoveryAttempts -lt 3 -and [DateTime]::UtcNow -ge $script:NextRecoveryAt) {
+            if (-not $script:LifecycleMutation -and $script:RecoveryAttempts -lt 3 -and [DateTime]::UtcNow -ge $script:NextRecoveryAt) {
                 $script:RecoveryAttempts++
                 $delaySeconds = [Math]::Pow(2, $script:RecoveryAttempts)
                 $script:NextRecoveryAt = [DateTime]::UtcNow.AddSeconds($delaySeconds)
@@ -979,6 +989,7 @@ $script:Paths = Get-CaseinPaths $ReleaseRoot
 $script:RuntimeJob = $null
 $script:RuntimeProcess = $null
 $script:LastFailedRuntimePid = 0
+$script:LifecycleMutation = $false
 New-Item -ItemType Directory -Force -Path $script:Paths.DataRoot | Out-Null
 
 if (-not $LibraryOnly) {
