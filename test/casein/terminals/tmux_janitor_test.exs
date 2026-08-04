@@ -151,8 +151,10 @@ defmodule Casein.Terminals.TmuxJanitorTest do
   test "kill_idle skips durable workspace shells backed by a live SessionOwner" do
     Application.put_env(:casein, :tmux_idle_seconds, 1)
     workspace_key = "jtest_ws"
-    sid = unique("shell_")
-    session = "casein_#{workspace_key}_#{sid}"
+    sid = unique("shell-")
+    # Build the name through the real policy rather than by hand: session ids are
+    # sanitized (underscore-free) so the workspace/sid boundary stays parseable.
+    session = Casein.Terminals.Tmux.session_name(workspace_key, sid)
 
     info = Casein.Terminals.Session.Info.new_shell("ws-id", sid)
 

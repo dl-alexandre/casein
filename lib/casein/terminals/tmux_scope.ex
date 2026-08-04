@@ -8,6 +8,7 @@ defmodule Casein.Terminals.TmuxScope do
   """
 
   alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxPolicy
   alias Casein.Workspaces
   alias Casein.Workspaces.State
 
@@ -24,12 +25,18 @@ defmodule Casein.Terminals.TmuxScope do
 
   def workspace_session_prefixes(_workspace), do: []
 
-  @doc "True when a tmux session name belongs to the workspace namespace."
+  @doc """
+  True when a tmux session name belongs to the workspace namespace.
+
+  Delegates the per-prefix test to `TmuxPolicy.session_in_namespace?/2`, which
+  matches the full `<prefix><sid>` shape rather than a bare prefix — see that
+  function for why `String.starts_with?/2` is not a safe boundary here.
+  """
   def session_in_workspace?(session, workspace)
       when is_binary(session) and session != "" do
     workspace
     |> workspace_session_prefixes()
-    |> Enum.any?(&String.starts_with?(session, &1))
+    |> Enum.any?(&TmuxPolicy.session_in_namespace?(session, &1))
   end
 
   def session_in_workspace?(_session, _workspace), do: false

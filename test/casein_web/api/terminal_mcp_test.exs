@@ -211,8 +211,8 @@ defmodule CaseinWeb.API.TerminalMCPTest do
 
   test "tools/call reports ambiguous workspace sessions through structuredContent" do
     prefix = Tmux.workspace_session_prefix("alpha")
-    session_a = prefix <> "_a"
-    session_b = prefix <> "_b"
+    session_a = prefix <> "a"
+    session_b = prefix <> "b"
 
     Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
