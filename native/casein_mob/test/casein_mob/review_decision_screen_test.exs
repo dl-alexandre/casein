@@ -622,6 +622,84 @@ defmodule CaseinMob.ReviewDecisionScreenTest do
     refute text(view) =~ "expired or was removed"
   end
 
+  test "resolved then offline remains offline when a late success arrives" do
+    card = intervention_card()
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+      |> render_info({:mobile_cards_status, {:disconnected, :network_unavailable}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :offline
+
+    view =
+      render_info(
+        view,
+        {:card_action_result, card["id"], {:ok, %{"result" => %{"confirmation" => "Delivered."}}}}
+      )
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :offline
+    assert assigns(view).intervention_completed == true
+    assert text(view) =~ "Connection lost"
+    refute text(view) =~ "Delivered."
+    assert_state_leaf(view, :offline, "Offline")
+  end
+
+  test "resolved request remains resolved after a late already-intervened error" do
+    card = intervention_card()
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+      |> render_info({:card_action_result, card["id"], {:error, "card_already_intervened"}})
+
+    assert assigns(view).authoritative_terminal_state == :resolved
+    assert assigns(view).action_state == :resolved
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).card_expired == false
+    assert text(view) =~ "Request resolved"
+    assert_state_leaf(view, :resolved, "Resolved")
+  end
+
+  test "stale request identity cannot be regressed by a late success" do
+    card = intervention_card()
+    collision = put_in(card, ["actions", Access.at(0), "revision"], "replacement-revision")
+
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: card})
+      |> authoritative_refresh(card)
+      |> render_info({:change, :note, "Continue"})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info({:mobile_cards_snapshot, %{"cards" => [collision]}})
+
+    assert assigns(view).authoritative_terminal_state == :stale
+    assert assigns(view).action_state == :stale
+
+    view =
+      render_info(
+        view,
+        {:card_action_result, card["id"], {:ok, %{"result" => %{"confirmation" => "Delivered."}}}}
+      )
+
+    assert assigns(view).authoritative_terminal_state == :stale
+    assert assigns(view).action_state == :stale
+    assert assigns(view).intervention_completed == false
+    assert text(view) =~ "request identity changed"
+    refute text(view) =~ "Delivered."
+    assert_state_leaf(view, :stale, "Stale")
+  end
+
   test "a resolved snapshot preserves an already confirmed intervention" do
     card = intervention_card()
 
