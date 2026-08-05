@@ -529,21 +529,26 @@ sudo ln -sfn "${NEW_SOCKET}" "${CURRENT_SYMLINK}.new"
 sudo mv -f "${CURRENT_SYMLINK}.new" "${CURRENT_SYMLINK}"
 CURRENT_SYMLINK_SWAPPED=1
 
-# Reconcile the app route during activation. The periodic deploy poller also
-# repairs the exact legacy /run/casein/current.sock route because the external
-# manager may regenerate Caddy after a successful activation.
+# Reconcile the app route during activation. Even when the configured dial is
+# already canonical, activation re-applies that exact value so Caddy drops any
+# pooled Unix connection that still targets the pre-swap socket. The periodic
+# deploy poller uses repair mode and remains a no-op for known-good routes.
 CADDY_HOST="$(sudo awk -F= '/^PHX_HOST=/{print $2}' "${ENV_FILE}" | tail -n 1)"
 CADDY_HOST="${CADDY_HOST:-${CANONICAL_DEVBOX_HOST}}"
-casein_reconcile_caddy_upstream "${CADDY_HOST}" migration || true
+caddy_reconcile_ok=0
+if casein_reconcile_caddy_upstream "${CADDY_HOST}" migration; then
+  caddy_reconcile_ok=1
+fi
 
 log "verifying deploy handoff health"
 deploy_status_json="$(curl -sS --unix-socket "${CURRENT_SYMLINK}" \
   -H "authorization: Bearer ${token}" \
   http://localhost/api/deploy_status || true)"
 
-if printf '%s' "${deploy_status_json}" | grep -q '"ok":true'; then
+if [ "${caddy_reconcile_ok}" = "1" ] &&
+    printf '%s' "${deploy_status_json}" | grep -q '"ok":true'; then
   :
-elif casein_caddy_reconcile_allows_attestation &&
+elif [ "${CADDY_RECONCILE_OUTCOME}" = "admin_unavailable" ] &&
     casein_canonical_route_attests_caddy_unavailable \
     "${CADDY_HOST}" "${REVISION}" "${NEW_SOCKET}" "${token}"; then
   log "warning: accepting exact canonical attestation after Caddy admin unavailability"
