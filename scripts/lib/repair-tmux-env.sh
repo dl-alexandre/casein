@@ -163,6 +163,41 @@ set_session_env_if_missing() {
   fi
 }
 
+# `tmux set-environment` only seeds panes created AFTER the call — a shell that
+# is already running never sees the repair, so `clauded` / `codex` / `grok`
+# keep failing in exactly the pane the operator ran this script from. Push the
+# refreshed session env into each live pane's shell.
+#
+# Panes running a foreground program (an agent, vim, less) are skipped rather
+# than typed into; they pick the env up when that program exits and the shell
+# draws its next prompt.
+refresh_live_panes() {
+  local session="$1"
+  local env_sh="$2"
+  local pane cmd quoted_env_sh
+  printf -v quoted_env_sh '%q' "$env_sh"
+
+  while IFS=$'\t' read -r pane cmd; do
+    [[ -n "$pane" ]] || continue
+
+    case "$cmd" in
+      bash | zsh | sh | dash | ksh | fish) ;;
+      *)
+        log "pane ${pane} busy (${cmd}) — run 'casein_sync_session_env' there after it exits"
+        continue
+        ;;
+    esac
+
+    # Leading space keeps this out of history under HISTCONTROL=ignorespace.
+    # Newer panes define casein_sync_session_env via shell integration; older
+    # ones predate it and fall back to the materialized env file.
+    tmux send-keys -t "$pane" \
+      " casein_sync_session_env 2>/dev/null || source ${quoted_env_sh}" C-m
+  done < <(
+    tmux list-panes -s -t "$session" -F "#{pane_id}"$'\t'"#{pane_current_command}" 2>/dev/null
+  )
+}
+
 repair_session() {
   local session="$1"
   local workspace_name workspace_id checkout scripts staging env_sh
@@ -249,6 +284,8 @@ PY
   )"
   tmux set-environment -t "$session" CASEIN_NPM_PREFIX "$npm_prefix"
   tmux set-environment -t "$session" PATH "$repaired_path"
+
+  refresh_live_panes "$session" "$env_sh"
 
   log "repaired ${session} (${workspace_name})"
 }
