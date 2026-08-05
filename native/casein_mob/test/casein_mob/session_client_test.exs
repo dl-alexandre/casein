@@ -1490,8 +1490,9 @@ defmodule CaseinMob.SessionClientTest do
 
     assert {:ok, _} = Ecto.UUID.cast(request_id)
     assert closed.assigns.mobile_terminal == nil
-    assert closed.assigns.terminal_delete_tombstone.request_id == request_id
-    assert closed.assigns.terminal_delete_tombstone.lease_id == "lease-1"
+    tombstone = Map.fetch!(closed.assigns.terminal_delete_tombstones, {:url, nil})
+    assert tombstone.request_id == request_id
+    assert tombstone.lease_id == "lease-1"
     refute_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_delete"}}
   end
 
@@ -1515,7 +1516,7 @@ defmodule CaseinMob.SessionClientTest do
                     }}
 
     assert {:ok, disconnected} = SessionClient.handle_disconnect(:closed, closed)
-    assert disconnected.assigns.terminal_delete_tombstone.ref == nil
+    assert disconnected.assigns.terminal_delete_tombstones[{:url, nil}].ref == nil
 
     assert {:ok, reconnecting} =
              disconnected
@@ -1548,8 +1549,8 @@ defmodule CaseinMob.SessionClientTest do
       {:ok, %{"schema" => "mobile_terminal_v1", "status" => "deleted", "lease_id" => "other"}}
 
     assert {:ok, retained} = SessionClient.handle_reply("push-ref", wrong_ack, retried)
-    assert retained.assigns.terminal_delete_tombstone.request_id == request_id
-    assert retained.assigns.terminal_delete_tombstone.ref == nil
+    assert retained.assigns.terminal_delete_tombstones[{:url, nil}].request_id == request_id
+    assert retained.assigns.terminal_delete_tombstones[{:url, nil}].ref == nil
 
     assert {:ok, retried_again} =
              SessionClient.handle_join(
@@ -1570,9 +1571,75 @@ defmodule CaseinMob.SessionClientTest do
     assert {:ok, acknowledged} =
              SessionClient.handle_reply("push-ref", exact_ack, retried_again)
 
-    assert acknowledged.assigns.terminal_delete_tombstone == nil
+    assert acknowledged.assigns.terminal_delete_tombstones == %{}
 
     assert_receive {:connection_command, %Slipstream.Commands.LeaveTopic{topic: "mobile:user:me"}}
+
+    assert {:noreply, watching_again} =
+             SessionClient.handle_cast({:watch_terminal, "workspace-1", self()}, acknowledged)
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_create",
+                      payload: %{workspace_id: "workspace-1"}
+                    }}
+
+    assert watching_again.assigns.mobile_terminal.status == :create
+  end
+
+  test "a pending delete is isolated by origin and retained while another origin creates" do
+    push_sink = start_push_sink(self())
+
+    old_origin_socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:configured_origin_id, "origin-old")
+      |> Socket.assign(:url, "wss://old.example/socket/websocket")
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+      |> Socket.assign(:mobile_terminal, terminal_state(self()))
+
+    assert {:noreply, old_closed} =
+             SessionClient.handle_cast({:unwatch_terminal, self()}, old_origin_socket)
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_delete",
+                      payload: %{lease_id: "lease-1", request_id: old_request_id}
+                    }}
+
+    assert {:ok, old_disconnected} = SessionClient.handle_disconnect(:closed, old_closed)
+
+    old_scope = {:origin, "origin-old"}
+
+    assert old_disconnected.assigns.terminal_delete_tombstones[old_scope].request_id ==
+             old_request_id
+
+    assert old_disconnected.assigns.terminal_delete_tombstones[old_scope].ref == nil
+
+    new_origin_socket =
+      old_disconnected
+      |> Socket.assign(:configured_origin_id, "origin-new")
+      |> Socket.assign(:url, "wss://new.example/socket/websocket")
+      |> Socket.assign(:transport_ready?, true)
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:noreply, watching_new} =
+             SessionClient.handle_cast(
+               {:watch_terminal, "workspace-new", self()},
+               new_origin_socket
+             )
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_create",
+                      payload: %{workspace_id: "workspace-new"}
+                    }}
+
+    assert watching_new.assigns.mobile_terminal.status == :create
+    assert watching_new.assigns.terminal_delete_tombstones[old_scope].request_id == old_request_id
+    refute_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_delete"}}
   end
 
   test "terminal join rejection refreshes with backoff and accepts a fresh one-time grant baseline" do
@@ -1765,13 +1832,14 @@ defmodule CaseinMob.SessionClientTest do
     |> Socket.assign(:topic_snapshots, %{})
     |> Socket.assign(:url, nil)
     |> Socket.assign(:token, nil)
+    |> Socket.assign(:configured_origin_id, nil)
     |> Socket.assign(:connecting?, false)
     |> Socket.assign(:reconnect_generation_required?, false)
     |> Socket.assign(:pending_configuration, nil)
     |> Socket.assign(:push_registration_refs, %{})
     |> Socket.assign(:card_action_refs, %{})
     |> Socket.assign(:terminal_control_refs, %{})
-    |> Socket.assign(:terminal_delete_tombstone, nil)
+    |> Socket.assign(:terminal_delete_tombstones, %{})
     |> Socket.assign(:mobile_terminal, nil)
     |> Socket.assign(:terminal_baseline_generation, 0)
     |> Socket.assign(:timing_context, timing_context)

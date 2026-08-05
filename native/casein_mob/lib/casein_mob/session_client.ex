@@ -36,6 +36,7 @@ defmodule CaseinMob.SessionClient do
 
   @name __MODULE__
   @mobile_cards_topic "mobile:user:me"
+  @terminal_delete_origin_limit 8
 
   # ── Public API ──────────────────────────────────────────────────────────────
 
@@ -231,7 +232,7 @@ defmodule CaseinMob.SessionClient do
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
       |> assign(:terminal_control_refs, %{})
-      |> assign(:terminal_delete_tombstone, nil)
+      |> assign(:terminal_delete_tombstones, %{})
       |> assign(:mobile_terminal, nil)
       |> assign(:terminal_baseline_generation, 0)
       |> assign(
@@ -549,7 +550,6 @@ defmodule CaseinMob.SessionClient do
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
       |> assign(:terminal_control_refs, %{})
-      |> assign(:terminal_delete_tombstone, nil)
       |> purge_terminal(:disconnected)
 
     {:noreply, socket}
@@ -1019,7 +1019,7 @@ defmodule CaseinMob.SessionClient do
     terminal = socket.assigns.mobile_terminal
 
     cond do
-      is_map(socket.assigns.terminal_delete_tombstone) ->
+      is_map(current_terminal_delete_tombstone(socket)) ->
         socket
 
       terminal.status == :backgrounded ->
@@ -1073,16 +1073,16 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp handle_terminal_control_reply(%{operation: :delete} = request, reply, socket) do
-    tombstone = socket.assigns.terminal_delete_tombstone
+    tombstone = terminal_delete_tombstone(socket, request.origin_scope)
 
     if valid_terminal_delete_reply?(reply, request, tombstone) do
       {:ok,
        socket
-       |> assign(:terminal_delete_tombstone, nil)
+       |> delete_terminal_delete_tombstone(request.origin_scope)
        |> maybe_release_terminal_control_topic()
        |> maybe_request_terminal_control()}
     else
-      {:ok, mark_terminal_delete_disconnected(socket)}
+      {:ok, mark_terminal_delete_disconnected(socket, request.origin_scope)}
     end
   end
 
@@ -1313,18 +1313,22 @@ defmodule CaseinMob.SessionClient do
     terminal = socket.assigns.mobile_terminal
 
     if is_map(terminal.lease) do
+      origin_scope = terminal_origin_scope(socket)
+
       tombstone =
-        socket.assigns.terminal_delete_tombstone ||
+        terminal_delete_tombstone(socket, origin_scope) ||
           %{
             lease_id: terminal.lease.id,
             request_id: Ecto.UUID.generate(),
             origin_id: Map.get(socket.assigns, :configured_origin_id),
+            origin_scope: origin_scope,
+            created_at: System.unique_integer([:positive, :monotonic]),
             ref: nil,
             attempts: 0
           }
 
       socket
-      |> assign(:terminal_delete_tombstone, tombstone)
+      |> put_terminal_delete_tombstone(origin_scope, tombstone)
       |> ensure_terminal_delete_connection()
       |> maybe_reconcile_terminal_delete()
     else
@@ -1333,7 +1337,7 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp maybe_reconcile_terminal_delete(socket) do
-    tombstone = socket.assigns.terminal_delete_tombstone
+    tombstone = current_terminal_delete_tombstone(socket)
 
     cond do
       not is_map(tombstone) ->
@@ -1356,11 +1360,16 @@ defmodule CaseinMob.SessionClient do
 
         case push(socket, @mobile_cards_topic, "terminal_delete", payload) do
           {:ok, ref} ->
-            request = Map.merge(payload, %{operation: :delete})
+            request =
+              Map.merge(payload, %{
+                operation: :delete,
+                origin_scope: tombstone.origin_scope
+              })
+
             updated = %{tombstone | ref: ref, attempts: tombstone.attempts + 1}
 
             socket
-            |> assign(:terminal_delete_tombstone, updated)
+            |> put_terminal_delete_tombstone(tombstone.origin_scope, updated)
             |> assign(
               :terminal_control_refs,
               Map.put(socket.assigns.terminal_control_refs, ref, request)
@@ -1372,11 +1381,61 @@ defmodule CaseinMob.SessionClient do
     end
   end
 
-  defp mark_terminal_delete_disconnected(socket) do
-    case socket.assigns.terminal_delete_tombstone do
-      nil -> socket
-      tombstone -> assign(socket, :terminal_delete_tombstone, %{tombstone | ref: nil})
+  defp mark_terminal_delete_disconnected(socket, origin_scope \\ nil) do
+    origin_scope = origin_scope || terminal_origin_scope(socket)
+
+    case terminal_delete_tombstone(socket, origin_scope) do
+      nil ->
+        socket
+
+      tombstone ->
+        put_terminal_delete_tombstone(socket, origin_scope, %{tombstone | ref: nil})
     end
+  end
+
+  defp terminal_origin_scope(socket) do
+    case Map.get(socket.assigns, :configured_origin_id) do
+      origin_id when is_binary(origin_id) and origin_id != "" -> {:origin, origin_id}
+      _ -> {:url, Map.get(socket.assigns, :url)}
+    end
+  end
+
+  defp current_terminal_delete_tombstone(socket),
+    do: terminal_delete_tombstone(socket, terminal_origin_scope(socket))
+
+  defp terminal_delete_tombstone(socket, origin_scope),
+    do: Map.get(socket.assigns.terminal_delete_tombstones, origin_scope)
+
+  defp put_terminal_delete_tombstone(socket, origin_scope, tombstone) do
+    tombstones =
+      socket.assigns.terminal_delete_tombstones
+      |> Map.put(origin_scope, tombstone)
+      |> bound_terminal_delete_tombstones()
+
+    assign(
+      socket,
+      :terminal_delete_tombstones,
+      tombstones
+    )
+  end
+
+  defp bound_terminal_delete_tombstones(tombstones)
+       when map_size(tombstones) <= @terminal_delete_origin_limit,
+       do: tombstones
+
+  defp bound_terminal_delete_tombstones(tombstones) do
+    {oldest_scope, _tombstone} =
+      Enum.min_by(tombstones, fn {_scope, tombstone} -> Map.get(tombstone, :created_at, 0) end)
+
+    Map.delete(tombstones, oldest_scope)
+  end
+
+  defp delete_terminal_delete_tombstone(socket, origin_scope) do
+    assign(
+      socket,
+      :terminal_delete_tombstones,
+      Map.delete(socket.assigns.terminal_delete_tombstones, origin_scope)
+    )
   end
 
   defp ensure_terminal_delete_connection(socket) do
@@ -2232,7 +2291,7 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp maybe_add_terminal_control_topic(topics, socket) do
-    if is_map(socket.assigns.terminal_delete_tombstone) and
+    if is_map(current_terminal_delete_tombstone(socket)) and
          @mobile_cards_topic not in topics do
       [@mobile_cards_topic | topics]
     else
@@ -2241,7 +2300,7 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp keep_terminal_control_topic?(socket, @mobile_cards_topic),
-    do: is_map(socket.assigns.terminal_delete_tombstone)
+    do: is_map(current_terminal_delete_tombstone(socket))
 
   defp keep_terminal_control_topic?(_socket, _topic), do: false
 
