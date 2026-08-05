@@ -1,43 +1,22 @@
 defmodule CaseinMob.TerminalScreen do
   @moduledoc """
-  On-device terminal — a real VT engine rendered as a monospace `Canvas` grid.
+  Read-only view of one server-owned disposable mobile terminal.
 
-  The Mob equivalent of Casein's web Ghostty terminal: **Model B** — the VT
-  engine owns the state machine + grid; this screen renders `cells/1`. The
-  terminal backend is abstracted by `CaseinMob.Terminal`: `ghostty_ex` on the
-  host (dev), the static `CaseinMob.Nifs.GhosttyVt` NIF on-device. Both yield the
-  same `[[{grapheme, fg, bg, flags}]]` cell shape, so the renderer below is
-  backend-agnostic.
-
-  ## Byte source
-
-  * **host (dev):** a local `Ghostty.PTY` runs a shell and streams `{:data, _}`.
-  * **on-device:** no shell (sandbox); a host `CaseinMob.HostBridge` streams
-    `{:vt_bytes, _}` over Mob distribution (Model-B-over-the-wire) and is the input
-    sink (raw TextField/key-bar bytes → `{:vt_input, _}` → its PTY). No local echo
-    — the PTY decides it.
-
-  Bursty output is coalesced to ~`@repaint_ms`/frame. ghostty colors are
-  `{0..255,0..255,0..255} | nil`, packed to `0xAARRGGBB` ints (`Mob.Renderer`
-  passes raw ints through). Bold maps to `weight: :bold`; italic/underline have no
-  Mob text attribute and are dropped. `<Canvas>` is a host-app component — the
-  `:draw` ops are painted by `MobBridge`.
+  The screen never starts a shell, accepts keyboard input, or talks to
+  `HostBridge`. Bytes arrive only from `SessionClient` after an authenticated
+  `mobile_terminal_v1` baseline. Any lifecycle gap clears the VT surface and a
+  fresh baseline is required before output is shown again.
   """
 
   use Mob.Screen
 
   import Bitwise
 
-  alias CaseinMob.Terminal
+  alias CaseinMob.{SessionClient, SessionConfig, Terminal}
 
-  # Per-cell size in **dp** (the Canvas draws in dp), so cols/rows derive from the
-  # measured terminal slot: cols = floor(width_dp / @cellw).
   @cellw 9
   @cellh 18
-  # Glyph point size — < @cellh so descenders/line-gap fit the cell box.
   @font_size 14
-  # Grid dims start at a sane default and are recomputed from the measured terminal
-  # slot. Clamped so tiny/transition layouts never resize the PTY to garbage.
   @default_cols 80
   @default_rows 24
   @min_cols 20
@@ -48,37 +27,28 @@ defmodule CaseinMob.TerminalScreen do
 
   @terminal_bg 0xFF080A0C
   @terminal_surface 0xFF101214
-  @terminal_panel 0xFF171A1D
   @terminal_border 0xFF31363B
-  @terminal_key_bg 0xFF24282D
-  @terminal_key_fg 0xFFE7ECEF
   @default_fg 0xFFE7ECEF
   @cursor_color 0xFFE0E0E0
 
   def mount(_params, _session, socket) do
-    term = Terminal.new(@default_cols, @default_rows)
+    workspace_id = selected_workspace_id()
+    origin = active_origin()
 
-    pty =
-      if Terminal.host?() do
-        {:ok, pty} =
-          Ghostty.PTY.start_link(cmd: shell(), cols: @default_cols, rows: @default_rows)
-
-        pty
-      else
-        # On-device: no PTY and no local echo — the host's PTY is the only source
-        # of rendered bytes. Empty until a HostBridge connects and streams.
-        nil
-      end
+    if is_binary(workspace_id), do: SessionClient.watch_terminal(workspace_id, self())
 
     socket =
       socket
-      |> Mob.Socket.assign(:term, term)
-      |> Mob.Socket.assign(:pty, pty)
-      # On-device, the host's CaseinMob.HostBridge announces itself here so input
-      # can flow back to the shell. nil until a host connects.
-      |> Mob.Socket.assign(:vt_host, nil)
+      |> Mob.Socket.assign(:term, Terminal.new(@default_cols, @default_rows))
       |> Mob.Socket.assign(:cols, @default_cols)
       |> Mob.Socket.assign(:rows, @default_rows)
+      |> Mob.Socket.assign(:workspace_id, workspace_id)
+      |> Mob.Socket.assign(:origin_id, origin.id)
+      |> Mob.Socket.assign(:origin_name, origin.name)
+      |> Mob.Socket.assign(:expires_at, nil)
+      |> Mob.Socket.assign(:status, if(workspace_id, do: :connecting, else: :unavailable))
+      |> Mob.Socket.assign(:baseline_ready?, false)
+      |> Mob.Socket.assign(:fresh_baseline_generation, nil)
       |> Mob.Socket.assign(:repaint_scheduled?, false)
       |> Mob.Socket.assign(:draw, [])
 
@@ -86,7 +56,6 @@ defmodule CaseinMob.TerminalScreen do
   end
 
   def render(assigns) do
-    draw = assigns.draw
     canvas_w = assigns.cols * @cellw
     canvas_h = assigns.rows * @cellh
 
@@ -109,10 +78,10 @@ defmodule CaseinMob.TerminalScreen do
           weight={1}
         />
         <Text
-          text={status_line(assigns)}
+          text={status_label(assigns.status)}
           text_size={:xs}
-          text_color={@terminal_key_fg}
-          background={status_badge_color(assigns)}
+          text_color={0xFFE7ECEF}
+          background={status_color(assigns.status)}
           padding_left={:space_sm}
           padding_right={:space_sm}
           padding_top={4}
@@ -127,14 +96,16 @@ defmodule CaseinMob.TerminalScreen do
         fill_height={true}
         weight={1}
       >
+        <Text text={metadata_line(assigns)} text_size={12.0} text_color={0xFFE7ECEF} padding={4} />
         <Text
-          text={terminal_meta(assigns)}
-          text_size={12.0}
-          text_color={@terminal_key_fg}
+          text="Read-only · input is disabled"
+          text_size={11.0}
+          text_color={0xFF9CA3AF}
           padding={4}
         />
         <Box
           id="terminal-surface"
+          fresh_baseline_generation={assigns.fresh_baseline_generation}
           on_change={{self(), :term_size}}
           background={@terminal_surface}
           border_color={@terminal_border}
@@ -145,262 +116,140 @@ defmodule CaseinMob.TerminalScreen do
           fill_height={true}
           weight={1}
         >
-          <Canvas width={canvas_w} height={canvas_h} draw={draw} />
-          <TextField
-            id="terminal-input"
-            value=""
-            keyboard={:default}
-            return_key={:send}
-            raw_input={true}
-            terminal_capture={true}
-            background={0x00000000}
-            padding={0}
-            corner_radius={0.0}
-            keep_keyboard_on_submit={true}
-            on_change={{self(), :input}}
-            on_submit={{self(), :enter}}
-            fill_width={true}
-            fill_height={true}
-          />
+          <Canvas width={canvas_w} height={canvas_h} draw={assigns.draw} />
         </Box>
-        <Column
-          id="terminal-keybar"
-          background={@terminal_panel}
-          corner_radius={6.0}
-          padding={4}
-          gap={4}
-          fill_width={true}
-        >
-          <Row gap={4} fill_width={true}>
-            <Button
-              text="Esc"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={12.0}
-              weight={1}
-              on_tap={{self(), :esc}}
-            />
-            <Button
-              text="Tab"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={12.0}
-              weight={1}
-              on_tap={{self(), :tab}}
-            />
-            <Button
-              text="^C"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={12.0}
-              weight={1}
-              on_tap={{self(), :ctrl_c}}
-            />
-            <Button
-              text="^D"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={12.0}
-              weight={1}
-              on_tap={{self(), :ctrl_d}}
-            />
-          </Row>
-          <Row gap={4} fill_width={true}>
-            <Button
-              text="←"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={14.0}
-              weight={1}
-              on_tap={{self(), :left}}
-            />
-            <Button
-              text="↑"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={14.0}
-              weight={1}
-              on_tap={{self(), :up}}
-            />
-            <Button
-              text="↓"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={14.0}
-              weight={1}
-              on_tap={{self(), :down}}
-            />
-            <Button
-              text="→"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={14.0}
-              weight={1}
-              on_tap={{self(), :right}}
-            />
-            <Button
-              text="⌫"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={14.0}
-              weight={1}
-              on_tap={{self(), :backspace}}
-            />
-            <Button
-              text="↵"
-              compact={true}
-              height={36.0}
-              corner_radius={4.0}
-              background={@terminal_key_bg}
-              text_color={@terminal_key_fg}
-              text_size={14.0}
-              weight={1}
-              on_tap={{self(), :enter}}
-            />
-          </Row>
-        </Column>
       </Column>
     </Column>
     """
   end
 
-  # ── Byte sources → terminal ──────────────────────────────────────────────────
+  def handle_info({:mobile_terminal_baseline, metadata, bytes}, socket)
+      when is_map(metadata) and is_binary(bytes) do
+    term = Terminal.reset(socket.assigns.term, socket.assigns.cols, socket.assigns.rows)
+    :ok = Terminal.write(term, bytes)
 
-  # host: local Ghostty.PTY shell output.
-  def handle_info({:data, bytes}, socket) when is_binary(bytes) do
-    Terminal.write(socket.assigns.term, bytes)
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:term, term)
+     |> Mob.Socket.assign(:origin_id, Map.get(metadata, :origin_id))
+     |> Mob.Socket.assign(:origin_name, Map.get(metadata, :origin_name) || "Unknown origin")
+     |> Mob.Socket.assign(:workspace_id, Map.get(metadata, :workspace_id))
+     |> Mob.Socket.assign(:expires_at, Map.get(metadata, :expires_at))
+     |> Mob.Socket.assign(:status, :live)
+     |> Mob.Socket.assign(:baseline_ready?, true)
+     |> Mob.Socket.assign(
+       :fresh_baseline_generation,
+       Map.get(metadata, :fresh_baseline_generation)
+     )
+     |> ensure_repaint()}
+  end
+
+  def handle_info({:mobile_terminal_output, bytes}, %{assigns: %{baseline_ready?: true}} = socket)
+      when is_binary(bytes) do
+    :ok = Terminal.write(socket.assigns.term, bytes)
     {:noreply, ensure_repaint(socket)}
   end
 
-  # device: bytes streamed from a host terminal over Mob distribution (Model-B).
-  def handle_info({:vt_bytes, bytes}, socket) when is_binary(bytes) do
-    Terminal.write(socket.assigns.term, bytes)
-    {:noreply, ensure_repaint(socket)}
+  def handle_info({:mobile_terminal_output, _bytes}, socket), do: {:noreply, socket}
+
+  def handle_info({:mobile_terminal_status, workspace_id, status, metadata}, socket) do
+    socket =
+      socket
+      |> Mob.Socket.assign(:workspace_id, workspace_id)
+      |> Mob.Socket.assign(:status, status)
+      |> maybe_assign_metadata(metadata)
+
+    if terminal_visible?(status), do: {:noreply, socket}, else: {:noreply, cover(socket)}
   end
 
-  # device: the host bridge announcing itself as the input sink. Sync the host
-  # PTY to our current grid so the two agree from the first byte.
-  def handle_info({:vt_host, host}, socket) when is_pid(host) do
-    send(host, {:vt_resize, socket.assigns.cols, socket.assigns.rows})
-    {:noreply, Mob.Socket.assign(socket, :vt_host, host)}
-  end
-
-  # Resize path: given a measured terminal slot "WxH" (dp), recompute the grid to fit,
-  # clamp, and resize the terminal + its byte source so the PTY and rendered grid
-  # agree. The native Android bridge reports this from the parent Box rather than
-  # the Canvas itself; Canvas placement was not reliable enough for measurement.
   def handle_info({:change, :term_size, wxh}, socket) when is_binary(wxh) do
     case parse_wxh(wxh) do
-      {w, h} ->
-        {:noreply, resize_to(socket, div(w, @cellw), div(h, @cellh))}
-
-      :error ->
-        {:noreply, socket}
+      {w, h} -> {:noreply, resize_to(socket, div(w, @cellw), div(h, @cellh))}
+      :error -> {:noreply, socket}
     end
   end
 
-  def handle_info({:exit, _status}, socket), do: {:noreply, socket}
-
   def handle_info({:resize_terminal, cols, rows}, socket)
-      when is_integer(cols) and is_integer(rows) do
-    {:noreply, resize_to(socket, cols, rows)}
-  end
+      when is_integer(cols) and is_integer(rows),
+      do: {:noreply, resize_to(socket, cols, rows)}
 
   def handle_info(:repaint, socket) do
     {:noreply, socket |> Mob.Socket.assign(:repaint_scheduled?, false) |> repaint()}
   end
 
-  # ── Mob UI events (0.7: tags deliver tuples to handle_info) ──────────────────
-
-  def handle_info({:change, :input, value}, socket) do
-    send_input(socket, value)
-    {:noreply, socket}
+  def handle_info(message, socket) when message in [:app_background, :background] do
+    SessionClient.terminal_background()
+    {:noreply, cover(socket)}
   end
 
-  # Terminals send carriage return for Enter. Shell canonical mode accepts this
-  # and raw TUIs (Codex, vim, prompts) often require it.
-  def handle_info({:tap, :enter}, socket), do: transmit(socket, "\r")
-  def handle_info({:submit, :enter}, socket), do: transmit(socket, "\r")
+  def handle_info(message, socket) when message in [:app_foreground, :foreground] do
+    SessionClient.terminal_foreground()
+    {:noreply, socket |> Mob.Socket.assign(:status, :refreshing) |> cover()}
+  end
+
+  def handle_info({:app_lifecycle, :background}, socket), do: handle_info(:app_background, socket)
+  def handle_info({:app_lifecycle, :foreground}, socket), do: handle_info(:app_foreground, socket)
 
   def handle_info({:tap, :back}, socket) do
+    SessionClient.unwatch_terminal(self())
     {:noreply, Mob.Socket.pop_screen(socket)}
   end
 
-  # Key bar: send raw control/escape bytes through the same device→host path, no
-  # local echo (the PTY decides). Arrows use the standard ANSI cursor sequences
-  # (history / cursor / vi nav). DEL is the normal PTY erase byte for Backspace.
-  @key_bytes %{
-    ctrl_c: <<3>>,
-    ctrl_d: <<4>>,
-    esc: <<27>>,
-    tab: "\t",
-    backspace: <<127>>,
-    up: "\e[A",
-    down: "\e[B",
-    right: "\e[C",
-    left: "\e[D"
-  }
-
-  def handle_info({:tap, key}, socket) when is_map_key(@key_bytes, key),
-    do: transmit(socket, Map.fetch!(@key_bytes, key))
-
   def handle_info(_message, socket), do: {:noreply, socket}
 
-  defp transmit(socket, bytes) do
-    send_input(socket, bytes)
-    {:noreply, socket}
+  def terminate(_reason, socket) do
+    SessionClient.unwatch_terminal(self())
+    Terminal.close(socket.assigns.term)
+    :ok
   end
 
-  # Input goes to the byte sink; we **never** local-echo — the PTY/shell line
-  # discipline decides echo, canonical mode, prompts, password no-echo, etc., and
-  # echoed input comes back as ordinary `{:data}`/`{:vt_bytes}` to render once.
-  #
-  #   * host (dev): write straight to the local PTY.
-  #   * device: forward to the host bridge (which writes the PTY).
-  #   * device with no host yet: drop (nothing to echo against).
-  defp send_input(%{assigns: %{pty: pty}}, bytes) when not is_nil(pty),
-    do: Ghostty.PTY.write(pty, bytes)
+  defp selected_workspace_id do
+    case SessionConfig.resume_context() do
+      %{workspace_id: workspace_id} when is_binary(workspace_id) and workspace_id != "" ->
+        workspace_id
 
-  defp send_input(%{assigns: %{vt_host: host}}, bytes) when is_pid(host),
-    do: send(host, {:vt_input, bytes})
+      _ ->
+        Enum.find(SessionConfig.pinned_workspaces(), &(is_binary(&1) and &1 != ""))
+    end
+  end
 
-  defp send_input(_socket, _bytes), do: :ok
+  defp active_origin do
+    case SessionConfig.connection() do
+      {:ok, profile} ->
+        %{
+          id: Map.get(profile, :origin_id),
+          name: Map.get(profile, :display_name) || Map.get(profile, :url) || "Unknown origin"
+        }
 
-  # Resize the byte source so the PTY and the rendered grid agree.
-  defp resize_source(%{assigns: %{pty: pty}}, cols, rows) when not is_nil(pty),
-    do: Ghostty.PTY.resize(pty, cols, rows)
+      :error ->
+        %{id: nil, name: "No active origin"}
+    end
+  end
 
-  defp resize_source(%{assigns: %{vt_host: host}}, cols, rows) when is_pid(host),
-    do: send(host, {:vt_resize, cols, rows})
+  defp maybe_assign_metadata(socket, metadata) when is_map(metadata) do
+    socket
+    |> maybe_assign(:origin_id, Map.get(metadata, :origin_id))
+    |> maybe_assign(:origin_name, Map.get(metadata, :origin_name))
+    |> maybe_assign(:expires_at, Map.get(metadata, :expires_at))
+  end
 
-  defp resize_source(_socket, _cols, _rows), do: :ok
+  defp maybe_assign_metadata(socket, _metadata), do: socket
+
+  defp maybe_assign(socket, _key, nil), do: socket
+  defp maybe_assign(socket, key, value), do: Mob.Socket.assign(socket, key, value)
+
+  defp terminal_visible?(:live), do: true
+  defp terminal_visible?(_status), do: false
+
+  defp cover(socket) do
+    term = Terminal.reset(socket.assigns.term, socket.assigns.cols, socket.assigns.rows)
+
+    socket
+    |> Mob.Socket.assign(:term, term)
+    |> Mob.Socket.assign(:baseline_ready?, false)
+    |> Mob.Socket.assign(:fresh_baseline_generation, nil)
+    |> repaint()
+  end
 
   defp resize_to(socket, cols, rows) do
     cols = clamp(cols, @min_cols, @max_cols)
@@ -409,8 +258,7 @@ defmodule CaseinMob.TerminalScreen do
     if {cols, rows} == {socket.assigns.cols, socket.assigns.rows} do
       socket
     else
-      Terminal.resize(socket.assigns.term, cols, rows)
-      resize_source(socket, cols, rows)
+      :ok = Terminal.resize(socket.assigns.term, cols, rows)
 
       socket
       |> Mob.Socket.assign(:cols, cols)
@@ -419,104 +267,112 @@ defmodule CaseinMob.TerminalScreen do
     end
   end
 
-  defp parse_wxh(s) do
-    with [w, h] <- String.split(s, "x"),
-         {wi, ""} <- Integer.parse(w),
-         {hi, ""} <- Integer.parse(h) do
-      {wi, hi}
+  defp parse_wxh(value) do
+    with [width, height] <- String.split(value, "x"),
+         {width, ""} <- Integer.parse(width),
+         {height, ""} <- Integer.parse(height) do
+      {width, height}
     else
       _ -> :error
     end
   end
 
-  defp clamp(v, lo, hi), do: v |> max(lo) |> min(hi)
+  defp clamp(value, low, high), do: value |> max(low) |> min(high)
 
-  defp status_line(%{vt_host: host}) when is_pid(host), do: "Devbox connected"
-  defp status_line(%{pty: pty}) when not is_nil(pty), do: "Local shell"
-  defp status_line(_assigns), do: "Waiting for devbox"
+  defp status_label(:live), do: "Live"
+  defp status_label(:awaiting_baseline), do: "Securing stream"
+  defp status_label(:refresh), do: "Refreshing"
+  defp status_label(:refreshing), do: "Refreshing"
+  defp status_label(:create), do: "Opening"
+  defp status_label(:connecting), do: "Connecting"
+  defp status_label(:backgrounded), do: "Covered"
+  defp status_label(:unavailable), do: "Unavailable"
+  defp status_label({:resync, _reason}), do: "Resyncing"
+  defp status_label({:cutoff, _reason}), do: "Closed"
+  defp status_label({:error, _reason}), do: "Unavailable"
+  defp status_label(_status), do: "Offline"
 
-  defp status_badge_color(%{vt_host: host}) when is_pid(host), do: 0xFF214332
-  defp status_badge_color(%{pty: pty}) when not is_nil(pty), do: 0xFF214332
-  defp status_badge_color(_assigns), do: 0xFF3D351E
+  defp status_color(:live), do: 0xFF214332
+  defp status_color({:error, _reason}), do: 0xFF5A2525
+  defp status_color({:cutoff, _reason}), do: 0xFF5A2525
+  defp status_color(_status), do: 0xFF3D351E
 
-  defp terminal_meta(assigns), do: "Grid #{grid_label(assigns)}"
-
-  defp grid_label(%{cols: cols, rows: rows}), do: "#{cols}x#{rows}"
-
-  # ── Grid → Canvas ops (cell shape: {grapheme, fg, bg, flags}) ─────────────────
+  defp metadata_line(assigns) do
+    workspace = assigns.workspace_id || "No authorized workspace"
+    expiry = assigns.expires_at || "unknown expiry"
+    "#{assigns.origin_name} · #{workspace} · expires #{expiry}"
+  end
 
   defp repaint(socket) do
     term = socket.assigns.term
-    {cur_col, cur_row} = Terminal.cursor(term)
+    {cursor_col, cursor_row} = Terminal.cursor(term)
     width = socket.assigns.cols * @cellw
     height = socket.assigns.rows * @cellh
 
-    ops =
+    cells =
       term
       |> Terminal.cells()
       |> Enum.with_index()
-      |> Enum.flat_map(fn {row, r} -> row_ops(row, r) end)
+      |> Enum.flat_map(fn {row, row_index} -> row_ops(row, row_index) end)
 
     background = Mob.Canvas.rect(0, 0, width, height, color: @terminal_surface, fill: true)
+    cursor = cursor_op(cursor_col, cursor_row)
 
-    Mob.Socket.assign(socket, :draw, [background | ops] ++ [cursor_op(cur_col, cur_row)])
+    draw =
+      if socket.assigns.baseline_ready?, do: [background | cells] ++ [cursor], else: [background]
+
+    Mob.Socket.assign(socket, :draw, draw)
   end
 
-  defp row_ops(row, r) do
+  defp row_ops(row, row_index) do
     row
     |> Enum.with_index()
-    |> Enum.flat_map(fn {cell, c} -> cell_ops(cell, r, c) end)
+    |> Enum.flat_map(fn {cell, column_index} -> cell_ops(cell, row_index, column_index) end)
   end
 
-  defp cell_ops({grapheme, fg, bg, flags}, r, c) do
-    x = c * @cellw
-    y = r * @cellh
+  defp cell_ops({grapheme, foreground, background, flags}, row, column) do
+    x = column * @cellw
+    y = row * @cellh
 
-    bg_ops =
-      if color = bg_color(bg) do
-        [Mob.Canvas.rect(x, y, @cellw, @cellh, color: color, fill: true)]
-      else
-        []
-      end
+    background_ops =
+      if color = background_color(background),
+        do: [Mob.Canvas.rect(x, y, @cellw, @cellh, color: color, fill: true)],
+        else: []
 
     text_ops =
-      if grapheme != "" do
+      if grapheme == "" do
+        []
+      else
         [
           Mob.Canvas.text(x, y, grapheme,
-            color: fg_color(fg),
+            color: foreground_color(foreground),
             size: @font_size,
             weight: bold_weight(flags),
             family: "Menlo"
           )
         ]
-      else
-        []
       end
 
-    bg_ops ++ text_ops
+    background_ops ++ text_ops
   end
 
-  defp cursor_op(col, row) do
-    Mob.Canvas.rect(col * @cellw, row * @cellh, @cellw, @cellh, color: @cursor_color, fill: true)
+  defp cursor_op(column, row) do
+    Mob.Canvas.rect(column * @cellw, row * @cellh, @cellw, @cellh,
+      color: @cursor_color,
+      fill: true
+    )
   end
 
   defp bold_weight(flags) when (flags &&& 1) != 0, do: :bold
-  defp bold_weight(_), do: :regular
+  defp bold_weight(_flags), do: :regular
 
-  # ghostty color `{r, g, b} | nil` -> 0xAARRGGBB int (Mob passes ints through).
   defp argb(nil), do: nil
-  defp argb({r, g, b}), do: 0xFF000000 ||| r <<< 16 ||| g <<< 8 ||| b
-
-  # The on-device Ghostty VT surface currently reports its default light theme
-  # as explicit white background / black foreground. Treat those as defaults so
-  # the Mob terminal owns the mobile dark palette, while still preserving ANSI
-  # colors and non-default backgrounds.
-  defp bg_color({255, 255, 255}), do: nil
-  defp bg_color(color), do: argb(color)
-
-  defp fg_color(nil), do: @default_fg
-  defp fg_color({0, 0, 0}), do: @default_fg
-  defp fg_color(color), do: argb(color)
+  defp argb({red, green, blue}), do: 0xFF000000 ||| red <<< 16 ||| green <<< 8 ||| blue
+  defp background_color({255, 255, 255}), do: nil
+  defp background_color(color), do: argb(color)
+  defp foreground_color(nil), do: @default_fg
+  defp foreground_color({0, 0, 0}), do: @default_fg
+  defp foreground_color(color), do: argb(color)
 
   defp ensure_repaint(%{assigns: %{repaint_scheduled?: true}} = socket), do: socket
 
@@ -524,6 +380,4 @@ defmodule CaseinMob.TerminalScreen do
     Process.send_after(self(), :repaint, @repaint_ms)
     Mob.Socket.assign(socket, :repaint_scheduled?, true)
   end
-
-  defp shell, do: System.get_env("SHELL") || "/bin/sh"
 end

@@ -50,6 +50,27 @@ defmodule CaseinMob.Terminal do
   def resize({:ghostty_ex, t}, cols, rows), do: Ghostty.Terminal.resize(t, cols, rows)
   def resize({:nif, res}, cols, rows), do: GhosttyVt.nif_resize(res, cols, rows)
 
+  @doc "Discard every rendered cell and scrollback entry."
+  @spec reset(t(), pos_integer(), pos_integer()) :: t()
+  def reset({:ghostty_ex, pid}, cols, rows) do
+    if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+    new(cols, rows)
+  end
+
+  def reset({:nif, resource} = terminal, _cols, _rows) do
+    GhosttyVt.nif_reset(resource)
+    terminal
+  end
+
+  @doc "Release host-side terminal resources when a screen exits."
+  @spec close(t()) :: :ok
+  def close({:ghostty_ex, pid}) do
+    if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+    :ok
+  end
+
+  def close({:nif, _resource}), do: :ok
+
   @doc """
   `:host` (no native Mob runtime — dev/`mix`) | `:android` | `:ios`.
   Mirrors `Mob.App`'s host-safe `:mob_nif.platform()` probe.

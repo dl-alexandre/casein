@@ -2,6 +2,7 @@ defmodule CaseinMob.SessionClientTest do
   use ExUnit.Case, async: true
 
   alias CaseinMob.ConnectionTiming
+  alias CaseinMob.MobileTerminalStream
   alias CaseinMob.SessionClient
   alias Slipstream.Socket
 
@@ -1370,6 +1371,454 @@ defmodule CaseinMob.SessionClientTest do
     refute_receive {:card_action_result, _card_id, _result}
   end
 
+  test "terminal grant stays out of snapshots and only an accepted baseline advances freshness" do
+    push_sink = start_push_sink(self())
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:watch_terminal, "ws-1", self()}, socket)
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      topic: "mobile:user:me",
+                      event: "terminal_create",
+                      payload: %{workspace_id: "ws-1", request_id: request_id}
+                    }}
+
+    assert {:ok, _} = Ecto.UUID.cast(request_id)
+    generation = socket.assigns.timing_context.generation
+
+    assert {:ok, socket} =
+             SessionClient.handle_reply(
+               "push-ref",
+               {:ok, terminal_control_reply("created")},
+               socket
+             )
+
+    assert_receive {:connection_command,
+                    %Slipstream.Commands.JoinTopic{
+                      topic: "mobile_terminal:lease-1",
+                      payload: %{
+                        "child_grant" => "one-time-secret",
+                        "connection_generation" => ^generation
+                      }
+                    }}
+
+    assert socket.assigns.topic_snapshots == %{}
+    assert socket.assigns.terminal_baseline_generation == 0
+    assert socket.assigns.mobile_terminal.child_grant == nil
+
+    assert socket.joins["mobile_terminal:lease-1"].params == %{
+             "connection_generation" => generation
+           }
+
+    refute inspect(socket) =~ "one-time-secret"
+
+    baseline = terminal_frame("terminal_baseline", "hello", generation, 0)
+
+    assert {:ok, socket} =
+             SessionClient.handle_join("mobile_terminal:lease-1", baseline, socket)
+
+    assert socket.assigns.terminal_baseline_generation == 1
+    assert socket.assigns.mobile_terminal.child_grant == nil
+    assert socket.assigns.topic_snapshots == %{}
+
+    assert_receive {:mobile_terminal_baseline,
+                    %{fresh_baseline_generation: 1, workspace_id: "ws-1"}, "hello"}
+
+    assert {:ok, duplicate} =
+             SessionClient.handle_message(
+               "mobile_terminal:lease-1",
+               "terminal_output",
+               baseline,
+               socket
+             )
+
+    assert duplicate.assigns.terminal_baseline_generation == 1
+    refute_receive {:mobile_terminal_baseline, _, _}
+  end
+
+  test "terminal background purges bytes and foreground refreshes the retained lease" do
+    push_sink = start_push_sink(self())
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+      |> Socket.assign(:mobile_terminal, terminal_state(self()))
+
+    assert {:noreply, covered} = SessionClient.handle_cast(:terminal_background, socket)
+    assert covered.assigns.mobile_terminal.status == :backgrounded
+    assert covered.assigns.mobile_terminal.child_grant == nil
+    assert covered.assigns.mobile_terminal.stream == nil
+
+    assert {:noreply, refreshing} = SessionClient.handle_cast(:terminal_foreground, covered)
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_refresh",
+                      payload: %{lease_id: "lease-1"}
+                    }}
+
+    assert refreshing.assigns.mobile_terminal.status == :refresh
+  end
+
+  test "terminal unwatch sends one exact delete request and purges local state" do
+    push_sink = start_push_sink(self())
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+      |> Socket.assign(:mobile_terminal, terminal_state(self()))
+
+    assert {:noreply, closed} =
+             SessionClient.handle_cast({:unwatch_terminal, self()}, socket)
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_delete",
+                      payload: %{lease_id: "lease-1", request_id: request_id}
+                    }}
+
+    assert {:ok, _} = Ecto.UUID.cast(request_id)
+    assert closed.assigns.mobile_terminal == nil
+    tombstone = Map.fetch!(closed.assigns.terminal_delete_tombstones, {:url, nil})
+    assert tombstone.request_id == request_id
+    assert tombstone.lease_id == "lease-1"
+    refute_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_delete"}}
+  end
+
+  test "a dropped delete is retried idempotently after reconnect and forgotten only on exact ack" do
+    push_sink = start_push_sink(self())
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+      |> Socket.assign(:mobile_terminal, terminal_state(self()))
+
+    assert {:noreply, closed} =
+             SessionClient.handle_cast({:unwatch_terminal, self()}, socket)
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_delete",
+                      payload: %{lease_id: "lease-1", request_id: request_id}
+                    }}
+
+    assert {:ok, disconnected} = SessionClient.handle_disconnect(:closed, closed)
+    assert disconnected.assigns.terminal_delete_tombstones[{:url, nil}].ref == nil
+
+    assert {:ok, reconnecting} =
+             disconnected
+             |> Map.put(:channel_pid, push_sink)
+             |> SessionClient.handle_connect()
+
+    assert_receive {:connection_command, %Slipstream.Commands.JoinTopic{topic: "mobile:user:me"}}
+
+    reconnected =
+      put_in(
+        reconnecting,
+        [Access.key(:joins), "mobile:user:me", Access.key(:status)],
+        :joined
+      )
+
+    assert {:ok, retried} =
+             SessionClient.handle_join(
+               "mobile:user:me",
+               mobile_snapshot(reconnected, 1),
+               reconnected
+             )
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_delete",
+                      payload: %{lease_id: "lease-1", request_id: ^request_id}
+                    }}
+
+    wrong_ack =
+      {:ok, %{"schema" => "mobile_terminal_v1", "status" => "deleted", "lease_id" => "other"}}
+
+    assert {:ok, retained} = SessionClient.handle_reply("push-ref", wrong_ack, retried)
+    assert retained.assigns.terminal_delete_tombstones[{:url, nil}].request_id == request_id
+    assert retained.assigns.terminal_delete_tombstones[{:url, nil}].ref == nil
+
+    assert {:ok, retried_again} =
+             SessionClient.handle_join(
+               "mobile:user:me",
+               mobile_snapshot(retained, 1),
+               retained
+             )
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_delete",
+                      payload: %{request_id: ^request_id}
+                    }}
+
+    exact_ack =
+      {:ok, %{"schema" => "mobile_terminal_v1", "status" => "deleted", "lease_id" => "lease-1"}}
+
+    assert {:ok, acknowledged} =
+             SessionClient.handle_reply("push-ref", exact_ack, retried_again)
+
+    assert acknowledged.assigns.terminal_delete_tombstones == %{}
+
+    assert_receive {:connection_command, %Slipstream.Commands.LeaveTopic{topic: "mobile:user:me"}}
+
+    assert {:noreply, watching_again} =
+             SessionClient.handle_cast({:watch_terminal, "workspace-1", self()}, acknowledged)
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_create",
+                      payload: %{workspace_id: "workspace-1"}
+                    }}
+
+    assert watching_again.assigns.mobile_terminal.status == :create
+  end
+
+  test "a pending delete is isolated by origin and retained while another origin creates" do
+    push_sink = start_push_sink(self())
+
+    old_origin_socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:configured_origin_id, "origin-old")
+      |> Socket.assign(:url, "wss://old.example/socket/websocket")
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+      |> Socket.assign(:mobile_terminal, terminal_state(self()))
+
+    assert {:noreply, old_closed} =
+             SessionClient.handle_cast({:unwatch_terminal, self()}, old_origin_socket)
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_delete",
+                      payload: %{lease_id: "lease-1", request_id: old_request_id}
+                    }}
+
+    assert {:ok, old_disconnected} = SessionClient.handle_disconnect(:closed, old_closed)
+
+    old_scope = {:origin, "origin-old"}
+
+    assert old_disconnected.assigns.terminal_delete_tombstones[old_scope].request_id ==
+             old_request_id
+
+    assert old_disconnected.assigns.terminal_delete_tombstones[old_scope].ref == nil
+
+    new_origin_socket =
+      old_disconnected
+      |> Socket.assign(:configured_origin_id, "origin-new")
+      |> Socket.assign(:url, "wss://new.example/socket/websocket")
+      |> Socket.assign(:transport_ready?, true)
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:noreply, watching_new} =
+             SessionClient.handle_cast(
+               {:watch_terminal, "workspace-new", self()},
+               new_origin_socket
+             )
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_create",
+                      payload: %{workspace_id: "workspace-new"}
+                    }}
+
+    assert watching_new.assigns.mobile_terminal.status == :create
+    assert watching_new.assigns.terminal_delete_tombstones[old_scope].request_id == old_request_id
+    refute_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_delete"}}
+  end
+
+  test "terminal join rejection refreshes with backoff and accepts a fresh one-time grant baseline" do
+    push_sink = start_push_sink(self())
+    socket = terminal_stream_socket(push_sink, self())
+
+    assert {:ok, rejected} =
+             SessionClient.handle_join(
+               "mobile_terminal:lease-1",
+               {:error, %{"reason" => "stale_grant"}},
+               socket
+             )
+
+    token = rejected.assigns.mobile_terminal.retry_token
+    assert is_reference(token)
+    assert rejected.assigns.mobile_terminal.retry_attempt == 1
+    assert rejected.assigns.mobile_terminal.stream == nil
+
+    assert {:noreply, refreshing} =
+             SessionClient.handle_info({:terminal_refresh_retry, token}, rejected)
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_refresh",
+                      payload: %{lease_id: "lease-1"}
+                    }}
+
+    assert {:ok, awaiting} =
+             SessionClient.handle_reply(
+               "push-ref",
+               {:ok, terminal_control_reply("refreshed", "fresh-one-time-grant")},
+               refreshing
+             )
+
+    assert_receive {:connection_command,
+                    %Slipstream.Commands.JoinTopic{
+                      payload: %{"child_grant" => "fresh-one-time-grant"}
+                    }}
+
+    assert awaiting.assigns.mobile_terminal.child_grant == nil
+    refute inspect(awaiting) =~ "fresh-one-time-grant"
+    generation = awaiting.assigns.timing_context.generation
+
+    assert {:ok, live} =
+             SessionClient.handle_join(
+               "mobile_terminal:lease-1",
+               terminal_frame("terminal_baseline", "fresh", generation, 0),
+               awaiting
+             )
+
+    assert live.assigns.mobile_terminal.status == :live
+    assert live.assigns.mobile_terminal.retry_attempt == 0
+    assert_receive {:mobile_terminal_baseline, _, "fresh"}
+  end
+
+  test "terminal close retries are capped and payload event mismatches fail closed" do
+    push_sink = start_push_sink(self())
+    socket = terminal_stream_socket(push_sink, self())
+    generation = socket.assigns.timing_context.generation
+    mismatched = terminal_frame("terminal_cutoff", "", generation, 0)
+
+    assert {:ok, rejected} =
+             SessionClient.handle_message(
+               "mobile_terminal:lease-1",
+               "terminal_output",
+               mismatched,
+               socket
+             )
+
+    assert rejected.assigns.mobile_terminal.stream == nil
+    assert rejected.assigns.mobile_terminal.retry_attempt == 1
+    refute_receive {:mobile_terminal_output, _}
+
+    opposite = terminal_stream_socket(push_sink, self())
+
+    assert {:ok, opposite_rejected} =
+             SessionClient.handle_message(
+               "mobile_terminal:lease-1",
+               "terminal_cutoff",
+               terminal_frame("terminal_output", "must-not-render", generation, 0),
+               opposite
+             )
+
+    assert opposite_rejected.assigns.mobile_terminal.stream == nil
+    refute_receive {:mobile_terminal_output, _}
+
+    malformed = terminal_stream_socket(push_sink, self())
+
+    assert {:ok, malformed_rejected} =
+             SessionClient.handle_message(
+               "mobile_terminal:lease-1",
+               "terminal_output",
+               "not-a-payload",
+               malformed
+             )
+
+    assert malformed_rejected.assigns.mobile_terminal.stream == nil
+    refute_receive {:mobile_terminal_output, _}
+
+    assert {:ok, coalesced} =
+             SessionClient.handle_topic_close(
+               "mobile_terminal:lease-1",
+               {:error, %{"reason" => "stale_grant"}},
+               rejected
+             )
+
+    assert coalesced.assigns.mobile_terminal.retry_token ==
+             rejected.assigns.mobile_terminal.retry_token
+
+    capped =
+      Enum.reduce(1..3, coalesced, fn _index, current ->
+        token = current.assigns.mobile_terminal.retry_token
+
+        assert {:noreply, attempted} =
+                 SessionClient.handle_info({:terminal_refresh_retry, token}, current)
+
+        assert_receive {:push_message,
+                        %Slipstream.Commands.PushMessage{event: "terminal_refresh"}}
+
+        assert {:ok, next} =
+                 SessionClient.handle_topic_close(
+                   "mobile_terminal:lease-1",
+                   {:error, %{"reason" => "stale_grant"}},
+                   attempted
+                 )
+
+        next
+      end)
+
+    assert capped.assigns.mobile_terminal.retry_attempt == 3
+    assert capped.assigns.mobile_terminal.retry_token == nil
+  end
+
+  test "eligible terminal topic close refreshes to a fresh authoritative baseline" do
+    push_sink = start_push_sink(self())
+    socket = terminal_stream_socket(push_sink, self())
+
+    assert {:ok, closed} =
+             SessionClient.handle_topic_close(
+               "mobile_terminal:lease-1",
+               {:error, %{"reason" => "grant_expired"}},
+               socket
+             )
+
+    token = closed.assigns.mobile_terminal.retry_token
+    assert is_reference(token)
+
+    assert {:noreply, refreshing} =
+             SessionClient.handle_info({:terminal_refresh_retry, token}, closed)
+
+    assert_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_refresh"}}
+
+    assert {:ok, awaiting} =
+             SessionClient.handle_reply(
+               "push-ref",
+               {:ok, terminal_control_reply("refreshed", "close-recovery-grant")},
+               refreshing
+             )
+
+    assert_receive {:connection_command,
+                    %Slipstream.Commands.JoinTopic{
+                      payload: %{"child_grant" => "close-recovery-grant"}
+                    }}
+
+    generation = awaiting.assigns.timing_context.generation
+
+    assert {:ok, live} =
+             SessionClient.handle_join(
+               "mobile_terminal:lease-1",
+               terminal_frame("terminal_baseline", "recovered", generation, 0),
+               awaiting
+             )
+
+    assert live.assigns.mobile_terminal.status == :live
+    assert live.assigns.mobile_terminal.retry_attempt == 0
+    refute inspect(live) =~ "close-recovery-grant"
+    assert_receive {:mobile_terminal_baseline, _, "recovered"}
+  end
+
   defp socket_with_subscriber(topic, subscriber) do
     socket_with_subscribers(%{topic => MapSet.new([subscriber])})
   end
@@ -1383,11 +1832,16 @@ defmodule CaseinMob.SessionClientTest do
     |> Socket.assign(:topic_snapshots, %{})
     |> Socket.assign(:url, nil)
     |> Socket.assign(:token, nil)
+    |> Socket.assign(:configured_origin_id, nil)
     |> Socket.assign(:connecting?, false)
     |> Socket.assign(:reconnect_generation_required?, false)
     |> Socket.assign(:pending_configuration, nil)
     |> Socket.assign(:push_registration_refs, %{})
     |> Socket.assign(:card_action_refs, %{})
+    |> Socket.assign(:terminal_control_refs, %{})
+    |> Socket.assign(:terminal_delete_tombstones, %{})
+    |> Socket.assign(:mobile_terminal, nil)
+    |> Socket.assign(:terminal_baseline_generation, 0)
     |> Socket.assign(:timing_context, timing_context)
     |> Socket.assign(:render_ready_generation, nil)
     |> Socket.assign(:transport_ready?, true)
@@ -1409,6 +1863,90 @@ defmodule CaseinMob.SessionClientTest do
       },
       extras
     )
+  end
+
+  defp terminal_control_reply(status, grant \\ "one-time-secret") do
+    %{
+      "schema" => "mobile_terminal_v1",
+      "status" => status,
+      "mode" => "read",
+      "channel_topic" => "mobile_terminal:lease-1",
+      "lease" => %{
+        "id" => "lease-1",
+        "lifecycle_generation" => "lifecycle-1",
+        "workspace_id" => "ws-1",
+        "expires_at" => "2026-08-05T00:00:00Z"
+      },
+      "child_grant" => %{
+        "token" => grant,
+        "expires_at" => "2026-08-05T00:00:00Z"
+      }
+    }
+  end
+
+  defp terminal_state(subscriber) do
+    %{
+      subscriber: subscriber,
+      workspace_id: "ws-1",
+      status: :live,
+      lease: %{
+        id: "lease-1",
+        lifecycle_generation: "lifecycle-1",
+        workspace_id: "ws-1",
+        expires_at: "2026-08-05T00:00:00Z"
+      },
+      channel_topic: "mobile_terminal:lease-1",
+      child_grant: "one-time-secret",
+      grant_expires_at: "2026-08-05T00:00:00Z",
+      connection_generation: "connection-1",
+      stream: :opaque_stream,
+      control_ref: nil,
+      retry_attempt: 0,
+      retry_token: nil,
+      retry_timer: nil
+    }
+  end
+
+  defp terminal_stream_socket(push_sink, subscriber) do
+    socket =
+      socket_with_subscriber("mobile:user:me", subscriber)
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
+
+    generation = socket.assigns.timing_context.generation
+
+    {:ok, stream} =
+      MobileTerminalStream.new(
+        lease_id: "lease-1",
+        lifecycle_generation: "lifecycle-1",
+        connection_generation: generation
+      )
+
+    terminal =
+      subscriber
+      |> terminal_state()
+      |> Map.put(:stream, stream)
+      |> Map.put(:connection_generation, generation)
+      |> Map.put(:status, :awaiting_baseline)
+
+    Socket.assign(socket, :mobile_terminal, terminal)
+  end
+
+  defp terminal_frame(event, bytes, connection_generation, offset) do
+    %{
+      "schema" => "mobile_terminal_v1",
+      "event" => event,
+      "mode" => "read",
+      "lease_id" => "lease-1",
+      "lifecycle_generation" => "lifecycle-1",
+      "connection_generation" => connection_generation,
+      "stream_generation" => "stream-1",
+      "offset" => offset,
+      "next_offset" => offset + byte_size(bytes),
+      "bytes_base64" => Base.encode64(bytes),
+      "truncated" => false
+    }
   end
 
   def handle_feed_stage(_event, measurements, metadata, subscriber) do
