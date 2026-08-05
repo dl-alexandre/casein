@@ -92,6 +92,12 @@ defmodule Casein.Terminals.Owner do
     SessionOwner.subscriber_count(owner_pid)
   end
 
+  @doc "Stops the exact shell owner without changing ordinary detach semantics."
+  def stop_shell_owner(workspace_id, sid), do: SessionOwner.stop_shell(workspace_id, sid)
+
+  @doc "Stops the exact PTY process without killing or enumerating tmux siblings."
+  def stop_session_exact(workspace_key, sid), do: Session.stop_exact(workspace_key, sid)
+
   @doc """
   Raw shell attachment bridge (via GhosttyRawAdapter).
 

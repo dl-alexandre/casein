@@ -60,6 +60,8 @@ defmodule Casein.Terminals do
   defdelegate owner_resize(owner_pid, cols, rows), to: Owner
   defdelegate owner_set_active(owner_pid, active?), to: Owner
   defdelegate owner_subscriber_count(owner_pid), to: Owner
+  defdelegate stop_shell_owner(workspace_id, sid), to: Owner
+  defdelegate stop_session_exact(workspace_key, sid), to: Owner
   defdelegate raw_shell_attach(workspace_id, sid, loc), to: Owner
   defdelegate session_backend_module(), to: Owner
   defdelegate send_session_input(session_pid, data), to: Owner
@@ -100,6 +102,7 @@ defmodule Casein.Terminals do
   defdelegate tmux_session_in_workspace?(session, workspace), to: TmuxOps
   defdelegate tmux_workspace_session_prefix(workspace_id_or_name), to: TmuxOps
   defdelegate tmux_session_name(workspace_name, sid), to: TmuxOps
+  defdelegate kill_tmux_session_exact(session), to: TmuxOps
   defdelegate tmux_topology_snapshot(session, opts \\ []), to: TmuxOps
   defdelegate tmux_topology_refresh_now(session, opts \\ []), to: TmuxOps
   defdelegate switch_tmux_topology_subscription(old_session, new_session, opts \\ []), to: TmuxOps

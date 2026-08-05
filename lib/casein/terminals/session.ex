@@ -104,6 +104,16 @@ defmodule Casein.Terminals.Session do
   def resize(pid, cols, rows), do: GenServer.cast(pid, {:resize, cols, rows})
   def stop(pid), do: GenServer.stop(pid, :normal)
 
+  @doc "Stops only the exact registered PTY process for workspace key and SID."
+  @spec stop_exact(String.t(), String.t()) ::
+          :ok | {:error, :session_stop_timeout | :session_stop_failed}
+  def stop_exact(workspace, sid) when is_binary(workspace) and is_binary(sid) do
+    case whereis(workspace, sid) do
+      :error -> :ok
+      {:ok, pid} -> stop_and_wait(pid)
+    end
+  end
+
   ## Callbacks
 
   @impl true
@@ -158,8 +168,13 @@ defmodule Casein.Terminals.Session do
     # scrollback isn't worth it (tmux on the remote retains its own scrollback
     # which redraws on attach). When the session is *missing* (server wipe),
     # reseed from the out-of-band archive so operators still see a recent tail.
+    disposable? = disposable_sid?(sid)
+
     {seeded_buffer, _history_restored?} =
       cond do
+        disposable? ->
+          {<<>>, false}
+
         resumed? ->
           {backend.capture_scrollback(tmux_session, []) |> trim_to(@buffer_bytes), false}
 
@@ -236,7 +251,7 @@ defmodule Casein.Terminals.Session do
              recreated?: recreated?,
              archive_dirty?: seeded_buffer != <<>>
          }
-         |> schedule_archive_spill()}
+         |> maybe_schedule_archive_spill(disposable?)}
 
       {:error, reason} ->
         {:stop, {:exec_failed, reason}, state}
@@ -509,11 +524,17 @@ defmodule Casein.Terminals.Session do
     for pid <- Map.values(state.subscribers),
         do: send(pid, {:term_data, state.ref, bin})
 
-    state
-    |> Map.put(:buffer, Casein.BoundedBuffer.append(state.buffer, bin, @buffer_bytes))
-    |> Map.put(:archive_dirty?, true)
-    |> schedule_archive_spill()
+    state = Map.put(state, :buffer, Casein.BoundedBuffer.append(state.buffer, bin, @buffer_bytes))
+
+    if disposable_sid?(state.sid) do
+      state
+    else
+      state |> Map.put(:archive_dirty?, true) |> schedule_archive_spill()
+    end
   end
+
+  defp maybe_schedule_archive_spill(state, true), do: state
+  defp maybe_schedule_archive_spill(state, false), do: schedule_archive_spill(state)
 
   defp schedule_archive_spill(%{archive_timer: ref} = state) when is_reference(ref), do: state
 
@@ -521,6 +542,8 @@ defmodule Casein.Terminals.Session do
     ref = Process.send_after(self(), :spill_scrollback_archive, @archive_spill_ms)
     %{state | archive_timer: ref}
   end
+
+  defp spill_archive(%{sid: "mob-" <> _}), do: :ok
 
   defp spill_archive(%{tmux: tmux, buffer: buffer}) when is_binary(tmux) and is_binary(buffer) do
     if buffer != <<>> do
@@ -531,6 +554,24 @@ defmodule Casein.Terminals.Session do
   end
 
   defp spill_archive(_), do: :ok
+
+  defp disposable_sid?("mob-" <> _), do: true
+  defp disposable_sid?(_), do: false
+
+  defp stop_and_wait(pid) do
+    ref = Process.monitor(pid)
+    GenServer.stop(pid, :normal)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+    after
+      5_000 -> {:error, :session_stop_timeout}
+    end
+  catch
+    :exit, {:noproc, _} -> :ok
+    :exit, {:timeout, _} -> {:error, :session_stop_timeout}
+    :exit, _reason -> {:error, :session_stop_failed}
+  end
 
   # Reverse-lookup a subscriber's monitor ref by pid. O(N) but N is tiny
   # (one tab + maybe one watcher in realistic cases).

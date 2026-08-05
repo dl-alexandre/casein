@@ -28,7 +28,8 @@ defmodule Casein.Supervision.Terminals do
       # Owns the pending set for undoable window closes. Its ETS table dies
       # with it by design: a crash must un-hide trashed windows, never strand
       # them hidden with no timer left to kill or restore them.
-      Casein.Terminals.WindowTrash
+      Casein.Terminals.WindowTrash,
+      Casein.Mobile.TerminalReaper
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

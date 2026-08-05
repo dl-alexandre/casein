@@ -123,6 +123,9 @@ defmodule Casein.Terminals.TmuxOps do
     Tmux.session_name(workspace_name, sid)
   end
 
+  @doc "Kills one exact managed tmux session through the configured adapter."
+  def kill_tmux_session_exact(session) when is_binary(session), do: tmux_adapter().kill(session)
+
   @doc "Snapshot tmux topology through the configured adapter unless one is supplied."
   @spec tmux_topology_snapshot(String.t(), keyword()) :: map()
   def tmux_topology_snapshot(session, opts \\ []) do
