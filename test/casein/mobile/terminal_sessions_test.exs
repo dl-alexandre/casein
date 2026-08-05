@@ -434,6 +434,40 @@ defmodule Casein.Mobile.TerminalSessionsTest do
            end)
   end
 
+  test "authorized delete replay reconciles only the exact retained scope" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    context = delete_context(lease)
+
+    assert {:ok, deleted} = TerminalSessions.delete_authorized(lease.id, context, tmux: Tmux)
+    assert deleted.state == "deleted"
+    assert Tmux.kills() == [lease.tmux_session]
+
+    assert {:ok, replayed} =
+             TerminalSessions.delete_authorized(lease.id, context, tmux: Tmux)
+
+    assert replayed.id == deleted.id
+    assert Tmux.kills() == [lease.tmux_session]
+
+    for mismatch <- [:user_id, :device_link_id, :origin_id, :origin_generation, :workspace_id] do
+      assert {:error, :not_found} =
+               TerminalSessions.delete_authorized(
+                 lease.id,
+                 Map.put(context, mismatch, "wrong-scope"),
+                 tmux: Tmux
+               )
+    end
+
+    assert {:error, :not_found} =
+             TerminalSessions.delete_authorized(Ecto.UUID.generate(), context, tmux: Tmux)
+
+    events =
+      Casein.Audit.list(limit: 20)
+      |> Enum.filter(&(&1.target_ref == lease.id))
+
+    assert Enum.count(events, &(&1.action == "mobile.terminal_deleted")) == 1
+    assert Enum.count(events, &(&1.action == "mobile.terminal_created")) == 1
+  end
+
   test "concurrent deletes serialize exact teardown and audit once" do
     assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
     Tmux.block_kill(self())
@@ -857,6 +891,23 @@ defmodule Casein.Mobile.TerminalSessionsTest do
       workspace_root: "/tmp/workspace",
       request_id: Ecto.UUID.generate()
     }
+  end
+
+  defp delete_context(lease) do
+    lease
+    |> Map.take([
+      :user_id,
+      :device_link_id,
+      :origin_id,
+      :origin_generation,
+      :workspace_id,
+      :lifecycle_generation,
+      :sid,
+      :tmux_session,
+      :pane_id,
+      :pane_role
+    ])
+    |> Map.put(:lease_id, lease.id)
   end
 
   defp insert_provisioning! do

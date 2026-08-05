@@ -194,8 +194,7 @@ defmodule CaseinWeb.MobileUserChannel do
          context <- terminal_context(socket, lease),
          :ok <- DeviceLinks.authorize_link(lease.device_link_id, context),
          :ok <- TerminalPolicy.authorize(context),
-         {:ok, _lease} <- TerminalSessions.authorize_read(lease_id, context),
-         {:ok, _deleted} <- TerminalSessions.delete(lease_id) do
+         {:ok, _deleted} <- TerminalSessions.delete_authorized(lease_id, context) do
       {:reply, {:ok, TerminalProtocol.delete_reply(lease_id)}, socket}
     else
       nil ->
