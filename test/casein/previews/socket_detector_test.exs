@@ -85,4 +85,57 @@ defmodule Casein.Previews.SocketDetectorTest do
                [41_330]
     end
   end
+
+  describe "ports_under_roots/3" do
+    # The real shape on the devbox: the workspace is /data/workspaces/<name>, but
+    # agents run their dev servers in /data/casein-agent-worktrees/<id>, a
+    # sibling. Scoping to the workspace path alone returned [] here, so detection
+    # fell back to regexing the banner out of tmux scrollback.
+    @output """
+    LISTEN 0 1024 0.0.0.0:4003 0.0.0.0:* users:(("beam.smp",pid=123,fd=33))
+    LISTEN 0 1024 0.0.0.0:21005 0.0.0.0:* users:(("beam.smp",pid=456,fd=12))
+    LISTEN 0 1024 0.0.0.0:9999 0.0.0.0:* users:(("beam.smp",pid=789,fd=9))
+    """
+
+    defp read_cwd do
+      fn
+        123 -> "/data/casein-agent-worktrees/agent-claude-adhoc-1"
+        456 -> "/data/workspaces/mine/apps/web"
+        789 -> "/data/casein-agent-worktrees/agent-claude-adhoc-PEER"
+      end
+    end
+
+    test "finds a dev server running in the workspace's own agent worktree" do
+      roots = ["/data/workspaces/mine", "/data/casein-agent-worktrees/agent-claude-adhoc-1"]
+
+      assert SocketDetector.ports_under_roots(@output, roots, read_cwd()) == [4003, 21_005]
+    end
+
+    # The isolation property. Worktree *roots* are global, so anything keyed off
+    # a root rather than per-workspace attribution would hand one workspace its
+    # peer's dev-server ports.
+    test "never claims a peer workspace's agent worktree" do
+      roots = ["/data/workspaces/mine", "/data/casein-agent-worktrees/agent-claude-adhoc-1"]
+
+      refute 9999 in SocketDetector.ports_under_roots(@output, roots, read_cwd())
+    end
+
+    test "without worktree roots it sees only the workspace itself" do
+      assert SocketDetector.ports_under_roots(@output, ["/data/workspaces/mine"], read_cwd()) ==
+               [21_005]
+    end
+
+    test "ignores blank and non-binary roots, and yields nothing when all are dropped" do
+      assert SocketDetector.ports_under_roots(@output, ["", nil, :bad], read_cwd()) == []
+      assert SocketDetector.ports_under_roots(@output, [], read_cwd()) == []
+    end
+
+    test "a sibling path that merely shares a prefix is not inside the root" do
+      read = fn 123 -> "/data/workspaces/mine-other/apps" end
+
+      line = ~s|LISTEN 0 1024 0.0.0.0:4003 0.0.0.0:* users:(("beam.smp",pid=123,fd=33))|
+
+      assert SocketDetector.ports_under_roots(line, ["/data/workspaces/mine"], read) == []
+    end
+  end
 end

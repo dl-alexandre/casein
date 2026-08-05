@@ -89,6 +89,9 @@ defmodule Casein.Previews.Deps.Test.Fakes do
     def list_runtimes(_filters), do: []
 
     @impl true
+    def list_agent_worktrees(_workspace_id), do: []
+
+    @impl true
     def runtime_preview_surfaces(_runtime), do: []
 
     @impl true

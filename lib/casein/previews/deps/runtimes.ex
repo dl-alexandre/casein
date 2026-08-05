@@ -9,6 +9,16 @@ defmodule Casein.Previews.Deps.Runtimes do
   @type runtime :: map()
 
   @callback list_runtimes(filters :: map()) :: [runtime()]
+
+  @doc """
+  Agent worktrees belonging to one workspace, each carrying its `:path`.
+
+  Scoped to a single workspace on purpose. Agent worktree *roots* are global
+  (`/data/casein-agent-worktrees`, …), so anything keyed off a root would let one
+  workspace claim a peer's dev-server ports; this is the per-workspace
+  attribution that keeps `SocketDetector` from doing that.
+  """
+  @callback list_agent_worktrees(workspace_id :: String.t()) :: [map()]
   @callback runtime_preview_surfaces(runtime()) :: [map()]
   @callback runtime_preview_server(runtime()) :: map() | nil
   @callback ensure_preview_server_started(runtime()) :: :ok | {:error, term()}

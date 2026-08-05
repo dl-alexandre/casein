@@ -14,6 +14,9 @@ defmodule Casein.Runtimes.PreviewDeps do
   def list_runtimes(filters), do: Runtimes.list_runtimes(filters)
 
   @impl true
+  def list_agent_worktrees(workspace_id), do: Runtimes.list_agent_worktrees(workspace_id)
+
+  @impl true
   def runtime_preview_surfaces(runtime), do: Runtimes.runtime_preview_surfaces(runtime)
 
   @impl true

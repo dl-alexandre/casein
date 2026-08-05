@@ -96,27 +96,60 @@ defmodule Casein.Previews.SocketDetector do
   def ports_for_workspace_cwd(output, cwd, read_cwd_fun \\ &process_cwd/1)
 
   def ports_for_workspace_cwd(output, cwd, read_cwd_fun)
-      when is_binary(output) and is_binary(cwd) and is_function(read_cwd_fun, 1) do
-    workspace_cwd = Path.expand(cwd)
+      when is_binary(output) and is_binary(cwd) and is_function(read_cwd_fun, 1),
+      do: ports_under_roots(output, [cwd], read_cwd_fun)
+
+  def ports_for_workspace_cwd(_, _, _), do: []
+
+  @doc false
+  # Keep ports whose listening process is working inside one of `roots`.
+  #
+  # `roots` is the workspace directory *plus that workspace's own agent
+  # worktrees*. Agent dev servers run in `/data/casein-agent-worktrees/<id>`,
+  # a sibling of the workspace directory, so scoping to the workspace path alone
+  # made this probe blind to them — it returned [] and detection fell back to
+  # regexing `localhost:PORT` out of tmux scrollback, which silently stops
+  # working once the banner scrolls away.
+  #
+  # The roots are resolved per workspace, never from the global worktree roots,
+  # so one workspace cannot claim a peer's dev-server ports.
+  @spec ports_under_roots(String.t(), [String.t()], (integer() -> String.t() | nil)) :: [
+          integer()
+        ]
+  def ports_under_roots(output, roots, read_cwd_fun \\ &process_cwd/1)
+
+  def ports_under_roots(output, roots, read_cwd_fun)
+      when is_binary(output) and is_list(roots) and is_function(read_cwd_fun, 1) do
+    expanded =
+      roots
+      |> Enum.filter(&(is_binary(&1) and &1 != ""))
+      |> Enum.map(&Path.expand/1)
+      |> Enum.uniq()
 
     output
     |> String.split("\n", trim: true)
     |> Enum.filter(&String.contains?(&1, "LISTEN"))
-    |> Enum.flat_map(fn line ->
-      with [_, port] <- Regex.run(@port_regex, line),
-           [_, pid] <- Regex.run(@pid_regex, line),
-           {port, ""} <- Integer.parse(port),
-           {pid, ""} <- Integer.parse(pid),
-           proc_cwd when is_binary(proc_cwd) <- read_cwd_fun.(pid),
-           true <- under_path?(Path.expand(proc_cwd), workspace_cwd) do
-        [port]
-      else
-        _ -> []
-      end
-    end)
+    |> Enum.flat_map(&port_if_under_roots(&1, expanded, read_cwd_fun))
   end
 
-  def ports_for_workspace_cwd(_, _, _), do: []
+  def ports_under_roots(_output, _roots, _read_cwd_fun), do: []
+
+  defp port_if_under_roots(_line, [], _read_cwd_fun), do: []
+
+  defp port_if_under_roots(line, roots, read_cwd_fun) do
+    with [_, port] <- Regex.run(@port_regex, line),
+         [_, pid] <- Regex.run(@pid_regex, line),
+         {port, ""} <- Integer.parse(port),
+         {pid, ""} <- Integer.parse(pid),
+         proc_cwd when is_binary(proc_cwd) <- read_cwd_fun.(pid),
+         true <- under_any_root?(Path.expand(proc_cwd), roots) do
+      [port]
+    else
+      _ -> []
+    end
+  end
+
+  defp under_any_root?(path, roots), do: Enum.any?(roots, &under_path?(path, &1))
 
   defp host_cwd(workspace) do
     case Deps.impl(:workspaces).safe_host_path(workspace) do
@@ -149,7 +182,7 @@ defmodule Casein.Previews.SocketDetector do
 
   defp probe_ports(workspace, cwd) do
     if attached_folder?(workspace) do
-      host_cwd_ports(cwd, true)
+      host_cwd_ports(workspace, cwd, true)
     else
       source_ports =
         case run_probe(probe_argv(workspace), cwd) do
@@ -157,20 +190,46 @@ defmodule Casein.Previews.SocketDetector do
           _ -> []
         end
 
-      source_ports ++ host_cwd_ports(cwd, HostMode.on_host?())
+      source_ports ++ host_cwd_ports(workspace, cwd, HostMode.on_host?())
     end
   end
 
-  defp host_cwd_ports(cwd, enabled?) do
+  defp host_cwd_ports(workspace, cwd, enabled?) do
     if enabled? do
       case run_probe(["sh", "-c", @attached_probe], cwd) do
-        {:ok, output} -> ports_for_workspace_cwd(output, cwd)
+        {:ok, output} -> ports_under_roots(output, [cwd | agent_worktree_paths(workspace)])
         _ -> []
       end
     else
       []
     end
   end
+
+  # Agent worktrees belonging to *this* workspace, so a dev server an agent
+  # started in its own worktree is attributed here and nowhere else.
+  #
+  # Best-effort like the rest of the module: this reaches the runtimes seam, and
+  # a detection helper must never turn a failure there into a raised preview.
+  defp agent_worktree_paths(workspace) do
+    case workspace_id(workspace) do
+      id when is_binary(id) and id != "" ->
+        id
+        |> Deps.impl(:runtimes).list_agent_worktrees()
+        |> Enum.map(&(Map.get(&1, :path) || Map.get(&1, "path")))
+        |> Enum.filter(&(is_binary(&1) and &1 != ""))
+
+      _ ->
+        []
+    end
+  rescue
+    e ->
+      Logger.debug("agent worktree lookup failed: #{inspect(e)}")
+      []
+  end
+
+  defp workspace_id(%{id: id}) when is_binary(id), do: id
+  defp workspace_id(%{"id" => id}) when is_binary(id), do: id
+  defp workspace_id(_workspace), do: nil
 
   @doc false
   def probe_argv(workspace) do
