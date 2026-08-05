@@ -546,3 +546,10 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
         #expect(defaults.string(forKey: HostPaths.releaseRootDefaultsKey) != nil)
     }
 }
+@Test func releaseNodeValidationAcceptsIsolatedTestNamesAndRejectsShellSyntax() {
+    #expect(ReleaseController.validatedReleaseNode("casein_package_123") == "casein_package_123")
+    #expect(ReleaseController.validatedReleaseNode("casein-package-123") == "casein-package-123")
+    #expect(ReleaseController.validatedReleaseNode("") == nil)
+    #expect(ReleaseController.validatedReleaseNode("casein@remote") == nil)
+    #expect(ReleaseController.validatedReleaseNode("casein; touch /tmp/nope") == nil)
+}

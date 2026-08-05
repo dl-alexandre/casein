@@ -31,6 +31,7 @@ resolved_tmux="$(DATABASE_PATH="${TMPDIR:-/tmp}/casein-resolver-$$.sqlite3" \
 [[ "$resolved_tmux" == "$tmux_bin" ]]
 
 smoke_label="casein_package_$$"
+smoke_release_node="casein_package_$$"
 smoke_socket="${TMPDIR:-/tmp}/$smoke_label.sock"
 tmux_environment=(env -i HOME="$HOME" PATH=/usr/bin:/bin TERM=xterm-256color)
 smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/casein-package-smoke.XXXXXX")"
@@ -93,7 +94,7 @@ done
 
 # Launch through LaunchServices to exercise the same bundle/resource discovery
 # path as Finder and Start at Login. No release or Homebrew path is injected.
-CASEIN_DESKTOP_DATA_DIR="$smoke_dir" open -n "$APP"
+CASEIN_DESKTOP_DATA_DIR="$smoke_dir" CASEIN_DESKTOP_RELEASE_NODE="$smoke_release_node" open -n "$APP"
 for _ in $(seq 1 15); do
   host_pid="$(pgrep -f "^$APP/Contents/MacOS/casein-menubar$" | tail -n 1 || true)"
   [[ -n "$host_pid" ]] && break

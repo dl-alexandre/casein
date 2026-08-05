@@ -15,6 +15,14 @@ public actor ReleaseController {
     /// daemon on this machine can't collide with the hosted one.
     public static let defaultReleaseNode = "casein_desktop"
 
+    /// Release node names are normally fixed, but package smoke tests need an
+    /// isolated node while the installed desktop app remains running.
+    public static func validatedReleaseNode(_ candidate: String) -> String? {
+        guard !candidate.isEmpty, candidate.count <= 64 else { return nil }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+        return candidate.unicodeScalars.allSatisfy(allowed.contains) ? candidate : nil
+    }
+
     private let paths: HostPaths
     private let releaseNode: String
     private let inheritedEnvironment: [String: String]
