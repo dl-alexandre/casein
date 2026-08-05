@@ -182,33 +182,59 @@ rollback() {
     exit "${status}"
   fi
 
-  log "deploy failed; stopping new canary unit and restoring release directory"
-  # Stop the new transient unit if it was started; the old instance(s) are
-  # still running and Caddy still points at the (unchanged) current.sock symlink
-  # so existing sessions are unaffected.
-  if [ -n "${NEW_UUID:-}" ]; then
-    stop_canary_unit "${NEW_UUID}"
-  fi
+  log "deploy failed; restoring routing before stopping the new canary"
+  stop_new_canary=1
+  symlink_restored=1
 
   if [ "${CURRENT_SYMLINK_SWAPPED}" = "1" ]; then
     if [ -n "${OLD_CURRENT_TARGET}" ]; then
       log "restoring ${CURRENT_SYMLINK} -> ${OLD_CURRENT_TARGET}"
-      sudo ln -sfn "${OLD_CURRENT_TARGET}" "${CURRENT_SYMLINK}.rollback" || true
-      sudo mv -f "${CURRENT_SYMLINK}.rollback" "${CURRENT_SYMLINK}" || true
+      if ! casein_restore_current_symlink_after_handoff \
+          "${OLD_CURRENT_TARGET}" "${CURRENT_SYMLINK}"; then
+        symlink_restored=0
+        stop_new_canary=0
+      fi
     else
-      log "removing ${CURRENT_SYMLINK}; it did not exist before this deploy"
-      sudo rm -f "${CURRENT_SYMLINK}" "${CURRENT_SYMLINK}.rollback" || true
+      # With no predecessor there is nowhere safe to send traffic. Preserve
+      # the healthy candidate rather than deleting its only route.
+      symlink_restored=0
+      stop_new_canary=0
+      log "warning: no predecessor symlink target; leaving the healthy candidate routed"
     fi
   fi
 
   if [ "${CADDY_UPSTREAM_PATCHED}" = "1" ] &&
     [ -n "${CADDY_UPSTREAM_PATH}" ] &&
     [ -n "${CADDY_PREVIOUS_DIAL}" ]; then
-    log "restoring Caddy upstream to ${CADDY_PREVIOUS_DIAL}"
-    casein_caddy_admin_curl -fsS -X PATCH \
-      "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" \
-      -H "content-type: application/json" \
-      -d "\"${CADDY_PREVIOUS_DIAL}\"" >/dev/null || true
+    if [ "${symlink_restored}" = "1" ] && [ -n "${OLD_CURRENT_TARGET}" ] &&
+        casein_restore_caddy_upstream_after_handoff \
+          "${CADDY_PREVIOUS_DIAL}" "unix/${OLD_CURRENT_TARGET}"; then
+      :
+    else
+      # The candidate may still be the configured or pooled upstream. Keep it
+      # alive rather than converting a failed deploy into a persistent 503.
+      stop_new_canary=0
+      log "warning: Caddy rollback was not proven; leaving the healthy candidate running"
+    fi
+  fi
+
+  # Stop only after both the symlink and any mutated Caddy pool are proven back
+  # on the predecessor. A failed restore intentionally leaves the candidate up.
+  if [ "${stop_new_canary}" = "1" ] && [ -n "${NEW_UUID:-}" ]; then
+    stop_canary_unit "${NEW_UUID}"
+  fi
+
+  if [ "${stop_new_canary}" = "0" ]; then
+    # Keep the candidate's immutable release tree and matching environment in
+    # place. Reasserting current.sock lets the normal poller's trusted direct-
+    # dial repair converge Caddy on its next tick; failure remains visible and
+    # both predecessor and candidate stay alive.
+    if ! casein_restore_current_symlink_after_handoff \
+        "${NEW_SOCKET}" "${CURRENT_SYMLINK}"; then
+      log "warning: retained candidate could not be restored as current.sock"
+    fi
+    log "warning: preserving retained candidate release and environment for poller reconciliation"
+    exit "${status}"
   fi
 
   if sudo test -f "${ENV_BACKUP}"; then
@@ -536,7 +562,8 @@ CURRENT_SYMLINK_SWAPPED=1
 CADDY_HOST="$(sudo awk -F= '/^PHX_HOST=/{print $2}' "${ENV_FILE}" | tail -n 1)"
 CADDY_HOST="${CADDY_HOST:-${CANONICAL_DEVBOX_HOST}}"
 caddy_reconcile_ok=0
-if casein_reconcile_caddy_upstream "${CADDY_HOST}" migration; then
+if casein_reconcile_caddy_upstream \
+    "${CADDY_HOST}" migration "unix/${NEW_SOCKET}"; then
   caddy_reconcile_ok=1
 fi
 

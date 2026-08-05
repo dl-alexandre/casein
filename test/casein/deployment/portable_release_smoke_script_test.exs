@@ -50,7 +50,7 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ ~s(RUN_ROOT="${CASEIN_RUN_ROOT:-/run/casein}")
     assert text =~ ~s(CURRENT_SYMLINK="${CASEIN_CURRENT_SOCK:-${RUN_ROOT}/current.sock}")
     assert text =~ ~s(source "${DEPLOY_SCRIPT_SELF_DIR}/lib/caddy-upstream.sh")
-    assert text =~ "casein_caddy_admin_curl -fsS -X PATCH"
+    assert caddy_helper =~ "casein_caddy_admin_curl -fsS -X PATCH"
     assert text =~ "casein_canonical_route_attests_caddy_unavailable"
     assert text =~ ~s|token="$(casein_read_casein_api_token "${ENV_FILE}")"|
     refute text =~ "awk -F= '/^CASEIN_API_TOKEN/"
@@ -76,7 +76,13 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     refute text =~ "awk -F= '/^CASEIN_API_TOKEN/"
 
     assert text =~
-             ~r|ensure_caddy_upstream\(\) \{\n  local host\n  # This helper.*?\n  CADDY_RECONCILE_OUTCOME="not_attempted"\n\n  host=|s
+             ~s(local host configured_socket="" current_target="" trusted_direct_dial="")
+
+    assert text =~
+             ~s(casein_reconcile_caddy_upstream "$host" repair "$trusted_direct_dial")
+
+    assert text =~
+             ~r|current_target=".*?".*?configured_socket.*?current_target.*?trusted_direct_dial="unix/\$\{configured_socket\}"|s
 
     assert text =~
              ~r|CADDY_RECONCILE_OUTCOME="not_attempted".*?if \[ .* != .* \]; then\n    log "refusing Caddy reconciliation.*?\n    return 1|s
