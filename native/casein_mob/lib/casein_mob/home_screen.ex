@@ -63,7 +63,13 @@ defmodule CaseinMob.HomeScreen do
   end
 
   def handle_info({:tap, :open_terminal}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen)}
+    params =
+      case CaseinMob.SessionConfig.default_terminal_target() do
+        {:ok, target} -> Map.take(target, [:origin_id, :workspace_id])
+        {:error, reason} -> %{target_error: reason}
+      end
+
+    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen, params)}
   end
 
   def handle_info({:tap, :open_sessions}, socket) do

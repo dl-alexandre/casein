@@ -29,4 +29,36 @@ defmodule CaseinMob.HomeScreenTest do
     view = HomeScreen |> mount_screen() |> render_info({:tap, :open_sessions})
     assert navigated_to(view) == CaseinMob.SessionDashboardScreen
   end
+
+  test "terminal navigation carries an explicit origin-qualified pinned target" do
+    CaseinMob.SessionConfig.clear_all()
+
+    CaseinMob.SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    CaseinMob.SessionConfig.pin_workspace("ws-1")
+
+    view = HomeScreen |> mount_screen() |> render_info({:tap, :open_terminal})
+
+    assert navigated_to(view) == CaseinMob.TerminalScreen
+
+    assert view.socket.__mob__.nav_action ==
+             {:push, CaseinMob.TerminalScreen,
+              %{origin_id: "origin-devbox", workspace_id: "ws-1"}}
+  end
+
+  test "terminal navigation carries a bounded error instead of selecting implicitly" do
+    CaseinMob.SessionConfig.clear_all()
+
+    view = HomeScreen |> mount_screen() |> render_info({:tap, :open_terminal})
+
+    assert navigated_to(view) == CaseinMob.TerminalScreen
+
+    assert view.socket.__mob__.nav_action ==
+             {:push, CaseinMob.TerminalScreen, %{target_error: :not_authenticated}}
+  end
 end

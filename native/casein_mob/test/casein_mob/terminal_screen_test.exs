@@ -1,7 +1,7 @@
 defmodule CaseinMob.TerminalScreenTest do
   use Mob.ScreenCase, async: false
 
-  alias CaseinMob.{Terminal, TerminalScreen}
+  alias CaseinMob.{SessionConfig, Terminal, TerminalScreen}
 
   test "platform routing never sends iOS through the Android-only Ghostty NIF" do
     assert Terminal.backend(:ios) == :ios_canvas
@@ -22,7 +22,7 @@ defmodule CaseinMob.TerminalScreenTest do
     assert find(view, :button, text: "Back")
     assert text(view) =~ "Terminal"
     assert text(view) =~ "Read-only · input is disabled"
-    assert text(view) =~ "No authorized workspace"
+    assert text(view) =~ "Select a workspace before opening Terminal"
     assert text(view) =~ "Unavailable"
 
     refute find(view, :text_field)
@@ -30,6 +30,60 @@ defmodule CaseinMob.TerminalScreenTest do
     refute find(view, :button, text: "Tab")
     refute find(view, :button, text: "^C")
     refute find(view, :button, text: "^D")
+  end
+
+  test "mount revalidates an explicit origin-qualified workspace target" do
+    SessionConfig.clear_all()
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      mount_screen(TerminalScreen, %{
+        origin_id: "origin-devbox",
+        workspace_id: "ws-1"
+      })
+
+    assert assigns(view).origin_id == "origin-devbox"
+    assert assigns(view).workspace_id == "ws-1"
+    assert assigns(view).status == :connecting
+    assert assigns(view).unavailable_reason == nil
+
+    stale =
+      mount_screen(TerminalScreen, %{
+        origin_id: "origin-old",
+        workspace_id: "ws-1"
+      })
+
+    assert assigns(stale).workspace_id == nil
+    assert assigns(stale).status == :unavailable
+    assert assigns(stale).unavailable_reason == :inactive_origin
+    assert text(stale) =~ "Selected workspace belongs to an inactive origin"
+  end
+
+  test "empty params never select a pinned workspace implicitly" do
+    SessionConfig.clear_all()
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    SessionConfig.pin_workspace("ws-1")
+
+    view = mount_screen(TerminalScreen, %{})
+
+    assert assigns(view).workspace_id == nil
+    assert assigns(view).status == :unavailable
+    assert assigns(view).unavailable_reason == :workspace_not_selected
   end
 
   test "an authoritative baseline exposes its freshness generation and metadata" do
@@ -42,8 +96,7 @@ defmodule CaseinMob.TerminalScreenTest do
     }
 
     view =
-      TerminalScreen
-      |> mount_screen()
+      mounted_terminal()
       |> render_info({:mobile_terminal_baseline, metadata, "ready"})
 
     assert text(view) =~ "Live"
@@ -51,16 +104,60 @@ defmodule CaseinMob.TerminalScreenTest do
     assert find(view, :box, id: "terminal-surface").props.fresh_baseline_generation == 7
   end
 
+  test "baseline and status identity mismatches fail closed without retargeting" do
+    view = mounted_terminal()
+
+    mismatched_baseline =
+      render_info(
+        view,
+        {:mobile_terminal_baseline,
+         %{origin_id: "origin-other", workspace_id: "ws-1", fresh_baseline_generation: 1},
+         "fixture"}
+      )
+
+    assert assigns(mismatched_baseline).origin_id == "origin-1"
+    assert assigns(mismatched_baseline).workspace_id == "ws-1"
+    assert assigns(mismatched_baseline).status == :unavailable
+    refute assigns(mismatched_baseline).baseline_ready?
+
+    mismatched_status =
+      render_info(
+        view,
+        {:mobile_terminal_status, "ws-other", :live, %{origin_id: "origin-1"}}
+      )
+
+    assert assigns(mismatched_status).origin_id == "origin-1"
+    assert assigns(mismatched_status).workspace_id == "ws-1"
+    assert assigns(mismatched_status).status == :unavailable
+
+    missing_origin =
+      render_info(view, {:mobile_terminal_status, "ws-1", :live, %{}})
+
+    assert assigns(missing_origin).origin_id == "origin-1"
+    assert assigns(missing_origin).workspace_id == "ws-1"
+    assert assigns(missing_origin).status == :unavailable
+
+    for malformed <- [nil, "bad", []] do
+      rejected =
+        render_info(view, {:mobile_terminal_status, "ws-1", :live, malformed})
+
+      assert assigns(rejected).origin_id == "origin-1"
+      assert assigns(rejected).workspace_id == "ws-1"
+      assert assigns(rejected).status == :unavailable
+      refute assigns(rejected).baseline_ready?
+    end
+  end
+
   test "background covers output and removes the old freshness signal" do
     metadata = %{
       origin_name: "Devbox",
+      origin_id: "origin-1",
       workspace_id: "ws-1",
       fresh_baseline_generation: 7
     }
 
     view =
-      TerminalScreen
-      |> mount_screen()
+      mounted_terminal()
       |> render_info({:mobile_terminal_baseline, metadata, "ready"})
       |> render_info(:app_background)
 
@@ -70,13 +167,13 @@ defmodule CaseinMob.TerminalScreenTest do
   test "iOS consumption scrubs the encoded transport copy without re-encoding active raw state" do
     metadata = %{
       origin_name: "Devbox",
+      origin_id: "origin-1",
       workspace_id: "ws-1",
       fresh_baseline_generation: 7
     }
 
     view =
-      TerminalScreen
-      |> mount_screen()
+      mounted_terminal()
       |> ios_backend()
       |> render_info({:mobile_terminal_baseline, metadata, "fixture"})
 
@@ -95,13 +192,13 @@ defmodule CaseinMob.TerminalScreenTest do
   test "iOS allows only one revision-bound encoded delivery and coalesces output behind it" do
     metadata = %{
       origin_name: "Devbox",
+      origin_id: "origin-1",
       workspace_id: "ws-1",
       fresh_baseline_generation: 7
     }
 
     baseline =
-      TerminalScreen
-      |> mount_screen()
+      mounted_terminal()
       |> ios_backend()
       |> render_info({:mobile_terminal_baseline, metadata, "base"})
 
@@ -136,13 +233,13 @@ defmodule CaseinMob.TerminalScreenTest do
   test "iOS lifecycle and ack timeout purge raw and encoded copies before any foreground render" do
     metadata = %{
       origin_name: "Devbox",
+      origin_id: "origin-1",
       workspace_id: "ws-1",
       fresh_baseline_generation: 7
     }
 
     live =
-      TerminalScreen
-      |> mount_screen()
+      mounted_terminal()
       |> ios_backend()
       |> render_info({:mobile_terminal_baseline, metadata, "fixture"})
 
@@ -170,13 +267,13 @@ defmodule CaseinMob.TerminalScreenTest do
   test "invalid native acknowledgment purges active raw state and requires resync" do
     metadata = %{
       origin_name: "Devbox",
+      origin_id: "origin-1",
       workspace_id: "ws-1",
       fresh_baseline_generation: 7
     }
 
     view =
-      TerminalScreen
-      |> mount_screen()
+      mounted_terminal()
       |> ios_backend()
       |> render_info({:mobile_terminal_baseline, metadata, "fixture"})
       |> render_info(:ios_terminal_invalid_consumption)
@@ -202,6 +299,20 @@ defmodule CaseinMob.TerminalScreenTest do
       view.socket
       |> Mob.Socket.assign(:terminal_backend, :ios_canvas)
       |> Mob.Socket.assign(:term, :ios_canvas)
+
+    %{view | socket: socket}
+  end
+
+  defp mounted_terminal do
+    view = mount_screen(TerminalScreen)
+
+    socket =
+      view.socket
+      |> Mob.Socket.assign(:origin_id, "origin-1")
+      |> Mob.Socket.assign(:origin_name, "Devbox")
+      |> Mob.Socket.assign(:workspace_id, "ws-1")
+      |> Mob.Socket.assign(:unavailable_reason, nil)
+      |> Mob.Socket.assign(:status, :connecting)
 
     %{view | socket: socket}
   end

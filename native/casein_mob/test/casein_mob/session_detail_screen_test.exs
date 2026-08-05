@@ -100,6 +100,36 @@ defmodule CaseinMob.SessionDetailScreenTest do
     assert text(view) =~ "workspace-with-a-very-lon..."
   end
 
+  test "detail terminal action passes its exact active-origin workspace" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    SessionConfig.pin_workspace("ws-1")
+
+    view = mount_screen(SessionDetailScreen, %{workspace_id: "ws-1"})
+    assert find(view, :button, text: "Terminal")
+
+    terminal = render_info(view, {:tap, :open_terminal})
+
+    assert terminal.socket.__mob__.nav_action ==
+             {:push, CaseinMob.TerminalScreen,
+              %{origin_id: "origin-devbox", workspace_id: "ws-1"}}
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-other",
+      display_name: "Other",
+      url: "https://other.test",
+      token: "other-token"
+    })
+
+    rejected = render_info(view, {:tap, :open_terminal})
+    assert assigns(rejected).notice == "Terminal is unavailable for this workspace"
+  end
+
   test "mount persists optional session id resume context" do
     mount_screen(SessionDetailScreen, %{
       workspace_id: "ws-1",

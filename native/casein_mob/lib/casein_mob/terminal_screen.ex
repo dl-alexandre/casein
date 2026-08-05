@@ -42,12 +42,24 @@ defmodule CaseinMob.TerminalScreen do
   @default_fg 0xFFE7ECEF
   @cursor_color 0xFFE0E0E0
 
-  def mount(_params, _session, socket) do
-    workspace_id = selected_workspace_id()
-    origin = active_origin()
+  def mount(params, _session, socket) do
+    {target, unavailable_reason} =
+      case params[:target_error] || params["target_error"] do
+        nil ->
+          case SessionConfig.terminal_target(params) do
+            {:ok, target} -> {target, nil}
+            {:error, reason} -> {unavailable_target(), reason}
+          end
+
+        reason ->
+          {unavailable_target(), reason}
+      end
+
+    workspace_id = target.workspace_id
     terminal_backend = Terminal.backend()
 
-    if is_binary(workspace_id), do: SessionClient.watch_terminal(workspace_id, self())
+    if is_binary(workspace_id),
+      do: SessionClient.watch_terminal(target.origin_id, workspace_id, self())
 
     socket =
       socket
@@ -60,8 +72,9 @@ defmodule CaseinMob.TerminalScreen do
       |> Mob.Socket.assign(:cols, @default_cols)
       |> Mob.Socket.assign(:rows, @default_rows)
       |> Mob.Socket.assign(:workspace_id, workspace_id)
-      |> Mob.Socket.assign(:origin_id, origin.id)
-      |> Mob.Socket.assign(:origin_name, origin.name)
+      |> Mob.Socket.assign(:origin_id, target.origin_id)
+      |> Mob.Socket.assign(:origin_name, target.origin_name)
+      |> Mob.Socket.assign(:unavailable_reason, unavailable_reason)
       |> Mob.Socket.assign(:expires_at, nil)
       |> Mob.Socket.assign(:status, if(workspace_id, do: :connecting, else: :unavailable))
       |> Mob.Socket.assign(:baseline_ready?, false)
@@ -142,27 +155,37 @@ defmodule CaseinMob.TerminalScreen do
 
   def handle_info({:mobile_terminal_baseline, metadata, bytes}, socket)
       when is_map(metadata) and is_binary(bytes) do
-    if byte_size(bytes) <= @max_ios_frame_bytes or socket.assigns.terminal_backend != :ios_canvas do
-      socket =
-        socket
-        |> accept_baseline(bytes)
-        |> Mob.Socket.assign(:origin_id, Map.get(metadata, :origin_id))
-        |> Mob.Socket.assign(:origin_name, Map.get(metadata, :origin_name) || "Unknown origin")
-        |> Mob.Socket.assign(:workspace_id, Map.get(metadata, :workspace_id))
-        |> Mob.Socket.assign(:expires_at, Map.get(metadata, :expires_at))
-        |> Mob.Socket.assign(:status, :live)
-        |> Mob.Socket.assign(:baseline_ready?, true)
-        |> Mob.Socket.assign(
-          :fresh_baseline_generation,
-          Map.get(metadata, :fresh_baseline_generation)
-        )
-        |> arm_ios_ack_timeout()
-        |> ensure_repaint()
+    cond do
+      not expected_terminal_metadata?(socket, metadata) ->
+        {:noreply,
+         socket
+         |> Mob.Socket.assign(:status, :unavailable)
+         |> Mob.Socket.assign(:unavailable_reason, :inactive_origin)
+         |> cover()}
 
-      {:noreply, socket}
-    else
-      SessionClient.terminal_foreground()
-      {:noreply, socket |> Mob.Socket.assign(:status, {:resync, :frame_limit}) |> cover()}
+      byte_size(bytes) <= @max_ios_frame_bytes or
+          socket.assigns.terminal_backend != :ios_canvas ->
+        socket =
+          socket
+          |> accept_baseline(bytes)
+          |> Mob.Socket.assign(:origin_id, Map.get(metadata, :origin_id))
+          |> Mob.Socket.assign(:origin_name, Map.get(metadata, :origin_name) || "Unknown origin")
+          |> Mob.Socket.assign(:workspace_id, Map.get(metadata, :workspace_id))
+          |> Mob.Socket.assign(:expires_at, Map.get(metadata, :expires_at))
+          |> Mob.Socket.assign(:status, :live)
+          |> Mob.Socket.assign(:baseline_ready?, true)
+          |> Mob.Socket.assign(
+            :fresh_baseline_generation,
+            Map.get(metadata, :fresh_baseline_generation)
+          )
+          |> arm_ios_ack_timeout()
+          |> ensure_repaint()
+
+        {:noreply, socket}
+
+      true ->
+        SessionClient.terminal_foreground()
+        {:noreply, socket |> Mob.Socket.assign(:status, {:resync, :frame_limit}) |> cover()}
     end
   end
 
@@ -183,14 +206,30 @@ defmodule CaseinMob.TerminalScreen do
 
   def handle_info({:mobile_terminal_output, _bytes}, socket), do: {:noreply, socket}
 
-  def handle_info({:mobile_terminal_status, workspace_id, status, metadata}, socket) do
-    socket =
-      socket
-      |> Mob.Socket.assign(:workspace_id, workspace_id)
-      |> Mob.Socket.assign(:status, status)
-      |> maybe_assign_metadata(metadata)
+  def handle_info({:mobile_terminal_status, workspace_id, status, metadata}, socket)
+      when is_map(metadata) do
+    if workspace_id == socket.assigns.workspace_id and expected_origin?(socket, metadata) do
+      socket =
+        socket
+        |> Mob.Socket.assign(:status, status)
+        |> maybe_assign_metadata(metadata)
 
-    if terminal_visible?(status), do: {:noreply, socket}, else: {:noreply, cover(socket)}
+      if terminal_visible?(status), do: {:noreply, socket}, else: {:noreply, cover(socket)}
+    else
+      {:noreply,
+       socket
+       |> Mob.Socket.assign(:status, :unavailable)
+       |> Mob.Socket.assign(:unavailable_reason, :inactive_origin)
+       |> cover()}
+    end
+  end
+
+  def handle_info({:mobile_terminal_status, _workspace_id, _status, _metadata}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:status, :unavailable)
+     |> Mob.Socket.assign(:unavailable_reason, :inactive_origin)
+     |> cover()}
   end
 
   def handle_info({:change, :term_size, wxh}, socket) when is_binary(wxh) do
@@ -266,26 +305,18 @@ defmodule CaseinMob.TerminalScreen do
     :ok
   end
 
-  defp selected_workspace_id do
-    case SessionConfig.resume_context() do
-      %{workspace_id: workspace_id} when is_binary(workspace_id) and workspace_id != "" ->
-        workspace_id
-
-      _ ->
-        Enum.find(SessionConfig.pinned_workspaces(), &(is_binary(&1) and &1 != ""))
-    end
-  end
-
-  defp active_origin do
+  defp unavailable_target do
     case SessionConfig.connection() do
       {:ok, profile} ->
         %{
-          id: Map.get(profile, :origin_id),
-          name: Map.get(profile, :display_name) || Map.get(profile, :url) || "Unknown origin"
+          origin_id: Map.get(profile, :origin_id),
+          origin_name:
+            Map.get(profile, :display_name) || Map.get(profile, :url) || "Unknown origin",
+          workspace_id: nil
         }
 
       :error ->
-        %{id: nil, name: "No active origin"}
+        %{origin_id: nil, origin_name: "No active origin", workspace_id: nil}
     end
   end
 
@@ -296,7 +327,17 @@ defmodule CaseinMob.TerminalScreen do
     |> maybe_assign(:expires_at, Map.get(metadata, :expires_at))
   end
 
-  defp maybe_assign_metadata(socket, _metadata), do: socket
+  defp expected_terminal_metadata?(socket, metadata) do
+    metadata_value(metadata, :origin_id) == socket.assigns.origin_id and
+      metadata_value(metadata, :workspace_id) == socket.assigns.workspace_id
+  end
+
+  defp expected_origin?(socket, metadata) do
+    metadata_value(metadata, :origin_id) == socket.assigns.origin_id
+  end
+
+  defp metadata_value(metadata, key),
+    do: Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
 
   defp maybe_assign(socket, _key, nil), do: socket
   defp maybe_assign(socket, key, value), do: Mob.Socket.assign(socket, key, value)
@@ -365,10 +406,22 @@ defmodule CaseinMob.TerminalScreen do
   defp status_color(_status), do: 0xFF3D351E
 
   defp metadata_line(assigns) do
-    workspace = assigns.workspace_id || "No authorized workspace"
-    expiry = assigns.expires_at || "unknown expiry"
-    "#{assigns.origin_name} · #{workspace} · expires #{expiry}"
+    if is_binary(assigns.workspace_id) do
+      expiry = assigns.expires_at || "unknown expiry"
+      "#{assigns.origin_name} · #{assigns.workspace_id} · expires #{expiry}"
+    else
+      "#{assigns.origin_name} · #{unavailable_copy(assigns.unavailable_reason)}"
+    end
   end
+
+  defp unavailable_copy(:workspace_not_selected), do: "Select a workspace before opening Terminal"
+  defp unavailable_copy(:inactive_origin), do: "Selected workspace belongs to an inactive origin"
+  defp unavailable_copy(:legacy_origin), do: "Legacy origins are read-only"
+
+  defp unavailable_copy(:not_authenticated),
+    do: "Authenticate this origin before opening Terminal"
+
+  defp unavailable_copy(_reason), do: "No authorized workspace"
 
   defp repaint(socket) do
     width = socket.assigns.cols * @cellw
