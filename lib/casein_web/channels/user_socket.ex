@@ -38,6 +38,7 @@ defmodule CaseinWeb.UserSocket do
         {:ok,
          socket
          |> assign(:current_user, user)
+         |> assign(:socket_credential, :user_token)
          |> assign(:mobile_feed_timing, timing)}
 
       _ ->
@@ -59,6 +60,7 @@ defmodule CaseinWeb.UserSocket do
         {:ok,
          socket
          |> assign(:current_user, user)
+         |> assign(:socket_credential, :pairing_token)
          |> assign(:pairing_workspace_id, workspace_id)
          |> assign(:mobile_origin_id, Origin.id())
          |> assign(:mobile_origin_name, Origin.display_name())
@@ -85,6 +87,7 @@ defmodule CaseinWeb.UserSocket do
         {:ok,
          socket
          |> assign(:current_user, user)
+         |> assign(:socket_credential, :device_link_token)
          |> assign(:pairing_workspace_id, workspace_id)
          |> assign(:device_link_id, claims.device_link_id)
          |> assign(:mobile_platform, Map.get(claims, :platform))
