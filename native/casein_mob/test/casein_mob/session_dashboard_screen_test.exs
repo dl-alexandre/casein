@@ -24,10 +24,21 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     assert_renderable(view)
     assert text(view) =~ "Attention Inbox"
     assert find(view, :button, text: "+ Pair").props.fill_width == false
+    assert find(view, :button, text: "Terminal").props.id == "open_terminal"
+    assert find(view, :button, text: "Terminal").props.fill_width == false
     assert find(view, :button, text: "...").props.fill_width == false
     assert find(view, :button, text: "...")
     refute find(view, :button, text: "Back")
     refute find(view, :button, text: "Home")
+  end
+
+  test "direct terminal action opens the read-only terminal screen" do
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:tap, :open_terminal})
+
+    assert navigated_to(view) == CaseinMob.TerminalScreen
   end
 
   test "not paired empty state invites pairing" do
