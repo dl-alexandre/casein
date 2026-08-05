@@ -583,13 +583,16 @@ export async function buildMatrix(args, deps = {}) {
     required.has("audit_actor") ||
     required.has("db_before_after") ||
     manifests.some((m) => m?.runtime?.require_tidewave === true);
-  rows.push(
-    await checkTidewave(args.tidewaveUrl || env.CASEIN_TIDEWAVE_MCP_URL, {
-      fetchImpl,
-      required: tidewaveRequired,
-      requiredTools: requiredTidewaveTools(manifests, required),
-    }),
-  );
+  const tidewaveRow = await checkTidewave(args.tidewaveUrl || env.CASEIN_TIDEWAVE_MCP_URL, {
+    fetchImpl,
+    required: tidewaveRequired,
+    requiredTools: requiredTidewaveTools(manifests, required),
+  });
+  rows.push(tidewaveRow);
+  // db_before_after rides Tidewave's SELECT-only path: it is provable exactly
+  // when Tidewave is. Without this it would stay unprovable and BLOCK a
+  // manifest that requires a collector the driver actually implements.
+  const dbReadProven = tidewaveRow.state === STATE.OK;
   // Visual baseline is stricter than the generic collector check: when
   // required, missing Artifact connectivity or a missing accepted baseline is
   // BLOCKED outright (a walk that cannot compare cannot prove anything), and
@@ -645,7 +648,12 @@ export async function buildMatrix(args, deps = {}) {
     rows.push(
       checkCollector(id, {
         required: required.has(key) || id === "screenshot" || (id === "viewport" && viewportRequired),
-        proven: PROBED[id] ? PROBED[id](deps.collectorProbe) : PROVEN_COLLECTORS.has(id),
+        proven:
+          id === "db_read"
+            ? dbReadProven
+            : PROBED[id]
+              ? PROBED[id](deps.collectorProbe)
+              : PROVEN_COLLECTORS.has(id),
       }),
     );
   }

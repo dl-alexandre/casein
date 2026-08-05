@@ -564,13 +564,19 @@ export function runtimeErrorEvidence(runtimePage = {}) {
   const sqlFail = runtimePage.sql?.status === "FAIL" ? 1 : 0;
   const liveviewFail =
     runtimePage.required_tidewave === true && runtimePage.liveview?.status === "error" ? 1 : 0;
+  // db_before_after must count here, not merely in runtime.evidence_failed:
+  // this function is the channel the page VERDICT reads. Collected-but-uncounted
+  // is the worst shape available — the report shows a proven violation while the
+  // page reports PASS.
+  const dbFail = runtimePage.db_before_after?.status === "FAIL" ? 1 : 0;
   return {
-    count: unique + probes + sqlFail + liveviewFail, // gate/verdict signal (deduped)
+    count: unique + probes + sqlFail + liveviewFail + dbFail, // gate/verdict signal (deduped)
     unique,
     total,
     probes_failed: probes,
     sql_failed: sqlFail,
     liveview_failed: liveviewFail,
+    db_before_after_failed: dbFail,
     sample,
   };
 }

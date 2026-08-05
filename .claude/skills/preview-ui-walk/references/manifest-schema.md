@@ -297,6 +297,42 @@ the driver has a single code path and v1 manifests behave identically.
 | A **failed cleanup is never green** | Cleanup that ran and lost turns a passing action `ASSERT_FAILED`; `cleanup_ran` reflects success, not merely that it was attempted. Gate-blocked cleanup says so instead of "0 steps failed" |
 | Retry never **re-enters** a mutated action | A read-only phase may still retry under the existing bounds; replaying from phase 1 after a write manufactures fixtures |
 
+### Proving read-only (`db_before_after`)
+
+```jsonc
+{ "name": "View SKU", "path": "/skus/{{carry.id}}",
+  "require_evidence": ["db_before_after"],
+  "runtime": { "db_before_after": {
+    "sql": "SELECT * FROM skus WHERE id = '{{carry.id}}'",
+    "expect_change": false } } }
+```
+
+Runs the SELECT **before navigation** and again after the phase's steps, then
+compares. The window spans navigation deliberately, and that is the whole point:
+
+* **`expect_change: false`** turns `safety.read_only` from a claim into
+  something the run verifies. The interactions gate can only refuse mutating
+  *steps* — it structurally cannot see a plain **GET that writes**, because no
+  mutating step ever runs. This can.
+* **`expect_change: true`** proves a write reached the store, not merely that
+  the UI said it saved.
+* Omit it to record the delta without asserting.
+
+Scope the query to the record under test with `{{carry.*}}` (carry reaches
+`runtime.sql`, `db_before_after.sql`, and probe `eval`). An unscoped
+`SELECT count(*) FROM skus` on a shared dataset reports **another session's**
+writes as this action's delta.
+
+Only **digests** of the two results are recorded — never rows — because this
+evidence rides into a published report. A snapshot that could not be taken
+yields no evidence and BLOCKS; it never reports an unproven "nothing changed".
+
+**`audit_actor` has no generic collector.** Attribution needs an app-side audit
+trail with an actor column, and the target app has none. Requiring it BLOCKS at
+preflight (exit 2) — loud and early, never a false pass. Until such a trail
+exists, a mutation on a **shared** dataset cannot be attributed to the walk:
+`db_before_after` can prove something changed, never that it was us.
+
 ### Prerequisites
 
 `prereq` answers *"is this action testable on this dataset right now?"* — so the

@@ -302,7 +302,7 @@
         "visual_baseline",
         "prereq"
       ],
-      "description": "The single source of truth for evidence keys. Walk-, action- and phase-level require_evidence all reference this; three inline copies would drift."
+      "description": "The single source of truth for evidence keys. Walk-, action- and phase-level require_evidence all reference this; three inline copies would drift. NOTE on \"audit_actor\": no generic collector exists, because attribution needs an app-side audit trail with an actor column and the target app has none. Requiring it BLOCKS at preflight (exit 2) rather than mid-walk \u2014 loud and early, not a false pass. Until such a trail exists, a mutation on a SHARED dataset cannot be attributed to this walk: db_before_after can prove something changed, never that it was us."
     },
     "action": {
       "type": "object",
@@ -1020,7 +1020,34 @@
         "sql": {
           "type": "string",
           "pattern": "^\\s*[Ss][Ee][Ll][Ee][Cc][Tt]\\b",
-          "description": "SELECT-only probe. Drivers must reject non-SELECT and cap rows."
+          "description": "SELECT-only probe. Drivers must reject non-SELECT and cap rows. Supports {{carry.*}}."
+        },
+        "db_before_after": {
+          "description": "Run a SELECT before navigation and again after the phase's steps, then compare. The window deliberately SPANS navigation, so expect_change:false also catches a plain GET that writes \u2014 something the interactions gate cannot see, because no mutating step ever runs. Only digests of the two results are recorded, never rows. Requires Tidewave; a snapshot that could not be taken yields no evidence and BLOCKS under require_evidence.",
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Shorthand: the SELECT to compare, recorded without an expectation."
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sql"
+              ],
+              "properties": {
+                "sql": {
+                  "type": "string",
+                  "pattern": "^\\s*[Ss][Ee][Ll][Ee][Cc][Tt]\\b",
+                  "description": "SELECT-only. Scope it to the record under test with {{carry.*}} \u2014 an unscoped count over a shared dataset reports another session's writes as this action's delta."
+                },
+                "expect_change": {
+                  "type": "boolean",
+                  "description": "true: this phase MUST have changed the result (proves the write reached the store, not just that the UI said so). false: it must NOT have \u2014 the read-only proof, and the higher-value direction, because it turns safety.read_only from a claim into something the run verifies. Omit to record the delta without asserting."
+                }
+              }
+            }
+          ]
         },
         "expect_min": {
           "type": "number",

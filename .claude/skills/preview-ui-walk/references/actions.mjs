@@ -247,6 +247,40 @@ export function applyCarryToPhase(effective, bag = {}) {
       return next;
     });
   }
+
+  // Runtime probes template too. This is what lets a before/after query be
+  // scoped to the RECORD under test — an unscoped `SELECT count(*) FROM skus`
+  // on a shared dataset reports another session's writes as our delta, so a
+  // change-detector without carry is a false-positive generator.
+  if (out.runtime && typeof out.runtime === "object") {
+    const rt = { ...out.runtime };
+    if (usesCarry(rt.sql)) {
+      const r = applyCarry(rt.sql, bag);
+      rt.sql = r.text;
+      missing.push(...r.missing);
+    }
+    if (rt.db_before_after) {
+      const spec = typeof rt.db_before_after === "string"
+        ? { sql: rt.db_before_after }
+        : { ...rt.db_before_after };
+      if (usesCarry(spec.sql)) {
+        const r = applyCarry(spec.sql, bag);
+        spec.sql = r.text;
+        missing.push(...r.missing);
+      }
+      rt.db_before_after = spec;
+    }
+    if (Array.isArray(rt.probes)) {
+      rt.probes = rt.probes.map((probe) => {
+        if (!usesCarry(probe?.eval)) return probe;
+        const r = applyCarry(probe.eval, bag);
+        missing.push(...r.missing);
+        return { ...probe, eval: r.text };
+      });
+    }
+    out.runtime = rt;
+  }
+
   return { phase: out, missing: [...new Set(missing)] };
 }
 

@@ -948,6 +948,99 @@ assert(
   assert(none.evaluated === true && none.results.length === 0, "no prerequisites is not a failure");
 }
 
+// ── db_before_after: proving a claim instead of asserting it ────────────────
+{
+  const { dbSnapshotSpec, dbBeforeAfterEvidence } = await import("./runtime_evidence.mjs");
+
+  assert(dbSnapshotSpec({}) === null, "no config means no snapshot");
+  assert(dbSnapshotSpec({ db_before_after: "SELECT 1" }).sql === "SELECT 1", "string shorthand works");
+  assert(dbSnapshotSpec({ db_before_after: { sql: "SELECT 1", expect_change: false } })
+    .expect_change === false, "expect_change is carried");
+  assert(dbSnapshotSpec({ db_before_after: { expect_change: true } }) === null,
+    "a spec without sql is not a snapshot");
+
+  const ok = (t) => ({ ok: true, error: null, text: t });
+  const spec = (e) => ({ sql: "SELECT 1", expect_change: e });
+
+  // The read-only proof — the direction that turns safety.read_only from a
+  // claim into something the run verifies.
+  const wrote = dbBeforeAfterEvidence(ok("a"), ok("b"), spec(false));
+  assert(wrote.status === "FAIL" && wrote.changed === true,
+    "a 'read-only' phase that changed the database FAILS");
+  assert(dbBeforeAfterEvidence(ok("a"), ok("a"), spec(false)).status === "PASS",
+    "a genuinely read-only phase passes");
+
+  // The write-landed direction.
+  assert(dbBeforeAfterEvidence(ok("a"), ok("a"), spec(true)).status === "FAIL",
+    "a mutation that never reached the store FAILS even if the UI said it saved");
+  assert(dbBeforeAfterEvidence(ok("a"), ok("b"), spec(true)).status === "PASS", "a real write passes");
+
+  // No expectation: record, do not judge.
+  assert(dbBeforeAfterEvidence(ok("a"), ok("b"), spec(undefined)).status === "PASS",
+    "without expect_change the delta is recorded, not judged");
+
+  // Could-not-ask is missing evidence, never a silent pass.
+  assert(dbBeforeAfterEvidence({ ok: false, error: "x" }, ok("b"), spec(false)) === null,
+    "a failed BEFORE snapshot yields no evidence");
+  assert(dbBeforeAfterEvidence(ok("a"), { ok: false, error: "x" }, spec(false)) === null,
+    "a failed AFTER snapshot yields no evidence");
+  assert(evidenceGuard(["db_before_after"], { db_before_after: null }) != null,
+    "...so require_evidence:['db_before_after'] BLOCKS through the existing guard");
+
+  // Evidence rides into a published report: digests, never rows.
+  const ev = dbBeforeAfterEvidence(ok("secret-row-data"), ok("secret-row-data"), spec(false));
+  const blob = JSON.stringify(ev);
+  assert(!blob.includes("secret-row-data"), "result rows never reach the evidence payload");
+  assert(ev.before_digest && ev.after_digest, "only digests are recorded");
+
+  // Carry must reach the query, or a shared-dataset delta is unattributable.
+  const A = await import("./actions.mjs");
+  const tpl = A.applyCarryToPhase(
+    { path: "/x", steps: [],
+      runtime: { db_before_after: { sql: "SELECT * FROM skus WHERE id = '{{carry.id}}'", expect_change: true },
+                 sql: "SELECT count(*) FROM t WHERE id = '{{carry.id}}'",
+                 probes: [{ name: "p", eval: "Repo.get(S, \"{{carry.id}}\")" }] } },
+    { id: "s9" },
+  );
+  assert(tpl.phase.runtime.db_before_after.sql.includes("'s9'"), "carry reaches the before/after query");
+  assert(tpl.phase.runtime.db_before_after.expect_change === true, "...without losing expect_change");
+  assert(tpl.phase.runtime.sql.includes("'s9'"), "carry reaches per-page SQL");
+  assert(tpl.phase.runtime.probes[0].eval.includes("s9"), "carry reaches probe eval");
+  const un = A.applyCarryToPhase(
+    { path: "/x", steps: [], runtime: { db_before_after: "SELECT 1 WHERE id='{{carry.nope}}'" } }, {});
+  assert(un.missing.includes("nope"), "an unresolved carry in runtime SQL is reported, not sent");
+
+  // The config must survive the page/walk runtime merge, or the collector is
+  // silently never configured and reports "no evidence" for a declared query.
+  const { mergePageRuntime } = await import("./runtime_evidence.mjs");
+  assert(
+    mergePageRuntime({}, { name: "P", runtime: { db_before_after: { sql: "SELECT 1" } } })
+      .db_before_after?.sql === "SELECT 1",
+    "db_before_after survives mergePageRuntime from the page",
+  );
+  assert(
+    mergePageRuntime({ runtime: { per_page: { P: { db_before_after: "SELECT 2" } } } }, { name: "P" })
+      .db_before_after === "SELECT 2",
+    "...and from runtime.per_page",
+  );
+
+  // REGRESSION: the collector must reach the page VERDICT, not only the
+  // evidence payload. Collected-but-uncounted was a real false green — the
+  // report showed a proven violation while the page said PASS.
+  assert(
+    runtimeErrorEvidence({ db_before_after: { status: "FAIL" } }).count === 1,
+    "a failed db_before_after counts toward the runtime-error verdict",
+  );
+  assert(
+    runtimeErrorEvidence({ db_before_after: { status: "PASS" } }).count === 0,
+    "a passing db_before_after does not",
+  );
+  assert(
+    runtimeErrorEvidence({ db_before_after: null }).count === 0,
+    "an absent db_before_after is not a failure (only require_evidence makes it one)",
+  );
+}
+
 // ── Action fold: one verdict per action ─────────────────────────────────────
 // The page taxonomy answers "what happened on this screen". The fold answers
 // "what happened to this user action", and the interesting cases are the ones
