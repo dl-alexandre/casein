@@ -1582,6 +1582,10 @@ defmodule CaseinMob.SessionClientTest do
     assert socket.assigns.topic_snapshots == %{}
     assert socket.assigns.terminal_baseline_generation == 0
     assert socket.assigns.mobile_terminal.child_grant == nil
+    assert socket.assigns.mobile_terminal.diagnostic.stage == :child_join_requested
+    assert socket.assigns.mobile_terminal.diagnostic.counts.status_delivered == 2
+    assert socket.assigns.mobile_terminal.diagnostic.counts.control_reply_accepted == 1
+    assert socket.assigns.mobile_terminal.diagnostic.counts.child_join_requested == 1
 
     assert socket.joins["mobile_terminal:lease-1"].params == %{
              "connection_generation" => generation
@@ -1599,7 +1603,14 @@ defmodule CaseinMob.SessionClientTest do
     assert socket.assigns.topic_snapshots == %{}
 
     assert_receive {:mobile_terminal_baseline,
-                    %{fresh_baseline_generation: 1, workspace_id: "ws-1"}, "hello"}
+                    %{
+                      fresh_baseline_generation: 1,
+                      workspace_id: "ws-1",
+                      terminal_diagnostic: diagnostic
+                    }, "hello"}
+
+    assert diagnostic.counts.child_join_reply_received == 1
+    assert diagnostic.counts.baseline_accepted == 1
 
     assert {:ok, duplicate} =
              SessionClient.handle_message(
@@ -1978,6 +1989,9 @@ defmodule CaseinMob.SessionClientTest do
     assert is_reference(token)
     assert rejected.assigns.mobile_terminal.retry_attempt == 1
     assert rejected.assigns.mobile_terminal.stream == nil
+    assert rejected.assigns.mobile_terminal.diagnostic.stage == :baseline_rejected
+    assert rejected.assigns.mobile_terminal.diagnostic.counts.child_join_reply_received == 1
+    assert rejected.assigns.mobile_terminal.diagnostic.counts.baseline_rejected == 1
 
     assert {:noreply, refreshing} =
              SessionClient.handle_info({:terminal_refresh_retry, token}, rejected)
@@ -2001,6 +2015,8 @@ defmodule CaseinMob.SessionClientTest do
                     }}
 
     assert awaiting.assigns.mobile_terminal.child_grant == nil
+    assert awaiting.assigns.mobile_terminal.diagnostic.stage == :child_join_requested
+    refute Map.has_key?(awaiting.assigns.mobile_terminal.diagnostic.counts, :baseline_rejected)
     refute inspect(awaiting) =~ "fresh-one-time-grant"
     generation = awaiting.assigns.timing_context.generation
 

@@ -31,7 +31,14 @@ defmodule CaseinMob.SessionClient do
   use Slipstream
   require Logger
 
-  alias CaseinMob.{ConnectionTiming, MobileTerminalStream, OriginIdentity, SessionConfig}
+  alias CaseinMob.{
+    ConnectionTiming,
+    MobileTerminalDiagnostic,
+    MobileTerminalStream,
+    OriginIdentity,
+    SessionConfig
+  }
+
   alias Slipstream.Socket
 
   @name __MODULE__
@@ -331,7 +338,11 @@ defmodule CaseinMob.SessionClient do
 
       terminal_topic?(topic) ->
         if match?({:error, _}, reply) do
-          {:ok, terminal_join_rejected(socket, reply)}
+          {:ok,
+           socket
+           |> record_terminal_stage(:child_join_reply_received)
+           |> record_terminal_stage(:baseline_rejected)
+           |> terminal_join_rejected(reply)}
         else
           accept_terminal_frame(socket, topic, "terminal_baseline", reply)
         end
@@ -1006,7 +1017,8 @@ defmodule CaseinMob.SessionClient do
           control_ref: nil,
           retry_attempt: 0,
           retry_token: nil,
-          retry_timer: nil
+          retry_timer: nil,
+          diagnostic: MobileTerminalDiagnostic.new()
         }
 
     socket
@@ -1108,7 +1120,12 @@ defmodule CaseinMob.SessionClient do
 
         socket
         |> assign(:terminal_control_refs, refs)
-        |> update_terminal(&(&1 |> Map.put(:control_ref, ref) |> Map.put(:status, operation)))
+        |> update_terminal(fn terminal ->
+          terminal
+          |> Map.put(:control_ref, ref)
+          |> Map.put(:status, operation)
+          |> Map.put(:diagnostic, MobileTerminalDiagnostic.reset(:control_requested))
+        end)
         |> notify_terminal_status()
 
       {:error, reason} ->
@@ -1162,6 +1179,7 @@ defmodule CaseinMob.SessionClient do
 
       socket =
         socket
+        |> record_terminal_stage(:control_reply_accepted)
         |> update_terminal(fn terminal ->
           %{
             terminal
@@ -1174,6 +1192,7 @@ defmodule CaseinMob.SessionClient do
               stream: stream
           }
         end)
+        |> record_terminal_stage(:child_join_requested)
         |> notify_terminal_status()
 
       joined =
@@ -1192,10 +1211,14 @@ defmodule CaseinMob.SessionClient do
       {:ok, joined}
     else
       {:error, :identity_mismatch} ->
-        {:ok, reject_terminal_identity(socket)}
+        {:ok,
+         socket |> record_terminal_stage(:control_reply_rejected) |> reject_terminal_identity()}
 
       _ ->
-        {:ok, terminal_error(socket, :invalid_payload)}
+        {:ok,
+         socket
+         |> record_terminal_stage(:control_reply_rejected)
+         |> terminal_error(:invalid_payload)}
     end
   end
 
@@ -1220,10 +1243,18 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp handle_terminal_control_reply(_operation, {:error, payload}, socket),
-    do: {:ok, terminal_error(socket, reason_value(payload))}
+    do:
+      {:ok,
+       socket
+       |> record_terminal_stage(:control_reply_rejected)
+       |> terminal_error(reason_value(payload))}
 
   defp handle_terminal_control_reply(_operation, _reply, socket),
-    do: {:ok, terminal_error(socket, :unavailable)}
+    do:
+      {:ok,
+       socket
+       |> record_terminal_stage(:control_reply_rejected)
+       |> terminal_error(:unavailable)}
 
   defp valid_terminal_delete_reply?(
          {:ok, payload},
@@ -1279,12 +1310,20 @@ defmodule CaseinMob.SessionClient do
   end
 
   defp accept_terminal_frame(socket, topic, expected_event, payload) do
+    socket =
+      if expected_event == "terminal_baseline",
+        do: record_terminal_stage(socket, :child_join_reply_received),
+        else: socket
+
     terminal = socket.assigns.mobile_terminal
 
     if is_map(terminal) and terminal.channel_topic == topic and
          match?(%MobileTerminalStream{}, terminal.stream) do
       if payload_value(payload, :event) != expected_event do
-        {:ok, schedule_terminal_refresh(socket, :invalid_payload)}
+        {:ok,
+         socket
+         |> record_terminal_stage(:baseline_rejected)
+         |> schedule_terminal_refresh(:invalid_payload)}
       else
         accept_bound_terminal_frame(socket, payload)
       end
@@ -1302,6 +1341,7 @@ defmodule CaseinMob.SessionClient do
 
         socket =
           socket
+          |> maybe_record_terminal_baseline(event, :baseline_accepted)
           |> update_terminal(fn current ->
             %{
               current
@@ -1322,10 +1362,16 @@ defmodule CaseinMob.SessionClient do
         {:ok, update_terminal(socket, &%{&1 | stream: stream})}
 
       {:resync, _stream, reason} ->
-        {:ok, schedule_terminal_refresh(socket, reason)}
+        {:ok,
+         socket
+         |> maybe_record_terminal_baseline(payload_value(payload, :event), :baseline_rejected)
+         |> schedule_terminal_refresh(reason)}
 
       {:cutoff, _stream, reason} ->
-        {:ok, schedule_terminal_refresh(socket, reason)}
+        {:ok,
+         socket
+         |> maybe_record_terminal_baseline(payload_value(payload, :event), :baseline_rejected)
+         |> schedule_terminal_refresh(reason)}
     end
   end
 
@@ -1361,7 +1407,8 @@ defmodule CaseinMob.SessionClient do
       read_only: true,
       expires_at: terminal.lease.expires_at,
       grant_expires_at: terminal.grant_expires_at,
-      fresh_baseline_generation: socket.assigns.terminal_baseline_generation
+      fresh_baseline_generation: socket.assigns.terminal_baseline_generation,
+      terminal_diagnostic: MobileTerminalDiagnostic.public(Map.get(terminal, :diagnostic))
     }
   end
 
@@ -1721,12 +1768,20 @@ defmodule CaseinMob.SessionClient do
   defp notify_terminal_status(%{assigns: %{mobile_terminal: nil}} = socket), do: socket
 
   defp notify_terminal_status(socket) do
+    socket = record_terminal_stage(socket, :status_delivered)
     terminal = socket.assigns.mobile_terminal
 
     metadata =
       if is_map(terminal.lease),
         do: terminal_metadata(socket),
         else: active_connection_metadata(socket)
+
+    metadata =
+      Map.put(
+        metadata,
+        :terminal_diagnostic,
+        MobileTerminalDiagnostic.public(Map.get(terminal, :diagnostic))
+      )
 
     send(
       terminal.subscriber,
@@ -1735,6 +1790,23 @@ defmodule CaseinMob.SessionClient do
 
     socket
   end
+
+  defp record_terminal_stage(%{assigns: %{mobile_terminal: nil}} = socket, _stage), do: socket
+
+  defp record_terminal_stage(socket, stage) do
+    update_terminal(socket, fn terminal ->
+      Map.put(
+        terminal,
+        :diagnostic,
+        MobileTerminalDiagnostic.record(Map.get(terminal, :diagnostic), stage)
+      )
+    end)
+  end
+
+  defp maybe_record_terminal_baseline(socket, "terminal_baseline", stage),
+    do: record_terminal_stage(socket, stage)
+
+  defp maybe_record_terminal_baseline(socket, _event, _stage), do: socket
 
   defp accept_mobile_snapshot(socket, payload, source) when is_map(payload) do
     version = payload_value(payload, :version)
