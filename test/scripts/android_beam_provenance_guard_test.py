@@ -394,7 +394,11 @@ sys.stdout.buffer.write(payload)
                 "invalid_grammar_length_count": 0,
                 "invalid_grammar_charset_count": 0,
                 "invalid_grammar_empty_count": 0,
-                "invalid_grammar_other_count": 0,
+                "invalid_grammar_leading_underscore_count": 0,
+                "invalid_grammar_leading_dash_count": 0,
+                "invalid_grammar_leading_dot_count": 0,
+                "invalid_grammar_leading_other_safe_punctuation_count": 0,
+                "invalid_grammar_suffix_or_structural_other_count": 0,
                 "invalid_digest_shape_count": 0,
                 "invalid_numeric_or_stat_count": 0,
                 "invalid_control_or_other_count": 0,
@@ -1063,6 +1067,10 @@ sys.stdout.buffer.write(payload)
             + digest,
             b"private secret name.beam\t" + identity + b"\t" + digest,
             b"\t" + identity + b"\t" + digest,
+            b"_leading.beam\t" + identity + b"\t" + digest,
+            b"-leading.beam\t" + identity + b"\t" + digest,
+            b".leading.beam\t" + identity + b"\t" + digest,
+            b"@leading.beam\t" + identity + b"\t" + digest,
             b"AllowedButWrong\t" + identity + b"\t" + digest,
             name + b"\t" + identity + b"\tshort-digest",
             name + b"\tnot-a-stat\t" + digest,
@@ -1081,7 +1089,15 @@ sys.stdout.buffer.write(payload)
         self.assertEqual(1, diagnostics.invalid_grammar_length_count)
         self.assertEqual(1, diagnostics.invalid_grammar_charset_count)
         self.assertEqual(1, diagnostics.invalid_grammar_empty_count)
-        self.assertEqual(1, diagnostics.invalid_grammar_other_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_leading_underscore_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_leading_dash_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_leading_dot_count)
+        self.assertEqual(
+            1, diagnostics.invalid_grammar_leading_other_safe_punctuation_count
+        )
+        self.assertEqual(
+            1, diagnostics.invalid_grammar_suffix_or_structural_other_count
+        )
         self.assertEqual(1, diagnostics.invalid_digest_shape_count)
         self.assertEqual(1, diagnostics.invalid_numeric_or_stat_count)
         self.assertEqual(1, diagnostics.invalid_control_or_other_count)
@@ -1431,7 +1447,11 @@ sys.stdout.buffer.write(payload)
                 "invalid_grammar_length_count",
                 "invalid_grammar_charset_count",
                 "invalid_grammar_empty_count",
-                "invalid_grammar_other_count",
+                "invalid_grammar_leading_underscore_count",
+                "invalid_grammar_leading_dash_count",
+                "invalid_grammar_leading_dot_count",
+                "invalid_grammar_leading_other_safe_punctuation_count",
+                "invalid_grammar_suffix_or_structural_other_count",
                 "invalid_digest_shape_count",
                 "invalid_numeric_or_stat_count",
                 "invalid_control_or_other_count",

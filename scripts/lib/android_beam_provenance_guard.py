@@ -291,7 +291,11 @@ class GuardResult:
     invalid_grammar_length_count: int = 0
     invalid_grammar_charset_count: int = 0
     invalid_grammar_empty_count: int = 0
-    invalid_grammar_other_count: int = 0
+    invalid_grammar_leading_underscore_count: int = 0
+    invalid_grammar_leading_dash_count: int = 0
+    invalid_grammar_leading_dot_count: int = 0
+    invalid_grammar_leading_other_safe_punctuation_count: int = 0
+    invalid_grammar_suffix_or_structural_other_count: int = 0
     invalid_digest_shape_count: int = 0
     invalid_numeric_or_stat_count: int = 0
     invalid_control_or_other_count: int = 0
@@ -322,7 +326,11 @@ class GuardResult:
             "invalid_grammar_length_count",
             "invalid_grammar_charset_count",
             "invalid_grammar_empty_count",
-            "invalid_grammar_other_count",
+            "invalid_grammar_leading_underscore_count",
+            "invalid_grammar_leading_dash_count",
+            "invalid_grammar_leading_dot_count",
+            "invalid_grammar_leading_other_safe_punctuation_count",
+            "invalid_grammar_suffix_or_structural_other_count",
             "invalid_digest_shape_count",
             "invalid_numeric_or_stat_count",
             "invalid_control_or_other_count",
@@ -353,7 +361,11 @@ class GuardResult:
                 "invalid_grammar_length_count",
                 "invalid_grammar_charset_count",
                 "invalid_grammar_empty_count",
-                "invalid_grammar_other_count",
+                "invalid_grammar_leading_underscore_count",
+                "invalid_grammar_leading_dash_count",
+                "invalid_grammar_leading_dot_count",
+                "invalid_grammar_leading_other_safe_punctuation_count",
+                "invalid_grammar_suffix_or_structural_other_count",
                 "invalid_digest_shape_count",
                 "invalid_numeric_or_stat_count",
                 "invalid_control_or_other_count",
@@ -395,7 +407,17 @@ class GuardResult:
             "invalid_grammar_length_count": self.invalid_grammar_length_count,
             "invalid_grammar_charset_count": self.invalid_grammar_charset_count,
             "invalid_grammar_empty_count": self.invalid_grammar_empty_count,
-            "invalid_grammar_other_count": self.invalid_grammar_other_count,
+            "invalid_grammar_leading_underscore_count": (
+                self.invalid_grammar_leading_underscore_count
+            ),
+            "invalid_grammar_leading_dash_count": self.invalid_grammar_leading_dash_count,
+            "invalid_grammar_leading_dot_count": self.invalid_grammar_leading_dot_count,
+            "invalid_grammar_leading_other_safe_punctuation_count": (
+                self.invalid_grammar_leading_other_safe_punctuation_count
+            ),
+            "invalid_grammar_suffix_or_structural_other_count": (
+                self.invalid_grammar_suffix_or_structural_other_count
+            ),
             "invalid_digest_shape_count": self.invalid_digest_shape_count,
             "invalid_numeric_or_stat_count": self.invalid_numeric_or_stat_count,
             "invalid_control_or_other_count": self.invalid_control_or_other_count,
@@ -423,7 +445,11 @@ class ManifestDiagnostics:
     invalid_grammar_length_count: int = 0
     invalid_grammar_charset_count: int = 0
     invalid_grammar_empty_count: int = 0
-    invalid_grammar_other_count: int = 0
+    invalid_grammar_leading_underscore_count: int = 0
+    invalid_grammar_leading_dash_count: int = 0
+    invalid_grammar_leading_dot_count: int = 0
+    invalid_grammar_leading_other_safe_punctuation_count: int = 0
+    invalid_grammar_suffix_or_structural_other_count: int = 0
     invalid_digest_shape_count: int = 0
     invalid_numeric_or_stat_count: int = 0
     invalid_control_or_other_count: int = 0
@@ -452,7 +478,17 @@ class ManifestDiagnostics:
             "invalid_grammar_length_count": self.invalid_grammar_length_count,
             "invalid_grammar_charset_count": self.invalid_grammar_charset_count,
             "invalid_grammar_empty_count": self.invalid_grammar_empty_count,
-            "invalid_grammar_other_count": self.invalid_grammar_other_count,
+            "invalid_grammar_leading_underscore_count": (
+                self.invalid_grammar_leading_underscore_count
+            ),
+            "invalid_grammar_leading_dash_count": self.invalid_grammar_leading_dash_count,
+            "invalid_grammar_leading_dot_count": self.invalid_grammar_leading_dot_count,
+            "invalid_grammar_leading_other_safe_punctuation_count": (
+                self.invalid_grammar_leading_other_safe_punctuation_count
+            ),
+            "invalid_grammar_suffix_or_structural_other_count": (
+                self.invalid_grammar_suffix_or_structural_other_count
+            ),
             "invalid_digest_shape_count": self.invalid_digest_shape_count,
             "invalid_numeric_or_stat_count": self.invalid_numeric_or_stat_count,
             "invalid_control_or_other_count": self.invalid_control_or_other_count,
@@ -1032,7 +1068,11 @@ def _manifest_diagnostics(
         "grammar_length": 0,
         "grammar_charset": 0,
         "grammar_empty": 0,
-        "grammar_other": 0,
+        "grammar_leading_underscore": 0,
+        "grammar_leading_dash": 0,
+        "grammar_leading_dot": 0,
+        "grammar_leading_other_safe_punctuation": 0,
+        "grammar_suffix_or_structural_other": 0,
         "digest_shape": 0,
         "numeric_or_stat": 0,
         "control_or_other": 0,
@@ -1071,7 +1111,17 @@ def _manifest_diagnostics(
         invalid_grammar_length_count=invalid_counts["grammar_length"],
         invalid_grammar_charset_count=invalid_counts["grammar_charset"],
         invalid_grammar_empty_count=invalid_counts["grammar_empty"],
-        invalid_grammar_other_count=invalid_counts["grammar_other"],
+        invalid_grammar_leading_underscore_count=invalid_counts[
+            "grammar_leading_underscore"
+        ],
+        invalid_grammar_leading_dash_count=invalid_counts["grammar_leading_dash"],
+        invalid_grammar_leading_dot_count=invalid_counts["grammar_leading_dot"],
+        invalid_grammar_leading_other_safe_punctuation_count=invalid_counts[
+            "grammar_leading_other_safe_punctuation"
+        ],
+        invalid_grammar_suffix_or_structural_other_count=invalid_counts[
+            "grammar_suffix_or_structural_other"
+        ],
         invalid_digest_shape_count=invalid_counts["digest_shape"],
         invalid_numeric_or_stat_count=invalid_counts["numeric_or_stat"],
         invalid_control_or_other_count=invalid_counts["control_or_other"],
@@ -1110,7 +1160,15 @@ def _classify_manifest_diagnostic_record(
     if any(byte not in _BEAM_NAME_ALLOWED_BYTES for byte in encoded_name):
         return ("grammar_charset", None)
     if _BEAM_NAME_RE.fullmatch(name) is None:
-        return ("grammar_other", None)
+        if encoded_name.startswith(b"_"):
+            return ("grammar_leading_underscore", None)
+        if encoded_name.startswith(b"-"):
+            return ("grammar_leading_dash", None)
+        if encoded_name.startswith(b"."):
+            return ("grammar_leading_dot", None)
+        if encoded_name.startswith(b"@"):
+            return ("grammar_leading_other_safe_punctuation", None)
+        return ("grammar_suffix_or_structural_other", None)
 
     try:
         digest_text = encoded_digest.decode("ascii")
