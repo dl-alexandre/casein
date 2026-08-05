@@ -3,6 +3,9 @@ defmodule Casein.Deployment.HealthTest do
 
   alias Casein.Deployment.Health
 
+  @host "casein.devbox.example.com"
+  @revision "1fb643af2c58da2c9b10019cc3de1b06555e3732"
+
   test "portable deployments report optional operator checks as not configured" do
     status =
       Health.status(
@@ -30,8 +33,84 @@ defmodule Casein.Deployment.HealthTest do
              status.checks.caddy_casein_upstream
   end
 
-  @host "casein.devbox.example.com"
-  @revision "1fb643af2c58da2c9b10019cc3de1b06555e3732"
+  test "Caddy probe retries a first zero-byte timeout then accepts the exact config" do
+    attempts = start_supervised!({Agent, fn -> 0 end})
+    test_pid = self()
+
+    request = fn url, request_opts ->
+      attempt = Agent.get_and_update(attempts, &{&1 + 1, &1 + 1})
+      send(test_pid, {:caddy_request, attempt, url, request_opts})
+
+      if attempt == 1,
+        do: {:error, %Req.TransportError{reason: :timeout}},
+        else: {:ok, %{status: 200, body: caddy_config()}}
+    end
+
+    sleep = fn duration -> send(test_pid, {:caddy_backoff, duration}) end
+
+    assert {:ok, config} =
+             Health.fetch_caddy_config(
+               caddy_admin_probe: true,
+               caddy_request: request,
+               caddy_retry_sleep: sleep
+             )
+
+    assert Health.caddy_app_dial(config, @host) == "unix//run/casein/current.sock"
+    assert_receive {:caddy_request, 1, "http://localhost:2019/config/", first_opts}
+    assert_receive {:caddy_backoff, 100}
+    assert_receive {:caddy_request, 2, "http://localhost:2019/config/", second_opts}
+    assert first_opts == second_opts
+    assert first_opts[:retry] == false
+    assert first_opts[:pool_timeout] == 250
+    assert first_opts[:connect_options] == [timeout: 250]
+    assert first_opts[:receive_timeout] == 500
+    refute_receive {:caddy_request, 3, _, _}
+  end
+
+  test "Caddy probe short-circuits after the first exact success" do
+    attempts = start_supervised!({Agent, fn -> 0 end})
+
+    request = fn _url, _request_opts ->
+      Agent.update(attempts, &(&1 + 1))
+      {:ok, %{status: 200, body: caddy_config()}}
+    end
+
+    assert {:ok, config} =
+             Health.fetch_caddy_config(
+               caddy_admin_probe: true,
+               caddy_request: request,
+               caddy_retry_sleep: fn _ -> flunk("successful probe must not back off") end
+             )
+
+    assert Health.caddy_app_dial(config, @host) == "unix//run/casein/current.sock"
+    assert Agent.get(attempts, & &1) == 1
+  end
+
+  test "Caddy probe bounds persistent timeouts to three attempts" do
+    test_pid = self()
+
+    request = fn _url, _opts ->
+      send(test_pid, :caddy_request)
+      {:error, %Req.TransportError{reason: :timeout}}
+    end
+
+    sleep = fn duration -> send(test_pid, {:caddy_backoff, duration}) end
+
+    assert {:error, %Req.TransportError{reason: :timeout}} =
+             Health.fetch_caddy_config(
+               caddy_admin_probe: true,
+               caddy_request: request,
+               caddy_retry_sleep: sleep
+             )
+
+    assert_receive :caddy_request
+    assert_receive {:caddy_backoff, 100}
+    assert_receive :caddy_request
+    assert_receive {:caddy_backoff, 200}
+    assert_receive :caddy_request
+    refute_receive :caddy_request
+    refute_receive {:caddy_backoff, _}
+  end
 
   defp caddy_config do
     %{
@@ -114,6 +193,31 @@ defmodule Casein.Deployment.HealthTest do
     assert %{ok: false, checks: checks} = Health.status(healthy_opts(socket))
     refute checks.socket_exists
     assert checks.current_socket_points_to_instance
+  end
+
+  test "status rejects a stale current socket target" do
+    socket =
+      Path.join(System.tmp_dir!(), "casein-health-#{System.unique_integer([:positive])}.sock")
+
+    stale_socket =
+      Path.join(System.tmp_dir!(), "casein-stale-#{System.unique_integer([:positive])}.sock")
+
+    on_exit(fn -> File.rm(socket) end)
+    on_exit(fn -> File.rm(stale_socket) end)
+    File.write!(socket, "")
+    File.write!(stale_socket, "")
+
+    assert %{ok: false, checks: checks} =
+             Health.status(
+               healthy_opts(socket)
+               |> Keyword.put(:current_target, stale_socket)
+             )
+
+    assert checks.socket_exists
+    refute checks.current_socket_points_to_instance
+
+    assert %{ok: true, actual: "unix//run/casein/current.sock"} =
+             checks.caddy_casein_upstream
   end
 
   test "status reports ok when Caddy routes Casein through the loopback proxy" do

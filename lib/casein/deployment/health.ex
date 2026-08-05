@@ -33,7 +33,7 @@ defmodule Casein.Deployment.Health do
     caddy_check =
       if :reverse_proxy in capabilities do
         opts
-        |> Keyword.get_lazy(:caddy_config, &fetch_caddy_config/0)
+        |> Keyword.get_lazy(:caddy_config, fn -> fetch_caddy_config(opts) end)
         |> caddy_upstream_check(host)
       else
         not_configured(:reverse_proxy)
@@ -148,30 +148,63 @@ defmodule Casein.Deployment.Health do
     end
   end
 
-  defp fetch_caddy_config do
-    if Application.get_env(:casein, :caddy_admin_probe, true) do
-      # retry: false so a slow/unreachable Caddy admin fails fast (≤1s) instead
-      # of Req's default exponential retry (~7s). Disabled entirely in test
-      # (config/test.exs) so status calls never make a real network request.
-      case Req.get("http://localhost:2019/config/",
-             retry: false,
-             connect_options: [timeout: 1_000],
-             receive_timeout: 1_000
-           ) do
-        {:ok, %{status: status, body: body}} when status in 200..299 and is_map(body) ->
-          {:ok, body}
+  @doc false
+  def fetch_caddy_config(opts \\ []) do
+    probe? =
+      Keyword.get_lazy(opts, :caddy_admin_probe, fn ->
+        Application.get_env(:casein, :caddy_admin_probe, true)
+      end)
 
-        {:ok, %{status: status}} ->
-          {:error, {:http_status, status}}
+    if probe? do
+      request = Keyword.get(opts, :caddy_request, &Req.get/2)
+      sleep = Keyword.get(opts, :caddy_retry_sleep, &Process.sleep/1)
 
-        {:error, reason} ->
-          {:error, reason}
-      end
+      # Req's own exponential retry is disabled so the complete probe remains
+      # inside the deploy handoff budget. Three one-second attempts with
+      # 100/200ms backoff tolerate the observed first-request Caddy admin stall
+      # while still failing closed in at most ~3.3s.
+      fetch_caddy_config(request, sleep, [100, 200])
     else
       {:error, :probe_disabled}
     end
   rescue
     error -> {:error, error}
+  end
+
+  defp fetch_caddy_config(request, sleep, backoffs) do
+    result =
+      request.("http://localhost:2019/config/",
+        retry: false,
+        # Keep the three sequential transport phases within one second total.
+        # Caddy admin is localhost, so pool checkout and connect should be
+        # effectively immediate; the receive phase gets the larger share.
+        pool_timeout: 250,
+        connect_options: [timeout: 250],
+        receive_timeout: 500
+      )
+
+    case result do
+      {:ok, %{status: status, body: body}} when status in 200..299 and is_map(body) ->
+        {:ok, body}
+
+      {:ok, %{status: status}} when status in 500..599 ->
+        retry_caddy_config({:error, {:http_status, status}}, request, sleep, backoffs)
+
+      {:ok, %{status: status}} ->
+        {:error, {:http_status, status}}
+
+      {:error, reason} ->
+        retry_caddy_config({:error, reason}, request, sleep, backoffs)
+    end
+  rescue
+    error -> retry_caddy_config({:error, error}, request, sleep, backoffs)
+  end
+
+  defp retry_caddy_config(error, _request, _sleep, []), do: error
+
+  defp retry_caddy_config(_error, request, sleep, [backoff | rest]) do
+    sleep.(backoff)
+    fetch_caddy_config(request, sleep, rest)
   end
 
   defp remote_head(opts, branch) do
