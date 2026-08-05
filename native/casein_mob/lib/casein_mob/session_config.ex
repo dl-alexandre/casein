@@ -137,21 +137,32 @@ defmodule CaseinMob.SessionConfig do
   """
   @spec reconcile_active_origin(map()) :: {:ok, map()} | {:error, atom()}
   def reconcile_active_origin(descriptor) when is_map(descriptor) do
+    reconcile_active_origin(descriptor, :any)
+  end
+
+  def reconcile_active_origin(_descriptor), do: {:error, :invalid_origin}
+
+  @doc "Reconcile only when the active profile still has the caller's expected origin id."
+  @spec reconcile_active_origin(map(), String.t() | :any) ::
+          {:ok, map()} | {:error, atom()}
+  def reconcile_active_origin(descriptor, expected_origin_id) when is_map(descriptor) do
     origin_id = descriptor |> map_value(:id) |> present()
 
     display_name =
       present(map_value(descriptor, :display_name) || map_value(descriptor, :name))
 
     with true <- is_binary(origin_id),
-         profile when is_map(profile) <- active_profile() do
+         profile when is_map(profile) <- active_profile(),
+         :ok <- validate_expected_origin(profile.origin_id, expected_origin_id) do
       reconcile_profile(profile, origin_id, display_name)
     else
       false -> {:error, :invalid_origin}
       nil -> {:error, :unknown_origin}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  def reconcile_active_origin(_descriptor), do: {:error, :invalid_origin}
+  def reconcile_active_origin(_descriptor, _expected_origin_id), do: {:error, :invalid_origin}
 
   @doc "Cache a bounded, non-authoritative card summary for a known origin."
   @spec cache_cards(String.t(), [map()], String.t() | nil) :: :ok | {:error, atom()}
@@ -462,6 +473,12 @@ defmodule CaseinMob.SessionConfig do
 
   defp validate_terminal_origin(origin_id, origin_id), do: :ok
   defp validate_terminal_origin(_origin_id, _active_origin_id), do: {:error, :inactive_origin}
+
+  defp validate_expected_origin(_active_origin_id, :any), do: :ok
+  defp validate_expected_origin(origin_id, origin_id), do: :ok
+
+  defp validate_expected_origin(_active_origin_id, _expected_origin_id),
+    do: {:error, :origin_mismatch}
 
   defp terminal_workspace_eligible?(workspace_id) do
     workspace_id in pinned_workspaces()

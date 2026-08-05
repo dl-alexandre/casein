@@ -1856,9 +1856,14 @@ defmodule CaseinMob.SessionClient do
     do: reconcile_snapshot_origin(socket, descriptor, origin_id)
 
   defp reconcile_snapshot_origin(socket, descriptor, origin_id) do
-    case safe_reconcile_active_origin(descriptor) do
+    expected_origin_id = Map.get(socket.assigns, :configured_origin_id)
+
+    case safe_reconcile_active_origin(descriptor, expected_origin_id) do
       {:ok, %{origin_id: ^origin_id} = profile} ->
-        {:ok, socket, profile.origin_id}
+        case reconcile_configured_origin(socket, profile.origin_id) do
+          {:ok, socket} -> {:ok, socket, profile.origin_id}
+          {:error, reason} -> {:error, reason}
+        end
 
       {:ok, _other_profile} ->
         {:error, :origin_mismatch}
@@ -1868,8 +1873,46 @@ defmodule CaseinMob.SessionClient do
     end
   end
 
-  defp safe_reconcile_active_origin(descriptor) do
-    SessionConfig.reconcile_active_origin(descriptor)
+  # The first authenticated snapshot is the only authority allowed to upgrade
+  # a URL-derived legacy identity to the server's stable origin id. Keep the
+  # live socket and a not-yet-sent terminal watch atomic with that upgrade.
+  # Any terminal request already in flight is purged instead of being silently
+  # retargeted or duplicated.
+  defp reconcile_configured_origin(socket, origin_id) do
+    case Map.get(socket.assigns, :configured_origin_id) do
+      ^origin_id ->
+        {:ok, socket}
+
+      "legacy_" <> _rest = legacy_origin_id ->
+        socket =
+          socket
+          |> assign(:configured_origin_id, origin_id)
+          |> assign(:expected_mobile_snapshot_origin_id, origin_id)
+          |> reconcile_pending_terminal_origin(legacy_origin_id, origin_id)
+
+        {:ok, socket}
+
+      _other_origin_id ->
+        {:error, :origin_mismatch}
+    end
+  end
+
+  defp reconcile_pending_terminal_origin(
+         %{assigns: %{mobile_terminal: %{origin_id: legacy_origin_id} = terminal}} = socket,
+         legacy_origin_id,
+         origin_id
+       ) do
+    if is_nil(terminal.control_ref) and is_nil(terminal.lease) do
+      update_terminal(socket, &Map.put(&1, :origin_id, origin_id))
+    else
+      purge_terminal(socket, :identity_mismatch)
+    end
+  end
+
+  defp reconcile_pending_terminal_origin(socket, _legacy_origin_id, _origin_id), do: socket
+
+  defp safe_reconcile_active_origin(descriptor, expected_origin_id) do
+    SessionConfig.reconcile_active_origin(descriptor, expected_origin_id)
   rescue
     _ -> {:error, :state_unavailable}
   catch

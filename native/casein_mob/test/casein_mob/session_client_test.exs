@@ -1,10 +1,21 @@
 defmodule CaseinMob.SessionClientTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias CaseinMob.ConnectionTiming
   alias CaseinMob.MobileTerminalStream
+  alias CaseinMob.OriginIdentity
   alias CaseinMob.SessionClient
+  alias CaseinMob.SessionConfig
   alias Slipstream.Socket
+
+  setup do
+    if Process.whereis(Mob.State) == nil do
+      start_supervised!(Mob.State)
+    end
+
+    SessionConfig.clear_all()
+    :ok
+  end
 
   test "mobile card topic join and pushes notify subscribers" do
     socket = socket_with_subscriber("mobile:user:me", self())
@@ -1008,6 +1019,165 @@ defmodule CaseinMob.SessionClientTest do
     assert_receive {:mobile_cards_snapshot, received}
     assert received["cards"] == valid["cards"]
     assert_receive {:mobile_cards_status, :joined}
+  end
+
+  test "authenticated snapshot atomically upgrades the configured legacy origin" do
+    url = "https://casein.test"
+    legacy_origin_id = OriginIdentity.legacy_id(url)
+    SessionConfig.put_pairing(url, "token")
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, url)
+      |> Socket.assign(:token, "token")
+      |> Socket.assign(:configured_origin_id, legacy_origin_id)
+      |> Socket.assign(:expected_mobile_snapshot_origin_id, legacy_origin_id)
+
+    assert {:ok, upgraded} =
+             SessionClient.handle_join("mobile:user:me", mobile_snapshot(socket, 1), socket)
+
+    assert upgraded.assigns.configured_origin_id == "origin-1"
+    assert upgraded.assigns.expected_mobile_snapshot_origin_id == "origin-1"
+    assert upgraded.assigns.accepted_mobile_snapshot_origin_id == "origin-1"
+    assert {:ok, %{origin_id: "origin-1"}} = SessionConfig.connection()
+  end
+
+  test "stable origin mismatch remains rejected without changing configured identity" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-old",
+      display_name: "Old",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:configured_origin_id, "origin-old")
+      |> Socket.assign(:expected_mobile_snapshot_origin_id, nil)
+
+    assert {:ok, rejected} =
+             SessionClient.handle_join("mobile:user:me", mobile_snapshot(socket, 1), socket)
+
+    assert rejected.assigns.configured_origin_id == "origin-old"
+    assert rejected.assigns.accepted_mobile_snapshot_origin_id == nil
+    assert rejected.assigns.topic_snapshots == %{}
+    assert {:ok, %{origin_id: "origin-old"}} = SessionConfig.connection()
+    refute_receive {:mobile_cards_snapshot, _payload}
+  end
+
+  test "stale socket snapshot cannot relabel a newly activated legacy profile" do
+    active_url = "https://active-now.test"
+    stale_url = "https://stale-socket.test"
+    active_legacy_id = OriginIdentity.legacy_id(active_url)
+    stale_legacy_id = OriginIdentity.legacy_id(stale_url)
+    SessionConfig.put_pairing(active_url, "active-token")
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, stale_url)
+      |> Socket.assign(:token, "stale-token")
+      |> Socket.assign(:configured_origin_id, stale_legacy_id)
+      |> Socket.assign(:expected_mobile_snapshot_origin_id, nil)
+
+    assert {:ok, rejected} =
+             SessionClient.handle_join("mobile:user:me", mobile_snapshot(socket, 1), socket)
+
+    assert rejected.assigns.configured_origin_id == stale_legacy_id
+    assert rejected.assigns.accepted_mobile_snapshot_origin_id == nil
+    assert {:ok, %{origin_id: ^active_legacy_id, url: ^active_url}} = SessionConfig.connection()
+
+    assert [%{origin_id: ^active_legacy_id, active?: true}] = SessionConfig.host_profiles()
+    refute_receive {:mobile_cards_snapshot, _payload}
+  end
+
+  test "legacy reconciliation rebinds a pending terminal before exactly one create" do
+    push_sink = start_push_sink(self())
+    url = "https://casein.test"
+    legacy_origin_id = OriginIdentity.legacy_id(url)
+    SessionConfig.put_pairing(url, "token")
+
+    terminal = %{
+      subscriber: self(),
+      origin_id: legacy_origin_id,
+      workspace_id: "ws-1",
+      status: :connecting,
+      lease: nil,
+      channel_topic: nil,
+      child_grant: nil,
+      grant_expires_at: nil,
+      connection_generation: nil,
+      stream: nil,
+      control_ref: nil,
+      retry_attempt: 0,
+      retry_token: nil,
+      retry_timer: nil
+    }
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Socket.assign(:url, url)
+      |> Socket.assign(:token, "token")
+      |> Socket.assign(:configured_origin_id, legacy_origin_id)
+      |> Socket.assign(:expected_mobile_snapshot_origin_id, legacy_origin_id)
+      |> Socket.assign(:mobile_terminal, terminal)
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:ok, creating} =
+             SessionClient.handle_join("mobile:user:me", mobile_snapshot(socket, 1), socket)
+
+    assert creating.assigns.configured_origin_id == "origin-1"
+    assert creating.assigns.mobile_terminal.origin_id == "origin-1"
+    assert creating.assigns.mobile_terminal.status == :create
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_create",
+                      payload: %{origin_id: "origin-1", workspace_id: "ws-1"}
+                    }}
+
+    refute_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_create"}}
+  end
+
+  test "legacy reconciliation purges an already in-flight terminal without retargeting it" do
+    push_sink = start_push_sink(self())
+    url = "https://casein.test"
+    legacy_origin_id = OriginIdentity.legacy_id(url)
+    SessionConfig.put_pairing(url, "token")
+
+    terminal =
+      self()
+      |> terminal_state()
+      |> Map.put(:origin_id, legacy_origin_id)
+      |> Map.put(:lease, nil)
+      |> Map.put(:channel_topic, nil)
+      |> Map.put(:stream, nil)
+      |> Map.put(:control_ref, "legacy-create-ref")
+      |> Map.put(:status, :create)
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, url)
+      |> Socket.assign(:token, "token")
+      |> Socket.assign(:configured_origin_id, legacy_origin_id)
+      |> Socket.assign(:expected_mobile_snapshot_origin_id, legacy_origin_id)
+      |> Socket.assign(:terminal_control_refs, %{
+        "legacy-create-ref" => %{
+          operation: :create,
+          origin_id: legacy_origin_id,
+          workspace_id: "ws-1"
+        }
+      })
+      |> Socket.assign(:mobile_terminal, terminal)
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:ok, upgraded} =
+             SessionClient.handle_join("mobile:user:me", mobile_snapshot(socket, 1), socket)
+
+    assert upgraded.assigns.configured_origin_id == "origin-1"
+    assert upgraded.assigns.mobile_terminal == nil
+    refute_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_create"}}
   end
 
   test "negative, string, float, nil, and missing versions fail closed" do
