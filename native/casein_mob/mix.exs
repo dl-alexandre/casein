@@ -28,11 +28,11 @@ defmodule CaseinMob.MixProject do
        override: true},
       {:mob,
        github: "dl-alexandre/mob", ref: "dd6ab6159aca279fa04bd8c4fd1bd5b48a27c621", override: true},
-      # Exact merged MobDev authority head: recovery-lock status is sanitized,
-      # read-only, and shares the acquisition liveness fences.
+      # Exact merged MobDev head rejects macOS AppleDouble sidecars from
+      # Android BEAM payload archives.
       {:mob_dev,
        git: "https://github.com/dl-alexandre/mob_dev.git",
-       ref: "876032a1c0b78c24bfc185cf8116f08aea33d273",
+       ref: "433a9d09fb5af2c7fbcecc138aeb87228cf2f934",
        only: [:dev, :test],
        runtime: false,
        override: true},
