@@ -5,7 +5,14 @@ defmodule CaseinWeb.SocketCredentialPolicyTest do
 
   alias Casein.DeviceLinks
   alias Casein.Workspace
-  alias CaseinWeb.{ChannelAuth, SocketCredentialPolicy, TerminalChannel, UserSocket}
+
+  alias CaseinWeb.{
+    ChannelAuth,
+    MobileTerminalChannel,
+    SocketCredentialPolicy,
+    TerminalChannel,
+    UserSocket
+  }
 
   @endpoint CaseinWeb.Endpoint
 
@@ -74,18 +81,17 @@ defmodule CaseinWeb.SocketCredentialPolicyTest do
     assert_no_terminal_side_effects("ws-1", "workspace")
   end
 
-  test "pairing and device-link credentials require a separate child grant for mobile terminal" do
-    for credential <- [:pairing_token, :device_link_token] do
-      assert {:error, :terminal_child_grant_required} =
-               SocketCredentialPolicy.authorize_mobile_terminal(%{
-                 socket_credential: credential,
-                 pairing_workspace_id: "ws-1"
-               })
-    end
-  end
+  test "mobile terminal route requires separate verified child-grant admission" do
+    assert {MobileTerminalChannel, []} = UserSocket.__channel__("mobile_terminal:lease-1")
 
-  test "mobile terminal topic is not exposed before the child-grant channel lands" do
-    assert is_nil(UserSocket.__channel__("mobile_terminal:lease-1"))
+    for assigns <- [
+          %{socket_credential: :pairing_token, pairing_workspace_id: "ws-1"},
+          %{socket_credential: :device_link_token, pairing_workspace_id: "ws-1"},
+          %{}
+        ] do
+      assert {:error, :terminal_child_grant_required} =
+               SocketCredentialPolicy.authorize_mobile_terminal(assigns)
+    end
   end
 
   test "mobile-scoped legacy sockets are denied ordinary terminal admission" do

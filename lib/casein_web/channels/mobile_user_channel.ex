@@ -17,10 +17,21 @@ defmodule CaseinWeb.MobileUserChannel do
   alias Casein.Mobile.Intervention
   alias Casein.Mobile.Observability
   alias Casein.Mobile.ResumeCard
+
+  alias Casein.Mobile.{
+    TerminalChildGrants,
+    TerminalPolicy,
+    TerminalProtocol,
+    TerminalSessions,
+    TerminalStream
+  }
+
   alias Casein.Mobile.UserObserver
+  alias Casein.DeviceLinks
   alias Casein.Origin
   alias Casein.Push
   alias Casein.Workspaces
+  alias Casein.Terminals.Session.Info
 
   @impl true
   def join("mobile:user:me", _params, socket) do
@@ -95,6 +106,109 @@ defmodule CaseinWeb.MobileUserChannel do
 
         {:reply, {:error, %{reason: Atom.to_string(reason)}}, socket}
     end
+  end
+
+  def handle_in(
+        "terminal_create",
+        %{"workspace_id" => workspace_id, "request_id" => request_id},
+        socket
+      )
+      when is_binary(workspace_id) and is_binary(request_id) do
+    with :ok <- require_device_link(socket),
+         :ok <- authorize_workspace(socket, socket.assigns.current_user, workspace_id),
+         {:ok, workspace} <- Workspaces.get(workspace_id),
+         context <- terminal_policy_context(socket, workspace_id),
+         :ok <-
+           DeviceLinks.authorize_link(context.device_link_id, %{
+             user_id: context.user_id,
+             workspace_id: context.workspace_id,
+             origin_id: socket.assigns.mobile_origin_id
+           }),
+         :ok <- TerminalPolicy.authorize(context),
+         {:ok, lease} <-
+           TerminalSessions.create(%{
+             user_id: context.user_id,
+             device_link_id: context.device_link_id,
+             origin_id: socket.assigns.mobile_origin_id,
+             origin_generation: socket.assigns.mobile_origin_generation,
+             workspace_id: workspace_id,
+             workspace_key: workspace.name || workspace.id,
+             workspace_root: workspace.path,
+             request_id: request_id
+           }),
+         {:ok, issued} <-
+           prepare_created_terminal(lease, %{
+             user_id: context.user_id,
+             workspace_id: context.workspace_id,
+             origin_id: socket.assigns.mobile_origin_id
+           }) do
+      {:reply,
+       {:ok,
+        TerminalProtocol.control_reply(
+          "created",
+          lease_payload(lease),
+          grant_payload(issued)
+        )}, socket}
+    else
+      {:error, reason} ->
+        {:reply, {:error, TerminalProtocol.error(terminal_reason(reason))}, socket}
+    end
+  end
+
+  def handle_in("terminal_refresh", %{"lease_id" => lease_id}, socket)
+      when is_binary(lease_id) do
+    with :ok <- require_device_link(socket),
+         lease when not is_nil(lease) <- TerminalSessions.get(lease_id),
+         context <- terminal_context(socket, lease),
+         :ok <- DeviceLinks.authorize_link(lease.device_link_id, context),
+         :ok <- TerminalPolicy.authorize(context),
+         {:ok, lease} <- TerminalSessions.authorize_read(lease_id, context),
+         {:ok, stream} <- TerminalStream.ensure_started(lease.id),
+         snapshot <- TerminalStream.snapshot(stream),
+         true <- is_binary(snapshot.topology_generation),
+         {:ok, issued} <-
+           TerminalChildGrants.refresh(lease, snapshot.topology_generation) do
+      {:reply,
+       {:ok,
+        TerminalProtocol.control_reply(
+          "refreshed",
+          lease_payload(lease),
+          grant_payload(issued)
+        )}, socket}
+    else
+      nil ->
+        {:reply, {:error, TerminalProtocol.error("not_found")}, socket}
+
+      false ->
+        {:reply, {:error, TerminalProtocol.error("stale_lease")}, socket}
+
+      {:error, reason} ->
+        {:reply, {:error, TerminalProtocol.error(terminal_reason(reason))}, socket}
+    end
+  end
+
+  def handle_in("terminal_delete", %{"lease_id" => lease_id}, socket)
+      when is_binary(lease_id) do
+    with :ok <- require_device_link(socket),
+         lease when not is_nil(lease) <- TerminalSessions.get(lease_id),
+         context <- terminal_context(socket, lease),
+         :ok <- DeviceLinks.authorize_link(lease.device_link_id, context),
+         :ok <- TerminalPolicy.authorize(context),
+         {:ok, _lease} <- TerminalSessions.authorize_read(lease_id, context),
+         {:ok, _deleted} <- TerminalSessions.delete(lease_id) do
+      {:reply, {:ok, TerminalProtocol.delete_reply(lease_id)}, socket}
+    else
+      nil ->
+        {:reply, {:error, TerminalProtocol.error("not_found")}, socket}
+
+      {:error, reason} ->
+        {:reply, {:error, TerminalProtocol.error(terminal_reason(reason))}, socket}
+    end
+  end
+
+  def handle_in(event, _params, socket)
+      when event in ["terminal_create", "terminal_refresh", "terminal_delete"] do
+    {:reply, {:error, TerminalProtocol.error("invalid_payload")}, socket}
   end
 
   def handle_in("card_action", %{"card_id" => card_id, "action" => action} = params, socket)
@@ -302,6 +416,76 @@ defmodule CaseinWeb.MobileUserChannel do
       _other -> false
     end
   end
+
+  defp require_device_link(%{assigns: %{socket_credential: :device_link_token}}), do: :ok
+  defp require_device_link(_socket), do: {:error, :unauthorized}
+
+  defp prepare_created_terminal(lease, parent_context) do
+    result =
+      with {:ok, stream} <- TerminalStream.ensure_started(lease.id),
+           info <- Info.new_shell(lease.workspace_id, lease.sid),
+           {:ok, identity} <-
+             TerminalStream.bind_owner(stream, lease.workspace_id, info,
+               workspace_key: lease.workspace_key,
+               loc: {:local, lease.workspace_root}
+             ) do
+        with {:ok, issued} <- TerminalChildGrants.refresh(lease, identity.topology_generation) do
+          case DeviceLinks.authorize_link(lease.device_link_id, parent_context) do
+            :ok ->
+              {:ok, issued}
+
+            {:error, reason} ->
+              _ = TerminalSessions.delete(lease.id)
+              {:error, reason}
+          end
+        end
+      end
+
+    result
+  end
+
+  defp terminal_policy_context(socket, workspace_id) do
+    %{
+      user_id: socket.assigns.current_user.id,
+      device_link_id: socket.assigns.device_link_id,
+      workspace_id: workspace_id
+    }
+  end
+
+  defp terminal_context(socket, lease) do
+    terminal_policy_context(socket, lease.workspace_id)
+    |> Map.merge(%{
+      origin_id: socket.assigns.mobile_origin_id,
+      origin_generation: socket.assigns.mobile_origin_generation,
+      lease_id: lease.id,
+      lifecycle_generation: lease.lifecycle_generation,
+      sid: lease.sid,
+      tmux_session: lease.tmux_session,
+      pane_id: lease.pane_id,
+      pane_role: lease.pane_role
+    })
+  end
+
+  defp lease_payload(lease) do
+    %{
+      id: lease.id,
+      lifecycle_generation: lease.lifecycle_generation,
+      workspace_id: lease.workspace_id,
+      expires_at: DateTime.to_iso8601(lease.expires_at)
+    }
+  end
+
+  defp grant_payload(%{token: token, expires_at: expires_at}),
+    do: %{token: token, expires_at: DateTime.to_iso8601(expires_at)}
+
+  defp terminal_reason(reason) when is_atom(reason),
+    do: reason |> Atom.to_string() |> terminal_reason()
+
+  defp terminal_reason(reason) when is_binary(reason) do
+    if reason in TerminalProtocol.error_codes(), do: reason, else: "unavailable"
+  end
+
+  defp terminal_reason(_reason), do: "unavailable"
 
   defp report_connection_issue(user_id, workspace_id, reason) do
     UserObserver.connection_issue_changed(user_id, %{

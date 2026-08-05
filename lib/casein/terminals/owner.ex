@@ -92,6 +92,10 @@ defmodule Casein.Terminals.Owner do
     SessionOwner.subscriber_count(owner_pid)
   end
 
+  @doc "Returns the immutable owner incarnation and current output generation."
+  @spec owner_identity(pid()) :: map()
+  def owner_identity(owner_pid) when is_pid(owner_pid), do: SessionOwner.identity(owner_pid)
+
   @doc "Stops the exact shell owner without changing ordinary detach semantics."
   def stop_shell_owner(workspace_id, sid), do: SessionOwner.stop_shell(workspace_id, sid)
 

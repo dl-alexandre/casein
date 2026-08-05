@@ -71,6 +71,7 @@ defmodule Casein.Terminals.SessionOwner do
     :loc,
     :host_id,
     :attachment,
+    :topology_generation,
     :replay_buffer,
     :replay_buffer_limit,
     # Monotonic content generation: +1 per live (non-replay) backend chunk.
@@ -242,6 +243,9 @@ defmodule Casein.Terminals.SessionOwner do
     GenServer.call(owner_pid, :subscriber_count)
   end
 
+  @doc "Returns the immutable owner incarnation and current output generation."
+  def identity(owner_pid) when is_pid(owner_pid), do: GenServer.call(owner_pid, :identity)
+
   @doc """
   True when a live `:shell` SessionOwner still backs `tmux_session`.
 
@@ -306,6 +310,7 @@ defmodule Casein.Terminals.SessionOwner do
        subscriber_refs: %{},
        subscriber_to_ref: %{},
        replay_buffer: <<>>,
+       topology_generation: Ecto.UUID.generate(),
        replay_buffer_limit: replay_buffer_limit(),
        command_tracker: CommandTracker.new(workspace_id, info.sid),
        raw_subscriber_last_seen: %{},
@@ -418,6 +423,11 @@ defmodule Casein.Terminals.SessionOwner do
   # Terminals.owner_subscriber_count/1 delegate (used by presence/UX/telemetry).
   def handle_call(:subscriber_count, _from, state) do
     {:reply, map_size(state.subscribers), state}
+  end
+
+  def handle_call(:identity, _from, state) do
+    {:reply, %{topology_generation: state.topology_generation, output_generation: state.gen},
+     state}
   end
 
   def handle_call(:tmux_session_name, _from, %{workspace_key: key, info: %{sid: sid}} = state) do
