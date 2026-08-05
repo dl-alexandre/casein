@@ -76,7 +76,10 @@ defmodule Casein.Mobile.TerminalSessions do
     |> order_by([s], asc: s.expires_at)
     |> limit(^Keyword.get(opts, :limit, 50))
     |> Repo.all()
-    |> Enum.map(fn lease -> delete(lease.id, Keyword.put(opts, :expired?, true)) end)
+    |> Enum.map(fn lease ->
+      expired? = lease.state == "expired" or DateTime.compare(lease.expires_at, now) != :gt
+      delete(lease.id, Keyword.put(opts, :expired?, expired?))
+    end)
   end
 
   @doc "Reconcile provisioning leases after a release restart."

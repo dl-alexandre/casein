@@ -174,6 +174,14 @@ defmodule Casein.Mobile.TerminalSessionsTest do
 
     assert deleted.state == "deleted"
     assert Tmux.kills() == [lease.tmux_session]
+
+    actions =
+      Casein.Audit.list(limit: 20)
+      |> Enum.filter(&(&1.target_ref == lease.id))
+      |> Enum.map(& &1.action)
+
+    assert "mobile.terminal_expired" in actions
+    refute "mobile.terminal_deleted" in actions
   end
 
   test "deleting is committed before exact external teardown and blocks concurrent observers" do
@@ -200,6 +208,31 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     assert {:ok, deleted} = TerminalSessions.delete(lease.id, tmux: Tmux)
     assert deleted.state == "deleted"
     assert Tmux.kills() == [lease.tmux_session]
+  end
+
+  test "reaper retry of an explicit delete preserves deleted rather than expired audit semantics" do
+    now = ~U[2026-08-05 10:00:00Z]
+
+    assert {:ok, lease} =
+             TerminalSessions.create(attrs(), tmux: Tmux, now: now, ttl_seconds: 60)
+
+    Tmux.kill_error(:temporarily_unavailable)
+
+    assert {:error, :temporarily_unavailable} = TerminalSessions.delete(lease.id, tmux: Tmux)
+    assert Repo.get!(TerminalSession, lease.id).state == "deleting"
+
+    assert [{:ok, deleted}] =
+             TerminalSessions.reconcile_due(tmux: Tmux, now: DateTime.add(now, 1, :second))
+
+    assert deleted.state == "deleted"
+
+    actions =
+      Casein.Audit.list(limit: 20)
+      |> Enum.filter(&(&1.target_ref == lease.id))
+      |> Enum.map(& &1.action)
+
+    assert "mobile.terminal_deleted" in actions
+    refute "mobile.terminal_expired" in actions
   end
 
   test "startup reconciliation removes an exact stale archive before provisioning" do
