@@ -16,6 +16,8 @@ defmodule CaseinWeb.MobileTerminalChannel do
   alias Casein.Terminals.Session.Info
 
   @validation_interval 1_000
+  @max_connection_generation_bytes 160
+  @connection_generation_pattern ~r/\A[A-Za-z0-9_:-]+\z/
 
   @impl true
   def join("mobile_terminal:" <> lease_id, params, socket) do
@@ -54,9 +56,9 @@ defmodule CaseinWeb.MobileTerminalChannel do
 
       {:ok, TerminalProtocol.baseline(payload_fields(baseline, lease)), socket}
     else
-      false -> {:error, TerminalProtocol.error("topology_mismatch")}
-      {:error, reason} -> {:error, TerminalProtocol.error(reason_code(reason))}
-      _ -> {:error, TerminalProtocol.error("unauthorized")}
+      false -> {:error, join_error("topology_mismatch", params)}
+      {:error, reason} -> {:error, join_error(reason_code(reason), params)}
+      _ -> {:error, join_error("unauthorized", params)}
     end
   end
 
@@ -187,10 +189,32 @@ defmodule CaseinWeb.MobileTerminalChannel do
   defp device_socket?(_socket), do: {:error, :unauthorized}
 
   defp join_params(%{"child_grant" => grant, "connection_generation" => generation})
-       when is_binary(grant) and grant != "" and is_binary(generation) and generation != "",
-       do: {:ok, generation, grant}
+       when is_binary(grant) and grant != "" do
+    if valid_connection_generation?(generation),
+      do: {:ok, generation, grant},
+      else: {:error, :invalid_payload}
+  end
 
   defp join_params(_params), do: {:error, :invalid_payload}
+
+  defp join_error(reason, %{"connection_generation" => generation}) do
+    if valid_connection_generation?(generation) do
+      reason
+      |> TerminalProtocol.error()
+      |> Map.put("connection_generation", generation)
+    else
+      TerminalProtocol.error(reason)
+    end
+  end
+
+  defp join_error(reason, _params), do: TerminalProtocol.error(reason)
+
+  defp valid_connection_generation?(generation) when is_binary(generation) do
+    byte_size(generation) <= @max_connection_generation_bytes and
+      Regex.match?(@connection_generation_pattern, generation)
+  end
+
+  defp valid_connection_generation?(_generation), do: false
   defp present_lease(nil), do: {:error, :not_found}
   defp present_lease(lease), do: {:ok, lease}
 
