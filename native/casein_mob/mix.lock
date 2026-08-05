@@ -33,7 +33,7 @@
   "mob": {:git, "https://github.com/dl-alexandre/mob.git", "dd6ab6159aca279fa04bd8c4fd1bd5b48a27c621", [ref: "dd6ab6159aca279fa04bd8c4fd1bd5b48a27c621"]},
   "mob_biometric": {:hex, :mob_biometric, "0.1.2", "b083f62af77b9b1ee4949bc13d8ce525eca6f84fddd4d78592f58b47b263dffa", [:mix], [{:mob, "~> 0.7", [hex: :mob, repo: "hexpm", optional: false]}], "hexpm", "de8e089af354b4307d353bd93e70f5dd68d1f1b6a01dbb9dd1d05e2954141057"},
   "mob_camera": {:hex, :mob_camera, "0.1.2", "548428f1bb3bf4e91d089a9c72057f975ebfa09ab0404e0a8c601ce6f9ad3f0e", [:mix], [{:mob, "~> 0.7", [hex: :mob, repo: "hexpm", optional: false]}], "hexpm", "597b9afe5fa52f234f5389c49d3a6ec4c496ee9634d41b15ee901644bb4c3f3e"},
-  "mob_dev": {:git, "https://github.com/dl-alexandre/mob_dev.git", "0ac970ebb93ffde25a22afdc9a43253d2112d327", [ref: "0ac970ebb93ffde25a22afdc9a43253d2112d327"]},
+  "mob_dev": {:git, "https://github.com/dl-alexandre/mob_dev.git", "20ed3163c618f1e8bcf79e168a1cfe994370377e", [ref: "20ed3163c618f1e8bcf79e168a1cfe994370377e"]},
   "mob_location": {:hex, :mob_location, "0.1.3", "c05c78751413a0ba5e4cb2795afe8143b6f5997f0cb8972e5a967a1886bad9fd", [:mix], [{:mob, "~> 0.7", [hex: :mob, repo: "hexpm", optional: false]}], "hexpm", "a424f30ff2517747e14120eb841c4108b3e5bc398c3cbd6eeefe776344885821"},
   "mob_notify": {:git, "https://github.com/dl-alexandre/mob_notify.git", "997b08c08346de7728a95bec306e96c812b92746", [ref: "997b08c08346de7728a95bec306e96c812b92746"]},
   "mob_scanner": {:hex, :mob_scanner, "0.1.1", "5a305b5565526f14389ba26738df8e99ad1e3a7e902656ca123bc74889b99573", [:mix], [{:mob, "~> 0.7", [hex: :mob, repo: "hexpm", optional: false]}], "hexpm", "9901390630287598ee56d31c1686ef84ff4395299a0374e77030acc8077ff57e"},
