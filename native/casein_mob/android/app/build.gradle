@@ -129,6 +129,18 @@ android {
             // the BEAM's dlopen fail with "library not found" on a Play-installed
             // split. useLegacyPackaging=true forces extraction.
             useLegacyPackaging true
+
+            // These three ERTS helpers are executable programs staged as
+            // lib*.so only so Android extracts them.  AGP's native-symbol
+            // stripping rewrites their bytes after staging, which breaks the
+            // exact helper provenance gate and can also alter executables that
+            // are launched directly rather than dlopened.  Keep this allowlist
+            // deliberately narrower than ordinary JNI libraries.
+            keepDebugSymbols += [
+                '**/libepmd.so',
+                '**/liberl_child_setup.so',
+                '**/libinet_gethost.so'
+            ]
         }
     }
 
