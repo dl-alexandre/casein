@@ -15,114 +15,6 @@ private enum CaseinTerminalProbeFixture {
         "privacy: fixture only"
 }
 
-private struct CaseinTerminalProbeCell: Identifiable, Equatable {
-    let id: Int
-    let row: Int
-    let column: Int
-    let character: Character
-    let color: Color
-    let bold: Bool
-}
-
-private struct CaseinTerminalProbeFrame: Equatable {
-    let cells: [CaseinTerminalProbeCell]
-    let rows: Int
-    let columns: Int
-}
-
-private protocol CaseinTerminalRendererFacade {
-    var rendererName: String { get }
-    func frame(forANSI bytes: String, columns: Int) -> CaseinTerminalProbeFrame
-}
-
-/// Minimal ANSI renderer used to prove the Mob/UIKit lifecycle seam before an
-/// unversioned full GhosttyKit dependency is accepted. It understands only the
-/// fixed fixture's reset, bold, and basic foreground SGR codes; unknown control
-/// sequences are discarded rather than rendered.
-private struct CaseinCanvasProbeRenderer: CaseinTerminalRendererFacade {
-    let rendererName = "casein_canvas"
-
-    func frame(forANSI bytes: String, columns: Int) -> CaseinTerminalProbeFrame {
-        var cells: [CaseinTerminalProbeCell] = []
-        var row = 0
-        var column = 0
-        var color = Color(red: 0.91, green: 0.94, blue: 0.96)
-        var bold = false
-        var index = bytes.startIndex
-
-        while index < bytes.endIndex {
-            if bytes[index] == "\u{001B}",
-               let (parameters, next) = sgrSequence(in: bytes, at: index) {
-                for parameter in parameters {
-                    switch parameter {
-                    case 0:
-                        color = Color(red: 0.91, green: 0.94, blue: 0.96)
-                        bold = false
-                    case 1: bold = true
-                    case 32: color = Color(red: 0.35, green: 0.86, blue: 0.55)
-                    case 36: color = Color(red: 0.35, green: 0.80, blue: 0.95)
-                    default: break
-                    }
-                }
-                index = next
-                continue
-            }
-
-            let character = bytes[index]
-            if character == "\r" {
-                column = 0
-            } else if character == "\n" {
-                row += 1
-                column = 0
-            } else if !character.isASCIIControl {
-                cells.append(
-                    CaseinTerminalProbeCell(
-                        id: cells.count,
-                        row: row,
-                        column: column,
-                        character: character,
-                        color: color,
-                        bold: bold
-                    )
-                )
-                column += 1
-                if column >= columns {
-                    row += 1
-                    column = 0
-                }
-            }
-            index = bytes.index(after: index)
-        }
-
-        return CaseinTerminalProbeFrame(cells: cells, rows: max(row + 1, 1), columns: columns)
-    }
-
-    private func sgrSequence(
-        in value: String,
-        at escape: String.Index
-    ) -> ([Int], String.Index)? {
-        let open = value.index(after: escape)
-        guard open < value.endIndex, value[open] == "[" else { return nil }
-        var cursor = value.index(after: open)
-        var digits = ""
-        while cursor < value.endIndex, value[cursor] != "m" {
-            let character = value[cursor]
-            guard character.isNumber || character == ";" else { return nil }
-            digits.append(character)
-            cursor = value.index(after: cursor)
-        }
-        guard cursor < value.endIndex else { return nil }
-        let parameters = digits.isEmpty ? [0] : digits.split(separator: ";").compactMap { Int($0) }
-        return (parameters, value.index(after: cursor))
-    }
-}
-
-private extension Character {
-    var isASCIIControl: Bool {
-        unicodeScalars.count == 1 && (unicodeScalars.first?.value ?? 32) < 32
-    }
-}
-
 @MainActor
 private final class CaseinTerminalProbeModel: ObservableObject {
     @Published private(set) var generation = 1
@@ -131,7 +23,7 @@ private final class CaseinTerminalProbeModel: ObservableObject {
     @Published private(set) var surfaceVisible = true
 
     let rendererName: String
-    let frame: CaseinTerminalProbeFrame
+    let frame: CaseinTerminalFrame
     let baselineResidentBytes: UInt64
 
     private let started = ContinuousClock.now
@@ -139,9 +31,12 @@ private final class CaseinTerminalProbeModel: ObservableObject {
         "--casein-terminal-probe-auto-cycles"
     )
 
-    init(renderer: some CaseinTerminalRendererFacade) {
+    init(renderer: some CaseinTerminalRenderer) {
         rendererName = renderer.rendererName
-        frame = renderer.frame(forANSI: CaseinTerminalProbeFixture.ansi, columns: 48)
+        frame = renderer.frame(
+            for: Data(CaseinTerminalProbeFixture.ansi.utf8),
+            columns: 48
+        )
         baselineResidentBytes = Self.residentBytes()
     }
 
@@ -189,44 +84,8 @@ private final class CaseinTerminalProbeModel: ObservableObject {
     }
 }
 
-private struct CaseinTerminalProbeSurface: View {
-    let frame: CaseinTerminalProbeFrame
-    let generation: Int
-    let onSurfaceAppear: (Int) -> Void
-
-    private let cellWidth: CGFloat = 8.4
-    private let cellHeight: CGFloat = 17
-
-    var body: some View {
-        GeometryReader { geometry in
-            Canvas { context, size in
-                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.04, green: 0.05, blue: 0.06)))
-                for cell in frame.cells {
-                    let text = Text(String(cell.character))
-                        .font(.system(size: 13, weight: cell.bold ? .bold : .regular, design: .monospaced))
-                        .foregroundStyle(cell.color)
-                    context.draw(
-                        text,
-                        at: CGPoint(
-                            x: CGFloat(cell.column) * cellWidth,
-                            y: CGFloat(cell.row) * cellHeight
-                        ),
-                        anchor: .topLeading
-                    )
-                }
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-        }
-        .id(generation)
-        .accessibilityHidden(true)
-        .onAppear {
-            DispatchQueue.main.async { onSurfaceAppear(generation) }
-        }
-    }
-}
-
 private struct CaseinTerminalRendererProbeView: View {
-    @StateObject private var model = CaseinTerminalProbeModel(renderer: CaseinCanvasProbeRenderer())
+    @StateObject private var model = CaseinTerminalProbeModel(renderer: CaseinCanvasTerminalRenderer())
     // Mob owns the UIKit scene lifecycle, so SwiftUI's scenePhase environment
     // is not authoritative here. Track UIKit activation notifications instead.
     @State private var applicationIsActive = UIApplication.shared.applicationState == .active
@@ -240,11 +99,13 @@ private struct CaseinTerminalRendererProbeView: View {
                 Text("Synthetic fixture · no session · read only")
                     .font(.caption)
                 if model.surfaceVisible {
-                    CaseinTerminalProbeSurface(
+                    CaseinTerminalCanvasSurface(
                         frame: model.frame,
-                        generation: model.generation,
-                        onSurfaceAppear: model.surfaceDidAppear
+                        surfaceGeneration: model.generation
                     )
+                    .onAppear {
+                        DispatchQueue.main.async { model.surfaceDidAppear(generation: model.generation) }
+                    }
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(.gray.opacity(0.4)))
                 }

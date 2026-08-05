@@ -15,11 +15,15 @@ config :mob_dev,
   bundle_id: System.get_env("MOB_BUNDLE_ID") || "com.alexandrefamilyfarm.casein-mob",
   # Path to the mob library repo (native source files for iOS/Android builds).
   mob_dir: Path.join(File.cwd!(), "deps/mob"),
-  # Casein-owned, synthetic-only iOS renderer probe. The Swift source registers
-  # a Mob native_view and also exposes an explicit launch-argument harness for
-  # signed physical-device lifecycle measurement. It has no transport/session
-  # dependency and is inert during ordinary app launches.
-  project_swift_sources: ["ios/CaseinTerminalRendererProbe.swift"],
+  # Casein-owned iOS terminal presentation boundary plus its synthetic probe.
+  # The product renderer exports a generation-fenced, privacy-covered UIKit
+  # host for the later transport adapter. The probe alone registers a Mob
+  # native_view and remains inert without its explicit launch argument.
+  project_swift_sources: [
+    "ios/CaseinTerminalANSIParser.swift",
+    "ios/CaseinTerminalRenderer.swift",
+    "ios/CaseinTerminalRendererProbe.swift"
+  ],
 
   # Path to your Elixir lib dir (e.g. ~/.local/share/mise/installs/elixir/1.18.4-otp-28/lib).
   elixir_lib:
