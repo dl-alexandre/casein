@@ -4,6 +4,7 @@ defmodule Casein.Mobile.TerminalSessions do
   import Ecto.Query
 
   alias Casein.Mobile.TerminalSession
+  alias Casein.Terminals.ScrollbackArchive
   alias Casein.{Audit, Repo, Terminals}
 
   @default_ttl_seconds 3_600
@@ -59,9 +60,9 @@ defmodule Casein.Mobile.TerminalSessions do
   def delete(session_or_id, opts \\ []) do
     id = if match?(%TerminalSession{}, session_or_id), do: session_or_id.id, else: session_or_id
 
-    case Repo.transaction(fn -> delete_locked(id, opts) end) do
-      {:ok, result} -> result
-      {:error, reason} -> {:error, reason}
+    with {:ok, lease} <- claim_deleting(id),
+         {:ok, result} <- with_lease_lock(id, fn -> teardown_locked(lease, opts) end) do
+      result
     end
   end
 
@@ -88,13 +89,44 @@ defmodule Casein.Mobile.TerminalSessions do
     |> Enum.map(&provision(&1, opts))
   end
 
-  defp provision(%TerminalSession{state: "active"} = lease, _opts), do: {:ok, lease}
+  defp provision(%TerminalSession{id: id}, opts) do
+    case with_lease_lock(id, fn -> provision_locked(id, opts) end) do
+      {:ok, {:created, active}} ->
+        audit(active, "mobile.terminal_created")
+        {:ok, active}
 
-  defp provision(%TerminalSession{state: "provisioning"} = lease, opts) do
+      {:ok, {:existing, active}} ->
+        {:ok, active}
+
+      {:ok, {:retry, reason}} ->
+        {:error, reason}
+
+      {:ok, {:fatal, failed, reason}} ->
+        audit(failed, "mobile.terminal_rejected", bounded_reason(reason))
+        _ = delete(failed.id, opts)
+        {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp provision_locked(id, opts) do
+    lease = Repo.get!(TerminalSession, id)
+
+    case lease.state do
+      "active" -> {:existing, lease}
+      "provisioning" -> provision_tmux(lease, opts)
+      other -> {:retry, {:invalid_state, other}}
+    end
+  end
+
+  defp provision_tmux(lease, opts) do
     tmux = adapter(opts)
 
     result =
-      with :ok <- tmux.ensure_session(lease.tmux_session, lease.workspace_root),
+      with :ok <- ScrollbackArchive.delete(lease.tmux_session),
+           :ok <- tmux.ensure_session(lease.tmux_session, lease.workspace_root),
            [pane] <- tmux.list_session_panes(lease.tmux_session),
            pane_id when is_binary(pane_id) <- Map.get(pane, :id),
            :ok <- tmux.set_pane_role(lease.tmux_session, pane_id, lease.pane_role) do
@@ -109,19 +141,17 @@ defmodule Casein.Mobile.TerminalSessions do
 
     case result do
       {:ok, active} ->
-        audit(active, "mobile.terminal_created")
-        {:ok, active}
+        {:created, active}
 
       {:error, reason} ->
         if reason in [:missing_initial_pane, :unexpected_topology, :missing_pane_id] do
-          fail_provision(lease, reason, opts)
+          {:fatal, mark_failed(lease, reason), reason}
         else
           record_retryable_provision_failure(lease, reason)
+          {:retry, reason}
         end
     end
   end
-
-  defp provision(%TerminalSession{} = lease, _opts), do: {:error, {:invalid_state, lease.state}}
 
   defp activate(lease, pane_id) do
     lease
@@ -129,7 +159,7 @@ defmodule Casein.Mobile.TerminalSessions do
     |> Repo.update()
   end
 
-  defp fail_provision(lease, reason, opts) do
+  defp mark_failed(lease, reason) do
     code = bounded_reason(reason)
 
     {:ok, failed} =
@@ -137,42 +167,52 @@ defmodule Casein.Mobile.TerminalSessions do
       |> TerminalSession.transition_changeset(%{state: "failed", failure_code: code})
       |> Repo.update()
 
-    audit(failed, "mobile.terminal_rejected", code)
-    _ = delete(failed.id, opts)
-    {:error, reason}
+    failed
   end
 
   defp record_retryable_provision_failure(lease, reason) do
     code = bounded_reason(reason)
 
-    case lease
-         |> TerminalSession.transition_changeset(%{
-           state: "provisioning",
-           failure_code: code
-         })
-         |> Repo.update() do
-      {:ok, _lease} -> {:error, reason}
-      {:error, changeset} -> {:error, changeset}
+    lease
+    |> TerminalSession.transition_changeset(%{
+      state: "provisioning",
+      failure_code: code
+    })
+    |> Repo.update!()
+  end
+
+  defp claim_deleting(id) when is_binary(id) do
+    case Repo.transaction(fn ->
+           query = from s in TerminalSession, where: s.id == ^id, lock: "FOR UPDATE"
+
+           case Repo.one(query) do
+             nil ->
+               Repo.rollback(:not_found)
+
+             %TerminalSession{state: "deleted"} = lease ->
+               lease
+
+             %TerminalSession{state: "deleting"} = lease ->
+               lease
+
+             lease ->
+               lease
+               |> TerminalSession.transition_changeset(%{state: "deleting"})
+               |> Repo.update!()
+           end
+         end) do
+      {:ok, lease} -> {:ok, lease}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp delete_locked(id, opts) when is_binary(id) do
-    query = from s in TerminalSession, where: s.id == ^id, lock: "FOR UPDATE"
+  defp teardown_locked(claimed_lease, opts) do
+    lease = Repo.get!(TerminalSession, claimed_lease.id)
 
-    case Repo.one(query) do
-      nil ->
-        {:error, :not_found}
-
-      %TerminalSession{state: "deleted"} = lease ->
-        {:ok, lease}
-
-      lease ->
-        {:ok, deleting} =
-          lease
-          |> TerminalSession.transition_changeset(%{state: "deleting"})
-          |> Repo.update()
-
-        teardown(deleting, opts)
+    if lease.state == "deleted" do
+      {:ok, lease}
+    else
+      teardown(lease, opts)
     end
   end
 
@@ -215,6 +255,16 @@ defmodule Casein.Mobile.TerminalSessions do
   defp normalize_kill({:error, reason}) when reason in [:not_found, :no_session], do: :ok
   defp normalize_kill({:error, {1, _}}), do: :ok
   defp normalize_kill(other), do: other
+
+  defp with_lease_lock(id, fun) when is_binary(id) and is_function(fun, 0) do
+    case Repo.transaction(fn ->
+           Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [id])
+           fun.()
+         end) do
+      {:ok, result} -> {:ok, result}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   defp resolve_create_conflict(changeset, attrs, opts) do
     if changeset.errors[:request_id] || changeset.errors[:device_link_id] do

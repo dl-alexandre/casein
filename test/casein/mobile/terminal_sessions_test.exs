@@ -7,14 +7,29 @@ defmodule Casein.Mobile.TerminalSessionsTest do
   defmodule Tmux do
     def start_link,
       do:
-        Agent.start_link(fn -> %{sessions: %{}, kills: [], ensure_error: nil} end,
+        Agent.start_link(
+          fn ->
+            %{
+              sessions: %{},
+              kills: [],
+              ensure_error: nil,
+              ensure_count: 0,
+              kill_error: nil,
+              kill_blocker: nil
+            }
+          end,
           name: __MODULE__
         )
 
     def ensure_session(session, cwd) do
       Agent.get_and_update(__MODULE__, fn
         %{ensure_error: nil} = state ->
-          {:ok, put_in(state, [:sessions, session], %{cwd: cwd, pane: %{id: "%1"}})}
+          state =
+            state
+            |> Map.update!(:ensure_count, &(&1 + 1))
+            |> put_in([:sessions, session], %{cwd: cwd, pane: %{id: "%1"}})
+
+          {:ok, state}
 
         %{ensure_error: reason} = state ->
           {{:error, reason}, state}
@@ -39,20 +54,39 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     end
 
     def kill(session) do
-      Agent.update(__MODULE__, fn state ->
-        state
-        |> update_in([:kills], &[session | &1])
-        |> update_in([:sessions], &Map.delete(&1, session))
-      end)
+      {blocker, error} = Agent.get(__MODULE__, &{&1.kill_blocker, &1.kill_error})
 
-      :ok
+      if blocker do
+        lease = Casein.Repo.get_by!(Casein.Mobile.TerminalSession, tmux_session: session)
+        send(blocker, {:kill_started, self(), session, lease.state})
+
+        receive do
+          :continue_kill -> :ok
+        end
+      end
+
+      if error do
+        Agent.update(__MODULE__, &%{&1 | kill_error: nil})
+        {:error, error}
+      else
+        Agent.update(__MODULE__, fn state ->
+          state
+          |> update_in([:kills], &[session | &1])
+          |> update_in([:sessions], &Map.delete(&1, session))
+        end)
+
+        :ok
+      end
     end
 
     def session_exists?(session),
       do: Agent.get(__MODULE__, &Map.has_key?(&1.sessions, session))
 
     def kills, do: Agent.get(__MODULE__, & &1.kills)
+    def ensure_count, do: Agent.get(__MODULE__, & &1.ensure_count)
     def ensure_error(reason), do: Agent.update(__MODULE__, &%{&1 | ensure_error: reason})
+    def kill_error(reason), do: Agent.update(__MODULE__, &%{&1 | kill_error: reason})
+    def block_kill(pid), do: Agent.update(__MODULE__, &%{&1 | kill_blocker: pid})
   end
 
   setup do
@@ -85,6 +119,21 @@ defmodule Casein.Mobile.TerminalSessionsTest do
              )
 
     assert Repo.aggregate(TerminalSession, :count) == 1
+  end
+
+  test "concurrent same-key create has one provision and one created audit" do
+    attrs = attrs()
+
+    tasks = for _ <- 1..2, do: Task.async(fn -> TerminalSessions.create(attrs, tmux: Tmux) end)
+    assert [{:ok, first}, {:ok, second}] = Enum.map(tasks, &Task.await(&1, 5_000))
+    assert first.id == second.id
+    assert Tmux.ensure_count() == 1
+
+    created =
+      Casein.Audit.list(limit: 20)
+      |> Enum.count(&(&1.target_ref == first.id and &1.action == "mobile.terminal_created"))
+
+    assert created == 1
   end
 
   test "delete is exact, ordered by authoritative identity, and idempotent" do
@@ -125,6 +174,43 @@ defmodule Casein.Mobile.TerminalSessionsTest do
 
     assert deleted.state == "deleted"
     assert Tmux.kills() == [lease.tmux_session]
+  end
+
+  test "deleting is committed before exact external teardown and blocks concurrent observers" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    Tmux.block_kill(self())
+    tmux_session = lease.tmux_session
+
+    task = Task.async(fn -> TerminalSessions.delete(lease.id, tmux: Tmux) end)
+    assert_receive {:kill_started, kill_pid, ^tmux_session, "deleting"}
+
+    send(kill_pid, :continue_kill)
+    assert {:ok, deleted} = Task.await(task, 5_000)
+    assert deleted.state == "deleted"
+  end
+
+  test "partial external teardown leaves a durable deleting fence and retries exactly" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    Tmux.kill_error(:temporarily_unavailable)
+
+    assert {:error, :temporarily_unavailable} = TerminalSessions.delete(lease.id, tmux: Tmux)
+    assert Repo.get!(TerminalSession, lease.id).state == "deleting"
+    assert Tmux.session_exists?(lease.tmux_session)
+
+    assert {:ok, deleted} = TerminalSessions.delete(lease.id, tmux: Tmux)
+    assert deleted.state == "deleted"
+    assert Tmux.kills() == [lease.tmux_session]
+  end
+
+  test "startup reconciliation removes an exact stale archive before provisioning" do
+    lease = insert_provisioning!()
+    Casein.Terminals.ScrollbackArchive.ensure_table!()
+    :ok = Casein.Terminals.ScrollbackArchive.put(lease.tmux_session, "must-not-survive")
+    assert Casein.Terminals.ScrollbackArchive.present?(lease.tmux_session)
+
+    assert [{:ok, active}] = TerminalSessions.reconcile_startup(tmux: Tmux)
+    assert active.id == lease.id
+    refute Casein.Terminals.ScrollbackArchive.present?(lease.tmux_session)
   end
 
   test "retryable tmux failure preserves one provisioning identity for startup reconciliation" do
@@ -186,5 +272,24 @@ defmodule Casein.Mobile.TerminalSessionsTest do
       workspace_root: "/tmp/workspace",
       request_id: Ecto.UUID.generate()
     }
+  end
+
+  defp insert_provisioning! do
+    attrs = attrs()
+    sid = "mob-" <> Ecto.UUID.generate()
+
+    %TerminalSession{}
+    |> TerminalSession.create_changeset(
+      Map.merge(attrs, %{
+        request_fingerprint: String.duplicate("a", 64),
+        sid: sid,
+        tmux_session: Casein.Terminals.tmux_session_name(attrs.workspace_key, sid),
+        pane_role: "mobile_terminal",
+        lifecycle_generation: Ecto.UUID.generate(),
+        state: "provisioning",
+        expires_at: DateTime.add(DateTime.utc_now(), 60, :second)
+      })
+    )
+    |> Repo.insert!()
   end
 end
