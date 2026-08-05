@@ -3,7 +3,7 @@ defmodule Casein.Mobile.TerminalSessions do
 
   import Ecto.Query
 
-  alias Casein.Mobile.TerminalSession
+  alias Casein.Mobile.{TerminalChildGrants, TerminalSession, TerminalStream}
   alias Casein.Terminals.ScrollbackArchive
   alias Casein.{Audit, Repo, Terminals}
 
@@ -50,6 +50,36 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   def get(id) when is_binary(id), do: Repo.get(TerminalSession, id)
+
+  @doc "Revalidates an active lease against durable scope and live tmux identity/topology."
+  def authorize_read(id, context, opts \\ []) when is_binary(id) and is_map(context) do
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+    tmux = adapter(opts)
+
+    with %TerminalSession{} = lease <- Repo.get(TerminalSession, id),
+         :ok <- validate_read_context(lease, context, now),
+         :ok <- verify_identity(lease),
+         {:ok, identity} <- tmux.mobile_terminal_identity(lease.tmux_session),
+         true <- identity == %{session_id: lease.tmux_native_id, marker: lease.tmux_lease_marker},
+         {:ok, :present} <- verify_live_topology(lease, tmux) do
+      {:ok, lease}
+    else
+      nil -> {:error, :not_found}
+      false -> {:error, :identity_mismatch}
+      {:ok, :absent} -> {:error, :stale_lease}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def lease_owned_sid?(workspace_id, sid) when is_binary(workspace_id) and is_binary(sid) do
+    Repo.exists?(
+      from s in TerminalSession,
+        where: s.workspace_id == ^workspace_id and s.sid == ^sid and s.state != "deleted"
+    )
+  end
+
+  def reserved_sid?(sid) when is_binary(sid),
+    do: Regex.match?(~r/\Amob-[0-9a-f-]{36}\z/, sid)
 
   @doc "Start/reuse the PTY only for an authoritative active mobile lease."
   def ensure_pty(session_or_id, opts \\ []) do
@@ -253,7 +283,20 @@ defmodule Casein.Mobile.TerminalSessions do
     if lease.state == "deleted" do
       {:ok, lease}
     else
-      teardown(lease, opts)
+      with :ok <- run_before_teardown(lease, opts) do
+        teardown(lease, opts)
+      end
+    end
+  end
+
+  defp run_before_teardown(lease, opts) do
+    _ = TerminalChildGrants.revoke_for_lease(lease.id)
+
+    with :ok <- TerminalStream.cutoff_lease(lease.id, "stale_lease") do
+      case Keyword.get(opts, :before_teardown) do
+        nil -> :ok
+        callback when is_function(callback, 1) -> callback.(lease)
+      end
     end
   end
 
@@ -340,6 +383,36 @@ defmodule Casein.Mobile.TerminalSessions do
         lease.tmux_lease_marker != lease.lifecycle_generation -> {:error, :identity_mismatch}
         true -> :ok
       end
+    end
+  end
+
+  defp validate_read_context(lease, context, now) do
+    expected = [
+      user_id: lease.user_id,
+      device_link_id: lease.device_link_id,
+      origin_id: lease.origin_id,
+      origin_generation: lease.origin_generation,
+      workspace_id: lease.workspace_id,
+      lease_id: lease.id,
+      lifecycle_generation: lease.lifecycle_generation,
+      sid: lease.sid,
+      tmux_session: lease.tmux_session,
+      pane_id: lease.pane_id,
+      pane_role: lease.pane_role
+    ]
+
+    cond do
+      lease.state != "active" ->
+        {:error, :stale_lease}
+
+      DateTime.compare(lease.expires_at, now) != :gt ->
+        {:error, :stale_lease}
+
+      Enum.any?(expected, fn {key, value} -> Map.get(context, key) != value end) ->
+        {:error, :identity_mismatch}
+
+      true ->
+        :ok
     end
   end
 

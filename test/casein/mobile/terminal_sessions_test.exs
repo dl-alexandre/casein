@@ -294,6 +294,43 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     assert sid == lease.sid
   end
 
+  test "read authorization revalidates exact durable scope and live identity/topology" do
+    request = attrs()
+    assert {:ok, lease} = TerminalSessions.create(request, tmux: Tmux)
+
+    context =
+      Map.take(lease, [
+        :user_id,
+        :device_link_id,
+        :origin_id,
+        :origin_generation,
+        :workspace_id,
+        :id,
+        :lifecycle_generation,
+        :sid,
+        :tmux_session,
+        :pane_id,
+        :pane_role
+      ])
+      |> Map.put(:lease_id, lease.id)
+      |> Map.delete(:id)
+
+    assert {:ok, authorized} = TerminalSessions.authorize_read(lease.id, context, tmux: Tmux)
+    assert authorized.id == lease.id
+
+    assert {:error, :identity_mismatch} =
+             TerminalSessions.authorize_read(
+               lease.id,
+               %{context | pane_id: "%wrong"},
+               tmux: Tmux
+             )
+  end
+
+  test "mobile SID namespace is reserved from ordinary terminal joins" do
+    assert TerminalSessions.reserved_sid?("mob-00000000-0000-0000-0000-000000000000")
+    refute TerminalSessions.reserved_sid?("workspace")
+  end
+
   test "same device request with changed authoritative scope fails closed" do
     attrs = attrs()
     assert {:ok, _} = TerminalSessions.create(attrs, tmux: Tmux)

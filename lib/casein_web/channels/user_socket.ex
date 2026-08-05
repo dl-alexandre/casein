@@ -14,6 +14,7 @@ defmodule CaseinWeb.UserSocket do
   channel "terminal:*", CaseinWeb.TerminalChannel
   channel "session:*", CaseinWeb.SessionChannel
   channel "mobile:user:*", CaseinWeb.MobileUserChannel
+  channel "mobile_terminal:*", CaseinWeb.MobileTerminalChannel
 
   @impl true
   def connect(params, socket, _connect_info) do
@@ -92,6 +93,7 @@ defmodule CaseinWeb.UserSocket do
          |> assign(:device_link_id, claims.device_link_id)
          |> assign(:mobile_platform, Map.get(claims, :platform))
          |> assign(:mobile_origin_id, claims.origin_id)
+         |> assign(:mobile_origin_generation, Origin.incarnation())
          |> assign(:mobile_origin_name, claims.origin_name)
          |> assign(:mobile_feed_timing, timing)}
 

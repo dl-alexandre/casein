@@ -12,6 +12,7 @@ defmodule Casein.DeviceLinks do
   alias Casein.Audit
   alias Casein.DeviceLinks.PairingHandle
   alias Casein.DeviceLinks.Token
+  alias Casein.Mobile.{TerminalSession, TerminalStream}
   alias Casein.Origin
   alias Casein.RateLimit
   alias Casein.Repo
@@ -117,33 +118,36 @@ defmodule Casein.DeviceLinks do
     with :ok <- validate_pairing_handle_shape(raw_handle),
          :ok <- Origin.authorize_request_base(request_base_url) do
       result =
-        Repo.transaction(fn ->
-          pending =
-            PairingHandle
-            |> where([h], h.handle_hash == ^token_hash(raw_handle))
-            |> lock("FOR UPDATE")
-            |> Repo.one()
+        case Repo.get_by(PairingHandle, handle_hash: token_hash(raw_handle)) do
+          nil ->
+            {:error, :invalid_pairing_handle}
 
-          case pending do
-            nil ->
-              Repo.rollback(:invalid_pairing_handle)
+          prefetched ->
+            with_subject_lock(prefetched.subject_id, fn ->
+              pending = lock_pairing_handle(raw_handle)
 
-            %PairingHandle{} = handle ->
-              with :ok <- validate_pending_handle(handle, request_base_url, attrs),
-                   {:ok, workspace} <- Workspaces.get(handle.resource_id),
-                   :ok <- authorize_workspace(workspace, pairing_handle_user(handle)),
-                   {:ok, exchange} <- create_from_pairing_handle(handle, workspace, attrs),
-                   {:ok, consumed} <-
-                     handle
-                     |> Ecto.Changeset.change(consumed_at: DateTime.utc_now())
-                     |> Repo.update() do
-                {exchange, consumed}
-              else
-                {:error, reason} ->
-                  Repo.rollback({reason, pairing_handle_audit_context(handle)})
+              case pending do
+                nil ->
+                  Repo.rollback(:invalid_pairing_handle)
+
+                %PairingHandle{} = handle ->
+                  with :ok <- validate_pending_handle(handle, request_base_url, attrs),
+                       {:ok, workspace} <- Workspaces.get(handle.resource_id),
+                       :ok <- authorize_workspace(workspace, pairing_handle_user(handle)),
+                       {:ok, exchange} <-
+                         create_from_pairing_handle(handle, workspace, attrs, true),
+                       {:ok, consumed} <-
+                         handle
+                         |> Ecto.Changeset.change(consumed_at: DateTime.utc_now())
+                         |> Repo.update() do
+                    {exchange, consumed}
+                  else
+                    {:error, reason} ->
+                      Repo.rollback({reason, pairing_handle_audit_context(handle)})
+                  end
               end
-          end
-        end)
+            end)
+        end
 
       finish_pairing_handle_exchange(result)
     end
@@ -209,6 +213,32 @@ defmodule Casein.DeviceLinks do
 
   def verify_token(_raw_token), do: {:error, :missing}
 
+  @doc "Revalidates the durable parent link without retaining its bearer token."
+  def authorize_link(device_link_id, expected, now \\ DateTime.utc_now())
+      when is_binary(device_link_id) and is_map(expected) do
+    case Repo.get(Token, device_link_id) do
+      %Token{} = token ->
+        cond do
+          not is_nil(token.revoked_at) -> {:error, :revoked}
+          expired?(token, now) -> {:error, :expired}
+          token.resource_kind != @resource_kind -> {:error, :scope_mismatch}
+          "phoenix_socket" not in (token.capabilities || []) -> {:error, :scope_mismatch}
+          token.subject_id != Map.get(expected, :user_id) -> {:error, :scope_mismatch}
+          token.resource_id != Map.get(expected, :workspace_id) -> {:error, :scope_mismatch}
+          token.origin_id != Map.get(expected, :origin_id) -> {:error, :scope_mismatch}
+          true -> :ok
+        end
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
+
+  @doc "Subscribes to immediate revocation of one durable device link."
+  def subscribe_revocation(device_link_id) when is_binary(device_link_id) do
+    Phoenix.PubSub.subscribe(Casein.PubSub, "device_link_revoked:" <> device_link_id)
+  end
+
   @doc "Revoke a persistent device token."
   @spec revoke_token(String.t()) :: {:ok, Token.t()} | {:error, atom() | Ecto.Changeset.t()}
   def revoke_token(raw_token) when is_binary(raw_token) do
@@ -217,9 +247,28 @@ defmodule Casein.DeviceLinks do
         {:error, :not_found}
 
       %Token{} = token ->
-        token
-        |> Ecto.Changeset.change(revoked_at: DateTime.utc_now())
-        |> Repo.update()
+        case with_subject_lock(token.subject_id, fn ->
+               current = lock_token(token.id)
+
+               cond do
+                 is_nil(current) ->
+                   Repo.rollback(:not_found)
+
+                 not is_nil(current.revoked_at) ->
+                   {current, false}
+
+                 true ->
+                   {Repo.update!(Ecto.Changeset.change(current, revoked_at: DateTime.utc_now())),
+                    true}
+               end
+             end) do
+          {:ok, {revoked, changed?}} ->
+            if changed?, do: broadcast_revoked(revoked.id)
+            {:ok, revoked}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
     end
   end
 
@@ -239,12 +288,24 @@ defmodule Casein.DeviceLinks do
   def revoke_all_for_subject(subject_id) when is_binary(subject_id) do
     now = DateTime.utc_now()
 
-    {count, _} =
-      Token
-      |> where([t], t.subject_id == ^subject_id and is_nil(t.revoked_at))
-      |> Repo.update_all(set: [revoked_at: now])
+    {:ok, ids} =
+      with_subject_lock(subject_id, fn ->
+        query = from t in Token, where: t.subject_id == ^subject_id and is_nil(t.revoked_at)
+        query = if repo_kind() == :postgres, do: from(t in query, lock: "FOR UPDATE"), else: query
+        ids = query |> select([t], t.id) |> Repo.all()
 
-    count
+        if ids != [] do
+          Token
+          |> where([t], t.id in ^ids and is_nil(t.revoked_at))
+          |> Repo.update_all(set: [revoked_at: now])
+        end
+
+        ids
+      end)
+
+    Enum.each(ids, &broadcast_revoked/1)
+
+    length(ids)
   end
 
   @doc false
@@ -295,9 +356,39 @@ defmodule Casein.DeviceLinks do
   end
 
   defp do_rotate(%Token{} = current, workspace) do
-    raw_token = generate_token()
+    with_subject_lock(current.subject_id, fn ->
+      fresh = lock_token(current.id)
+      now = DateTime.utc_now()
 
-    token_attrs = %{
+      with %Token{} <- fresh,
+           true <- fresh.token_hash == current.token_hash,
+           :ok <- ensure_active(fresh, now),
+           raw_token <- generate_token(),
+           token_attrs <- rotated_token_attrs(fresh, raw_token),
+           {:ok, link} <- %Token{} |> Token.changeset(token_attrs) |> Repo.insert(),
+           {:ok, _revoked} <-
+             fresh |> Ecto.Changeset.change(revoked_at: now) |> Repo.update() do
+        %{
+          token: raw_token,
+          link: link,
+          workspace: workspace,
+          capabilities: fresh.capabilities || @capabilities
+        }
+      else
+        nil -> Repo.rollback(:invalid_token)
+        false -> Repo.rollback(:invalid_token)
+        {:error, reason} when reason in [:revoked, :expired] -> Repo.rollback(reason)
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+    |> tap(fn
+      {:ok, _result} -> broadcast_revoked(current.id)
+      _other -> :ok
+    end)
+  end
+
+  defp rotated_token_attrs(current, raw_token) do
+    %{
       origin_id: current.origin_id,
       origin_name: current.origin_name,
       subject_id: current.subject_id,
@@ -312,21 +403,6 @@ defmodule Casein.DeviceLinks do
       platform: current.platform,
       expires_at: current.expires_at
     }
-
-    Repo.transaction(fn ->
-      with {:ok, link} <- %Token{} |> Token.changeset(token_attrs) |> Repo.insert(),
-           {:ok, _revoked} <-
-             current |> Ecto.Changeset.change(revoked_at: DateTime.utc_now()) |> Repo.update() do
-        %{
-          token: raw_token,
-          link: link,
-          workspace: workspace,
-          capabilities: current.capabilities || @capabilities
-        }
-      else
-        {:error, changeset} -> Repo.rollback(changeset)
-      end
-    end)
   end
 
   @doc false
@@ -417,6 +493,20 @@ defmodule Casein.DeviceLinks do
     |> Repo.update_all(set: [revoked_at: now])
   end
 
+  defp broadcast_revoked(device_link_id) do
+    TerminalSession
+    |> where([lease], lease.device_link_id == ^device_link_id and lease.state != "deleted")
+    |> select([lease], lease.id)
+    |> Repo.all()
+    |> Enum.each(&TerminalStream.cutoff_lease(&1, "grant_revoked"))
+
+    Phoenix.PubSub.broadcast(
+      Casein.PubSub,
+      "device_link_revoked:" <> device_link_id,
+      {:device_link_revoked, device_link_id}
+    )
+  end
+
   defp lock_pairing_handle_scope(attrs) do
     scope =
       Enum.join(
@@ -429,11 +519,13 @@ defmodule Casein.DeviceLinks do
         ":"
       )
 
-    Ecto.Adapters.SQL.query!(
-      Repo,
-      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-      [scope]
-    )
+    if repo_kind() == :postgres do
+      Ecto.Adapters.SQL.query!(
+        Repo,
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [scope]
+      )
+    end
   end
 
   defp validate_pairing_handle_shape(raw_handle) do
@@ -494,7 +586,12 @@ defmodule Casein.DeviceLinks do
     }
   end
 
-  defp create_from_pairing_handle(%PairingHandle{} = handle, workspace, attrs) do
+  defp create_from_pairing_handle(
+         %PairingHandle{} = handle,
+         workspace,
+         attrs,
+         subject_locked?
+       ) do
     create_persistent_link(
       pairing_handle_user(handle),
       workspace,
@@ -502,7 +599,8 @@ defmodule Casein.DeviceLinks do
       attrs,
       handle.capabilities,
       handle.origin_id,
-      optional_string(attrs, :origin_name) || Origin.display_name(handle.origin_base_url)
+      optional_string(attrs, :origin_name) || Origin.display_name(handle.origin_base_url),
+      subject_locked?
     )
   end
 
@@ -513,7 +611,8 @@ defmodule Casein.DeviceLinks do
          attrs,
          capabilities,
          origin_id,
-         origin_name
+         origin_name,
+         subject_locked? \\ false
        ) do
     raw_token = generate_token()
     now = DateTime.utc_now()
@@ -534,12 +633,64 @@ defmodule Casein.DeviceLinks do
       expires_at: DateTime.add(now, ttl_seconds(), :second)
     }
 
-    case %Token{} |> Token.changeset(token_attrs) |> Repo.insert() do
+    insert = fn ->
+      case %Token{} |> Token.changeset(token_attrs) |> Repo.insert() do
+        {:ok, link} -> link
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end
+
+    result = if subject_locked?, do: {:ok, insert.()}, else: with_subject_lock(user.id, insert)
+
+    case result do
       {:ok, link} ->
         {:ok, %{token: raw_token, link: link, workspace: workspace, capabilities: capabilities}}
 
       {:error, changeset} ->
         {:error, changeset}
+    end
+  end
+
+  defp with_subject_lock(subject_id, fun) do
+    transaction = fn ->
+      Repo.transaction(fn ->
+        if repo_kind() == :postgres do
+          Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+            "device-link-subject:" <> subject_id
+          ])
+        end
+
+        fun.()
+      end)
+    end
+
+    case repo_kind() do
+      :postgres -> transaction.()
+      :sqlite -> :global.trans({{__MODULE__, {:subject, subject_id}}, self()}, transaction)
+    end
+  end
+
+  defp lock_token(id) do
+    query = from token in Token, where: token.id == ^id
+    query = if repo_kind() == :postgres, do: from(token in query, lock: "FOR UPDATE"), else: query
+    Repo.one(query)
+  end
+
+  defp lock_pairing_handle(raw_handle) do
+    query =
+      from handle in PairingHandle,
+        where: handle.handle_hash == ^token_hash(raw_handle)
+
+    query =
+      if repo_kind() == :postgres, do: from(handle in query, lock: "FOR UPDATE"), else: query
+
+    Repo.one(query)
+  end
+
+  defp repo_kind do
+    case apply(Repo, :__adapter__, []) do
+      Ecto.Adapters.Postgres -> :postgres
+      Ecto.Adapters.SQLite3 -> :sqlite
     end
   end
 

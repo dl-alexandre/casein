@@ -3,6 +3,7 @@ defmodule Casein.DeviceLinksTest do
 
   alias Casein.DeviceLinks
   alias Casein.DeviceLinks.Token
+  alias Casein.Mobile.{TerminalSession, TerminalStream}
   alias Casein.Workspace
   alias Casein.Repo
 
@@ -63,13 +64,57 @@ defmodule Casein.DeviceLinksTest do
   end
 
   test "revoked token no longer verifies" do
-    assert {:ok, %{token: raw_token}} =
+    assert {:ok, %{token: raw_token, link: link}} =
              DeviceLinks.create_from_pairing_claims(owner_claims(), %{})
 
     assert {:ok, _claims} = DeviceLinks.verify_token(raw_token)
+    assert :ok = DeviceLinks.subscribe_revocation(link.id)
+    link_id = link.id
+    lease = insert_active_lease!(link.id)
+    stream = start_supervised!({TerminalStream, lease_id: lease.id})
+    assert {:ok, _} = TerminalStream.subscribe(stream, "device-revoke")
+    assert {:ok, _} = TerminalStream.append(stream, "before-revoke")
+    assert_receive {:mobile_terminal_output, _}
 
     assert {:ok, _link} = DeviceLinks.revoke_token(raw_token)
+    assert TerminalStream.snapshot(stream).cutoff == "grant_revoked"
+    assert {:error, "grant_revoked"} = TerminalStream.append(stream, "after-return")
+    assert_receive {:device_link_revoked, ^link_id}
     assert {:error, :revoked} = DeviceLinks.verify_token(raw_token)
+  end
+
+  defp insert_active_lease!(device_link_id) do
+    sid = "mob-" <> Ecto.UUID.generate()
+
+    lease =
+      %TerminalSession{}
+      |> TerminalSession.create_changeset(%{
+        user_id: "owner",
+        device_link_id: device_link_id,
+        origin_id: Casein.Origin.id(),
+        origin_generation: Casein.Origin.incarnation(),
+        workspace_id: "ws-1",
+        workspace_key: "ws-1",
+        workspace_root: "/tmp/ws-1",
+        request_id: Ecto.UUID.generate(),
+        request_fingerprint: String.duplicate("a", 64),
+        sid: sid,
+        tmux_session: Casein.Terminals.tmux_session_name("ws-1", sid),
+        pane_role: "mobile_terminal",
+        lifecycle_generation: Ecto.UUID.generate(),
+        state: "provisioning",
+        expires_at: DateTime.add(DateTime.utc_now(), 300, :second)
+      })
+      |> Repo.insert!()
+
+    lease
+    |> TerminalSession.transition_changeset(%{
+      state: "active",
+      pane_id: "%1",
+      tmux_native_id: "$1",
+      tmux_lease_marker: lease.lifecycle_generation
+    })
+    |> Repo.update!()
   end
 
   test "missing workspace is surfaced" do
@@ -98,6 +143,43 @@ defmodule Casein.DeviceLinksTest do
     assert DeviceLinks.list_for_subject("owner") == []
   end
 
+  test "rotate racing revoke-all never mints authority after revocation returns" do
+    for sequence <- 1..12 do
+      subject = "rotate-race-#{sequence}"
+      claims = %{owner_claims() | id: subject, username: subject, email: "#{subject}@example.com"}
+      assert {:ok, %{token: raw}} = DeviceLinks.create_from_pairing_claims(claims, %{})
+      parent = self()
+
+      rotate =
+        Task.async(fn ->
+          send(parent, {:ready, self()})
+          receive do: (:go -> DeviceLinks.rotate_token(raw))
+        end)
+
+      revoke =
+        Task.async(fn ->
+          send(parent, {:ready, self()})
+          receive do: (:go -> DeviceLinks.revoke_all_for_subject(subject))
+        end)
+
+      assert_receive {:ready, rotate_pid}
+      assert_receive {:ready, revoke_pid}
+      send(rotate_pid, :go)
+      send(revoke_pid, :go)
+
+      rotate_result = Task.await(rotate, 5_000)
+      assert Task.await(revoke, 5_000) in [1, 2]
+
+      case rotate_result do
+        {:ok, %{token: replacement}} ->
+          assert {:error, :revoked} = DeviceLinks.verify_token(replacement)
+
+        {:error, reason} ->
+          assert reason in [:revoked, :invalid_token]
+      end
+    end
+  end
+
   test "ttl_seconds honors application config" do
     prev = Application.get_env(:casein, :device_link_ttl_seconds)
     Application.put_env(:casein, :device_link_ttl_seconds, 120)
@@ -124,6 +206,33 @@ defmodule Casein.DeviceLinksTest do
     assert {:ok, %{workspace_id: "ws-1"}} = DeviceLinks.verify_token(new_token)
     assert {:error, :revoked} = DeviceLinks.verify_token(old_token)
     assert %Token{revoked_at: %DateTime{}} = Repo.get!(Token, old_link.id)
+  end
+
+  test "concurrent rotations have exactly one winner" do
+    assert {:ok, %{token: raw}} = DeviceLinks.create_from_pairing_claims(owner_claims(), %{})
+    parent = self()
+
+    tasks =
+      for _ <- 1..2 do
+        Task.async(fn ->
+          send(parent, {:ready, self()})
+          receive do: (:go -> DeviceLinks.rotate_token(raw))
+        end)
+      end
+
+    pids =
+      for _ <- 1..2,
+          do:
+            (
+              assert_receive {:ready, pid}
+              pid
+            )
+
+    Enum.each(pids, &send(&1, :go))
+    results = Enum.map(tasks, &Task.await(&1, 5_000))
+
+    assert Enum.count(results, &match?({:ok, _}, &1)) == 1
+    assert Enum.count(results, &(&1 == {:error, :revoked})) == 1
   end
 
   test "rotate_token refuses a revoked token" do

@@ -16,6 +16,7 @@ defmodule CaseinWeb.TerminalChannel do
   use Phoenix.Channel
 
   alias Casein.Terminals
+  alias Casein.Mobile.TerminalSessions
   alias CaseinWeb.ChannelAuth
   alias CaseinWeb.SocketCredentialPolicy
   alias Casein.Workspaces
@@ -44,6 +45,8 @@ defmodule CaseinWeb.TerminalChannel do
 
     with {workspace_id, sid} <- split_workspace_sid(rest),
          true <- workspace_id != "" and sid != "",
+         false <- TerminalSessions.reserved_sid?(sid),
+         false <- TerminalSessions.lease_owned_sid?(workspace_id, sid),
          {:ok, %{mode: mode, ws: ws, fast_path: fast_path}, next_fast_cache} <-
            resolve_workspace_context(
              user,
@@ -68,6 +71,7 @@ defmodule CaseinWeb.TerminalChannel do
       attach_owner_mode(info, mode, ws, socket)
     else
       :error -> {:error, %{reason: "invalid session"}}
+      true -> {:error, %{reason: "reserved mobile terminal"}}
       {:error, reason} -> {:error, %{reason: format(reason)}}
       _ -> {:error, %{reason: "invalid session"}}
     end

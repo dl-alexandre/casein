@@ -60,6 +60,7 @@ defmodule Casein.Terminals do
   defdelegate owner_resize(owner_pid, cols, rows), to: Owner
   defdelegate owner_set_active(owner_pid, active?), to: Owner
   defdelegate owner_subscriber_count(owner_pid), to: Owner
+  defdelegate owner_identity(owner_pid), to: Owner
   defdelegate stop_shell_owner(workspace_id, sid), to: Owner
   defdelegate stop_session_exact(workspace_key, sid), to: Owner
   defdelegate raw_shell_attach(workspace_id, sid, loc), to: Owner

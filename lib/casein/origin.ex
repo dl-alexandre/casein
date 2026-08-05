@@ -10,6 +10,8 @@ defmodule Casein.Origin do
 
   @id_prefix "casein_"
   @id_context "casein-mobile-origin-v1"
+  @incarnation_prefix "origin_gen_"
+  @incarnation_context "casein-mobile-origin-incarnation-v1"
   @legacy_devbox_origins [
     "https://devide.devbox.milcgroup.com",
     "https://local.dalexandre-devide.devbox.milcgroup.com"
@@ -35,6 +37,13 @@ defmodule Casein.Origin do
       configured ->
         configured
     end
+  end
+
+  @doc "Installation-stable generation used to prevent cross-origin lease reuse."
+  @spec incarnation() :: String.t()
+  def incarnation do
+    configured_string(:origin_incarnation) ||
+      @incarnation_prefix <> stable_digest(@incarnation_context)
   end
 
   @spec display_name(String.t() | nil) :: String.t()
@@ -125,6 +134,18 @@ defmodule Casein.Origin do
       _ ->
         nil
     end
+  end
+
+  defp stable_digest(context) do
+    secret = Application.get_env(:casein, :origin_identity_secret)
+
+    unless is_binary(secret) and byte_size(secret) >= 32 do
+      raise "Casein origin identity requires a stable endpoint secret_key_base"
+    end
+
+    :crypto.mac(:hmac, :sha256, secret, context)
+    |> binary_part(0, 16)
+    |> Base.url_encode64(padding: false)
   end
 
   defp normalize_base_url(url) do

@@ -159,6 +159,31 @@ defmodule Casein.DeviceLinks.PairingHandlesTest do
     assert Enum.count(results, &match?({:error, :pairing_handle_replayed}, &1)) == 1
   end
 
+  test "pairing exchange and revoke-all share one lock order without deadlock" do
+    {:ok, pending} = issue()
+    owner = self()
+
+    exchange_task = Task.async(fn -> receive do: (:go -> exchange(pending.handle)) end)
+
+    revoke_task =
+      Task.async(fn -> receive do: (:go -> DeviceLinks.revoke_all_for_subject("owner")) end)
+
+    for task <- [exchange_task, revoke_task] do
+      Ecto.Adapters.SQL.Sandbox.allow(Repo, owner, task.pid)
+      send(task.pid, :go)
+    end
+
+    assert {:ok, result} = Task.await(exchange_task, 5_000)
+    revoked_count = Task.await(revoke_task, 5_000)
+    assert revoked_count in [0, 1]
+
+    if revoked_count == 1 do
+      assert {:error, :revoked} = DeviceLinks.verify_token(result.token)
+    else
+      assert {:ok, _claims} = DeviceLinks.verify_token(result.token)
+    end
+  end
+
   test "invalid handle shapes and enumeration guesses have one generic failure" do
     for handle <- ["", "short", String.duplicate("a", 42), String.duplicate("!", 43)] do
       assert {:error, :invalid_pairing_handle} = exchange(handle)
