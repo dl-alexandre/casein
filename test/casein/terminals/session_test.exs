@@ -179,6 +179,79 @@ defmodule Casein.Terminals.SessionTest do
     end)
   end
 
+  test "ordinary mob-prefixed sessions archive unless explicitly marked ephemeral", ctx do
+    sid = "mob-" <> Ecto.UUID.generate()
+
+    workspace =
+      "ordinary-prefix-" <> Base.url_encode64(:crypto.strong_rand_bytes(4), padding: false)
+
+    tmux_session = Tmux.session_name(workspace, sid)
+
+    on_exit(fn ->
+      Tmux.kill(tmux_session)
+      Casein.Terminals.ScrollbackArchive.delete(tmux_session)
+    end)
+
+    ordinary_ctx = %{ctx | workspace: workspace, sid: sid}
+
+    with_pty(ordinary_ctx, fn ->
+      Casein.Terminals.ScrollbackArchive.delete(tmux_session)
+      {:ok, pid} = Session.ensure_started(workspace, sid, ctx.cwd)
+      {:ok, _, _, _} = Session.subscribe(pid)
+      Session.send_input(pid, "echo ORDINARY_MOB_PREFIX\n")
+      assert wait_for_session_output(pid, "ORDINARY_MOB_PREFIX", 3_000)
+      safe_stop(pid)
+      wait_until_stopped(pid)
+
+      assert Casein.Terminals.ScrollbackArchive.present?(tmux_session)
+    end)
+  end
+
+  test "explicit ephemeral archive option is independent of SID prefix" do
+    {:ok, ordinary, {:continue, :spawn}} =
+      Session.init({"workspace", "mob-client-name", {:local, System.tmp_dir!()}})
+
+    {:ok, disposable, {:continue, :spawn}} =
+      Session.init(
+        {"workspace", "server-owned", {:local, System.tmp_dir!()}, archive: :ephemeral}
+      )
+
+    refute ordinary.disposable?
+    assert disposable.disposable?
+  end
+
+  test "archive spill obeys explicit disposition rather than mob SID prefix" do
+    ordinary_tmux = "casein_workspace_mob-client-chosen"
+    ephemeral_tmux = "casein_workspace_server-owned"
+    Casein.Terminals.ScrollbackArchive.delete(ordinary_tmux)
+    Casein.Terminals.ScrollbackArchive.delete(ephemeral_tmux)
+
+    on_exit(fn ->
+      Casein.Terminals.ScrollbackArchive.delete(ordinary_tmux)
+      Casein.Terminals.ScrollbackArchive.delete(ephemeral_tmux)
+    end)
+
+    assert :ok =
+             Session.terminate(:normal, %{
+               tmux: ordinary_tmux,
+               sid: "mob-client-chosen",
+               buffer: "ordinary output",
+               disposable?: false
+             })
+
+    assert Casein.Terminals.ScrollbackArchive.present?(ordinary_tmux)
+
+    assert :ok =
+             Session.terminate(:normal, %{
+               tmux: ephemeral_tmux,
+               sid: "not-prefixed",
+               buffer: "must not persist",
+               disposable?: true
+             })
+
+    refute Casein.Terminals.ScrollbackArchive.present?(ephemeral_tmux)
+  end
+
   defp with_pty(%{pty_available?: true}, fun), do: fun.()
   defp with_pty(%{pty_available?: false}, _fun), do: assert(true)
 

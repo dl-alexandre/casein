@@ -16,7 +16,8 @@ defmodule Casein.Mobile.TerminalSessionsTest do
               ensure_count: 0,
               kill_error: nil,
               kill_blocker: nil,
-              disappear_on_list: false
+              disappear_on_list: false,
+              provision_topology: :single
             }
           end,
           name: __MODULE__
@@ -25,10 +26,18 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     def ensure_session(session, cwd) do
       Agent.get_and_update(__MODULE__, fn
         %{ensure_error: nil} = state ->
+          pane =
+            case state.provision_topology do
+              :single -> %{id: "%1"}
+              :empty -> nil
+              :missing_id -> %{}
+              :multiple -> [%{id: "%1"}, %{id: "%2"}]
+            end
+
           state =
             state
             |> Map.update!(:ensure_count, &(&1 + 1))
-            |> put_in([:sessions, session], %{cwd: cwd, pane: %{id: "%1"}})
+            |> put_in([:sessions, session], %{cwd: cwd, pane: pane})
 
           {:ok, state}
 
@@ -45,6 +54,7 @@ defmodule Casein.Mobile.TerminalSessionsTest do
           panes =
             case get_in(state, [:sessions, session, :pane]) do
               nil -> []
+              panes when is_list(panes) -> panes
               pane -> [pane]
             end
 
@@ -94,6 +104,10 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     def ensure_count, do: Agent.get(__MODULE__, & &1.ensure_count)
     def ensure_error(reason), do: Agent.update(__MODULE__, &%{&1 | ensure_error: reason})
     def kill_error(reason), do: Agent.update(__MODULE__, &%{&1 | kill_error: reason})
+
+    def provision_topology(topology),
+      do: Agent.update(__MODULE__, &%{&1 | provision_topology: topology})
+
     def block_kill(pid), do: Agent.update(__MODULE__, &%{&1 | kill_blocker: pid})
 
     def external_remove(session) do
@@ -397,13 +411,90 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     assert {:error, :temporarily_unavailable} = TerminalSessions.create(attrs, tmux: Tmux)
     [pending] = Repo.all(TerminalSession)
     assert pending.state == "provisioning"
-    assert pending.failure_code =~ "temporarily_unavailable"
+    assert pending.failure_code == "tmux_temporarily_unavailable"
 
     Tmux.ensure_error(nil)
     assert [{:ok, active}] = TerminalSessions.reconcile_startup(tmux: Tmux)
     assert active.id == pending.id
     assert active.state == "active"
     assert Repo.aggregate(TerminalSession, :count) == 1
+  end
+
+  test "fatal never-active topologies are reaped by exact authoritative name only" do
+    Enum.each([:empty, :missing_id, :multiple], fn topology ->
+      Tmux.provision_topology(topology)
+      request = %{attrs() | request_id: Ecto.UUID.generate()}
+
+      expected =
+        case topology do
+          :empty -> :missing_initial_pane
+          :missing_id -> :missing_pane_id
+          :multiple -> :unexpected_topology
+        end
+
+      assert {:error, ^expected} = TerminalSessions.create(request, tmux: Tmux)
+      lease = Repo.get_by!(TerminalSession, request_id: request.request_id)
+      assert lease.state == "deleted"
+      refute Tmux.session_exists?(lease.tmux_session)
+      assert lease.tmux_session in Tmux.kills()
+    end)
+  end
+
+  test "never-active cleanup leaves sibling mobile terminals untouched" do
+    assert {:ok, sibling} = TerminalSessions.create(attrs(), tmux: Tmux)
+    Tmux.provision_topology(:multiple)
+    request = %{attrs() | request_id: Ecto.UUID.generate()}
+
+    assert {:error, :unexpected_topology} = TerminalSessions.create(request, tmux: Tmux)
+    failed = Repo.get_by!(TerminalSession, request_id: request.request_id)
+
+    assert failed.state == "deleted"
+    assert Tmux.session_exists?(sibling.tmux_session)
+    refute sibling.tmux_session in Tmux.kills()
+  end
+
+  test "durable provisioning failures use fixed allowlisted codes, never inspected output" do
+    secret = "raw tmux pane output / credential-like material"
+    Tmux.ensure_error({:subprocess_failed, secret})
+
+    assert {:error, {:subprocess_failed, ^secret}} =
+             TerminalSessions.create(attrs(), tmux: Tmux)
+
+    [pending] = Repo.all(TerminalSession)
+    assert pending.failure_code == "tmux_provision_failed"
+    refute pending.failure_code =~ secret
+  end
+
+  test "ordinary mob-prefixed sessions archive unless explicitly disposable" do
+    ordinary_tmux = "casein_workspace_mob-client-chosen"
+    ephemeral_tmux = "casein_workspace_server-owned"
+    Casein.Terminals.ScrollbackArchive.delete(ordinary_tmux)
+    Casein.Terminals.ScrollbackArchive.delete(ephemeral_tmux)
+
+    on_exit(fn ->
+      Casein.Terminals.ScrollbackArchive.delete(ordinary_tmux)
+      Casein.Terminals.ScrollbackArchive.delete(ephemeral_tmux)
+    end)
+
+    assert :ok =
+             Casein.Terminals.Session.terminate(:normal, %{
+               tmux: ordinary_tmux,
+               sid: "mob-client-chosen",
+               buffer: "ordinary output",
+               disposable?: false
+             })
+
+    assert Casein.Terminals.ScrollbackArchive.present?(ordinary_tmux)
+
+    assert :ok =
+             Casein.Terminals.Session.terminate(:normal, %{
+               tmux: ephemeral_tmux,
+               sid: "not-prefixed",
+               buffer: "must not persist",
+               disposable?: true
+             })
+
+    refute Casein.Terminals.ScrollbackArchive.present?(ephemeral_tmux)
   end
 
   test "schema rejects client-like non-mobile identities" do

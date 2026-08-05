@@ -44,9 +44,17 @@ defmodule Casein.Terminals.Session do
     %{id: {__MODULE__, arg}, start: {__MODULE__, :start_link, [arg]}, restart: :temporary}
   end
 
+  def child_spec({_workspace, _sid, _loc, _opts} = arg) do
+    %{id: {__MODULE__, arg}, start: {__MODULE__, :start_link, [arg]}, restart: :temporary}
+  end
+
   def start_link({workspace, sid, loc}) do
+    start_link({workspace, sid, loc, []})
+  end
+
+  def start_link({workspace, sid, loc, opts}) do
     name = via(workspace, sid)
-    GenServer.start_link(__MODULE__, {workspace, sid, loc}, name: name)
+    GenServer.start_link(__MODULE__, {workspace, sid, loc, opts}, name: name)
   end
 
   def via(workspace, sid),
@@ -62,7 +70,9 @@ defmodule Casein.Terminals.Session do
   @doc """
   Returns the Session pid, starting one if not already running.
   """
-  def ensure_started(workspace, sid, loc) do
+  def ensure_started(workspace, sid, loc), do: ensure_started(workspace, sid, loc, [])
+
+  def ensure_started(workspace, sid, loc, opts) when is_list(opts) do
     case whereis(workspace, sid) do
       {:ok, pid} ->
         {:ok, pid}
@@ -70,7 +80,7 @@ defmodule Casein.Terminals.Session do
       :error ->
         DynamicSupervisor.start_child(
           Casein.Terminals.Supervisor,
-          {__MODULE__, {workspace, sid, loc}}
+          {__MODULE__, {workspace, sid, loc, opts}}
         )
     end
   end
@@ -117,7 +127,9 @@ defmodule Casein.Terminals.Session do
   ## Callbacks
 
   @impl true
-  def init({workspace, sid, loc}) do
+  def init({workspace, sid, loc}), do: init({workspace, sid, loc, []})
+
+  def init({workspace, sid, loc, opts}) do
     backend = Backend.module()
 
     # Defer the blocking PTY bring-up (tmux scrollback capture + :exec.run, each
@@ -145,6 +157,7 @@ defmodule Casein.Terminals.Session do
        buffer: <<>>,
        archive_timer: nil,
        archive_dirty?: false,
+       disposable?: Keyword.get(opts, :archive) == :ephemeral,
        recreated?: false
      }, {:continue, :spawn}}
   end
@@ -168,7 +181,11 @@ defmodule Casein.Terminals.Session do
     # scrollback isn't worth it (tmux on the remote retains its own scrollback
     # which redraws on attach). When the session is *missing* (server wipe),
     # reseed from the out-of-band archive so operators still see a recent tail.
-    disposable? = disposable_sid?(sid)
+    # Disposable status is an explicit server-owned session option, never a
+    # caller-chosen SID prefix. Ordinary sessions named `mob-*` retain normal
+    # archive behavior. The mobile lifecycle/channel passes this option only
+    # after resolving an authoritative durable lease.
+    disposable? = state.disposable?
 
     {seeded_buffer, _history_restored?} =
       cond do
@@ -248,6 +265,7 @@ defmodule Casein.Terminals.Session do
              cols: cols,
              rows: rows,
              buffer: seeded_buffer,
+             disposable?: disposable?,
              recreated?: recreated?,
              archive_dirty?: seeded_buffer != <<>>
          }
@@ -526,7 +544,7 @@ defmodule Casein.Terminals.Session do
 
     state = Map.put(state, :buffer, Casein.BoundedBuffer.append(state.buffer, bin, @buffer_bytes))
 
-    if disposable_sid?(state.sid) do
+    if state.disposable? do
       state
     else
       state |> Map.put(:archive_dirty?, true) |> schedule_archive_spill()
@@ -543,7 +561,7 @@ defmodule Casein.Terminals.Session do
     %{state | archive_timer: ref}
   end
 
-  defp spill_archive(%{sid: "mob-" <> _}), do: :ok
+  defp spill_archive(%{disposable?: true}), do: :ok
 
   defp spill_archive(%{tmux: tmux, buffer: buffer}) when is_binary(tmux) and is_binary(buffer) do
     if buffer != <<>> do
@@ -554,9 +572,6 @@ defmodule Casein.Terminals.Session do
   end
 
   defp spill_archive(_), do: :ok
-
-  defp disposable_sid?("mob-" <> _), do: true
-  defp disposable_sid?(_), do: false
 
   defp stop_and_wait(pid) do
     ref = Process.monitor(pid)

@@ -105,7 +105,7 @@ defmodule Casein.Mobile.TerminalSessions do
         {:error, reason}
 
       {:ok, {:fatal, failed, reason}} ->
-        audit(failed, "mobile.terminal_rejected", bounded_reason(reason))
+        audit(failed, "mobile.terminal_rejected", failure_code(reason))
         _ = delete(failed.id, opts)
         {:error, reason}
 
@@ -164,7 +164,7 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp mark_failed(lease, reason) do
-    code = bounded_reason(reason)
+    code = failure_code(reason)
 
     {:ok, failed} =
       lease
@@ -175,7 +175,7 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp record_retryable_provision_failure(lease, reason) do
-    code = bounded_reason(reason)
+    code = failure_code(reason)
 
     lease
     |> TerminalSession.transition_changeset(%{
@@ -221,6 +221,35 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp teardown(lease, opts) do
+    if is_nil(lease.pane_id) do
+      teardown_never_active(lease, opts)
+    else
+      teardown_active(lease, opts)
+    end
+  end
+
+  # A provisioning lease can fail before a trustworthy pane identity exists
+  # (empty/multiple panes or a pane without an id). Requiring the missing pane
+  # identity here would make the server-owned tmux session unreapable. The
+  # durable lease is still authoritative for the exact derived session name,
+  # so clean up only that name and never enumerate or derive a prefix target.
+  defp teardown_never_active(lease, opts) do
+    tmux = adapter(opts)
+    terminal_control = Keyword.get(opts, :terminal_control, Terminals)
+
+    with :ok <- verify_identity(lease),
+         :ok <- terminal_control.stop_shell_owner(lease.workspace_id, lease.sid),
+         :ok <- terminal_control.stop_session_exact(lease.workspace_key, lease.sid),
+         :ok <- maybe_kill_exact_tmux(tmux, lease.tmux_session),
+         false <- tmux.session_exists?(lease.tmux_session) do
+      complete_delete(lease, opts)
+    else
+      true -> {:error, :tmux_still_present}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp teardown_active(lease, opts) do
     tmux = adapter(opts)
     terminal_control = Keyword.get(opts, :terminal_control, Terminals)
 
@@ -232,26 +261,30 @@ defmodule Casein.Mobile.TerminalSessions do
          {:ok, topology_state} <- reconcile_topology(initial_topology, final_topology),
          :ok <- maybe_kill_tmux(tmux, lease.tmux_session, topology_state),
          false <- tmux.session_exists?(lease.tmux_session) do
-      now = Keyword.get(opts, :now, DateTime.utc_now())
-
-      {:ok, deleted} =
-        lease
-        |> TerminalSession.transition_changeset(%{state: "deleted", ended_at: now})
-        |> Repo.update()
-
-      audit(
-        deleted,
-        if(Keyword.get(opts, :expired?, false),
-          do: "mobile.terminal_expired",
-          else: "mobile.terminal_deleted"
-        )
-      )
-
-      {:ok, deleted}
+      complete_delete(lease, opts)
     else
       true -> {:error, :tmux_still_present}
       {:error, _} = error -> error
     end
+  end
+
+  defp complete_delete(lease, opts) do
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+
+    {:ok, deleted} =
+      lease
+      |> TerminalSession.transition_changeset(%{state: "deleted", ended_at: now})
+      |> Repo.update()
+
+    audit(
+      deleted,
+      if(Keyword.get(opts, :expired?, false),
+        do: "mobile.terminal_expired",
+        else: "mobile.terminal_deleted"
+      )
+    )
+
+    {:ok, deleted}
   end
 
   defp verify_identity(lease) do
@@ -293,6 +326,14 @@ defmodule Casein.Mobile.TerminalSessions do
     do: normalize_kill(tmux.kill(tmux_session))
 
   defp maybe_kill_tmux(_tmux, _tmux_session, :absent), do: :ok
+
+  defp maybe_kill_exact_tmux(tmux, tmux_session) do
+    if tmux.session_exists?(tmux_session) do
+      normalize_kill(tmux.kill(tmux_session))
+    else
+      :ok
+    end
+  end
 
   defp normalize_kill(:ok), do: :ok
   defp normalize_kill({:error, reason}) when reason in [:not_found, :no_session], do: :ok
@@ -377,11 +418,14 @@ defmodule Casein.Mobile.TerminalSessions do
 
   defp fetch(attrs, key), do: Map.get(attrs, key) || Map.get(attrs, Atom.to_string(key))
 
-  defp bounded_reason(reason) do
-    reason
-    |> inspect(limit: 3, printable_limit: 40)
-    |> String.slice(0, 80)
-  end
+  # Persist only a small typed allowlist. Adapter/subprocess failures may carry
+  # inspected command output, paths, or terminal bytes and must never reach the
+  # durable lease or audit metadata.
+  defp failure_code(:missing_initial_pane), do: "missing_initial_pane"
+  defp failure_code(:unexpected_topology), do: "unexpected_topology"
+  defp failure_code(:missing_pane_id), do: "missing_pane_id"
+  defp failure_code(:temporarily_unavailable), do: "tmux_temporarily_unavailable"
+  defp failure_code(_reason), do: "tmux_provision_failed"
 
   defp audit(lease, action, reason_code \\ nil) do
     Audit.emit!(%{
