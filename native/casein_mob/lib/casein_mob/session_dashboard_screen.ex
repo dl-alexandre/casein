@@ -207,6 +207,10 @@ defmodule CaseinMob.SessionDashboardScreen do
     {:noreply, socket}
   end
 
+  def handle_info({:tap, :open_terminal}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen)}
+  end
+
   def handle_info({:alert, :open_terminal}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen)}
   end
@@ -376,6 +380,20 @@ defmodule CaseinMob.SessionDashboardScreen do
             padding: :space_sm,
             height: 44.0,
             on_tap: {self(), :pair_device}
+          },
+          children: []
+        },
+        %{
+          type: :button,
+          props: %{
+            id: "open_terminal",
+            text: "Terminal",
+            background: :surface_raised,
+            text_color: :on_surface,
+            fill_width: false,
+            padding: :space_sm,
+            height: 44.0,
+            on_tap: {self(), :open_terminal}
           },
           children: []
         },
