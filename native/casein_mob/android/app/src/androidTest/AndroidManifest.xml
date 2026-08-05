@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <activity
+            android:name="com.example.casein_mob.TerminalPrivacyTestActivity"
+            android:exported="false" />
         <meta-data
             android:name="com.example.casein_mob.CASEIN_UTILITY_SOURCE_SHA256"
             android:value="${caseinUtilitySoakSourceSha256}" />
