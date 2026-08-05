@@ -49,6 +49,11 @@ MAX_BEAM_BYTES = 16 * 1024 * 1024
 MAX_AGGREGATE_BEAM_BYTES = 128 * 1024 * 1024
 READ_CHUNK_BYTES = 64 * 1024
 COMMAND_TIMEOUT_SECONDS = 60.0
+MANIFEST_TIMEOUT_BASE_SECONDS = 30.0
+MANIFEST_TIMEOUT_PER_BEAM_SECONDS = 0.12
+MANIFEST_TIMEOUT_MIN_SECONDS = 60.0
+MANIFEST_TIMEOUT_MAX_SECONDS = 240.0
+MANIFEST_IDLE_TIMEOUT_SECONDS = 15.0
 PROCESS_TERM_TIMEOUT_SECONDS = 1.0
 PROCESS_KILL_TIMEOUT_SECONDS = 1.0
 POLL_SECONDS = 0.05
@@ -247,6 +252,7 @@ class CommandRunner(Protocol):
         *,
         stdout_limit: int,
         timeout_seconds: float,
+        idle_timeout_seconds: float | None = None,
         cwd: Path | None = None,
         env_overrides: Mapping[str, str] | None = None,
     ) -> CommandResult: ...
@@ -334,10 +340,16 @@ class SubprocessCommandRunner:
         *,
         stdout_limit: int,
         timeout_seconds: float,
+        idle_timeout_seconds: float | None = None,
         cwd: Path | None = None,
         env_overrides: Mapping[str, str] | None = None,
     ) -> CommandResult:
-        if not argv or stdout_limit <= 0 or timeout_seconds <= 0:
+        if (
+            not argv
+            or stdout_limit <= 0
+            or timeout_seconds <= 0
+            or (idle_timeout_seconds is not None and idle_timeout_seconds <= 0)
+        ):
             return CommandResult("failed")
         if not _POSIX_GROUP_API:
             return CommandResult("failed")
@@ -365,6 +377,11 @@ class SubprocessCommandRunner:
         selector: selectors.BaseSelector | None = None
         collected = bytearray()
         deadline = time.monotonic() + timeout_seconds
+        idle_deadline = (
+            time.monotonic() + idle_timeout_seconds
+            if idle_timeout_seconds is not None
+            else None
+        )
         category = "ok"
         reaped = False
 
@@ -387,15 +404,26 @@ class SubprocessCommandRunner:
             selector.register(process.stdout, selectors.EVENT_READ)
 
             while not _process_exited_unreaped(process):
-                if time.monotonic() >= deadline:
+                now = time.monotonic()
+                if now >= deadline or (
+                    idle_deadline is not None and now >= idle_deadline
+                ):
                     category = "timeout"
                     break
 
-                remaining = max(0.0, deadline - time.monotonic())
+                remaining = max(0.0, deadline - now)
+                if idle_deadline is not None:
+                    remaining = min(remaining, max(0.0, idle_deadline - now))
                 if selector.select(min(POLL_SECONDS, remaining)):
+                    before_read = len(collected)
                     if not _read_bounded(process.stdout, collected, stdout_limit):
                         category = "output_limit"
                         break
+                    if (
+                        idle_timeout_seconds is not None
+                        and len(collected) > before_read
+                    ):
+                        idle_deadline = time.monotonic() + idle_timeout_seconds
 
             if category == "ok":
                 category = _drain_bounded(process.stdout, collected, stdout_limit)
@@ -637,7 +665,10 @@ def _verify_android_beam_provenance(
         return GuardResult(status)
 
     common = {"expected_manifest_valid": True}
-    status, installed = _read_installed_manifest(serial, package, runner)
+    expected_count = len(expected.digests)
+    status, installed = _read_installed_manifest(
+        serial, package, runner, expected_count
+    )
     if status != "ok" or installed is None:
         return GuardResult(status, **common)
 
@@ -704,7 +735,9 @@ def _verify_android_beam_provenance(
         ):
             return GuardResult("beam_digest_mismatch", **matched)
 
-    closing_status, closing_manifest = _read_installed_manifest(serial, package, runner)
+    closing_status, closing_manifest = _read_installed_manifest(
+        serial, package, runner, expected_count
+    )
     if closing_status != "ok" or closing_manifest is None:
         return GuardResult(closing_status, **matched)
     if closing_manifest.entries != installed.entries:
@@ -721,11 +754,16 @@ def _read_installed_manifest(
     serial: str,
     package: str,
     runner: CommandRunner,
+    expected_count: int,
 ) -> tuple[str, InstalledManifest | None]:
+    timeout_seconds = _manifest_timeout_seconds(expected_count)
+    if timeout_seconds is None:
+        return ("installed_manifest_failed", None)
     result = runner.run(
         build_manifest_argv(serial, package),
         stdout_limit=MAX_MANIFEST_BYTES,
-        timeout_seconds=COMMAND_TIMEOUT_SECONDS,
+        timeout_seconds=timeout_seconds,
+        idle_timeout_seconds=MANIFEST_IDLE_TIMEOUT_SECONDS,
     )
     if result.category == "output_limit":
         return ("installed_manifest_limited", None)
@@ -749,6 +787,24 @@ def _read_installed_manifest(
         }.get(manifest.category, "internal_error")
         return (status, None)
     return ("ok", manifest)
+
+
+def _manifest_timeout_seconds(expected_count: int) -> float | None:
+    if (
+        not isinstance(expected_count, int)
+        or isinstance(expected_count, bool)
+        or expected_count <= 0
+        or expected_count > MAX_BEAMS
+    ):
+        return None
+    calibrated = (
+        MANIFEST_TIMEOUT_BASE_SECONDS
+        + expected_count * MANIFEST_TIMEOUT_PER_BEAM_SECONDS
+    )
+    return min(
+        MANIFEST_TIMEOUT_MAX_SECONDS,
+        max(MANIFEST_TIMEOUT_MIN_SECONDS, calibrated),
+    )
 
 
 def _resolve_runtime_sources(
