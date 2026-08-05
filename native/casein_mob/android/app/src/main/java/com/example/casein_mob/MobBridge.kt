@@ -162,6 +162,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -1888,6 +1889,24 @@ object MobNativeViewRegistry {
 /** Renders a MobNode tree produced by Mob.Renderer. */
 @Composable
 fun RenderNode(node: MobNode, modifier: Modifier = Modifier) {
+    val terminalSurface = node.props["id"] == "terminal-surface"
+    if (terminalSurface) {
+        DisposableEffect(Unit) {
+            AndroidTerminalPrivacy.surfaceMounted()
+            onDispose { AndroidTerminalPrivacy.surfaceUnmounted() }
+        }
+
+        // The shared byte-plane integration supplies this only after accepting
+        // an authoritative full baseline for the current connection generation.
+        // Rendering activity alone is never treated as freshness.
+        terminalBaselineGeneration(node.props["fresh_baseline_generation"])?.let { generation ->
+            DisposableEffect(generation) {
+                AndroidTerminalPrivacy.freshBaseline(generation)
+                onDispose { }
+            }
+        }
+    }
+
     val ox = floatProp(node.props, "offset_x") ?: 0f
     val oy = floatProp(node.props, "offset_y") ?: 0f
     if (ox != 0f || oy != 0f) {
