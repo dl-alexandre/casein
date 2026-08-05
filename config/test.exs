@@ -77,6 +77,21 @@ config :casein, :tmux_server_label, "casein_test"
 # Never spawn the host tmux keepalive anchor during the test suite.
 config :casein, :tmux_host_anchor, false
 
+# Keep test scrollback spill out of the real ~/.casein/tmux-scrollback.
+# ScrollbackArchive defaults to $HOME/.casein/tmux-scrollback, which is the
+# archive the *production* server reseeds from after a crash (see
+# docs/subsystems/tmux_crash_recovery.md). The suite creates and kills real
+# tmux sessions, so an unsandboxed run spills one .scrollback file per test
+# session into that dir and never reaps them: on the devbox it had grown to
+# 10,679 files / 488 MB, of which 10,548 were test session names. That is both
+# unbounded disk growth and production recovery state written by tests.
+# Keyed by OS pid for the same reason as :deployment_instance_dir below —
+# concurrent agent test runs on the devbox share MIX_TEST_PARTITION "0", so a
+# partition-keyed dir would be shared across suites.
+config :casein,
+       :tmux_scrollback_archive_dir,
+       Path.join(System.tmp_dir!(), "casein-test-scrollback-#{System.pid()}")
+
 # Keep test-boot deployment heartbeats out of the real /run/casein/instances.
 # Devbox terminals inherit CASEIN_INSTANCE_UUID from the canary that spawned
 # them, so an unsandboxed `mix test` boot would overwrite that live canary's

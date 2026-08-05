@@ -29,6 +29,22 @@ for var <- ~w(CASEIN_GROK_BUNDLE_ROOT CASEIN_GROK_LEADER_ROOT) do
   System.delete_env(var)
 end
 
+# Close the scrollback sandbox over VM *shutdown*.
+#
+# config/test.exs sets :tmux_scrollback_archive_dir, but
+# `ScrollbackArchive.archive_dir/0` resolves app config → env var → $HOME at
+# *call* time, and the `:casein` app env is unloaded while the VM stops. Any
+# spill during shutdown (SessionOwner terminate → put/2) therefore reads a nil
+# app config and falls back to $HOME/.casein/tmux-scrollback — the production
+# archive. That is exactly how test sessions kept landing there even with the
+# config set: the writes all arrive in one burst in the final milliseconds of
+# the run. `CASEIN_TMUX_SCROLLBACK_DIR` lives in the OS process env, which
+# outlives app-env teardown, so it still resolves after config is gone.
+case Application.get_env(:casein, :tmux_scrollback_archive_dir) do
+  dir when is_binary(dir) and dir != "" -> System.put_env("CASEIN_TMUX_SCROLLBACK_DIR", dir)
+  _ -> :ok
+end
+
 # One tmux server per test VM. `config/test.exs` pins the label to a fixed
 # `casein_test`, which is correct for isolating the suite from live sessions but
 # NOT for isolating concurrent suites from each other: this box routinely runs

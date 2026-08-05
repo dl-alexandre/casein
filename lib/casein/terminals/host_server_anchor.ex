@@ -125,6 +125,10 @@ defmodule Casein.Terminals.HostServerAnchor do
   # there is no reachable server to strand: a healthy one would have succeeded. If
   # a wedged server process is still alive it simply keeps an unlinked inode and
   # stays unreachable, which it already was.
+  # socket_path/3 composes TMUX_TMPDIR (operator env), `id -u`, and the app's
+  # own TmuxServer.label() — no request- or user-supplied segment reaches it,
+  # so there is no traversal source to taint.
+  # sobelow_skip ["Traversal.FileModule"]
   defp retry_after_unlink(dir, out, code) do
     with path when is_binary(path) <- socket_path(),
          true <- File.exists?(path),
