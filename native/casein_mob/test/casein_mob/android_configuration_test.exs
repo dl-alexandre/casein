@@ -2,6 +2,7 @@ defmodule CaseinMob.AndroidConfigurationTest do
   use ExUnit.Case, async: true
 
   @manifest Path.expand("../../android/app/src/main/AndroidManifest.xml", __DIR__)
+  @gradle Path.expand("../../android/app/build.gradle", __DIR__)
   @mob_notify_bridge Path.expand(
                        "../../android/app/src/main/java/io/mob/notify/MobNotifyBridge.kt",
                        __DIR__
@@ -33,5 +34,39 @@ defmodule CaseinMob.AndroidConfigurationTest do
     assert bridge =~ ~S|deliverPushTokenError(pid, "firebase_token_blank")|
     assert bridge =~ "firebase_token_fetch_failed"
     refute bridge =~ "com.example.casein_mob"
+  end
+
+  test "preserves only staged ERTS executables byte-for-byte across every packaged ABI" do
+    gradle = File.read!(@gradle)
+
+    assert gradle =~ "keepDebugSymbols += ["
+
+    helpers =
+      Regex.scan(~r/'\*\*\/(lib[^']+\.so)'/, gradle, capture: :all_but_first)
+      |> List.flatten()
+
+    assert helpers == ["libepmd.so", "liberl_child_setup.so", "libinet_gethost.so"]
+
+    # ABI wildcards apply the same exact allowlist to arm64-v8a,
+    # armeabi-v7a, and x86_64. Ordinary JNI libraries retain AGP's existing
+    # stripping behavior rather than silently widening the exception.
+    [abi_filter_line] =
+      Regex.run(~r/ndk \{ abiFilters ([^}]+) \}/, gradle, capture: :all_but_first)
+
+    abis = Regex.scan(~r/'([^']+)'/, abi_filter_line, capture: :all_but_first) |> List.flatten()
+
+    assert abis == ["arm64-v8a", "armeabi-v7a", "x86_64"]
+
+    packaged_helper_paths =
+      for abi <- abis, helper <- helpers do
+        "lib/#{abi}/#{helper}"
+      end
+
+    assert length(packaged_helper_paths) == 9
+    assert Enum.uniq(packaged_helper_paths) == packaged_helper_paths
+
+    refute gradle =~ "**/libcasein_mob.so"
+    refute gradle =~ "**/libsqlite3_nif.so"
+    refute gradle =~ "**/*.so"
   end
 end
