@@ -128,6 +128,13 @@ defmodule CaseinMob.TerminalScreen do
       >
         <Text text={metadata_line(assigns)} text_size={12.0} text_color={0xFFE7ECEF} padding={4} />
         <Text
+          id="terminal-status-detail"
+          text={status_detail(assigns.status)}
+          text_size={11.0}
+          text_color={0xFFFCA5A5}
+          padding={4}
+        />
+        <Text
           text="Read-only · input is disabled"
           text_size={11.0}
           text_color={0xFF9CA3AF}
@@ -404,6 +411,41 @@ defmodule CaseinMob.TerminalScreen do
   defp status_color({:error, _reason}), do: 0xFF5A2525
   defp status_color({:cutoff, _reason}), do: 0xFF5A2525
   defp status_color(_status), do: 0xFF3D351E
+
+  defp status_detail({:error, :inactive_origin}), do: "Workspace origin changed · reopen Terminal"
+
+  defp status_detail({:error, reason})
+       when reason in [
+              :identity_mismatch,
+              :topology_mismatch,
+              :connection_generation_mismatch,
+              :stale_lease
+            ],
+       do: "Session changed · reopen Terminal"
+
+  defp status_detail({:error, reason})
+       when reason in [
+              :unauthorized,
+              :feature_disabled,
+              :kill_switch_active,
+              :policy_denied,
+              :read_only
+            ],
+       do: "Terminal access unavailable"
+
+  defp status_detail({:error, :not_found}), do: "Workspace terminal unavailable"
+
+  defp status_detail({:error, reason})
+       when reason in [
+              :stale_grant,
+              :grant_expired,
+              :grant_revoked,
+              :grant_already_used
+            ],
+       do: "Secure stream expired · reopen Terminal"
+
+  defp status_detail({:error, _reason}), do: "Terminal unavailable · try again"
+  defp status_detail(_status), do: ""
 
   defp metadata_line(assigns) do
     if is_binary(assigns.workspace_id) do
