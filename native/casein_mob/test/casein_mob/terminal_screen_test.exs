@@ -285,6 +285,49 @@ defmodule CaseinMob.TerminalScreenTest do
     assert native_terminal_props(view).delivery_state == :covered
   end
 
+  test "bounded terminal errors render fixed accessible non-reflective guidance" do
+    metadata = %{origin_id: "origin-1", workspace_id: "ws-1"}
+
+    cases = [
+      {:inactive_origin, "Workspace origin changed · reopen Terminal"},
+      {:identity_mismatch, "Session changed · reopen Terminal"},
+      {:topology_mismatch, "Session changed · reopen Terminal"},
+      {:connection_generation_mismatch, "Session changed · reopen Terminal"},
+      {:stale_lease, "Session changed · reopen Terminal"},
+      {:unauthorized, "Terminal access unavailable"},
+      {:feature_disabled, "Terminal access unavailable"},
+      {:kill_switch_active, "Terminal access unavailable"},
+      {:policy_denied, "Terminal access unavailable"},
+      {:read_only, "Terminal access unavailable"},
+      {:not_found, "Workspace terminal unavailable"},
+      {:stale_grant, "Secure stream expired · reopen Terminal"},
+      {:grant_expired, "Secure stream expired · reopen Terminal"},
+      {:grant_revoked, "Secure stream expired · reopen Terminal"},
+      {:grant_already_used, "Secure stream expired · reopen Terminal"},
+      {:invalid_payload, "Terminal unavailable · try again"},
+      {:unavailable, "Terminal unavailable · try again"},
+      {:offset_mismatch, "Terminal unavailable · try again"}
+    ]
+
+    Enum.each(cases, fn {reason, copy} ->
+      view =
+        mounted_terminal()
+        |> render_info({:mobile_terminal_status, "ws-1", {:error, reason}, metadata})
+
+      assert find(view, :text, id: "terminal-status-detail")
+      assert text(view) =~ copy
+    end)
+
+    canary = "never-reflect-this-secret"
+
+    unknown =
+      mounted_terminal()
+      |> render_info({:mobile_terminal_status, "ws-1", {:error, canary}, metadata})
+
+    assert text(unknown) =~ "Terminal unavailable · try again"
+    refute text(unknown) =~ canary
+  end
+
   test "back uses the normal navigation stack" do
     view =
       TerminalScreen
