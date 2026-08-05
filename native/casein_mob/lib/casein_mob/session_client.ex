@@ -31,7 +31,7 @@ defmodule CaseinMob.SessionClient do
   use Slipstream
   require Logger
 
-  alias CaseinMob.{ConnectionTiming, OriginIdentity, SessionConfig}
+  alias CaseinMob.{ConnectionTiming, MobileTerminalStream, OriginIdentity, SessionConfig}
   alias Slipstream.Socket
 
   @name __MODULE__
@@ -129,6 +129,27 @@ defmodule CaseinMob.SessionClient do
     cast({:unwatch_mobile_cards, subscriber})
   end
 
+  @doc "Open one server-owned, read-only terminal for an authorized workspace."
+  @spec watch_terminal(String.t(), pid()) :: :ok
+  def watch_terminal(workspace_id, subscriber \\ self())
+      when is_binary(workspace_id) and is_pid(subscriber) do
+    cast({:watch_terminal, workspace_id, subscriber})
+  end
+
+  @doc "Delete the active server-owned terminal and forget all local terminal state."
+  @spec unwatch_terminal(pid()) :: :ok
+  def unwatch_terminal(subscriber \\ self()) when is_pid(subscriber) do
+    cast({:unwatch_terminal, subscriber})
+  end
+
+  @doc "Cover terminal output while the app is backgrounded."
+  @spec terminal_background() :: :ok
+  def terminal_background, do: cast(:terminal_background)
+
+  @doc "Require a fresh grant and baseline after returning to the foreground."
+  @spec terminal_foreground() :: :ok
+  def terminal_foreground, do: cast(:terminal_foreground)
+
   @doc "Send a narrow mobile card action to the authenticated user's card stream."
   @spec card_action(String.t(), String.t(), map() | nil) :: :ok
   def card_action(card_id, action, payload \\ nil)
@@ -209,6 +230,9 @@ defmodule CaseinMob.SessionClient do
       |> assign(:test_mode?, Keyword.get(opts, :test_mode?, false))
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
+      |> assign(:terminal_control_refs, %{})
+      |> assign(:mobile_terminal, nil)
+      |> assign(:terminal_baseline_generation, 0)
       |> assign(
         :timing_context,
         boot_context || ConnectionTiming.new_context(:cold)
@@ -291,11 +315,14 @@ defmodule CaseinMob.SessionClient do
           {:ok, socket, accepted_reply, _baseline?} ->
             socket = cache_topic_snapshot(socket, topic, accepted_reply)
             notify_joined(socket, topic, accepted_reply)
-            {:ok, socket}
+            {:ok, maybe_request_terminal_control(socket)}
 
           {:error, socket} ->
             {:ok, socket}
         end
+
+      terminal_topic?(topic) ->
+        accept_terminal_frame(socket, topic, reply)
 
       true ->
         socket = cache_topic_snapshot(socket, topic, reply)
@@ -339,12 +366,26 @@ defmodule CaseinMob.SessionClient do
     end
   end
 
+  def handle_message(topic, event, payload, socket)
+      when event in ["terminal_output", "terminal_cutoff"] do
+    if terminal_topic?(topic),
+      do: accept_terminal_frame(socket, topic, payload),
+      else: {:ok, socket}
+  end
+
   def handle_message(_topic, "cards_snapshot", _payload, socket), do: {:ok, socket}
 
   def handle_message(_topic, _event, _payload, socket), do: {:ok, socket}
 
   @impl Slipstream
   def handle_reply(ref, reply, socket) do
+    case pop_terminal_control(socket, ref) do
+      {nil, socket} -> handle_non_terminal_reply(ref, reply, socket)
+      {operation, socket} -> handle_terminal_control_reply(operation, reply, socket)
+    end
+  end
+
+  defp handle_non_terminal_reply(ref, reply, socket) do
     case pop_push_registration(socket, ref) do
       {nil, socket} ->
         handle_card_action_reply(ref, reply, socket)
@@ -372,8 +413,12 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_topic_close(topic, reason, socket) do
-    notify_status(socket, topic, error_status(reason))
-    {:ok, drop_topic_snapshot(socket, topic)}
+    if terminal_topic?(topic) do
+      {:ok, terminal_closed(socket, reason)}
+    else
+      notify_status(socket, topic, error_status(reason))
+      {:ok, drop_topic_snapshot(socket, topic)}
+    end
   end
 
   @impl Slipstream
@@ -400,6 +445,7 @@ defmodule CaseinMob.SessionClient do
       |> assign(:topic_snapshots, %{})
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
+      |> purge_terminal_transport(status)
 
     case pop_pending_configuration(socket) do
       {%{
@@ -474,21 +520,25 @@ defmodule CaseinMob.SessionClient do
         socket
       end
 
-    {:noreply,
-     socket
-     |> clear_subscriber_monitors()
-     |> assign(:subscribers, %{})
-     |> assign(:topic_snapshots, %{})
-     |> assign(:url, nil)
-     |> assign(:token, nil)
-     |> assign(:configured_origin_id, nil)
-     |> assign(:connecting?, false)
-     |> assign(:reconnect_generation_required?, false)
-     |> assign(:pending_configuration, nil)
-     |> assign(:transport_ready?, false)
-     |> reset_mobile_snapshot_guard()
-     |> assign(:push_registration_refs, %{})
-     |> assign(:card_action_refs, %{})}
+    socket =
+      socket
+      |> clear_subscriber_monitors()
+      |> assign(:subscribers, %{})
+      |> assign(:topic_snapshots, %{})
+      |> assign(:url, nil)
+      |> assign(:token, nil)
+      |> assign(:configured_origin_id, nil)
+      |> assign(:connecting?, false)
+      |> assign(:reconnect_generation_required?, false)
+      |> assign(:pending_configuration, nil)
+      |> assign(:transport_ready?, false)
+      |> reset_mobile_snapshot_guard()
+      |> assign(:push_registration_refs, %{})
+      |> assign(:card_action_refs, %{})
+      |> assign(:terminal_control_refs, %{})
+      |> purge_terminal(:disconnected)
+
+    {:noreply, socket}
   end
 
   def handle_cast({:watch, workspace_id, subscriber}, socket) do
@@ -509,6 +559,44 @@ defmodule CaseinMob.SessionClient do
 
   def handle_cast({:unwatch_mobile_cards, subscriber}, socket) do
     {:noreply, drop_subscriber(socket, @mobile_cards_topic, subscriber)}
+  end
+
+  def handle_cast({:watch_terminal, workspace_id, subscriber}, socket) do
+    socket =
+      socket
+      |> replace_terminal_subscription(workspace_id, subscriber)
+      |> watch_topic(@mobile_cards_topic, subscriber)
+      |> maybe_request_terminal_control()
+
+    {:noreply, socket}
+  end
+
+  def handle_cast({:unwatch_terminal, subscriber}, socket) do
+    if get_in(socket.assigns, [:mobile_terminal, :subscriber]) == subscriber do
+      socket =
+        socket
+        |> request_terminal_delete()
+        |> purge_terminal(:closed)
+        |> drop_subscriber(@mobile_cards_topic, subscriber)
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_cast(:terminal_background, socket) do
+    {:noreply, purge_terminal_transport(socket, :backgrounded)}
+  end
+
+  def handle_cast(:terminal_foreground, socket) do
+    socket =
+      socket
+      |> update_terminal(&Map.put(&1, :status, :refreshing))
+      |> notify_terminal_status()
+      |> maybe_request_terminal_control()
+
+    {:noreply, socket}
   end
 
   def handle_cast({:card_action, card_id, action, payload, origin_id}, socket) do
@@ -585,6 +673,13 @@ defmodule CaseinMob.SessionClient do
       ^ref ->
         # A screen went away — forget its one monitor, drop it from every topic,
         # and leave topics that empty out.
+        socket =
+          if get_in(socket.assigns, [:mobile_terminal, :subscriber]) == pid do
+            socket |> request_terminal_delete() |> purge_terminal(:subscriber_down)
+          else
+            socket
+          end
+
         socket =
           socket
           |> assign(:subscriber_monitors, Map.delete(socket.assigns.subscriber_monitors, pid))
@@ -834,6 +929,7 @@ defmodule CaseinMob.SessionClient do
     notify_pending_card_actions(socket, {:error, :host_switched})
 
     socket
+    |> purge_terminal(:origin_switched)
     |> clear_subscriber_monitors()
     |> assign(:subscribers, %{})
     |> assign(:topic_snapshots, %{})
@@ -846,6 +942,440 @@ defmodule CaseinMob.SessionClient do
   defp cache_topic_snapshot(socket, topic, payload) do
     snapshots = Map.put(socket.assigns[:topic_snapshots] || %{}, topic, payload)
     assign(socket, :topic_snapshots, snapshots)
+  end
+
+  # Terminal state is intentionally separate from topic_snapshots. Raw grants
+  # and terminal bytes are connection-scoped and must never enter replay/cache.
+  defp replace_terminal_subscription(socket, workspace_id, subscriber) do
+    current = socket.assigns.mobile_terminal
+
+    socket =
+      if is_map(current) and
+           (current.workspace_id != workspace_id or current.subscriber != subscriber) do
+        socket |> request_terminal_delete() |> purge_terminal(:replaced)
+      else
+        socket
+      end
+
+    terminal =
+      socket.assigns.mobile_terminal ||
+        %{
+          subscriber: subscriber,
+          workspace_id: workspace_id,
+          status: :connecting,
+          lease: nil,
+          channel_topic: nil,
+          child_grant: nil,
+          grant_expires_at: nil,
+          connection_generation: nil,
+          stream: nil,
+          control_ref: nil
+        }
+
+    socket
+    |> assign(:mobile_terminal, terminal)
+    |> ensure_subscriber_monitor(subscriber)
+    |> notify_terminal_status()
+  end
+
+  defp maybe_request_terminal_control(%{assigns: %{mobile_terminal: nil}} = socket), do: socket
+
+  defp maybe_request_terminal_control(socket) do
+    terminal = socket.assigns.mobile_terminal
+
+    cond do
+      terminal.status == :backgrounded ->
+        socket
+
+      not is_nil(terminal.control_ref) ->
+        socket
+
+      not outbound_ready?(socket, @mobile_cards_topic) ->
+        socket
+
+      is_map(terminal.lease) ->
+        push_terminal_control(socket, :refresh, "terminal_refresh", %{
+          lease_id: terminal.lease.id
+        })
+
+      true ->
+        push_terminal_control(socket, :create, "terminal_create", %{
+          workspace_id: terminal.workspace_id,
+          request_id: Ecto.UUID.generate()
+        })
+    end
+  end
+
+  defp push_terminal_control(socket, operation, event, payload) do
+    case push(socket, @mobile_cards_topic, event, payload) do
+      {:ok, ref} ->
+        refs = Map.put(socket.assigns.terminal_control_refs, ref, operation)
+
+        socket
+        |> assign(:terminal_control_refs, refs)
+        |> update_terminal(&(&1 |> Map.put(:control_ref, ref) |> Map.put(:status, operation)))
+        |> notify_terminal_status()
+
+      {:error, reason} ->
+        terminal_error(socket, reason)
+    end
+  end
+
+  defp pop_terminal_control(socket, ref) do
+    {operation, refs} = Map.pop(socket.assigns.terminal_control_refs, ref)
+
+    socket =
+      socket
+      |> assign(:terminal_control_refs, refs)
+      |> update_terminal(fn terminal ->
+        if terminal.control_ref == ref, do: Map.put(terminal, :control_ref, nil), else: terminal
+      end)
+
+    {operation, socket}
+  end
+
+  defp handle_terminal_control_reply(:delete, _reply, socket),
+    do: {:ok, purge_terminal(socket, :deleted)}
+
+  defp handle_terminal_control_reply(operation, {:ok, payload}, socket)
+       when operation in [:create, :refresh] and is_map(payload) do
+    with {:ok, lease, topic, grant, expires_at} <-
+           validate_terminal_control_reply(payload, operation),
+         {:ok, stream} <-
+           MobileTerminalStream.new(
+             lease_id: lease.id,
+             lifecycle_generation: lease.lifecycle_generation,
+             connection_generation: terminal_connection_generation(socket)
+           ) do
+      connection_generation = terminal_connection_generation(socket)
+
+      socket =
+        socket
+        |> update_terminal(fn terminal ->
+          %{
+            terminal
+            | status: :awaiting_baseline,
+              lease: lease,
+              channel_topic: topic,
+              child_grant: nil,
+              grant_expires_at: expires_at,
+              connection_generation: connection_generation,
+              stream: stream
+          }
+        end)
+        |> notify_terminal_status()
+
+      joined =
+        join(socket, topic, %{
+          "child_grant" => grant,
+          "connection_generation" => connection_generation
+        })
+
+      # The one-time grant exists only in the outbound join command. Do not
+      # retain it in assigns or Slipstream's reconnectable join configuration.
+      joined =
+        update_in(joined.joins[topic].params, fn _params ->
+          %{"connection_generation" => connection_generation}
+        end)
+
+      {:ok, joined}
+    else
+      _ -> {:ok, terminal_error(socket, :invalid_payload)}
+    end
+  end
+
+  defp handle_terminal_control_reply(_operation, {:error, payload}, socket),
+    do: {:ok, terminal_error(socket, reason_value(payload))}
+
+  defp handle_terminal_control_reply(_operation, _reply, socket),
+    do: {:ok, terminal_error(socket, :unavailable)}
+
+  defp validate_terminal_control_reply(payload, operation) do
+    lease = payload_value(payload, :lease)
+    grant = payload_value(payload, :child_grant)
+    topic = payload_value(payload, :channel_topic)
+    mode = payload_value(payload, :mode)
+    schema = payload_value(payload, :schema)
+    status = payload_value(payload, :status)
+    token = if is_map(grant), do: payload_value(grant, :token)
+    expires_at = if is_map(grant), do: payload_value(grant, :expires_at)
+
+    normalized_lease = %{
+      id: if(is_map(lease), do: payload_value(lease, :id)),
+      lifecycle_generation: if(is_map(lease), do: payload_value(lease, :lifecycle_generation)),
+      workspace_id: if(is_map(lease), do: payload_value(lease, :workspace_id)),
+      expires_at: if(is_map(lease), do: payload_value(lease, :expires_at))
+    }
+
+    if schema == "mobile_terminal_v1" and mode == "read" and
+         status == expected_terminal_status(operation) and is_binary(token) and token != "" and
+         is_binary(expires_at) and valid_terminal_lease?(normalized_lease, topic) do
+      {:ok, normalized_lease, topic, token, expires_at}
+    else
+      {:error, :invalid_payload}
+    end
+  end
+
+  defp expected_terminal_status(:create), do: "created"
+  defp expected_terminal_status(:refresh), do: "refreshed"
+
+  defp valid_terminal_lease?(lease, "mobile_terminal:" <> id) do
+    lease.id == id and is_binary(lease.lifecycle_generation) and
+      is_binary(lease.workspace_id) and is_binary(lease.expires_at)
+  end
+
+  defp valid_terminal_lease?(_lease, _topic), do: false
+
+  defp terminal_connection_generation(socket) do
+    get_in(socket.assigns, [:timing_context, :generation])
+  end
+
+  defp accept_terminal_frame(socket, topic, payload) do
+    terminal = socket.assigns.mobile_terminal
+
+    if is_map(terminal) and terminal.channel_topic == topic and
+         match?(%MobileTerminalStream{}, terminal.stream) do
+      case MobileTerminalStream.accept(terminal.stream, payload) do
+        {:ok, stream, bytes} ->
+          event = payload_value(payload, :event)
+
+          socket =
+            socket
+            |> update_terminal(&%{&1 | stream: stream, status: :live, child_grant: nil})
+            |> maybe_advance_terminal_baseline(event)
+
+          notify_terminal_bytes(socket, event, bytes)
+          {:ok, notify_terminal_status(socket)}
+
+        {:duplicate, stream} ->
+          {:ok, update_terminal(socket, &%{&1 | stream: stream})}
+
+        {:resync, _stream, reason} ->
+          socket =
+            socket
+            |> purge_terminal_transport({:resync, reason})
+            |> maybe_request_terminal_control()
+
+          {:ok, socket}
+
+        {:cutoff, _stream, reason} ->
+          {:ok, purge_terminal_transport(socket, {:cutoff, reason})}
+      end
+    else
+      {:ok, socket}
+    end
+  end
+
+  defp notify_terminal_bytes(socket, "terminal_baseline", bytes) do
+    terminal = socket.assigns.mobile_terminal
+    send(terminal.subscriber, {:mobile_terminal_baseline, terminal_metadata(socket), bytes})
+  end
+
+  defp notify_terminal_bytes(socket, "terminal_output", bytes) do
+    send(socket.assigns.mobile_terminal.subscriber, {:mobile_terminal_output, bytes})
+  end
+
+  defp notify_terminal_bytes(_socket, _event, _bytes), do: :ok
+
+  defp maybe_advance_terminal_baseline(socket, "terminal_baseline") do
+    assign(
+      socket,
+      :terminal_baseline_generation,
+      socket.assigns.terminal_baseline_generation + 1
+    )
+  end
+
+  defp maybe_advance_terminal_baseline(socket, _event), do: socket
+
+  defp terminal_metadata(socket) do
+    terminal = socket.assigns.mobile_terminal
+    connection = active_connection_metadata(socket)
+
+    %{
+      origin_id: connection.origin_id,
+      origin_name: connection.origin_name,
+      workspace_id: terminal.lease.workspace_id,
+      read_only: true,
+      expires_at: terminal.lease.expires_at,
+      grant_expires_at: terminal.grant_expires_at,
+      fresh_baseline_generation: socket.assigns.terminal_baseline_generation
+    }
+  end
+
+  defp active_connection_metadata(socket) do
+    configured_origin_id = Map.get(socket.assigns, :configured_origin_id)
+
+    if is_binary(configured_origin_id) and configured_origin_id != "" do
+      %{
+        origin_id: configured_origin_id,
+        origin_name: Map.get(socket.assigns, :url) || "Unknown origin"
+      }
+    else
+      configured_connection_metadata()
+    end
+  end
+
+  defp configured_connection_metadata do
+    case SessionConfig.connection() do
+      {:ok, profile} ->
+        %{
+          origin_id: Map.get(profile, :origin_id),
+          origin_name: Map.get(profile, :display_name) || Map.get(profile, :url)
+        }
+
+      :error ->
+        %{origin_id: nil, origin_name: "Unknown origin"}
+    end
+  rescue
+    ArgumentError -> %{origin_id: nil, origin_name: "Unknown origin"}
+  end
+
+  defp request_terminal_delete(%{assigns: %{mobile_terminal: nil}} = socket), do: socket
+
+  defp request_terminal_delete(socket) do
+    terminal = socket.assigns.mobile_terminal
+
+    if is_map(terminal.lease) and outbound_ready?(socket, @mobile_cards_topic) do
+      case push(socket, @mobile_cards_topic, "terminal_delete", %{
+             lease_id: terminal.lease.id,
+             request_id: Ecto.UUID.generate()
+           }) do
+        {:ok, ref} ->
+          assign(
+            socket,
+            :terminal_control_refs,
+            Map.put(socket.assigns.terminal_control_refs, ref, :delete)
+          )
+
+        {:error, _reason} ->
+          socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp terminal_closed(socket, reason) do
+    socket |> purge_terminal_transport({:closed, classify_close_reason(reason)})
+  end
+
+  defp terminal_error(socket, reason) do
+    socket
+    |> update_terminal(&Map.put(&1, :status, {:error, bounded_terminal_reason(reason)}))
+    |> notify_terminal_status()
+  end
+
+  defp bounded_terminal_reason(reason)
+       when reason in [
+              :invalid_payload,
+              :unauthorized,
+              :not_found,
+              :unavailable,
+              :feature_disabled,
+              :kill_switch_active,
+              :policy_denied,
+              :inactive_origin,
+              :stale_lease,
+              :stale_grant,
+              :grant_expired,
+              :grant_revoked,
+              :identity_mismatch,
+              :topology_mismatch,
+              :offset_mismatch,
+              :read_only
+            ],
+       do: reason
+
+  defp bounded_terminal_reason(reason) when is_binary(reason) do
+    case reason do
+      "invalid_payload" -> :invalid_payload
+      "unauthorized" -> :unauthorized
+      "not_found" -> :not_found
+      "feature_disabled" -> :feature_disabled
+      "kill_switch_active" -> :kill_switch_active
+      "policy_denied" -> :policy_denied
+      "inactive_origin" -> :inactive_origin
+      "stale_lease" -> :stale_lease
+      "stale_grant" -> :stale_grant
+      "grant_expired" -> :grant_expired
+      "grant_revoked" -> :grant_revoked
+      "identity_mismatch" -> :identity_mismatch
+      "topology_mismatch" -> :topology_mismatch
+      "offset_mismatch" -> :offset_mismatch
+      "read_only" -> :read_only
+      _ -> :unavailable
+    end
+  end
+
+  defp bounded_terminal_reason(_reason), do: :unavailable
+
+  defp purge_terminal_transport(%{assigns: %{mobile_terminal: nil}} = socket, _status),
+    do: socket
+
+  defp purge_terminal_transport(socket, status) do
+    terminal = socket.assigns.mobile_terminal
+    topic = terminal.channel_topic
+
+    socket =
+      if is_binary(topic) do
+        socket = if joined?(socket, topic), do: leave(socket, topic), else: socket
+        %{socket | joins: Map.delete(socket.joins, topic)}
+      else
+        socket
+      end
+
+    socket
+    |> update_terminal(fn current ->
+      %{
+        current
+        | status: status,
+          channel_topic: nil,
+          child_grant: nil,
+          grant_expires_at: nil,
+          connection_generation: nil,
+          stream: nil,
+          control_ref: nil
+      }
+    end)
+    |> assign(:terminal_control_refs, %{})
+    |> notify_terminal_status()
+  end
+
+  defp purge_terminal(socket, status) do
+    socket = purge_terminal_transport(socket, status)
+
+    case socket.assigns.mobile_terminal do
+      nil ->
+        socket
+
+      terminal ->
+        send(terminal.subscriber, {:mobile_terminal_status, terminal.workspace_id, status, %{}})
+        assign(socket, :mobile_terminal, nil)
+    end
+  end
+
+  defp update_terminal(%{assigns: %{mobile_terminal: nil}} = socket, _fun), do: socket
+
+  defp update_terminal(socket, fun) do
+    assign(socket, :mobile_terminal, fun.(socket.assigns.mobile_terminal))
+  end
+
+  defp notify_terminal_status(%{assigns: %{mobile_terminal: nil}} = socket), do: socket
+
+  defp notify_terminal_status(socket) do
+    terminal = socket.assigns.mobile_terminal
+
+    metadata =
+      if is_map(terminal.lease),
+        do: terminal_metadata(socket),
+        else: active_connection_metadata(socket)
+
+    send(
+      terminal.subscriber,
+      {:mobile_terminal_status, terminal.workspace_id, terminal.status, metadata}
+    )
+
+    socket
   end
 
   defp accept_mobile_snapshot(socket, payload, source) when is_map(payload) do
@@ -1500,7 +2030,7 @@ defmodule CaseinMob.SessionClient do
     subscribed? =
       Enum.any?(socket.assigns.subscribers, fn {_topic, pids} ->
         MapSet.member?(pids, subscriber)
-      end)
+      end) or get_in(socket.assigns, [:mobile_terminal, :subscriber]) == subscriber
 
     if subscribed? do
       socket
@@ -1629,6 +2159,8 @@ defmodule CaseinMob.SessionClient do
 
   defp topic(workspace_id), do: "session:" <> workspace_id
   defp workspace_id("session:" <> id), do: id
+  defp terminal_topic?("mobile_terminal:" <> lease_id), do: lease_id != ""
+  defp terminal_topic?(_topic), do: false
   defp mobile_cards_topic?(@mobile_cards_topic), do: true
   defp mobile_cards_topic?(_topic), do: false
 end
