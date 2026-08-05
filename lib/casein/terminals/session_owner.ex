@@ -255,6 +255,32 @@ defmodule Casein.Terminals.SessionOwner do
     end)
   end
 
+  @doc "Stops only the exact shell owner identified by workspace and SID."
+  @spec stop_shell(String.t(), String.t()) :: :ok
+  def stop_shell(workspace_id, sid) when is_binary(workspace_id) and is_binary(sid) do
+    key = {:terminal_owner, :shell, workspace_id, sid}
+
+    case Registry.lookup(Casein.Terminals.Registry, key) do
+      [{pid, _}] -> stop_and_wait(pid)
+      [] -> :ok
+    end
+  end
+
+  defp stop_and_wait(pid) do
+    ref = Process.monitor(pid)
+    GenServer.stop(pid, :normal)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+    after
+      5_000 -> {:error, :owner_stop_timeout}
+    end
+  catch
+    :exit, {:noproc, _} -> :ok
+    :exit, {:timeout, _} -> {:error, :owner_stop_timeout}
+    :exit, _reason -> {:error, :owner_stop_failed}
+  end
+
   defp tmux_session_name(pid) do
     GenServer.call(pid, :tmux_session_name)
   catch

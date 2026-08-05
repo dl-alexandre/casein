@@ -53,6 +53,9 @@ defmodule Casein.Terminals.Tmux do
   defdelegate move_window(session, src, dst, dir), to: TmuxCtl.Client
   defdelegate rename_window(session, window_id, name), to: TmuxCtl.Client
   defdelegate set_session_alias(session, name), to: TmuxCtl.Client
+  defdelegate set_mobile_terminal_identity(session, marker), to: TmuxCtl.Client
+  defdelegate mobile_terminal_identity(session), to: TmuxCtl.Client
+  defdelegate kill_mobile_terminal(session, native_id, marker), to: TmuxCtl.Client
   defdelegate set_pane_role(session, pane_id, role), to: TmuxCtl.Client
   defdelegate list_windows(), to: TmuxCtl.Client
   defdelegate list_sessions(), to: TmuxCtl.Client

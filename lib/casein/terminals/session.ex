@@ -44,9 +44,17 @@ defmodule Casein.Terminals.Session do
     %{id: {__MODULE__, arg}, start: {__MODULE__, :start_link, [arg]}, restart: :temporary}
   end
 
+  def child_spec({_workspace, _sid, _loc, _opts} = arg) do
+    %{id: {__MODULE__, arg}, start: {__MODULE__, :start_link, [arg]}, restart: :temporary}
+  end
+
   def start_link({workspace, sid, loc}) do
+    start_link({workspace, sid, loc, []})
+  end
+
+  def start_link({workspace, sid, loc, opts}) do
     name = via(workspace, sid)
-    GenServer.start_link(__MODULE__, {workspace, sid, loc}, name: name)
+    GenServer.start_link(__MODULE__, {workspace, sid, loc, opts}, name: name)
   end
 
   def via(workspace, sid),
@@ -62,16 +70,23 @@ defmodule Casein.Terminals.Session do
   @doc """
   Returns the Session pid, starting one if not already running.
   """
-  def ensure_started(workspace, sid, loc) do
-    case whereis(workspace, sid) do
-      {:ok, pid} ->
-        {:ok, pid}
+  def ensure_started(workspace, sid, loc), do: ensure_started(workspace, sid, loc, [])
 
-      :error ->
-        DynamicSupervisor.start_child(
-          Casein.Terminals.Supervisor,
-          {__MODULE__, {workspace, sid, loc}}
-        )
+  def ensure_started(workspace, sid, loc, opts) when is_list(opts) do
+    with {:ok, requested_disposition} <- archive_disposition(opts) do
+      case whereis(workspace, sid) do
+        {:ok, pid} ->
+          case GenServer.call(pid, :archive_disposition) do
+            ^requested_disposition -> {:ok, pid}
+            _other -> {:error, :archive_disposition_mismatch}
+          end
+
+        :error ->
+          DynamicSupervisor.start_child(
+            Casein.Terminals.Supervisor,
+            {__MODULE__, {workspace, sid, loc, opts}}
+          )
+      end
     end
   end
 
@@ -104,10 +119,22 @@ defmodule Casein.Terminals.Session do
   def resize(pid, cols, rows), do: GenServer.cast(pid, {:resize, cols, rows})
   def stop(pid), do: GenServer.stop(pid, :normal)
 
+  @doc "Stops only the exact registered PTY process for workspace key and SID."
+  @spec stop_exact(String.t(), String.t()) ::
+          :ok | {:error, :session_stop_timeout | :session_stop_failed}
+  def stop_exact(workspace, sid) when is_binary(workspace) and is_binary(sid) do
+    case whereis(workspace, sid) do
+      :error -> :ok
+      {:ok, pid} -> stop_and_wait(pid)
+    end
+  end
+
   ## Callbacks
 
   @impl true
-  def init({workspace, sid, loc}) do
+  def init({workspace, sid, loc}), do: init({workspace, sid, loc, []})
+
+  def init({workspace, sid, loc, opts}) do
     backend = Backend.module()
 
     # Defer the blocking PTY bring-up (tmux scrollback capture + :exec.run, each
@@ -135,6 +162,8 @@ defmodule Casein.Terminals.Session do
        buffer: <<>>,
        archive_timer: nil,
        archive_dirty?: false,
+       archive_disposition: archive_disposition!(opts),
+       disposable?: archive_disposition!(opts) == :ephemeral,
        recreated?: false
      }, {:continue, :spawn}}
   end
@@ -158,8 +187,17 @@ defmodule Casein.Terminals.Session do
     # scrollback isn't worth it (tmux on the remote retains its own scrollback
     # which redraws on attach). When the session is *missing* (server wipe),
     # reseed from the out-of-band archive so operators still see a recent tail.
+    # Disposable status is an explicit server-owned session option, never a
+    # caller-chosen SID prefix. Ordinary sessions named `mob-*` retain normal
+    # archive behavior. The mobile lifecycle/channel passes this option only
+    # after resolving an authoritative durable lease.
+    disposable? = state.disposable?
+
     {seeded_buffer, _history_restored?} =
       cond do
+        disposable? ->
+          {<<>>, false}
+
         resumed? ->
           {backend.capture_scrollback(tmux_session, []) |> trim_to(@buffer_bytes), false}
 
@@ -233,10 +271,11 @@ defmodule Casein.Terminals.Session do
              cols: cols,
              rows: rows,
              buffer: seeded_buffer,
+             disposable?: disposable?,
              recreated?: recreated?,
              archive_dirty?: seeded_buffer != <<>>
          }
-         |> schedule_archive_spill()}
+         |> maybe_schedule_archive_spill(disposable?)}
 
       {:error, reason} ->
         {:stop, {:exec_failed, reason}, state}
@@ -282,6 +321,10 @@ defmodule Casein.Terminals.Session do
 
   def handle_call(:snapshot, _from, state) do
     {:reply, state.buffer, state}
+  end
+
+  def handle_call(:archive_disposition, _from, state) do
+    {:reply, state.archive_disposition, state}
   end
 
   @impl true
@@ -509,11 +552,17 @@ defmodule Casein.Terminals.Session do
     for pid <- Map.values(state.subscribers),
         do: send(pid, {:term_data, state.ref, bin})
 
-    state
-    |> Map.put(:buffer, Casein.BoundedBuffer.append(state.buffer, bin, @buffer_bytes))
-    |> Map.put(:archive_dirty?, true)
-    |> schedule_archive_spill()
+    state = Map.put(state, :buffer, Casein.BoundedBuffer.append(state.buffer, bin, @buffer_bytes))
+
+    if state.disposable? do
+      state
+    else
+      state |> Map.put(:archive_dirty?, true) |> schedule_archive_spill()
+    end
   end
+
+  defp maybe_schedule_archive_spill(state, true), do: state
+  defp maybe_schedule_archive_spill(state, false), do: schedule_archive_spill(state)
 
   defp schedule_archive_spill(%{archive_timer: ref} = state) when is_reference(ref), do: state
 
@@ -521,6 +570,8 @@ defmodule Casein.Terminals.Session do
     ref = Process.send_after(self(), :spill_scrollback_archive, @archive_spill_ms)
     %{state | archive_timer: ref}
   end
+
+  defp spill_archive(%{disposable?: true}), do: :ok
 
   defp spill_archive(%{tmux: tmux, buffer: buffer}) when is_binary(tmux) and is_binary(buffer) do
     if buffer != <<>> do
@@ -532,6 +583,21 @@ defmodule Casein.Terminals.Session do
 
   defp spill_archive(_), do: :ok
 
+  defp stop_and_wait(pid) do
+    ref = Process.monitor(pid)
+    GenServer.stop(pid, :normal)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+    after
+      5_000 -> {:error, :session_stop_timeout}
+    end
+  catch
+    :exit, {:noproc, _} -> :ok
+    :exit, {:timeout, _} -> {:error, :session_stop_timeout}
+    :exit, _reason -> {:error, :session_stop_failed}
+  end
+
   # Reverse-lookup a subscriber's monitor ref by pid. O(N) but N is tiny
   # (one tab + maybe one watcher in realistic cases).
   defp find_subscriber_ref(state, pid) do
@@ -539,6 +605,19 @@ defmodule Casein.Terminals.Session do
       {ref, ^pid} -> ref
       _ -> nil
     end)
+  end
+
+  defp archive_disposition(opts) do
+    case Keyword.get(opts, :archive, :persistent) do
+      :persistent -> {:ok, :persistent}
+      :ephemeral -> {:ok, :ephemeral}
+      _other -> {:error, :invalid_archive_disposition}
+    end
+  end
+
+  defp archive_disposition!(opts) do
+    {:ok, disposition} = archive_disposition(opts)
+    disposition
   end
 
   defp trim_to(bin, cap) when byte_size(bin) <= cap, do: bin

@@ -546,3 +546,17 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
         #expect(defaults.string(forKey: HostPaths.releaseRootDefaultsKey) != nil)
     }
 }
+@Test func releaseNodeOverrideRequiresExplicitPackageSmokeContract() {
+    #expect(ReleaseController.releaseNode(environment: [:]) == "casein_desktop")
+    #expect(ReleaseController.releaseNode(environment: [
+        "CASEIN_DESKTOP_RELEASE_NODE": "casein_package_123"
+    ]) == "casein_desktop")
+    #expect(ReleaseController.releaseNode(environment: [
+        "CASEIN_DESKTOP_PACKAGE_SMOKE": "1",
+        "CASEIN_DESKTOP_RELEASE_NODE": "casein_package_123"
+    ]) == "casein_package_123")
+    #expect(ReleaseController.releaseNode(environment: [
+        "CASEIN_DESKTOP_PACKAGE_SMOKE": "1",
+        "CASEIN_DESKTOP_RELEASE_NODE": "casein@remote"
+    ]) == "casein_desktop")
+}

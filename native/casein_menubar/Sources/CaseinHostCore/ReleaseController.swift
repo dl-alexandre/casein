@@ -15,6 +15,23 @@ public actor ReleaseController {
     /// daemon on this machine can't collide with the hosted one.
     public static let defaultReleaseNode = "casein_desktop"
 
+    private static func validatedReleaseNode(_ candidate: String) -> String? {
+        guard !candidate.isEmpty, candidate.count <= 64 else { return nil }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+        return candidate.unicodeScalars.allSatisfy(allowed.contains) ? candidate : nil
+    }
+
+    /// Production always owns `casein_desktop`. The package test launcher may
+    /// request an isolated node only through this explicit smoke contract.
+    public static func releaseNode(environment: [String: String]) -> String {
+        guard environment["CASEIN_DESKTOP_PACKAGE_SMOKE"] == "1",
+              let candidate = environment["CASEIN_DESKTOP_RELEASE_NODE"],
+              let validated = validatedReleaseNode(candidate)
+        else { return defaultReleaseNode }
+
+        return validated
+    }
+
     private let paths: HostPaths
     private let releaseNode: String
     private let inheritedEnvironment: [String: String]
