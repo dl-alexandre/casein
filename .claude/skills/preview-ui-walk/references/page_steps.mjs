@@ -1,8 +1,8 @@
 // Page step runner for preview-ui-walk.
 //
 // Read-only steps always allowed:
-//   wait_for, assert_selector, assert_text, assert_url, assert_iframe,
-//   assert_http, settle, screenshot
+//   wait_for, assert_selector, assert_text, assert_url, assert_value,
+//   assert_iframe, assert_http, settle, screenshot
 // Mutating steps (click, fill, type, press, select, check) require:
 //   safety.allow_interactions === true  AND  no prod_like env_check hits
 // and still refuse names listed in safety.deny_events (matched against step.event).
@@ -14,12 +14,15 @@
 //
 // Steps are product-owned in pages[].steps. Drivers never invent clicks.
 
+import { compareValues } from "./normalize.mjs";
+
 const READ_ONLY = new Set([
   "wait_for",
   "wait_for_selector",
   "assert_selector",
   "assert_text",
   "assert_url",
+  "assert_value",
   "assert_iframe",
   "assert_http",
   "settle",
@@ -88,7 +91,17 @@ export function pageNeedsRequiredInteractions(pageSpec) {
 export function walkNeedsRequiredInteractions(manifest) {
   // Top-level click-login steps count too (login.kind=click + login.steps).
   if (pageNeedsRequiredInteractions(manifest?.login)) return true;
-  return (manifest?.pages || []).some((p) => pageNeedsRequiredInteractions(p));
+  for (const login of Object.values(manifest?.logins || {})) {
+    if (pageNeedsRequiredInteractions(login)) return true;
+  }
+  if ((manifest?.pages || []).some((p) => pageNeedsRequiredInteractions(p))) return true;
+  // v2: phases and action-scoped cleanup carry steps too. Walked inline rather
+  // than via actions.mjs, which imports this module (a cycle would break both).
+  return (manifest?.actions || []).some(
+    (a) =>
+      (a?.phases || []).some((p) => pageNeedsRequiredInteractions(p)) ||
+      pageNeedsRequiredInteractions({ steps: a?.cleanup_steps }),
+  );
 }
 
 /**
@@ -277,6 +290,20 @@ async function executeStep(page, step, { timeout, base }) {
       const scope = resolveScope(page, step);
       const loc = scope.locator(sel).first();
       const count = await loc.count();
+      // "absent" is the inverse assertion: the selector must match NOTHING.
+      // Distinct from "hidden" (present but not visible), and the only way to
+      // express a permission-negative check — this control must not exist for
+      // this account. Without it, a missing selector always throws, so absence
+      // could not be asserted at all.
+      if (step.state === "absent") {
+        if (count) {
+          throw new Error(
+            `selector present (expected absent): ${sel}` +
+              (frameSelector(step) ? ` (frame ${frameSelector(step)})` : ""),
+          );
+        }
+        return;
+      }
       if (!count) {
         throw new Error(
           `selector not found: ${sel}` +
@@ -301,6 +328,33 @@ async function executeStep(page, step, { timeout, base }) {
         throw new Error(
           `text not found: ${needle.slice(0, 80)}` +
             (frameSelector(step) ? ` (frame ${frameSelector(step)})` : ""),
+        );
+      }
+      return;
+    }
+    case "assert_value": {
+      // assert_text matches body.innerText, and an <input>'s value contributes
+      // NOTHING to innerText — so without this a persisted field cannot be
+      // asserted at all, which makes edit -> save -> reopen unverifiable.
+      if (!sel) throw new Error("assert_value needs selector");
+      const scope = resolveScope(page, step);
+      const loc = scope.locator(sel).first();
+      if (!(await loc.count())) throw new Error(`selector not found: ${sel}`);
+      const actual = await loc.inputValue();
+      if (typeof step.contains === "string") {
+        if (!String(actual).includes(step.contains)) {
+          throw new Error(`value ${JSON.stringify(actual)} does not contain ${JSON.stringify(step.contains)}`);
+        }
+        return;
+      }
+      const expected = step.value !== undefined ? step.value : text;
+      if (expected === undefined || expected === null) {
+        throw new Error("assert_value needs value/text or contains");
+      }
+      const cmp = compareValues(actual, expected, step.normalize || null);
+      if (!cmp.equal) {
+        throw new Error(
+          `value ${JSON.stringify(cmp.actual)} != ${JSON.stringify(cmp.expected)} (${cmp.reason})`,
         );
       }
       return;

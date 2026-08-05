@@ -24,7 +24,8 @@ import {
   verdict,
 } from "./preflight.mjs";
 import { checkVisualBaselineReadiness, storeFromEnv } from "./visual_baseline.mjs";
-import { expandWalkCases, normalizeViewports } from "./a11y_collector.mjs";
+import { normalizeViewports } from "./a11y_collector.mjs";
+import { expandActionCases, normalizeActions } from "./actions.mjs";
 
 /** Role env prefixes a manifest needs, derived from login.params_from_env. */
 export function roleEnvPrefixes(manifests) {
@@ -44,6 +45,10 @@ export function requiredEvidence(manifests) {
   for (const m of manifests) {
     for (const k of m?.require_evidence || []) req.add(k);
     for (const p of m?.pages || []) for (const k of p?.require_evidence || []) req.add(k);
+    for (const act of m?.actions || []) {
+      for (const k of act?.require_evidence || []) req.add(k);
+      for (const ph of act?.phases || []) for (const k of ph?.require_evidence || []) req.add(k);
+    }
   }
   return [...req].sort();
 }
@@ -81,9 +86,18 @@ export function checkSchema(loaded) {
   if (bad.length) {
     return row("schema", STATE.BLOCKED, `${bad.length} manifest(s) failed to load: ${bad[0].error}`);
   }
-  const missing = loaded.filter((l) => !l.manifest?.pages || !l.manifest?.report?.name);
+  // v2: a manifest declares pages[] OR actions[]. Requiring pages[] would
+  // BLOCK every actions-only manifest at preflight.
+  const missing = loaded.filter(
+    (l) =>
+      (!l.manifest?.pages && !l.manifest?.actions) || !l.manifest?.report?.name,
+  );
   if (missing.length) {
-    return row("schema", STATE.BLOCKED, `${missing.length} manifest(s) missing pages/report.name`);
+    return row(
+      "schema",
+      STATE.BLOCKED,
+      `${missing.length} manifest(s) missing pages[]/actions[] or report.name`,
+    );
   }
   let logicalPages = 0;
   let viewportVisits = 0;
@@ -100,7 +114,7 @@ export function checkSchema(loaded) {
     if (new Set(names).size !== names.length) {
       return row("schema", STATE.BLOCKED, `${manifest.report.name} has duplicate viewport names`);
     }
-    const expanded = expandWalkCases(manifest.pages, manifest.viewports);
+    const expanded = expandActionCases(manifest, manifest.viewports);
     if (expanded.unknown.length > 0) {
       const first = expanded.unknown[0];
       return row(
@@ -109,8 +123,12 @@ export function checkSchema(loaded) {
         `${manifest.report.name} page ${first.page} references unknown viewport ${first.name}`,
       );
     }
-    logicalPages += manifest.pages.length;
-    viewportVisits += expanded.cases.length;
+    if (expanded.errors.length > 0) {
+      return row("schema", STATE.BLOCKED, `${manifest.report.name}: ${expanded.errors[0]}`);
+    }
+    const actions = normalizeActions(manifest);
+    logicalPages += actions.reduce((n, act) => n + act.phases.length, 0);
+    viewportVisits += expanded.cases.reduce((n, c) => n + c.phases.length, 0);
   }
   return row(
     "schema",

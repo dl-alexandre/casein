@@ -130,6 +130,7 @@ If Tidewave is unreachable: **still walk the browser path**, mark runtime as
 |--------|-----------|--------|
 | `wait_for` / `wait_for_selector` | no | CSS selector; optional `frame` |
 | `assert_selector` / `assert_text` / `assert_url` | no | always allowed; `frame`/`iframe` scopes into embeds |
+| `assert_value` | no | reads a form control's **value** (`input`/`select`/`textarea`); optional `contains`, `normalize` |
 | `assert_iframe` | no | **embed loaded** — body length / text / URL (kills shell-only false greens) |
 | `assert_http` | no | session cookie GET (path status + optional body text) |
 | `settle` | no | fixed sleep |
@@ -141,6 +142,23 @@ If Tidewave is unreachable: **still walk the browser path**, mark runtime as
 Mutating steps also check `step.event` against `safety.deny_events`. If interactions
 are blocked, a required mutating step **FAIL**s (so the walk does not greenwash
 as navigate-only). Set `"required": false` to SKIP instead.
+
+**Two additions worth knowing why they exist:**
+
+* `assert_value` — `assert_text` matches `body.innerText`, and an `<input>`'s
+  value contributes **nothing** to `innerText`. Without `assert_value` there is
+  no way to assert a persisted field, which makes a persistence check
+  (edit → save → reopen → confirm) unexpressible.
+* `state: "absent"` — `assert_selector` *throws* when a selector is missing, so
+  absence could not be asserted at all. `absent` (selector matches nothing) is
+  distinct from `hidden` (present, not visible) and is what permission-negative
+  checks need: *this control must not exist for a limited account*.
+
+Comparison is literal by default. Opt into `normalize`
+(`{ as, precision, unit, trim, case_fold }`) to compare at the displayed
+precision or require a unit. It is a **shared** definition rather than
+`assert_value`-private, so a future cross-stack differ encodes the parity bar
+once instead of reimplementing it.
 
 ### Agent policy
 
@@ -221,6 +239,91 @@ Or any draft-07 validator. Drivers should fail closed on schema-invalid manifest
 4. Unique `report.name`; document intent in `_note` or `preview-walks/README.md`.
 5. Schema-validate; run once; tighten asserts/probes from real failures.
 
+## Actions (v2): multi-navigation units with one verdict
+
+A `pages[]` entry is **one navigation with its own verdict**, and steps run
+inside a single page load — there is deliberately no `navigate` step. That makes
+the most important UAT assertion unexpressible in v1: *edit → save → **reopen** →
+confirm it persisted* needs two navigations, so it becomes two independent
+verdicts and nothing ever proves the second reflected the first.
+
+An **action** is a sequence of phases sharing one browser context, one carried
+state bag, and one folded verdict — the unit that maps to one tracker issue.
+
+```jsonc
+{ "version": 2,
+  "logins": { "supervisor": { "kind": "redirect_cookie", "path": "/dev/login",
+                              "params_from_env": ["WALK_SUPERVISOR_EMAIL"],
+                              "lands_on": "/inventory", "site": "North Yard" } },
+  "actions": [{
+    "name": "Change reorder threshold",
+    "uat": { "issue": 4210, "contract_hash": "9f2c41ab" },
+    "login": "supervisor",
+    "budget_ms": 8000,
+    "prereq": [{ "type": "record_exists", "of": "skus", "where": { "status": "active" }, "min": 1 }],
+    "phases": [
+      { "path": "/inventory/skus",
+        "carry": { "sku_id": { "from": "attr", "selector": "[data-sku-id]", "attr": "data-sku-id" } } },
+      { "name": "Edit", "path": "/inventory/skus/{{carry.sku_id}}/edit", "budget_ms": 12000,
+        "steps": [{ "action": "fill", "selector": "#reorder_threshold", "text": "50" },
+                  { "action": "click", "selector": "#save", "event": "save" }] },
+      { "name": "Reopen", "path": "/inventory/skus/{{carry.sku_id}}/edit",
+        "steps": [{ "action": "assert_value", "selector": "#reorder_threshold", "value": "50.00",
+                    "normalize": { "as": "number", "precision": 2 } }] }
+    ],
+    "cleanup_steps": [ /* … */ ]
+  }] }
+```
+
+See `actions-example.json` for the full fictional shape.
+
+**Inheritance** is uniform — **phase → action → walk → driver default**. Scalars
+override; `require_evidence` and `noise_patterns` union; `runtime` deep-merges.
+A phase is a page with `name` optional (it defaults to `<action> · <ordinal>`)
+plus `carry` and `mutates`.
+
+**One internal model.** A v1 `pages[]` entry normalizes to a one-phase action, so
+the driver has a single code path and v1 manifests behave identically.
+
+### Rules that are not obvious
+
+| Rule | Why |
+|------|-----|
+| `mutates` can only **escalate** | Mutation is inferred from steps and that inference is authoritative. `false` is not honored — you cannot opt out of being treated as mutating |
+| A **mutating action pins to one viewport** | The case expander is a cartesian product; unpinned, a 3-viewport walk executes the mutation three times. Remaining viewports record `NOT_TESTED` |
+| An action **never splits across contexts** | Grouping by login happens at action granularity; `login` is an action-level axis and is not valid per phase |
+| Cleanup is **action-scoped** | It runs after the last phase regardless of which phase died, so teardown still happens when a middle phase fails |
+| Cleanup **navigates first** | It opens its own page (a dead phase must not block teardown), and that page is navigated to `cleanup_path` or the last phase's resolved path. Steps on a blank page match nothing and would report a teardown that never happened |
+| A **failed cleanup is never green** | Cleanup that ran and lost turns a passing action `ASSERT_FAILED`; `cleanup_ran` reflects success, not merely that it was attempted. Gate-blocked cleanup says so instead of "0 steps failed" |
+| Retry never **re-enters** a mutated action | A read-only phase may still retry under the existing bounds; replaying from phase 1 after a write manufactures fixtures |
+
+### Prerequisites
+
+`prereq` answers *"is this action testable on this dataset right now?"* — so the
+engine doesn't report "not implemented" when the truth is "no eligible data".
+Every predicate type compiles to a primitive that already exists: `record_exists`
+and `sql` to a SELECT-only `execute_sql_query` with `expect`/`expect_min`;
+`feature_enabled`, `account_can` and `eval` to a `project_eval` probe. It's a
+typed facade, not a new checking engine, and `sql`/`eval` are escape hatches so
+an unanticipated precondition never waits on a schema change.
+
+Three rules carry the weight:
+
+* **Unevaluable is `BLOCKED`, never skipped.** Add `prereq` to
+  `require_evidence` and the existing `evidenceGuard` produces the verdict —
+  a predicate must never inherit runtime's `skipped: tidewave_unavailable`
+  degradation, which would delete the gate exactly when the environment is sick.
+* **Re-evaluated after any failure.** If a predicate held before and not after,
+  a **read-only** action is reclassified `BLOCKED` / `precondition_lost` — the
+  app is not at fault for a record another session consumed. For a **mutating**
+  action the status is left alone and the delta is recorded as
+  `preconditionDelta`: our own writes are a candidate cause, and rewriting the
+  status would hide real defects behind our own side effects.
+* **`prereq_policy`** is declared, not inferred. `"check"` (the only implemented
+  mode) blocks when unmet — correct for shared datasets, where the walk must
+  never manufacture the state it is about to test. `"seed"` is reserved for
+  isolated targets.
+
 ## Normalized result classes (v1.1)
 
 Every page keeps its **diagnostic status** (`PASS`, `PASS_SLOW`, `BOUNCED`,
@@ -246,6 +349,23 @@ fixture-tested in `selftest.mjs`. Two rules worth internalising:
   That is the fail-closed contract: a walk that could not collect what it was
   told to collect must not exit green. `--soft-blocked` downgrades it for
   exploratory runs only.
+
+### `MUTATED_UNVERIFIED` (v2 actions)
+
+One diagnostic status the page taxonomy has no word for: **a mutation landed and
+the check that was supposed to prove it never produced an answer.** Not `BLOCKED`
+(something *did* happen), not `FAILED` (no assertion ran and lost), not `PASS`,
+not `NOT_TESTED`. It normalizes to class **`BLOCKED`**, so no consumer learns a
+fifth class — `RESULT_CLASSES` stays four.
+
+Two rules it does not share with `BLOCKED`:
+
+* **`--soft-blocked` cannot downgrade it.** On a shared dataset this is the one
+  state that also corrupts the *next* run's preconditions, so an exploratory run
+  is exactly when you least want it hidden.
+* **It always owes cleanup**, and the report colors it distinctly from
+  `BLOCKED` — the call to action is different (go clean up), not just "could not
+  prove".
 
 ## Required evidence (fail closed)
 
