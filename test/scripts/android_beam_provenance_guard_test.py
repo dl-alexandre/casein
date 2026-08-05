@@ -275,8 +275,12 @@ if mode == "empty":
 if mode == "truncated":
     sys.stdout.buffer.write(b"CASEIN_BEAMS_V5\\n")
     raise SystemExit(0)
+program = args[8].replace(
+    '[ "$path" -ef "/proc/$$/fd/3" ]',
+    'casein_same_fd "$path"',
+)
 completed = subprocess.run(
-    ["/bin/sh", "-c", args[8], *args[9:]],
+    ["/bin/sh", "-c", program, *args[9:]],
     cwd=os.environ["CASEIN_FAKE_DEVICE_ROOT"],
     env=os.environ.copy(),
     stdin=subprocess.DEVNULL,
@@ -295,7 +299,7 @@ import sys
 if os.environ.get("CASEIN_FAKE_STAT_MODE") == "fail":
     raise SystemExit(1)
 target = sys.argv[-1]
-info = os.fstat(3) if target == "/proc/self/fd/3" else os.stat(target)
+info = os.stat(target)
 sys.stdout.write(f"9:{info.st_ino}:81a4:{info.st_size}:0:0\\n")
 """,
             "sha256sum": f"#!{sys.executable}\n"
@@ -306,6 +310,16 @@ import sys
 if os.environ.get("CASEIN_FAKE_SHA_MODE") == "fail":
     raise SystemExit(1)
 sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest() + "  -\\n")
+""",
+            "casein_same_fd": f"#!{sys.executable}\n"
+            + """import os
+import sys
+
+if os.environ.get("CASEIN_FAKE_FD_ALIAS_MODE") == "mismatch":
+    raise SystemExit(1)
+path = os.stat(sys.argv[1])
+opened = os.fstat(3)
+raise SystemExit(0 if (path.st_dev, path.st_ino) == (opened.st_dev, opened.st_ino) else 1)
 """,
             "cat": f"#!{sys.executable}\n"
             + """import os
@@ -527,6 +541,27 @@ sys.stdout.buffer.write(payload)
                 )
                 self.assertEqual(0, result.returncode)
 
+    def test_device_shell_fd_identity_contract_uses_parent_shell_proc_and_ef(self) -> None:
+        for program in (guard._MANIFEST_SCRIPT, guard._READ_SCRIPT):
+            with self.subTest(size=len(program)):
+                self.assertNotIn("/proc/self/fd/3", program)
+                self.assertNotIn("stat -L", program)
+                self.assertNotIn("stat -Lc", program)
+                self.assertEqual(2, program.count('[ "$path" -ef "/proc/$$/fd/3" ]'))
+                self.assertGreaterEqual(
+                    program.count("stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\""),
+                    3,
+                )
+
+        self.assertIn('[ "$before" = "$after_open" ] || finish CHANGED', guard._MANIFEST_SCRIPT)
+        self.assertIn('[ "$after_path" = "$opened" ] || finish CHANGED', guard._MANIFEST_SCRIPT)
+        self.assertIn('[ "$expected" = "$before" ] &&', guard._READ_SCRIPT)
+        self.assertIn('[ "$before" = "$after_open" ] || finish CHANGED', guard._READ_SCRIPT)
+        self.assertIn(
+            '[ "$after_path" = "$opened" ] || finish_data CHANGED',
+            guard._READ_SCRIPT,
+        )
+
     def test_android9_shaped_fake_adb_exec_out_boundary_is_exact(self) -> None:
         fake_root, environment = self.fake_adb_environment("exact")
         installed_root = fake_root / guard.INSTALLED_BEAM_DIR
@@ -540,6 +575,23 @@ sys.stdout.buffer.write(payload)
 
         self.assertEqual("exact", result.status)
         self.assertTrue(result.exact)
+
+    def test_fake_adb_fd_alias_mismatch_fails_closed(self) -> None:
+        fake_root, environment = self.fake_adb_environment("fd-alias-mismatch")
+        installed_root = fake_root / guard.INSTALLED_BEAM_DIR
+        installed_root.mkdir(parents=True)
+        for name, payload in self.payloads.items():
+            (installed_root / name).write_bytes(payload)
+
+        runner = BoundaryRunner(self.runtime_result())
+        with mock.patch.dict(
+            os.environ,
+            {**environment, "CASEIN_FAKE_FD_ALIAS_MODE": "mismatch"},
+        ):
+            result = self.verify(runner)
+
+        self.assertEqual("installed_manifest_changed", result.status)
+        self.assertFalse(result.exact)
 
     def test_fake_adb_host_zero_requires_complete_framed_remote_status(self) -> None:
         fake_root, environment = self.fake_adb_environment("failures")

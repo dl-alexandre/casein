@@ -121,16 +121,17 @@ for path in \"$dir\"/*.beam \"$dir\"/.*.beam; do
   name=${{path##*/}}
   before=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish CHANGED
   exec 3<\"$path\" || finish CHANGED
-  opened=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || finish CHANGED
+  [ \"$path\" -ef \"/proc/$$/fd/3\" ] || finish CHANGED
   after_open=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish CHANGED
   [ -f \"$path\" ] && [ ! -L \"$path\" ] || finish CHANGED
-  [ \"$before\" = \"$opened\" ] && [ \"$after_open\" = \"$opened\" ] || finish CHANGED
+  [ \"$before\" = \"$after_open\" ] || finish CHANGED
+  opened=\"$after_open\"
   digest_line=$(sha256sum <&3) || finish HASH_FAILED
   digest=${{digest_line%% *}}
-  after_hash=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || finish CHANGED
+  [ \"$path\" -ef \"/proc/$$/fd/3\" ] || finish CHANGED
   after_path=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish CHANGED
   [ -f \"$path\" ] && [ ! -L \"$path\" ] || finish CHANGED
-  [ \"$opened\" = \"$after_hash\" ] && [ \"$after_path\" = \"$opened\" ] || finish CHANGED
+  [ \"$after_path\" = \"$opened\" ] || finish CHANGED
   exec 3<&-
   printf '%s\\t%s\\t%s\\n' \"$name\" \"$opened\" \"$digest\"
 done
@@ -161,18 +162,18 @@ expected_size=${{rest%%:*}}
 [ \"$expected_size\" -gt 0 ] && [ \"$expected_size\" -le {MAX_BEAM_BYTES} ] || finish LIMITED
 before=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish MISSING
 exec 3<\"$path\" || finish MISSING
-opened=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || finish INVALID
+[ \"$path\" -ef \"/proc/$$/fd/3\" ] || finish INVALID
 after_open=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish CHANGED
 [ -f \"$path\" ] && [ ! -L \"$path\" ] || finish CHANGED
 [ \"$expected\" = \"$before\" ] &&
-  [ \"$before\" = \"$opened\" ] &&
-  [ \"$after_open\" = \"$opened\" ] || finish CHANGED
+  [ \"$before\" = \"$after_open\" ] || finish CHANGED
+opened=\"$after_open\"
 printf 'DATA\\n' || exit 0
 cat <&3 || finish_data READ_FAILED
-after_read=$(stat -Lc '%d:%i:%f:%s:%Y:%Z' /proc/self/fd/3) || finish_data CHANGED
+[ \"$path\" -ef \"/proc/$$/fd/3\" ] || finish_data CHANGED
 after_path=$(stat -c '%d:%i:%f:%s:%Y:%Z' \"$path\") || finish_data CHANGED
 [ -f \"$path\" ] && [ ! -L \"$path\" ] || finish_data CHANGED
-[ \"$opened\" = \"$after_read\" ] && [ \"$after_path\" = \"$opened\" ] || finish_data CHANGED
+[ \"$after_path\" = \"$opened\" ] || finish_data CHANGED
 exec 3<&-
 finish_data OK
 """
