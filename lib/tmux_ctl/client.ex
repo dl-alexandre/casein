@@ -1181,6 +1181,81 @@ defmodule TmuxCtl.Client do
     end
   end
 
+  @mobile_terminal_lease_option "@casein_mobile_terminal_lease"
+
+  @doc "Set and read back server-owned identity for a disposable mobile terminal."
+  def set_mobile_terminal_identity(session, marker)
+      when is_binary(session) and is_binary(marker) do
+    if String.match?(marker, ~r/\A[0-9a-f-]{36}\z/) do
+      case run(["set-option", "-t", session, @mobile_terminal_lease_option, marker]) do
+        {_, 0} ->
+          case mobile_terminal_identity(session) do
+            {:ok, %{marker: ^marker} = identity} ->
+              {:ok, identity}
+
+            {:ok, _identity} ->
+              {:error, :mobile_terminal_marker_mismatch}
+
+            {:error, _} = error ->
+              error
+          end
+
+        {out, code} ->
+          {:error, {code, out}}
+      end
+    else
+      {:error, :invalid_mobile_terminal_marker}
+    end
+  end
+
+  @doc "Read tmux's immutable native session id and mobile-terminal lease marker."
+  def mobile_terminal_identity(session) when is_binary(session) do
+    format = "\#{session_id}|\#{#{@mobile_terminal_lease_option}}"
+
+    case run(["display-message", "-p", "-t", session, format]) do
+      {out, 0} ->
+        case String.split(String.trim(out), "|", parts: 2) do
+          [native_id, marker] when native_id != "" ->
+            {:ok, %{session_id: native_id, marker: marker}}
+
+          _ ->
+            {:error, :invalid_mobile_terminal_identity}
+        end
+
+      {out, code} ->
+        {:error, {code, out}}
+    end
+  end
+
+  @doc "Kill only the native tmux identity after revalidating its lease marker."
+  def kill_mobile_terminal(session, native_id, marker)
+      when is_binary(session) and is_binary(native_id) and is_binary(marker) do
+    if String.match?(native_id, ~r/\A\$[0-9]+\z/) and
+         String.match?(marker, ~r/\A[0-9a-f-]{36}\z/) do
+      # One tmux server command performs both comparisons and the kill. The
+      # false branch deliberately returns non-zero; no name-based kill is ever
+      # issued, so a same-name replacement or server restart is preserved.
+      condition =
+        "\#{&&:\#{==:\#{session_id},#{native_id}}," <>
+          "\#{==:\#{#{@mobile_terminal_lease_option}},#{marker}}}"
+
+      case run([
+             "if-shell",
+             "-F",
+             "-t",
+             session,
+             condition,
+             "kill-session -t #{native_id}",
+             "run-shell \"exit 42\""
+           ]) do
+        {_, 0} -> :ok
+        {_out, _code} -> {:error, :mobile_terminal_identity_mismatch}
+      end
+    else
+      {:error, :invalid_mobile_terminal_identity}
+    end
+  end
+
   @doc """
   Set or clear a pane's Casein role metadata.
 

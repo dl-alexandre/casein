@@ -20,6 +20,8 @@ defmodule Casein.Mobile.TerminalSession do
     field :request_fingerprint, :string
     field :sid, :string
     field :tmux_session, :string
+    field :tmux_native_id, :string
+    field :tmux_lease_marker, :string
     field :pane_id, :string
     field :pane_role, :string, default: @role
     field :lifecycle_generation, Ecto.UUID
@@ -90,10 +92,19 @@ defmodule Casein.Mobile.TerminalSession do
 
   def transition_changeset(session, attrs) do
     session
-    |> cast(attrs, [:state, :pane_id, :ended_at, :failure_code])
+    |> cast(attrs, [
+      :state,
+      :pane_id,
+      :tmux_native_id,
+      :tmux_lease_marker,
+      :ended_at,
+      :failure_code
+    ])
     |> validate_required([:state])
     |> validate_inclusion(:state, @states)
     |> validate_length(:pane_id, max: 32)
+    |> validate_length(:tmux_native_id, max: 64)
+    |> validate_length(:tmux_lease_marker, max: 64)
     |> validate_length(:failure_code, max: 80)
   end
 end

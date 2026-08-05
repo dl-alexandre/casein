@@ -141,6 +141,31 @@ defmodule TmuxCtl.ClientTest do
     assert_receive {:tmux_runner, ["set-option", "-t", @session, "-u", "@casein_session_alias"]}
   end
 
+  test "mobile terminal identity check and native-id kill are one atomic tmux command" do
+    marker = "11111111-1111-4111-8111-111111111111"
+    FakeState.put(:fake_tmux_failures, %{"if-shell" => {"replacement observed", 42}})
+
+    assert {:error, :mobile_terminal_identity_mismatch} =
+             Client.kill_mobile_terminal(@session, "$7", marker)
+
+    assert_receive {:tmux_runner,
+                    [
+                      "if-shell",
+                      "-F",
+                      "-t",
+                      @session,
+                      condition,
+                      "kill-session -t $7",
+                      _false_branch
+                    ]}
+
+    assert condition =~ "\#{session_id},$7"
+    assert condition =~ "@casein_mobile_terminal_lease"
+    assert condition =~ marker
+    refute_receive {:tmux_runner, ["display-message" | _]}
+    refute_receive {:tmux_runner, ["kill-session" | _]}
+  end
+
   test "set_pane_role stores and clears a managed pane user option" do
     assert :ok = Client.set_pane_role(@session, "%1", "agent")
 

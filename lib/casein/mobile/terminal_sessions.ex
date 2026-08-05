@@ -51,6 +51,28 @@ defmodule Casein.Mobile.TerminalSessions do
 
   def get(id) when is_binary(id), do: Repo.get(TerminalSession, id)
 
+  @doc "Start/reuse the PTY only for an authoritative active mobile lease."
+  def ensure_pty(session_or_id, opts \\ []) do
+    id = if match?(%TerminalSession{}, session_or_id), do: session_or_id.id, else: session_or_id
+    session_module = Keyword.get(opts, :session_module, Casein.Terminals.Session)
+
+    case Repo.get(TerminalSession, id) do
+      %TerminalSession{state: "active"} = lease ->
+        session_module.ensure_started(
+          lease.workspace_key,
+          lease.sid,
+          {:local, lease.workspace_root},
+          archive: :ephemeral
+        )
+
+      %TerminalSession{} ->
+        {:error, :terminal_not_active}
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
+
   def owns_tmux_session?(tmux_session) when is_binary(tmux_session) do
     Repo.exists?(from s in TerminalSession, where: s.tmux_session == ^tmux_session)
   end
@@ -102,12 +124,12 @@ defmodule Casein.Mobile.TerminalSessions do
         {:ok, active}
 
       {:ok, {:retry, reason}} ->
-        {:error, reason}
+        {:error, public_reason(reason)}
 
       {:ok, {:fatal, failed, reason}} ->
         audit(failed, "mobile.terminal_rejected", failure_code(reason))
         _ = delete(failed.id, opts)
-        {:error, reason}
+        {:error, public_reason(reason)}
 
       {:error, reason} ->
         {:error, reason}
@@ -131,10 +153,16 @@ defmodule Casein.Mobile.TerminalSessions do
     result =
       with :ok <- ScrollbackArchive.delete(lease.tmux_session),
            :ok <- tmux.ensure_session(lease.tmux_session, lease.workspace_root),
+           {:ok, identity} <-
+             tmux.set_mobile_terminal_identity(
+               lease.tmux_session,
+               lease.lifecycle_generation
+             ),
+           {:ok, identified_lease} <- persist_tmux_identity(lease, identity),
            [pane] <- tmux.list_session_panes(lease.tmux_session),
            pane_id when is_binary(pane_id) <- Map.get(pane, :id),
            :ok <- tmux.set_pane_role(lease.tmux_session, pane_id, lease.pane_role) do
-        activate(lease, pane_id)
+        activate(identified_lease, pane_id)
       else
         [] -> {:error, :missing_initial_pane}
         panes when is_list(panes) -> {:error, :unexpected_topology}
@@ -156,6 +184,19 @@ defmodule Casein.Mobile.TerminalSessions do
         end
     end
   end
+
+  defp persist_tmux_identity(lease, %{session_id: native_id, marker: marker})
+       when is_binary(native_id) and native_id != "" and is_binary(marker) and marker != "" do
+    lease
+    |> TerminalSession.transition_changeset(%{
+      state: "provisioning",
+      tmux_native_id: native_id,
+      tmux_lease_marker: marker
+    })
+    |> Repo.update()
+  end
+
+  defp persist_tmux_identity(_lease, _identity), do: {:error, :invalid_tmux_identity}
 
   defp activate(lease, pane_id) do
     lease
@@ -237,14 +278,22 @@ defmodule Casein.Mobile.TerminalSessions do
     tmux = adapter(opts)
     terminal_control = Keyword.get(opts, :terminal_control, Terminals)
 
-    with :ok <- verify_identity(lease),
+    with :ok <- verify_lease_name(lease),
          :ok <- terminal_control.stop_shell_owner(lease.workspace_id, lease.sid),
-         :ok <- terminal_control.stop_session_exact(lease.workspace_key, lease.sid),
-         :ok <- maybe_kill_exact_tmux(tmux, lease.tmux_session),
-         false <- tmux.session_exists?(lease.tmux_session) do
-      complete_delete(lease, opts)
+         :ok <- terminal_control.stop_session_exact(lease.workspace_key, lease.sid) do
+      if tmux.session_exists?(lease.tmux_session) do
+        with :ok <- verify_identity(lease),
+             :ok <- maybe_kill_exact_tmux(tmux, lease),
+             false <- tmux.session_exists?(lease.tmux_session) do
+          complete_delete(lease, opts)
+        else
+          true -> {:error, :tmux_still_present}
+          {:error, _} = error -> error
+        end
+      else
+        complete_delete(lease, opts)
+      end
     else
-      true -> {:error, :tmux_still_present}
       {:error, _} = error -> error
     end
   end
@@ -259,7 +308,7 @@ defmodule Casein.Mobile.TerminalSessions do
          :ok <- terminal_control.stop_session_exact(lease.workspace_key, lease.sid),
          {:ok, final_topology} <- verify_live_topology(lease, tmux),
          {:ok, topology_state} <- reconcile_topology(initial_topology, final_topology),
-         :ok <- maybe_kill_tmux(tmux, lease.tmux_session, topology_state),
+         :ok <- maybe_kill_tmux(tmux, lease, topology_state),
          false <- tmux.session_exists?(lease.tmux_session) do
       complete_delete(lease, opts)
     else
@@ -288,6 +337,17 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp verify_identity(lease) do
+    with :ok <- verify_lease_name(lease) do
+      cond do
+        not is_binary(lease.tmux_native_id) -> {:error, :tmux_identity_missing}
+        not is_binary(lease.tmux_lease_marker) -> {:error, :tmux_identity_missing}
+        lease.tmux_lease_marker != lease.lifecycle_generation -> {:error, :identity_mismatch}
+        true -> :ok
+      end
+    end
+  end
+
+  defp verify_lease_name(lease) do
     expected = Terminals.tmux_session_name(lease.workspace_key, lease.sid)
     if expected == lease.tmux_session, do: :ok, else: {:error, :identity_mismatch}
   end
@@ -322,14 +382,27 @@ defmodule Casein.Mobile.TerminalSessions do
   defp reconcile_topology(:absent, :absent), do: {:ok, :absent}
   defp reconcile_topology(:absent, :present), do: {:error, :terminal_session_reappeared}
 
-  defp maybe_kill_tmux(tmux, tmux_session, :present),
-    do: normalize_kill(tmux.kill(tmux_session))
+  defp maybe_kill_tmux(tmux, lease, :present),
+    do:
+      normalize_kill(
+        tmux.kill_mobile_terminal(
+          lease.tmux_session,
+          lease.tmux_native_id,
+          lease.tmux_lease_marker
+        )
+      )
 
-  defp maybe_kill_tmux(_tmux, _tmux_session, :absent), do: :ok
+  defp maybe_kill_tmux(_tmux, _lease, :absent), do: :ok
 
-  defp maybe_kill_exact_tmux(tmux, tmux_session) do
-    if tmux.session_exists?(tmux_session) do
-      normalize_kill(tmux.kill(tmux_session))
+  defp maybe_kill_exact_tmux(tmux, lease) do
+    if tmux.session_exists?(lease.tmux_session) do
+      normalize_kill(
+        tmux.kill_mobile_terminal(
+          lease.tmux_session,
+          lease.tmux_native_id,
+          lease.tmux_lease_marker
+        )
+      )
     else
       :ok
     end
@@ -426,6 +499,12 @@ defmodule Casein.Mobile.TerminalSessions do
   defp failure_code(:missing_pane_id), do: "missing_pane_id"
   defp failure_code(:temporarily_unavailable), do: "tmux_temporarily_unavailable"
   defp failure_code(_reason), do: "tmux_provision_failed"
+
+  defp public_reason(:missing_initial_pane), do: :missing_initial_pane
+  defp public_reason(:unexpected_topology), do: :unexpected_topology
+  defp public_reason(:missing_pane_id), do: :missing_pane_id
+  defp public_reason(:temporarily_unavailable), do: :temporarily_unavailable
+  defp public_reason(_reason), do: :tmux_provision_failed
 
   defp audit(lease, action, reason_code \\ nil) do
     Audit.emit!(%{

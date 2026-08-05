@@ -29,16 +29,17 @@ defmodule Casein.Mobile.TerminalReaper do
     {:noreply, state}
   end
 
-  defp safe_reconcile(fun) do
+  @doc false
+  def safe_reconcile(fun) do
     fun.()
   rescue
-    error ->
-      Logger.warning("mobile terminal reconciliation failed", reason: Exception.message(error))
-      {:error, error}
+    _error ->
+      Logger.warning("mobile terminal reconciliation failed reason_code=reconcile_failed")
+      {:error, :reconcile_failed}
   catch
-    :exit, reason ->
-      Logger.warning("mobile terminal reconciliation exited", reason: inspect(reason, limit: 3))
-      {:error, reason}
+    :exit, _reason ->
+      Logger.warning("mobile terminal reconciliation exited reason_code=reconcile_exited")
+      {:error, :reconcile_exited}
   end
 
   defp schedule(interval), do: Process.send_after(self(), :reap, interval)

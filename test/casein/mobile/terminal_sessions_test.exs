@@ -4,6 +4,19 @@ defmodule Casein.Mobile.TerminalSessionsTest do
   alias Casein.Mobile.{TerminalSession, TerminalSessions}
   alias Casein.Repo
 
+  import ExUnit.CaptureLog
+
+  defmodule SessionModule do
+    def start_link, do: Agent.start_link(fn -> [] end, name: __MODULE__)
+
+    def ensure_started(workspace, sid, loc, opts) do
+      Agent.update(__MODULE__, &[{workspace, sid, loc, opts} | &1])
+      {:ok, self()}
+    end
+
+    def calls, do: Agent.get(__MODULE__, &Enum.reverse/1)
+  end
+
   defmodule Tmux do
     def start_link,
       do:
@@ -17,7 +30,9 @@ defmodule Casein.Mobile.TerminalSessionsTest do
               kill_error: nil,
               kill_blocker: nil,
               disappear_on_list: false,
-              provision_topology: :single
+              provision_topology: :single,
+              next_native_id: 1,
+              replace_on_kill: false
             }
           end,
           name: __MODULE__
@@ -34,10 +49,18 @@ defmodule Casein.Mobile.TerminalSessionsTest do
               :multiple -> [%{id: "%1"}, %{id: "%2"}]
             end
 
+          native_id = "$#{state.next_native_id}"
+
           state =
             state
             |> Map.update!(:ensure_count, &(&1 + 1))
-            |> put_in([:sessions, session], %{cwd: cwd, pane: pane})
+            |> Map.update!(:next_native_id, &(&1 + 1))
+            |> put_in([:sessions, session], %{
+              cwd: cwd,
+              pane: pane,
+              native_id: native_id,
+              marker: nil
+            })
 
           {:ok, state}
 
@@ -70,6 +93,80 @@ defmodule Casein.Mobile.TerminalSessionsTest do
 
       :ok
     end
+
+    def set_mobile_terminal_identity(session, marker) do
+      Agent.get_and_update(__MODULE__, fn state ->
+        case get_in(state, [:sessions, session]) do
+          nil ->
+            {{:error, :not_found}, state}
+
+          current ->
+            updated = Map.put(current, :marker, marker)
+            identity = %{session_id: current.native_id, marker: marker}
+            {{:ok, identity}, put_in(state, [:sessions, session], updated)}
+        end
+      end)
+    end
+
+    def mobile_terminal_identity(session) do
+      Agent.get(__MODULE__, fn state ->
+        case get_in(state, [:sessions, session]) do
+          nil -> {:error, :not_found}
+          current -> {:ok, %{session_id: current.native_id, marker: current.marker || ""}}
+        end
+      end)
+    end
+
+    def kill_mobile_terminal(session, native_id, marker) do
+      if blocker = Agent.get(__MODULE__, & &1.kill_blocker) do
+        lease = Casein.Repo.get_by!(Casein.Mobile.TerminalSession, tmux_session: session)
+        send(blocker, {:kill_started, self(), session, lease.state})
+
+        receive do
+          :continue_kill -> :ok
+        end
+      end
+
+      Agent.get_and_update(__MODULE__, fn state ->
+        state = maybe_replace_at_kill(state, session)
+        current = get_in(state, [:sessions, session])
+
+        cond do
+          state.kill_error ->
+            {{:error, state.kill_error}, %{state | kill_error: nil}}
+
+          is_nil(current) ->
+            {{:error, :not_found}, state}
+
+          current.native_id != native_id or current.marker != marker ->
+            {{:error, :mobile_terminal_identity_mismatch}, state}
+
+          true ->
+            next =
+              state
+              |> update_in([:kills], &[session | &1])
+              |> update_in([:sessions], &Map.delete(&1, session))
+
+            {:ok, next}
+        end
+      end)
+    end
+
+    defp maybe_replace_at_kill(%{replace_on_kill: true} = state, session) do
+      native_id = "$#{state.next_native_id}"
+
+      state
+      |> Map.put(:replace_on_kill, false)
+      |> Map.update!(:next_native_id, &(&1 + 1))
+      |> put_in([:sessions, session], %{
+        cwd: "/tmp/replacement",
+        pane: %{id: "%replacement", role: "operator"},
+        native_id: native_id,
+        marker: nil
+      })
+    end
+
+    defp maybe_replace_at_kill(state, _session), do: state
 
     def kill(session) do
       {blocker, error} = Agent.get(__MODULE__, &{&1.kill_blocker, &1.kill_error})
@@ -107,6 +204,8 @@ defmodule Casein.Mobile.TerminalSessionsTest do
 
     def provision_topology(topology),
       do: Agent.update(__MODULE__, &%{&1 | provision_topology: topology})
+
+    def replace_on_kill, do: Agent.update(__MODULE__, &%{&1 | replace_on_kill: true})
 
     def block_kill(pid), do: Agent.update(__MODULE__, &%{&1 | kill_blocker: pid})
 
@@ -154,6 +253,7 @@ defmodule Casein.Mobile.TerminalSessionsTest do
   setup do
     start_supervised!(%{id: Tmux, start: {Tmux, :start_link, []}})
     start_supervised!(%{id: TerminalControl, start: {TerminalControl, :start_link, []}})
+    start_supervised!(%{id: SessionModule, start: {SessionModule, :start_link, []}})
     :ok
   end
 
@@ -166,10 +266,22 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     assert first.pane_role == "mobile_terminal"
     assert String.starts_with?(first.sid, "mob-")
     assert first.tmux_session == Casein.Terminals.tmux_session_name("workspace", first.sid)
+    assert first.tmux_native_id == "$1"
+    assert first.tmux_lease_marker == first.lifecycle_generation
 
     assert {:ok, replay} = TerminalSessions.create(attrs, tmux: Tmux)
     assert replay.id == first.id
     assert Repo.aggregate(TerminalSession, :count) == 1
+  end
+
+  test "authoritative mobile PTY path always requests ephemeral archive disposition" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    assert {:ok, _pid} = TerminalSessions.ensure_pty(lease.id, session_module: SessionModule)
+
+    assert [{"workspace", sid, {:local, "/tmp/workspace"}, [archive: :ephemeral]}] =
+             SessionModule.calls()
+
+    assert sid == lease.sid
   end
 
   test "same device request with changed authoritative scope fails closed" do
@@ -317,6 +429,18 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     assert Tmux.kills() == []
   end
 
+  test "active same-name replacement at atomic kill boundary is preserved" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    Tmux.replace_on_kill()
+
+    assert {:error, :mobile_terminal_identity_mismatch} =
+             TerminalSessions.delete(lease.id, tmux: Tmux)
+
+    assert Repo.get!(TerminalSession, lease.id).state == "deleting"
+    assert Tmux.session_exists?(lease.tmux_session)
+    assert Tmux.kills() == []
+  end
+
   test "reaper completes a deleting lease whose exact tmux target is already absent" do
     now = ~U[2026-08-05 10:00:00Z]
     first_attrs = attrs()
@@ -437,6 +561,12 @@ defmodule Casein.Mobile.TerminalSessionsTest do
       assert lease.state == "deleted"
       refute Tmux.session_exists?(lease.tmux_session)
       assert lease.tmux_session in Tmux.kills()
+
+      rejected =
+        Casein.Audit.list(limit: 50)
+        |> Enum.find(&(&1.target_ref == lease.id and &1.action == "mobile.terminal_rejected"))
+
+      assert rejected.metadata.reason_code == Atom.to_string(expected)
     end)
   end
 
@@ -453,16 +583,59 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     refute sibling.tmux_session in Tmux.kills()
   end
 
+  test "never-active same-name replacement at atomic kill boundary is preserved" do
+    Tmux.provision_topology(:multiple)
+    Tmux.replace_on_kill()
+
+    assert {:error, :unexpected_topology} = TerminalSessions.create(attrs(), tmux: Tmux)
+    [lease] = Repo.all(TerminalSession)
+
+    assert lease.state == "deleting"
+    assert Tmux.session_exists?(lease.tmux_session)
+    assert Tmux.kills() == []
+  end
+
   test "durable provisioning failures use fixed allowlisted codes, never inspected output" do
     secret = "raw tmux pane output / credential-like material"
     Tmux.ensure_error({:subprocess_failed, secret})
 
-    assert {:error, {:subprocess_failed, ^secret}} =
-             TerminalSessions.create(attrs(), tmux: Tmux)
+    assert {:error, :tmux_provision_failed} = TerminalSessions.create(attrs(), tmux: Tmux)
 
     [pending] = Repo.all(TerminalSession)
     assert pending.failure_code == "tmux_provision_failed"
     refute pending.failure_code =~ secret
+
+    audit = Casein.Audit.list(limit: 20) |> Enum.filter(&(&1.target_ref == pending.id))
+    assert audit == []
+    refute inspect(Casein.Audit.list(limit: 20)) =~ secret
+  end
+
+  test "reaper logs and returns only allowlisted codes for exceptions and exits" do
+    exception_secret = "exception secret material"
+
+    exception_log =
+      capture_log(fn ->
+        assert {:error, :reconcile_failed} =
+                 Casein.Mobile.TerminalReaper.safe_reconcile(fn ->
+                   raise exception_secret
+                 end)
+      end)
+
+    assert exception_log =~ "reason_code=reconcile_failed"
+    refute exception_log =~ exception_secret
+
+    exit_secret = "exit secret material"
+
+    exit_log =
+      capture_log(fn ->
+        assert {:error, :reconcile_exited} =
+                 Casein.Mobile.TerminalReaper.safe_reconcile(fn ->
+                   exit({:adapter_failed, exit_secret})
+                 end)
+      end)
+
+    assert exit_log =~ "reason_code=reconcile_exited"
+    refute exit_log =~ exit_secret
   end
 
   test "ordinary mob-prefixed sessions archive unless explicitly disposable" do

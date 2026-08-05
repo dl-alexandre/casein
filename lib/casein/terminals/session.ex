@@ -73,15 +73,20 @@ defmodule Casein.Terminals.Session do
   def ensure_started(workspace, sid, loc), do: ensure_started(workspace, sid, loc, [])
 
   def ensure_started(workspace, sid, loc, opts) when is_list(opts) do
-    case whereis(workspace, sid) do
-      {:ok, pid} ->
-        {:ok, pid}
+    with {:ok, requested_disposition} <- archive_disposition(opts) do
+      case whereis(workspace, sid) do
+        {:ok, pid} ->
+          case GenServer.call(pid, :archive_disposition) do
+            ^requested_disposition -> {:ok, pid}
+            _other -> {:error, :archive_disposition_mismatch}
+          end
 
-      :error ->
-        DynamicSupervisor.start_child(
-          Casein.Terminals.Supervisor,
-          {__MODULE__, {workspace, sid, loc, opts}}
-        )
+        :error ->
+          DynamicSupervisor.start_child(
+            Casein.Terminals.Supervisor,
+            {__MODULE__, {workspace, sid, loc, opts}}
+          )
+      end
     end
   end
 
@@ -157,7 +162,8 @@ defmodule Casein.Terminals.Session do
        buffer: <<>>,
        archive_timer: nil,
        archive_dirty?: false,
-       disposable?: Keyword.get(opts, :archive) == :ephemeral,
+       archive_disposition: archive_disposition!(opts),
+       disposable?: archive_disposition!(opts) == :ephemeral,
        recreated?: false
      }, {:continue, :spawn}}
   end
@@ -315,6 +321,10 @@ defmodule Casein.Terminals.Session do
 
   def handle_call(:snapshot, _from, state) do
     {:reply, state.buffer, state}
+  end
+
+  def handle_call(:archive_disposition, _from, state) do
+    {:reply, state.archive_disposition, state}
   end
 
   @impl true
@@ -595,6 +605,19 @@ defmodule Casein.Terminals.Session do
       {ref, ^pid} -> ref
       _ -> nil
     end)
+  end
+
+  defp archive_disposition(opts) do
+    case Keyword.get(opts, :archive, :persistent) do
+      :persistent -> {:ok, :persistent}
+      :ephemeral -> {:ok, :ephemeral}
+      _other -> {:error, :invalid_archive_disposition}
+    end
+  end
+
+  defp archive_disposition!(opts) do
+    {:ok, disposition} = archive_disposition(opts)
+    disposition
   end
 
   defp trim_to(bin, cap) when byte_size(bin) <= cap, do: bin
