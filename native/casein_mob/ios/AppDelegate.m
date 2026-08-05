@@ -74,6 +74,7 @@ __attribute__((weak)) void mob_deliver_notification_json(const char* json) {
 // call before mob_init_ui() even when no plugins are activated (the function
 // body is just empty in that case).
 extern void mob_register_plugins(void);
+extern void casein_register_terminal_probe(void);
 
 static NSString* MobStringValue(id value);
 static NSMutableDictionary* MobStringMapFromDictionary(NSDictionary* dict);
@@ -341,7 +342,9 @@ static BOOL MobStoreDeepLinkURL(NSURL* url) {
     }
 
     UIWindow* window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene*)scene];
-    UIViewController* vc = [MobUIFactory makeRootViewController];
+    UIViewController* vc = [CaseinTerminalProbeFactory isEnabled]
+        ? [CaseinTerminalProbeFactory makeRootViewController]
+        : [MobUIFactory makeRootViewController];
     window.rootViewController = vc;
     self.window = window;
     [self fitWindowToScene:(UIWindowScene*)scene];
@@ -387,6 +390,7 @@ static BOOL MobStoreDeepLinkURL(NSURL* url) {
     (void)app;
 
     [UNUserNotificationCenter currentNotificationCenter].delegate = self;
+    casein_register_terminal_probe();
 
     // Must run before mob_init_ui() so the registry has every plugin view
     // factory in place by the time the BEAM mounts its first screen.
