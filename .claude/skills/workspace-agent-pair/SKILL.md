@@ -3,7 +3,7 @@ name: workspace-agent-pair
 description: >
   Ensure a product workspace agent runtime (OpenCode, Claude, Grok, Codex) has
   Casein terminal/preview/artifact MCP plus host infrastructure skills
-  (preview-ui-walk, delegate-to-grok, this skill). Use when the user says pair
+  (preview-ui-walk, delegate-to-worker, this skill). Use when the user says pair
   opencode, share MCP/skills with a workspace agent, "tools missing", "skill not
   found outside casein", run preview-ui-walk from another workspace, or
   OpenCode/Claude cannot see Casein MCP on a product checkout.
@@ -22,7 +22,7 @@ tracked git files (staging uses `{env:CASEIN_API_TOKEN}` / `${CASEIN_API_TOKEN}`
 ## When to run
 
 - User asks to pair OpenCode (or Claude/Grok/Codex) on a named workspace
-- `preview-ui-walk` / `delegate-to-grok` missing outside the casein checkout
+- `preview-ui-walk` / `delegate-to-worker` missing outside the casein checkout
 - OpenCode `debug config` has no `casein-*-<workspace>` MCP servers
 - Terminal/preview MCP tools 401 or wrong-workspace scope
 
@@ -83,7 +83,7 @@ What it does:
 | **Grok** | (n/a skill loader; host skills still staged for siblings) | project `.mcp.json` (worktree preferred; ensure script can write primary) | `bash …/launch-casein-agent.sh grok` |
 | **Codex** | n/a | per-launch `-c mcp_servers…` from launcher | `bash …/launch-casein-agent.sh codex` |
 
-Default host skill allowlist: `delegate-to-grok`, `preview-ui-walk`,
+Default host skill allowlist: `delegate-to-worker`, `preview-ui-walk`,
 `workspace-agent-pair`. Override with `CASEIN_GLOBAL_AGENT_SKILLS="…"`.
 
 ## 3. Manual fallback (if the script is unavailable)
@@ -133,7 +133,7 @@ Wrong-workspace check: MCP server names / URLs must include **this**
 |------|---------------------|
 | App UI smoke (any surface) | `preview-ui-walk` — product workflows under `.casein/preview-walk.json` and/or `.casein/preview-walks/<id>.json` |
 | Author/improve a walk | Edit/add product manifests; do not fork the skill |
-| Parallel Grok implementation | `delegate-to-grok` |
+| Parallel worker implementation (grok/codex/claude/opencode) | `delegate-to-worker` |
 | Casein-itself UI check | `verify` (only inside casein checkout) |
 
 **Restart OpenCode** after pairing — config and skills are load-time, not hot-reload.

@@ -261,7 +261,7 @@ call to keep long-polling.
 Casein-infrastructure skills live in the casein repo under `.claude/skills`, so
 they only travel with casein checkouts. But agents routinely run in **other**
 product-repo worktrees (e.g. auditing OneBackend-v3) that do not carry them — so
-an orchestrator there could not invoke `delegate-to-grok` even though delegation
+an orchestrator there could not invoke `delegate-to-worker` even though delegation
 is host infrastructure, not app code.
 
 On every Claude and Codex launch the launcher stages the allow-listed global skills into
@@ -272,12 +272,23 @@ profile when the workspace uses one, else `~/.claude`) or Codex home
 `~/.config/opencode/skills` and the project `.opencode/skills` (OpenCode also
 auto-loads `~/.claude/skills` as external skills). Staging is idempotent and
 refreshes when the canonical source changes (`scripts/lib/agent-skills.sh`). The
-allowlist defaults to `delegate-to-grok`, `preview-ui-walk`, and
+allowlist defaults to `delegate-to-worker`, `preview-ui-walk`, and
 `workspace-agent-pair` (re-pair any product workspace's agent MCP + skills);
 project-only skills like `verify` are excluded because they only make sense
 inside the casein checkout, where the project `.claude/skills` copy already
 provides them. Override with `CASEIN_GLOBAL_AGENT_SKILLS="a b c"`, or opt out
 entirely with `CASEIN_AGENT_SKILLS=0`.
+
+Staging also **prunes**. Because staging is a copy, dropping or renaming a skill
+would otherwise leave the old directory in every config home forever, so agents
+would see the retired skill alongside its replacement — with the stale copy
+carrying the wrong instructions. Each staged copy is marked with a
+`.casein-staged` file and is removed once its name leaves the allowlist. Copies
+staged before that marker existed are reached by name through
+`CASEIN_RETIRED_AGENT_SKILLS` (currently `delegate-to-grok`, renamed to
+`delegate-to-worker`); that list can be trimmed once those copies have aged out.
+A skill directory with neither the marker nor a retired name was not staged by
+Casein and is never touched.
 
 Cross-repository worker spawning must use Casein's host helper, not a launcher
 path under the product checkout:
