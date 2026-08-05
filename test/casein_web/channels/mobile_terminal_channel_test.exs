@@ -35,6 +35,25 @@ defmodule CaseinWeb.MobileTerminalChannelTest do
                socket
              )
            ) =~ "one-time-secret"
+
+    for invalid_generation <- [String.duplicate("a", 161), "bad generation\nreflected"] do
+      assert {:error,
+              %{
+                "schema" => "mobile_terminal_v1",
+                "reason" => "invalid_payload"
+              } = error} =
+               MobileTerminalChannel.join(
+                 "mobile_terminal:#{Ecto.UUID.generate()}",
+                 %{
+                   "child_grant" => "one-time-secret",
+                   "connection_generation" => invalid_generation
+                 },
+                 socket
+               )
+
+      refute Map.has_key?(error, "connection_generation")
+      refute inspect(error) =~ invalid_generation
+    end
   end
 
   test "terminal mutations are explicitly rejected as read only" do
