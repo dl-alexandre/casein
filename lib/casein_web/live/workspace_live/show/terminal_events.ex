@@ -610,6 +610,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
            |> return_to_trashed_session(session, params)
            |> TerminalState.refresh_tmux_topology()
            |> TerminalState.focus_active_terminal(%{"reason" => "tmux:restore_window"})
+           # Retire the close toast. It holds its lane for the whole grace
+           # period, so without this the viewer keeps offering to undo a close
+           # that has already been undone — and the confirmation below sits
+           # behind it in the backlog, unseen.
+           |> push_event("window:restored", %{"window_id" => window_id})
            |> put_flash(:info, "Restored #{window_label(name)}.")}
 
         {:error, :nothing_pending} ->
