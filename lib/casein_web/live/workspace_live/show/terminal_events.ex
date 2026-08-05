@@ -573,9 +573,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   # intact. This is why there is no `data-confirm` on the close affordances:
   # the undo window replaces the prompt.
   def handle_event("tmux:kill_window", params, socket) do
-    case window_id_param(params) do
-      nil -> {:noreply, put_flash(socket, :error, "No window to close.")}
-      window_id -> trash_window(socket, window_id)
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      {_result, socket} = trash_window(socket, window_id_param(params))
+      {:noreply, socket}
+    else
+      TerminalState.deny_tmux_mutation(socket)
     end
   end
 
@@ -585,7 +587,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   # thing you did.
   def handle_event("tmux:restore_window", params, socket) do
     if TerminalState.tmux_mutations_allowed?(socket) do
-      session = socket.assigns.tmux_session
+      session = restore_target_session(socket, params)
 
       result =
         case window_id_param(params) do
@@ -605,6 +607,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
 
           {:noreply,
            socket
+           |> return_to_trashed_session(session, params)
            |> TerminalState.refresh_tmux_topology()
            |> TerminalState.focus_active_terminal(%{"reason" => "tmux:restore_window"})
            |> put_flash(:info, "Restored #{window_label(name)}.")}
@@ -996,67 +999,113 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   defp pluralize(1, singular), do: "1 " <> singular
   defp pluralize(count, singular), do: "#{count} " <> singular <> "s"
 
-  defp trash_window(socket, window_id) do
-    if TerminalState.tmux_mutations_allowed?(socket) do
-      socket = TerminalState.refresh_tmux_topology(socket)
-      session = socket.assigns.tmux_session
-      # Already filtered to visible windows, so the last-window guard counts
-      # what the operator can actually see — trashing down to an empty tab
-      # strip is refused for the same reason tmux refuses to kill the last one.
-      windows = socket.assigns[:tmux_windows] || []
-      window = Enum.find(windows, &(&1.id == window_id))
+  @doc """
+  Hides `window_id` from every viewer and arms the deferred kill.
 
-      cond do
-        length(windows) <= 1 ->
-          {:noreply, put_flash(socket, :error, "Cannot close the last tmux window.")}
+  Public because closing the *last pane* of a window is the same act as closing
+  the window — `PaneLayoutEvents` routes there too, so `C-b x` on a single-pane
+  tab is as undoable as the tab-strip ×. Callers own their own authorization
+  gate: `tmux:kill_window` checks `tmux_mutations_allowed?/1`, `pane:close_focused`
+  historically does not, and this function must not change either.
 
-        is_nil(window) ->
-          {:noreply, put_flash(socket, :error, "Window no longer exists. Refreshed windows.")}
+  Options:
 
-        true ->
-          # Move tmux's own selection off the window before hiding it, or every
-          # viewer is left pointed at a window they can no longer see. This is
-          # the one tmux mutation a deferred close makes, and undo puts it back.
-          if socket.assigns[:tmux_active_window_id] == window_id do
-            case next_visible_window_id(windows, window_id) do
-              nil -> :ok
-              next_id -> TerminalState.tmux_adapter().select_window(session, next_id)
-            end
+    * `:allow_last` — trash even when it empties the tab strip. Only for the
+      caller that is simultaneously moving the operator to another session, so
+      nobody is left staring at a session with no windows.
+    * `:skip_idle_patch` — do not patch the idle-view URL while refreshing. For
+      callers that push their own patch afterwards: LiveView refuses a second
+      redirect on one socket, so two patches crash the view.
+    * `:reason` — what to report as the cause of the focus push. Defaults to
+      `"tmux:kill_window"`; the close-pane path passes its own so the reason
+      names the affordance the operator actually used.
+
+  Returns `{:ok, socket}` once the window is hidden and the timer armed, or
+  `{:error, socket}` with the reason already flashed — callers that follow a
+  close with more work (switching sessions, patching the URL) must not do it
+  when nothing was closed.
+
+  On success pushes `window:trashed` carrying the session and sid the close
+  happened in, so the undo can find its way back even if the operator has moved
+  on since.
+  """
+  @spec trash_window(Phoenix.LiveView.Socket.t(), String.t() | nil, keyword()) ::
+          {:ok, Phoenix.LiveView.Socket.t()} | {:error, Phoenix.LiveView.Socket.t()}
+  def trash_window(socket, window_id, opts \\ [])
+
+  def trash_window(socket, nil, _opts) do
+    {:error, put_flash(socket, :error, "No window to close.")}
+  end
+
+  def trash_window(socket, window_id, opts) do
+    refresh_opts = Keyword.take(opts, [:skip_idle_patch])
+    reason = Keyword.get(opts, :reason, "tmux:kill_window")
+
+    socket = TerminalState.refresh_tmux_topology(socket, refresh_opts)
+    session = socket.assigns.tmux_session
+    # Already filtered to visible windows, so the last-window guard counts
+    # what the operator can actually see — trashing down to an empty tab
+    # strip is refused for the same reason tmux refuses to kill the last one.
+    windows = socket.assigns[:tmux_windows] || []
+    window = Enum.find(windows, &(&1.id == window_id))
+
+    cond do
+      length(windows) <= 1 and not Keyword.get(opts, :allow_last, false) ->
+        {:error, put_flash(socket, :error, "Cannot close the last tmux window.")}
+
+      is_nil(window) ->
+        {:error, put_flash(socket, :error, "Window no longer exists. Refreshed windows.")}
+
+      true ->
+        # Move tmux's own selection off the window before hiding it, or every
+        # viewer is left pointed at a window they can no longer see. This is
+        # the one tmux mutation a deferred close makes, and undo puts it back.
+        if socket.assigns[:tmux_active_window_id] == window_id do
+          case next_visible_window_id(windows, window_id) do
+            nil -> :ok
+            next_id -> TerminalState.tmux_adapter().select_window(session, next_id)
           end
+        end
 
-          case WindowTrash.trash(session, window_id, Map.get(window, :name)) do
-            {:ok, grace_ms} ->
-              {:noreply,
-               socket
-               |> assign(:tmux_rename_window_id, nil)
-               |> TerminalState.refresh_tmux_topology()
-               |> TerminalState.focus_active_terminal(%{"reason" => "tmux:kill_window"})
-               |> push_event("window:trashed", %{
-                 "window_id" => window_id,
-                 "label" => window_label(Map.get(window, :name)),
-                 "grace_ms" => grace_ms
-               })}
+        case WindowTrash.trash(session, window_id, Map.get(window, :name)) do
+          {:ok, grace_ms} ->
+            {:ok,
+             socket
+             |> assign(:tmux_rename_window_id, nil)
+             |> TerminalState.refresh_tmux_topology(refresh_opts)
+             |> TerminalState.focus_active_terminal(%{"reason" => reason})
+             |> push_event("window:trashed", %{
+               "window_id" => window_id,
+               "label" => window_label(Map.get(window, :name)),
+               "grace_ms" => grace_ms,
+               # Where the window actually lives. Closing the last window of a
+               # session moves the operator elsewhere, so by the time they hit
+               # Undo `tmux_session` may name a different session entirely.
+               "session" => session,
+               "sid" => socket.assigns[:terminal_sid]
+             })}
 
-            {:error, reason} ->
-              socket = TerminalState.refresh_tmux_topology(socket)
-              {:noreply, put_flash(socket, :error, kill_window_error(reason))}
-          end
-      end
-    else
-      TerminalState.deny_tmux_mutation(socket)
+          {:error, trash_error} ->
+            socket = TerminalState.refresh_tmux_topology(socket, refresh_opts)
+            {:error, put_flash(socket, :error, kill_window_error(trash_error))}
+        end
     end
   end
 
   # tmux moves to the next window on kill; match that so a deferred close feels
-  # like the real one. Wraps to the previous window when closing the last tab.
+  # like the real one. Wraps to the previous window when closing the last tab,
+  # and yields nil when the window being closed is the only one — negative-index
+  # `Enum.at/2` would otherwise wrap right back onto it and select the very
+  # window we are hiding.
   defp next_visible_window_id(windows, window_id) do
     case Enum.find_index(windows, &(&1.id == window_id)) do
       nil ->
         nil
 
       index ->
-        neighbor = Enum.at(windows, index + 1) || Enum.at(windows, index - 1)
-        neighbor && neighbor.id
+        neighbor = Enum.at(windows, index + 1) || Enum.at(windows, max(index - 1, 0))
+
+        if neighbor && neighbor.id != window_id, do: neighbor.id
     end
   end
 
@@ -1066,6 +1115,47 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   defp window_id_param(%{"window-id" => id}) when is_binary(id) and id != "", do: id
   defp window_id_param(%{"window_id" => id}) when is_binary(id) and id != "", do: id
   defp window_id_param(_), do: nil
+
+  defp param_string(params, key) when is_map(params) do
+    case Map.get(params, key) do
+      value when is_binary(value) and value != "" -> value
+      _ -> nil
+    end
+  end
+
+  defp param_string(_params, _key), do: nil
+
+  # Which session the undo acts on.
+  #
+  # Closing the last window of a session moves the operator to another one, so
+  # by the time Undo is pressed `tmux_session` names somewhere else and the
+  # pending entry would look absent. The toast carries the sid it was trashed
+  # under — resolve the session name back out of that rather than trusting the
+  # session string on the wire, so a client can only ever name a session that
+  # belongs to a sid in this workspace. `C-b r` carries no ids and means "here".
+  defp restore_target_session(socket, params) do
+    with sid when is_binary(sid) <- param_string(params, "sid"),
+         {:ok, _info, session} when is_binary(session) <-
+           TerminalState.resolve_active_session(socket, sid, param_string(params, "session")) do
+      session
+    else
+      _ -> socket.assigns.tmux_session
+    end
+  end
+
+  # Undo of a close that emptied a session also has to undo the move away from
+  # it, or the window comes back somewhere the operator cannot see. Only the
+  # cross-session case needs this; restoring within the current session is
+  # already where they are.
+  defp return_to_trashed_session(socket, session, params) do
+    sid = param_string(params, "sid")
+
+    if is_binary(sid) and session != socket.assigns[:tmux_session] do
+      TerminalState.switch_active_session(socket, sid, session)
+    else
+      socket
+    end
+  end
 
   defp window_label(name) when is_binary(name) and name != "", do: "window “#{name}”"
   defp window_label(_), do: "window"

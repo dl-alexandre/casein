@@ -419,6 +419,13 @@ window.addEventListener("phx:window:trashed", (event) => {
   const detail = event.detail || {}
   const windowId = detail.window_id
   const {message, actionLabel, durationMs} = windowTrashToast(detail)
+  // Carry the session the window was trashed in, not just its id. Closing the
+  // last window of a session moves the operator to another one, so by the time
+  // they press Undo the server's "current" session names somewhere else and a
+  // bare window id would look like nothing is pending.
+  const value = {"window-id": windowId}
+  if (detail.session) value["session"] = detail.session
+  if (detail.sid) value["sid"] = detail.sid
 
   showToast(message, {
     kind: "info",
@@ -430,9 +437,7 @@ window.addEventListener("phx:window:trashed", (event) => {
           if (!windowId || !window.liveSocket) return
           window.liveSocket.execJS(
             document.documentElement,
-            JSON.stringify([
-              ["push", {event: "tmux:restore_window", value: {"window-id": windowId}}]
-            ])
+            JSON.stringify([["push", {event: "tmux:restore_window", value}]])
           )
         }
       }
