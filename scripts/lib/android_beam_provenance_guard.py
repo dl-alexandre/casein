@@ -24,7 +24,7 @@ import stat
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Mapping, Protocol, Sequence, TextIO
 
@@ -72,6 +72,9 @@ _INSTALLED_IDENTITY_RE = re.compile(
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TIMEOUT_REASONS = frozenset({"none", "idle", "total"})
 _MANIFEST_CAPTURE_SCOPES = frozenset({"none", "complete", "incomplete_prefix"})
+_INVALID_FRAME_PATTERNS = frozenset(
+    {"none", "interleaved", "suffix", "prefix", "mixed"}
+)
 
 _MANIFEST_HEADER = b"CASEIN_BEAMS_V5"
 _MANIFEST_END = b"END"
@@ -277,6 +280,12 @@ class GuardResult:
     unexpected_name_count: int = 0
     missing_name_count: int = 0
     manifest_capture_scope: str = "none"
+    invalid_field_count: int = 0
+    invalid_name_encoding_or_grammar_count: int = 0
+    invalid_digest_shape_count: int = 0
+    invalid_numeric_or_stat_count: int = 0
+    invalid_control_or_other_count: int = 0
+    invalid_frame_pattern: str = "none"
 
     def __post_init__(self) -> None:
         if self.status not in STATUSES:
@@ -285,6 +294,8 @@ class GuardResult:
             object.__setattr__(self, "timeout_reason", "none")
         if self.manifest_capture_scope not in _MANIFEST_CAPTURE_SCOPES:
             object.__setattr__(self, "manifest_capture_scope", "none")
+        if self.invalid_frame_pattern not in _INVALID_FRAME_PATTERNS:
+            object.__setattr__(self, "invalid_frame_pattern", "none")
         for field_name in (
             "completed_record_count",
             "valid_record_count",
@@ -293,6 +304,11 @@ class GuardResult:
             "expected_name_match_count",
             "unexpected_name_count",
             "missing_name_count",
+            "invalid_field_count",
+            "invalid_name_encoding_or_grammar_count",
+            "invalid_digest_shape_count",
+            "invalid_numeric_or_stat_count",
+            "invalid_control_or_other_count",
         ):
             value = getattr(self, field_name)
             if (
@@ -312,8 +328,14 @@ class GuardResult:
                 "expected_name_match_count",
                 "unexpected_name_count",
                 "missing_name_count",
+                "invalid_field_count",
+                "invalid_name_encoding_or_grammar_count",
+                "invalid_digest_shape_count",
+                "invalid_numeric_or_stat_count",
+                "invalid_control_or_other_count",
             ):
                 object.__setattr__(self, field_name, 0)
+            object.__setattr__(self, "invalid_frame_pattern", "none")
 
     @property
     def exact(self) -> bool:
@@ -337,6 +359,14 @@ class GuardResult:
             "unexpected_name_count": self.unexpected_name_count,
             "missing_name_count": self.missing_name_count,
             "manifest_capture_scope": self.manifest_capture_scope,
+            "invalid_field_count": self.invalid_field_count,
+            "invalid_name_encoding_or_grammar_count": (
+                self.invalid_name_encoding_or_grammar_count
+            ),
+            "invalid_digest_shape_count": self.invalid_digest_shape_count,
+            "invalid_numeric_or_stat_count": self.invalid_numeric_or_stat_count,
+            "invalid_control_or_other_count": self.invalid_control_or_other_count,
+            "invalid_frame_pattern": self.invalid_frame_pattern,
             "exact": self.exact,
         }
 
@@ -352,6 +382,12 @@ class ManifestDiagnostics:
     unexpected_name_count: int = 0
     missing_name_count: int = 0
     manifest_capture_scope: str = "none"
+    invalid_field_count: int = 0
+    invalid_name_encoding_or_grammar_count: int = 0
+    invalid_digest_shape_count: int = 0
+    invalid_numeric_or_stat_count: int = 0
+    invalid_control_or_other_count: int = 0
+    invalid_frame_pattern: str = "none"
 
     def guard_fields(self) -> dict[str, object]:
         return {
@@ -364,6 +400,14 @@ class ManifestDiagnostics:
             "unexpected_name_count": self.unexpected_name_count,
             "missing_name_count": self.missing_name_count,
             "manifest_capture_scope": self.manifest_capture_scope,
+            "invalid_field_count": self.invalid_field_count,
+            "invalid_name_encoding_or_grammar_count": (
+                self.invalid_name_encoding_or_grammar_count
+            ),
+            "invalid_digest_shape_count": self.invalid_digest_shape_count,
+            "invalid_numeric_or_stat_count": self.invalid_numeric_or_stat_count,
+            "invalid_control_or_other_count": self.invalid_control_or_other_count,
+            "invalid_frame_pattern": self.invalid_frame_pattern,
         }
 
 
@@ -864,20 +908,13 @@ def _read_installed_manifest(
         idle_timeout_seconds=MANIFEST_IDLE_TIMEOUT_SECONDS,
     )
     diagnostics = _manifest_diagnostics(result.stdout, expected_names)
-    diagnostics = ManifestDiagnostics(
+    diagnostics = replace(
+        diagnostics,
         timeout_reason=(
             result.timeout_reason
             if result.timeout_reason in _TIMEOUT_REASONS
             else "none"
         ),
-        completed_record_count=diagnostics.completed_record_count,
-        valid_record_count=diagnostics.valid_record_count,
-        unique_name_count=diagnostics.unique_name_count,
-        duplicate_name_count=diagnostics.duplicate_name_count,
-        expected_name_match_count=diagnostics.expected_name_match_count,
-        unexpected_name_count=diagnostics.unexpected_name_count,
-        missing_name_count=diagnostics.missing_name_count,
-        manifest_capture_scope=diagnostics.manifest_capture_scope,
     )
     if result.category == "output_limit":
         return ("installed_manifest_limited", None, diagnostics)
@@ -937,28 +974,21 @@ def _manifest_diagnostics(
     names: set[str] = set()
     valid = 0
     duplicates = 0
-    for encoded_entry in record_lines:
-        if valid >= MAX_BEAMS:
-            break
-        fields = encoded_entry.split(b"\t")
-        if len(fields) != 3:
-            break
-        encoded_name, encoded_identity, encoded_digest = fields
-        try:
-            name = encoded_name.decode("ascii")
-            _validate_beam_name(name)
-            identity = encoded_identity.decode("ascii")
-            installed_size = _validate_installed_identity(identity)
-            digest_text = encoded_digest.decode("ascii")
-        except (UnicodeDecodeError, InvalidArguments):
-            break
-        if (
-            len(encoded_name) > MAX_BEAM_NAME_BYTES
-            or _SHA256_RE.fullmatch(digest_text) is None
-            or installed_size <= 0
-            or installed_size > MAX_BEAM_BYTES
-        ):
-            break
+    invalid_counts = {
+        "field_count": 0,
+        "name_encoding_or_grammar": 0,
+        "digest_shape": 0,
+        "numeric_or_stat": 0,
+        "control_or_other": 0,
+    }
+    validity: list[bool] = []
+    for encoded_entry in record_lines[:MAX_BEAMS]:
+        category, name = _classify_manifest_diagnostic_record(encoded_entry)
+        record_valid = category == "valid" and name is not None
+        validity.append(record_valid)
+        if not record_valid:
+            invalid_counts[category] += 1
+            continue
         valid += 1
         if name in names:
             duplicates += 1
@@ -975,7 +1005,76 @@ def _manifest_diagnostics(
         unexpected_name_count=len(names) - expected_matches,
         missing_name_count=len(expected_names) - expected_matches,
         manifest_capture_scope="complete" if complete else "incomplete_prefix",
+        invalid_field_count=invalid_counts["field_count"],
+        invalid_name_encoding_or_grammar_count=invalid_counts[
+            "name_encoding_or_grammar"
+        ],
+        invalid_digest_shape_count=invalid_counts["digest_shape"],
+        invalid_numeric_or_stat_count=invalid_counts["numeric_or_stat"],
+        invalid_control_or_other_count=invalid_counts["control_or_other"],
+        invalid_frame_pattern=_invalid_frame_pattern(validity),
     )
+
+
+def _classify_manifest_diagnostic_record(
+    encoded_entry: bytes,
+) -> tuple[str, str | None]:
+    if (
+        not encoded_entry
+        or encoded_entry == _MANIFEST_END
+        or encoded_entry.startswith(_MANIFEST_STATUS_TAG + b"\t")
+    ):
+        return ("control_or_other", None)
+
+    fields = encoded_entry.split(b"\t")
+    if len(fields) != 3:
+        return ("field_count", None)
+    encoded_name, encoded_identity, encoded_digest = fields
+    if len(encoded_name) > MAX_BEAM_NAME_BYTES:
+        return ("name_encoding_or_grammar", None)
+    try:
+        name = encoded_name.decode("ascii")
+        _validate_beam_name(name)
+    except (UnicodeDecodeError, InvalidArguments):
+        return ("name_encoding_or_grammar", None)
+
+    try:
+        digest_text = encoded_digest.decode("ascii")
+    except UnicodeDecodeError:
+        return ("digest_shape", None)
+    if _SHA256_RE.fullmatch(digest_text) is None:
+        return ("digest_shape", None)
+
+    try:
+        identity = encoded_identity.decode("ascii")
+        installed_size = _validate_installed_identity(identity)
+    except (UnicodeDecodeError, InvalidArguments):
+        return ("numeric_or_stat", None)
+    if installed_size <= 0 or installed_size > MAX_BEAM_BYTES:
+        return ("numeric_or_stat", None)
+    return ("valid", name)
+
+
+def _invalid_frame_pattern(validity: Sequence[bool]) -> str:
+    invalid_positions = [index for index, valid in enumerate(validity) if not valid]
+    if not invalid_positions:
+        return "none"
+    valid_positions = [index for index, valid in enumerate(validity) if valid]
+    if not valid_positions:
+        # With no valid anchor, every captured invalid frame is a prefix.
+        return "prefix"
+
+    first_valid = valid_positions[0]
+    last_valid = valid_positions[-1]
+    regions = set()
+    for position in invalid_positions:
+        if position < first_valid:
+            regions.add("prefix")
+        elif position > last_valid:
+            regions.add("suffix")
+        else:
+            regions.add("interleaved")
+    return next(iter(regions)) if len(regions) == 1 else "mixed"
 
 
 def _manifest_timeout_seconds(expected_count: int) -> float | None:

@@ -386,6 +386,12 @@ sys.stdout.buffer.write(payload)
                 "unexpected_name_count": 0,
                 "missing_name_count": 0,
                 "manifest_capture_scope": "none",
+                "invalid_field_count": 0,
+                "invalid_name_encoding_or_grammar_count": 0,
+                "invalid_digest_shape_count": 0,
+                "invalid_numeric_or_stat_count": 0,
+                "invalid_control_or_other_count": 0,
+                "invalid_frame_pattern": "none",
                 "exact": True,
             },
             result.public(),
@@ -974,11 +980,15 @@ sys.stdout.buffer.write(payload)
             completed_record_count=guard.MAX_BEAMS + 1,
             valid_record_count=True,
             manifest_capture_scope=SECRET,
+            invalid_field_count=guard.MAX_BEAMS + 1,
+            invalid_frame_pattern=SECRET,
         )
         self.assertEqual("none", result.timeout_reason)
         self.assertEqual(0, result.completed_record_count)
         self.assertEqual(0, result.valid_record_count)
         self.assertEqual("none", result.manifest_capture_scope)
+        self.assertEqual(0, result.invalid_field_count)
+        self.assertEqual("none", result.invalid_frame_pattern)
         self.assertNotIn(SECRET, json.dumps(result.public()))
 
         exact = guard.GuardResult(
@@ -1028,6 +1038,61 @@ sys.stdout.buffer.write(payload)
         self.assertEqual(0, diagnostics.unique_name_count)
         self.assertEqual(len(self.payloads), diagnostics.missing_name_count)
         self.assertEqual("complete", diagnostics.manifest_capture_scope)
+
+    def test_invalid_frame_reason_counts_are_fixed_exclusive_and_nonreflecting(self) -> None:
+        valid = manifest(*tuple(self.payloads)[:1], payloads=self.payloads).split(b"\n")[1]
+        name, identity, digest = valid.split(b"\t")
+        frames = (
+            valid,
+            b"wrong\tfield-count",
+            b"private secret name.beam\t" + identity + b"\t" + digest,
+            name + b"\t" + identity + b"\tshort-digest",
+            name + b"\tnot-a-stat\t" + digest,
+            b"STATUS\tOK",
+            valid,
+        )
+        payload = guard._MANIFEST_HEADER + b"\n" + b"\n".join(frames) + b"\n"
+        diagnostics = guard._manifest_diagnostics(payload, frozenset(self.payloads))
+        self.assertEqual("incomplete_prefix", diagnostics.manifest_capture_scope)
+        self.assertEqual(2, diagnostics.valid_record_count)
+        self.assertEqual(1, diagnostics.invalid_field_count)
+        self.assertEqual(1, diagnostics.invalid_name_encoding_or_grammar_count)
+        self.assertEqual(1, diagnostics.invalid_digest_shape_count)
+        self.assertEqual(1, diagnostics.invalid_numeric_or_stat_count)
+        self.assertEqual(1, diagnostics.invalid_control_or_other_count)
+        self.assertEqual("interleaved", diagnostics.invalid_frame_pattern)
+
+        result = guard.GuardResult(
+            "installed_manifest_malformed", **diagnostics.guard_fields()
+        )
+        public = json.dumps(result.public(), sort_keys=True)
+        self.assertNotIn("private secret name", public)
+        self.assertNotIn(name.decode("ascii"), public)
+        self.assertNotIn(digest.decode("ascii"), public)
+
+    def test_invalid_frame_pattern_uses_positions_only(self) -> None:
+        cases = (
+            ((True, True), "none"),
+            ((False, False, True), "prefix"),
+            ((True, False, False), "suffix"),
+            ((True, False, True), "interleaved"),
+            ((False, True, False), "mixed"),
+            ((False, False), "prefix"),
+        )
+        for validity, expected in cases:
+            with self.subTest(validity=validity):
+                self.assertEqual(expected, guard._invalid_frame_pattern(validity))
+
+    def test_invalid_frame_reason_counts_are_capped(self) -> None:
+        payload = (
+            guard._MANIFEST_HEADER
+            + b"\n"
+            + b"bad-field-count\n" * (guard.MAX_BEAMS + 2)
+        )
+        diagnostics = guard._manifest_diagnostics(payload, frozenset(self.payloads))
+        self.assertEqual(guard.MAX_BEAMS, diagnostics.invalid_field_count)
+        self.assertEqual("prefix", diagnostics.invalid_frame_pattern)
+        self.assertEqual("incomplete_prefix", diagnostics.manifest_capture_scope)
 
     def test_truncated_and_malformed_manifest_frames_are_rejected(self) -> None:
         digest = b"0" * 64
@@ -1333,6 +1398,12 @@ sys.stdout.buffer.write(payload)
                 "unexpected_name_count",
                 "missing_name_count",
                 "manifest_capture_scope",
+                "invalid_field_count",
+                "invalid_name_encoding_or_grammar_count",
+                "invalid_digest_shape_count",
+                "invalid_numeric_or_stat_count",
+                "invalid_control_or_other_count",
+                "invalid_frame_pattern",
                 "exact",
             },
             set(decoded),
