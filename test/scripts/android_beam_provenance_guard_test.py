@@ -8,10 +8,14 @@ import importlib.util
 import io
 import json
 import os
+import selectors
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import textwrap
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -1124,7 +1128,7 @@ sys.stdout.buffer.write(payload)
         try:
             with mock.patch.object(
                 subprocess, "Popen", return_value=FakeProcess(stdout=stream)
-            ) as popen:
+            ) as popen, mock.patch.object(os, "killpg"):
                 result = guard.SubprocessCommandRunner().run(
                     ("adb", "version"),
                     stdout_limit=32,
@@ -1149,7 +1153,7 @@ sys.stdout.buffer.write(payload)
             stream = reader.makefile("rb", buffering=0)
             with mock.patch.object(
                 subprocess, "Popen", return_value=FakeProcess(stdout=stream)
-            ):
+            ), mock.patch.object(os, "killpg"):
                 result = guard.SubprocessCommandRunner().run(
                     ("adb", "version"),
                     stdout_limit=limit,
@@ -1161,6 +1165,229 @@ sys.stdout.buffer.write(payload)
 
         self.assertEqual("output_limit", result.category)
         self.assertEqual(limit + 1, len(result.stdout))
+
+    def test_missing_stdout_still_reaps_only_the_child_group(self) -> None:
+        process = FakeProcess(stdout=None)
+        with mock.patch.object(
+            subprocess, "Popen", return_value=process
+        ), mock.patch.object(os, "killpg") as killpg:
+            result = guard.SubprocessCommandRunner().run(
+                ("adb", "version"),
+                stdout_limit=32,
+                timeout_seconds=1.0,
+            )
+
+        self.assertEqual("failed", result.category)
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(
+            [
+                mock.call(process.pid, signal.SIGTERM),
+                mock.call(process.pid, signal.SIGKILL),
+            ],
+            killpg.call_args_list,
+        )
+
+    def test_non_posix_group_host_fails_before_spawning(self) -> None:
+        with mock.patch.object(guard, "_POSIX_GROUP_API", False), mock.patch.object(
+            subprocess, "Popen"
+        ) as popen:
+            result = guard.SubprocessCommandRunner().run(
+                ("adb", "version"),
+                stdout_limit=32,
+                timeout_seconds=1.0,
+            )
+
+        self.assertEqual("failed", result.category)
+        popen.assert_not_called()
+
+    def test_selector_failure_still_kills_and_reaps_the_owned_group(self) -> None:
+        marker = Path(self.temp.name) / "selector-failure-child"
+        program = textwrap.dedent(
+            """
+            import os
+            import sys
+            import time
+
+            with open(sys.argv[1], "w", encoding="ascii") as stream:
+                stream.write(str(os.getpid()))
+            time.sleep(60)
+            """
+        )
+
+        class FailingSelector:
+            def register(self, _stream, _events):
+                return None
+
+            def select(self, _timeout):
+                deadline = time.monotonic() + 1
+                while not marker.exists():
+                    if time.monotonic() >= deadline:
+                        raise OSError
+                    time.sleep(0.005)
+                raise OSError
+
+            def close(self):
+                return None
+
+        with mock.patch.object(selectors, "DefaultSelector", FailingSelector):
+            result = guard.SubprocessCommandRunner().run(
+                (sys.executable, "-c", program, str(marker)),
+                stdout_limit=32,
+                timeout_seconds=2.0,
+            )
+
+        self.assertEqual("failed", result.category)
+        child_pid = int(marker.read_text(encoding="ascii"))
+        self.assertTrue(self._wait_for_process_exit(child_pid))
+
+    def test_runner_success_and_failure_return_without_signaling_caller(self) -> None:
+        runner = guard.SubprocessCommandRunner()
+        cases = ((0, "ok"), (7, "ok"))
+
+        for returncode, category in cases:
+            with self.subTest(returncode=returncode):
+                result = runner.run(
+                    (
+                        sys.executable,
+                        "-c",
+                        "import sys; sys.stdout.write('STATUS\\n'); "
+                        f"raise SystemExit({returncode})",
+                    ),
+                    stdout_limit=32,
+                    timeout_seconds=1.0,
+                )
+                self.assertEqual(category, result.category)
+                self.assertEqual(returncode, result.returncode)
+                self.assertEqual(b"STATUS\n", result.stdout)
+
+        # Reaching this assertion proves child cleanup did not signal the caller.
+        self.assertTrue(True)
+
+    def test_success_and_nonzero_exit_kill_silent_child_group_descendants(self) -> None:
+        runner = guard.SubprocessCommandRunner()
+        for returncode in (0, 7):
+            marker = Path(self.temp.name) / f"silent-child-{returncode}"
+            program = textwrap.dedent(
+                """
+                import subprocess
+                import sys
+
+                child = subprocess.Popen(
+                    [sys.executable, "-c", "import time; time.sleep(60)"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                with open(sys.argv[1], "w", encoding="ascii") as stream:
+                    stream.write(str(child.pid))
+                sys.stdout.write("STATUS\\n")
+                raise SystemExit(int(sys.argv[2]))
+                """
+            )
+
+            with self.subTest(returncode=returncode):
+                result = runner.run(
+                    (sys.executable, "-c", program, str(marker), str(returncode)),
+                    stdout_limit=32,
+                    timeout_seconds=1.0,
+                )
+                self.assertEqual("ok", result.category)
+                self.assertEqual(returncode, result.returncode)
+                self.assertEqual(b"STATUS\n", result.stdout)
+                child_pid = int(marker.read_text(encoding="ascii"))
+                self.assertTrue(self._wait_for_process_exit(child_pid))
+
+    def test_timeout_kills_child_group_without_orphan_or_reflection(self) -> None:
+        marker = Path(self.temp.name) / "timeout-child"
+        program = textwrap.dedent(
+            """
+            import os
+            import signal
+            import subprocess
+            import sys
+            import time
+
+            ready = sys.argv[3]
+            child = subprocess.Popen(
+                [sys.executable, "-c", "import signal,sys,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); open(sys.argv[1], 'w').write('R'); time.sleep(60)", ready],
+                stdout=sys.stdout,
+                stderr=subprocess.DEVNULL,
+            )
+            deadline = time.monotonic() + 2
+            while not os.path.exists(ready):
+                if time.monotonic() >= deadline:
+                    raise SystemExit(9)
+                time.sleep(0.005)
+            with open(sys.argv[1], "w", encoding="ascii") as stream:
+                stream.write(str(child.pid))
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            sys.stdout.buffer.write(sys.argv[2].encode())
+            sys.stdout.buffer.flush()
+            time.sleep(60)
+            """
+        )
+
+        ready = Path(self.temp.name) / "timeout-ready"
+
+        with mock.patch.object(guard, "PROCESS_TERM_TIMEOUT_SECONDS", 0.05), mock.patch.object(
+            guard, "PROCESS_KILL_TIMEOUT_SECONDS", 0.2
+        ):
+            result = guard.SubprocessCommandRunner().run(
+                (
+                    sys.executable,
+                    "-c",
+                    program,
+                    str(marker),
+                    SECRET,
+                    str(ready),
+                ),
+                stdout_limit=256,
+                timeout_seconds=0.5,
+            )
+
+        self.assertEqual("timeout", result.category)
+        self.assertIsNotNone(result.returncode)
+        child_pid = int(marker.read_text(encoding="ascii"))
+        self.assertTrue(self._wait_for_process_exit(child_pid))
+
+    def test_exited_group_leader_cannot_leave_stdout_holder_orphaned(self) -> None:
+        marker = Path(self.temp.name) / "stdout-holder"
+        program = textwrap.dedent(
+            """
+            import subprocess
+            import sys
+
+            child = subprocess.Popen(
+                [sys.executable, "-c", "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"],
+                stdout=sys.stdout,
+                stderr=subprocess.DEVNULL,
+            )
+            with open(sys.argv[1], "w", encoding="ascii") as stream:
+                stream.write(str(child.pid))
+            """
+        )
+
+        result = guard.SubprocessCommandRunner().run(
+            (sys.executable, "-c", program, str(marker)),
+            stdout_limit=32,
+            timeout_seconds=1.0,
+        )
+
+        self.assertEqual("failed", result.category)
+        self.assertEqual(0, result.returncode)
+        child_pid = int(marker.read_text(encoding="ascii"))
+        self.assertTrue(self._wait_for_process_exit(child_pid))
+
+    @staticmethod
+    def _wait_for_process_exit(pid: int) -> bool:
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return True
+            time.sleep(0.01)
+        return False
 
 
 if __name__ == "__main__":

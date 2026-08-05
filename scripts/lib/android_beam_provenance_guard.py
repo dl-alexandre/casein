@@ -53,6 +53,11 @@ PROCESS_TERM_TIMEOUT_SECONDS = 1.0
 PROCESS_KILL_TIMEOUT_SECONDS = 1.0
 POLL_SECONDS = 0.05
 
+_POSIX_GROUP_API = all(
+    hasattr(os, name)
+    for name in ("killpg", "waitid", "P_PID", "WEXITED", "WNOHANG", "WNOWAIT")
+)
+
 _SERIAL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _BEAM_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,122}\.beam$")
 _SOURCE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -334,6 +339,8 @@ class SubprocessCommandRunner:
     ) -> CommandResult:
         if not argv or stdout_limit <= 0 or timeout_seconds <= 0:
             return CommandResult("failed")
+        if not _POSIX_GROUP_API:
+            return CommandResult("failed")
 
         environment = None
         if env_overrides:
@@ -359,17 +366,27 @@ class SubprocessCommandRunner:
         collected = bytearray()
         deadline = time.monotonic() + timeout_seconds
         category = "ok"
+        reaped = False
 
         try:
             if process.stdout is None:
                 _terminate_process_group(process)
-                return CommandResult("failed")
+                _wait_for_process_exit_unreaped(
+                    process, PROCESS_TERM_TIMEOUT_SECONDS
+                )
+                _kill_process_group(process)
+                try:
+                    returncode = process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
+                except subprocess.TimeoutExpired:
+                    returncode = None
+                reaped = returncode is not None
+                return CommandResult("failed", returncode)
 
             os.set_blocking(process.stdout.fileno(), False)
             selector = selectors.DefaultSelector()
             selector.register(process.stdout, selectors.EVENT_READ)
 
-            while process.poll() is None:
+            while not _process_exited_unreaped(process):
                 if time.monotonic() >= deadline:
                     category = "timeout"
                     break
@@ -381,28 +398,52 @@ class SubprocessCommandRunner:
                         break
 
             if category == "ok":
-                if not _drain_bounded(process.stdout, collected, stdout_limit):
-                    category = "output_limit"
+                category = _drain_bounded(process.stdout, collected, stdout_limit)
 
             if category != "ok":
                 _terminate_process_group(process)
+                _wait_for_process_exit_unreaped(
+                    process, PROCESS_TERM_TIMEOUT_SECONDS
+                )
 
+            # Signal while the unreaped leader still anchors ownership of this
+            # numeric process-group id.  This also removes silent descendants
+            # after a normal or nonzero leader exit without a PGID-reuse race.
+            _kill_process_group(process)
             try:
-                returncode = process.wait(timeout=PROCESS_TERM_TIMEOUT_SECONDS)
+                returncode = process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
-                _kill_process_group(process)
-                try:
-                    returncode = process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
-                except subprocess.TimeoutExpired:
-                    returncode = None
-                    category = "failed"
+                returncode = None
+                category = "failed"
+            reaped = returncode is not None
 
             return CommandResult(category, returncode, bytes(collected))
+        except (OSError, ValueError):
+            return CommandResult("failed")
         finally:
+            if not reaped:
+                _terminate_process_group(process)
+                try:
+                    _wait_for_process_exit_unreaped(
+                        process, PROCESS_TERM_TIMEOUT_SECONDS
+                    )
+                except OSError:
+                    pass
+                _kill_process_group(process)
+                try:
+                    process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
             if selector is not None:
-                selector.close()
+                try:
+                    selector.close()
+                except OSError:
+                    pass
             if process.stdout is not None:
-                process.stdout.close()
+                try:
+                    process.stdout.close()
+                except OSError:
+                    pass
 
 
 def _read_bounded(stream: object, collected: bytearray, limit: int) -> bool:
@@ -416,29 +457,54 @@ def _read_bounded(stream: object, collected: bytearray, limit: int) -> bool:
     return len(collected) <= limit
 
 
-def _drain_bounded(stream: object, collected: bytearray, limit: int) -> bool:
+def _drain_bounded(stream: object, collected: bytearray, limit: int) -> str:
     """Drain an exited child's pipe through EOF or the first over-limit byte."""
 
     while True:
         read_size = min(4096, limit + 1 - len(collected))
         if read_size <= 0:
-            return False
+            return "output_limit"
         try:
             chunk = os.read(stream.fileno(), read_size)
         except BlockingIOError:
-            return False
+            # The group leader exited while another group member retained the
+            # pipe.  Treat missing EOF as failure, then bound the whole group.
+            return "failed"
         except OSError:
-            return False
+            return "failed"
         if not chunk:
-            return True
+            return "ok"
         collected.extend(chunk)
         if len(collected) > limit:
-            return False
+            return "output_limit"
+
+
+def _process_exited_unreaped(process: subprocess.Popen[bytes]) -> bool:
+    if process.returncode is not None:
+        return True
+    try:
+        info = os.waitid(
+            os.P_PID,
+            process.pid,
+            os.WEXITED | os.WNOHANG | os.WNOWAIT,
+        )
+    except ChildProcessError:
+        return True
+    return info is not None
+
+
+def _wait_for_process_exit_unreaped(
+    process: subprocess.Popen[bytes], timeout_seconds: float
+) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if _process_exited_unreaped(process):
+            return True
+        time.sleep(min(POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+    return _process_exited_unreaped(process)
 
 
 def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is not None:
-        return
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except (OSError, ProcessLookupError):
@@ -446,8 +512,6 @@ def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
 
 
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is not None:
-        return
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except (OSError, ProcessLookupError):
