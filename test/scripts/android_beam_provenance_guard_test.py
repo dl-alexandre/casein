@@ -387,7 +387,14 @@ sys.stdout.buffer.write(payload)
                 "missing_name_count": 0,
                 "manifest_capture_scope": "none",
                 "invalid_field_count": 0,
-                "invalid_name_encoding_or_grammar_count": 0,
+                "invalid_name_encoding_count": 0,
+                "invalid_grammar_absolute_count": 0,
+                "invalid_grammar_separator_depth_count": 0,
+                "invalid_grammar_dot_segment_count": 0,
+                "invalid_grammar_length_count": 0,
+                "invalid_grammar_charset_count": 0,
+                "invalid_grammar_empty_count": 0,
+                "invalid_grammar_other_count": 0,
                 "invalid_digest_shape_count": 0,
                 "invalid_numeric_or_stat_count": 0,
                 "invalid_control_or_other_count": 0,
@@ -1045,7 +1052,18 @@ sys.stdout.buffer.write(payload)
         frames = (
             valid,
             b"wrong\tfield-count",
+            b"\xff.beam\t" + identity + b"\t" + digest,
+            b"/absolute.beam\t" + identity + b"\t" + digest,
+            b"depth/name.beam\t" + identity + b"\t" + digest,
+            b"a..b.beam\t" + identity + b"\t" + digest,
+            b"a" * (guard.MAX_BEAM_NAME_BYTES + 1)
+            + b"\t"
+            + identity
+            + b"\t"
+            + digest,
             b"private secret name.beam\t" + identity + b"\t" + digest,
+            b"\t" + identity + b"\t" + digest,
+            b"AllowedButWrong\t" + identity + b"\t" + digest,
             name + b"\t" + identity + b"\tshort-digest",
             name + b"\tnot-a-stat\t" + digest,
             b"STATUS\tOK",
@@ -1056,7 +1074,14 @@ sys.stdout.buffer.write(payload)
         self.assertEqual("incomplete_prefix", diagnostics.manifest_capture_scope)
         self.assertEqual(2, diagnostics.valid_record_count)
         self.assertEqual(1, diagnostics.invalid_field_count)
-        self.assertEqual(1, diagnostics.invalid_name_encoding_or_grammar_count)
+        self.assertEqual(1, diagnostics.invalid_name_encoding_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_absolute_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_separator_depth_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_dot_segment_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_length_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_charset_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_empty_count)
+        self.assertEqual(1, diagnostics.invalid_grammar_other_count)
         self.assertEqual(1, diagnostics.invalid_digest_shape_count)
         self.assertEqual(1, diagnostics.invalid_numeric_or_stat_count)
         self.assertEqual(1, diagnostics.invalid_control_or_other_count)
@@ -1399,7 +1424,14 @@ sys.stdout.buffer.write(payload)
                 "missing_name_count",
                 "manifest_capture_scope",
                 "invalid_field_count",
-                "invalid_name_encoding_or_grammar_count",
+                "invalid_name_encoding_count",
+                "invalid_grammar_absolute_count",
+                "invalid_grammar_separator_depth_count",
+                "invalid_grammar_dot_segment_count",
+                "invalid_grammar_length_count",
+                "invalid_grammar_charset_count",
+                "invalid_grammar_empty_count",
+                "invalid_grammar_other_count",
                 "invalid_digest_shape_count",
                 "invalid_numeric_or_stat_count",
                 "invalid_control_or_other_count",
