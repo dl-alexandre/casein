@@ -66,22 +66,7 @@ Once the gate is settled, pick on task shape:
 | Bulk / parallel implementation, unlock active | **grok** — cheap to fan out, but budget for capture-based extraction |
 | Read-only analysis or review | any; grok with `CASEIN_SPAWN_ALLOW_READ_ONLY=1` is fine |
 
-### Which model a worker gets
-
-Casein pins a model for two runtimes and leaves the rest to the runtime's own
-config:
-
-| Runtime | Model source |
-|---|---|
-| **codex** | `CASEIN_CODEX_DEFAULT_MODEL`, else the `model` key in `~/.codex/config.toml` |
-| **opencode** | `CASEIN_OPENCODE_DEFAULT_MODEL`, default `opencode/grok-4.5` |
-| **claude**, **grok** | the runtime's own config; Casein sets nothing |
-
-Both vars yield to an explicit `--model`/`-m` on the launch command, and setting
-either to the empty string opts out so the host-global config wins. Note that
-opencode's own config (`~/.config/opencode`) is **box-global** — editing it
-changes every opencode session on the machine, Casein-launched or not, which is
-why the default is injected per launch rather than written there.
+### On usage-based routing
 
 There is no reliable quota signal to route on, and you should not invent one:
 

@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "$schema": "./preview-walk.schema.json",
+  "_driver": "playwright_walk.mjs — login.kind=click runs login.steps (fill/click) then walks pages",
+  "_note": "FICTIONAL migration shape for product login-only / click-auth manifests. Put fill/click in login.steps (not only pages[0]); set allow_interactions:true. Prefer redirect_cookie when a mock/bypass route exists.",
+  "login": {
+    "kind": "click",
+    "path": "/login",
+    "lands_on": "/dashboard",
+    "budget_ms": 90000,
+    "params_from_env": ["WALK_LOGIN_EMAIL", "WALK_LOGIN_PASSWORD"],
+    "steps": [
+      {
+        "action": "fill",
+        "selector": "input[name=email], input[type=email], #email",
+        "text": "${WALK_LOGIN_EMAIL}",
+        "name": "email"
+      },
+      {
+        "action": "fill",
+        "selector": "input[name=password], input[type=password], #password",
+        "text": "${WALK_LOGIN_PASSWORD}",
+        "name": "password"
+      },
+      {
+        "action": "click",
+        "selector": "button[type=submit], button:has-text(\"Log in\"), button:has-text(\"Sign in\")",
+        "name": "submit"
+      }
+    ]
+  },
+  "pages": [
+    {
+      "name": "Dashboard",
+      "path": "/dashboard",
+      "lands_on": "/dashboard",
+      "budget_ms": 15000,
+      "steps": [
+        { "action": "assert_url", "path": "/dashboard" }
+      ]
+    }
+  ],
+  "safety": {
+    "read_only": false,
+    "allow_interactions": true,
+    "env_check": ["APP_API_URL", "AUTH_API_URL"],
+    "deny_events": ["delete", "confirm_delete", "save"],
+    "note": "Click-login requires allow_interactions:true and non-prod env_check. Interactions blocked → loud SKIPPED, not wrong-password."
+  },
+  "runtime": {
+    "tidewave": true,
+    "log_levels": ["error"]
+  },
+  "report": {
+    "name": "example-login-click"
+  }
+}
