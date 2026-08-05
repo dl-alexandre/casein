@@ -39,7 +39,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents do
         # whole window — as long as another window survives. C-b x on a
         # single-pane tab is the common way operators close a tab.
         length(socket.assigns[:tmux_windows] || []) > 1 ->
-          close_focused_window(socket, session)
+          close_focused_window(socket)
 
         # Last pane of the last window: closing it ends this tmux session.
         # Instead of refusing, close it and drop the operator into another
@@ -652,21 +652,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents do
     end
   end
 
-  defp close_focused_window(socket, session) do
-    window_id = socket.assigns[:tmux_active_window_id]
+  # Closing the last pane closes the window, so it goes through the same
+  # deferred, undoable path as the tab-strip × rather than killing outright.
+  # Every agent tab here is single-pane, which made `C-b x` the most common way
+  # to close a window *and* the one way that took its processes with it.
+  defp close_focused_window(socket) do
+    {_result, socket} =
+      socket
+      |> assign(:window_zoomed?, false)
+      |> TerminalEvents.trash_window(socket.assigns[:tmux_active_window_id],
+        reason: "pane:close_focused"
+      )
 
-    case TerminalState.tmux_adapter().kill_window(session, window_id) do
-      :ok ->
-        {:noreply,
-         socket
-         |> assign(:window_zoomed?, false)
-         |> assign(:tmux_rename_window_id, nil)
-         |> TerminalState.refresh_tmux_topology()
-         |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
-    end
+    {:noreply, socket}
   end
 
   defp close_focused_last_window(socket, session) do
@@ -678,38 +676,57 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents do
     window_id = socket.assigns[:tmux_active_window_id]
 
     if is_binary(fallback_sid) do
-      case TerminalState.tmux_adapter().kill_window(session, window_id) do
-        :ok ->
-          socket =
-            socket
-            |> assign(:window_zoomed?, false)
-            |> assign(:tmux_rename_window_id, nil)
-            |> TerminalState.switch_active_session(fallback_sid)
-            |> TerminalState.refresh_session_tabs()
-            |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})
+      # `allow_last:` because this empties the session's tab strip — safe only
+      # because we move the operator to `fallback_sid` in the same breath. The
+      # trashed window carries its own session in the undo payload, so Undo
+      # brings both the window and the operator back.
+      case TerminalEvents.trash_window(socket, window_id,
+             allow_last: true,
+             reason: "pane:close_focused"
+           ) do
+        {:ok, socket} ->
+          {:noreply,
+           socket
+           |> assign(:window_zoomed?, false)
+           |> TerminalState.switch_active_session(fallback_sid)
+           |> TerminalState.refresh_session_tabs()
+           |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})}
 
+        # Nothing was closed and the reason is already flashed — staying put is
+        # the correct outcome; switching sessions here would strand the
+        # operator away from a window that is still open.
+        {:error, socket} ->
           {:noreply, socket}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
       end
     else
       replace_only_window(socket, session, window_id)
     end
   end
 
+  # Only window of the only session: open the replacement *first*, so trashing
+  # the old one never empties the tab strip and undo lands in a coherent state
+  # (replacement plus the restored original) rather than resurrecting the sole
+  # window of a session that no longer has one.
   defp replace_only_window(socket, session, window_id) do
     case TerminalState.tmux_adapter().new_window(session, cwd: Show.terminal_window_cwd(socket)) do
       {:ok, new_window_id} ->
-        _ = TerminalState.tmux_adapter().kill_window(session, window_id)
-
-        socket =
+        # The replacement already exists, so the old window is no longer the
+        # last one and trashes under the normal guard. Move to the replacement
+        # either way: if the trash failed the operator still has both windows,
+        # and the new one is where they asked to be.
+        #
+        # `skip_idle_patch:` because the push_patch below is this socket's one
+        # redirect — letting the refresh patch the idle URL too crashes the view.
+        {_result, socket} =
           socket
           |> assign(:window_zoomed?, false)
-          |> assign(:tmux_rename_window_id, nil)
-          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
-          |> push_patch(to: TerminalState.workspace_window_path(socket, new_window_id))
-          |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})
+          |> TerminalEvents.trash_window(window_id,
+            skip_idle_patch: true,
+            reason: "pane:close_focused"
+          )
+
+        socket =
+          push_patch(socket, to: TerminalState.workspace_window_path(socket, new_window_id))
 
         {:noreply, socket}
 

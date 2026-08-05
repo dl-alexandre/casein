@@ -474,12 +474,16 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       assert_receive {:fake_tmux_kill_other_panes, ^session, "%1"}
 
       # With a single pane left in the only window of the only session,
-      # close replaces the window (open a fresh one, kill the old) rather than
-      # refusing — C-b x never strands the operator.
+      # close replaces the window (open a fresh one, defer the old) rather than
+      # refusing — C-b x never strands the operator. The old window is only
+      # hidden: tmux still holds it until the undo grace period runs out.
       Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
       assert_receive {:fake_tmux_new_window, ^session, _}
-      assert_receive {:fake_tmux_kill_window, ^session, "@0"}
+      refute_receive {:fake_tmux_kill_window, ^session, "@0"}, 50
       refute_receive {:fake_tmux_kill_pane, ^session, _}, 50
+
+      assert Casein.Terminals.WindowTrash.pending?(session, "@0")
+      Casein.Terminals.WindowTrash.__reset__()
     end
 
     test "close_focused decides against live tmux, not a stale cached pane count", %{
@@ -557,12 +561,13 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       assert_receive {:fake_tmux_kill_pane, ^session, "%0"}
     end
 
-    test "close_focused on a single-pane window closes the window when others exist", %{
+    test "close_focused on a single-pane window defers the window close", %{
       conn: conn,
       workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
       prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
+      prev_grace = Application.get_env(:casein, :window_trash_grace_ms)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -571,6 +576,8 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
       Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      # Long enough that the deferred kill cannot fire while the test runs.
+      Application.put_env(:casein, :window_trash_grace_ms, 60_000)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       # Two windows, the active one (@0) holding a single pane.
@@ -609,7 +616,9 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       })
 
       on_exit(fn ->
+        Casein.Terminals.WindowTrash.__reset__()
         restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:window_trash_grace_ms, prev_grace)
         restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
         restore(:fake_tmux_windows, prev_fake_tmux_windows)
         restore(:fake_tmux_panes, prev_fake_tmux_panes)
@@ -620,17 +629,65 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
 
       # tmux closes a window when its final pane dies; C-b x on a single-pane
       # tab closes the tab rather than refusing, since another window survives.
+      # Closing it is the same act as the tab-strip ×, so it takes the same
+      # deferred path — the window leaves the viewer while tmux keeps it (and
+      # everything running in it) alive until the grace period runs out.
       Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
-      assert_receive {:fake_tmux_kill_window, ^session, "@0"}
+
+      refute_receive {:fake_tmux_kill_window, ^session, "@0"}, 50
       refute_receive {:fake_tmux_kill_pane, ^session, _}, 50
+
+      assert Casein.Terminals.WindowTrash.pending?(session, "@0")
+      refute has_element?(view, "#tmux-window--0")
+
+      # The undo has to be offered, and it has to carry where the window lives.
+      assert_push_event(view, "window:trashed", %{
+        "window_id" => "@0",
+        "session" => ^session,
+        "sid" => sid
+      })
+
+      # Selection moves off the window being hidden, not onto it.
+      assert_receive {:fake_tmux_select_window, ^session, "@1"}
+
+      # Feed the toast payload back the way app.js does. The handler has to
+      # address the window through the sid it was trashed under rather than
+      # whatever session the socket happens to be on now — that indirection is
+      # what keeps undo working after a close moves the operator elsewhere.
+      render_hook(view, "tmux:restore_window", %{
+        "window-id" => "@0",
+        "session" => session,
+        "sid" => sid
+      })
+
+      refute Casein.Terminals.WindowTrash.pending?(session, "@0")
+      assert_receive {:fake_tmux_select_window, ^session, "@0"}
+      assert has_element?(view, "#tmux-window--0")
+
+      # Close it again, then undo with a session name the client made up. The
+      # session on the wire is only a hint: it is resolved back out of the sid,
+      # which is scoped to this workspace. If the raw string were trusted the
+      # restore would look in a session that has nothing pending and this
+      # window would stay trashed.
+      Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
+      assert Casein.Terminals.WindowTrash.pending?(session, "@0")
+
+      render_hook(view, "tmux:restore_window", %{
+        "window-id" => "@0",
+        "session" => "casein_someone-else_u-intruder",
+        "sid" => sid
+      })
+
+      refute Casein.Terminals.WindowTrash.pending?(session, "@0")
     end
 
-    test "close_focused on the last window closes it and drops into another session", %{
+    test "close_focused on the last window defers it and drops into another session", %{
       conn: conn,
       workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
       prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
+      prev_grace = Application.get_env(:casein, :window_trash_grace_ms)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -639,6 +696,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
       Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :window_trash_grace_ms, 60_000)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       # Single window, single pane: closing it ends the tmux session.
@@ -661,7 +719,9 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       })
 
       on_exit(fn ->
+        Casein.Terminals.WindowTrash.__reset__()
         restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:window_trash_grace_ms, prev_grace)
         restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
         restore(:fake_tmux_windows, prev_fake_tmux_windows)
         restore(:fake_tmux_panes, prev_fake_tmux_panes)
@@ -700,10 +760,81 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       end)
 
       # Last window of the session: close it (ending the session) rather than
-      # refuse, because another session is available to switch into.
+      # refuse, because another session is available to switch into. Emptying
+      # the tab strip is only acceptable here because the operator is being
+      # moved elsewhere in the same breath — and it is still deferred, so the
+      # session and its processes survive the grace period.
       Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
-      assert_receive {:fake_tmux_kill_window, ^session, "@0"}
+
+      refute_receive {:fake_tmux_kill_window, ^session, "@0"}, 50
       refute_receive {:fake_tmux_kill_pane, ^session, _}, 50
+
+      assert Casein.Terminals.WindowTrash.pending?(session, "@0")
+
+      # With nowhere else to go, selection must not land back on the window
+      # being hidden.
+      refute_receive {:fake_tmux_select_window, ^session, "@0"}, 50
+    end
+
+    test "close_focused on the only window of the only session defers behind its replacement",
+         %{
+           conn: conn,
+           workspace_name: workspace_name,
+           workspace_path: workspace_path
+         } do
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
+      prev_grace = Application.get_env(:casein, :window_trash_grace_ms)
+      prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+      prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+      prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+      session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :window_trash_grace_ms, 60_000)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{
+            id: "@0",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [raw_test_pane("%0", workspace_path, activity_now)]
+      })
+
+      on_exit(fn ->
+        Casein.Terminals.WindowTrash.__reset__()
+        restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:window_trash_grace_ms, prev_grace)
+        restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+        restore(:fake_tmux_windows, prev_fake_tmux_windows)
+        restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
+
+      # No other session to fall back to, so a replacement window opens first.
+      # Opening it before the close is what keeps the old window trashable: it
+      # is no longer the last one, so the deferred path applies and undo lands
+      # in a coherent state rather than resurrecting a session's only window.
+      Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
+
+      assert_receive {:fake_tmux_new_window, ^session, _opts}
+      refute_receive {:fake_tmux_kill_window, ^session, "@0"}, 50
+
+      assert Casein.Terminals.WindowTrash.pending?(session, "@0")
     end
   end
 
