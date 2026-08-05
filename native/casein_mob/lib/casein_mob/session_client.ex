@@ -340,16 +340,7 @@ defmodule CaseinMob.SessionClient do
       terminal_topic?(topic) ->
         if current_terminal_join_reply?(socket, topic, reply) do
           socket = clear_terminal_join_timeout(socket)
-
-          if match?({:error, _}, reply) do
-            {:ok,
-             socket
-             |> record_terminal_stage(:child_join_reply_received)
-             |> record_terminal_stage(:baseline_rejected)
-             |> terminal_join_rejected(reply)}
-          else
-            accept_terminal_frame(socket, topic, "terminal_baseline", reply)
-          end
+          accept_terminal_frame(socket, topic, "terminal_baseline", reply)
         else
           {:ok, socket}
         end
@@ -443,13 +434,46 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_topic_close(topic, reason, socket) do
-    if current_terminal_topic?(socket, topic) do
-      {:ok, terminal_closed(socket, reason)}
+    if current_terminal_close?(socket, topic, reason) do
+      join_failed? = get_in(socket.assigns, [:mobile_terminal, :status]) == :awaiting_baseline
+      socket = terminal_closed(socket, reason)
+
+      socket =
+        if join_failed? do
+          socket
+          |> record_terminal_stage(:child_join_reply_received)
+          |> record_terminal_stage(:baseline_rejected)
+        else
+          socket
+        end
+
+      {:ok, socket}
     else
-      notify_status(socket, topic, error_status(reason))
-      {:ok, drop_topic_snapshot(socket, topic)}
+      if current_terminal_topic?(socket, topic) do
+        {:ok, socket}
+      else
+        notify_status(socket, topic, error_status(reason))
+        {:ok, drop_topic_snapshot(socket, topic)}
+      end
     end
   end
+
+  defp current_terminal_close?(socket, topic, reason) do
+    terminal = socket.assigns.mobile_terminal
+    generation = terminal_close_generation(reason)
+
+    is_map(terminal) and terminal.channel_topic == topic and
+      cond do
+        is_binary(generation) -> generation == terminal.connection_generation
+        terminal.status == :awaiting_baseline -> false
+        true -> true
+      end
+  end
+
+  defp terminal_close_generation({:error, payload}) when is_map(payload),
+    do: payload_value(payload, :connection_generation)
+
+  defp terminal_close_generation(_reason), do: nil
 
   @impl Slipstream
   def handle_disconnect(reason, socket) do
@@ -773,7 +797,10 @@ defmodule CaseinMob.SessionClient do
     if is_map(terminal) and Map.get(terminal, :join_timeout_token) == token and
          terminal.channel_topic == topic and terminal.connection_generation == generation and
          terminal.status == :awaiting_baseline do
-      {:noreply, schedule_terminal_refresh(socket, :unavailable)}
+      {:noreply,
+       socket
+       |> purge_terminal_transport({:resync, :unavailable})
+       |> disconnect()}
     else
       {:noreply, socket}
     end
@@ -1334,14 +1361,6 @@ defmodule CaseinMob.SessionClient do
     is_map(terminal) and terminal.channel_topic == topic
   end
 
-  defp current_terminal_join_reply?(socket, topic, {:error, _reply}) do
-    terminal = socket.assigns.mobile_terminal
-
-    is_map(terminal) and terminal.channel_topic == topic and
-      terminal.status == :awaiting_baseline and
-      is_reference(Map.get(terminal, :join_timeout_token))
-  end
-
   defp current_terminal_join_reply?(socket, topic, reply) when is_map(reply) do
     terminal = socket.assigns.mobile_terminal
     generation = payload_value(reply, :connection_generation)
@@ -1661,13 +1680,6 @@ defmodule CaseinMob.SessionClient do
   defp terminal_closed(socket, reason) do
     reason = reason |> reason_value() |> bounded_terminal_reason()
     schedule_terminal_refresh(socket, reason)
-  end
-
-  defp terminal_join_rejected(socket, {:error, payload}) do
-    payload
-    |> reason_value()
-    |> bounded_terminal_reason()
-    |> then(&schedule_terminal_refresh(socket, &1))
   end
 
   defp schedule_terminal_refresh(socket, reason) do

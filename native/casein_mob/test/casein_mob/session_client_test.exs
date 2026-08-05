@@ -1644,11 +1644,20 @@ defmodule CaseinMob.SessionClientTest do
     assert timed_out.assigns.mobile_terminal.status == {:resync, :unavailable}
     assert timed_out.joins["mobile_terminal:lease-1"].status == :closed
     assert timed_out.joins["mobile_terminal:lease-1"].params == %{}
-    retry_token = timed_out.assigns.mobile_terminal.retry_token
-    assert is_reference(retry_token)
+    assert timed_out.assigns.mobile_terminal.retry_token == nil
+    assert_receive {:connection_command, %Slipstream.Commands.CloseConnection{}}
+
+    assert {:ok, disconnected} = SessionClient.handle_disconnect(:closed, timed_out)
+
+    reconnected =
+      disconnected
+      |> Socket.assign(:transport_ready?, true)
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Map.put(:channel_pid, push_sink)
 
     assert {:noreply, refreshing} =
-             SessionClient.handle_info({:terminal_refresh_retry, retry_token}, timed_out)
+             SessionClient.handle_cast({:watch_terminal, "ws-1", self()}, reconnected)
 
     assert_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_refresh"}}
 
@@ -1676,6 +1685,48 @@ defmodule CaseinMob.SessionClientTest do
     assert refreshed.joins["mobile_terminal:lease-1"].params == %{
              "connection_generation" => second_generation
            }
+
+    assert {:ok, stale_error_ignored} =
+             SessionClient.handle_topic_close(
+               "mobile_terminal:lease-1",
+               {:error,
+                %{
+                  "reason" => "stale_grant",
+                  "connection_generation" => first_generation
+                }},
+               refreshed
+             )
+
+    assert stale_error_ignored.assigns.mobile_terminal.status == :awaiting_baseline
+
+    assert stale_error_ignored.assigns.mobile_terminal.connection_generation ==
+             second_generation
+
+    assert stale_error_ignored.assigns.mobile_terminal.join_timeout_token ==
+             refreshed.assigns.mobile_terminal.join_timeout_token
+
+    baseline = terminal_frame("terminal_baseline", "fresh", second_generation, 0)
+
+    assert {:ok, live} =
+             SessionClient.handle_join("mobile_terminal:lease-1", baseline, stale_error_ignored)
+
+    assert_receive {:mobile_terminal_baseline, _, "fresh"}
+
+    assert {:ok, live_after_stale_error} =
+             SessionClient.handle_topic_close(
+               "mobile_terminal:lease-1",
+               {:error,
+                %{
+                  "reason" => "stale_grant",
+                  "connection_generation" => first_generation
+                }},
+               live
+             )
+
+    assert live_after_stale_error.assigns.mobile_terminal.status == :live
+
+    assert live_after_stale_error.assigns.mobile_terminal.connection_generation ==
+             second_generation
 
     refute inspect(refreshed) =~ "first-secret"
     refute inspect(refreshed) =~ "fresh-secret"
@@ -2086,11 +2137,16 @@ defmodule CaseinMob.SessionClientTest do
   test "terminal join rejection refreshes with backoff and accepts a fresh one-time grant baseline" do
     push_sink = start_push_sink(self())
     socket = terminal_stream_socket(push_sink, self())
+    generation = socket.assigns.mobile_terminal.connection_generation
 
     assert {:ok, rejected} =
-             SessionClient.handle_join(
+             SessionClient.handle_topic_close(
                "mobile_terminal:lease-1",
-               {:error, %{"reason" => "stale_grant"}},
+               {:error,
+                %{
+                  "reason" => "stale_grant",
+                  "connection_generation" => generation
+                }},
                socket
              )
 
@@ -2215,10 +2271,16 @@ defmodule CaseinMob.SessionClientTest do
         assert_receive {:connection_command,
                         %Slipstream.Commands.JoinTopic{topic: "mobile_terminal:lease-1"}}
 
+        generation = awaiting.assigns.mobile_terminal.connection_generation
+
         assert {:ok, next} =
                  SessionClient.handle_topic_close(
                    "mobile_terminal:lease-1",
-                   {:error, %{"reason" => "stale_grant"}},
+                   {:error,
+                    %{
+                      "reason" => "stale_grant",
+                      "connection_generation" => generation
+                    }},
                    awaiting
                  )
 
@@ -2232,11 +2294,16 @@ defmodule CaseinMob.SessionClientTest do
   test "eligible terminal topic close refreshes to a fresh authoritative baseline" do
     push_sink = start_push_sink(self())
     socket = terminal_stream_socket(push_sink, self())
+    generation = socket.assigns.mobile_terminal.connection_generation
 
     assert {:ok, closed} =
              SessionClient.handle_topic_close(
                "mobile_terminal:lease-1",
-               {:error, %{"reason" => "grant_expired"}},
+               {:error,
+                %{
+                  "reason" => "grant_expired",
+                  "connection_generation" => generation
+                }},
                socket
              )
 

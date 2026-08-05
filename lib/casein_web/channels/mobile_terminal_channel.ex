@@ -54,9 +54,9 @@ defmodule CaseinWeb.MobileTerminalChannel do
 
       {:ok, TerminalProtocol.baseline(payload_fields(baseline, lease)), socket}
     else
-      false -> {:error, TerminalProtocol.error("topology_mismatch")}
-      {:error, reason} -> {:error, TerminalProtocol.error(reason_code(reason))}
-      _ -> {:error, TerminalProtocol.error("unauthorized")}
+      false -> {:error, join_error("topology_mismatch", params)}
+      {:error, reason} -> {:error, join_error(reason_code(reason), params)}
+      _ -> {:error, join_error("unauthorized", params)}
     end
   end
 
@@ -191,6 +191,15 @@ defmodule CaseinWeb.MobileTerminalChannel do
        do: {:ok, generation, grant}
 
   defp join_params(_params), do: {:error, :invalid_payload}
+
+  defp join_error(reason, %{"connection_generation" => generation})
+       when is_binary(generation) and generation != "" do
+    reason
+    |> TerminalProtocol.error()
+    |> Map.put("connection_generation", generation)
+  end
+
+  defp join_error(reason, _params), do: TerminalProtocol.error(reason)
   defp present_lease(nil), do: {:error, :not_found}
   defp present_lease(lease), do: {:ok, lease}
 
