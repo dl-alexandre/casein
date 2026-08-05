@@ -112,7 +112,8 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp provision_locked(id, opts) do
-    lease = Repo.get!(TerminalSession, id)
+    lease =
+      Repo.one!(from s in TerminalSession, where: s.id == ^id, lock: "FOR UPDATE")
 
     case lease.state do
       "active" -> {:existing, lease}
