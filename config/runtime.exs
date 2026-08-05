@@ -57,6 +57,25 @@ config :casein,
        :allow_global_mcp_tool_calls,
        truthy_env?.("CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS")
 
+mobile_terminal_allowlist = fn name ->
+  name
+  |> System.get_env("")
+  |> String.split(",", trim: true)
+  |> Enum.map(&String.trim/1)
+  |> Enum.reject(&(&1 == ""))
+  |> Enum.uniq()
+end
+
+# Raw mobile terminal access is an elevated deployment capability. Keep both
+# switches fail-closed: enabling requires an explicit deployment flag, an
+# explicit kill-switch release, and exact user/device/workspace allowlists.
+config :casein, :mobile_terminal,
+  enabled: truthy_env?.("CASEIN_MOBILE_TERMINAL_ENABLED"),
+  kill_switch: not falsey_env?.("CASEIN_MOBILE_TERMINAL_KILL_SWITCH"),
+  user_ids: mobile_terminal_allowlist.("CASEIN_MOBILE_TERMINAL_USER_IDS"),
+  device_link_ids: mobile_terminal_allowlist.("CASEIN_MOBILE_TERMINAL_DEVICE_LINK_IDS"),
+  workspace_ids: mobile_terminal_allowlist.("CASEIN_MOBILE_TERMINAL_WORKSPACE_IDS")
+
 # When on, MCP `tools/list` advertises only a small core set + the search_tools
 # / invoke_tool meta-tools instead of every tool, to cut context and improve
 # tool selection on large surfaces. Off by default (full tool list). The

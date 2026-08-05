@@ -113,6 +113,16 @@ config :casein,
   # Persistent mobile companion tokens expire after this many seconds (default 90 days).
   device_link_ttl_seconds: 60 * 60 * 24 * 90,
   device_link_reaper_enabled: true,
+  # Elevated raw-terminal access from a paired mobile device. This remains
+  # doubly off by default: deployment disabled and kill switch active. When
+  # enabled, all three exact allowlists must also match.
+  mobile_terminal: [
+    enabled: false,
+    kill_switch: true,
+    user_ids: [],
+    device_link_ids: [],
+    workspace_ids: []
+  ],
   mcp_ticket_ttl_seconds: 300,
   mcp_ticket_clock: {DateTime, :utc_now}
 

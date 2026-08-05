@@ -1,7 +1,7 @@
 defmodule CaseinWeb.TerminalChannelTest do
   use CaseinWeb.ConnCase, async: false
 
-  import Phoenix.ChannelTest
+  import Phoenix.ChannelTest, except: [socket: 3]
 
   alias Casein.Audit
   alias Casein.Integrations.Manager.Client
@@ -2183,6 +2183,12 @@ defmodule CaseinWeb.TerminalChannelTest do
 
   defp terminal_fast_path_cache_key(actor_id, workspace_id, sid, host_id, mode) do
     {:terminal_fast_path, actor_id, workspace_id, sid, host_id, mode}
+  end
+
+  # Channel tests bypass UserSocket.connect/3. Mirror its immutable browser
+  # credential marker explicitly so missing markers remain fail-closed.
+  defp socket(module, id, assigns) do
+    Phoenix.ChannelTest.socket(module, id, Map.put(assigns, :socket_credential, :user_token))
   end
 
   # Under raw-only every join is a raw attach. These cache/auth tests care about

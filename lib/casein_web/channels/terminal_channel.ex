@@ -17,6 +17,7 @@ defmodule CaseinWeb.TerminalChannel do
 
   alias Casein.Terminals
   alias CaseinWeb.ChannelAuth
+  alias CaseinWeb.SocketCredentialPolicy
   alias Casein.Workspaces
 
   require Logger
@@ -27,6 +28,15 @@ defmodule CaseinWeb.TerminalChannel do
 
   @impl true
   def join("terminal:" <> rest, params, socket) do
+    with :ok <- SocketCredentialPolicy.authorize_ordinary_terminal(socket.assigns) do
+      join_authorized(rest, params, socket)
+    else
+      {:error, :terminal_access_denied} ->
+        {:error, %{reason: "terminal access is not authorized"}}
+    end
+  end
+
+  defp join_authorized(rest, params, socket) do
     user = socket.assigns[:current_user] || %{}
     host_id = host_id(params)
     mode = :raw
