@@ -217,15 +217,16 @@ export const WindowPickerSidebar = {
     const item = this.currentItem()
     const windowId = item?.getAttribute("phx-value-window-id")
     if (!windowId) return
-    this.pushEvent("tmux:rename_start", {window_id: windowId})
+    this.pushEvent("tmux:rename_start", {"window-id": windowId})
   },
 
+  // No confirm(): the close is deferred and undoable for a grace period, so
+  // the undo toast stands in for the prompt.
   killCurrentWindow() {
     const item = this.currentItem()
     const windowId = item?.getAttribute("phx-value-window-id")
     if (!windowId) return
-    if (!window.confirm("Kill this tmux window and everything running in it?")) return
-    this.pushEvent("tmux:kill_window", {window_id: windowId})
+    this.pushEvent("tmux:kill_window", {"window-id": windowId})
   },
 
   _closeSidebar() {

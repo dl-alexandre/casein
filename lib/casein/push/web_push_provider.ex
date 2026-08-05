@@ -16,6 +16,7 @@ defmodule Casein.Push.WebPushProvider do
   @behaviour Casein.Push.Provider
 
   alias Casein.Push
+  alias Casein.Push.WebLink
   alias Casein.Push.WebPush.{Encryption, Vapid}
 
   # 4 weeks — the push service caches until the device reconnects.
@@ -70,29 +71,56 @@ defmodule Casein.Push.WebPushProvider do
   end
 
   # Web Push has no title/body fields of its own — the service-worker `push`
-  # handler reads this JSON and calls showNotification.
-  defp payload(notification) do
+  # handler reads this JSON and calls showNotification. Public because the
+  # delivered body is encrypted, so this is the only place a test can read it.
+  @doc false
+  @spec payload(map()) :: map()
+  def payload(notification) do
     %{
-      "title" => notification[:title] || "Casein",
+      "title" => title(notification),
       "body" => notification[:reason] || notification[:body] || "An agent needs you.",
-      "url" => web_url(notification),
+      "url" => WebLink.build(notification),
       "tag" => tag(notification),
       "workspace_id" => to_string(notification[:workspace_id] || ""),
+      "workspace_name" => notification[:workspace_name],
+      "session_id" => notification[:session_id] || locator(notification, :session),
+      "window_id" => locator(notification, :window),
+      "tmux_session" => locator(notification, :tmux_session),
+      "action" => notification[:action],
       "notification_id" => notification[:notification_id]
     }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
   end
 
-  # Prefer an http(s) deep link; a native casein:// scheme can't open in a
-  # browser, so fall back to the app root (the attention strip shows which agent).
-  defp web_url(notification) do
-    case notification[:deep_link] || notification[:url] do
-      "http" <> _ = url -> url
-      _ -> "/"
+  # The workspace leads the title: the OS shows "Casein" as the app name, so
+  # without it a stack of pushes is indistinguishable across workspaces.
+  defp title(notification) do
+    action = notification[:title] || "Casein"
+
+    case notification[:workspace_name] do
+      name when is_binary(name) and name != "" -> "#{name} — #{action}"
+      _ -> action
     end
   end
 
-  defp tag(%{workspace_id: wid}) when is_binary(wid) and wid != "", do: "ws:#{wid}"
-  defp tag(_), do: "casein"
+  # `tag` replaces an existing notification. Keying it per workspace collapsed
+  # two different agents in one workspace into a single card; key it on the
+  # attention identity so each waiting agent keeps its own.
+  defp tag(notification) do
+    key =
+      notification[:attention_key] || notification[:session_id] ||
+        notification[:notification_id] || notification[:workspace_id]
+
+    if is_binary(key) and key != "", do: "casein:#{key}", else: "casein"
+  end
+
+  defp locator(notification, key) do
+    case notification[:locator] do
+      locator when is_map(locator) -> locator[key] || locator[Atom.to_string(key)]
+      _ -> nil
+    end
+  end
 
   defp decode_subscription(%{"endpoint" => endpoint, "keys" => %{"p256dh" => p, "auth" => a}})
        when is_binary(endpoint) do

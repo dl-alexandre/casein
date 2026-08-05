@@ -57,11 +57,12 @@ defmodule Casein.Workspaces.SessionSummary do
     preview_pane_ids = preview_pane_ids(id)
     sessions = sessions(ws, opts)
     agent_activity_by_session = agent_activity_by_session(id)
+    counts = runtime_counts(opts, id, runtimes)
 
     session_links =
       Enum.map(sessions, &session_link(ws, &1, preview_pane_ids, agent_activity_by_session))
 
-    live? = worktree_live?(sessions, runtimes, Keyword.get(opts, :live_tmux_names, :all))
+    live? = worktree_live?(sessions, counts.active, Keyword.get(opts, :live_tmux_names, :all))
 
     %{
       id: id,
@@ -76,10 +77,23 @@ defmodule Casein.Workspaces.SessionSummary do
       session_count: length(sessions),
       sessions: session_links,
       agent_layout: AgentPane.layout_status(session_links),
-      runtime_count: length(runtimes),
-      active_runtime_count: Enum.count(runtimes, &active_runtime?/1),
+      runtime_count: counts.total,
+      active_runtime_count: counts.active,
       live?: live?
     }
+  end
+
+  # The switcher only needs totals, so `build_many/1` passes a per-workspace
+  # count aggregate instead of every runtime row. A direct `build/3` caller that
+  # already holds the rows keeps the old behaviour.
+  defp runtime_counts(opts, workspace_id, runtimes) do
+    case Keyword.get(opts, :runtime_counts) do
+      %{} = by_workspace ->
+        Map.get(by_workspace, workspace_id, %{total: 0, active: 0})
+
+      _ ->
+        %{total: length(runtimes), active: Enum.count(runtimes, &active_runtime?/1)}
+    end
   end
 
   @spec build_many([map()]) :: [summary()]
@@ -88,16 +102,17 @@ defmodule Casein.Workspaces.SessionSummary do
     directory_inventory = SessionDirectory.directory_inventory()
     live_tmux_names = live_tmux_name_set(tmux_sessions)
     workspace_ids = Enum.map(workspaces, &workspace_id/1)
-    runtimes_by_workspace = Runtimes.list_runtimes_by_workspace_ids(workspace_ids)
+    runtime_counts = Runtimes.count_runtimes_by_workspace_ids(workspace_ids)
 
     workspaces
     |> Task.async_stream(
       &build(
         &1,
-        Map.get(runtimes_by_workspace, workspace_id(&1), []),
+        [],
         tmux_sessions: tmux_sessions,
         directory_inventory: directory_inventory,
-        live_tmux_names: live_tmux_names
+        live_tmux_names: live_tmux_names,
+        runtime_counts: runtime_counts
       ),
       max_concurrency: System.schedulers_online(),
       ordered: true,
@@ -440,10 +455,10 @@ defmodule Casein.Workspaces.SessionSummary do
   # are NOT live — that is how the picker drops dead `agent-*-adhoc-*` ghosts left
   # behind on disk. When the live tmux set is unknown (a bare `build/1`), default
   # to live so nothing is hidden by accident.
-  defp worktree_live?(_sessions, _runtimes, :all), do: true
+  defp worktree_live?(_sessions, _active_runtime_count, :all), do: true
 
-  defp worktree_live?(sessions, runtimes, %MapSet{} = live_names) do
-    Enum.any?(runtimes, &active_runtime?/1) or
+  defp worktree_live?(sessions, active_runtime_count, %MapSet{} = live_names) do
+    active_runtime_count > 0 or
       Enum.any?(sessions, fn session ->
         name = Map.get(session, :tmux_session) || Map.get(session, "tmux_session")
         is_binary(name) and MapSet.member?(live_names, name)

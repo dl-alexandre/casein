@@ -21,6 +21,7 @@ defmodule Casein.Workspaces.PathResolver do
   """
 
   alias Casein.Files.PathSafety
+  alias Casein.ProcessEnv
   alias Casein.Workspaces.State
 
   @reserved_prefixes ~w(
@@ -98,11 +99,15 @@ defmodule Casein.Workspaces.PathResolver do
 
   def route_for(_other), do: :error
 
+  # Resolved through `Casein.ProcessEnv` so an `async: true` test can scope a
+  # workspaces root to its own process instead of mutating global Application
+  # env. With no override this is `Application.get_env/3` plus one process
+  # dictionary read.
   @spec root() :: String.t() | nil
   def root do
-    Application.get_env(:casein, :lan_path_root) ||
-      Application.get_env(:casein, :workspaces_root) ||
-      Application.get_env(:casein, :home_workspace_path)
+    ProcessEnv.get(:casein, :lan_path_root, nil) ||
+      ProcessEnv.get(:casein, :workspaces_root, nil) ||
+      ProcessEnv.get(:casein, :home_workspace_path, nil)
   end
 
   @spec reserved_prefix?(String.t()) :: boolean()

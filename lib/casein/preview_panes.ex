@@ -23,6 +23,7 @@ defmodule Casein.PreviewPanes do
   alias Casein.Previews
   alias Casein.Previews.Deps
   alias Casein.PreviewPanes.PreviewPaneRegistration
+  alias Casein.Previews.OwnOrigin
   alias Casein.Previews.Url
   alias Casein.Previews.WorkspaceContext
   alias Casein.Repo
@@ -1226,6 +1227,16 @@ defmodule Casein.PreviewPanes do
     end
   end
 
+  # Prefer the preview's own hostname over the `/preview-proxy` path prefix.
+  #
+  # The path prefix is what breaks LiveView: the client reports
+  # `window.location.href` on every channel join, the proxied app's router has no
+  # route for `/preview-proxy/<ws>/<port>/...`, and the rejected join makes the
+  # client fall back to a full page request — forever. On its own origin the app
+  # sees its real path and joins normally. See `Casein.Previews.OwnOrigin`.
+  #
+  # The path proxy remains the fallback for workspaces whose id is not
+  # hostname-safe and whenever own-origin routing is switched off.
   defp proxy_display_url(registration, url) do
     with true <- preview_proxy_enabled?(),
          wsid when is_binary(wsid) <- registration.workspace_id,
@@ -1233,7 +1244,11 @@ defmodule Casein.PreviewPanes do
          %URI{port: port} = uri when is_integer(port) and port > 0 <- URI.parse(url) do
       path = uri.path || "/"
       query = if uri.query, do: "?" <> uri.query, else: ""
-      {:ok, "/preview-proxy/#{wsid}/#{port}#{path}#{query}"}
+
+      case OwnOrigin.origin(wsid, port) do
+        {:ok, origin} -> {:ok, origin <> path <> query}
+        :error -> {:ok, "/preview-proxy/#{wsid}/#{port}#{path}#{query}"}
+      end
     else
       _ -> :error
     end

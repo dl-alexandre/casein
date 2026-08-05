@@ -21,6 +21,7 @@ defmodule Casein.Push.Dispatcher do
   alias Casein.Mobile.UserObserver
   alias Casein.Mobile.ResumeCard
   alias Casein.Origin
+  alias Casein.Workspaces.State
   alias Casein.{Alerts, Notifications, Push}
 
   def start_link(_opts \\ []) do
@@ -68,6 +69,7 @@ defmodule Casein.Push.Dispatcher do
 
   defp dispatch(event, notification) do
     provider = Push.provider()
+    notification = Map.put(notification, :workspace_name, workspace_name(event.workspace_id))
 
     event.workspace_id
     |> Push.tokens_for()
@@ -125,6 +127,7 @@ defmodule Casein.Push.Dispatcher do
     if attention.notify do
       %{
         workspace_id: card.workspace_id,
+        workspace_name: card.workspace_name,
         user_id: card.user_id,
         session_id: card.session_id,
         card_id: card.id,
@@ -187,6 +190,20 @@ defmodule Casein.Push.Dispatcher do
         dispatch_entries(provider, entries, notification)
     end
   end
+
+  # A push that does not name its workspace is unactionable when several
+  # workspaces are running: the operator cannot tell which one wants them.
+  # Mobile cards already carry the name; audit alerts only carry the id.
+  defp workspace_name(nil), do: nil
+
+  defp workspace_name(workspace_id) when is_binary(workspace_id) do
+    case State.get(workspace_id) do
+      {:ok, %{name: name}} when is_binary(name) and name != "" -> name
+      _ -> nil
+    end
+  end
+
+  defp workspace_name(_workspace_id), do: nil
 
   defp alert_recipient_group(%{user_id: user_id}) when is_binary(user_id),
     do: {:user, user_id}

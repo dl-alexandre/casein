@@ -10,9 +10,20 @@ defmodule Casein.Deployment.TerminalSmoke do
 
   This smoke actually exercises a terminal against the running release: it opens a
   throwaway host tmux session and asserts (a) the tmux **server's own cwd** is a
-  live directory — the precise incident signal — and (b) the new session's pane
-  starts in a directory that exists. Run pre-swap in the deploy script so a
-  failure aborts promotion with the old instance still serving.
+  live directory — the precise incident signal — (b) the new session's pane
+  starts in a directory that exists, and (c) a `CASEIN_*` variable pushed into
+  the session env *after* the pane exists actually reaches the pane's shell.
+
+  (c) covers the 2026-08-03 incident: `tmux set-environment` only seeds panes
+  created after the call, so every pane's shell kept the tmux server's launch
+  env — no `CASEIN_WORKSPACE_ID` / MCP URLs, and the global admin API token.
+  Every agent launcher refused to start, while the session env table, MCP
+  `tools/list`, and app health were all green. Note that `/proc/<pid>/environ`
+  cannot see this: it reports the exec-time environment and never reflects a
+  later `export`, so the probe has to ask the shell itself.
+
+  Run pre-swap in the deploy script so a failure aborts promotion with the old
+  instance still serving.
   """
 
   require Logger
@@ -20,6 +31,10 @@ defmodule Casein.Deployment.TerminalSmoke do
   alias Casein.Terminals.TmuxServer
 
   @session_prefix "casein_smoke_"
+  @pairing_var "CASEIN_SMOKE_PAIRING"
+  @pairing_marker "casein-pairing"
+  @pairing_attempts 8
+  @pairing_sleep_ms 400
 
   @doc """
   Run the terminal smoke. Returns `:ok` when a fresh terminal is usable, or
@@ -35,8 +50,9 @@ defmodule Casein.Deployment.TerminalSmoke do
     try do
       with :ok <- create_session(session, cwd),
            {:ok, server_pid} <- server_pid(session),
-           :ok <- check_server_cwd(server_pid) do
-        check_pane_cwd(session)
+           :ok <- check_server_cwd(server_pid),
+           :ok <- check_pane_cwd(session) do
+        check_pane_env_pairing(session)
       end
     after
       _ = kill_session(session)
@@ -77,6 +93,38 @@ defmodule Casein.Deployment.TerminalSmoke do
     do: dir_exists?.(path)
 
   def pane_cwd_alive?(_path, _dir_exists?), do: false
+
+  @doc """
+  Classify a pane capture taken after probing for the pairing variable.
+
+  The probe prints `casein-pairing=<value>` on its own; the *typed* command line
+  is also in the capture, so the marker and the `=` are printf-joined rather
+  than literal in the command — otherwise the echoed command would match itself.
+
+  `:hydrated` wins over `:missing` because the capture is cumulative: the first
+  probe legitimately prints `MISSING` (the shell hydrates on its *next* prompt,
+  which has not happened yet), and that line stays on screen after a later probe
+  succeeds.
+  """
+  @spec pairing_verdict(String.t(), String.t()) :: :hydrated | :missing | :unknown
+  def pairing_verdict(capture, nonce) when is_binary(capture) and is_binary(nonce) do
+    cond do
+      String.contains?(capture, "#{@pairing_marker}=#{nonce}") -> :hydrated
+      String.contains?(capture, "#{@pairing_marker}=MISSING") -> :missing
+      true -> :unknown
+    end
+  end
+
+  @doc """
+  Shell command that prints the pairing variable under the capture marker.
+
+  Built with printf's format arguments so the literal `#{@pairing_marker}=`
+  never appears in the typed command — only in its output.
+  """
+  @spec pairing_probe() :: String.t()
+  def pairing_probe do
+    ~s|printf '%s%s\\n' '#{@pairing_marker}' "=${#{@pairing_var}:-MISSING}"|
+  end
 
   # ── side-effecting steps ────────────────────────────────────────────────────
 
@@ -130,6 +178,57 @@ defmodule Casein.Deployment.TerminalSmoke do
       end
 
     if pane_cwd_alive?(path), do: :ok, else: {:error, {:pane_cwd_missing, path}}
+  end
+
+  # Set the variable AFTER the pane exists — that ordering is the whole point:
+  # it is what PaneEnv.ensure_for_session/3 does, and what a plain
+  # `tmux set-environment` cannot deliver to an already-running shell on its own.
+  defp check_pane_env_pairing(session) do
+    nonce = "#{@pairing_marker}-#{System.unique_integer([:positive])}"
+
+    case TmuxCtl.Client.set_environment(session, @pairing_var, nonce) do
+      :ok ->
+        await_pairing(session, nonce, @pairing_attempts)
+
+      other ->
+        # Can't even set the session env — infra, not a pairing regression.
+        Logger.warning("terminal smoke: set-environment failed (failing open): #{inspect(other)}")
+        :ok
+    end
+  end
+
+  defp await_pairing(_session, _nonce, 0), do: {:error, {:pane_env_not_hydrated, @pairing_var}}
+
+  defp await_pairing(session, nonce, attempts) do
+    _ = TmuxCtl.Client.send_command(session, pairing_probe())
+    Process.sleep(@pairing_sleep_ms)
+
+    case TmuxCtl.Client.capture_recent(session, 40) do
+      {:ok, capture} ->
+        case pairing_verdict(capture, nonce) do
+          :hydrated ->
+            :ok
+
+          # The first probe is expected to miss: the shell hydrates on its next
+          # prompt, which has not run yet. Only a miss that survives the whole
+          # window is a regression.
+          _ when attempts > 1 ->
+            await_pairing(session, nonce, attempts - 1)
+
+          :missing ->
+            {:error, {:pane_env_not_hydrated, @pairing_var}}
+
+          :unknown ->
+            # Probe output never appeared at all — capture/plumbing problem
+            # rather than an env regression.
+            Logger.warning("terminal smoke: pairing probe produced no output (failing open)")
+            :ok
+        end
+
+      other ->
+        Logger.warning("terminal smoke: capture failed (failing open): #{inspect(other)}")
+        :ok
+    end
   end
 
   defp kill_session(session) do

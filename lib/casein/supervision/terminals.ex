@@ -24,7 +24,11 @@ defmodule Casein.Supervision.Terminals do
       # races the server-spawn cwd claim.
       Casein.Terminals.TmuxEvents,
       Casein.Terminals.TmuxJanitor,
-      Casein.Terminals.TmuxWindowJanitor
+      Casein.Terminals.TmuxWindowJanitor,
+      # Owns the pending set for undoable window closes. Its ETS table dies
+      # with it by design: a crash must un-hide trashed windows, never strand
+      # them hidden with no timer left to kill or restore them.
+      Casein.Terminals.WindowTrash
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

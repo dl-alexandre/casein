@@ -136,33 +136,98 @@ async function networkFirstStatic(request) {
   }
 }
 
+// Click routing, in order of preference:
+//
+//   1. a window already on the notification's workspace  -> focus it, attach in place
+//   2. any other window of ours (an installed app window) -> focus + navigate it
+//   3. nothing open                                       -> open a new window
+//
+// Step 2 matters most on desktop: the old code focused an arbitrary same-origin
+// client and never navigated it, and every miss fell through to openWindow("/"),
+// which lands on the scratch workspace in a plain browser tab rather than the
+// installed app window the operator already had running.
 async function openNotificationTarget(targetUrl, detail) {
+  const target = new URL(targetUrl, self.location.origin);
+
   const allClients = await clients.matchAll({
     type: "window",
     includeUncontrolled: true
   });
 
-  const targetOrigin = new URL(targetUrl, self.location.origin).origin;
-  const sameOriginClients = allClients.filter((client) => {
+  const ourClients = allClients.filter((client) => {
     try {
-      return new URL(client.url).origin === targetOrigin;
+      return new URL(client.url).origin === target.origin;
     } catch (_error) {
       return false;
     }
   });
 
-  const message = {
-    type: "CASEIN_AGENT_QUIET_OPEN",
-    detail
-  };
+  const message = { type: "CASEIN_AGENT_QUIET_OPEN", detail };
+  const targetWorkspace = workspacePath(target);
 
-  if (sameOriginClients.length > 0) {
-    const client = sameOriginClients[0];
-    await client.focus();
+  const onWorkspace = ourClients.filter(
+    (client) => workspacePath(clientUrl(client)) === targetWorkspace
+  );
+
+  if (onWorkspace.length > 0) {
+    const client = preferredClient(onWorkspace);
+    await focusClient(client);
     client.postMessage(message);
     return;
   }
 
-  const opened = await clients.openWindow(targetUrl);
+  const elsewhere = preferredClient(ourClients);
+  if (elsewhere) {
+    // A target that names no workspace (a bare "/") is not worth pulling a
+    // window off the workspace it is showing — "/" is the scratch mount.
+    if (targetWorkspace === "/") {
+      await focusClient(elsewhere);
+      elsewhere.postMessage(message);
+      return;
+    }
+
+    // navigate() is only allowed on clients this worker controls; a window from
+    // before the worker activated throws, and openWindow is the honest fallback.
+    const navigated = await elsewhere.navigate(target.href).catch(() => null);
+    if (navigated) {
+      await focusClient(navigated);
+      return;
+    }
+  }
+
+  const opened = await clients.openWindow(target.href);
   if (opened) opened.postMessage(message);
+}
+
+// Workspace identity of a URL, so "same workspace, different session/tab" still
+// counts as a window we should reuse. Everything outside /workspaces/:id (the
+// dashboard, the scratch root) shares the "/" bucket.
+function workspacePath(url) {
+  if (!url) return null;
+  const match = url.pathname.match(/^\/workspaces\/[^/]+/);
+  return match ? match[0] : "/";
+}
+
+function clientUrl(client) {
+  try {
+    return new URL(client.url);
+  } catch (_error) {
+    return null;
+  }
+}
+
+// A visible window is the one the operator is looking at; prefer it over a
+// window buried on another desktop or minimized.
+function preferredClient(candidates) {
+  if (candidates.length === 0) return null;
+  return (
+    candidates.find((client) => client.focused) ||
+    candidates.find((client) => client.visibilityState === "visible") ||
+    candidates[0]
+  );
+}
+
+async function focusClient(client) {
+  if (typeof client.focus !== "function") return client;
+  return client.focus().catch(() => client);
 }

@@ -201,9 +201,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
     end
 
     test "shell with blank tmux_session derives the name from workspace + sid" do
-      # Tmux.session_name/2 -> "casein_<sanitized ws>_<sanitized sid>"
+      # Tmux.session_name/2 -> "casein_<sanitize(ws)>_<sanitize_sid(sid)>".
+      # The workspace segment keeps `_`, but the sid segment folds it to `-` so
+      # the workspace/sid boundary stays unambiguous — otherwise a sid could
+      # forge a longer workspace prefix. See TmuxPolicy.session_in_namespace?/2.
       info = %SessionInfo{kind: :shell, sid: "my sid", tmux_session: ""}
-      assert TerminalState.tmux_session_for_info(info, "My WS") == "casein_My_WS_my_sid"
+      assert TerminalState.tmux_session_for_info(info, "My WS") == "casein_My_WS_my-sid"
     end
 
     test "shell with nil tmux_session derives the name from workspace + sid" do

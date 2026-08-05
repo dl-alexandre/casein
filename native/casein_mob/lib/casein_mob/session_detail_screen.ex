@@ -19,17 +19,22 @@ defmodule CaseinMob.SessionDetailScreen do
 
   def mount(params, _session, socket) do
     workspace_id = params[:workspace_id] || params["workspace_id"]
-    session_id = params[:session_id] || params["session_id"]
+    target_session_id = exact_session_id(params[:session_id] || params["session_id"])
     source = params[:source] || params["source"] || :workspace
 
     if is_binary(workspace_id) do
-      SessionConfig.put_resume_context(workspace_id, session_id: session_id, source: source)
+      SessionConfig.put_resume_context(workspace_id,
+        session_id: target_session_id,
+        source: source
+      )
+
       SessionClient.watch(workspace_id, self())
     end
 
     socket =
       socket
       |> Mob.Socket.assign(:workspace_id, workspace_id)
+      |> Mob.Socket.assign(:target_session_id, target_session_id)
       |> Mob.Socket.assign(:snapshot, nil)
       |> Mob.Socket.assign(:status, :connecting)
       |> Mob.Socket.assign(:notice, nil)
@@ -129,7 +134,7 @@ defmodule CaseinMob.SessionDetailScreen do
                 [
                   status_banner(snap, assigns.status),
                   transition_notice(assigns.notice)
-                  | body(snap, assigns.status)
+                  | body(snap, assigns.status, assigns.target_session_id)
                 ]
                 |> Enum.reject(&is_nil/1)
             }
@@ -140,14 +145,14 @@ defmodule CaseinMob.SessionDetailScreen do
     }
   end
 
-  defp body(nil, status) do
+  defp body(nil, status, _target_session_id) do
     case status_state(status) do
       state when state in [:disconnected, :error] -> recovery_panel(status)
       _ -> connecting_panel()
     end
   end
 
-  defp body(snap, _status) do
+  defp body(snap, _status, nil) do
     [
       supervision_summary(snap),
       current_run_card(get(snap, "current_run")),
@@ -158,6 +163,13 @@ defmodule CaseinMob.SessionDetailScreen do
       section_label("Active agents"),
       agents_section(get(snap, "active_agents", []))
     ]
+  end
+
+  defp body(snap, _status, target_session_id) when is_binary(target_session_id) do
+    case exact_target_run(snap, target_session_id) do
+      {:ok, run} -> [target_run_card(run, target_session_id)]
+      :unavailable -> [target_unavailable_card(target_session_id)]
+    end
   end
 
   defp recovery_panel(status) do
@@ -383,6 +395,83 @@ defmodule CaseinMob.SessionDetailScreen do
         ]
         |> Enum.reject(&is_nil/1)
     }
+  end
+
+  defp target_run_card(run, target_session_id) do
+    status = get(run, "status")
+
+    %{
+      type: :column,
+      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 6},
+      children:
+        [
+          %{
+            type: :row,
+            props: %{fill_width: true, gap: 8},
+            children: [
+              %{
+                type: :text,
+                props: %{
+                  text: "Resumed session",
+                  text_color: :muted,
+                  text_size: :sm,
+                  weight: 1
+                },
+                children: []
+              },
+              chip(run_status_label(run), run_status_color(status))
+            ]
+          },
+          maybe_text("Session #{truncate(target_session_id, 42)}", :muted, :xs),
+          maybe_text(run_title(run), :on_surface, :lg),
+          maybe_text(run_time_line(run), :muted, :xs),
+          maybe_text(run_context_line(run), :muted, :xs),
+          maybe_text(run_reference_line(run), :muted, :xs),
+          maybe_text(run_result_line(run), :muted, :xs)
+        ]
+        |> Enum.reject(&is_nil/1)
+    }
+  end
+
+  defp target_unavailable_card(target_session_id) do
+    %{
+      type: :column,
+      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 6},
+      children: [
+        %{
+          type: :text,
+          props: %{
+            text: "Requested session unavailable",
+            text_color: :on_surface,
+            text_size: :lg,
+            font_weight: "bold"
+          },
+          children: []
+        },
+        maybe_text("Session #{truncate(target_session_id, 42)}", :muted, :xs),
+        %{
+          type: :text,
+          props: %{
+            text:
+              "The current snapshot is partial or this session was replaced. No other run was substituted.",
+            text_color: :muted,
+            text_size: :sm
+          },
+          children: []
+        }
+      ]
+    }
+  end
+
+  defp exact_target_run(snap, target_session_id) do
+    runs =
+      [get(snap, "current_run") | List.wrap(get(snap, "recent_runs", []))]
+      |> Enum.filter(&(is_map(&1) and get(&1, "id") == target_session_id))
+
+    case runs do
+      [run] -> {:ok, run}
+      _missing_or_ambiguous -> :unavailable
+    end
   end
 
   # ── Recent runs ─────────────────────────────────────────────────────────────
@@ -767,6 +856,12 @@ defmodule CaseinMob.SessionDetailScreen do
   defp get(map, key, default \\ nil)
   defp get(%{} = map, key, default), do: Map.get(map, key) || atom_key(map, key) || default
   defp get(_map, _key, default), do: default
+
+  defp exact_session_id(value) when is_binary(value) do
+    if String.trim(value) == "", do: nil, else: value
+  end
+
+  defp exact_session_id(_value), do: nil
 
   defp atom_key(map, key) when is_binary(key) do
     Map.get(map, String.to_existing_atom(key))

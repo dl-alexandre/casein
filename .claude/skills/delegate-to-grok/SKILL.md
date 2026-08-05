@@ -16,6 +16,14 @@ required — always pass an explicit `pane` id from topology or the spawn helper
 
 - Terminal MCP with `workspace_id` on every call.
 - Orchestrator cwd is **not** where the worker should edit (workers use their own worktree).
+- **The workspace's agent-write unlock is active.** `terminal_context` returns an
+  `agent_write` block; when `write_enabled` is `false`, stop here and ask the
+  operator to re-grant agent write in the workspace UI (max 240 min). A Grok pane
+  spawned while locked gets a read-only bwrap sandbox — it reaches a normal prompt
+  but cannot write its worktree, resolve DNS, or start the BEAM, so `mix` will not
+  run. That sandbox is **frozen when the pane's leader starts**: re-granting the
+  unlock later does not free a running pane, only a relaunch does. For write work
+  that cannot wait for an operator, delegate to **codex**, which is not gated.
 
 ## 1. Resolve session
 
@@ -42,21 +50,24 @@ ends with ` - grok`) that is:
 
 ### Spawn fresh (preferred when reuse is ambiguous)
 
-From the primary checkout on the devbox:
+Invoke the Casein-owned helper, even when the orchestrator is working in a
+different product repository:
 
 ```bash
 bash /data/workspaces/dalexandre/casein/scripts/spawn-agent-worker.sh grok <task-slug> <session>
 ```
 
-Or from any checkout with env resolved:
-
-```bash
-bash scripts/spawn-agent-worker.sh grok <task-slug> <session>
-```
+The helper preflights the workspace's agent-write unlock and **exits 3 without
+opening a window** when it is locked, rather than spawning a pane that cannot
+write. Treat that exit as "ask the operator to re-grant", not as a transient
+failure to retry.
 
 Stdout is the new `pane_id` (e.g. `%255`). The helper unsets
-`CASEIN_AGENT_WORKTREE_PATH` from tmux session env so each spawn creates a fresh
-worktree — without that, workers reuse the orchestrator's checkout.
+`CASEIN_AGENT_WORKTREE_PATH`, sources the orchestrator's materialized workspace
+environment in the new tmux window, and uses Casein's launcher to create a fresh
+worktree for the product checkout. Do not invoke a product-local
+`scripts/launch-casein-agent.sh`; product repos are not expected to carry Casein
+host infrastructure.
 
 Wait until the worker is at prompt:
 
@@ -211,7 +222,7 @@ the materialized MCP, and the agent-state hook:
 
 ```bash
 tmux respawn-pane -k -t <worker_pane> -c <worker-worktree-path> \
-  "bash -lc 'cd \"<worker-worktree-path>\" && CASEIN_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" CASEIN_AGENT_TASK=<task-slug> exec bash scripts/launch-casein-agent.sh grok'"
+  "bash -lc 'cd \"<worker-worktree-path>\" && CASEIN_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" CASEIN_AGENT_TASK=<task-slug> exec bash /data/workspaces/dalexandre/casein/scripts/launch-casein-agent.sh grok'"
 ```
 
 Use **`launch-casein-agent.sh`**, not `spawn-agent-worker.sh` (§2): the launcher

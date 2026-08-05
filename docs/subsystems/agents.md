@@ -204,6 +204,21 @@ rather than reusing a previously writable native-tool sandbox. Write-enabled
 leaders extend Grok's `strict` profile; locked leaders extend `read-only` with
 explicit credential denies.
 
+The MCP grant and the filesystem sandbox therefore move on different clocks, and
+the difference is the trap: MCP re-intersects per request, but the sandbox base
+is chosen once, when the leader starts, and stays frozen for the pane's life. A
+pane launched while locked reaches a normal-looking prompt yet cannot write its
+worktree, reach the network, or start the BEAM — and a later grant does **not**
+free it; only a relaunch does. Two surfaces make that discoverable instead of
+leaving it to be rediscovered by failure: the workspace status API and
+`terminal_context` both report an `agent_write` block (`write_enabled`,
+`unlock_status`, `unlock_until`, plus a remedy note when blocked), and
+`scripts/spawn-agent-worker.sh` preflights it — refusing to open a Grok worker
+window with exit 3 rather than spawning a pane that cannot work. Note that
+`write_enabled` can be false while the unlock is *active*, when the workspace is
+not in manual mode or its DB isolation is `shared_stage`/`unsafe`; re-granting
+does not help there, so the surfaces say so explicitly.
+
 `search_tools` and `invoke_tool` are intentionally absent, so cross-server
 routing cannot bypass the exact grant. Streamable HTTP session ids are also bound
 to server, workspace, and bearer scope. The capability follows the private

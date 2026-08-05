@@ -32,7 +32,7 @@ defmodule CaseinMob.MixProject do
       # across one immutable payload and exact target identity, failing closed.
       {:mob_dev,
        git: "https://github.com/dl-alexandre/mob_dev.git",
-       ref: "36ed329cf22279b3ce2769450a0916e48e97ac55",
+       ref: "c282e669e2dc5f319042f409e0d39a2e3b26edc9",
        only: [:dev, :test],
        runtime: false,
        override: true},

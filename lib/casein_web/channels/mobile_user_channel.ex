@@ -110,6 +110,8 @@ defmodule CaseinWeb.MobileUserChannel do
          {:ok,
           %{
             status: "accepted",
+            card_id: result.card_id,
+            action_id: result.action_id,
             idempotent: result.idempotent,
             result: result.result,
             snapshot: render_snapshot(UserObserver.snapshot(user_id), socket)
@@ -388,6 +390,7 @@ defmodule CaseinWeb.MobileUserChannel do
         attention = Map.fetch!(attention_by_card, card.id)
 
         {
+          unresolved_pin_band(card, attention),
           attention_rank_band(attention.priority),
           attention.rank * -1,
           attention_sort_time(attention.changed_at || card.updated_at),
@@ -460,6 +463,7 @@ defmodule CaseinWeb.MobileUserChannel do
 
     %{
       id: card.id,
+      sticky: unresolved_needs_me?(attention),
       attention: render_value(attention),
       origin: render_value(resume.origin),
       resume: render_value(resume),
@@ -502,6 +506,13 @@ defmodule CaseinWeb.MobileUserChannel do
   defp attention_rank_band("high"), do: 1
   defp attention_rank_band("normal"), do: 2
   defp attention_rank_band(_priority), do: 3
+
+  # Viewing a request acknowledges visibility; it does not demote unresolved
+  # work. Only authoritative resolution/removal releases this pin.
+  defp unresolved_pin_band(_card, attention),
+    do: if(unresolved_needs_me?(attention), do: 0, else: 1)
+
+  defp unresolved_needs_me?(attention), do: attention.unresolved? == true
 
   defp attention_sort_time(%DateTime{} = value),
     do: DateTime.to_unix(value, :microsecond) * -1
@@ -563,6 +574,13 @@ defmodule CaseinWeb.MobileUserChannel do
     intervention
     |> Map.delete(:pwa_path)
     |> Map.put(:pwa_url, CaseinWeb.Endpoint.url() <> intervention.pwa_path)
+    |> Map.update(
+      :actions,
+      [],
+      &Enum.map(&1, fn action ->
+        Map.drop(action, [:server_message, "server_message"])
+      end)
+    )
     |> render_value()
   end
 
@@ -592,7 +610,9 @@ defmodule CaseinWeb.MobileUserChannel do
   # Action specs may carry a `:route` tuple (navigation actions); convert it to a
   # JSON-encodable map. Everything else renders generically.
   defp render_action_spec(spec) when is_map(spec) do
-    Map.new(spec, fn
+    spec
+    |> Map.drop([:server_message, "server_message"])
+    |> Map.new(fn
       {:route, route} -> {"route", render_route(route)}
       {key, value} -> {to_string(key), render_value(value)}
     end)

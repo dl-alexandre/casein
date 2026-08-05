@@ -116,5 +116,56 @@ defmodule Casein.Mobile.InterventionContractTest do
     assert Intervention.project(completed) == nil
   end
 
+  test "direction and blocker actions are server-declared and revision-bound" do
+    direction =
+      Card.clarification(
+        %{
+          user_id: "dev",
+          workspace_id: "ws",
+          session_id: "direction-task",
+          request_kind: "direction",
+          choices: ["Keep the API", "Migrate callers"],
+          locator: %{tmux_session: "casein_ws_agent", pane: "%2"},
+          task_ref: %{type: "agent_task", id: "direction-task"}
+        },
+        @now
+      )
+
+    blocker =
+      Card.clarification(
+        %{
+          user_id: "dev",
+          workspace_id: "ws",
+          session_id: "blocker-task",
+          request_kind: "blocker",
+          choices: ["Grant access"],
+          locator: %{tmux_session: "casein_ws_agent", pane: "%2"},
+          task_ref: %{type: "agent_task", id: "blocker-task"}
+        },
+        @now
+      )
+
+    assert [%{id: "choose_1"} = first, %{id: "choose_2"} = second] =
+             Intervention.action_specs(direction)
+
+    assert first.label == "Keep the API"
+    assert first.server_message == "Selected direction: Keep the API"
+    assert first.revision == second.revision
+    assert {:ok, ^second} = Intervention.available_action(direction, "choose_2")
+
+    assert {:error, :intervention_unavailable} =
+             Intervention.available_action(direction, "choose_3")
+
+    assert {:error, :unsupported_action} =
+             Intervention.available_action(direction, "client_invented")
+
+    assert [%{id: "choose_1", server_message: "Use this recovery action: Grant access"}] =
+             Intervention.action_specs(blocker)
+
+    malformed = put_in(direction, [:context, :choices], ["Only one direction"])
+    assert Intervention.action_specs(malformed) == []
+    assert Intervention.project(malformed) == nil
+  end
+
   defp action_ids(card), do: card |> Intervention.action_specs() |> Enum.map(& &1.id)
 end

@@ -123,6 +123,8 @@ defmodule Casein.PushTest do
     assert notification.title == "2 items need review"
     assert notification.reason == "Review required before work continues"
     assert notification.workspace_id == "pw-1"
+    # Without the name a push cannot say which workspace wants the operator.
+    assert notification.workspace_name == "Push Workspace"
     assert notification.user_id == user_id
     assert notification.session_id == "run-1"
     assert notification.card_id == "needs_review:pw-1:run-1"

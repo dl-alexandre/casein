@@ -139,15 +139,44 @@ function Save-CaseinSettings {
         Set-Content -LiteralPath $script:Paths.Settings -Encoding UTF8
 }
 
+function Resolve-CaseinTrustedLanProgram {
+    $releasePath = [IO.Path]::GetFullPath($script:Paths.ReleaseRoot).TrimEnd('\') + '\'
+    $program = Get-ChildItem -LiteralPath $script:Paths.ReleaseRoot -Directory -Filter 'erts-*' -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName 'bin\erl.exe' } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        Select-Object -First 1
+    if (-not $program) { return $null }
+
+    $resolved = [IO.Path]::GetFullPath([string]$program)
+    if (-not $resolved.StartsWith($releasePath, [StringComparison]::OrdinalIgnoreCase)) { return $null }
+    $resolved
+}
+
 function Read-CaseinTrustedLanState {
     if (-not (Test-Path -LiteralPath $script:Paths.TrustedLan)) {
-        return [pscustomobject]@{ enabled = $false }
+        return [pscustomobject]@{ enabled = $false; reconciliation_required = $false }
     }
     try {
-        Get-Content -Raw -LiteralPath $script:Paths.TrustedLan | ConvertFrom-Json
+        $state = Get-Content -Raw -LiteralPath $script:Paths.TrustedLan | ConvertFrom-Json
+        if ([bool]$state.enabled) {
+            $currentProgram = Resolve-CaseinTrustedLanProgram
+            $savedProgram = [string]$state.program
+            if (-not $currentProgram -or -not $savedProgram -or
+                -not ([IO.Path]::GetFullPath($savedProgram)).Equals($currentProgram, [StringComparison]::OrdinalIgnoreCase)) {
+                # A Windows Firewall program rule is bound to an exact executable path.
+                # Never expose the new release until elevation has moved that rule forward.
+                return [pscustomobject]@{
+                    enabled = $false
+                    reconciliation_required = $true
+                    previous_program = $savedProgram
+                }
+            }
+        }
+        $state | Add-Member -NotePropertyName reconciliation_required -NotePropertyValue $false -Force
+        $state
     } catch {
         Write-CaseinLog "Ignoring invalid Trusted LAN state: $($_.Exception.Message)"
-        [pscustomobject]@{ enabled = $false }
+        [pscustomobject]@{ enabled = $false; reconciliation_required = $false }
     }
 }
 
@@ -734,7 +763,22 @@ function Start-CaseinTray {
     $script:RecoveryAttempts = 0
     $script:NextRecoveryAt = [DateTime]::MinValue
     $script:LastFailedRuntimePid = 0
+    $script:LifecycleMutation = $false
     Save-CaseinSettings $script:Port $script:LaunchAtSignIn
+
+    $trustedLanState = Read-CaseinTrustedLanState
+    if ([bool]$trustedLanState.reconciliation_required) {
+        try {
+            Write-CaseinLog 'Reconciling the Trusted LAN firewall rule with the installed release'
+            $trustedLanState = Set-CaseinTrustedLan $true $script:Port
+            Write-CaseinLog 'Trusted LAN firewall rule reconciled successfully'
+        } catch {
+            # Read-CaseinTrustedLanState keeps the runtime loopback-only until a
+            # later launch or an explicit menu action completes reconciliation.
+            Write-CaseinLog "Trusted LAN firewall reconciliation failed: $($_.Exception.Message)"
+            $trustedLanState = Read-CaseinTrustedLanState
+        }
+    }
 
     $runningIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(34, 197, 94))
     $stoppedIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(107, 114, 128))
@@ -758,7 +802,6 @@ function Start-CaseinTray {
     $supportItem = $menu.Items.Add('Create support bundle')
     $rotateTokensItem = $menu.Items.Add('Rotate local access tokens')
     $trustedLanItem = $menu.Items.Add('Trusted LAN access')
-    $trustedLanState = Read-CaseinTrustedLanState
     $trustedLanItem.Checked = [bool]$trustedLanState.enabled
     $copyLanUrlItem = $menu.Items.Add('Copy Trusted LAN URL')
     $copyLanUrlItem.Enabled = [bool]$trustedLanState.enabled
@@ -876,10 +919,16 @@ function Start-CaseinTray {
     })
     $trustedLanItem.Add_Click({
         $trustedLanItem.Enabled = $false
+        $script:LifecycleMutation = $true
         try {
             $enable = -not $trustedLanItem.Checked
             Stop-CaseinRuntime $script:Port
             $state = Set-CaseinTrustedLan $enable $script:Port
+            # The elevated helper can remain open long enough for the recovery
+            # timer to observe the intentional stop. Stop any recovery-started
+            # loopback runtime after the new state is durable so the next start
+            # must rebuild its environment and bind the requested LAN address.
+            Stop-CaseinRuntime $script:Port
             $trustedLanItem.Checked = [bool]$state.enabled
             $copyLanUrlItem.Enabled = [bool]$state.enabled
             if (-not (Start-CaseinRuntime $script:Port)) {
@@ -896,6 +945,7 @@ function Start-CaseinTray {
             $tray.ShowBalloonTip(5000, 'Trusted LAN change failed', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Error)
             if (-not (Test-CaseinReady $script:Port)) { Start-CaseinRuntime $script:Port | Out-Null }
         } finally {
+            $script:LifecycleMutation = $false
             $trustedLanItem.Enabled = $true
         }
     })
@@ -926,10 +976,12 @@ function Start-CaseinTray {
             $tray.Text = 'Casein - Stopped'
             $tray.Icon = $errorIcon
             $openItem.Enabled = $false
-            [void](Observe-CaseinRuntimeFailure)
-            Clear-CaseinStaleRuntimeState $script:Port | Out-Null
+            if (-not $script:LifecycleMutation) {
+                [void](Observe-CaseinRuntimeFailure)
+                Clear-CaseinStaleRuntimeState $script:Port | Out-Null
+            }
 
-            if ($script:RecoveryAttempts -lt 3 -and [DateTime]::UtcNow -ge $script:NextRecoveryAt) {
+            if (-not $script:LifecycleMutation -and $script:RecoveryAttempts -lt 3 -and [DateTime]::UtcNow -ge $script:NextRecoveryAt) {
                 $script:RecoveryAttempts++
                 $delaySeconds = [Math]::Pow(2, $script:RecoveryAttempts)
                 $script:NextRecoveryAt = [DateTime]::UtcNow.AddSeconds($delaySeconds)
@@ -979,6 +1031,7 @@ $script:Paths = Get-CaseinPaths $ReleaseRoot
 $script:RuntimeJob = $null
 $script:RuntimeProcess = $null
 $script:LastFailedRuntimePid = 0
+$script:LifecycleMutation = $false
 New-Item -ItemType Directory -Force -Path $script:Paths.DataRoot | Out-Null
 
 if (-not $LibraryOnly) {

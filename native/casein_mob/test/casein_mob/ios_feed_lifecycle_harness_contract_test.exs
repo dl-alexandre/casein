@@ -37,16 +37,68 @@ defmodule CaseinMob.IOSFeedLifecycleHarnessContractTest do
     assert harness =~ ~s(app.buttons["Selected · Devbox"])
     assert harness =~ ~s(app.staticTexts["https://casein.devbox.milcgroup.com"])
     assert harness =~ ~s(app.staticTexts["Authenticated live feed"])
+
+    assert harness =~
+             ~s(app.staticTexts[\n            "Switched origin; refreshing authoritative state"\n        ])
+
     assert harness =~ ~s(app.staticTexts["Saved profile · validating live access"])
     assert harness =~ ~s(app.staticTexts["Devbox · Connecting"])
+    assert harness =~ "notice: reconnectNotice"
+    assert harness =~ "validating: validatingFeed"
+    assert harness =~ "connecting: connectingOrigin"
+    assert harness =~ "acknowledged: notice.exists"
+    assert harness =~ "validating: validating.exists"
+    assert harness =~ "connecting: connecting.exists"
+    assert harness =~ "private static func waitForReconnectTransition("
+    assert harness =~ "private static func reconnectTransitionObserved("
+    assert harness =~ "predicate: NSPredicate { _, _ in !reconnectNotice.exists }"
+    assert harness =~ "XCTWaiter.wait(for: [noticeClearedBeforeTap], timeout: 10)"
+    assert harness =~ "XCTWaiter.wait(for: [noticeClearedAfterSnapshot], timeout: 30)"
+
+    polling_helper =
+      harness
+      |> String.split("private static func waitForReconnectTransition(", parts: 2)
+      |> List.last()
+      |> String.split("\n    private static func reconnectTransitionObserved(", parts: 2)
+      |> List.first()
+
+    assert polling_helper =~ "let deadline = Date().addingTimeInterval(limit)"
+    assert polling_helper =~ "Date().addingTimeInterval(0.02)"
+    assert polling_helper =~ "while Date() < deadline"
+    assert polling_helper =~ "return reconnectTransitionObserved("
+    refute polling_helper =~ "while true"
+
+    transition_helper =
+      harness
+      |> String.split("private static func reconnectTransitionObserved(", parts: 2)
+      |> List.last()
+      |> String.split("\n    }", parts: 2)
+      |> List.first()
+
+    assert transition_helper =~ "acknowledged || validating || connecting"
+    refute transition_helper =~ "|| true"
+    refute transition_helper =~ "authenticatedFeed"
     assert occurrences(harness, "selectedDevbox.tap()") == 1
     assert occurrences(harness, "app.activate()") == 1
-
-    assert_before(harness, "selectedDevbox.tap()", "let transition = XCTNSPredicateExpectation(")
+    assert occurrences(harness, "!reconnectNotice.exists") == 2
 
     assert_before(
       harness,
-      "let transition = XCTNSPredicateExpectation(",
+      "let noticeClearedBeforeTap = XCTNSPredicateExpectation(",
+      "selectedDevbox.tap()"
+    )
+
+    assert_before(harness, "selectedDevbox.tap()", "Self.waitForReconnectTransition(")
+
+    assert_before(
+      harness,
+      "Self.waitForReconnectTransition(",
+      "let noticeClearedAfterSnapshot = XCTNSPredicateExpectation("
+    )
+
+    assert_before(
+      harness,
+      "let noticeClearedAfterSnapshot = XCTNSPredicateExpectation(",
       "authenticatedFeed.waitForExistence(timeout: 30)"
     )
 

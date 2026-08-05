@@ -279,6 +279,21 @@ inside the casein checkout, where the project `.claude/skills` copy already
 provides them. Override with `CASEIN_GLOBAL_AGENT_SKILLS="a b c"`, or opt out
 entirely with `CASEIN_AGENT_SKILLS=0`.
 
+Cross-repository worker spawning must use Casein's host helper, not a launcher
+path under the product checkout:
+
+```bash
+bash /data/workspaces/dalexandre/casein/scripts/spawn-agent-worker.sh \
+  grok <task-slug> <casein-session>
+```
+
+The helper resolves the product's primary checkout, sources its materialized
+workspace environment inside the fresh tmux window, pins the requested session,
+and invokes Casein's own `launch-casein-agent.sh`. This preserves workspace MCP
+pairing and stale-socket repair while forcing the worker into an isolated
+product worktree; product repositories do not need to vendor Casein launch
+scripts.
+
 OpenCode MCP is injected as project `.opencode/opencode.json` from the workspace
 staging tree whenever the launch is paired (`CASEIN_WORKSPACE_ID` +
 `CASEIN_AGENT_MCP_HOME`) — primary checkout or agent worktree. Grok still keeps

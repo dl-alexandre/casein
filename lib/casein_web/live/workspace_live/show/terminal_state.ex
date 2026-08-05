@@ -11,6 +11,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   alias Casein.Attention.Policy, as: AttentionPolicy
   alias Casein.Codex.SessionTitles
   alias Casein.Terminals
+  alias Casein.Terminals.WindowTrash
   alias Casein.Labels
   alias CaseinWeb.WorkspaceLive.Show
   alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
@@ -46,6 +47,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   end
 
   def assign_tmux_topology(socket, topology, opts \\ []) do
+    topology = hide_trashed_windows(topology)
+
     if is_binary(topology.session) do
       pane_ids = Enum.map(topology.panes, &Map.get(&1, :id))
       Labels.prune_session(topology.session, pane_ids)
@@ -136,6 +139,63 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
     |> ViewDeepLink.apply_pending_url_view()
     |> ViewDeepLink.apply_pending_url_recovery()
     |> maybe_patch_idle_view_url(opts)
+  end
+
+  # A window closed with the undoable path is still fully alive in tmux during
+  # its grace period — it is only withheld from viewers, so it can be brought
+  # back intact. Filtering here rather than at each call site means every
+  # surface fed by topology (tab strip, window picker, sidebar tree, pane
+  # overlay) hides it together, on the synchronous refresh and the watcher
+  # broadcast alike.
+  defp hide_trashed_windows(%{session: session, windows: windows} = topology)
+       when is_binary(session) and is_list(windows) do
+    case WindowTrash.reject_pending(session, windows) do
+      ^windows ->
+        topology
+
+      visible ->
+        visible_ids = MapSet.new(visible, & &1.id)
+
+        topology
+        |> Map.put(:windows, visible)
+        |> Map.put(
+          :panes,
+          Enum.filter(topology.panes || [], &MapSet.member?(visible_ids, &1.window_id))
+        )
+        |> reseat_active_window(visible, visible_ids)
+    end
+  end
+
+  defp hide_trashed_windows(topology), do: topology
+
+  # Defensive only: trashing the active window also moves tmux's own selection
+  # (see TerminalEvents), so by the next topology read the active id normally
+  # already points somewhere visible. This covers the gap between the two, and
+  # any topology snapshot taken mid-flight.
+  defp reseat_active_window(topology, visible, visible_ids) do
+    if is_nil(topology.active_window_id) or
+         MapSet.member?(visible_ids, topology.active_window_id) do
+      topology
+    else
+      fallback = List.first(visible)
+
+      topology
+      |> Map.put(:active_window_id, fallback && fallback.id)
+      |> Map.put(
+        :active_pane_id,
+        fallback && fallback_active_pane_id(topology.panes, fallback.id)
+      )
+    end
+  end
+
+  defp fallback_active_pane_id(panes, window_id) do
+    panes = panes || []
+
+    pane =
+      Enum.find(panes, &(&1.active && &1.window_id == window_id)) ||
+        Enum.find(panes, &(&1.window_id == window_id))
+
+    pane && pane.id
   end
 
   defp maybe_patch_idle_view_url(socket, opts) do
@@ -489,9 +549,28 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
       socket
       |> assign(:tmux_topology_generation, generation)
       |> monitor_tmux_topology_watcher(result[:pid])
+      |> sync_window_trash_subscription(nil)
     else
       socket
     end
+  end
+
+  @doc """
+  Follows the trash topic for the currently assigned session.
+
+  Trashing hides a window from every viewer, not just the one that closed it,
+  so the others need a nudge to re-filter — the topology itself has not changed
+  and the watcher has nothing to broadcast.
+  """
+  def sync_window_trash_subscription(socket, old_session) do
+    new_session = socket.assigns[:tmux_session]
+
+    if connected?(socket) and old_session != new_session do
+      if is_binary(old_session), do: WindowTrash.unsubscribe(old_session)
+      if is_binary(new_session), do: WindowTrash.subscribe(new_session)
+    end
+
+    socket
   end
 
   @doc """
@@ -556,6 +635,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         socket
         |> assign(:tmux_topology_generation, generation)
         |> monitor_tmux_topology_watcher(result[:pid])
+        |> sync_window_trash_subscription(old_session)
         |> maybe_reset_preview_selection_on_session_change(session_changed?)
 
       assign_tmux_topology(socket, topology)

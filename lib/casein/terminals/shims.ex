@@ -639,6 +639,7 @@ defmodule Casein.Terminals.Shims do
       "${HOME:-}/.local/bin"
     unset -f __casein_prepend_path
 
+    #{session_env_sync_snippet()}
     case "$-" in
       *i*) ;;
       *) return 0 2>/dev/null || exit 0 ;;
@@ -707,6 +708,10 @@ defmodule Casein.Terminals.Shims do
       local status=$?
       __casein_in_prompt_command=1
 
+      # A pane can be created in the same tick PaneEnv pushes the session env;
+      # retry until the workspace vars land, then this is a no-op forever.
+      __casein_sync_session_env_if_pending
+
       __casein_run_original_prompt_command
 
       if [[ "${__casein_command_active:-0}" == "1" ]]; then
@@ -760,6 +765,68 @@ defmodule Casein.Terminals.Shims do
     """
   end
 
+  # Hydrates CASEIN_* from the tmux session environment table.
+  #
+  # `tmux set-environment` only seeds panes created *after* the call, so a pane
+  # whose shell started before `PaneEnv.ensure_for_session/3` ran keeps whatever
+  # env the tmux server was launched with — on a release box that is the global
+  # server env: no CASEIN_WORKSPACE_ID / MCP URLs, and the *global* admin
+  # CASEIN_API_TOKEN, which MCP tools/call rejects. Every agent launcher then
+  # refuses to start ("CASEIN_WORKSPACE_NAME is required").
+  #
+  # Shared verbatim by the bash and zsh integrations: sync once at shell init,
+  # then retry on each prompt until the pairing vars land (self-disabling, so
+  # steady state costs nothing). `casein_sync_session_env` is deliberately
+  # un-prefixed — repair tooling and operators call it by name in live panes.
+  defp session_env_sync_snippet do
+    """
+    casein_sync_session_env() {
+      [ -n "${TMUX:-}" ] || return 0
+      command -v tmux >/dev/null 2>&1 || return 0
+
+      local __casein_line __casein_key __casein_value
+
+      while IFS= read -r __casein_line; do
+        case "$__casein_line" in
+          -CASEIN_*)
+            # tmux marks removed variables with a leading '-'.
+            unset "${__casein_line#-}" 2>/dev/null || true
+            continue
+            ;;
+          CASEIN_*=*) ;;
+          *) continue ;;
+        esac
+
+        __casein_key="${__casein_line%%=*}"
+        __casein_value="${__casein_line#*=}"
+
+        case "$__casein_key" in
+          # Shell-integration bookkeeping is per-shell, never session state.
+          CASEIN_SHELL_INTEGRATION_LOADED | CASEIN_SHELL_INTEGRATION_RC_SOURCED) continue ;;
+        esac
+
+        export "$__casein_key=$__casein_value"
+      done <<CASEIN_SESSION_ENV
+    $(tmux show-environment 2>/dev/null)
+    CASEIN_SESSION_ENV
+
+      if [ -n "${CASEIN_WORKSPACE_ID:-}" ]; then
+        __casein_session_env_synced=1
+      fi
+
+      return 0
+    }
+
+    __casein_sync_session_env_if_pending() {
+      [ "${__casein_session_env_synced:-0}" = "1" ] && return 0
+      casein_sync_session_env
+    }
+
+    __casein_session_env_synced=0
+    casein_sync_session_env
+    """
+  end
+
   # Same OSC 133 prompt marks / OSC 7 cwd contract as the bash integration,
   # implemented with zsh's native precmd/preexec hooks instead of
   # PROMPT_COMMAND + a DEBUG trap. Loaded by the staged ZDOTDIR's .zshrc after
@@ -798,6 +865,7 @@ defmodule Casein.Terminals.Shims do
       "${HOME:-}/.local/bin"
     unset -f __casein_prepend_path
 
+    #{session_env_sync_snippet()}
     __casein_urlencode() {
       local value="${1:-}"
       local encoded=""
@@ -841,6 +909,9 @@ defmodule Casein.Terminals.Shims do
 
     __casein_precmd() {
       local exit_status=$?
+
+      # Mirrors the bash PROMPT_COMMAND retry: close the pane-create race.
+      __casein_sync_session_env_if_pending
 
       if [[ "${__casein_command_active:-0}" == "1" ]]; then
         __casein_emit_osc "133;D;${exit_status}"

@@ -6,6 +6,8 @@
 *.beam
 *.o
 *.so
+# Versioned soname outputs (libFoo.so.0, libFoo.so.0.1.0) do NOT match *.so.
+*.so.*
 *.dylib
 *.a
 !native/ghostty_vt/lib-android-arm64/libghostty-vt.a

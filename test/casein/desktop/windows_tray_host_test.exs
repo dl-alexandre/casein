@@ -50,6 +50,10 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "function Observe-CaseinRuntimeFailure"
     assert script =~ "function Update-CaseinRecoveryState"
     assert script =~ "Automatic runtime recovery exhausted after 3 attempts"
+    assert script =~ "$script:LifecycleMutation = $true"
+    assert script =~ "if (-not $script:LifecycleMutation)"
+    assert script =~ "if (-not $script:LifecycleMutation -and $script:RecoveryAttempts -lt 3"
+    assert script =~ "# must rebuild its environment and bind the requested LAN address."
     refute script =~ "Invoke-CaseinRelease -Arguments @('start') -Port $Port -Wait"
     assert script =~ "taskkill.exe /PID $runtimePid /T /F"
     assert script =~ "Local\\Casein.Desktop.Tray"
@@ -123,6 +127,18 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert tray =~ "'CASEIN_LAN_INSECURE_HTTP'] = 'true'"
     assert tray =~ "'PHX_IP'] = '0.0.0.0'"
     assert uninstaller =~ "-Action Disable"
+  end
+
+  test "Trusted LAN remains loopback-only until an upgrade refreshes its program-scoped rule" do
+    tray = File.read!(@tray_script)
+
+    assert tray =~ "function Resolve-CaseinTrustedLanProgram"
+    assert tray =~ "reconciliation_required = $true"
+    assert tray =~ "previous_program = $savedProgram"
+    assert tray =~ "Set-CaseinTrustedLan $true $script:Port"
+    assert tray =~ "Trusted LAN firewall rule reconciled successfully"
+    assert tray =~ "Read-CaseinTrustedLanState keeps the runtime loopback-only"
+    assert tray =~ "'PHX_IP'] = '0.0.0.0'"
   end
 
   test "rollback swaps only between validated installed release roots" do

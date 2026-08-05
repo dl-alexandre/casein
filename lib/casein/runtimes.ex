@@ -35,6 +35,10 @@ defmodule Casein.Runtimes do
 
   @default_ttl_seconds 60 * 60
 
+  # Kept in sync with `Casein.Runtimes.EctoAdapter`'s SQL-side filter and with
+  # `Casein.Workspaces.SessionSummary.active_runtime?/1`.
+  @active_runtime_statuses ~w(active bound provisioned)
+
   @callback create_runtime(Runtime.t(), LifecycleEvent.t()) ::
               {:ok, Runtime.t()} | {:error, term()}
   @callback update_runtime(Runtime.t(), LifecycleEvent.t() | nil) ::
@@ -42,9 +46,15 @@ defmodule Casein.Runtimes do
   @callback get_runtime(String.t()) :: {:ok, Runtime.t()} | :error
   @callback list_runtimes(map()) :: [Runtime.t()]
   @callback list_runtimes_by_workspace_ids([String.t()]) :: [Runtime.t()]
+  @callback list_agent_worktree_runtimes(String.t(), keyword()) :: [Runtime.t()]
+  @callback count_runtimes_by_workspace_ids([String.t()]) :: %{
+              optional(String.t()) => %{total: non_neg_integer(), active: non_neg_integer()}
+            }
   @callback events_for(String.t()) :: [LifecycleEvent.t()]
   @callback clear() :: :ok
-  @optional_callbacks list_runtimes_by_workspace_ids: 1
+  @optional_callbacks list_runtimes_by_workspace_ids: 1,
+                      list_agent_worktree_runtimes: 2,
+                      count_runtimes_by_workspace_ids: 1
 
   def list_runtimes(filters \\ %{}), do: impl().list_runtimes(normalize_filter(filters))
 
@@ -65,6 +75,35 @@ defmodule Casein.Runtimes do
 
     runtimes
     |> Enum.group_by(& &1.workspace_id)
+  end
+
+  @doc """
+  Per-workspace runtime totals without loading the runtime rows themselves.
+
+  Switchers only ever need "how many, and how many are active" — loading every
+  row to call `length/1` on it made the session picker's cost scale with the
+  lifetime history of the busiest workspace.
+  """
+  @spec count_runtimes_by_workspace_ids([String.t()]) :: %{
+          optional(String.t()) => %{total: non_neg_integer(), active: non_neg_integer()}
+        }
+  def count_runtimes_by_workspace_ids(workspace_ids) when is_list(workspace_ids) do
+    workspace_ids = Enum.filter(workspace_ids, &(is_binary(&1) and &1 != ""))
+    adapter = impl()
+
+    if function_exported?(adapter, :count_runtimes_by_workspace_ids, 1) do
+      adapter.count_runtimes_by_workspace_ids(workspace_ids)
+    else
+      workspace_ids
+      |> list_runtimes_by_workspace_ids()
+      |> Map.new(fn {workspace_id, runtimes} ->
+        {workspace_id,
+         %{
+           total: length(runtimes),
+           active: Enum.count(runtimes, &(&1.status in @active_runtime_statuses))
+         }}
+      end)
+    end
   end
 
   def get_runtime(runtime_id) when is_binary(runtime_id), do: impl().get_runtime(runtime_id)
@@ -159,14 +198,79 @@ defmodule Casein.Runtimes do
   @doc "List active agent worktree runtimes for a workspace."
   @spec list_agent_worktrees(String.t()) :: [map()]
   def list_agent_worktrees(workspace_id) when is_binary(workspace_id) do
-    %{"workspace_id" => workspace_id}
-    |> list_runtimes()
-    |> Enum.filter(&agent_worktree_runtime?/1)
-    |> Enum.reject(&(&1.status in ["cleaned", "expired"]))
+    workspace_id
+    |> list_agent_worktree_runtimes()
     |> Enum.map(&agent_worktree_payload/1)
   end
 
   def list_agent_worktrees(_workspace_id), do: []
+
+  @doc """
+  Active agent worktree runtimes for a workspace, one row per worktree path.
+
+  This is the workspace's *current* worktree set, so it must be read newest-first
+  and collapsed per path. The previous implementation paged the generic
+  `list_runtimes/1` (oldest-first, capped at 500 rows), which on a long-lived
+  workspace returned only ancient rows: the picker stopped seeing worktrees
+  created after the cap was reached, and `observe_worktree/2` stopped finding the
+  row it was supposed to update — so every reconcile inserted a duplicate instead,
+  pushing real worktrees further out of the window.
+
+  Pass `latest_per_path: false` to get every live row instead — the expiry sweep
+  has to see duplicates in order to retire them.
+  """
+  @spec list_agent_worktree_runtimes(String.t(), keyword()) :: [Runtime.t()]
+  def list_agent_worktree_runtimes(workspace_id, opts \\ [])
+
+  def list_agent_worktree_runtimes(workspace_id, opts) when is_binary(workspace_id) do
+    adapter = impl()
+    latest_per_path? = Keyword.get(opts, :latest_per_path, true)
+
+    runtimes =
+      if function_exported?(adapter, :list_agent_worktree_runtimes, 2) do
+        adapter.list_agent_worktree_runtimes(workspace_id, opts)
+      else
+        adapter.list_runtimes(normalize_filter(%{"workspace_id" => workspace_id}))
+      end
+
+    runtimes =
+      runtimes
+      |> Enum.filter(&agent_worktree_runtime?/1)
+      |> Enum.reject(&(&1.status in ["cleaned", "expired"]))
+
+    if latest_per_path?,
+      do: newest_per_worktree_path(runtimes),
+      else: Enum.sort_by(runtimes, &runtime_recency/1, :desc)
+  end
+
+  def list_agent_worktree_runtimes(_workspace_id, _opts), do: []
+
+  # Collapse duplicates the adapter may still return (memory adapter, or rows
+  # left behind by the pre-fix insert loop) so one worktree is one tab.
+  defp newest_per_worktree_path(runtimes) do
+    runtimes
+    |> Enum.group_by(&worktree_path_key/1)
+    |> Enum.flat_map(fn
+      {nil, group} -> group
+      {_key, group} -> [Enum.max_by(group, &runtime_recency/1)]
+    end)
+    |> Enum.sort_by(&runtime_recency/1, :desc)
+  end
+
+  defp worktree_path_key(%Runtime{worktree_path: path}) when is_binary(path) and path != "",
+    do: String.trim_trailing(Path.expand(path), "/")
+
+  defp worktree_path_key(_runtime), do: nil
+
+  # Sort on an integer, never on the %DateTime{} struct: Erlang term order on
+  # maps compares keys alphabetically (`:day` before `:month` before `:year`),
+  # so struct comparison is not chronological.
+  defp runtime_recency(%Runtime{} = runtime) do
+    case runtime.heartbeat_at || runtime.created_at || runtime.inserted_at do
+      %DateTime{} = at -> DateTime.to_unix(at, :microsecond)
+      _ -> 0
+    end
+  end
 
   @doc """
   Observe an agent-created Git worktree as a child runtime of `workspace_id`.
@@ -728,11 +832,9 @@ defmodule Casein.Runtimes do
         runtime_by_id
 
       true ->
-        list_runtimes(%{"workspace_id" => workspace_id})
-        |> Enum.find(fn runtime ->
-          agent_worktree_runtime?(runtime) and runtime.status not in ["cleaned", "expired"] and
-            same_path?(runtime.worktree_path, worktree_path)
-        end)
+        workspace_id
+        |> list_agent_worktree_runtimes()
+        |> Enum.find(&same_path?(&1.worktree_path, worktree_path))
     end
   end
 
@@ -789,8 +891,10 @@ defmodule Casein.Runtimes do
       |> Enum.map(&Path.expand/1)
       |> MapSet.new()
 
-    %{"workspace_id" => workspace_id}
-    |> list_runtimes()
+    # Every live row, not the per-path view: duplicates left behind by the old
+    # insert loop have to be reachable here or they can never be retired.
+    workspace_id
+    |> list_agent_worktree_runtimes(latest_per_path: false)
     |> Enum.filter(&missing_worktree?(&1, linked_paths))
     |> Enum.reduce([], fn runtime, expired ->
       now = DateTime.utc_now()

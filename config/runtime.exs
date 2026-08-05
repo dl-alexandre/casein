@@ -409,6 +409,13 @@ if config_env() == :prod and not release_cli? do
 
   config :casein, :preview_frame_src, preview_frame_src
 
+  # Own-origin previews (`pv-<port>-<workspace>.<domain>`). Requires the edge
+  # `pv-*` route from scripts/preview-router.sh to be live, so it is switched on
+  # per-deployment rather than by default. See `Casein.Previews.OwnOrigin`.
+  config :casein, :preview_own_origin,
+    enabled: System.get_env("CASEIN_PREVIEW_OWN_ORIGIN", "0") in ~w(1 true yes),
+    domain: System.get_env("CASEIN_PREVIEW_DOMAIN", "devbox.milcgroup.com")
+
   # Bind address. Defaults to all interfaces for container/k8s deploys that
   # front Casein with their own network policy. When Casein runs behind a
   # forward-auth reverse proxy, it MUST be unreachable except through that

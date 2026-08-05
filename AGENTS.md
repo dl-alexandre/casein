@@ -4,11 +4,13 @@ This is a web application written using the Phoenix web framework.
 
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
 - In this checkout, agent shells may not have `mix`, `elixir`, or `erl` on `PATH` even though `mise` is installed. The repo pins its toolchain in `.tool-versions` (Elixir 1.20.0-otp-28, Erlang 28.5), so a plain `mise exec -- mix ...` from inside the checkout resolves the right versions for formatting, tests, and `precommit` — no explicit version pins needed. Avoid Elixir `1.18.4-otp-27` for local work; current Phoenix dev config uses `~r"..."E` regex sigils that Elixir 1.18 rejects with `Regex.CompileError invalid_option`.
-- **Elixir version strategy (three toolchains, on purpose — converge when convenient):**
-  - **Local dev / agents:** 1.20.0-otp-28 + OTP 28.5 via `.tool-versions` (needs 1.19+ for the dev-config regex sigils).
-  - **Release builder (`Dockerfile`):** 1.19.3 + OTP 28.5 — what actually ships to the devbox.
-  - **CI test job (`deploy-devbox.yml`):** 1.18.4 + OTP 27.2 — compiles `MIX_ENV=test` only, so it never sees the dev-config sigils; kept older to catch syntax not yet available on the oldest supported runtime.
-  - When bumping any of these, grep this file, `Dockerfile` (`ELIXIR_VERSION`/`OTP_VERSION` args), `.github/workflows/*.yml`, and `.tool-versions` so they don't drift silently.
+- **Elixir version strategy (converged — one toolchain everywhere):** **1.20.0 + OTP 28.5**, in all four places:
+  - **Local dev / agents:** `.tool-versions` (`elixir 1.20.0-otp-28`, `erlang 28.5`).
+  - **Release builder:** `Dockerfile` `ELIXIR_VERSION=1.20.0` / `OTP_VERSION=28.5` — what actually ships to the devbox.
+  - **CI:** `deploy-devbox.yml`, `pty-tests.yml`, `windows-desktop.yml`, `macos-desktop.yml` all pin `1.20.0` / `28.5`.
+  - When bumping, grep this file, `Dockerfile` (`ELIXIR_VERSION`/`OTP_VERSION` args), `.github/workflows/*.yml`, and `.tool-versions` so they don't drift silently.
+  - History: these were deliberately *three different* toolchains (dev 1.20, release 1.19.3, CI 1.18.4/OTP 27.2) until `fd63ca31` (2026-07-06) synced them. This bullet described the old split for ~4 weeks afterwards — long enough that following it would have "restored" a Dockerfile pin that reintroduces the `Regex.CompileError` warned about above. If you are bumping versions, trust the four files, not this paragraph.
+  - **Lost safety property, not yet replaced:** the old 1.18.4 CI job compiled `MIX_ENV=test` only and existed to catch syntax unavailable on the oldest supported runtime. Nothing enforces the declared `elixir: "~> 1.15"` floor in `mix.exs` any more, and that floor is already untrue — `config/dev.exs` uses `~r"..."E` sigils that need ≥1.19. Either raise the floor to match reality or add a job that compiles `MIX_ENV=dev` on it.
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 - For tmux topology, LiveView controls, and agent mutation endpoints, read `docs/tmux_control_plane.md` before changing terminal control-plane behavior
 - For GitHub operations in this `/data/workspaces/dalexandre/casein` checkout, use the repo-local credential helper already stored in `.git/config`. Normal `git fetch` / `git push origin master` should authenticate with the dalexandre GitHub CLI config at `/home/devbox/.config/gh-dalexandre`. Do not move this helper to global Git config; it is intentionally scoped to this checkout so other workspaces/users are not affected. If the helper is missing, restore it with: `git config --local credential.https://github.com.helper '!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential'`.
@@ -299,6 +301,32 @@ Agent workflow:
 5. `preview_open_app` (splits a tmux preview pane) → observe/screenshot → `preview_close` for UI checks
 
 Starter prompt for external agents: `.devbox-agent-prompt.txt` (expand vars after `source .devbox-agent.env`).
+
+### Previewing your own dev server — start it with `preview_ensure_server_here`
+
+Do **not** hand-roll `PORT=<n> mix phx.server` and then point a preview at it. Use
+`preview_ensure_server_here`, which allocates a runtime-owned port (41050-41079),
+records it against the workspace, and sets `PORT` for the launched server.
+
+Why it matters: reaching a loopback port through a preview is gated on that port
+being *owned* by the workspace — either declared in the workspace's `ports` map,
+detected into `detected_ports`, or vouched for by a **live pane registration**. A
+hand-picked port qualifies only by that last route, and the registration lives in
+an in-memory registry that starts empty on boot (`Casein.PreviewPanes` does not
+rehydrate from its DB rows). So a hand-rolled port is refused for the first minute
+or two after every Casein deploy, until the pane re-registers. A runtime-owned or
+declared port has no such window.
+
+If you must pick the port yourself, use the workspace's declared `ports.http`.
+
+Previews are served from their own origin — `pv-<port>-<workspace>.devbox.milcgroup.com`,
+not a path prefix. That is deliberate and load-bearing for LiveView: under the old
+`/preview-proxy/<ws>/<port>/` prefix the client reported a prefixed
+`window.location.href` on every channel join, the proxied app's router could not
+match it, and the rejected join made the client fall back to a full page request
+with no backoff — an endless ~1s reload loop. See `Casein.Previews.OwnOrigin`.
+Two gates sit in front of every preview origin: identity (oauth2-proxy), then
+`Casein.Previews.Access` for workspace + port. Being signed in is not sufficient.
 
 ### MCP client injection (Grok, Claude, Codex, OpenCode)
 

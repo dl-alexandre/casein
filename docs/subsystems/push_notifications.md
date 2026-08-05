@@ -96,6 +96,40 @@ needed.
 The provider mints the ES256 JWT itself and converts the DER ECDSA signature to
 the raw 64-byte form APNs requires.
 
+### Web Push (installed PWA)
+
+| Env var | Purpose |
+|---------|---------|
+| `CASEIN_VAPID_PUBLIC_KEY` | VAPID public key (base64url) — also served to the browser so it can subscribe |
+| `CASEIN_VAPID_PRIVATE_KEY` | VAPID private key (base64url) |
+| `CASEIN_VAPID_SUBJECT` | `mailto:` / `https:` contact for the push service (default `mailto:admin@localhost`) |
+
+With VAPID keys present, `NativeProvider` routes `"web"` tokens to
+`Casein.Push.WebPushProvider`, so browser and native pushes coexist. The
+browser subscribes via `assets/js/web_push.js` and the payload is delivered to
+the `push` handler in `priv/static/service-worker.js`.
+
+Two things are load-bearing for a desktop PWA, and both were broken until
+2026-08-03:
+
+- **Deep links must be http.** Notifications carry a native `casein://` deep
+  link that no browser can open. `Casein.Push.WebLink` rewrites it into a real
+  workspace URL (`/workspaces/{id}?session=…&window=…`, see
+  [`../deep_links.md`](../deep_links.md)), carrying the card's locator so the
+  click lands on the pane the agent is waiting in. Only a notification with no
+  workspace at all falls back to `/` — and `/` mounts the **scratch**
+  workspace, which is exactly the symptom of a lost deep link.
+- **Clicks must reuse an open window.** `notificationclick` prefers a window
+  already on the target workspace (focus + attach in place), then any other
+  window of ours (focus + `navigate`), and only opens a new window when nothing
+  is running. Without that, every click spawned a browser tab beside the
+  installed app windows the operator already had open.
+
+Payloads name the workspace in the title (`dev-ide — Agent needs
+clarification`) because the OS shows only the app name, and they tag per
+waiting agent (`casein:{attention_key}`) rather than per workspace, so two
+agents in one workspace do not overwrite each other's notification.
+
 ## Going live
 
 ### FCM, fastest path
@@ -172,6 +206,11 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
   - `test/casein/push/registry_test.exs` covers the token store directly.
   - Per-provider request shaping: `apns_provider_test.exs`,
     `fcm_provider_test.exs`, `fcm_token_test.exs`, `native_provider_test.exs`.
+  - Web Push: `web_link_test.exs` (URL rewriting), `web_push_provider_test.exs`
+    (payload shape — the wire body is encrypted, so the payload builder is the
+    only readable seam), and `assets/test/service_worker_notification_click.test.mjs`,
+    which evaluates the real `service-worker.js` in a VM and drives its
+    `notificationclick` listener against fake windows.
 
 ## Known simplifications
 

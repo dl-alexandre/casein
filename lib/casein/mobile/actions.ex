@@ -280,26 +280,15 @@ defmodule Casein.Mobile.Actions do
       {:ok, result} ->
         case maybe_resolve_clarification(context, card, spec) do
           :ok ->
-            result = Map.put(result, "requested_action_id", spec.id)
-
-            {:ok, outcome} =
-              outcome
-              |> ActionOutcome.changeset(%{status: "accepted", result: result})
-              |> Repo.update()
-
-            record_intervention_audit(context, card, spec.id, "succeeded", nil)
-
-            {:ok,
-             %{
-               status: "accepted",
-               action_id: outcome.action_id,
-               card_id: outcome.card_id,
-               result: outcome.result,
-               idempotent: false
-             }}
+            accept_delivered_intervention(context, card, outcome, spec, result, "resolved")
 
           {:error, reason} ->
-            fail_intervention_outcome(outcome, context, card, spec.id, reason)
+            # Delivery to tmux is irreversible. Once it succeeds, never mark
+            # the claim retryable merely because the secondary durable
+            # resolution append failed: a retry could paste the same decision
+            # twice. Keep the accepted idempotency/card lock and expose only a
+            # bounded resolution marker for reconciliation/diagnosis.
+            accept_delivered_intervention(context, card, outcome, spec, result, "failed", reason)
         end
 
       {:error, reason} ->
@@ -307,21 +296,67 @@ defmodule Casein.Mobile.Actions do
     end
   end
 
-  defp maybe_resolve_clarification(
+  defp accept_delivered_intervention(
          context,
-         %{type: :clarification} = card,
-         %{id: "follow_up"} = spec
+         card,
+         outcome,
+         spec,
+         result,
+         request_resolution,
+         resolution_reason \\ nil
        ) do
-    case Clarification.resolve(card, %{actor_id: context.user_id, action_id: spec.id}) do
-      {:ok, _event, _status} -> :ok
-      {:error, _reason} -> {:error, :clarification_resolution_failed}
+    result =
+      result
+      |> Map.put("requested_action_id", spec.id)
+      |> Map.put("request_resolution", request_resolution)
+
+    {:ok, outcome} =
+      outcome
+      |> ActionOutcome.changeset(%{status: "accepted", result: result})
+      |> Repo.update()
+
+    record_intervention_audit(
+      context,
+      card,
+      spec.id,
+      "succeeded",
+      resolution_reason
+    )
+
+    {:ok,
+     %{
+       status: "accepted",
+       action_id: outcome.action_id,
+       card_id: outcome.card_id,
+       result: outcome.result,
+       idempotent: false
+     }}
+  end
+
+  defp maybe_resolve_clarification(context, %{type: :clarification} = card, spec) do
+    if Intervention.delivery_action?(spec) do
+      case resolve_clarification(card, %{actor_id: context.user_id, action_id: spec.id}) do
+        {:ok, _event, _status} -> :ok
+        {:error, _reason} -> {:error, :clarification_resolution_failed}
+      end
+    else
+      {:error, :clarification_response_required}
     end
   end
 
-  defp maybe_resolve_clarification(_context, %{type: :clarification}, _spec),
-    do: {:error, :clarification_response_required}
-
   defp maybe_resolve_clarification(_context, _card, _spec), do: :ok
+
+  defp clarification_module do
+    Application.get_env(:casein, :mobile_clarification_module, Clarification)
+  end
+
+  defp resolve_clarification(card, attrs) do
+    clarification_module().resolve(card, attrs)
+  rescue
+    _error -> {:error, :resolution_unavailable}
+  catch
+    _kind, _reason -> {:error, :resolution_unavailable}
+  end
 
   defp fail_intervention_outcome(outcome, context, card, action_id, reason) do
     _ =

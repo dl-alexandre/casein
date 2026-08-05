@@ -36,6 +36,10 @@ defmodule CaseinWeb.MobileUserChannelTest do
     prev_tmux_scrollback = FakeState.get(:fake_tmux_scrollback)
     prev_tmux_paste_error = FakeState.get(:fake_tmux_paste_error)
     prev_tmux_test_pid = FakeState.get(:fake_tmux_test_pid)
+
+    prev_mobile_clarification_module =
+      Application.get_env(:casein, :mobile_clarification_module)
+
     File.mkdir_p!(workspace_root)
     Application.put_env(:casein, :workspaces_root, workspace_root)
     Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
@@ -65,9 +69,200 @@ defmodule CaseinWeb.MobileUserChannelTest do
       restore_fake_state(:fake_tmux_scrollback, prev_tmux_scrollback)
       restore_fake_state(:fake_tmux_paste_error, prev_tmux_paste_error)
       restore_fake_state(:fake_tmux_test_pid, prev_tmux_test_pid)
+      restore_env(:mobile_clarification_module, prev_mobile_clarification_module)
     end)
 
     {:ok, workspace_root: workspace_root}
+  end
+
+  test "declared direction choice is exact-target, revision-bound, and replay-safe", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    :ok =
+      AgentState.report(workspace_id, tmux_session, pane_id, :blocked, nil,
+        agent_session_id: "agent-task-direction"
+      )
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local"}
+             )
+
+    :ok = UserObserver.watch_workspace(user_id, workspace_id)
+
+    assert {:ok, _event, :inserted} =
+             Clarification.request(%{
+               workspace_id: workspace_id,
+               tmux_session_id: tmux_session,
+               pane_id: pane_id,
+               request_id: "direction-request-exact-once",
+               agent_session_id: "agent-task-direction",
+               request_kind: "direction",
+               question: "Which path should I take?",
+               choices: ["Keep compatibility", "Migrate callers"]
+             })
+
+    card = await_card_snapshot().cards |> Enum.find(&(&1.type == "clarification"))
+    assert Enum.map(card.actions, & &1["id"]) == ["choose_1", "choose_2"]
+    refute Jason.encode!(card.actions) =~ "server_message"
+    refute Jason.encode!(card.intervention) =~ "server_message"
+
+    stale =
+      intervention_action_payload(card, %{
+        "card_id" => card.id,
+        "action" => "choose_1",
+        "origin_id" => "origin-local",
+        "request_id" => "direction-stale-revision",
+        "payload" => %{}
+      })
+      |> put_in(["payload", "revision"], "not-the-authoritative-revision")
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", stale)
+    assert_reply ref, :error, %{reason: "action_revision_stale"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    inactive_origin =
+      intervention_action_payload(card, %{
+        "card_id" => card.id,
+        "action" => "choose_1",
+        "origin_id" => "other-origin",
+        "request_id" => "direction-inactive-origin",
+        "payload" => %{}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", inactive_origin)
+    assert_reply ref, :error, %{reason: "origin_mismatch"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{id: "%1", window_id: "@1", active: true, role: "operator"},
+        %{id: pane_id, window_id: "@1", active: false, role: "verify"},
+        %{id: "%4", window_id: "@1", active: false, role: "agent"}
+      ]
+    })
+
+    wrong_pane =
+      intervention_action_payload(card, %{
+        "card_id" => card.id,
+        "action" => "choose_1",
+        "origin_id" => "origin-local",
+        "request_id" => "direction-wrong-pane",
+        "payload" => %{}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", wrong_pane)
+    assert_reply ref, :error, %{reason: "intervention_unavailable"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    seed_intervention_target(workspace_id)
+
+    action =
+      intervention_action_payload(card, %{
+        "card_id" => card.id,
+        "action" => "choose_1",
+        "origin_id" => "origin-local",
+        "request_id" => "direction-choice-once",
+        "payload" => %{}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", action)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
+
+    assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id,
+                    "Selected direction: Keep compatibility", [target: ^pane_id, submit: true]}
+
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, "%1", _, _}, 100
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, "%3", _, _}, 100
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", action)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+  end
+
+  test "delivered choice stays accepted and non-retryable when request resolution fails", %{
+    workspace_root: workspace_root
+  } do
+    Application.put_env(
+      :casein,
+      :mobile_clarification_module,
+      Casein.Test.FailingMobileClarification
+    )
+
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    :ok =
+      AgentState.report(workspace_id, tmux_session, pane_id, :blocked, nil,
+        agent_session_id: "agent-task-resolution-failure"
+      )
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local"}
+             )
+
+    :ok = UserObserver.watch_workspace(user_id, workspace_id)
+
+    assert {:ok, _event, :inserted} =
+             Clarification.request(%{
+               workspace_id: workspace_id,
+               tmux_session_id: tmux_session,
+               pane_id: pane_id,
+               request_id: "direction-resolution-failure",
+               agent_session_id: "agent-task-resolution-failure",
+               request_kind: "direction",
+               question: "Which recovery should I use?",
+               choices: ["Retry safely", "Stop"]
+             })
+
+    card = await_card_snapshot().cards |> Enum.find(&(&1.type == "clarification"))
+
+    action =
+      intervention_action_payload(card, %{
+        "card_id" => card.id,
+        "action" => "choose_1",
+        "origin_id" => "origin-local",
+        "request_id" => "resolution-failure-once",
+        "payload" => %{}
+      })
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", action)
+
+    assert_reply ref,
+                 :ok,
+                 %{
+                   status: "accepted",
+                   idempotent: false,
+                   result: %{"request_resolution" => "failed"}
+                 },
+                 1_000
+
+    assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id,
+                    "Selected direction: Retry safely", [target: ^pane_id, submit: true]}
+
+    assert %{status: "accepted", result: %{"request_resolution" => "failed"}} =
+             Repo.get_by(ActionOutcome, request_id: "resolution-failure-once")
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", action)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    different_request = put_in(action, ["request_id"], "resolution-failure-second-request")
+    ref = Phoenix.ChannelTest.push(socket, "card_action", different_request)
+    assert_reply ref, :error, %{reason: "card_already_intervened"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
   end
 
   test "joins only the authenticated user's mobile topic" do
@@ -320,6 +515,9 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert card.attention["priority"] == "critical"
     assert card.attention["reason_code"] == "review_requested"
     assert card.attention["required_decision"] == "Review"
+    assert card.attention["unresolved?"]
+    assert card.attention["pin"] == "needs_me"
+    assert card.sticky
     assert card.attention["identity"] =~ reply.origin.id
 
     assert card.action.route == %{
@@ -673,6 +871,50 @@ defmodule CaseinWeb.MobileUserChannelTest do
     refute inspect(audit) =~ "Yes, run only the focused suite."
     refute inspect(audit) =~ "Should I continue after the focused suite?"
     refute inspect(audit) =~ "Continue only if it passes."
+  end
+
+  test "direction choice wire projection never exposes server-authored delivery messages", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    :ok =
+      AgentState.report(workspace_id, tmux_session, pane_id, :blocked, nil,
+        agent_session_id: "agent-direction-123"
+      )
+
+    assert {:ok, _reply, _socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local", mobile_platform: "ios"}
+             )
+
+    :ok = UserObserver.watch_workspace(user_id, workspace_id)
+
+    assert {:ok, _event, :inserted} =
+             Clarification.request(%{
+               workspace_id: workspace_id,
+               tmux_session_id: tmux_session,
+               pane_id: pane_id,
+               request_id: "request-direction-wire",
+               agent_session_id: "agent-direction-123",
+               request_kind: "direction",
+               question: "Which bounded direction should I take?",
+               choices: ["Keep the API", "Use the adapter"]
+             })
+
+    payload = await_card_snapshot()
+    card = Enum.find(payload.cards, &(&1.type == "clarification"))
+
+    assert Enum.map(card.actions, & &1["id"]) == ["choose_1", "choose_2"]
+    assert Enum.map(card.intervention["actions"], & &1["id"]) == ["choose_1", "choose_2"]
+    refute Enum.any?(card.actions, &Map.has_key?(&1, "server_message"))
+    refute Enum.any?(card.intervention["actions"], &Map.has_key?(&1, "server_message"))
+    refute Jason.encode!(payload) =~ "Selected direction:"
   end
 
   test "new clarification revision invalidates a rendered action and pane replacement fails closed",
@@ -2242,6 +2484,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert [%{"id" => "resume", "route" => route}] = card.actions
     assert route.type == "session_detail"
     assert route.session_id == run_id
+    card_id = card.id
 
     ref =
       Phoenix.ChannelTest.push(
@@ -2254,8 +2497,29 @@ defmodule CaseinWeb.MobileUserChannelTest do
         })
       )
 
-    assert_reply ref, :ok, %{status: "accepted", idempotent: false, result: result}, 1_000
+    assert_reply ref, :ok, reply, 1_000
+
+    assert %{
+             status: "accepted",
+             card_id: ^card_id,
+             action_id: "resume",
+             idempotent: false,
+             result: result
+           } = reply
+
     assert result["session_id"] == run_id
+
+    assert %{
+             "status" => "accepted",
+             "card_id" => ^card_id,
+             "action_id" => "resume",
+             "idempotent" => false,
+             "result" => %{
+               "target" => "session_detail",
+               "workspace_id" => ^workspace_id,
+               "session_id" => ^run_id
+             }
+           } = reply |> Jason.encode!() |> Jason.decode!()
 
     # Navigation performs no run mutation and does not resolve the idle card.
     assert Ledger.timeline_for(workspace_id, run_id) == []
@@ -2279,7 +2543,15 @@ defmodule CaseinWeb.MobileUserChannelTest do
         })
       )
 
-    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    assert_reply ref,
+                 :ok,
+                 %{
+                   status: "accepted",
+                   card_id: ^card_id,
+                   action_id: "resume",
+                   idempotent: true
+                 },
+                 1_000
   end
 
   test "a recorded rejection does not block a corrected retry", %{workspace_root: workspace_root} do

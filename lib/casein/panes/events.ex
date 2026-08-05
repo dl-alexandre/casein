@@ -81,7 +81,17 @@ defmodule Casein.Panes.Events do
   def broadcast(%{workspace_id: workspace_id} = event) when is_binary(workspace_id) do
     normalized = normalize(event)
 
-    for id <- WorkspaceAliases.viewer_ids(workspace_id, resolve_remote?: true) do
+    # resolve_remote?: false — regression guard for #314. Every caller of this
+    # function reaches it from *inside* a singleton GenServer callback:
+    # PreviewPanes via broadcast_pane_event/3 (heartbeat short-circuit in
+    # handle_call, and commit_op under handle_info) and FilePanes via
+    # FilePanes.Payload.broadcast/2 (commit_op under handle_info). A cold-State
+    # fallthrough here blocks on a 15s Manager HTTP call inside the named
+    # process and cascades every pane operation box-wide. Fan-out is
+    # best-effort: a cold cache degrades to the canonical id and self-heals on
+    # the viewer's next poll. `subscribe/1` above is caller-side and correctly
+    # keeps resolve_remote?: true.
+    for id <- WorkspaceAliases.viewer_ids(workspace_id, resolve_remote?: false) do
       Phoenix.PubSub.broadcast(
         @pubsub,
         topic(id),

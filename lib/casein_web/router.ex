@@ -197,6 +197,16 @@ defmodule CaseinWeb.Router do
     match :*, "/:workspace_id/:port/*path", PreviewProxyController, :proxy
   end
 
+  # Forward-auth sub-request for own-origin previews. The edge router calls this
+  # before proxying a `pv-<port>-<workspace>` host to its loopback port; it reuses
+  # the preview pipeline so the viewer is established exactly as the path proxy
+  # establishes it. Status-only: 204 allows, 403 denies.
+  scope "/api", CaseinWeb do
+    pipe_through :preview_proxy
+
+    get "/previews/authz", PreviewAuthzController, :authz
+  end
+
   # Durable, login-gated public URL for an artifact project's static files,
   # served straight from its git worktree (not the ephemeral loopback preview
   # server). Uses :workspace_file (session + ForwardAuth, no cockpit CSP — the
