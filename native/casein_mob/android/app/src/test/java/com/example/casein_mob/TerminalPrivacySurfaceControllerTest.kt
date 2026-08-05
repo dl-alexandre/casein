@@ -107,4 +107,14 @@ class TerminalPrivacySurfaceControllerTest {
         assertFalse(fence.claim(40))
         assertTrue(fence.claim(42))
     }
+
+    @Test
+    fun `baseline property accepts only non negative integer wire values`() {
+        assertEquals(0L, terminalBaselineGeneration(0))
+        assertEquals(7L, terminalBaselineGeneration(7L))
+        assertEquals(null, terminalBaselineGeneration(-1))
+        assertEquals(null, terminalBaselineGeneration(1.5))
+        assertEquals(null, terminalBaselineGeneration("7"))
+        assertEquals(null, terminalBaselineGeneration(null))
+    }
 }

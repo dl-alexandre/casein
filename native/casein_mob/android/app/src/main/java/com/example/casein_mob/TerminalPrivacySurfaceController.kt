@@ -93,6 +93,15 @@ internal class TerminalBaselineSignalFence {
     }
 }
 
+internal fun terminalBaselineGeneration(value: Any?): Long? =
+    when (value) {
+        is Byte -> value.toLong()
+        is Short -> value.toLong()
+        is Int -> value.toLong()
+        is Long -> value
+        else -> null
+    }?.takeIf { it >= 0 }
+
 /** Android window implementation. All calls are made on the activity main thread. */
 internal class TerminalPrivacyWindowHost(private val activity: Activity) :
     TerminalPrivacySurfaceController.Host {

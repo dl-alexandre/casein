@@ -1899,7 +1899,7 @@ fun RenderNode(node: MobNode, modifier: Modifier = Modifier) {
         // The shared byte-plane integration supplies this only after accepting
         // an authoritative full baseline for the current connection generation.
         // Rendering activity alone is never treated as freshness.
-        (node.props["fresh_baseline_generation"] as? Number)?.toLong()?.let { generation ->
+        terminalBaselineGeneration(node.props["fresh_baseline_generation"])?.let { generation ->
             DisposableEffect(generation) {
                 AndroidTerminalPrivacy.freshBaseline(generation)
                 onDispose { }
