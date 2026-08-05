@@ -1111,10 +1111,24 @@ defmodule Casein.PreviewPanes do
   defp commit_rehydrate_item({:drop, _registration}, state), do: state
   defp commit_rehydrate_item(_, state), do: state
 
+  # The tmux pane is what decides whether a registration is still real, and it is
+  # the only thing we close on.
+  #
+  # A browser control session is a Playwright runtime: it dies whenever Casein
+  # restarts, while the pane and the dev server behind it carry on. Treating that
+  # as "this registration is gone" made the first list_for_workspace/1 after every
+  # deploy permanently close every open registration — which is why a preview on
+  # an agent-chosen port was refused until its pane happened to re-register, and
+  # why one pane accumulated hundreds of closed rows over a day.
+  #
+  # So a pane that is still alive keeps its registration even when the control
+  # pair is closed; the control session is re-established lazily by whoever needs
+  # to drive the browser. Deliberate teardown is unaffected: those paths set
+  # `status: :closed`, and only `:open` rows are loaded for rehydration at all.
   defp rehydrate_io_result(%PreviewPaneRegistration{} = persisted) do
     registration = persisted_registration_to_map(persisted)
 
-    if persisted_registration_live?(persisted) do
+    if persisted_pane_live?(persisted) do
       {:commit, registration}
     else
       close_persisted_registration(registration)
@@ -1888,10 +1902,13 @@ defmodule Casein.PreviewPanes do
     ArgumentError -> nil
   end
 
-  defp persisted_registration_live?(%PreviewPaneRegistration{} = registration) do
+  @doc false
+  # True while the pane this registration describes still exists in tmux.
+  #
+  # Deliberately says nothing about the browser control session — see
+  # `rehydrate_io_result/1` for why conflating the two was destructive.
+  def persisted_pane_live?(%PreviewPaneRegistration{} = registration) do
     with %{status: :open} <- registration,
-         true <-
-           Previews.open_control_pair?(registration.preview, registration.control_session),
          tmux_session when is_binary(tmux_session) and tmux_session != "" <-
            registration.tmux_session do
       tmux_session
@@ -1901,6 +1918,8 @@ defmodule Casein.PreviewPanes do
       _ -> false
     end
   end
+
+  def persisted_pane_live?(_registration), do: false
 
   defp load_open_persisted_registration(pane_id) when is_binary(pane_id) do
     if preview_pane_persistence_enabled?() do
