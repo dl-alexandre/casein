@@ -189,6 +189,12 @@ defmodule CaseinWeb.Router do
     # Deliberately unauthenticated, Accept-header agnostic, and independent of
     # devbox deploy checks. Platforms need a status code, not infra details.
     get "/healthz", HealthController, :show
+
+    # Public by design so a Slack recipient can fetch the installer. This is an
+    # exact route backed by one operator-configured file, not a generic file
+    # server or upload surface.
+    get "/downloads/windows/Casein-Setup.exe", DesktopDownloadController, :windows
+    get "/downloads/windows/Casein-Setup.exe.sha256", DesktopDownloadController, :windows_sha256
   end
 
   scope "/preview-proxy", CaseinWeb do

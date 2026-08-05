@@ -72,6 +72,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :deploy_drift, :any, required: true
   attr :deploy_failure, :any, required: true
   attr :deploy_in_progress, :any, required: true
+  attr :desktop_downloads, :any, default: []
   attr :desktop_terminal?, :any, required: true
   attr :desktop_terminal_pty, :any, required: true
   attr :desktop_terminal_refresh, :any, required: true
@@ -364,6 +365,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
             <.header_overflow_menu
               active_window_pane_count={@active_window_pane_count}
+              desktop_downloads={@desktop_downloads}
               desktop_terminal?={@desktop_terminal?}
               host_loc={@host_loc}
               notif_unread_count={@notif_unread_count}

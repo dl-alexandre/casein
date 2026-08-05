@@ -256,6 +256,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         socket
         |> assign(:page_title, ws.name)
         |> assign(:workspace, ws)
+        |> assign(:desktop_downloads, Casein.DesktopDownloads.available_platforms())
         # Panel components take current_user as an attr, so it must always
         # exist (nil = anonymous LAN viewer, authorized via
         # PanelGate.path_access_pre_authorized?).
@@ -2527,6 +2528,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       deploy_drift={@deploy_drift}
       deploy_failure={@deploy_failure}
       deploy_in_progress={@deploy_in_progress}
+      desktop_downloads={@desktop_downloads}
       desktop_terminal?={@desktop_terminal?}
       desktop_terminal_pty={@desktop_terminal_pty}
       desktop_terminal_refresh={@desktop_terminal_refresh}

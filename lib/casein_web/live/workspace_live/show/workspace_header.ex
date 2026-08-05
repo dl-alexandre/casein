@@ -8,6 +8,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
   attr :desktop_terminal?, :boolean, default: false
   attr :notif_unread_count, :integer, default: 0
   attr :agent_approval_count, :integer, default: 0
+  attr :desktop_downloads, :list, default: []
 
   attr :active_window_pane_count, :any, required: true
   attr :host_loc, :any, required: true
@@ -288,6 +289,30 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
           <span>Command palette</span>
           <.menu_kbd keys="Ctrl P" />
         </button>
+
+        <details :if={@desktop_downloads != []} class="group/download">
+          <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-1.5 text-left text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden">
+            <span>Download Casein</span>
+            <.icon name="hero-chevron-right" class="size-3 transition group-open/download:rotate-90" />
+          </summary>
+          <a
+            :for={platform <- @desktop_downloads}
+            href={platform.url}
+            download
+            class="block w-full py-1.5 pl-6 pr-3 text-left text-xs text-base-content/80 hover:bg-base-200"
+          >
+            {platform.label}
+          </a>
+          <div
+            :for={platform <- @desktop_downloads}
+            class="px-6 pb-1.5 text-[9px] text-base-content/50"
+          >
+            SHA-256
+            <a href={platform.sha256_url} class="ml-1 break-all font-mono hover:text-primary">
+              {platform.sha256}
+            </a>
+          </div>
+        </details>
 
         <button
           type="button"
