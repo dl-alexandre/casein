@@ -155,18 +155,38 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
 
       visible ->
         visible_ids = MapSet.new(visible, & &1.id)
+        renumbered = close_index_gap(windows, visible)
 
         topology
-        |> Map.put(:windows, visible)
+        |> Map.put(:windows, renumbered)
         |> Map.put(
           :panes,
           Enum.filter(topology.panes || [], &MapSet.member?(visible_ids, &1.window_id))
         )
-        |> reseat_active_window(visible, visible_ids)
+        |> reseat_active_window(renumbered, visible_ids)
     end
   end
 
   defp hide_trashed_windows(topology), do: topology
+
+  # Sessions run with `renumber-windows on`, so the moment the grace period
+  # expires tmux closes the gap itself. Showing the sparse numbering until then
+  # (0, 2, 3 with 1 hidden) leaves the strip with a hole and makes `C-b 1` a
+  # dead key. Renumber presentationally so the viewer shows the numbering the
+  # close is *going* to produce — and undo puts the original numbering back,
+  # because tmux's own indexes were never touched.
+  defp close_index_gap(original, visible) do
+    base =
+      original
+      |> Enum.map(&Map.get(&1, :index))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.min(fn -> 0 end)
+
+    visible
+    |> Enum.sort_by(&(Map.get(&1, :index) || 0))
+    |> Enum.with_index(base)
+    |> Enum.map(fn {window, index} -> Map.put(window, :index, index) end)
+  end
 
   # Defensive only: trashing the active window also moves tmux's own selection
   # (see TerminalEvents), so by the next topology read the active id normally
