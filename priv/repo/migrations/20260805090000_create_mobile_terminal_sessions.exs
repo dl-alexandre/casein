@@ -34,12 +34,18 @@ defmodule Casein.Repo.Migrations.CreateMobileTerminalSessions do
     create index(:mobile_terminal_sessions, [:state, :expires_at])
     create index(:mobile_terminal_sessions, [:device_link_id, :workspace_id])
 
-    create constraint(:mobile_terminal_sessions, :mobile_terminal_sessions_state_check,
-             check: "state IN ('provisioning','active','deleting','deleted','expired','failed')"
-           )
+    # SQLite cannot add table constraints after CREATE TABLE. Desktop releases
+    # use SQLite, while server releases use Postgres, so keep the database-level
+    # checks where the adapter supports this migration operation. The schema
+    # changeset enforces the same closed state set and SID format on both.
+    if repo().__adapter__() == Ecto.Adapters.Postgres do
+      create constraint(:mobile_terminal_sessions, :mobile_terminal_sessions_state_check,
+               check: "state IN ('provisioning','active','deleting','deleted','expired','failed')"
+             )
 
-    create constraint(:mobile_terminal_sessions, :mobile_terminal_sessions_sid_check,
-             check: "sid LIKE 'mob-%'"
-           )
+      create constraint(:mobile_terminal_sessions, :mobile_terminal_sessions_sid_check,
+               check: "sid LIKE 'mob-%'"
+             )
+    end
   end
 end

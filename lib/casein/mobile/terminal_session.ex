@@ -87,6 +87,9 @@ defmodule Casein.Mobile.TerminalSession do
     |> unique_constraint([:device_link_id, :request_id],
       name: :mobile_terminal_sessions_device_request_index
     )
+    |> unique_constraint([:device_link_id, :request_id],
+      name: :mobile_terminal_sessions_device_link_id_request_id_index
+    )
     |> unique_constraint(:tmux_session)
   end
 

@@ -137,8 +137,7 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp provision_locked(id, opts) do
-    lease =
-      Repo.one!(from s in TerminalSession, where: s.id == ^id, lock: "FOR UPDATE")
+    lease = Repo.one!(lease_query(id))
 
     case lease.state do
       "active" -> {:existing, lease}
@@ -227,10 +226,23 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp claim_deleting(id) when is_binary(id) do
-    case Repo.transaction(fn ->
-           query = from s in TerminalSession, where: s.id == ^id, lock: "FOR UPDATE"
+    case repo_kind() do
+      :postgres ->
+        claim_deleting_transaction(id)
 
-           case Repo.one(query) do
+      :sqlite ->
+        :global.trans({{__MODULE__, {:claim, id}}, self()}, fn ->
+          claim_deleting_transaction(id)
+        end)
+
+      :unsupported ->
+        {:error, :unsupported_repo_adapter}
+    end
+  end
+
+  defp claim_deleting_transaction(id) do
+    case Repo.transaction(fn ->
+           case Repo.one(lease_query(id)) do
              nil ->
                Repo.rollback(:not_found)
 
@@ -426,12 +438,55 @@ defmodule Casein.Mobile.TerminalSessions do
   defp normalize_kill(_other), do: {:error, :tmux_teardown_failed}
 
   defp with_lease_lock(id, fun) when is_binary(id) and is_function(fun, 0) do
-    case Repo.transaction(fn ->
-           Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [id])
-           fun.()
-         end) do
+    transaction = fn ->
+      Repo.transaction(fn ->
+        case repo_kind() do
+          :postgres ->
+            Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [id])
+
+          :sqlite ->
+            :ok
+        end
+
+        fun.()
+      end)
+    end
+
+    result =
+      case repo_kind() do
+        :postgres ->
+          transaction.()
+
+        :sqlite ->
+          # Desktop SQLite is single-node. A keyed in-node lock supplies the
+          # same exact-lease serialization without issuing Postgres-only SQL.
+          :global.trans({{__MODULE__, id}, self()}, transaction)
+
+        :unsupported ->
+          {:error, :unsupported_repo_adapter}
+      end
+
+    case result do
       {:ok, result} -> {:ok, result}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp lease_query(id) do
+    query = from s in TerminalSession, where: s.id == ^id
+
+    case repo_kind() do
+      :postgres -> from s in query, lock: "FOR UPDATE"
+      :sqlite -> query
+      :unsupported -> raise "unsupported repository adapter"
+    end
+  end
+
+  defp repo_kind do
+    case Application.get_env(:casein, :repo_adapter) do
+      Ecto.Adapters.Postgres -> :postgres
+      Ecto.Adapters.SQLite3 -> :sqlite
+      _other -> :unsupported
     end
   end
 
