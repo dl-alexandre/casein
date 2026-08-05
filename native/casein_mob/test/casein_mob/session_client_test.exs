@@ -1517,11 +1517,19 @@ defmodule CaseinMob.SessionClientTest do
     assert {:ok, disconnected} = SessionClient.handle_disconnect(:closed, closed)
     assert disconnected.assigns.terminal_delete_tombstone.ref == nil
 
+    assert {:ok, reconnecting} =
+             disconnected
+             |> Map.put(:channel_pid, push_sink)
+             |> SessionClient.handle_connect()
+
+    assert_receive {:connection_command, %Slipstream.Commands.JoinTopic{topic: "mobile:user:me"}}
+
     reconnected =
-      disconnected
-      |> Map.put(:channel_pid, push_sink)
-      |> Socket.assign(:transport_ready?, true)
-      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      put_in(
+        reconnecting,
+        [Access.key(:joins), "mobile:user:me", Access.key(:status)],
+        :joined
+      )
 
     assert {:ok, retried} =
              SessionClient.handle_join(
@@ -1563,6 +1571,8 @@ defmodule CaseinMob.SessionClientTest do
              SessionClient.handle_reply("push-ref", exact_ack, retried_again)
 
     assert acknowledged.assigns.terminal_delete_tombstone == nil
+
+    assert_receive {:connection_command, %Slipstream.Commands.LeaveTopic{topic: "mobile:user:me"}}
   end
 
   test "terminal join rejection refreshes with backoff and accepts a fresh one-time grant baseline" do

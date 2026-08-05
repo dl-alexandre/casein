@@ -294,10 +294,12 @@ defmodule CaseinMob.SessionClient do
       # suspend/reconnect can deliver the new connection before that close event.
       # Resetting the local statuses here prevents a stale `:joined` marker from
       # suppressing the authoritative joins on the new connection.
-      socket =
+      topics =
         socket.assigns.subscribers
         |> Map.keys()
-        |> Enum.reduce(socket, fn topic, acc -> join(acc, topic) end)
+        |> maybe_add_terminal_control_topic(socket)
+
+      socket = Enum.reduce(topics, socket, fn topic, acc -> join(acc, topic) end)
 
       {:ok, socket}
     end
@@ -1077,6 +1079,7 @@ defmodule CaseinMob.SessionClient do
       {:ok,
        socket
        |> assign(:terminal_delete_tombstone, nil)
+       |> maybe_release_terminal_control_topic()
        |> maybe_request_terminal_control()}
     else
       {:ok, mark_terminal_delete_disconnected(socket)}
@@ -1322,6 +1325,7 @@ defmodule CaseinMob.SessionClient do
 
       socket
       |> assign(:terminal_delete_tombstone, tombstone)
+      |> ensure_terminal_delete_connection()
       |> maybe_reconcile_terminal_delete()
     else
       socket
@@ -1373,6 +1377,10 @@ defmodule CaseinMob.SessionClient do
       nil -> socket
       tombstone -> assign(socket, :terminal_delete_tombstone, %{tombstone | ref: nil})
     end
+  end
+
+  defp ensure_terminal_delete_connection(socket) do
+    if connected?(socket), do: socket, else: ensure_connection_requested(socket)
   end
 
   defp terminal_closed(socket, reason) do
@@ -2210,13 +2218,40 @@ defmodule CaseinMob.SessionClient do
               |> assign(:subscribers, Map.delete(socket.assigns.subscribers, topic))
               |> assign(:topic_snapshots, Map.delete(socket.assigns.topic_snapshots, topic))
 
-            if joined?(socket, topic), do: leave(socket, topic), else: socket
+            if keep_terminal_control_topic?(socket, topic) do
+              socket
+            else
+              if joined?(socket, topic), do: leave(socket, topic), else: socket
+            end
           else
             assign(socket, :subscribers, Map.put(socket.assigns.subscribers, topic, remaining))
           end
       end
 
     maybe_demonitor_subscriber(socket, subscriber)
+  end
+
+  defp maybe_add_terminal_control_topic(topics, socket) do
+    if is_map(socket.assigns.terminal_delete_tombstone) and
+         @mobile_cards_topic not in topics do
+      [@mobile_cards_topic | topics]
+    else
+      topics
+    end
+  end
+
+  defp keep_terminal_control_topic?(socket, @mobile_cards_topic),
+    do: is_map(socket.assigns.terminal_delete_tombstone)
+
+  defp keep_terminal_control_topic?(_socket, _topic), do: false
+
+  defp maybe_release_terminal_control_topic(socket) do
+    if is_nil(Map.get(socket.assigns.subscribers, @mobile_cards_topic)) and
+         joined?(socket, @mobile_cards_topic) do
+      leave(socket, @mobile_cards_topic)
+    else
+      socket
+    end
   end
 
   defp ensure_subscriber_monitor(socket, subscriber) do
