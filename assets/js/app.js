@@ -56,7 +56,7 @@ import {WindowTabStrip} from "./window_tab_strip"
 import {HeaderOverflow} from "./header_overflow"
 import {copyInGesture} from "./clipboard_write.mjs"
 import {windowTrashToast} from "./window_trash_toast.mjs"
-import {showToast} from "./toast"
+import {hideToast, showToast} from "./toast"
 import {
   canShareText,
   copyTextSync,
@@ -427,6 +427,10 @@ window.addEventListener("phx:window:trashed", (event) => {
   if (detail.session) value["session"] = detail.session
   if (detail.sid) value["sid"] = detail.sid
 
+  // Remember the exact text so the toast can be retired by whichever path
+  // undoes the close — the button here, or C-b r elsewhere in the viewer.
+  if (windowId) __closeToasts.set(windowId, message)
+
   showToast(message, {
     kind: "info",
     duration: durationMs,
@@ -435,6 +439,9 @@ window.addEventListener("phx:window:trashed", (event) => {
         label: actionLabel,
         onClick: () => {
           if (!windowId || !window.liveSocket) return
+          // Retire it on the click rather than waiting for the round trip: an
+          // Undo button that lingers reads as "that didn't work".
+          __dismissCloseToast(windowId)
           window.liveSocket.execJS(
             document.documentElement,
             JSON.stringify([["push", {event: "tmux:restore_window", value}]])
@@ -443,6 +450,22 @@ window.addEventListener("phx:window:trashed", (event) => {
       }
     ]
   })
+})
+
+// The close toast occupies its lane for the whole grace period. Left alone it
+// keeps offering to undo a close that is already undone, and strands the
+// "Restored …" confirmation behind it in the backlog.
+const __closeToasts = new Map()
+
+function __dismissCloseToast(windowId) {
+  const message = __closeToasts.get(windowId)
+  if (!message) return
+  __closeToasts.delete(windowId)
+  hideToast(message)
+}
+
+window.addEventListener("phx:window:restored", (event) => {
+  __dismissCloseToast(event.detail?.window_id)
 })
 
 window.addEventListener("phx:casein:reload_preview_iframes", (event) => {

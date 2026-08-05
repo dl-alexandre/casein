@@ -664,6 +664,11 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       assert_receive {:fake_tmux_select_window, ^session, "@0"}
       assert has_element?(view, "#tmux-window--0")
 
+      # Retire the close toast. It holds its lane for the full grace period, so
+      # without this the viewer goes on offering to undo an undone close and
+      # the "Restored …" confirmation never surfaces from behind it.
+      assert_push_event(view, "window:restored", %{"window_id" => "@0"})
+
       # Close it again, then undo with a session name the client made up. The
       # session on the wire is only a hint: it is resolved back out of the sid,
       # which is scoped to this workspace. If the raw string were trusted the
