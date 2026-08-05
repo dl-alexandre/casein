@@ -131,12 +131,12 @@ defmodule CaseinMob.MobileTerminalStream do
          :ok <- validate_connection_identity(state, frame),
          :ok <- validate_stream_generation(state, frame) do
       cond do
-        frame.offset == state.next_offset ->
+        exact_duplicate?(state, frame) ->
+          {:duplicate, state}
+
+        frame.offset == state.next_offset and not seen_offset_range?(state, frame) ->
           accepted = state |> Map.put(:next_offset, frame.next_offset) |> remember(frame)
           {:ok, accepted, frame.bytes}
-
-        frame.offset < state.next_offset and exact_duplicate?(state, frame) ->
-          {:duplicate, state}
 
         true ->
           resync(state, :offset_mismatch)
@@ -262,6 +262,10 @@ defmodule CaseinMob.MobileTerminalStream do
 
   defp exact_duplicate?(state, frame) do
     Map.get(state.duplicate_ledger, {frame.offset, frame.next_offset}) == digest(frame)
+  end
+
+  defp seen_offset_range?(state, frame) do
+    Map.has_key?(state.duplicate_ledger, {frame.offset, frame.next_offset})
   end
 
   defp remember(state, frame) do

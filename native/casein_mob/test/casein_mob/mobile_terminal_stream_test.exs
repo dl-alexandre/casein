@@ -59,6 +59,20 @@ defmodule CaseinMob.MobileTerminalStreamTest do
     assert_purged(purged)
   end
 
+  test "accepts zero-length output once and treats exact replay as a duplicate", %{state: state} do
+    assert {:ok, live, "abc"} = Stream.accept(state, baseline("abc", 0))
+    empty = output("", 3)
+
+    assert {:ok, accepted, ""} = Stream.accept(live, empty)
+    assert accepted.next_offset == 3
+    assert {:duplicate, same} = Stream.accept(accepted, empty)
+    assert same == accepted
+
+    conflicting = Map.put(empty, "truncated", true)
+    assert {:resync, purged, :offset_mismatch} = Stream.accept(accepted, conflicting)
+    assert_purged(purged)
+  end
+
   test "rejects gaps, partial overlaps, and stale duplicates outside bounded ledger", %{
     state: state
   } do
