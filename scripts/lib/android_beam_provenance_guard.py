@@ -70,6 +70,9 @@ _INSTALLED_IDENTITY_RE = re.compile(
     r"^[0-9]+:[0-9]+:[0-9a-f]+:[0-9]+:-?[0-9]+:-?[0-9]+$"
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_BEAM_NAME_ALLOWED_BYTES = frozenset(
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.@-"
+)
 _TIMEOUT_REASONS = frozenset({"none", "idle", "total"})
 _MANIFEST_CAPTURE_SCOPES = frozenset({"none", "complete", "incomplete_prefix"})
 _INVALID_FRAME_PATTERNS = frozenset(
@@ -281,7 +284,14 @@ class GuardResult:
     missing_name_count: int = 0
     manifest_capture_scope: str = "none"
     invalid_field_count: int = 0
-    invalid_name_encoding_or_grammar_count: int = 0
+    invalid_name_encoding_count: int = 0
+    invalid_grammar_absolute_count: int = 0
+    invalid_grammar_separator_depth_count: int = 0
+    invalid_grammar_dot_segment_count: int = 0
+    invalid_grammar_length_count: int = 0
+    invalid_grammar_charset_count: int = 0
+    invalid_grammar_empty_count: int = 0
+    invalid_grammar_other_count: int = 0
     invalid_digest_shape_count: int = 0
     invalid_numeric_or_stat_count: int = 0
     invalid_control_or_other_count: int = 0
@@ -305,7 +315,14 @@ class GuardResult:
             "unexpected_name_count",
             "missing_name_count",
             "invalid_field_count",
-            "invalid_name_encoding_or_grammar_count",
+            "invalid_name_encoding_count",
+            "invalid_grammar_absolute_count",
+            "invalid_grammar_separator_depth_count",
+            "invalid_grammar_dot_segment_count",
+            "invalid_grammar_length_count",
+            "invalid_grammar_charset_count",
+            "invalid_grammar_empty_count",
+            "invalid_grammar_other_count",
             "invalid_digest_shape_count",
             "invalid_numeric_or_stat_count",
             "invalid_control_or_other_count",
@@ -329,7 +346,14 @@ class GuardResult:
                 "unexpected_name_count",
                 "missing_name_count",
                 "invalid_field_count",
-                "invalid_name_encoding_or_grammar_count",
+                "invalid_name_encoding_count",
+                "invalid_grammar_absolute_count",
+                "invalid_grammar_separator_depth_count",
+                "invalid_grammar_dot_segment_count",
+                "invalid_grammar_length_count",
+                "invalid_grammar_charset_count",
+                "invalid_grammar_empty_count",
+                "invalid_grammar_other_count",
                 "invalid_digest_shape_count",
                 "invalid_numeric_or_stat_count",
                 "invalid_control_or_other_count",
@@ -360,9 +384,18 @@ class GuardResult:
             "missing_name_count": self.missing_name_count,
             "manifest_capture_scope": self.manifest_capture_scope,
             "invalid_field_count": self.invalid_field_count,
-            "invalid_name_encoding_or_grammar_count": (
-                self.invalid_name_encoding_or_grammar_count
+            "invalid_name_encoding_count": self.invalid_name_encoding_count,
+            "invalid_grammar_absolute_count": self.invalid_grammar_absolute_count,
+            "invalid_grammar_separator_depth_count": (
+                self.invalid_grammar_separator_depth_count
             ),
+            "invalid_grammar_dot_segment_count": (
+                self.invalid_grammar_dot_segment_count
+            ),
+            "invalid_grammar_length_count": self.invalid_grammar_length_count,
+            "invalid_grammar_charset_count": self.invalid_grammar_charset_count,
+            "invalid_grammar_empty_count": self.invalid_grammar_empty_count,
+            "invalid_grammar_other_count": self.invalid_grammar_other_count,
             "invalid_digest_shape_count": self.invalid_digest_shape_count,
             "invalid_numeric_or_stat_count": self.invalid_numeric_or_stat_count,
             "invalid_control_or_other_count": self.invalid_control_or_other_count,
@@ -383,7 +416,14 @@ class ManifestDiagnostics:
     missing_name_count: int = 0
     manifest_capture_scope: str = "none"
     invalid_field_count: int = 0
-    invalid_name_encoding_or_grammar_count: int = 0
+    invalid_name_encoding_count: int = 0
+    invalid_grammar_absolute_count: int = 0
+    invalid_grammar_separator_depth_count: int = 0
+    invalid_grammar_dot_segment_count: int = 0
+    invalid_grammar_length_count: int = 0
+    invalid_grammar_charset_count: int = 0
+    invalid_grammar_empty_count: int = 0
+    invalid_grammar_other_count: int = 0
     invalid_digest_shape_count: int = 0
     invalid_numeric_or_stat_count: int = 0
     invalid_control_or_other_count: int = 0
@@ -401,9 +441,18 @@ class ManifestDiagnostics:
             "missing_name_count": self.missing_name_count,
             "manifest_capture_scope": self.manifest_capture_scope,
             "invalid_field_count": self.invalid_field_count,
-            "invalid_name_encoding_or_grammar_count": (
-                self.invalid_name_encoding_or_grammar_count
+            "invalid_name_encoding_count": self.invalid_name_encoding_count,
+            "invalid_grammar_absolute_count": self.invalid_grammar_absolute_count,
+            "invalid_grammar_separator_depth_count": (
+                self.invalid_grammar_separator_depth_count
             ),
+            "invalid_grammar_dot_segment_count": (
+                self.invalid_grammar_dot_segment_count
+            ),
+            "invalid_grammar_length_count": self.invalid_grammar_length_count,
+            "invalid_grammar_charset_count": self.invalid_grammar_charset_count,
+            "invalid_grammar_empty_count": self.invalid_grammar_empty_count,
+            "invalid_grammar_other_count": self.invalid_grammar_other_count,
             "invalid_digest_shape_count": self.invalid_digest_shape_count,
             "invalid_numeric_or_stat_count": self.invalid_numeric_or_stat_count,
             "invalid_control_or_other_count": self.invalid_control_or_other_count,
@@ -976,7 +1025,14 @@ def _manifest_diagnostics(
     duplicates = 0
     invalid_counts = {
         "field_count": 0,
-        "name_encoding_or_grammar": 0,
+        "name_encoding": 0,
+        "grammar_absolute": 0,
+        "grammar_separator_depth": 0,
+        "grammar_dot_segment": 0,
+        "grammar_length": 0,
+        "grammar_charset": 0,
+        "grammar_empty": 0,
+        "grammar_other": 0,
         "digest_shape": 0,
         "numeric_or_stat": 0,
         "control_or_other": 0,
@@ -1006,9 +1062,16 @@ def _manifest_diagnostics(
         missing_name_count=len(expected_names) - expected_matches,
         manifest_capture_scope="complete" if complete else "incomplete_prefix",
         invalid_field_count=invalid_counts["field_count"],
-        invalid_name_encoding_or_grammar_count=invalid_counts[
-            "name_encoding_or_grammar"
+        invalid_name_encoding_count=invalid_counts["name_encoding"],
+        invalid_grammar_absolute_count=invalid_counts["grammar_absolute"],
+        invalid_grammar_separator_depth_count=invalid_counts[
+            "grammar_separator_depth"
         ],
+        invalid_grammar_dot_segment_count=invalid_counts["grammar_dot_segment"],
+        invalid_grammar_length_count=invalid_counts["grammar_length"],
+        invalid_grammar_charset_count=invalid_counts["grammar_charset"],
+        invalid_grammar_empty_count=invalid_counts["grammar_empty"],
+        invalid_grammar_other_count=invalid_counts["grammar_other"],
         invalid_digest_shape_count=invalid_counts["digest_shape"],
         invalid_numeric_or_stat_count=invalid_counts["numeric_or_stat"],
         invalid_control_or_other_count=invalid_counts["control_or_other"],
@@ -1030,13 +1093,24 @@ def _classify_manifest_diagnostic_record(
     if len(fields) != 3:
         return ("field_count", None)
     encoded_name, encoded_identity, encoded_digest = fields
-    if len(encoded_name) > MAX_BEAM_NAME_BYTES:
-        return ("name_encoding_or_grammar", None)
     try:
         name = encoded_name.decode("ascii")
-        _validate_beam_name(name)
-    except (UnicodeDecodeError, InvalidArguments):
-        return ("name_encoding_or_grammar", None)
+    except UnicodeDecodeError:
+        return ("name_encoding", None)
+    if not encoded_name:
+        return ("grammar_empty", None)
+    if encoded_name.startswith(b"/"):
+        return ("grammar_absolute", None)
+    if b"/" in encoded_name or b"\\" in encoded_name:
+        return ("grammar_separator_depth", None)
+    if encoded_name == b"." or b".." in encoded_name:
+        return ("grammar_dot_segment", None)
+    if len(encoded_name) > MAX_BEAM_NAME_BYTES:
+        return ("grammar_length", None)
+    if any(byte not in _BEAM_NAME_ALLOWED_BYTES for byte in encoded_name):
+        return ("grammar_charset", None)
+    if _BEAM_NAME_RE.fullmatch(name) is None:
+        return ("grammar_other", None)
 
     try:
         digest_text = encoded_digest.decode("ascii")
