@@ -1742,6 +1742,8 @@ defmodule CaseinMob.SessionClient do
     Map.get(payload, key) || Map.get(payload, Atom.to_string(key))
   end
 
+  defp payload_value(_payload, _key), do: nil
+
   defp reset_mobile_snapshot_guard(socket) do
     expected_origin_id =
       case active_origin_id() do

@@ -1649,6 +1649,19 @@ defmodule CaseinMob.SessionClientTest do
     assert opposite_rejected.assigns.mobile_terminal.stream == nil
     refute_receive {:mobile_terminal_output, _}
 
+    malformed = terminal_stream_socket(push_sink, self())
+
+    assert {:ok, malformed_rejected} =
+             SessionClient.handle_message(
+               "mobile_terminal:lease-1",
+               "terminal_output",
+               "not-a-payload",
+               malformed
+             )
+
+    assert malformed_rejected.assigns.mobile_terminal.stream == nil
+    refute_receive {:mobile_terminal_output, _}
+
     assert {:ok, coalesced} =
              SessionClient.handle_topic_close(
                "mobile_terminal:lease-1",
