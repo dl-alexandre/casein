@@ -6,13 +6,22 @@ defmodule CaseinMob.TerminalScreen do
   `HostBridge`. Bytes arrive only from `SessionClient` after an authenticated
   `mobile_terminal_v1` baseline. Any lifecycle gap clears the VT surface and a
   fresh baseline is required before output is shown again.
+
+  On iOS, the active renderer keeps at most 64 KiB of plaintext in this screen
+  process so incremental output can be reconstructed. It is never persisted,
+  logged, cached, or exposed to accessibility. A base64 transport copy exists
+  only for one revision-bound native delivery: native acknowledges consumption,
+  the component and retained Mob tree scrub it, and a two-second timeout or
+  mismatched acknowledgment covers and purges the stream. The first BEAM
+  lifecycle callback purges both copies; UIKit covers pixels synchronously
+  before that callback and foreground requires a newer baseline generation.
   """
 
   use Mob.Screen
 
   import Bitwise
 
-  alias CaseinMob.{SessionClient, SessionConfig, Terminal}
+  alias CaseinMob.{IOSTerminalComponent, SessionClient, SessionConfig, Terminal}
 
   @cellw 9
   @cellh 18
@@ -24,6 +33,8 @@ defmodule CaseinMob.TerminalScreen do
   @min_rows 4
   @max_rows 200
   @repaint_ms 16
+  @max_ios_frame_bytes 65_536
+  @ios_ack_timeout_ms 2_000
 
   @terminal_bg 0xFF080A0C
   @terminal_surface 0xFF101214
@@ -34,12 +45,18 @@ defmodule CaseinMob.TerminalScreen do
   def mount(_params, _session, socket) do
     workspace_id = selected_workspace_id()
     origin = active_origin()
+    terminal_backend = Terminal.backend()
 
     if is_binary(workspace_id), do: SessionClient.watch_terminal(workspace_id, self())
 
     socket =
       socket
+      |> Mob.Socket.assign(:terminal_backend, terminal_backend)
       |> Mob.Socket.assign(:term, Terminal.new(@default_cols, @default_rows))
+      |> Mob.Socket.assign(:ios_frame, <<>>)
+      |> Mob.Socket.assign(:ios_queued_output, <<>>)
+      |> Mob.Socket.assign(:ios_revision, 0)
+      |> Mob.Socket.assign(:ios_delivery_pending?, false)
       |> Mob.Socket.assign(:cols, @default_cols)
       |> Mob.Socket.assign(:rows, @default_rows)
       |> Mob.Socket.assign(:workspace_id, workspace_id)
@@ -116,7 +133,7 @@ defmodule CaseinMob.TerminalScreen do
           fill_height={true}
           weight={1}
         >
-          <Canvas width={canvas_w} height={canvas_h} draw={assigns.draw} />
+          {terminal_surface(assigns, canvas_w, canvas_h)}
         </Box>
       </Column>
     </Column>
@@ -125,29 +142,43 @@ defmodule CaseinMob.TerminalScreen do
 
   def handle_info({:mobile_terminal_baseline, metadata, bytes}, socket)
       when is_map(metadata) and is_binary(bytes) do
-    term = Terminal.reset(socket.assigns.term, socket.assigns.cols, socket.assigns.rows)
-    :ok = Terminal.write(term, bytes)
+    if byte_size(bytes) <= @max_ios_frame_bytes or socket.assigns.terminal_backend != :ios_canvas do
+      socket =
+        socket
+        |> accept_baseline(bytes)
+        |> Mob.Socket.assign(:origin_id, Map.get(metadata, :origin_id))
+        |> Mob.Socket.assign(:origin_name, Map.get(metadata, :origin_name) || "Unknown origin")
+        |> Mob.Socket.assign(:workspace_id, Map.get(metadata, :workspace_id))
+        |> Mob.Socket.assign(:expires_at, Map.get(metadata, :expires_at))
+        |> Mob.Socket.assign(:status, :live)
+        |> Mob.Socket.assign(:baseline_ready?, true)
+        |> Mob.Socket.assign(
+          :fresh_baseline_generation,
+          Map.get(metadata, :fresh_baseline_generation)
+        )
+        |> arm_ios_ack_timeout()
+        |> ensure_repaint()
 
-    {:noreply,
-     socket
-     |> Mob.Socket.assign(:term, term)
-     |> Mob.Socket.assign(:origin_id, Map.get(metadata, :origin_id))
-     |> Mob.Socket.assign(:origin_name, Map.get(metadata, :origin_name) || "Unknown origin")
-     |> Mob.Socket.assign(:workspace_id, Map.get(metadata, :workspace_id))
-     |> Mob.Socket.assign(:expires_at, Map.get(metadata, :expires_at))
-     |> Mob.Socket.assign(:status, :live)
-     |> Mob.Socket.assign(:baseline_ready?, true)
-     |> Mob.Socket.assign(
-       :fresh_baseline_generation,
-       Map.get(metadata, :fresh_baseline_generation)
-     )
-     |> ensure_repaint()}
+      {:noreply, socket}
+    else
+      SessionClient.terminal_foreground()
+      {:noreply, socket |> Mob.Socket.assign(:status, {:resync, :frame_limit}) |> cover()}
+    end
   end
 
   def handle_info({:mobile_terminal_output, bytes}, %{assigns: %{baseline_ready?: true}} = socket)
       when is_binary(bytes) do
-    :ok = Terminal.write(socket.assigns.term, bytes)
-    {:noreply, ensure_repaint(socket)}
+    case accept_output(socket, bytes) do
+      {:ok, socket, :delivery} ->
+        {:noreply, socket |> arm_ios_ack_timeout() |> ensure_repaint()}
+
+      {:ok, socket, :queued} ->
+        {:noreply, socket}
+
+      :overflow ->
+        SessionClient.terminal_foreground()
+        {:noreply, socket |> Mob.Socket.assign(:status, {:resync, :frame_limit}) |> cover()}
+    end
   end
 
   def handle_info({:mobile_terminal_output, _bytes}, socket), do: {:noreply, socket}
@@ -175,6 +206,38 @@ defmodule CaseinMob.TerminalScreen do
 
   def handle_info(:repaint, socket) do
     {:noreply, socket |> Mob.Socket.assign(:repaint_scheduled?, false) |> repaint()}
+  end
+
+  def handle_info({:ios_terminal_consumed, generation, revision}, socket) do
+    cond do
+      generation == socket.assigns.fresh_baseline_generation and
+          revision == socket.assigns.ios_revision ->
+        {:noreply, finish_ios_delivery(socket)}
+
+      generation == socket.assigns.fresh_baseline_generation and
+        is_integer(revision) and revision < socket.assigns.ios_revision ->
+        {:noreply, socket}
+
+      true ->
+        SessionClient.terminal_foreground()
+        {:noreply, socket |> Mob.Socket.assign(:status, {:resync, :native_ack}) |> cover()}
+    end
+  end
+
+  def handle_info(:ios_terminal_invalid_consumption, socket) do
+    SessionClient.terminal_foreground()
+    {:noreply, socket |> Mob.Socket.assign(:status, {:resync, :native_ack}) |> cover()}
+  end
+
+  def handle_info({:ios_terminal_ack_timeout, generation, revision}, socket) do
+    if socket.assigns.ios_delivery_pending? and
+         generation == socket.assigns.fresh_baseline_generation and
+         revision == socket.assigns.ios_revision do
+      SessionClient.terminal_foreground()
+      {:noreply, socket |> Mob.Socket.assign(:status, {:resync, :native_ack}) |> cover()}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info(message, socket) when message in [:app_background, :background] do
@@ -246,6 +309,10 @@ defmodule CaseinMob.TerminalScreen do
 
     socket
     |> Mob.Socket.assign(:term, term)
+    |> Mob.Socket.assign(:ios_frame, <<>>)
+    |> Mob.Socket.assign(:ios_queued_output, <<>>)
+    |> Mob.Socket.assign(:ios_revision, socket.assigns.ios_revision + 1)
+    |> Mob.Socket.assign(:ios_delivery_pending?, false)
     |> Mob.Socket.assign(:baseline_ready?, false)
     |> Mob.Socket.assign(:fresh_baseline_generation, nil)
     |> repaint()
@@ -304,24 +371,137 @@ defmodule CaseinMob.TerminalScreen do
   end
 
   defp repaint(socket) do
-    term = socket.assigns.term
-    {cursor_col, cursor_row} = Terminal.cursor(term)
     width = socket.assigns.cols * @cellw
     height = socket.assigns.rows * @cellh
 
-    cells =
-      term
-      |> Terminal.cells()
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {row, row_index} -> row_ops(row, row_index) end)
-
     background = Mob.Canvas.rect(0, 0, width, height, color: @terminal_surface, fill: true)
-    cursor = cursor_op(cursor_col, cursor_row)
 
     draw =
-      if socket.assigns.baseline_ready?, do: [background | cells] ++ [cursor], else: [background]
+      if socket.assigns.terminal_backend == :ios_canvas do
+        [background]
+      else
+        term = socket.assigns.term
+        {cursor_col, cursor_row} = Terminal.cursor(term)
+
+        cells =
+          term
+          |> Terminal.cells()
+          |> Enum.with_index()
+          |> Enum.flat_map(fn {row, row_index} -> row_ops(row, row_index) end)
+
+        cursor = cursor_op(cursor_col, cursor_row)
+
+        if socket.assigns.baseline_ready?,
+          do: [background | cells] ++ [cursor],
+          else: [background]
+      end
 
     Mob.Socket.assign(socket, :draw, draw)
+  end
+
+  defp terminal_surface(%{terminal_backend: :ios_canvas} = assigns, width, height) do
+    pending? = assigns.ios_delivery_pending?
+
+    IOSTerminalComponent.widget(
+      owner: self(),
+      encoded_frame: if(pending?, do: Base.encode64(assigns.ios_frame), else: ""),
+      frame_bytes: if(pending?, do: byte_size(assigns.ios_frame), else: 0),
+      delivery_state:
+        cond do
+          pending? -> :frame
+          assigns.baseline_ready? -> :consumed
+          true -> :covered
+        end,
+      baseline_generation: assigns.fresh_baseline_generation,
+      revision: assigns.ios_revision,
+      baseline_ready: assigns.baseline_ready?,
+      columns: assigns.cols,
+      width: width,
+      height: height
+    )
+  end
+
+  defp terminal_surface(assigns, width, height) do
+    Mob.UI.canvas(width: width, height: height, draw: assigns.draw)
+  end
+
+  defp accept_baseline(%{assigns: %{terminal_backend: :ios_canvas}} = socket, bytes) do
+    socket
+    |> Mob.Socket.assign(:ios_frame, bytes)
+    |> Mob.Socket.assign(:ios_queued_output, <<>>)
+    |> bump_ios_revision()
+  end
+
+  defp accept_baseline(socket, bytes) do
+    term = Terminal.reset(socket.assigns.term, socket.assigns.cols, socket.assigns.rows)
+    :ok = Terminal.write(term, bytes)
+    Mob.Socket.assign(socket, :term, term)
+  end
+
+  defp accept_output(%{assigns: %{terminal_backend: :ios_canvas}} = socket, bytes) do
+    total_bytes =
+      byte_size(socket.assigns.ios_frame) + byte_size(socket.assigns.ios_queued_output) +
+        byte_size(bytes)
+
+    if total_bytes <= @max_ios_frame_bytes do
+      if socket.assigns.ios_delivery_pending? do
+        {:ok,
+         Mob.Socket.assign(
+           socket,
+           :ios_queued_output,
+           socket.assigns.ios_queued_output <> bytes
+         ), :queued}
+      else
+        {:ok,
+         socket
+         |> Mob.Socket.assign(:ios_frame, socket.assigns.ios_frame <> bytes)
+         |> bump_ios_revision(), :delivery}
+      end
+    else
+      :overflow
+    end
+  end
+
+  defp accept_output(socket, bytes) do
+    :ok = Terminal.write(socket.assigns.term, bytes)
+    {:ok, socket, :delivery}
+  end
+
+  defp bump_ios_revision(socket) do
+    socket
+    |> Mob.Socket.assign(:ios_revision, socket.assigns.ios_revision + 1)
+    |> Mob.Socket.assign(:ios_delivery_pending?, true)
+  end
+
+  defp arm_ios_ack_timeout(%{assigns: %{terminal_backend: :ios_canvas}} = socket) do
+    Process.send_after(
+      self(),
+      {:ios_terminal_ack_timeout, socket.assigns.fresh_baseline_generation,
+       socket.assigns.ios_revision},
+      @ios_ack_timeout_ms
+    )
+
+    socket
+  end
+
+  defp arm_ios_ack_timeout(socket), do: socket
+
+  defp finish_ios_delivery(socket) do
+    queued = socket.assigns.ios_queued_output
+
+    socket =
+      socket
+      |> Mob.Socket.assign(:ios_delivery_pending?, false)
+      |> Mob.Socket.assign(:ios_queued_output, <<>>)
+
+    if queued == <<>> do
+      socket
+    else
+      socket
+      |> Mob.Socket.assign(:ios_frame, socket.assigns.ios_frame <> queued)
+      |> bump_ios_revision()
+      |> arm_ios_ack_timeout()
+    end
   end
 
   defp row_ops(row, row_index) do

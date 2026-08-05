@@ -75,6 +75,7 @@ __attribute__((weak)) void mob_deliver_notification_json(const char* json) {
 // body is just empty in that case).
 extern void mob_register_plugins(void);
 extern void casein_register_terminal_probe(void);
+extern void casein_register_terminal_product(void);
 
 static NSString* MobStringValue(id value);
 static NSMutableDictionary* MobStringMapFromDictionary(NSDictionary* dict);
@@ -396,6 +397,12 @@ static BOOL MobStoreDeepLinkURL(NSURL* url) {
     if ([CaseinTerminalProbeFactory isEnabled]) {
         casein_register_terminal_probe();
     }
+
+    // The ordinary product terminal uses a distinct always-registered native
+    // view. Registration grants no transport or terminal authority; the view
+    // stays covered until the authenticated BEAM client supplies a fresh,
+    // generation-bound baseline.
+    casein_register_terminal_product();
 
     // Must run before mob_init_ui() so the registry has every plugin view
     // factory in place by the time the BEAM mounts its first screen.

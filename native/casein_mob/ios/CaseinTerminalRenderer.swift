@@ -175,6 +175,184 @@ private struct CaseinTerminalProductView: View {
     }
 }
 
+private enum CaseinTerminalComponentUpdate: Equatable {
+    case frame(CaseinTerminalComponentPayload)
+    case consumed
+    case covered
+    case invalid
+}
+
+private struct CaseinTerminalComponentPayload: Equatable {
+    let generation: Int
+    let revision: Int
+    let frame: CaseinTerminalFrame
+
+    static func decode(_ props: [String: Any]) -> CaseinTerminalComponentUpdate {
+        let maximumFrameBytes = 65_536
+        let maximumEncodedBytes = 87_384
+
+        guard let deliveryState = props["delivery_state"] as? String else { return .invalid }
+        if deliveryState == "consumed" { return .consumed }
+        if deliveryState == "covered" { return .covered }
+        guard deliveryState == "frame" else { return .invalid }
+
+        guard let encoded = props["encoded_frame"] as? String,
+              let declaredBytes = (props["frame_bytes"] as? NSNumber)?.intValue,
+              let generation = (props["baseline_generation"] as? NSNumber)?.intValue,
+              let revision = (props["revision"] as? NSNumber)?.intValue,
+              let baselineReady = (props["baseline_ready"] as? NSNumber)?.boolValue,
+              let columns = (props["columns"] as? NSNumber)?.intValue,
+              baselineReady,
+              generation > 0,
+              revision >= 0,
+              declaredBytes >= 0,
+              declaredBytes <= maximumFrameBytes,
+              columns > 0,
+              columns <= 400,
+              encoded.utf8.count <= maximumEncodedBytes,
+              encoded.utf8.count % 4 == 0,
+              encoded.unicodeScalars.allSatisfy({ scalar in
+                  let value = scalar.value
+                  return (65...90).contains(value)
+                      || (97...122).contains(value)
+                      || (48...57).contains(value)
+                      || value == 43 || value == 47 || value == 61
+              }) else { return .invalid }
+
+        let padding = encoded.hasSuffix("==") ? 2 : (encoded.hasSuffix("=") ? 1 : 0)
+        let decodedUpperBound = (encoded.utf8.count / 4) * 3 - padding
+        guard decodedUpperBound == declaredBytes,
+              decodedUpperBound <= maximumFrameBytes,
+              let bytes = Data(base64Encoded: encoded, options: []),
+              bytes.count == declaredBytes else { return .invalid }
+
+        let frame = CaseinCanvasTerminalRenderer().frame(for: bytes, columns: columns)
+        return .frame(Self(generation: generation, revision: revision, frame: frame))
+    }
+}
+
+@MainActor
+private final class CaseinTerminalComponentState: ObservableObject {
+    @Published private(set) var frame = CaseinTerminalFrame.empty()
+    @Published private(set) var covered = true
+    @Published private(set) var surfaceGeneration = 0
+
+    private var generation: Int?
+    private var revision = -1
+    private var requiresGenerationAfter = -1
+
+    @discardableResult
+    func apply(_ update: CaseinTerminalComponentUpdate) -> Bool {
+        switch update {
+        case .consumed:
+            return false
+        case .covered, .invalid:
+            requireFreshGeneration()
+            return false
+        case let .frame(payload):
+            return applyFrame(payload)
+        }
+    }
+
+    private func applyFrame(_ payload: CaseinTerminalComponentPayload) -> Bool {
+        guard payload.generation > requiresGenerationAfter else {
+            requireFreshGeneration()
+            return false
+        }
+
+        if let generation, payload.generation < generation {
+            requireFreshGeneration()
+            return false
+        }
+
+        if generation != payload.generation {
+            generation = payload.generation
+            revision = -1
+            frame = .empty(columns: payload.frame.columns)
+        }
+
+        guard payload.revision >= revision else {
+            requireFreshGeneration()
+            return false
+        }
+
+        revision = payload.revision
+        frame = payload.frame
+        surfaceGeneration += 1
+        covered = UIApplication.shared.applicationState != .active
+        return true
+    }
+
+    func applicationWillResignActive() { requireFreshGeneration() }
+    func applicationDidBecomeActive() { requireFreshGeneration() }
+
+    private func requireFreshGeneration() {
+        if let generation { requiresGenerationAfter = max(requiresGenerationAfter, generation) }
+        frame = .empty(columns: frame.columns)
+        surfaceGeneration += 1
+        covered = true
+    }
+}
+
+private struct CaseinTerminalProductComponentView: View {
+    let update: CaseinTerminalComponentUpdate
+    let consumed: (Int, Int) -> Void
+
+    @StateObject private var state = CaseinTerminalComponentState()
+
+    var body: some View {
+        ZStack {
+            Color(red: 0.03, green: 0.035, blue: 0.045)
+            CaseinTerminalCanvasSurface(
+                frame: state.frame,
+                surfaceGeneration: state.surfaceGeneration
+            )
+
+            if state.covered {
+                Color.black
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Terminal waiting for a fresh baseline")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("casein.terminal.product.root")
+        .onAppear { apply(update) }
+        .onChange(of: update) { _, value in apply(value) }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.willResignActiveNotification
+        )) { _ in state.applicationWillResignActive() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.didBecomeActiveNotification
+        )) { _ in state.applicationDidBecomeActive() }
+    }
+
+    private func apply(_ update: CaseinTerminalComponentUpdate) {
+        let accepted = state.apply(update)
+        if accepted, case let .frame(payload) = update {
+            consumed(payload.generation, payload.revision)
+        }
+    }
+}
+
+@MainActor
+@_cdecl("casein_register_terminal_product")
+public func casein_register_terminal_product() {
+    MobNativeViewRegistry.shared.register("CaseinMob_IOSTerminalComponent") { props, send in
+        // Decode and render immediately. The returned SwiftUI value retains
+        // cells and identity metadata, never the encoded terminal prop.
+        let update = CaseinTerminalComponentPayload.decode(props)
+        return AnyView(CaseinTerminalProductComponentView(
+            update: update,
+            consumed: { generation, revision in
+                send("terminal_consumed", [
+                    "generation": generation,
+                    "revision": revision
+                ])
+            }
+        ))
+    }
+}
+
 /// UIKit owns the privacy boundary so it changes synchronously with app
 /// lifecycle notifications. Foregrounding never uncovers old terminal pixels:
 /// a matching fresh baseline must be accepted first.
