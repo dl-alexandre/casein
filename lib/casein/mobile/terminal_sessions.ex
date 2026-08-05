@@ -224,6 +224,7 @@ defmodule Casein.Mobile.TerminalSessions do
     tmux = adapter(opts)
 
     with :ok <- verify_identity(lease),
+         :ok <- verify_live_topology(lease, tmux),
          :ok <- Terminals.stop_shell_owner(lease.workspace_id, lease.sid),
          :ok <- Terminals.stop_session_exact(lease.workspace_key, lease.sid),
          :ok <- normalize_kill(tmux.kill(lease.tmux_session)),
@@ -253,6 +254,23 @@ defmodule Casein.Mobile.TerminalSessions do
   defp verify_identity(lease) do
     expected = Terminals.tmux_session_name(lease.workspace_key, lease.sid)
     if expected == lease.tmux_session, do: :ok, else: {:error, :identity_mismatch}
+  end
+
+  defp verify_live_topology(lease, tmux) do
+    case tmux.list_session_panes(lease.tmux_session) do
+      [pane] ->
+        cond do
+          Map.get(pane, :id) != lease.pane_id -> {:error, :pane_identity_mismatch}
+          Map.get(pane, :role) != lease.pane_role -> {:error, :pane_role_mismatch}
+          true -> :ok
+        end
+
+      [] ->
+        {:error, :missing_terminal_pane}
+
+      _panes ->
+        {:error, :unexpected_topology}
+    end
   end
 
   defp normalize_kill(:ok), do: :ok
@@ -293,7 +311,15 @@ defmodule Casein.Mobile.TerminalSessions do
   defp fingerprint(attrs) do
     attrs
     |> atomize_required()
-    |> Map.take([:user_id, :device_link_id, :origin_id, :origin_generation, :workspace_id])
+    |> Map.take([
+      :user_id,
+      :device_link_id,
+      :origin_id,
+      :origin_generation,
+      :workspace_id,
+      :workspace_key,
+      :workspace_root
+    ])
     |> Enum.sort()
     |> :erlang.term_to_binary()
     |> then(&:crypto.hash(:sha256, &1))
@@ -348,7 +374,6 @@ defmodule Casein.Mobile.TerminalSessions do
         origin_id: lease.origin_id,
         device_link_id: lease.device_link_id,
         sid: lease.sid,
-        tmux_session: lease.tmux_session,
         pane_id: lease.pane_id,
         state: lease.state,
         expires_at: lease.expires_at,

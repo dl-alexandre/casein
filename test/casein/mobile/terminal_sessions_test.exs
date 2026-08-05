@@ -87,6 +87,13 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     def ensure_error(reason), do: Agent.update(__MODULE__, &%{&1 | ensure_error: reason})
     def kill_error(reason), do: Agent.update(__MODULE__, &%{&1 | kill_error: reason})
     def block_kill(pid), do: Agent.update(__MODULE__, &%{&1 | kill_blocker: pid})
+
+    def replace_pane(session, pane_id, role) do
+      Agent.update(
+        __MODULE__,
+        &put_in(&1, [:sessions, session, :pane], %{id: pane_id, role: role})
+      )
+    end
   end
 
   setup do
@@ -115,6 +122,21 @@ defmodule Casein.Mobile.TerminalSessionsTest do
 
     assert {:error, :idempotency_key_reused} =
              TerminalSessions.create(%{attrs | origin_generation: "origin-generation-2"},
+               tmux: Tmux
+             )
+
+    assert Repo.aggregate(TerminalSession, :count) == 1
+  end
+
+  test "same device request with changed workspace key or root fails closed" do
+    attrs = attrs()
+    assert {:ok, _} = TerminalSessions.create(attrs, tmux: Tmux)
+
+    assert {:error, :idempotency_key_reused} =
+             TerminalSessions.create(%{attrs | workspace_key: "other-workspace"}, tmux: Tmux)
+
+    assert {:error, :idempotency_key_reused} =
+             TerminalSessions.create(%{attrs | workspace_root: "/tmp/other-workspace"},
                tmux: Tmux
              )
 
@@ -159,6 +181,7 @@ defmodule Casein.Mobile.TerminalSessionsTest do
              metadata = event.metadata
 
              Map.has_key?(metadata, :terminal_id) and
+               not Map.has_key?(metadata, :tmux_session) and
                not Map.has_key?(metadata, :input) and
                not Map.has_key?(metadata, :output) and
                not Map.has_key?(metadata, :command)
@@ -195,6 +218,26 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     send(kill_pid, :continue_kill)
     assert {:ok, deleted} = Task.await(task, 5_000)
     assert deleted.state == "deleted"
+  end
+
+  test "pane replacement fails closed before exact teardown" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    Tmux.replace_pane(lease.tmux_session, "%replacement", lease.pane_role)
+
+    assert {:error, :pane_identity_mismatch} = TerminalSessions.delete(lease.id, tmux: Tmux)
+    assert Repo.get!(TerminalSession, lease.id).state == "deleting"
+    assert Tmux.session_exists?(lease.tmux_session)
+    assert Tmux.kills() == []
+  end
+
+  test "pane role drift fails closed before exact teardown" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    Tmux.replace_pane(lease.tmux_session, lease.pane_id, "operator")
+
+    assert {:error, :pane_role_mismatch} = TerminalSessions.delete(lease.id, tmux: Tmux)
+    assert Repo.get!(TerminalSession, lease.id).state == "deleting"
+    assert Tmux.session_exists?(lease.tmux_session)
+    assert Tmux.kills() == []
   end
 
   test "partial external teardown leaves a durable deleting fence and retries exactly" do
