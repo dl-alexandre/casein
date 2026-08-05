@@ -231,6 +231,7 @@ defmodule CaseinMob.SessionClient do
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
       |> assign(:terminal_control_refs, %{})
+      |> assign(:terminal_delete_tombstone, nil)
       |> assign(:mobile_terminal, nil)
       |> assign(:terminal_baseline_generation, 0)
       |> assign(
@@ -315,14 +316,22 @@ defmodule CaseinMob.SessionClient do
           {:ok, socket, accepted_reply, _baseline?} ->
             socket = cache_topic_snapshot(socket, topic, accepted_reply)
             notify_joined(socket, topic, accepted_reply)
-            {:ok, maybe_request_terminal_control(socket)}
+
+            {:ok,
+             socket
+             |> maybe_reconcile_terminal_delete()
+             |> maybe_request_terminal_control()}
 
           {:error, socket} ->
             {:ok, socket}
         end
 
       terminal_topic?(topic) ->
-        accept_terminal_frame(socket, topic, reply)
+        if match?({:error, _}, reply) do
+          {:ok, terminal_join_rejected(socket, reply)}
+        else
+          accept_terminal_frame(socket, topic, "terminal_baseline", reply)
+        end
 
       true ->
         socket = cache_topic_snapshot(socket, topic, reply)
@@ -369,7 +378,7 @@ defmodule CaseinMob.SessionClient do
   def handle_message(topic, event, payload, socket)
       when event in ["terminal_output", "terminal_cutoff"] do
     if terminal_topic?(topic),
-      do: accept_terminal_frame(socket, topic, payload),
+      do: accept_terminal_frame(socket, topic, event, payload),
       else: {:ok, socket}
   end
 
@@ -445,6 +454,8 @@ defmodule CaseinMob.SessionClient do
       |> assign(:topic_snapshots, %{})
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
+      |> mark_terminal_delete_disconnected()
+      |> assign(:terminal_control_refs, %{})
       |> purge_terminal_transport(status)
 
     case pop_pending_configuration(socket) do
@@ -536,6 +547,7 @@ defmodule CaseinMob.SessionClient do
       |> assign(:push_registration_refs, %{})
       |> assign(:card_action_refs, %{})
       |> assign(:terminal_control_refs, %{})
+      |> assign(:terminal_delete_tombstone, nil)
       |> purge_terminal(:disconnected)
 
     {:noreply, socket}
@@ -705,6 +717,24 @@ defmodule CaseinMob.SessionClient do
 
       observed_at = System.convert_time_unit(observed_at, :native, :microsecond)
       {:noreply, timing_stage(socket, stage, observed_at: observed_at, outcome: outcome)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({:terminal_refresh_retry, token}, socket) do
+    terminal = socket.assigns.mobile_terminal
+
+    if is_map(terminal) and terminal.retry_token == token do
+      socket =
+        socket
+        |> update_terminal(fn current ->
+          %{current | retry_token: nil, retry_timer: nil, status: :refreshing}
+        end)
+        |> notify_terminal_status()
+        |> maybe_request_terminal_control()
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -969,7 +999,10 @@ defmodule CaseinMob.SessionClient do
           grant_expires_at: nil,
           connection_generation: nil,
           stream: nil,
-          control_ref: nil
+          control_ref: nil,
+          retry_attempt: 0,
+          retry_token: nil,
+          retry_timer: nil
         }
 
     socket
@@ -984,6 +1017,9 @@ defmodule CaseinMob.SessionClient do
     terminal = socket.assigns.mobile_terminal
 
     cond do
+      is_map(socket.assigns.terminal_delete_tombstone) ->
+        socket
+
       terminal.status == :backgrounded ->
         socket
 
@@ -1034,8 +1070,18 @@ defmodule CaseinMob.SessionClient do
     {operation, socket}
   end
 
-  defp handle_terminal_control_reply(:delete, _reply, socket),
-    do: {:ok, purge_terminal(socket, :deleted)}
+  defp handle_terminal_control_reply(%{operation: :delete} = request, reply, socket) do
+    tombstone = socket.assigns.terminal_delete_tombstone
+
+    if valid_terminal_delete_reply?(reply, request, tombstone) do
+      {:ok,
+       socket
+       |> assign(:terminal_delete_tombstone, nil)
+       |> maybe_request_terminal_control()}
+    else
+      {:ok, mark_terminal_delete_disconnected(socket)}
+    end
+  end
 
   defp handle_terminal_control_reply(operation, {:ok, payload}, socket)
        when operation in [:create, :refresh] and is_map(payload) do
@@ -1090,6 +1136,19 @@ defmodule CaseinMob.SessionClient do
   defp handle_terminal_control_reply(_operation, _reply, socket),
     do: {:ok, terminal_error(socket, :unavailable)}
 
+  defp valid_terminal_delete_reply?(
+         {:ok, payload},
+         %{lease_id: lease_id, request_id: request_id},
+         %{lease_id: lease_id, request_id: request_id}
+       )
+       when is_map(payload) do
+    payload_value(payload, :schema) == "mobile_terminal_v1" and
+      payload_value(payload, :status) == "deleted" and
+      payload_value(payload, :lease_id) == lease_id
+  end
+
+  defp valid_terminal_delete_reply?(_reply, _request, _tombstone), do: false
+
   defp validate_terminal_control_reply(payload, operation) do
     lease = payload_value(payload, :lease)
     grant = payload_value(payload, :child_grant)
@@ -1130,39 +1189,54 @@ defmodule CaseinMob.SessionClient do
     get_in(socket.assigns, [:timing_context, :generation])
   end
 
-  defp accept_terminal_frame(socket, topic, payload) do
+  defp accept_terminal_frame(socket, topic, expected_event, payload) do
     terminal = socket.assigns.mobile_terminal
 
     if is_map(terminal) and terminal.channel_topic == topic and
          match?(%MobileTerminalStream{}, terminal.stream) do
-      case MobileTerminalStream.accept(terminal.stream, payload) do
-        {:ok, stream, bytes} ->
-          event = payload_value(payload, :event)
-
-          socket =
-            socket
-            |> update_terminal(&%{&1 | stream: stream, status: :live, child_grant: nil})
-            |> maybe_advance_terminal_baseline(event)
-
-          notify_terminal_bytes(socket, event, bytes)
-          {:ok, notify_terminal_status(socket)}
-
-        {:duplicate, stream} ->
-          {:ok, update_terminal(socket, &%{&1 | stream: stream})}
-
-        {:resync, _stream, reason} ->
-          socket =
-            socket
-            |> purge_terminal_transport({:resync, reason})
-            |> maybe_request_terminal_control()
-
-          {:ok, socket}
-
-        {:cutoff, _stream, reason} ->
-          {:ok, purge_terminal_transport(socket, {:cutoff, reason})}
+      if payload_value(payload, :event) != expected_event do
+        {:ok, schedule_terminal_refresh(socket, :invalid_payload)}
+      else
+        accept_bound_terminal_frame(socket, payload)
       end
     else
       {:ok, socket}
+    end
+  end
+
+  defp accept_bound_terminal_frame(socket, payload) do
+    terminal = socket.assigns.mobile_terminal
+
+    case MobileTerminalStream.accept(terminal.stream, payload) do
+      {:ok, stream, bytes} ->
+        event = payload_value(payload, :event)
+
+        socket =
+          socket
+          |> update_terminal(fn current ->
+            %{
+              current
+              | stream: stream,
+                status: :live,
+                child_grant: nil,
+                retry_attempt: 0,
+                retry_token: nil,
+                retry_timer: nil
+            }
+          end)
+          |> maybe_advance_terminal_baseline(event)
+
+        notify_terminal_bytes(socket, event, bytes)
+        {:ok, notify_terminal_status(socket)}
+
+      {:duplicate, stream} ->
+        {:ok, update_terminal(socket, &%{&1 | stream: stream})}
+
+      {:resync, _stream, reason} ->
+        {:ok, schedule_terminal_refresh(socket, reason)}
+
+      {:cutoff, _stream, reason} ->
+        {:ok, schedule_terminal_refresh(socket, reason)}
     end
   end
 
@@ -1235,29 +1309,143 @@ defmodule CaseinMob.SessionClient do
   defp request_terminal_delete(socket) do
     terminal = socket.assigns.mobile_terminal
 
-    if is_map(terminal.lease) and outbound_ready?(socket, @mobile_cards_topic) do
-      case push(socket, @mobile_cards_topic, "terminal_delete", %{
-             lease_id: terminal.lease.id,
-             request_id: Ecto.UUID.generate()
-           }) do
-        {:ok, ref} ->
-          assign(
-            socket,
-            :terminal_control_refs,
-            Map.put(socket.assigns.terminal_control_refs, ref, :delete)
-          )
+    if is_map(terminal.lease) do
+      tombstone =
+        socket.assigns.terminal_delete_tombstone ||
+          %{
+            lease_id: terminal.lease.id,
+            request_id: Ecto.UUID.generate(),
+            origin_id: Map.get(socket.assigns, :configured_origin_id),
+            ref: nil,
+            attempts: 0
+          }
 
-        {:error, _reason} ->
-          socket
-      end
+      socket
+      |> assign(:terminal_delete_tombstone, tombstone)
+      |> maybe_reconcile_terminal_delete()
     else
       socket
     end
   end
 
-  defp terminal_closed(socket, reason) do
-    socket |> purge_terminal_transport({:closed, classify_close_reason(reason)})
+  defp maybe_reconcile_terminal_delete(socket) do
+    tombstone = socket.assigns.terminal_delete_tombstone
+
+    cond do
+      not is_map(tombstone) ->
+        socket
+
+      not is_nil(tombstone.ref) ->
+        socket
+
+      tombstone.attempts >= 3 ->
+        socket
+
+      tombstone.origin_id != Map.get(socket.assigns, :configured_origin_id) ->
+        socket
+
+      not outbound_ready?(socket, @mobile_cards_topic) ->
+        socket
+
+      true ->
+        payload = %{lease_id: tombstone.lease_id, request_id: tombstone.request_id}
+
+        case push(socket, @mobile_cards_topic, "terminal_delete", payload) do
+          {:ok, ref} ->
+            request = Map.merge(payload, %{operation: :delete})
+            updated = %{tombstone | ref: ref, attempts: tombstone.attempts + 1}
+
+            socket
+            |> assign(:terminal_delete_tombstone, updated)
+            |> assign(
+              :terminal_control_refs,
+              Map.put(socket.assigns.terminal_control_refs, ref, request)
+            )
+
+          {:error, _reason} ->
+            socket
+        end
+    end
   end
+
+  defp mark_terminal_delete_disconnected(socket) do
+    case socket.assigns.terminal_delete_tombstone do
+      nil -> socket
+      tombstone -> assign(socket, :terminal_delete_tombstone, %{tombstone | ref: nil})
+    end
+  end
+
+  defp terminal_closed(socket, reason) do
+    reason = reason |> reason_value() |> bounded_terminal_reason()
+    schedule_terminal_refresh(socket, reason)
+  end
+
+  defp terminal_join_rejected(socket, {:error, payload}) do
+    payload
+    |> reason_value()
+    |> bounded_terminal_reason()
+    |> then(&schedule_terminal_refresh(socket, &1))
+  end
+
+  defp schedule_terminal_refresh(socket, reason) do
+    reason = bounded_terminal_reason(reason)
+    terminal = socket.assigns.mobile_terminal
+
+    if is_map(terminal) and not is_nil(terminal.retry_token) do
+      socket
+    else
+      schedule_new_terminal_refresh(socket, terminal, reason)
+    end
+  end
+
+  defp schedule_new_terminal_refresh(socket, terminal, reason) do
+    socket = purge_terminal_transport(socket, {:resync, reason})
+    terminal = socket.assigns.mobile_terminal || terminal
+
+    cond do
+      not is_map(terminal) ->
+        socket
+
+      not terminal_retryable?(reason) ->
+        socket
+
+      terminal.retry_attempt >= 3 or not is_nil(terminal.retry_token) ->
+        socket
+
+      true ->
+        attempt = terminal.retry_attempt + 1
+        token = make_ref()
+        delay = Enum.at([250, 500, 1_000], attempt - 1)
+        timer = Process.send_after(self(), {:terminal_refresh_retry, token}, delay)
+
+        socket
+        |> update_terminal(fn current ->
+          %{
+            current
+            | retry_attempt: attempt,
+              retry_token: token,
+              retry_timer: timer,
+              status: {:resync, reason}
+          }
+        end)
+        |> notify_terminal_status()
+    end
+  end
+
+  defp terminal_retryable?(reason)
+       when reason in [
+              :invalid_payload,
+              :unavailable,
+              :stale_grant,
+              :grant_expired,
+              :grant_revoked,
+              :grant_already_used,
+              :connection_generation_mismatch,
+              :offset_mismatch
+            ],
+       do: true
+
+  defp terminal_retryable?(_reason), do: false
 
   defp terminal_error(socket, reason) do
     socket
@@ -1279,6 +1467,8 @@ defmodule CaseinMob.SessionClient do
               :stale_grant,
               :grant_expired,
               :grant_revoked,
+              :grant_already_used,
+              :connection_generation_mismatch,
               :identity_mismatch,
               :topology_mismatch,
               :offset_mismatch,
@@ -1299,6 +1489,8 @@ defmodule CaseinMob.SessionClient do
       "stale_grant" -> :stale_grant
       "grant_expired" -> :grant_expired
       "grant_revoked" -> :grant_revoked
+      "grant_already_used" -> :grant_already_used
+      "connection_generation_mismatch" -> :connection_generation_mismatch
       "identity_mismatch" -> :identity_mismatch
       "topology_mismatch" -> :topology_mismatch
       "offset_mismatch" -> :offset_mismatch
@@ -1315,6 +1507,7 @@ defmodule CaseinMob.SessionClient do
   defp purge_terminal_transport(socket, status) do
     terminal = socket.assigns.mobile_terminal
     topic = terminal.channel_topic
+    if is_reference(terminal.retry_timer), do: Process.cancel_timer(terminal.retry_timer)
 
     socket =
       if is_binary(topic) do
@@ -1334,11 +1527,23 @@ defmodule CaseinMob.SessionClient do
           grant_expires_at: nil,
           connection_generation: nil,
           stream: nil,
-          control_ref: nil
+          control_ref: nil,
+          retry_token: nil,
+          retry_timer: nil
       }
     end)
-    |> assign(:terminal_control_refs, %{})
+    |> retain_terminal_delete_refs()
     |> notify_terminal_status()
+  end
+
+  defp retain_terminal_delete_refs(socket) do
+    refs =
+      Map.filter(socket.assigns.terminal_control_refs, fn
+        {_ref, %{operation: :delete}} -> true
+        _entry -> false
+      end)
+
+    assign(socket, :terminal_control_refs, refs)
   end
 
   defp purge_terminal(socket, status) do
