@@ -330,7 +330,10 @@ curl -sS -X PATCH \
   "https://casein.example.test/api/workspaces/ws-1/windows/@2"
 ```
 
-Kill a window:
+Close a window. This is **deferred and undoable**, the same as closing one in
+the viewer: the window disappears from every topology read immediately, but
+tmux is untouched until the grace period expires, so nothing running in it is
+lost yet. The response reports `grace_ms`.
 
 ```bash
 curl -sS -X DELETE \
@@ -339,6 +342,26 @@ curl -sS -X DELETE \
   -d '{"session":"casein_alpha_u-dev"}' \
   "https://casein.example.test/api/workspaces/ws-1/windows/@2"
 ```
+
+```json
+{"action": "window_close_deferred",
+ "result": {"window_id": "@2", "grace_ms": 30000}}
+```
+
+Take that close back while it is still pending. After the grace period the
+window is really gone and this returns `422 window_not_pending`:
+
+```bash
+curl -sS -X POST \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"session":"casein_alpha_u-dev"}' \
+  "https://casein.example.test/api/workspaces/ws-1/windows/@2/restore"
+```
+
+A window pending close is filtered out of every topology payload, so `select`
+and `rename` on it return `404 window_not_found` — a caller never acts on a
+window it has already been told is closed.
 
 ## Pane mutations
 

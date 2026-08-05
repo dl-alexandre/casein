@@ -155,7 +155,8 @@ topology. `?dry_run=1` returns the action + current topology without mutating.
 | POST | `/api/workspaces/:id/windows` | `WorkspaceWindowController` · `:create_window` | New window (`name`, `cwd` opts) |
 | POST | `/api/workspaces/:id/windows/:window_id/select` | `…` · `:select_window` | Select window |
 | PATCH | `/api/workspaces/:id/windows/:window_id` | `…` · `:rename_window` | Rename (`name` required) |
-| DELETE | `/api/workspaces/:id/windows/:window_id` | `…` · `:kill_window` | Kill window |
+| DELETE | `/api/workspaces/:id/windows/:window_id` | `…` · `:kill_window` | Close window — deferred and undoable; returns `grace_ms` |
+| POST | `/api/workspaces/:id/windows/:window_id/restore` | `…` · `:restore_window` | Undo a deferred close while still pending |
 | POST | `/api/workspaces/:id/panes` | `WorkspacePaneController` · `:create_pane` | Split a target pane (`pane_id`/`target_pane_id`, `direction` `h`/`v`) |
 | POST | `/api/workspaces/:id/panes/:pane_id/select` | `…` · `:select_pane` | Select pane |
 | POST | `/api/workspaces/:id/panes/:pane_id/split` | `…` · `:split_pane` | Split pane (`direction` `h`/`v`) |

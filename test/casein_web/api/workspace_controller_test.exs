@@ -26,12 +26,16 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
     Application.put_env(:casein, :api_token, @token)
     Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+    # Deferred window closes are global and outlive a test; a leftover pending
+    # entry would hide a window from an unrelated test's topology.
+    Casein.Terminals.WindowTrash.__reset__()
     Application.put_env(:casein, :agent_mcp_base_url, "http://127.0.0.1:4000")
 
     on_exit(fn ->
       MemoryAdapter.clear()
       Casein.Audit.MemoryAdapter.clear()
       Casein.Agents.Activity.clear()
+      Casein.Terminals.WindowTrash.__reset__()
 
       if prev_token,
         do: Application.put_env(:casein, :api_token, prev_token),
@@ -1446,18 +1450,75 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
     assert [%{action: "tmux.window_renamed", target_ref: "@2"}] =
              Casein.Audit.recent_for("ws-1", 1)
 
-    killed =
+    closed =
       conn
       |> authed()
       |> delete("/api/workspaces/ws-1/windows/@2", %{"session" => @api_session})
       |> json_response(200)
 
-    assert killed["action"] == "window_killed"
-    refute Enum.any?(killed["topology"]["windows"], &(&1["id"] == "@2"))
-    assert_receive {:fake_tmux_kill_window, @api_session, "@2"}
+    # Deferred, like the viewer: the window is gone from the response topology
+    # but tmux still has it until the grace period expires.
+    assert closed["action"] == "window_close_deferred"
+    assert closed["result"]["window_id"] == "@2"
+    assert closed["result"]["grace_ms"] > 0
+    refute Enum.any?(closed["topology"]["windows"], &(&1["id"] == "@2"))
+    refute_receive {:fake_tmux_kill_window, @api_session, "@2"}
 
-    assert [%{action: "tmux.window_killed", target_ref: "@2"}] =
+    assert [%{action: "tmux.window_close_deferred", target_ref: "@2"}] =
              Casein.Audit.recent_for("ws-1", 1)
+
+    # A pending window is invisible to the rest of the surface, so acting on it
+    # reports not-found rather than mutating something already reported closed.
+    assert conn
+           |> authed()
+           |> post("/api/workspaces/ws-1/windows/@2/select", %{"session" => @api_session})
+           |> json_response(404)
+
+    restored =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/windows/@2/restore", %{"session" => @api_session})
+      |> json_response(200)
+
+    assert restored["action"] == "window_close_undone"
+    assert Enum.any?(restored["topology"]["windows"], &(&1["id"] == "@2"))
+    refute_receive {:fake_tmux_kill_window, @api_session, "@2"}
+
+    # Restoring twice is a 422, not a silent success — the second caller must
+    # not believe it recovered a window.
+    assert %{"error" => "window_not_pending"} =
+             conn
+             |> authed()
+             |> post("/api/workspaces/ws-1/windows/@2/restore", %{"session" => @api_session})
+             |> json_response(422)
+  end
+
+  test "a deferred window close really kills once the grace period expires", %{conn: conn} do
+    seed_workspace()
+    seed_tmux_session(@api_session)
+
+    prev_grace = Application.get_env(:casein, :window_trash_grace_ms)
+    Application.put_env(:casein, :window_trash_grace_ms, 50)
+
+    on_exit(fn ->
+      if prev_grace,
+        do: Application.put_env(:casein, :window_trash_grace_ms, prev_grace),
+        else: Application.delete_env(:casein, :window_trash_grace_ms)
+    end)
+
+    conn
+    |> authed()
+    |> delete("/api/workspaces/ws-1/windows/@2", %{"session" => @api_session})
+    |> json_response(200)
+
+    assert_receive {:fake_tmux_kill_window, @api_session, "@2"}, 1_000
+
+    # Too late to take back once it has really gone.
+    assert %{"error" => "window_not_pending"} =
+             conn
+             |> authed()
+             |> post("/api/workspaces/ws-1/windows/@2/restore", %{"session" => @api_session})
+             |> json_response(422)
   end
 
   test "window mutation endpoints return stable errors", %{conn: conn} do

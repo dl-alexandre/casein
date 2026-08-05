@@ -14,6 +14,7 @@ defmodule CaseinWeb.API.WorkspaceAPI do
 
   alias Casein.Files.PathSafety
   alias Casein.Terminals
+  alias Casein.Terminals.WindowTrash
   alias Casein.Workspaces
 
   # ---------------------------------------------------------------------------
@@ -113,14 +114,21 @@ defmodule CaseinWeb.API.WorkspaceAPI do
   def topology_payload(workspace_id, session) do
     topology = Terminals.tmux_topology_snapshot(session)
 
+    # Windows closed through the undoable path are still alive in tmux during
+    # their grace period, but they are gone as far as callers are concerned —
+    # including the response to the DELETE that just closed one. Filtering here
+    # keeps every API topology agreeing with what the viewer shows.
+    windows = WindowTrash.reject_pending(session, topology.windows)
+    visible_ids = MapSet.new(windows, & &1.id)
+
     %{
       workspace_id: workspace_id,
       session: topology.session,
       active_window_id: topology.active_window_id,
       active_pane_id: topology.active_pane_id,
       version: topology.version,
-      windows: topology.windows,
-      panes: topology.panes
+      windows: windows,
+      panes: Enum.filter(topology.panes || [], &MapSet.member?(visible_ids, &1.window_id))
     }
   end
 
@@ -149,10 +157,14 @@ defmodule CaseinWeb.API.WorkspaceAPI do
     end
   end
 
+  # A window pending an undoable close is deliberately invisible here, so
+  # selecting or renaming one reports `window_not_found` rather than acting on
+  # something the caller has already been told is gone.
   def find_window(session, window_id) do
     session
     |> Terminals.tmux_topology_snapshot()
     |> Map.fetch!(:windows)
+    |> then(&WindowTrash.reject_pending(session, &1))
     |> Enum.find(&(&1.id == window_id or to_string(&1.index) == window_id))
   end
 
