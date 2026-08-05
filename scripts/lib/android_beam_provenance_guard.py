@@ -71,6 +71,7 @@ _INSTALLED_IDENTITY_RE = re.compile(
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TIMEOUT_REASONS = frozenset({"none", "idle", "total"})
+_MANIFEST_CAPTURE_SCOPES = frozenset({"none", "complete", "incomplete_prefix"})
 
 _MANIFEST_HEADER = b"CASEIN_BEAMS_V5"
 _MANIFEST_END = b"END"
@@ -269,18 +270,50 @@ class GuardResult:
     beam_digest_match: bool = False
     timeout_reason: str = "none"
     completed_record_count: int = 0
+    valid_record_count: int = 0
+    unique_name_count: int = 0
+    duplicate_name_count: int = 0
+    expected_name_match_count: int = 0
+    unexpected_name_count: int = 0
+    missing_name_count: int = 0
+    manifest_capture_scope: str = "none"
 
     def __post_init__(self) -> None:
         if self.status not in STATUSES:
             object.__setattr__(self, "status", "internal_error")
         if self.timeout_reason not in _TIMEOUT_REASONS:
             object.__setattr__(self, "timeout_reason", "none")
-        if (
-            not isinstance(self.completed_record_count, int)
-            or isinstance(self.completed_record_count, bool)
-            or not 0 <= self.completed_record_count <= MAX_BEAMS
+        if self.manifest_capture_scope not in _MANIFEST_CAPTURE_SCOPES:
+            object.__setattr__(self, "manifest_capture_scope", "none")
+        for field_name in (
+            "completed_record_count",
+            "valid_record_count",
+            "unique_name_count",
+            "duplicate_name_count",
+            "expected_name_match_count",
+            "unexpected_name_count",
+            "missing_name_count",
         ):
-            object.__setattr__(self, "completed_record_count", 0)
+            value = getattr(self, field_name)
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or not 0 <= value <= MAX_BEAMS
+            ):
+                object.__setattr__(self, field_name, 0)
+        if self.exact:
+            object.__setattr__(self, "timeout_reason", "none")
+            object.__setattr__(self, "manifest_capture_scope", "none")
+            for field_name in (
+                "completed_record_count",
+                "valid_record_count",
+                "unique_name_count",
+                "duplicate_name_count",
+                "expected_name_match_count",
+                "unexpected_name_count",
+                "missing_name_count",
+            ):
+                object.__setattr__(self, field_name, 0)
 
     @property
     def exact(self) -> bool:
@@ -297,6 +330,13 @@ class GuardResult:
             "beam_digest_match": self.beam_digest_match,
             "timeout_reason": self.timeout_reason,
             "completed_record_count": self.completed_record_count,
+            "valid_record_count": self.valid_record_count,
+            "unique_name_count": self.unique_name_count,
+            "duplicate_name_count": self.duplicate_name_count,
+            "expected_name_match_count": self.expected_name_match_count,
+            "unexpected_name_count": self.unexpected_name_count,
+            "missing_name_count": self.missing_name_count,
+            "manifest_capture_scope": self.manifest_capture_scope,
             "exact": self.exact,
         }
 
@@ -305,6 +345,26 @@ class GuardResult:
 class ManifestDiagnostics:
     timeout_reason: str = "none"
     completed_record_count: int = 0
+    valid_record_count: int = 0
+    unique_name_count: int = 0
+    duplicate_name_count: int = 0
+    expected_name_match_count: int = 0
+    unexpected_name_count: int = 0
+    missing_name_count: int = 0
+    manifest_capture_scope: str = "none"
+
+    def guard_fields(self) -> dict[str, object]:
+        return {
+            "timeout_reason": self.timeout_reason,
+            "completed_record_count": self.completed_record_count,
+            "valid_record_count": self.valid_record_count,
+            "unique_name_count": self.unique_name_count,
+            "duplicate_name_count": self.duplicate_name_count,
+            "expected_name_match_count": self.expected_name_match_count,
+            "unexpected_name_count": self.unexpected_name_count,
+            "missing_name_count": self.missing_name_count,
+            "manifest_capture_scope": self.manifest_capture_scope,
+        }
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -691,22 +751,24 @@ def _verify_android_beam_provenance(
         return GuardResult(status)
 
     common = {"expected_manifest_valid": True}
-    expected_count = len(expected.digests)
+    expected_names = frozenset(expected.digests)
     status, installed, diagnostics = _read_installed_manifest(
-        serial, package, runner, expected_count
+        serial, package, runner, expected_names
     )
     if status != "ok" or installed is None:
         return GuardResult(
             status,
-            timeout_reason=diagnostics.timeout_reason,
-            completed_record_count=diagnostics.completed_record_count,
+            **diagnostics.guard_fields(),
             **common,
         )
 
     complete = {**common, "installed_manifest_complete": True}
-    expected_names = frozenset(expected.digests)
     if installed.names != expected_names:
-        return GuardResult("beam_name_set_mismatch", **complete)
+        return GuardResult(
+            "beam_name_set_mismatch",
+            **diagnostics.guard_fields(),
+            **complete,
+        )
 
     matched = {**complete, "beam_name_set_match": True}
     for beam_name in sorted(expected_names):
@@ -767,13 +829,12 @@ def _verify_android_beam_provenance(
             return GuardResult("beam_digest_mismatch", **matched)
 
     closing_status, closing_manifest, closing_diagnostics = _read_installed_manifest(
-        serial, package, runner, expected_count
+        serial, package, runner, expected_names
     )
     if closing_status != "ok" or closing_manifest is None:
         return GuardResult(
             closing_status,
-            timeout_reason=closing_diagnostics.timeout_reason,
-            completed_record_count=closing_diagnostics.completed_record_count,
+            **closing_diagnostics.guard_fields(),
             **matched,
         )
     if closing_manifest.entries != installed.entries:
@@ -790,8 +851,9 @@ def _read_installed_manifest(
     serial: str,
     package: str,
     runner: CommandRunner,
-    expected_count: int,
+    expected_names: frozenset[str],
 ) -> tuple[str, InstalledManifest | None, ManifestDiagnostics]:
+    expected_count = len(expected_names)
     timeout_seconds = _manifest_timeout_seconds(expected_count)
     if timeout_seconds is None:
         return ("installed_manifest_failed", None, ManifestDiagnostics())
@@ -801,13 +863,21 @@ def _read_installed_manifest(
         timeout_seconds=timeout_seconds,
         idle_timeout_seconds=MANIFEST_IDLE_TIMEOUT_SECONDS,
     )
+    diagnostics = _manifest_diagnostics(result.stdout, expected_names)
     diagnostics = ManifestDiagnostics(
         timeout_reason=(
             result.timeout_reason
             if result.timeout_reason in _TIMEOUT_REASONS
             else "none"
         ),
-        completed_record_count=_completed_manifest_record_count(result.stdout),
+        completed_record_count=diagnostics.completed_record_count,
+        valid_record_count=diagnostics.valid_record_count,
+        unique_name_count=diagnostics.unique_name_count,
+        duplicate_name_count=diagnostics.duplicate_name_count,
+        expected_name_match_count=diagnostics.expected_name_match_count,
+        unexpected_name_count=diagnostics.unexpected_name_count,
+        missing_name_count=diagnostics.missing_name_count,
+        manifest_capture_scope=diagnostics.manifest_capture_scope,
     )
     if result.category == "output_limit":
         return ("installed_manifest_limited", None, diagnostics)
@@ -845,6 +915,67 @@ def _completed_manifest_record_count(payload: bytes) -> int:
         if completed >= MAX_BEAMS:
             return MAX_BEAMS
     return completed
+
+
+def _manifest_diagnostics(
+    payload: bytes, expected_names: frozenset[str]
+) -> ManifestDiagnostics:
+    completed = _completed_manifest_record_count(payload)
+    if not payload.startswith(_MANIFEST_HEADER + b"\n"):
+        return ManifestDiagnostics()
+
+    lines = payload.split(b"\n")
+    complete = (
+        payload.endswith(b"\n")
+        and len(lines) >= 4
+        and lines[-2] == _MANIFEST_END
+        and len(lines[-3].split(b"\t")) == 2
+        and lines[-3].split(b"\t")[0] == _MANIFEST_STATUS_TAG
+        and lines[-3].split(b"\t")[1] in _MANIFEST_STATUSES
+    )
+    record_lines = lines[1:-3] if complete else lines[1:-1]
+    names: set[str] = set()
+    valid = 0
+    duplicates = 0
+    for encoded_entry in record_lines:
+        if valid >= MAX_BEAMS:
+            break
+        fields = encoded_entry.split(b"\t")
+        if len(fields) != 3:
+            break
+        encoded_name, encoded_identity, encoded_digest = fields
+        try:
+            name = encoded_name.decode("ascii")
+            _validate_beam_name(name)
+            identity = encoded_identity.decode("ascii")
+            installed_size = _validate_installed_identity(identity)
+            digest_text = encoded_digest.decode("ascii")
+        except (UnicodeDecodeError, InvalidArguments):
+            break
+        if (
+            len(encoded_name) > MAX_BEAM_NAME_BYTES
+            or _SHA256_RE.fullmatch(digest_text) is None
+            or installed_size <= 0
+            or installed_size > MAX_BEAM_BYTES
+        ):
+            break
+        valid += 1
+        if name in names:
+            duplicates += 1
+        else:
+            names.add(name)
+
+    expected_matches = len(names.intersection(expected_names))
+    return ManifestDiagnostics(
+        completed_record_count=completed,
+        valid_record_count=valid,
+        unique_name_count=len(names),
+        duplicate_name_count=duplicates,
+        expected_name_match_count=expected_matches,
+        unexpected_name_count=len(names) - expected_matches,
+        missing_name_count=len(expected_names) - expected_matches,
+        manifest_capture_scope="complete" if complete else "incomplete_prefix",
+    )
 
 
 def _manifest_timeout_seconds(expected_count: int) -> float | None:

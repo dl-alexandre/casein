@@ -379,6 +379,13 @@ sys.stdout.buffer.write(payload)
                 "beam_digest_match": True,
                 "timeout_reason": "none",
                 "completed_record_count": 0,
+                "valid_record_count": 0,
+                "unique_name_count": 0,
+                "duplicate_name_count": 0,
+                "expected_name_match_count": 0,
+                "unexpected_name_count": 0,
+                "missing_name_count": 0,
+                "manifest_capture_scope": "none",
                 "exact": True,
             },
             result.public(),
@@ -566,7 +573,10 @@ sys.stdout.buffer.write(payload)
 
         runner = self.runner(*self.payloads)
         status, installed, diagnostics = guard._read_installed_manifest(
-            SERIAL, PACKAGE, runner, guard.MAX_BEAMS + 1
+            SERIAL,
+            PACKAGE,
+            runner,
+            frozenset(f"Elixir.Module{index}.beam" for index in range(guard.MAX_BEAMS + 1)),
         )
         self.assertEqual("installed_manifest_failed", status)
         self.assertIsNone(installed)
@@ -647,7 +657,7 @@ sys.stdout.buffer.write(payload)
             guard, "MANIFEST_IDLE_TIMEOUT_SECONDS", 0.75
         ):
             status, installed, diagnostics = guard._read_installed_manifest(
-                SERIAL, PACKAGE, runner, len(self.payloads)
+                SERIAL, PACKAGE, runner, frozenset(self.payloads)
             )
 
         self.assertEqual("ok", status)
@@ -921,6 +931,13 @@ sys.stdout.buffer.write(payload)
                 self.assertEqual(status, result.status)
                 self.assertEqual(reason, result.timeout_reason)
                 self.assertEqual(len(names), result.completed_record_count)
+                self.assertEqual(len(names), result.valid_record_count)
+                self.assertEqual(len(names), result.unique_name_count)
+                self.assertEqual(0, result.duplicate_name_count)
+                self.assertEqual(len(names), result.expected_name_match_count)
+                self.assertEqual(0, result.unexpected_name_count)
+                self.assertEqual(len(self.payloads) - len(names), result.missing_name_count)
+                self.assertEqual("incomplete_prefix", result.manifest_capture_scope)
                 self.assertNotIn(SECRET, public)
                 self.assertNotIn(SERIAL, public)
                 self.assertNotIn(PACKAGE, public)
@@ -934,16 +951,83 @@ sys.stdout.buffer.write(payload)
             guard.MAX_BEAMS,
             guard._completed_manifest_record_count(oversized),
         )
+        capped = guard._manifest_diagnostics(
+            guard._MANIFEST_HEADER
+            + b"\n"
+            + (
+                b"Elixir.Repeated.beam\t1:2:81a4:4:5:6\t"
+                + b"0" * 64
+                + b"\n"
+            )
+            * (guard.MAX_BEAMS + 2),
+            frozenset(self.payloads),
+        )
+        self.assertEqual(guard.MAX_BEAMS, capped.completed_record_count)
+        self.assertEqual(guard.MAX_BEAMS, capped.valid_record_count)
+        self.assertEqual(1, capped.unique_name_count)
+        self.assertEqual(guard.MAX_BEAMS - 1, capped.duplicate_name_count)
 
     def test_manifest_diagnostic_sanitizes_untrusted_values(self) -> None:
         result = guard.GuardResult(
             "installed_manifest_failed",
             timeout_reason=SECRET,
             completed_record_count=guard.MAX_BEAMS + 1,
+            valid_record_count=True,
+            manifest_capture_scope=SECRET,
         )
         self.assertEqual("none", result.timeout_reason)
         self.assertEqual(0, result.completed_record_count)
+        self.assertEqual(0, result.valid_record_count)
+        self.assertEqual("none", result.manifest_capture_scope)
         self.assertNotIn(SECRET, json.dumps(result.public()))
+
+        exact = guard.GuardResult(
+            "exact",
+            valid_record_count=1,
+            unique_name_count=1,
+            manifest_capture_scope="complete",
+        )
+        self.assertEqual(0, exact.valid_record_count)
+        self.assertEqual(0, exact.unique_name_count)
+        self.assertEqual("none", exact.manifest_capture_scope)
+
+    def test_manifest_aggregate_diagnostics_distinguish_duplicates_from_unexpected_names(self) -> None:
+        expected = tuple(self.payloads)
+        duplicate_payload = manifest(*expected, expected[0], expected[1], payloads=self.payloads)
+        duplicate_result = self.verify(FakeRunner(guard.CommandResult("ok", 0, duplicate_payload)))
+        self.assertEqual("installed_manifest_duplicate", duplicate_result.status)
+        self.assertEqual(len(expected) + 2, duplicate_result.valid_record_count)
+        self.assertEqual(len(expected), duplicate_result.unique_name_count)
+        self.assertEqual(2, duplicate_result.duplicate_name_count)
+        self.assertEqual(len(expected), duplicate_result.expected_name_match_count)
+        self.assertEqual(0, duplicate_result.unexpected_name_count)
+        self.assertEqual(0, duplicate_result.missing_name_count)
+        self.assertEqual("complete", duplicate_result.manifest_capture_scope)
+
+        extras = ("Elixir.UnexpectedOne.beam", "Elixir.UnexpectedTwo.beam")
+        overlay_payload = manifest(*expected, *extras, payloads=self.payloads)
+        overlay_result = self.verify(FakeRunner(guard.CommandResult("ok", 0, overlay_payload)))
+        self.assertEqual("beam_name_set_mismatch", overlay_result.status)
+        self.assertEqual(len(expected) + 2, overlay_result.valid_record_count)
+        self.assertEqual(len(expected) + 2, overlay_result.unique_name_count)
+        self.assertEqual(0, overlay_result.duplicate_name_count)
+        self.assertEqual(len(expected), overlay_result.expected_name_match_count)
+        self.assertEqual(2, overlay_result.unexpected_name_count)
+        self.assertEqual(0, overlay_result.missing_name_count)
+        self.assertEqual("complete", overlay_result.manifest_capture_scope)
+
+    def test_completed_frame_counter_is_broader_than_valid_record_diagnostics(self) -> None:
+        payload = (
+            guard._MANIFEST_HEADER
+            + b"\nopaque\topaque\topaque\n"
+            + b"STATUS\tOK\nEND\n"
+        )
+        diagnostics = guard._manifest_diagnostics(payload, frozenset(self.payloads))
+        self.assertEqual(1, diagnostics.completed_record_count)
+        self.assertEqual(0, diagnostics.valid_record_count)
+        self.assertEqual(0, diagnostics.unique_name_count)
+        self.assertEqual(len(self.payloads), diagnostics.missing_name_count)
+        self.assertEqual("complete", diagnostics.manifest_capture_scope)
 
     def test_truncated_and_malformed_manifest_frames_are_rejected(self) -> None:
         digest = b"0" * 64
@@ -1242,6 +1326,13 @@ sys.stdout.buffer.write(payload)
                 "beam_digest_match",
                 "timeout_reason",
                 "completed_record_count",
+                "valid_record_count",
+                "unique_name_count",
+                "duplicate_name_count",
+                "expected_name_match_count",
+                "unexpected_name_count",
+                "missing_name_count",
+                "manifest_capture_scope",
                 "exact",
             },
             set(decoded),
