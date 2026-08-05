@@ -28,11 +28,11 @@ defmodule CaseinMob.MixProject do
        override: true},
       {:mob,
        github: "dl-alexandre/mob", ref: "dd6ab6159aca279fa04bd8c4fd1bd5b48a27c621", override: true},
-      # Exact merged MobDev authority head: native device work is serialized
-      # across one immutable payload and exact target identity, failing closed.
+      # Exact merged MobDev authority head: recovery-lock status is sanitized,
+      # read-only, and shares the acquisition liveness fences.
       {:mob_dev,
        git: "https://github.com/dl-alexandre/mob_dev.git",
-       ref: "a62becab15b09a9c93f715cdc78dfea61d4df1e7",
+       ref: "876032a1c0b78c24bfc185cf8116f08aea33d273",
        only: [:dev, :test],
        runtime: false,
        override: true},
