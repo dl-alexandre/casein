@@ -291,6 +291,10 @@ defmodule CaseinWeb.Router do
     patch "/workspaces/:id/windows/:window_id", WorkspaceWindowController, :rename_window
     delete "/workspaces/:id/windows/:window_id", WorkspaceWindowController, :kill_window
 
+    post "/workspaces/:id/windows/:window_id/restore",
+         WorkspaceWindowController,
+         :restore_window
+
     post "/workspaces/:id/panes", WorkspacePaneController, :create_pane
     post "/workspaces/:id/panes/:pane_id/select", WorkspacePaneController, :select_pane
     post "/workspaces/:id/panes/:pane_id/split", WorkspacePaneController, :split_pane

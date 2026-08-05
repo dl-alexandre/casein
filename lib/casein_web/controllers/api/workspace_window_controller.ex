@@ -1,10 +1,17 @@
 defmodule CaseinWeb.API.WorkspaceWindowController do
   @moduledoc """
-  Tmux window mutations for a workspace: create, select, rename, kill.
+  Tmux window mutations for a workspace: create, select, rename, close, restore.
 
   Split out of `WorkspaceController` — same URLs (`/api/workspaces/:id/windows*`),
   same payload shapes. Every mutation refreshes the topology, emits a
   `tmux.window_*` audit event, and returns the post-mutation topology.
+
+  `DELETE /windows/:window_id` is deferred and undoable, the same as closing a
+  window in the viewer: it hides the window and arms the real `kill-window` on
+  a grace-period timer (`Casein.Terminals.WindowTrash`), reporting `grace_ms`.
+  `POST /windows/:window_id/restore` takes that back while it is still pending.
+  Trashed windows are filtered out of every topology payload, so a caller never
+  sees a window it has been told is closed.
   """
 
   use CaseinWeb, :controller
@@ -13,6 +20,7 @@ defmodule CaseinWeb.API.WorkspaceWindowController do
 
   alias Casein.Audit
   alias Casein.Export
+  alias Casein.Terminals.WindowTrash
 
   # Root every action in a fresh correlation context so the tmux.window_* audit
   # events these mutations emit are traced (Casein.Signals.EntryContext is the
@@ -68,13 +76,49 @@ defmodule CaseinWeb.API.WorkspaceWindowController do
     end
   end
 
+  @doc """
+  Closes a window — deferred and undoable, matching the viewer.
+
+  The window is hidden from every topology read (including this response) and
+  the real `kill-window` is armed on a grace-period timer. Until it fires the
+  window and its processes are untouched, so `restore_window/2` can bring it
+  back. The response carries `grace_ms` so a caller knows how long it has.
+  """
   def kill_window(conn, %{"id" => id, "window_id" => window_id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn) do
-      mutate_window(conn, id, session, "window_killed", fn ->
+      mutate_window(conn, id, session, "window_close_deferred", fn ->
         case find_window(session, window_id) do
-          nil -> {:error, :window_not_found}
-          _window -> tmux_adapter().kill_window(session, window_id)
+          nil ->
+            {:error, :window_not_found}
+
+          window ->
+            case WindowTrash.trash(session, window.id, Map.get(window, :name)) do
+              {:ok, grace_ms} -> {:ok, %{window_id: window.id, grace_ms: grace_ms}}
+              {:error, reason} -> {:error, reason}
+            end
+        end
+      end)
+    else
+      :error -> not_found(conn)
+      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
+    end
+  end
+
+  @doc """
+  Takes back a deferred close while it is still within its grace period.
+
+  Without this the API's deferral would be a delay with no way to cancel —
+  worse for a caller than closing immediately. Returns `window_not_pending`
+  once the timer has fired and the window is really gone.
+  """
+  def restore_window(conn, %{"id" => id, "window_id" => window_id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, session} <- topology_session(conn) do
+      mutate_window(conn, id, session, "window_close_undone", fn ->
+        case WindowTrash.restore(session, window_id) do
+          {:ok, _name} -> {:ok, %{window_id: window_id}}
+          {:error, :not_pending} -> {:error, :window_not_pending}
         end
       end)
     else
@@ -94,6 +138,11 @@ defmodule CaseinWeb.API.WorkspaceWindowController do
       case fun.() do
         :ok ->
           json(conn, mutation_payload(conn, workspace_id, session, action))
+
+        # Deferred close/restore report a map so the response can carry
+        # grace_ms alongside the window id.
+        {:ok, result} when is_map(result) ->
+          json(conn, mutation_payload(conn, workspace_id, session, action, result))
 
         {:ok, window_id} ->
           json(
