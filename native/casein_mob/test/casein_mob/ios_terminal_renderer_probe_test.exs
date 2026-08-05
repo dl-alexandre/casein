@@ -3,6 +3,7 @@ defmodule CaseinMob.IOSTerminalRendererProbeTest do
 
   @ios_dir Path.expand("../../ios", __DIR__)
   @swift Path.join(@ios_dir, "CaseinTerminalRendererProbe.swift")
+  @product_swift Path.join(@ios_dir, "CaseinTerminalRenderer.swift")
   @delegate Path.join(@ios_dir, "AppDelegate.m")
   @mob_config Path.expand("../../mob.exs", __DIR__)
   @ui_test Path.join(@ios_dir, "CaseinMobSoakUITests/CaseinTerminalRendererProbeUITests.swift")
@@ -41,13 +42,15 @@ defmodule CaseinMob.IOSTerminalRendererProbeTest do
     assert delegate =~ "if ([CaseinTerminalProbeFactory isEnabled])"
     assert delegate =~ "casein_register_terminal_probe();"
     assert swift =~ "if CaseinTerminalProbeFactory.isEnabled()"
-    assert config =~ "project_swift_sources: [\"ios/CaseinTerminalRendererProbe.swift\"]"
+    assert config =~ "\"ios/CaseinTerminalRenderer.swift\""
+    assert config =~ "\"ios/CaseinTerminalRendererProbe.swift\""
   end
 
   test "fixture pixels are excluded from accessibility and inactive transitions are masked" do
     swift = File.read!(@swift)
+    product_swift = File.read!(@product_swift)
 
-    assert swift =~ ".accessibilityHidden(true)"
+    assert product_swift =~ ".accessibilityHidden(true)"
     assert swift =~ "if !applicationIsActive"
     assert swift =~ "UIApplication.didBecomeActiveNotification"
     assert swift =~ "UIApplication.willResignActiveNotification"
@@ -60,9 +63,10 @@ defmodule CaseinMob.IOSTerminalRendererProbeTest do
 
   test "renderer façade and generation lifecycle remain Casein-owned" do
     swift = File.read!(@swift)
+    product_swift = File.read!(@product_swift)
 
-    assert swift =~ "protocol CaseinTerminalRendererFacade"
-    assert swift =~ "struct CaseinCanvasProbeRenderer"
+    assert product_swift =~ "protocol CaseinTerminalRenderer"
+    assert product_swift =~ "struct CaseinCanvasTerminalRenderer"
     assert swift =~ "generation += 1"
     assert swift =~ "presentedGenerations.insert(generation).inserted"
     assert swift =~ "surface mount milliseconds"
