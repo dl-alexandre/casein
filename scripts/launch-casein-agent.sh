@@ -35,7 +35,7 @@ Runtimes:
             session:pane, or agent)
   opencode  injects per-workspace MCP via project .opencode/opencode.json
             (paired primary checkout OR agent worktree) and stages host
-            skills (delegate-to-grok, preview-ui-walk, workspace-agent-pair)
+            skills (delegate-to-worker, preview-ui-walk, workspace-agent-pair)
             into ~/.config/opencode/skills + project .opencode/skills
   agent     MCP env + real agent binary
 EOF
@@ -1446,7 +1446,7 @@ case "$RUNTIME" in
     done
     set -- "${claude_user_args[@]}"
 
-    # Stage Casein-infra skills (e.g. delegate-to-grok) into this launch's Claude
+    # Stage Casein-infra skills (e.g. delegate-to-worker) into this launch's Claude
     # config home so agents in non-casein workspaces still have them. enforce_owner_auth
     # above sets CLAUDE_CONFIG_DIR when the workspace uses an owner profile; otherwise
     # Claude reads the host global ~/.claude. Opt out with CASEIN_AGENT_SKILLS=0.

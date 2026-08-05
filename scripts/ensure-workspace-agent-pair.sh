@@ -365,7 +365,7 @@ skills = json.load(open(sys.argv[1]))
 cfg = json.load(open(sys.argv[2]))
 ws = sys.argv[3]
 names = {s.get("name") for s in skills}
-need = {"preview-ui-walk", "workspace-agent-pair", "delegate-to-grok"}
+need = {"preview-ui-walk", "workspace-agent-pair", "delegate-to-worker"}
 missing = sorted(need - names)
 print(f"verify: opencode skills present={sorted(names & need)}")
 if missing:
@@ -414,5 +414,5 @@ Next:
   # or Claude / Grok / Codex via:
   #   bash ${ROOT}/scripts/launch-casein-agent.sh <runtime>
 
-Host skills now available: preview-ui-walk, delegate-to-grok, workspace-agent-pair
+Host skills now available: preview-ui-walk, delegate-to-worker, workspace-agent-pair
 EOF
