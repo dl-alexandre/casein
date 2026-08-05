@@ -32,13 +32,38 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     refute find(view, :button, text: "Home")
   end
 
-  test "direct terminal action opens the read-only terminal screen" do
+  test "direct terminal action stays put and explains when no workspace is selected" do
+    SessionConfig.put_pairing("https://casein.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:tap, :open_terminal})
+
+    assert assigns(view).notice == "Open a workspace before Terminal"
+  end
+
+  test "direct terminal action passes an explicit origin-qualified workspace target" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    SessionConfig.pin_workspace("ws-1")
+    SessionConfig.put_resume_context("ws-1")
+
     view =
       SessionDashboardScreen
       |> mount_screen()
       |> render_info({:tap, :open_terminal})
 
     assert navigated_to(view) == CaseinMob.TerminalScreen
+
+    assert view.socket.__mob__.nav_action ==
+             {:push, CaseinMob.TerminalScreen,
+              %{origin_id: "origin-devbox", workspace_id: "ws-1"}}
   end
 
   test "not paired empty state invites pairing" do

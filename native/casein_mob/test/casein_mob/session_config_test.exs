@@ -138,6 +138,119 @@ defmodule CaseinMob.SessionConfigTest do
            }
   end
 
+  test "terminal target is bound to the active origin and selected workspace" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.devbox.test",
+      token: "token"
+    })
+
+    SessionConfig.pin_workspace("ws-1")
+    SessionConfig.put_resume_context("ws-1")
+
+    assert {:ok, %{origin_id: "origin-devbox", origin_name: "Devbox", workspace_id: "ws-1"}} =
+             SessionConfig.terminal_target(%{
+               origin_id: "origin-devbox",
+               workspace_id: "ws-1"
+             })
+
+    assert {:error, :inactive_origin} =
+             SessionConfig.terminal_target(%{
+               origin_id: "origin-old",
+               workspace_id: "ws-1"
+             })
+
+    assert {:error, :workspace_not_selected} =
+             SessionConfig.terminal_target(%{
+               origin_id: "origin-devbox",
+               workspace_id: "stale-ws"
+             })
+  end
+
+  test "terminal target follows profile switches without falling back across origins" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-one",
+      display_name: "One",
+      url: "https://one.test",
+      token: "one-token"
+    })
+
+    SessionConfig.pin_workspace("one-ws")
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-two",
+      display_name: "Two",
+      url: "https://two.test",
+      token: "two-token"
+    })
+
+    SessionConfig.pin_workspace("two-ws")
+
+    assert {:ok, %{origin_id: "origin-two", workspace_id: "two-ws"}} =
+             SessionConfig.default_terminal_target()
+
+    assert {:error, :workspace_not_selected} =
+             SessionConfig.terminal_target(%{workspace_id: "one-ws"})
+
+    assert {:ok, %{origin_id: "origin-one"}} = SessionConfig.activate_origin("origin-one")
+
+    assert {:ok, %{origin_id: "origin-one", workspace_id: "one-ws"}} =
+             SessionConfig.default_terminal_target()
+  end
+
+  test "terminal target is unavailable without an eligible workspace or on a legacy origin" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.devbox.test",
+      token: "token"
+    })
+
+    assert {:error, :workspace_not_selected} = SessionConfig.default_terminal_target()
+
+    SessionConfig.put_pairing("https://devide.devbox.milcgroup.com", "legacy-token")
+
+    assert {:ok, %{origin_id: "origin-devbox"}} =
+             SessionConfig.activate_origin("origin-devbox")
+
+    assert {:error, :inactive_origin} =
+             SessionConfig.terminal_target(%{origin_id: "legacy-origin", workspace_id: "ws"})
+  end
+
+  test "terminal target requires an explicit origin and pinned workspace" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.devbox.test",
+      token: "token"
+    })
+
+    SessionConfig.put_resume_context("resume-only")
+
+    assert {:error, :workspace_not_selected} = SessionConfig.terminal_target(%{})
+
+    assert {:error, :workspace_not_selected} =
+             SessionConfig.terminal_target(%{
+               origin_id: "origin-devbox",
+               workspace_id: "resume-only"
+             })
+  end
+
+  test "active legacy profile is classified as read-only before authentication" do
+    legacy_url = "https://devide.devbox.milcgroup.com"
+    legacy_origin = OriginIdentity.legacy_id(legacy_url)
+
+    SessionConfig.put_pairing(legacy_url, "legacy-token")
+    Mob.State.put(:session_active_host, legacy_origin)
+
+    assert {:error, :legacy_origin} =
+             SessionConfig.terminal_target(%{
+               origin_id: legacy_origin,
+               workspace_id: "ws"
+             })
+  end
+
   test "clearing all state clears resume context" do
     SessionConfig.put_pairing("https://stored.test", "stored-token")
     SessionConfig.pin_workspace("ws-1")

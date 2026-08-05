@@ -131,10 +131,10 @@ defmodule CaseinMob.SessionClient do
   end
 
   @doc "Open one server-owned, read-only terminal for an authorized workspace."
-  @spec watch_terminal(String.t(), pid()) :: :ok
-  def watch_terminal(workspace_id, subscriber \\ self())
-      when is_binary(workspace_id) and is_pid(subscriber) do
-    cast({:watch_terminal, workspace_id, subscriber})
+  @spec watch_terminal(String.t(), String.t(), pid()) :: :ok
+  def watch_terminal(origin_id, workspace_id, subscriber \\ self())
+      when is_binary(origin_id) and is_binary(workspace_id) and is_pid(subscriber) do
+    cast({:watch_terminal, origin_id, workspace_id, subscriber})
   end
 
   @doc "Delete the active server-owned terminal and forget all local terminal state."
@@ -576,9 +576,16 @@ defmodule CaseinMob.SessionClient do
   end
 
   def handle_cast({:watch_terminal, workspace_id, subscriber}, socket) do
+    handle_cast(
+      {:watch_terminal, Map.get(socket.assigns, :configured_origin_id), workspace_id, subscriber},
+      socket
+    )
+  end
+
+  def handle_cast({:watch_terminal, origin_id, workspace_id, subscriber}, socket) do
     socket =
       socket
-      |> replace_terminal_subscription(workspace_id, subscriber)
+      |> replace_terminal_subscription(origin_id, workspace_id, subscriber)
       |> watch_topic(@mobile_cards_topic, subscriber)
       |> maybe_request_terminal_control()
 
@@ -978,21 +985,16 @@ defmodule CaseinMob.SessionClient do
 
   # Terminal state is intentionally separate from topic_snapshots. Raw grants
   # and terminal bytes are connection-scoped and must never enter replay/cache.
-  defp replace_terminal_subscription(socket, workspace_id, subscriber) do
+  defp replace_terminal_subscription(socket, origin_id, workspace_id, subscriber) do
     current = socket.assigns.mobile_terminal
 
-    socket =
-      if is_map(current) and
-           (current.workspace_id != workspace_id or current.subscriber != subscriber) do
-        socket |> request_terminal_delete() |> purge_terminal(:replaced)
-      else
-        socket
-      end
+    socket = replace_terminal_target(socket, current, origin_id, workspace_id, subscriber)
 
     terminal =
       socket.assigns.mobile_terminal ||
         %{
           subscriber: subscriber,
+          origin_id: origin_id,
           workspace_id: workspace_id,
           status: :connecting,
           lease: nil,
@@ -1013,6 +1015,49 @@ defmodule CaseinMob.SessionClient do
     |> notify_terminal_status()
   end
 
+  # A screen remount can replace its process while the create request is still
+  # in flight. Keep ownership of the same workspace request and transfer only
+  # the local subscriber so the server sees one create, not two competing
+  # leases. A workspace change remains a real replacement and follows the
+  # delete/purge path.
+  defp replace_terminal_target(
+         socket,
+         %{origin_id: origin_id, workspace_id: workspace_id} = current,
+         origin_id,
+         workspace_id,
+         subscriber
+       )
+       when current.subscriber != subscriber do
+    old_subscriber = current.subscriber
+
+    subscribers =
+      Map.update(
+        socket.assigns.subscribers,
+        @mobile_cards_topic,
+        MapSet.new([subscriber]),
+        &MapSet.put(&1, subscriber)
+      )
+
+    socket
+    |> update_terminal(&Map.put(&1, :subscriber, subscriber))
+    |> ensure_subscriber_monitor(subscriber)
+    |> assign(:subscribers, subscribers)
+    |> drop_subscriber(@mobile_cards_topic, old_subscriber)
+  end
+
+  defp replace_terminal_target(socket, current, origin_id, workspace_id, subscriber)
+       when is_map(current) do
+    if Map.get(current, :origin_id) != origin_id or current.workspace_id != workspace_id or
+         current.subscriber != subscriber do
+      socket |> request_terminal_delete() |> purge_terminal(:replaced)
+    else
+      socket
+    end
+  end
+
+  defp replace_terminal_target(socket, _current, _origin_id, _workspace_id, _subscriber),
+    do: socket
+
   defp maybe_request_terminal_control(%{assigns: %{mobile_terminal: nil}} = socket), do: socket
 
   defp maybe_request_terminal_control(socket) do
@@ -1031,6 +1076,9 @@ defmodule CaseinMob.SessionClient do
       not outbound_ready?(socket, @mobile_cards_topic) ->
         socket
 
+      Map.get(terminal, :origin_id) != Map.get(socket.assigns, :configured_origin_id) ->
+        terminal_error(socket, :inactive_origin)
+
       is_map(terminal.lease) ->
         push_terminal_control(socket, :refresh, "terminal_refresh", %{
           lease_id: terminal.lease.id
@@ -1038,6 +1086,7 @@ defmodule CaseinMob.SessionClient do
 
       true ->
         push_terminal_control(socket, :create, "terminal_create", %{
+          origin_id: Map.get(terminal, :origin_id),
           workspace_id: terminal.workspace_id,
           request_id: Ecto.UUID.generate()
         })
@@ -1047,7 +1096,15 @@ defmodule CaseinMob.SessionClient do
   defp push_terminal_control(socket, operation, event, payload) do
     case push(socket, @mobile_cards_topic, event, payload) do
       {:ok, ref} ->
-        refs = Map.put(socket.assigns.terminal_control_refs, ref, operation)
+        terminal = socket.assigns.mobile_terminal
+
+        request = %{
+          operation: operation,
+          origin_id: Map.get(terminal, :origin_id),
+          workspace_id: terminal.workspace_id
+        }
+
+        refs = Map.put(socket.assigns.terminal_control_refs, ref, request)
 
         socket
         |> assign(:terminal_control_refs, refs)
@@ -1086,10 +1143,15 @@ defmodule CaseinMob.SessionClient do
     end
   end
 
-  defp handle_terminal_control_reply(operation, {:ok, payload}, socket)
+  defp handle_terminal_control_reply(
+         %{operation: operation} = request,
+         {:ok, payload},
+         socket
+       )
        when operation in [:create, :refresh] and is_map(payload) do
     with {:ok, lease, topic, grant, expires_at} <-
            validate_terminal_control_reply(payload, operation),
+         :ok <- validate_terminal_reply_scope(request, socket, lease),
          {:ok, stream} <-
            MobileTerminalStream.new(
              lease_id: lease.id,
@@ -1129,7 +1191,31 @@ defmodule CaseinMob.SessionClient do
 
       {:ok, joined}
     else
-      _ -> {:ok, terminal_error(socket, :invalid_payload)}
+      {:error, :identity_mismatch} ->
+        {:ok, reject_terminal_identity(socket)}
+
+      _ ->
+        {:ok, terminal_error(socket, :invalid_payload)}
+    end
+  end
+
+  defp reject_terminal_identity(socket) do
+    socket
+    |> purge_terminal_transport({:error, :identity_mismatch})
+    |> update_terminal(&Map.put(&1, :lease, nil))
+    |> terminal_error(:identity_mismatch)
+  end
+
+  defp validate_terminal_reply_scope(request, socket, lease) do
+    terminal = socket.assigns.mobile_terminal
+
+    if is_map(terminal) and request.origin_id == Map.get(terminal, :origin_id) and
+         request.origin_id == Map.get(socket.assigns, :configured_origin_id) and
+         request.workspace_id == terminal.workspace_id and
+         request.workspace_id == lease.workspace_id do
+      :ok
+    else
+      {:error, :identity_mismatch}
     end
   end
 

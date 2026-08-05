@@ -77,6 +77,10 @@ defmodule CaseinMob.SessionDetailScreen do
     {:noreply, Mob.Socket.pop_screen(socket)}
   end
 
+  def handle_info({:tap, :open_terminal}, socket) do
+    {:noreply, open_terminal(socket)}
+  end
+
   def handle_info({:tap, :pin}, socket) do
     if is_binary(socket.assigns.workspace_id),
       do: SessionConfig.pin_workspace(socket.assigns.workspace_id)
@@ -258,9 +262,35 @@ defmodule CaseinMob.SessionDetailScreen do
           },
           children: []
         },
+        %{
+          type: :button,
+          props: %{
+            text: "Terminal",
+            background: :surface_raised,
+            text_color: :on_surface,
+            fill_width: false,
+            padding: :space_sm,
+            height: 44.0,
+            on_tap: {self(), :open_terminal}
+          },
+          children: []
+        },
         chip(status_label(status), status_color(status))
       ]
     }
+  end
+
+  defp open_terminal(socket) do
+    case SessionConfig.selected_terminal_target(socket.assigns.workspace_id) do
+      {:ok, target} ->
+        Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen, %{
+          workspace_id: target.workspace_id,
+          origin_id: target.origin_id
+        })
+
+      {:error, _reason} ->
+        temporary_notice(socket, "Terminal is unavailable for this workspace")
+    end
   end
 
   defp status_banner(snap, status) do

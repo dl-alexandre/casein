@@ -259,6 +259,52 @@ defmodule CaseinMob.SessionConfig do
     end
   end
 
+  @doc "Resolve one origin-qualified workspace for the disposable mobile terminal."
+  @spec terminal_target(map()) :: {:ok, map()} | {:error, atom()}
+  def terminal_target(params) when is_map(params) do
+    explicit_origin_id = present(map_value(params, :origin_id))
+    explicit_workspace_id = present(map_value(params, :workspace_id))
+
+    with true <- is_binary(explicit_origin_id) and is_binary(explicit_workspace_id),
+         {:ok, profile} <- terminal_profile(),
+         :ok <- validate_terminal_origin(explicit_origin_id, profile.origin_id),
+         true <- terminal_workspace_eligible?(explicit_workspace_id) do
+      {:ok,
+       %{
+         origin_id: profile.origin_id,
+         origin_name: profile.display_name,
+         workspace_id: explicit_workspace_id
+       }}
+    else
+      false -> {:error, :workspace_not_selected}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def terminal_target(_params), do: {:error, :invalid_target}
+
+  @doc "Resolve the active profile's explicitly pinned default terminal target."
+  @spec default_terminal_target() :: {:ok, map()} | {:error, atom()}
+  def default_terminal_target do
+    with {:ok, profile} <- terminal_profile(),
+         workspace_id when is_binary(workspace_id) <- List.first(pinned_workspaces()) do
+      terminal_target(%{origin_id: profile.origin_id, workspace_id: workspace_id})
+    else
+      nil -> {:error, :workspace_not_selected}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "Resolve one explicitly selected pinned workspace on the active origin."
+  @spec selected_terminal_target(String.t()) :: {:ok, map()} | {:error, atom()}
+  def selected_terminal_target(workspace_id) when is_binary(workspace_id) do
+    with {:ok, profile} <- terminal_profile() do
+      terminal_target(%{origin_id: profile.origin_id, workspace_id: workspace_id})
+    end
+  end
+
+  def selected_terminal_target(_workspace_id), do: {:error, :workspace_not_selected}
+
   @spec put_resume_context(String.t(), keyword()) :: :ok
   def put_resume_context(workspace_id, opts \\ []) when is_binary(workspace_id) do
     if String.trim(workspace_id) == "" do
@@ -413,6 +459,26 @@ defmodule CaseinMob.SessionConfig do
 
   defp storage_key(:pinned_workspaces), do: @pinned_key
   defp storage_key(:resume_context), do: @resume_key
+
+  defp validate_terminal_origin(origin_id, origin_id), do: :ok
+  defp validate_terminal_origin(_origin_id, _active_origin_id), do: {:error, :inactive_origin}
+
+  defp terminal_workspace_eligible?(workspace_id) do
+    workspace_id in pinned_workspaces()
+  end
+
+  defp terminal_profile do
+    case runtime_default_pairing() || active_profile() do
+      %{read_only: true} ->
+        {:error, :legacy_origin}
+
+      %{url: url, token: token} = profile when is_binary(url) and is_binary(token) ->
+        {:ok, normalize_profile(profile)}
+
+      _ ->
+        {:error, :not_authenticated}
+    end
+  end
 
   defp normalize_url(url) do
     OriginIdentity.normalize_url(url)

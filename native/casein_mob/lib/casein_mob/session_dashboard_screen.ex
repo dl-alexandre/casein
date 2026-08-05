@@ -208,11 +208,11 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   def handle_info({:tap, :open_terminal}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen)}
+    {:noreply, open_terminal(socket)}
   end
 
   def handle_info({:alert, :open_terminal}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen)}
+    {:noreply, open_terminal(socket)}
   end
 
   def handle_info({:alert, :open_apps}, socket) do
@@ -2295,6 +2295,25 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   defp open_workspace(socket, _workspace_id), do: socket
+
+  defp open_terminal(socket) do
+    case SessionConfig.default_terminal_target() do
+      {:ok, target} ->
+        Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen, %{
+          workspace_id: target.workspace_id,
+          origin_id: target.origin_id
+        })
+
+      {:error, :workspace_not_selected} ->
+        Mob.Socket.assign(socket, :notice, "Open a workspace before Terminal")
+
+      {:error, :inactive_origin} ->
+        Mob.Socket.assign(socket, :notice, "Selected workspace belongs to an inactive origin")
+
+      {:error, _reason} ->
+        Mob.Socket.assign(socket, :notice, "Terminal is unavailable for this origin")
+    end
+  end
 
   defp resume_last_session(socket) do
     case socket.assigns[:resume_context] || SessionConfig.resume_context() do

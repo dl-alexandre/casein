@@ -1443,6 +1443,157 @@ defmodule CaseinMob.SessionClientTest do
     refute_receive {:mobile_terminal_baseline, _, _}
   end
 
+  test "repeated watch for the same selected terminal emits terminal_create exactly once" do
+    push_sink = start_push_sink(self())
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Socket.assign(:configured_origin_id, "origin-1")
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:noreply, creating} =
+             SessionClient.handle_cast(
+               {:watch_terminal, "origin-1", "ws-1", self()},
+               socket
+             )
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_create",
+                      payload: %{workspace_id: "ws-1"}
+                    }}
+
+    assert {:noreply, still_creating} =
+             SessionClient.handle_cast({:watch_terminal, "ws-1", self()}, creating)
+
+    assert still_creating.assigns.mobile_terminal.control_ref ==
+             creating.assigns.mobile_terminal.control_ref
+
+    refute_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_create"}}
+  end
+
+  test "rapid remount transfers an in-flight terminal create to the new subscriber exactly once" do
+    push_sink = start_push_sink(self())
+
+    new_subscriber =
+      start_supervised!(%{
+        id: make_ref(),
+        start: {Task, :start_link, [fn -> receive do: (:stop -> :ok) end]}
+      })
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Socket.assign(:configured_origin_id, "origin-1")
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:noreply, creating} =
+             SessionClient.handle_cast(
+               {:watch_terminal, "origin-1", "ws-1", self()},
+               socket
+             )
+
+    assert_receive {:push_message,
+                    %Slipstream.Commands.PushMessage{
+                      event: "terminal_create",
+                      payload: %{workspace_id: "ws-1"}
+                    }}
+
+    create_ref = creating.assigns.mobile_terminal.control_ref
+
+    assert {:noreply, remounted} =
+             SessionClient.handle_cast(
+               {:watch_terminal, "origin-1", "ws-1", new_subscriber},
+               creating
+             )
+
+    assert remounted.assigns.mobile_terminal.subscriber == new_subscriber
+    assert remounted.assigns.mobile_terminal.control_ref == create_ref
+    assert remounted.assigns.mobile_terminal.status == :create
+    assert remounted.assigns.subscribers["mobile:user:me"] == MapSet.new([new_subscriber])
+    refute Map.has_key?(remounted.assigns.subscriber_monitors, self())
+    assert is_reference(remounted.assigns.subscriber_monitors[new_subscriber])
+    refute_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_create"}}
+    refute_receive {:connection_command, %Slipstream.Commands.LeaveTopic{}}
+    refute_receive {:connection_command, %Slipstream.Commands.JoinTopic{topic: "mobile:user:me"}}
+
+    assert {:ok, resolved} =
+             SessionClient.handle_reply(
+               create_ref,
+               {:ok, terminal_control_reply("created")},
+               remounted
+             )
+
+    assert resolved.assigns.mobile_terminal.subscriber == new_subscriber
+    assert resolved.assigns.mobile_terminal.lease.workspace_id == "ws-1"
+  end
+
+  test "terminal create fails closed when expected origin changed before the watch cast" do
+    push_sink = start_push_sink(self())
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Socket.assign(:configured_origin_id, "origin-new")
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:noreply, rejected} =
+             SessionClient.handle_cast(
+               {:watch_terminal, "origin-old", "ws-1", self()},
+               socket
+             )
+
+    assert rejected.assigns.mobile_terminal.status == {:error, :inactive_origin}
+    refute_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_create"}}
+  end
+
+  test "terminal create reply revalidates stored origin and workspace before binding a lease" do
+    push_sink = start_push_sink(self())
+
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> Socket.assign(:configured_origin_id, "origin-1")
+      |> Map.put(:channel_pid, push_sink)
+
+    assert {:noreply, creating} =
+             SessionClient.handle_cast(
+               {:watch_terminal, "origin-1", "ws-1", self()},
+               socket
+             )
+
+    assert_receive {:push_message, %Slipstream.Commands.PushMessage{event: "terminal_create"}}
+    ref = creating.assigns.mobile_terminal.control_ref
+
+    switched = Socket.assign(creating, :configured_origin_id, "origin-other")
+
+    assert {:ok, rejected_origin} =
+             SessionClient.handle_reply(
+               ref,
+               {:ok, terminal_control_reply("created")},
+               switched
+             )
+
+    assert rejected_origin.assigns.mobile_terminal.lease == nil
+    assert rejected_origin.assigns.mobile_terminal.stream == nil
+    assert rejected_origin.assigns.mobile_terminal.status == {:error, :identity_mismatch}
+
+    wrong_workspace_reply =
+      put_in(terminal_control_reply("created"), ["lease", "workspace_id"], "ws-other")
+
+    assert {:ok, rejected_workspace} =
+             SessionClient.handle_reply(ref, {:ok, wrong_workspace_reply}, creating)
+
+    assert rejected_workspace.assigns.mobile_terminal.lease == nil
+    assert rejected_workspace.assigns.mobile_terminal.stream == nil
+    assert rejected_workspace.assigns.mobile_terminal.status == {:error, :identity_mismatch}
+  end
+
   test "terminal background purges bytes and foreground refreshes the retained lease" do
     push_sink = start_push_sink(self())
 
