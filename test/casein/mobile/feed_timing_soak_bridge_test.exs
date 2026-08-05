@@ -79,11 +79,15 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
 
     on_exit(fn -> File.rm(stderr_path) end)
 
+    # :code.which/1 returns the atom :cover_compiled (not a path charlist) when
+    # the module is cover-instrumented, which is exactly how the pre-push gate
+    # runs the suite. Fall back to the app's ebin dir in that case, otherwise
+    # this fails on every cover run and burns the gate's single-flake budget.
     ebin_dir =
-      FeedTimingSoakBridge
-      |> :code.which()
-      |> List.to_string()
-      |> Path.dirname()
+      case :code.which(FeedTimingSoakBridge) do
+        path when is_list(path) -> path |> List.to_string() |> Path.dirname()
+        _ -> Application.app_dir(:casein, "ebin")
+      end
 
     eval = """
     client_name =

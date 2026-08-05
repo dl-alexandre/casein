@@ -60,6 +60,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
               autocomplete="off"
               spellcheck="false"
               placeholder="Search sessions, windows, files, commands…"
+              phx-debounce="150"
               phx-mounted={Phoenix.LiveView.JS.focus()}
               class="w-full bg-transparent text-sm px-2 py-1.5 outline-none placeholder:text-base-content/40"
             />

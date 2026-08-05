@@ -3,6 +3,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
 
   alias Casein.Agents.AgentPane
   alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxPolicy
   alias Casein.Terminals.TmuxTopology
   alias Casein.Workspaces
   alias Casein.Workspaces.Scratch
@@ -109,8 +110,14 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
 
   defp workspace_matches?(session, params) do
     case workspace_prefixes(params) do
-      [] -> true
-      prefixes -> Enum.any?(prefixes, &String.starts_with?(session, &1))
+      [] ->
+        true
+
+      prefixes ->
+        # Full <prefix><sid> match, not a bare prefix: `casein_acme_` is a
+        # genuine prefix of workspace `acme_prod`'s `casein_acme_prod_1`, so
+        # String.starts_with?/2 let a token scoped to `acme` drive `acme_prod`.
+        Enum.any?(prefixes, &TmuxPolicy.session_in_namespace?(session, &1))
     end
   end
 
@@ -140,8 +147,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
         Enum.reject(sessions, &scratch_session?/1)
 
       prefixes ->
+        # Same exact-boundary rule as workspace_matches?/2 — this is the listing
+        # that leaks a neighbouring workspace's session names to a scoped token.
         Enum.filter(sessions, fn %{session: name} ->
-          Enum.any?(prefixes, &String.starts_with?(name, &1))
+          Enum.any?(prefixes, &TmuxPolicy.session_in_namespace?(name, &1))
         end)
     end
   end

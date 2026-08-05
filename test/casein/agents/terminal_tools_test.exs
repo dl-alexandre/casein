@@ -280,8 +280,8 @@ defmodule Casein.Agents.TerminalToolsTest do
 
   test "terminal_context recommends the attached session when ambiguous" do
     prefix = Tmux.workspace_session_prefix("alpha")
-    stale = prefix <> "_stale"
-    live = prefix <> "_live"
+    stale = prefix <> "stale"
+    live = prefix <> "live"
 
     Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
@@ -308,8 +308,8 @@ defmodule Casein.Agents.TerminalToolsTest do
 
   test "terminal_context recommends the most recent session when none is attached" do
     prefix = Tmux.workspace_session_prefix("alpha")
-    older = prefix <> "_older"
-    newer = prefix <> "_newer"
+    older = prefix <> "older"
+    newer = prefix <> "newer"
 
     Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
@@ -337,8 +337,8 @@ defmodule Casein.Agents.TerminalToolsTest do
 
     test "terminal_context resolves ambiguous sessions to the caller's session" do
       prefix = Tmux.workspace_session_prefix("alpha")
-      other = prefix <> "_other"
-      mine = prefix <> "_mine"
+      other = prefix <> "other"
+      mine = prefix <> "mine"
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
         # The other session is more recent AND attached — both heuristics
@@ -657,8 +657,8 @@ defmodule Casein.Agents.TerminalToolsTest do
 
   test "default session selection is ambiguous when multiple workspace sessions exist" do
     prefix = Tmux.workspace_session_prefix("alpha")
-    session_a = prefix <> "_a"
-    session_b = prefix <> "_b"
+    session_a = prefix <> "a"
+    session_b = prefix <> "b"
 
     Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
