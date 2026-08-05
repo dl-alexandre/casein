@@ -15,7 +15,8 @@ defmodule Casein.Mobile.TerminalSessionsTest do
               ensure_error: nil,
               ensure_count: 0,
               kill_error: nil,
-              kill_blocker: nil
+              kill_blocker: nil,
+              disappear_on_list: false
             }
           end,
           name: __MODULE__
@@ -37,10 +38,17 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     end
 
     def list_session_panes(session) do
-      Agent.get(__MODULE__, fn state ->
-        case get_in(state, [:sessions, session, :pane]) do
-          nil -> []
-          pane -> [pane]
+      Agent.get_and_update(__MODULE__, fn state ->
+        if state.disappear_on_list and Map.has_key?(state.sessions, session) do
+          {[], %{state | sessions: Map.delete(state.sessions, session), disappear_on_list: false}}
+        else
+          panes =
+            case get_in(state, [:sessions, session, :pane]) do
+              nil -> []
+              pane -> [pane]
+            end
+
+          {panes, state}
         end
       end)
     end
@@ -95,6 +103,10 @@ defmodule Casein.Mobile.TerminalSessionsTest do
       )
     end
 
+    def disappear_on_next_list do
+      Agent.update(__MODULE__, &%{&1 | disappear_on_list: true})
+    end
+
     def replace_pane(session, pane_id, role) do
       Agent.update(
         __MODULE__,
@@ -103,8 +115,31 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     end
   end
 
+  defmodule TerminalControl do
+    def start_link do
+      Agent.start_link(fn -> %{stop_blocker: nil} end, name: __MODULE__)
+    end
+
+    def stop_shell_owner(_workspace_id, _sid), do: :ok
+
+    def stop_session_exact(workspace_key, sid) do
+      if blocker = Agent.get(__MODULE__, & &1.stop_blocker) do
+        send(blocker, {:exact_stop_started, self(), workspace_key, sid})
+
+        receive do
+          :continue_exact_stop -> :ok
+        end
+      else
+        :ok
+      end
+    end
+
+    def block_stop(pid), do: Agent.update(__MODULE__, &%{&1 | stop_blocker: pid})
+  end
+
   setup do
     start_supervised!(%{id: Tmux, start: {Tmux, :start_link, []}})
+    start_supervised!(%{id: TerminalControl, start: {TerminalControl, :start_link, []}})
     :ok
   end
 
@@ -247,6 +282,27 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     assert Tmux.kills() == []
   end
 
+  test "pane replacement during exact owner cutoff is revalidated before kill" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    TerminalControl.block_stop(self())
+    tmux_session = lease.tmux_session
+    sid = lease.sid
+
+    task =
+      Task.async(fn ->
+        TerminalSessions.delete(lease.id, tmux: Tmux, terminal_control: TerminalControl)
+      end)
+
+    assert_receive {:exact_stop_started, stop_pid, "workspace", ^sid}
+    Tmux.replace_pane(tmux_session, "%replacement", lease.pane_role)
+    send(stop_pid, :continue_exact_stop)
+
+    assert {:error, :pane_identity_mismatch} = Task.await(task, 5_000)
+    assert Repo.get!(TerminalSession, lease.id).state == "deleting"
+    assert Tmux.session_exists?(tmux_session)
+    assert Tmux.kills() == []
+  end
+
   test "reaper completes a deleting lease whose exact tmux target is already absent" do
     now = ~U[2026-08-05 10:00:00Z]
     first_attrs = attrs()
@@ -272,6 +328,16 @@ defmodule Casein.Mobile.TerminalSessionsTest do
 
     assert deleted.state == "deleted"
     assert Tmux.session_exists?(sibling.tmux_session)
+    assert Tmux.kills() == []
+  end
+
+  test "teardown treats disappearance between exists and topology reads as absent" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    Tmux.disappear_on_next_list()
+
+    assert {:ok, deleted} = TerminalSessions.delete(lease.id, tmux: Tmux)
+    assert deleted.state == "deleted"
+    refute Tmux.session_exists?(lease.tmux_session)
     assert Tmux.kills() == []
   end
 

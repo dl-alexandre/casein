@@ -222,11 +222,14 @@ defmodule Casein.Mobile.TerminalSessions do
 
   defp teardown(lease, opts) do
     tmux = adapter(opts)
+    terminal_control = Keyword.get(opts, :terminal_control, Terminals)
 
     with :ok <- verify_identity(lease),
-         {:ok, topology_state} <- verify_live_topology(lease, tmux),
-         :ok <- Terminals.stop_shell_owner(lease.workspace_id, lease.sid),
-         :ok <- Terminals.stop_session_exact(lease.workspace_key, lease.sid),
+         {:ok, initial_topology} <- verify_live_topology(lease, tmux),
+         :ok <- terminal_control.stop_shell_owner(lease.workspace_id, lease.sid),
+         :ok <- terminal_control.stop_session_exact(lease.workspace_key, lease.sid),
+         {:ok, final_topology} <- verify_live_topology(lease, tmux),
+         {:ok, topology_state} <- reconcile_topology(initial_topology, final_topology),
          :ok <- maybe_kill_tmux(tmux, lease.tmux_session, topology_state),
          false <- tmux.session_exists?(lease.tmux_session) do
       now = Keyword.get(opts, :now, DateTime.utc_now())
@@ -267,7 +270,11 @@ defmodule Casein.Mobile.TerminalSessions do
           end
 
         [] ->
-          {:error, :missing_terminal_pane}
+          if tmux.session_exists?(lease.tmux_session) do
+            {:error, :missing_terminal_pane}
+          else
+            {:ok, :absent}
+          end
 
         _panes ->
           {:error, :unexpected_topology}
@@ -276,6 +283,11 @@ defmodule Casein.Mobile.TerminalSessions do
       {:ok, :absent}
     end
   end
+
+  defp reconcile_topology(:present, :present), do: {:ok, :present}
+  defp reconcile_topology(:present, :absent), do: {:ok, :absent}
+  defp reconcile_topology(:absent, :absent), do: {:ok, :absent}
+  defp reconcile_topology(:absent, :present), do: {:error, :terminal_session_reappeared}
 
   defp maybe_kill_tmux(tmux, tmux_session, :present),
     do: normalize_kill(tmux.kill(tmux_session))
