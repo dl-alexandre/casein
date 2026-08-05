@@ -160,7 +160,8 @@ defmodule CaseinMob.IOSFeedLifecycleHarnessContractTest do
     end
 
     assert source_files_for(project, "BB000008") == [
-             "BB000001 /* CaseinMobSoakUITests.swift in Sources */"
+             "BB000001 /* CaseinMobSoakUITests.swift in Sources */",
+             "DD000001 /* CaseinTerminalRendererProbeUITests.swift in Sources */"
            ]
 
     assert source_files_for(project, "CC000008") == [
