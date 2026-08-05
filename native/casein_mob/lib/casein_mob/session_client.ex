@@ -44,6 +44,7 @@ defmodule CaseinMob.SessionClient do
   @name __MODULE__
   @mobile_cards_topic "mobile:user:me"
   @terminal_delete_origin_limit 8
+  @terminal_join_timeout_ms 5_000
 
   # ── Public API ──────────────────────────────────────────────────────────────
 
@@ -337,14 +338,20 @@ defmodule CaseinMob.SessionClient do
         end
 
       terminal_topic?(topic) ->
-        if match?({:error, _}, reply) do
-          {:ok,
-           socket
-           |> record_terminal_stage(:child_join_reply_received)
-           |> record_terminal_stage(:baseline_rejected)
-           |> terminal_join_rejected(reply)}
+        if current_terminal_join_reply?(socket, topic, reply) do
+          socket = clear_terminal_join_timeout(socket)
+
+          if match?({:error, _}, reply) do
+            {:ok,
+             socket
+             |> record_terminal_stage(:child_join_reply_received)
+             |> record_terminal_stage(:baseline_rejected)
+             |> terminal_join_rejected(reply)}
+          else
+            accept_terminal_frame(socket, topic, "terminal_baseline", reply)
+          end
         else
-          accept_terminal_frame(socket, topic, "terminal_baseline", reply)
+          {:ok, socket}
         end
 
       true ->
@@ -436,7 +443,7 @@ defmodule CaseinMob.SessionClient do
 
   @impl Slipstream
   def handle_topic_close(topic, reason, socket) do
-    if terminal_topic?(topic) do
+    if current_terminal_topic?(socket, topic) do
       {:ok, terminal_closed(socket, reason)}
     else
       notify_status(socket, topic, error_status(reason))
@@ -760,6 +767,18 @@ defmodule CaseinMob.SessionClient do
     end
   end
 
+  def handle_info({:terminal_join_timeout, token, topic, generation}, socket) do
+    terminal = socket.assigns.mobile_terminal
+
+    if is_map(terminal) and Map.get(terminal, :join_timeout_token) == token and
+         terminal.channel_topic == topic and terminal.connection_generation == generation and
+         terminal.status == :awaiting_baseline do
+      {:noreply, schedule_terminal_refresh(socket, :unavailable)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   # ── Internals ───────────────────────────────────────────────────────────────
@@ -1018,6 +1037,8 @@ defmodule CaseinMob.SessionClient do
           retry_attempt: 0,
           retry_token: nil,
           retry_timer: nil,
+          join_timeout_token: nil,
+          join_timeout_timer: nil,
           diagnostic: MobileTerminalDiagnostic.new()
         }
 
@@ -1166,6 +1187,8 @@ defmodule CaseinMob.SessionClient do
          socket
        )
        when operation in [:create, :refresh] and is_map(payload) do
+    connection_generation = terminal_join_generation(socket)
+
     with {:ok, lease, topic, grant, expires_at} <-
            validate_terminal_control_reply(payload, operation),
          :ok <- validate_terminal_reply_scope(request, socket, lease),
@@ -1173,10 +1196,8 @@ defmodule CaseinMob.SessionClient do
            MobileTerminalStream.new(
              lease_id: lease.id,
              lifecycle_generation: lease.lifecycle_generation,
-             connection_generation: terminal_connection_generation(socket)
+             connection_generation: connection_generation
            ) do
-      connection_generation = terminal_connection_generation(socket)
-
       socket =
         socket
         |> record_terminal_stage(:control_reply_accepted)
@@ -1204,11 +1225,14 @@ defmodule CaseinMob.SessionClient do
       # The one-time grant exists only in the outbound join command. Do not
       # retain it in assigns or Slipstream's reconnectable join configuration.
       joined =
-        update_in(joined.joins[topic].params, fn _params ->
+        joined
+        |> put_in([Access.key(:joins), topic, Access.key(:status)], :requested)
+        |> put_in(
+          [Access.key(:joins), topic, Access.key(:params)],
           %{"connection_generation" => connection_generation}
-        end)
+        )
 
-      {:ok, joined}
+      {:ok, arm_terminal_join_timeout(joined, topic, connection_generation)}
     else
       {:error, :identity_mismatch} ->
         {:ok,
@@ -1305,8 +1329,67 @@ defmodule CaseinMob.SessionClient do
 
   defp valid_terminal_lease?(_lease, _topic), do: false
 
+  defp current_terminal_topic?(socket, topic) do
+    terminal = socket.assigns.mobile_terminal
+    is_map(terminal) and terminal.channel_topic == topic
+  end
+
+  defp current_terminal_join_reply?(socket, topic, {:error, _reply}) do
+    terminal = socket.assigns.mobile_terminal
+
+    is_map(terminal) and terminal.channel_topic == topic and
+      terminal.status == :awaiting_baseline and
+      is_reference(Map.get(terminal, :join_timeout_token))
+  end
+
+  defp current_terminal_join_reply?(socket, topic, reply) when is_map(reply) do
+    terminal = socket.assigns.mobile_terminal
+    generation = payload_value(reply, :connection_generation)
+
+    is_map(terminal) and terminal.channel_topic == topic and
+      terminal.status == :awaiting_baseline and
+      is_reference(Map.get(terminal, :join_timeout_token)) and
+      is_binary(generation) and generation == terminal.connection_generation
+  end
+
+  defp current_terminal_join_reply?(_socket, _topic, _reply), do: false
+
+  defp arm_terminal_join_timeout(socket, topic, generation) do
+    socket = clear_terminal_join_timeout(socket)
+    token = make_ref()
+
+    timer =
+      Process.send_after(
+        self(),
+        {:terminal_join_timeout, token, topic, generation},
+        @terminal_join_timeout_ms
+      )
+
+    update_terminal(socket, fn terminal ->
+      terminal
+      |> Map.put(:join_timeout_token, token)
+      |> Map.put(:join_timeout_timer, timer)
+    end)
+  end
+
+  defp clear_terminal_join_timeout(socket) do
+    terminal = socket.assigns.mobile_terminal
+    timer = if is_map(terminal), do: Map.get(terminal, :join_timeout_timer)
+    if is_reference(timer), do: Process.cancel_timer(timer)
+
+    update_terminal(socket, fn current ->
+      current
+      |> Map.put(:join_timeout_token, nil)
+      |> Map.put(:join_timeout_timer, nil)
+    end)
+  end
+
   defp terminal_connection_generation(socket) do
     get_in(socket.assigns, [:timing_context, :generation])
+  end
+
+  defp terminal_join_generation(socket) do
+    terminal_connection_generation(socket) <> ":" <> Ecto.UUID.generate()
   end
 
   defp accept_terminal_frame(socket, topic, expected_event, payload) do
@@ -1709,10 +1792,18 @@ defmodule CaseinMob.SessionClient do
     topic = terminal.channel_topic
     if is_reference(terminal.retry_timer), do: Process.cancel_timer(terminal.retry_timer)
 
+    if is_reference(Map.get(terminal, :join_timeout_timer)),
+      do: Process.cancel_timer(terminal.join_timeout_timer)
+
     socket =
       if is_binary(topic) do
         socket = if joined?(socket, topic), do: leave(socket, topic), else: socket
-        %{socket | joins: Map.delete(socket.joins, topic)}
+
+        if match?({:resync, _reason}, status) do
+          close_terminal_join(socket, topic)
+        else
+          %{socket | joins: Map.delete(socket.joins, topic)}
+        end
       else
         socket
       end
@@ -1729,11 +1820,24 @@ defmodule CaseinMob.SessionClient do
           stream: nil,
           control_ref: nil,
           retry_token: nil,
-          retry_timer: nil
+          retry_timer: nil,
+          join_timeout_token: nil,
+          join_timeout_timer: nil
       }
     end)
     |> retain_terminal_delete_refs()
     |> notify_terminal_status()
+  end
+
+  defp close_terminal_join(socket, topic) do
+    case Map.fetch(socket.joins, topic) do
+      {:ok, join} ->
+        closed = join |> Map.put(:status, :closed) |> Map.put(:params, %{})
+        %{socket | joins: Map.put(socket.joins, topic, closed)}
+
+      :error ->
+        socket
+    end
   end
 
   defp retain_terminal_delete_refs(socket) do
