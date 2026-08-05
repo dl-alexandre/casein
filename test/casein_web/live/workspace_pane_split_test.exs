@@ -686,6 +686,93 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       refute Casein.Terminals.WindowTrash.pending?(session, "@0")
     end
 
+    test "a hidden window leaves no numbering gap and no cycling dead spot", %{
+      conn: conn,
+      workspace_name: workspace_name,
+      workspace_path: workspace_path
+    } do
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
+      prev_grace = Application.get_env(:casein, :window_trash_grace_ms)
+      prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+      prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+      prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+      session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :window_trash_grace_ms, 60_000)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session =>
+          Enum.map(
+            [{"@0", 0, "alpha", true}, {"@1", 1, "beta", false}, {"@2", 2, "gamma", false}],
+            fn
+              {id, index, name, active} ->
+                %{
+                  id: id,
+                  index: index,
+                  name: name,
+                  active: active,
+                  panes: 1,
+                  activity: activity_now,
+                  current_command: "bash"
+                }
+            end
+          )
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session =>
+          Enum.map([{"%0", "@0"}, {"%1", "@1"}, {"%2", "@2"}], fn {pane_id, window_id} ->
+            %{
+              raw_test_pane(pane_id, workspace_path, activity_now)
+              | active: window_id == "@0",
+                window_id: window_id
+            }
+          end)
+      })
+
+      on_exit(fn ->
+        Casein.Terminals.WindowTrash.__reset__()
+        restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:window_trash_grace_ms, prev_grace)
+        restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+        restore(:fake_tmux_windows, prev_fake_tmux_windows)
+        restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      assert render(view) =~ ~s(data-tmux-window-index="2")
+
+      # Hide the middle window.
+      render_click(view, "tmux:kill_window", %{"window-id" => "@1"})
+      assert Casein.Terminals.WindowTrash.pending?(session, "@1")
+
+      html = render(view)
+      refute has_element?(view, "#tmux-window--1")
+
+      # Sessions run `renumber-windows on`, so the gap the close will produce
+      # should already be closed: two windows numbered 0 and 1, no stale 2 and
+      # no hole where the hidden window used to sit.
+      assert html =~ ~s(data-tmux-window-index="0")
+      assert html =~ ~s(data-tmux-window-index="1")
+      refute html =~ ~s(data-tmux-window-index="2")
+
+      # Cycling must step over the hidden window rather than into it.
+      render_click(view, "tmux:cycle_window", %{"dir" => "next"})
+      assert_receive {:fake_tmux_select_window, ^session, "@2"}
+      refute_receive {:fake_tmux_select_window, ^session, "@1"}, 50
+
+      # Undo puts the original numbering back — tmux's own indexes were never
+      # touched, so nothing had to be renumbered for real.
+      render_click(view, "tmux:restore_window", %{"window-id" => "@1"})
+      restored = render(view)
+      assert has_element?(view, "#tmux-window--1")
+      assert restored =~ ~s(data-tmux-window-index="2")
+    end
+
     test "close_focused on the last window defers it and drops into another session", %{
       conn: conn,
       workspace_name: workspace_name,

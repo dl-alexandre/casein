@@ -219,7 +219,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   # tmux `C-b l`: use tmux's session-level history so this also works after a
   # browser reconnect or a window switch made by another client.
   def handle_event("tmux:last_window", _params, socket) do
-    case TerminalState.tmux_adapter().last_window(socket.assigns.tmux_session) do
+    # tmux's last-window history can point at a window hidden pending an
+    # undoable close. Stepping the visible list keeps `C-b l` on something the
+    # operator can actually see; with nothing pending this delegates unchanged.
+    case last_window_result(socket) do
       :ok ->
         {:noreply,
          socket
@@ -430,7 +433,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
 
   def handle_event("tmux:cycle_window", %{"dir" => dir}, socket)
       when dir in ["next", "prev"] do
-    case TerminalState.tmux_adapter().cycle_window(socket.assigns.tmux_session, dir) do
+    # tmux's own next/prev-window walks every window it has, including ones
+    # hidden pending an undoable close — cycling would drop the operator into a
+    # window the viewer says is gone. When something is pending, step over the
+    # visible list instead. With nothing pending the two are equivalent, so keep
+    # delegating to tmux and leave the common path untouched.
+    case cycle_window_target(socket, dir) do
+      {:ok, window_id} ->
+        TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id)
+
+      :delegate ->
+        TerminalState.tmux_adapter().cycle_window(socket.assigns.tmux_session, dir)
+    end
+    |> case do
       :ok ->
         {:noreply,
          socket
@@ -1111,6 +1126,46 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
         neighbor = Enum.at(windows, index + 1) || Enum.at(windows, max(index - 1, 0))
 
         if neighbor && neighbor.id != window_id, do: neighbor.id
+    end
+  end
+
+  # `C-b l` with a hidden window in play. tmux would happily select it, so fall
+  # back to the previous visible window instead of its last-window history.
+  defp last_window_result(socket) do
+    session = socket.assigns.tmux_session
+
+    case cycle_window_target(socket, "prev") do
+      {:ok, window_id} -> TerminalState.tmux_adapter().select_window(session, window_id)
+      :delegate -> TerminalState.tmux_adapter().last_window(session)
+    end
+  end
+
+  # Where `C-b n` / `C-b p` should land. Returns `:delegate` when nothing is
+  # hidden on this session, so the ordinary path keeps using tmux's own
+  # next/prev-window (and its notion of ordering) exactly as before.
+  defp cycle_window_target(socket, dir) do
+    session = socket.assigns[:tmux_session]
+    windows = sorted_tmux_windows(socket.assigns[:tmux_windows] || [])
+
+    cond do
+      not is_binary(session) -> :delegate
+      MapSet.size(WindowTrash.pending_ids(session)) == 0 -> :delegate
+      windows == [] -> :delegate
+      true -> step_visible_window(windows, socket.assigns[:tmux_active_window_id], dir)
+    end
+  end
+
+  defp step_visible_window(windows, active_window_id, dir) do
+    case Enum.find_index(windows, &(&1.id == active_window_id)) do
+      nil ->
+        # Active window is itself hidden (or unknown) — the nearest sane
+        # landing spot is the first visible one rather than tmux's guess.
+        {:ok, hd(windows).id}
+
+      index ->
+        offset = if dir == "next", do: 1, else: -1
+        target = Enum.at(windows, Integer.mod(index + offset, length(windows)))
+        {:ok, target.id}
     end
   end
 
