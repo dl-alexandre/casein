@@ -94,7 +94,11 @@ done
 
 # Launch through LaunchServices to exercise the same bundle/resource discovery
 # path as Finder and Start at Login. No release or Homebrew path is injected.
-CASEIN_DESKTOP_DATA_DIR="$smoke_dir" CASEIN_DESKTOP_RELEASE_NODE="$smoke_release_node" open -n "$APP"
+open -n \
+  --env "CASEIN_DESKTOP_DATA_DIR=$smoke_dir" \
+  --env CASEIN_DESKTOP_PACKAGE_SMOKE=1 \
+  --env "CASEIN_DESKTOP_RELEASE_NODE=$smoke_release_node" \
+  "$APP"
 for _ in $(seq 1 15); do
   host_pid="$(pgrep -f "^$APP/Contents/MacOS/casein-menubar$" | tail -n 1 || true)"
   [[ -n "$host_pid" ]] && break
@@ -106,6 +110,7 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 [[ -f "$runtime_file" ]] || { echo "packaged app did not publish runtime.json" >&2; exit 1; }
+"$RELEASE/erts-16.4/bin/epmd" -names | rg -x "name $smoke_release_node at port [0-9]+"
 
 port="$(plutil -extract port raw "$runtime_file")"
 for _ in $(seq 1 30); do

@@ -10,8 +10,7 @@ struct CaseinMenuBarApp: App {
         // Menu bar extra only, no Dock icon. Packaged builds also set
         // LSUIElement in Info.plist; this covers `swift run`.
         NSApplication.shared.setActivationPolicy(.accessory)
-        let releaseNode = ProcessInfo.processInfo.environment["CASEIN_DESKTOP_RELEASE_NODE"]
-            .flatMap(ReleaseController.validatedReleaseNode) ?? ReleaseController.defaultReleaseNode
+        let releaseNode = ReleaseController.releaseNode(environment: ProcessInfo.processInfo.environment)
         let monitor = ServerMonitor(releaseNode: releaseNode)
         monitor.startPolling()
         // A packaged desktop host owns its embedded release. Launching it —

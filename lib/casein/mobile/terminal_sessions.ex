@@ -226,40 +226,24 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp claim_deleting(id) when is_binary(id) do
-    case repo_kind() do
-      :postgres ->
-        claim_deleting_transaction(id)
-
-      :sqlite ->
-        :global.trans({{__MODULE__, {:claim, id}}, self()}, fn ->
-          claim_deleting_transaction(id)
-        end)
-
-      :unsupported ->
-        {:error, :unsupported_repo_adapter}
-    end
+    with_lease_lock(id, fn -> claim_deleting_locked(id) end)
   end
 
-  defp claim_deleting_transaction(id) do
-    case Repo.transaction(fn ->
-           case Repo.one(lease_query(id)) do
-             nil ->
-               Repo.rollback(:not_found)
+  defp claim_deleting_locked(id) do
+    case Repo.one(lease_query(id)) do
+      nil ->
+        Repo.rollback(:not_found)
 
-             %TerminalSession{state: "deleted"} = lease ->
-               lease
+      %TerminalSession{state: "deleted"} = lease ->
+        lease
 
-             %TerminalSession{state: "deleting"} = lease ->
-               lease
+      %TerminalSession{state: "deleting"} = lease ->
+        lease
 
-             lease ->
-               lease
-               |> TerminalSession.transition_changeset(%{state: "deleting"})
-               |> Repo.update!()
-           end
-         end) do
-      {:ok, lease} -> {:ok, lease}
-      {:error, reason} -> {:error, reason}
+      lease ->
+        lease
+        |> TerminalSession.transition_changeset(%{state: "deleting"})
+        |> Repo.update!()
     end
   end
 
@@ -483,7 +467,9 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp repo_kind do
-    case Application.get_env(:casein, :repo_adapter) do
+    # Resolve from the compiled Repo itself. `apply/3` keeps multi-adapter
+    # release builds warning-clean while avoiding mutable application env.
+    case apply(Repo, :__adapter__, []) do
       Ecto.Adapters.Postgres -> :postgres
       Ecto.Adapters.SQLite3 -> :sqlite
       _other -> :unsupported

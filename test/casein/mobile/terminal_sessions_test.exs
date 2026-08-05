@@ -29,6 +29,7 @@ defmodule Casein.Mobile.TerminalSessionsTest do
               ensure_count: 0,
               kill_error: nil,
               kill_blocker: nil,
+              provision_blocker: nil,
               disappear_on_list: false,
               provision_topology: :single,
               next_native_id: 1,
@@ -39,6 +40,14 @@ defmodule Casein.Mobile.TerminalSessionsTest do
         )
 
     def ensure_session(session, cwd) do
+      if blocker = Agent.get(__MODULE__, & &1.provision_blocker) do
+        send(blocker, {:provision_started, self(), session})
+
+        receive do
+          :continue_provision -> :ok
+        end
+      end
+
       Agent.get_and_update(__MODULE__, fn
         %{ensure_error: nil} = state ->
           pane =
@@ -208,6 +217,7 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     def replace_on_kill, do: Agent.update(__MODULE__, &%{&1 | replace_on_kill: true})
 
     def block_kill(pid), do: Agent.update(__MODULE__, &%{&1 | kill_blocker: pid})
+    def block_provision(pid), do: Agent.update(__MODULE__, &%{&1 | provision_blocker: pid})
 
     def external_remove(session) do
       Agent.update(
@@ -326,6 +336,37 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     assert created == 1
   end
 
+  test "provision and delete of the same lease serialize on one lifecycle lock" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    Tmux.external_remove(lease.tmux_session)
+
+    from(s in TerminalSession, where: s.id == ^lease.id)
+    |> Repo.update_all(
+      set: [
+        state: "provisioning",
+        pane_id: nil,
+        tmux_native_id: nil,
+        tmux_lease_marker: nil
+      ]
+    )
+
+    Tmux.block_provision(self())
+
+    provision_task = Task.async(fn -> TerminalSessions.reconcile_startup(tmux: Tmux) end)
+    assert_receive {:provision_started, provision_pid, tmux_session}
+    assert lease.tmux_session == tmux_session
+
+    delete_task = Task.async(fn -> TerminalSessions.delete(lease.id, tmux: Tmux) end)
+    assert Task.yield(delete_task, 100) == nil
+
+    send(provision_pid, :continue_provision)
+    assert [{:ok, active}] = Task.await(provision_task, 5_000)
+    assert active.state == "active"
+    assert {:ok, deleted} = Task.await(delete_task, 5_000)
+    assert deleted.state == "deleted"
+    assert Tmux.kills() == [tmux_session]
+  end
+
   test "delete is exact, ordered by authoritative identity, and idempotent" do
     assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
 
@@ -354,6 +395,31 @@ defmodule Casein.Mobile.TerminalSessionsTest do
                not Map.has_key?(metadata, :output) and
                not Map.has_key?(metadata, :command)
            end)
+  end
+
+  test "concurrent deletes serialize exact teardown and audit once" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    Tmux.block_kill(self())
+    tmux_session = lease.tmux_session
+
+    first_task = Task.async(fn -> TerminalSessions.delete(lease.id, tmux: Tmux) end)
+    assert_receive {:kill_started, first_pid, ^tmux_session, "deleting"}
+
+    second_task = Task.async(fn -> TerminalSessions.delete(lease.id, tmux: Tmux) end)
+    assert Task.yield(second_task, 100) == nil
+
+    send(first_pid, :continue_kill)
+    assert {:ok, first} = Task.await(first_task, 5_000)
+    assert {:ok, second} = Task.await(second_task, 5_000)
+    assert first.state == "deleted"
+    assert second.state == "deleted"
+    assert Tmux.kills() == [tmux_session]
+
+    deleted_events =
+      Casein.Audit.list(limit: 20)
+      |> Enum.count(&(&1.target_ref == lease.id and &1.action == "mobile.terminal_deleted"))
+
+    assert deleted_events == 1
   end
 
   test "expired leases are reaped without deriving a namespace prefix" do
