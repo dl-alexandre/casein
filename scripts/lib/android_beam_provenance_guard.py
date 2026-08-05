@@ -70,6 +70,7 @@ _INSTALLED_IDENTITY_RE = re.compile(
     r"^[0-9]+:[0-9]+:[0-9a-f]+:[0-9]+:-?[0-9]+:-?[0-9]+$"
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_TIMEOUT_REASONS = frozenset({"none", "idle", "total"})
 
 _MANIFEST_HEADER = b"CASEIN_BEAMS_V5"
 _MANIFEST_END = b"END"
@@ -243,6 +244,7 @@ class CommandResult:
     category: str
     returncode: int | None = None
     stdout: bytes = b""
+    timeout_reason: str = "none"
 
 
 class CommandRunner(Protocol):
@@ -265,10 +267,20 @@ class GuardResult:
     installed_manifest_complete: bool = False
     beam_name_set_match: bool = False
     beam_digest_match: bool = False
+    timeout_reason: str = "none"
+    completed_record_count: int = 0
 
     def __post_init__(self) -> None:
         if self.status not in STATUSES:
             object.__setattr__(self, "status", "internal_error")
+        if self.timeout_reason not in _TIMEOUT_REASONS:
+            object.__setattr__(self, "timeout_reason", "none")
+        if (
+            not isinstance(self.completed_record_count, int)
+            or isinstance(self.completed_record_count, bool)
+            or not 0 <= self.completed_record_count <= MAX_BEAMS
+        ):
+            object.__setattr__(self, "completed_record_count", 0)
 
     @property
     def exact(self) -> bool:
@@ -283,8 +295,16 @@ class GuardResult:
             "installed_manifest_complete": self.installed_manifest_complete,
             "beam_name_set_match": self.beam_name_set_match,
             "beam_digest_match": self.beam_digest_match,
+            "timeout_reason": self.timeout_reason,
+            "completed_record_count": self.completed_record_count,
             "exact": self.exact,
         }
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ManifestDiagnostics:
+    timeout_reason: str = "none"
+    completed_record_count: int = 0
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -383,6 +403,7 @@ class SubprocessCommandRunner:
             else None
         )
         category = "ok"
+        timeout_reason = "none"
         reaped = False
 
         try:
@@ -405,10 +426,13 @@ class SubprocessCommandRunner:
 
             while not _process_exited_unreaped(process):
                 now = time.monotonic()
-                if now >= deadline or (
-                    idle_deadline is not None and now >= idle_deadline
-                ):
+                if now >= deadline:
                     category = "timeout"
+                    timeout_reason = "total"
+                    break
+                if idle_deadline is not None and now >= idle_deadline:
+                    category = "timeout"
+                    timeout_reason = "idle"
                     break
 
                 remaining = max(0.0, deadline - now)
@@ -445,7 +469,9 @@ class SubprocessCommandRunner:
                 category = "failed"
             reaped = returncode is not None
 
-            return CommandResult(category, returncode, bytes(collected))
+            return CommandResult(
+                category, returncode, bytes(collected), timeout_reason
+            )
         except (OSError, ValueError):
             return CommandResult("failed")
         finally:
@@ -666,11 +692,16 @@ def _verify_android_beam_provenance(
 
     common = {"expected_manifest_valid": True}
     expected_count = len(expected.digests)
-    status, installed = _read_installed_manifest(
+    status, installed, diagnostics = _read_installed_manifest(
         serial, package, runner, expected_count
     )
     if status != "ok" or installed is None:
-        return GuardResult(status, **common)
+        return GuardResult(
+            status,
+            timeout_reason=diagnostics.timeout_reason,
+            completed_record_count=diagnostics.completed_record_count,
+            **common,
+        )
 
     complete = {**common, "installed_manifest_complete": True}
     expected_names = frozenset(expected.digests)
@@ -735,11 +766,16 @@ def _verify_android_beam_provenance(
         ):
             return GuardResult("beam_digest_mismatch", **matched)
 
-    closing_status, closing_manifest = _read_installed_manifest(
+    closing_status, closing_manifest, closing_diagnostics = _read_installed_manifest(
         serial, package, runner, expected_count
     )
     if closing_status != "ok" or closing_manifest is None:
-        return GuardResult(closing_status, **matched)
+        return GuardResult(
+            closing_status,
+            timeout_reason=closing_diagnostics.timeout_reason,
+            completed_record_count=closing_diagnostics.completed_record_count,
+            **matched,
+        )
     if closing_manifest.entries != installed.entries:
         return GuardResult("installed_manifest_changed", **matched)
 
@@ -755,22 +791,30 @@ def _read_installed_manifest(
     package: str,
     runner: CommandRunner,
     expected_count: int,
-) -> tuple[str, InstalledManifest | None]:
+) -> tuple[str, InstalledManifest | None, ManifestDiagnostics]:
     timeout_seconds = _manifest_timeout_seconds(expected_count)
     if timeout_seconds is None:
-        return ("installed_manifest_failed", None)
+        return ("installed_manifest_failed", None, ManifestDiagnostics())
     result = runner.run(
         build_manifest_argv(serial, package),
         stdout_limit=MAX_MANIFEST_BYTES,
         timeout_seconds=timeout_seconds,
         idle_timeout_seconds=MANIFEST_IDLE_TIMEOUT_SECONDS,
     )
+    diagnostics = ManifestDiagnostics(
+        timeout_reason=(
+            result.timeout_reason
+            if result.timeout_reason in _TIMEOUT_REASONS
+            else "none"
+        ),
+        completed_record_count=_completed_manifest_record_count(result.stdout),
+    )
     if result.category == "output_limit":
-        return ("installed_manifest_limited", None)
+        return ("installed_manifest_limited", None, diagnostics)
     if result.category != "ok":
-        return ("installed_manifest_failed", None)
+        return ("installed_manifest_failed", None, diagnostics)
     if result.returncode != 0:
-        return ("installed_manifest_failed", None)
+        return ("installed_manifest_failed", None, diagnostics)
 
     manifest = _parse_installed_manifest(result.stdout)
     if manifest.category != "ok":
@@ -785,8 +829,22 @@ def _read_installed_manifest(
             "unsafe_name": "installed_manifest_unsafe_name",
             "limited": "installed_manifest_limited",
         }.get(manifest.category, "internal_error")
-        return (status, None)
-    return ("ok", manifest)
+        return (status, None, diagnostics)
+    return ("ok", manifest, diagnostics)
+
+
+def _completed_manifest_record_count(payload: bytes) -> int:
+    if not payload.startswith(_MANIFEST_HEADER + b"\n"):
+        return 0
+    lines = payload.split(b"\n")
+    completed = 0
+    for line in lines[1:-1]:
+        if len(line.split(b"\t")) != 3:
+            break
+        completed += 1
+        if completed >= MAX_BEAMS:
+            return MAX_BEAMS
+    return completed
 
 
 def _manifest_timeout_seconds(expected_count: int) -> float | None:
