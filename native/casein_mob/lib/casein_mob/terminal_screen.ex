@@ -21,7 +21,13 @@ defmodule CaseinMob.TerminalScreen do
 
   import Bitwise
 
-  alias CaseinMob.{IOSTerminalComponent, SessionClient, SessionConfig, Terminal}
+  alias CaseinMob.{
+    IOSTerminalComponent,
+    MobileTerminalDiagnostic,
+    SessionClient,
+    SessionConfig,
+    Terminal
+  }
 
   @cellw 9
   @cellh 18
@@ -79,6 +85,8 @@ defmodule CaseinMob.TerminalScreen do
       |> Mob.Socket.assign(:status, if(workspace_id, do: :connecting, else: :unavailable))
       |> Mob.Socket.assign(:baseline_ready?, false)
       |> Mob.Socket.assign(:fresh_baseline_generation, nil)
+      |> Mob.Socket.assign(:terminal_diagnostic, nil)
+      |> Mob.Socket.assign(:terminal_screen_stage, :watch_started)
       |> Mob.Socket.assign(:repaint_scheduled?, false)
       |> Mob.Socket.assign(:draw, [])
 
@@ -135,6 +143,13 @@ defmodule CaseinMob.TerminalScreen do
           padding={4}
         />
         <Text
+          id="terminal-stage-diagnostic"
+          text={stage_diagnostic(assigns)}
+          text_size={11.0}
+          text_color={0xFF9CA3AF}
+          padding={4}
+        />
+        <Text
           text="Read-only · input is disabled"
           text_size={11.0}
           text_color={0xFF9CA3AF}
@@ -185,6 +200,8 @@ defmodule CaseinMob.TerminalScreen do
             :fresh_baseline_generation,
             Map.get(metadata, :fresh_baseline_generation)
           )
+          |> assign_terminal_diagnostic(metadata)
+          |> Mob.Socket.assign(:terminal_screen_stage, :first_paint_scheduled)
           |> arm_ios_ack_timeout()
           |> ensure_repaint()
 
@@ -220,6 +237,8 @@ defmodule CaseinMob.TerminalScreen do
         socket
         |> Mob.Socket.assign(:status, status)
         |> maybe_assign_metadata(metadata)
+        |> assign_terminal_diagnostic(metadata)
+        |> Mob.Socket.assign(:terminal_screen_stage, :status_received)
 
       if terminal_visible?(status), do: {:noreply, socket}, else: {:noreply, cover(socket)}
     else
@@ -334,6 +353,16 @@ defmodule CaseinMob.TerminalScreen do
     |> maybe_assign(:expires_at, Map.get(metadata, :expires_at))
   end
 
+  defp assign_terminal_diagnostic(socket, metadata) do
+    diagnostic = metadata_value(metadata, :terminal_diagnostic)
+
+    if MobileTerminalDiagnostic.valid_public?(diagnostic) do
+      Mob.Socket.assign(socket, :terminal_diagnostic, diagnostic)
+    else
+      Mob.Socket.assign(socket, :terminal_diagnostic, nil)
+    end
+  end
+
   defp expected_terminal_metadata?(socket, metadata) do
     metadata_value(metadata, :origin_id) == socket.assigns.origin_id and
       metadata_value(metadata, :workspace_id) == socket.assigns.workspace_id
@@ -446,6 +475,37 @@ defmodule CaseinMob.TerminalScreen do
 
   defp status_detail({:error, _reason}), do: "Terminal unavailable · try again"
   defp status_detail(_status), do: ""
+
+  defp stage_diagnostic(%{status: :live}), do: ""
+
+  defp stage_diagnostic(assigns) do
+    client_stage =
+      case assigns.terminal_diagnostic do
+        %{stage: stage} -> stage_label(stage)
+        _diagnostic -> "Waiting for client status"
+      end
+
+    screen_stage =
+      case assigns.terminal_screen_stage do
+        :watch_started -> "screen waiting"
+        :status_received -> "screen received status"
+        :first_paint_scheduled -> "first paint scheduled"
+        _stage -> "screen state unknown"
+      end
+
+    client_stage <> " · " <> screen_stage
+  end
+
+  defp stage_label(:watch_started), do: "Watch started"
+  defp stage_label(:control_requested), do: "Control requested"
+  defp stage_label(:control_reply_accepted), do: "Control reply accepted"
+  defp stage_label(:control_reply_rejected), do: "Control reply rejected"
+  defp stage_label(:child_join_requested), do: "Secure stream requested"
+  defp stage_label(:child_join_reply_received), do: "Secure stream replied"
+  defp stage_label(:baseline_accepted), do: "Baseline accepted"
+  defp stage_label(:baseline_rejected), do: "Baseline rejected"
+  defp stage_label(:status_delivered), do: "Client status delivered"
+  defp stage_label(_stage), do: "Client stage unknown"
 
   defp metadata_line(assigns) do
     if is_binary(assigns.workspace_id) do

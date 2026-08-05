@@ -92,7 +92,11 @@ defmodule CaseinMob.TerminalScreenTest do
       origin_name: "Devbox",
       workspace_id: "ws-1",
       expires_at: "2026-08-05T00:00:00Z",
-      fresh_baseline_generation: 7
+      fresh_baseline_generation: 7,
+      terminal_diagnostic: %{
+        stage: :baseline_accepted,
+        counts: %{watch_started: 1, baseline_accepted: 1}
+      }
     }
 
     view =
@@ -102,6 +106,41 @@ defmodule CaseinMob.TerminalScreenTest do
     assert text(view) =~ "Live"
     assert text(view) =~ "Devbox · ws-1"
     assert find(view, :box, id: "terminal-surface").props.fresh_baseline_generation == 7
+    assert find(view, :text, id: "terminal-stage-diagnostic").props.text == ""
+  end
+
+  test "pre-live diagnostic is fixed, accessible, and non-reflective" do
+    metadata = %{
+      origin_id: "origin-1",
+      workspace_id: "ws-1",
+      terminal_diagnostic: %{
+        stage: :child_join_requested,
+        counts: %{watch_started: 1, child_join_requested: 1}
+      }
+    }
+
+    waiting =
+      mounted_terminal()
+      |> render_info({:mobile_terminal_status, "ws-1", :awaiting_baseline, metadata})
+
+    assert find(waiting, :text, id: "terminal-stage-diagnostic").props.text ==
+             "Secure stream requested · screen received status"
+
+    canary = "never-reflect-this-secret"
+
+    malformed =
+      mounted_terminal()
+      |> render_info(
+        {:mobile_terminal_status, "ws-1", :awaiting_baseline,
+         %{
+           origin_id: "origin-1",
+           workspace_id: "ws-1",
+           terminal_diagnostic: %{stage: canary, counts: %{canary => 99}}
+         }}
+      )
+
+    assert text(malformed) =~ "Waiting for client status · screen received status"
+    refute text(malformed) =~ canary
   end
 
   test "baseline and status identity mismatches fail closed without retargeting" do
