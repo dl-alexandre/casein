@@ -51,6 +51,32 @@ defmodule Casein.Mobile.TerminalSessions do
 
   def get(id) when is_binary(id), do: Repo.get(TerminalSession, id)
 
+  @doc """
+  Deletes an active lease, or reconciles a replay when that exact scoped lease
+  is already durably deleted.
+
+  Scope mismatches deliberately collapse to `:not_found` so a caller cannot use
+  retained deleted rows to enumerate another device's terminal history.
+  """
+  @spec delete_authorized(String.t(), map(), keyword()) ::
+          {:ok, TerminalSession.t()} | {:error, term()}
+  def delete_authorized(id, context, opts \\ []) when is_binary(id) and is_map(context) do
+    case Repo.get(TerminalSession, id) do
+      nil ->
+        {:error, :not_found}
+
+      %TerminalSession{} = lease ->
+        with :ok <- validate_delete_context(lease, context) do
+          if lease.state == "deleted" do
+            {:ok, lease}
+          else
+            with {:ok, _authorized} <- authorize_read(id, context, opts),
+                 do: delete(id, opts)
+          end
+        end
+    end
+  end
+
   @doc "Revalidates an active lease against durable scope and live tmux identity/topology."
   def authorize_read(id, context, opts \\ []) when is_binary(id) and is_map(context) do
     now = Keyword.get(opts, :now, DateTime.utc_now())
@@ -414,6 +440,21 @@ defmodule Casein.Mobile.TerminalSessions do
       true ->
         :ok
     end
+  end
+
+  defp validate_delete_context(lease, context) do
+    expected = [
+      user_id: lease.user_id,
+      device_link_id: lease.device_link_id,
+      origin_id: lease.origin_id,
+      origin_generation: lease.origin_generation,
+      workspace_id: lease.workspace_id,
+      lease_id: lease.id
+    ]
+
+    if Enum.all?(expected, fn {key, value} -> Map.get(context, key) == value end),
+      do: :ok,
+      else: {:error, :not_found}
   end
 
   defp verify_lease_name(lease) do
