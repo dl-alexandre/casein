@@ -224,10 +224,10 @@ defmodule Casein.Mobile.TerminalSessions do
     tmux = adapter(opts)
 
     with :ok <- verify_identity(lease),
-         :ok <- verify_live_topology(lease, tmux),
+         {:ok, topology_state} <- verify_live_topology(lease, tmux),
          :ok <- Terminals.stop_shell_owner(lease.workspace_id, lease.sid),
          :ok <- Terminals.stop_session_exact(lease.workspace_key, lease.sid),
-         :ok <- normalize_kill(tmux.kill(lease.tmux_session)),
+         :ok <- maybe_kill_tmux(tmux, lease.tmux_session, topology_state),
          false <- tmux.session_exists?(lease.tmux_session) do
       now = Keyword.get(opts, :now, DateTime.utc_now())
 
@@ -257,21 +257,30 @@ defmodule Casein.Mobile.TerminalSessions do
   end
 
   defp verify_live_topology(lease, tmux) do
-    case tmux.list_session_panes(lease.tmux_session) do
-      [pane] ->
-        cond do
-          Map.get(pane, :id) != lease.pane_id -> {:error, :pane_identity_mismatch}
-          Map.get(pane, :role) != lease.pane_role -> {:error, :pane_role_mismatch}
-          true -> :ok
-        end
+    if tmux.session_exists?(lease.tmux_session) do
+      case tmux.list_session_panes(lease.tmux_session) do
+        [pane] ->
+          cond do
+            Map.get(pane, :id) != lease.pane_id -> {:error, :pane_identity_mismatch}
+            Map.get(pane, :role) != lease.pane_role -> {:error, :pane_role_mismatch}
+            true -> {:ok, :present}
+          end
 
-      [] ->
-        {:error, :missing_terminal_pane}
+        [] ->
+          {:error, :missing_terminal_pane}
 
-      _panes ->
-        {:error, :unexpected_topology}
+        _panes ->
+          {:error, :unexpected_topology}
+      end
+    else
+      {:ok, :absent}
     end
   end
+
+  defp maybe_kill_tmux(tmux, tmux_session, :present),
+    do: normalize_kill(tmux.kill(tmux_session))
+
+  defp maybe_kill_tmux(_tmux, _tmux_session, :absent), do: :ok
 
   defp normalize_kill(:ok), do: :ok
   defp normalize_kill({:error, reason}) when reason in [:not_found, :no_session], do: :ok

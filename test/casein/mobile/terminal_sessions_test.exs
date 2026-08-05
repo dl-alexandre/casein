@@ -88,6 +88,13 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     def kill_error(reason), do: Agent.update(__MODULE__, &%{&1 | kill_error: reason})
     def block_kill(pid), do: Agent.update(__MODULE__, &%{&1 | kill_blocker: pid})
 
+    def external_remove(session) do
+      Agent.update(
+        __MODULE__,
+        &update_in(&1, [:sessions], fn sessions -> Map.delete(sessions, session) end)
+      )
+    end
+
     def replace_pane(session, pane_id, role) do
       Agent.update(
         __MODULE__,
@@ -237,6 +244,34 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     assert {:error, :pane_role_mismatch} = TerminalSessions.delete(lease.id, tmux: Tmux)
     assert Repo.get!(TerminalSession, lease.id).state == "deleting"
     assert Tmux.session_exists?(lease.tmux_session)
+    assert Tmux.kills() == []
+  end
+
+  test "reaper completes a deleting lease whose exact tmux target is already absent" do
+    now = ~U[2026-08-05 10:00:00Z]
+    first_attrs = attrs()
+
+    assert {:ok, lease} =
+             TerminalSessions.create(first_attrs, tmux: Tmux, now: now, ttl_seconds: 60)
+
+    assert {:ok, sibling} =
+             TerminalSessions.create(%{first_attrs | request_id: Ecto.UUID.generate()},
+               tmux: Tmux,
+               now: now,
+               ttl_seconds: 60
+             )
+
+    lease
+    |> TerminalSession.transition_changeset(%{state: "deleting"})
+    |> Repo.update!()
+
+    Tmux.external_remove(lease.tmux_session)
+
+    assert [{:ok, deleted}] =
+             TerminalSessions.reconcile_due(tmux: Tmux, now: DateTime.add(now, 1, :second))
+
+    assert deleted.state == "deleted"
+    assert Tmux.session_exists?(sibling.tmux_session)
     assert Tmux.kills() == []
   end
 
