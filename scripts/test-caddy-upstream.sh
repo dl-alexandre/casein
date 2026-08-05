@@ -17,10 +17,13 @@ current_dial="unix//run/casein/current.sock"
 patch_count=0
 last_patch_url=""
 last_patch_data=""
+patch_dials=""
 admin_url="${CASEIN_CADDY_ADMIN_URL}"
 admin_config_fail=0
 admin_read_fail=0
+admin_read_fail_at_patch_count=0
 admin_patch_fail=0
+admin_patch_fail_at=0
 admin_verify_fail=0
 canonical_body=""
 canonical_http_code="503"
@@ -85,13 +88,21 @@ curl() {
       '{"apps":{"http":{"servers":{"srv0":{"routes":[{"match":[{"host":["unrelated.devbox.milcgroup.com"]}],"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"127.0.0.1:9999"}]}]},{"match":[{"host":["casein.devbox.milcgroup.com"]}],"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"unix//run/casein/current.sock"}]}]}]}}}}}'
   elif [ "$method" = "PATCH" ]; then
     [ "$admin_patch_fail" -eq 0 ] || return 28
+    if [ "$admin_patch_fail_at" -eq $((patch_count + 1)) ]; then
+      return 28
+    fi
     last_patch_url="$url"
     last_patch_data="$data"
     current_dial="${data%\"}"
     current_dial="${current_dial#\"}"
+    patch_dials="${patch_dials}${current_dial}"$'\n'
     patch_count=$((patch_count + 1))
   elif [ "$url" = "${admin_url}/config${upstream_path}" ]; then
     [ "$admin_read_fail" -eq 0 ] || return 28
+    if [ "$admin_read_fail_at_patch_count" -gt 0 ] &&
+        [ "$patch_count" -ge "$admin_read_fail_at_patch_count" ]; then
+      return 28
+    fi
     if [ "$admin_verify_fail" -eq 1 ] &&
         [ "$current_dial" = "unix//run/casein/current.sock" ]; then
       return 28
@@ -158,26 +169,211 @@ casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
 [ "$patch_count" -eq 0 ]
 
 # Activation must refresh Caddy's connection pool even though the configured
-# scalar is already canonical. Repeating the refresh is idempotent: the route
-# value remains unchanged and only the exact discovered upstream is patched.
-casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" migration
-[ "$current_dial" = "unix//run/casein/current.sock" ]
-[ "$patch_count" -eq 1 ]
-[ "$last_patch_url" = "${admin_url}/config${upstream_path}" ]
-[ "$last_patch_data" = '"unix//run/casein/current.sock"' ]
-[ "$unrelated_dial" = "127.0.0.1:9999" ]
-[ "$CADDY_RECONCILE_OUTCOME" = "verified_known_dial" ]
-casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" migration
+# scalar is already canonical. A same-value PATCH is not sufficient: move only
+# this upstream through the exact healthy instance socket, then restore the
+# canonical dial. Repeating the pair is idempotent at rest.
+handoff_dial="unix//run/casein/instances/0123456789abcdef.sock"
+casein_reconcile_caddy_upstream \
+  "casein.devbox.milcgroup.com" migration "$handoff_dial"
 [ "$current_dial" = "unix//run/casein/current.sock" ]
 [ "$patch_count" -eq 2 ]
 [ "$last_patch_url" = "${admin_url}/config${upstream_path}" ]
 [ "$last_patch_data" = '"unix//run/casein/current.sock"' ]
 [ "$unrelated_dial" = "127.0.0.1:9999" ]
+[ "$CADDY_RECONCILE_OUTCOME" = "verified_known_dial" ]
+[ "$(printf '%s' "$patch_dials")" = "${handoff_dial}"$'\n'"unix//run/casein/current.sock" ]
+casein_reconcile_caddy_upstream \
+  "casein.devbox.milcgroup.com" migration "$handoff_dial"
+[ "$current_dial" = "unix//run/casein/current.sock" ]
+[ "$patch_count" -eq 4 ]
+[ "$last_patch_url" = "${admin_url}/config${upstream_path}" ]
+[ "$last_patch_data" = '"unix//run/casein/current.sock"' ]
+[ "$unrelated_dial" = "127.0.0.1:9999" ]
+
+patch_count_before_invalid="$patch_count"
+if casein_reconcile_caddy_upstream \
+    "casein.devbox.milcgroup.com" migration \
+    "unix//run/casein/instances/../../unrelated.sock"; then
+  echo "invalid handoff dial unexpectedly reconciled" >&2
+  exit 1
+fi
+[ "$CADDY_RECONCILE_OUTCOME" = "invalid_handoff_dial" ]
+[ "$patch_count" -eq "$patch_count_before_invalid" ]
+[ "$current_dial" = "unix//run/casein/current.sock" ]
+
+# Every intermediate failure is fail-closed. A failed first PATCH leaves the
+# canonical dial untouched. A failed final PATCH leaves the verified exact
+# instance dial plus the rollback marker, so the deploy trap restores the
+# previous dial before returning traffic to the old symlink target.
+CADDY_UPSTREAM_PATCHED=0
+admin_patch_fail=1
+if casein_reconcile_caddy_upstream \
+    "casein.devbox.milcgroup.com" migration "$handoff_dial"; then
+  echo "failed first handoff PATCH unexpectedly reconciled" >&2
+  exit 1
+fi
+[ "$CADDY_RECONCILE_OUTCOME" = "patch_failed" ]
+[ "$current_dial" = "unix//run/casein/current.sock" ]
+[ "$CADDY_UPSTREAM_PATCHED" -eq 0 ]
+admin_patch_fail=0
+
+CADDY_UPSTREAM_PATCHED=0
+admin_patch_fail_at=$((patch_count + 2))
+if casein_reconcile_caddy_upstream \
+    "casein.devbox.milcgroup.com" migration "$handoff_dial"; then
+  echo "failed final handoff PATCH unexpectedly reconciled" >&2
+  exit 1
+fi
+[ "$CADDY_RECONCILE_OUTCOME" = "patch_failed" ]
+[ "$current_dial" = "$handoff_dial" ]
+[ "$CADDY_UPSTREAM_PATCHED" -eq 1 ]
+admin_patch_fail_at=0
+current_dial="unix//run/casein/current.sock"
+
+CADDY_UPSTREAM_PATCHED=0
+admin_read_fail_at_patch_count=$((patch_count + 2))
+if casein_reconcile_caddy_upstream \
+    "casein.devbox.milcgroup.com" migration "$handoff_dial"; then
+  echo "failed final handoff verification unexpectedly reconciled" >&2
+  exit 1
+fi
+[ "$CADDY_RECONCILE_OUTCOME" = "verification_failed" ]
+[ "$current_dial" = "unix//run/casein/current.sock" ]
+[ "$CADDY_UPSTREAM_PATCHED" -eq 1 ]
+admin_read_fail_at_patch_count=0
+
+# Rollback evicts the candidate pool through the exact predecessor before
+# restoring the prior at-rest dial. Only the fully verified pair permits the
+# deploy trap to stop the candidate.
+rollback_old_dial="unix//run/casein/instances/fedcba9876543210.sock"
+rollback_previous_dial="unix//run/casein/current.sock"
+patch_dials_before_rollback="$(printf '%s' "$patch_dials")"
+casein_restore_caddy_upstream_after_handoff \
+  "$rollback_previous_dial" "$rollback_old_dial"
+[ "$current_dial" = "$rollback_previous_dial" ]
+[ "$(printf '%s' "$patch_dials")" = \
+  "${patch_dials_before_rollback}"$'\n'"${rollback_old_dial}"$'\n'"${rollback_previous_dial}" ]
+
+admin_patch_fail=1
+if casein_restore_caddy_upstream_after_handoff \
+    "$rollback_previous_dial" "$rollback_old_dial"; then
+  echo "failed rollback PATCH unexpectedly verified" >&2
+  exit 1
+fi
+admin_patch_fail=0
+
+admin_patch_fail_at=$((patch_count + 2))
+if casein_restore_caddy_upstream_after_handoff \
+    "$rollback_previous_dial" "$rollback_old_dial"; then
+  echo "failed final rollback PATCH unexpectedly verified" >&2
+  exit 1
+fi
+[ "$current_dial" = "$rollback_old_dial" ]
+admin_patch_fail_at=0
+current_dial="$rollback_previous_dial"
+
+if casein_restore_caddy_upstream_after_handoff \
+    "$rollback_previous_dial" \
+    "unix//run/casein/instances/../../candidate.sock"; then
+  echo "invalid rollback identity unexpectedly accepted" >&2
+  exit 1
+fi
+
+# The deploy trap must restore the symlink and Caddy pool before its only
+# candidate-stop call, and must suppress that stop when restoration is not
+# proven. This hermetic source-order guard prevents the original outage from
+# being reintroduced around the tested helper.
+python3 - \
+  "${ROOT}/scripts/deploy-devbox-release.sh" \
+  "${ROOT}/scripts/deploy-poller.sh" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+start = source.index("rollback() {")
+end = source.index("\ntrap rollback EXIT", start)
+body = source[start:end]
+
+restore_symlink = body.index('restoring ${CURRENT_SYMLINK}')
+verify_symlink = body.index("casein_restore_current_symlink_after_handoff")
+restore_caddy = body.index("casein_restore_caddy_upstream_after_handoff")
+failed_restore_keeps_candidate = body.index("stop_new_canary=0")
+stop_candidate = body.index('stop_canary_unit "${NEW_UUID}"')
+retain_candidate = body.index("preserving retained candidate release and environment")
+restore_environment = body.index('restoring ${ENV_FILE} from ${ENV_BACKUP}')
+move_release = body.index('moving failed candidate release')
+
+if not (
+    restore_symlink < verify_symlink < restore_caddy < stop_candidate
+    and failed_restore_keeps_candidate < stop_candidate
+    and 'if [ "${stop_new_canary}" = "1" ]' in body
+    and stop_candidate < retain_candidate < restore_environment < move_release
+):
+    raise SystemExit("rollback routing is not proven before candidate stop")
+
+poller = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+for required in (
+    'current_target" = "$configured_socket',
+    'trusted_direct_dial="unix/${configured_socket}"',
+    'casein_reconcile_caddy_upstream "$host" repair "$trusted_direct_dial"',
+):
+    if required not in poller:
+        raise SystemExit("poller retained-candidate reconciliation guard missing")
+PY
+
+# Exercise atomic symlink proof and its failure modes without touching the
+# host run directory. The deploy trap consumes only this verified result.
+symlink_fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/casein-symlink-proof-XXXXXX")"
+mkdir -p "${symlink_fixture_root}/instances"
+old_target="${symlink_fixture_root}/instances/0123456789abcdef.sock"
+new_target="${symlink_fixture_root}/instances/fedcba9876543210.sock"
+current_link="${symlink_fixture_root}/current.sock"
+: >"$old_target"
+: >"$new_target"
+ln -s "$new_target" "$current_link"
+sudo_fail_command=""
+sudo_readlink_override=""
+sudo() {
+  if [ -n "$sudo_fail_command" ] && [ "$1" = "$sudo_fail_command" ]; then
+    return 1
+  fi
+  if [ "$1" = "readlink" ] && [ -n "$sudo_readlink_override" ]; then
+    printf '%s\n' "$sudo_readlink_override"
+    return 0
+  fi
+  command "$@"
+}
+casein_restore_current_symlink_after_handoff "$old_target" "$current_link"
+[ "$(readlink "$current_link")" = "$old_target" ]
+
+ln -sfn "$new_target" "$current_link"
+sudo_fail_command="ln"
+if casein_restore_current_symlink_after_handoff "$old_target" "$current_link"; then
+  echo "failed rollback symlink create unexpectedly verified" >&2
+  exit 1
+fi
+[ "$(readlink "$current_link")" = "$new_target" ]
+
+sudo_fail_command="mv"
+if casein_restore_current_symlink_after_handoff "$old_target" "$current_link"; then
+  echo "failed rollback symlink swap unexpectedly verified" >&2
+  exit 1
+fi
+[ "$(readlink "$current_link")" = "$new_target" ]
+
+sudo_fail_command=""
+sudo_readlink_override="$new_target"
+if casein_restore_current_symlink_after_handoff "$old_target" "$current_link"; then
+  echo "mismatched rollback symlink readback unexpectedly verified" >&2
+  exit 1
+fi
+sudo_readlink_override=""
+rm -rf "$symlink_fixture_root"
 
 current_dial="unix//run/devide/current.sock"
 casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
 [ "$current_dial" = "unix//run/casein/current.sock" ]
-[ "$patch_count" -eq 3 ]
+[ "$patch_count" -eq 11 ]
 
 current_dial="unix//unexpected/current.sock"
 if casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair; then
@@ -185,17 +381,24 @@ if casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair; then
   exit 1
 fi
 [ "$current_dial" = "unix//unexpected/current.sock" ]
-[ "$patch_count" -eq 3 ]
+[ "$patch_count" -eq 11 ]
 [ "$CADDY_RECONCILE_OUTCOME" = "unknown_dial" ]
 if casein_caddy_reconcile_allows_attestation; then
   echo "unknown Caddy dial unexpectedly allowed attestation" >&2
   exit 1
 fi
 
+retained_dial="unix//run/casein/instances/abcdef0123456789.sock"
+current_dial="$retained_dial"
+casein_reconcile_caddy_upstream \
+  "casein.devbox.milcgroup.com" repair "$retained_dial"
+[ "$current_dial" = "unix//run/casein/current.sock" ]
+[ "$CADDY_RECONCILE_OUTCOME" = "unknown_dial_repaired" ]
+
 current_dial="unix//unexpected/current.sock"
 casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" migration
 [ "$current_dial" = "unix//run/casein/current.sock" ]
-[ "$patch_count" -eq 4 ]
+[ "$patch_count" -eq 13 ]
 [ "$CADDY_RECONCILE_OUTCOME" = "unknown_dial_repaired" ]
 if casein_caddy_reconcile_allows_attestation; then
   echo "repaired unknown Caddy dial unexpectedly allowed attestation" >&2

@@ -249,10 +249,12 @@ sys.exit(0 if found else 3)
 casein_reconcile_caddy_upstream() {
   local host="$1"
   local mode="${2:-migration}"
+  local handoff_dial="${3:-}"
   local observed=""
   local previous_dial=""
   local find_status=0
   local unknown_dial_observed=0
+  local refresh_known_dial=0
 
   CADDY_RECONCILE_OUTCOME="not_attempted"
   CADDY_UPSTREAM_PATH="$(casein_find_caddy_upstream_path "$host")" || find_status=$?
@@ -285,9 +287,11 @@ casein_reconcile_caddy_upstream() {
       fi
       # current.sock is an atomic symlink. Caddy may keep a pooled Unix
       # connection to the old target after the symlink changes, so activation
-      # deliberately re-applies the same scalar value. The narrowly-scoped
-      # config mutation reprovisions this reverse proxy without changing any
-      # route or relying on a broad Caddy reload.
+      # deliberately moves this one upstream through the exact new instance
+      # socket before restoring the canonical dial. Caddy treats a same-value
+      # PATCH as a no-op, while the bounded two-step mutation reprovisions the
+      # reverse proxy without changing any other route or broadly reloading it.
+      refresh_known_dial=1
       log "refreshing canonical Caddy upstream for ${host} after socket handoff"
       ;;
     "$CASEIN_CADDY_LOOPBACK_DIAL")
@@ -296,6 +300,7 @@ casein_reconcile_caddy_upstream() {
         log "Caddy upstream for ${host} uses the supported loopback proxy"
         return 0
       fi
+      refresh_known_dial=1
       log "refreshing supported loopback Caddy upstream for ${host} after socket handoff"
       ;;
     "$CASEIN_CADDY_LEGACY_DIAL")
@@ -303,7 +308,15 @@ casein_reconcile_caddy_upstream() {
       ;;
     *)
       unknown_dial_observed=1
-      if [ "$mode" = "repair" ]; then
+      if [ "$mode" = "repair" ] && [ "$CADDY_PREVIOUS_DIAL" = "$handoff_dial" ] &&
+          [[ "$handoff_dial" =~ ^unix//run/casein/instances/[0-9a-f]{16}\.sock$ ]]; then
+        # A failed activation may intentionally retain its healthy candidate
+        # and exact direct dial. The poller supplies this value only when it
+        # also matches the verified current.sock target, allowing the next tick
+        # to return config to the canonical symlink without accepting an
+        # arbitrary unknown upstream.
+        log "repairing verified retained candidate Caddy upstream for ${host}"
+      elif [ "$mode" = "repair" ]; then
         CADDY_RECONCILE_OUTCOME="unknown_dial"
         log "warning: refusing to repair unknown Caddy upstream ${CADDY_PREVIOUS_DIAL:-empty} for ${host}"
         return 1
@@ -311,6 +324,50 @@ casein_reconcile_caddy_upstream() {
       log "migrating Caddy upstream for ${host}: ${CADDY_PREVIOUS_DIAL:-unknown} -> ${CASEIN_CADDY_CANONICAL_DIAL}"
       ;;
   esac
+
+  if [ "$refresh_known_dial" -eq 1 ]; then
+    case "$handoff_dial" in
+      unix//run/casein/instances/*.sock)
+        if ! [[ "$handoff_dial" =~ ^unix//run/casein/instances/[0-9a-f]{16}\.sock$ ]]; then
+          CADDY_RECONCILE_OUTCOME="invalid_handoff_dial"
+          log "warning: refusing invalid Caddy handoff dial"
+          return 1
+        fi
+        ;;
+      *)
+        CADDY_RECONCILE_OUTCOME="invalid_handoff_dial"
+        log "warning: refusing missing Caddy handoff dial"
+        return 1
+        ;;
+    esac
+
+    if ! casein_caddy_admin_curl -fsS -X PATCH \
+        "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" \
+        -H "content-type: application/json" \
+        -d "\"${handoff_dial}\"" >/dev/null; then
+      CADDY_RECONCILE_OUTCOME="patch_failed"
+      log "warning: Caddy handoff PATCH failed; leaving ${CADDY_PREVIOUS_DIAL} in place"
+      return 1
+    fi
+    # From this point rollback must restore the original dial even when the
+    # verification or final canonical PATCH fails.
+    CADDY_UPSTREAM_PATCHED=1
+
+    if ! observed="$(
+      casein_caddy_admin_curl -s \
+        "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" 2>/dev/null
+    )"; then
+      CADDY_RECONCILE_OUTCOME="verification_failed"
+      log "warning: Caddy handoff verification failed for ${host}"
+      return 1
+    fi
+    observed="$(printf '%s' "$observed" | tr -d '"')"
+    if [ "$observed" != "$handoff_dial" ]; then
+      CADDY_RECONCILE_OUTCOME="verification_failed"
+      log "warning: Caddy handoff verification did not observe the exact new instance"
+      return 1
+    fi
+  fi
 
   local desired_dial="$CASEIN_CADDY_CANONICAL_DIAL"
   case "$CADDY_PREVIOUS_DIAL" in
@@ -359,4 +416,91 @@ casein_caddy_reconcile_allows_attestation() {
     admin_unavailable | verified_known_dial) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# Restore a handoff without stranding Caddy on the candidate that the deploy
+# trap is about to stop. Moving through the exact predecessor socket evicts a
+# pool that may still target the candidate even when config already reads as
+# the previous canonical or loopback dial.
+casein_restore_caddy_upstream_after_handoff() {
+  local previous_dial="$1"
+  local old_instance_dial="$2"
+  local observed=""
+
+  if [ -z "$CADDY_UPSTREAM_PATH" ] || [ -z "$previous_dial" ] ||
+      ! [[ "$old_instance_dial" =~ ^unix//run/casein/instances/[0-9a-f]{16}\.sock$ ]]; then
+    log "warning: refusing Caddy rollback with invalid prior identity"
+    return 1
+  fi
+
+  if ! casein_caddy_admin_curl -fsS -X PATCH \
+      "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" \
+      -H "content-type: application/json" \
+      -d "\"${old_instance_dial}\"" >/dev/null; then
+    log "warning: Caddy rollback could not select the predecessor"
+    return 1
+  fi
+  if ! observed="$(casein_caddy_admin_curl -s \
+      "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" 2>/dev/null)" ||
+      [ "$(printf '%s' "$observed" | tr -d '"')" != "$old_instance_dial" ]; then
+    log "warning: Caddy rollback did not verify the predecessor"
+    return 1
+  fi
+
+  if ! casein_caddy_admin_curl -fsS -X PATCH \
+      "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" \
+      -H "content-type: application/json" \
+      -d "\"${previous_dial}\"" >/dev/null; then
+    log "warning: Caddy rollback could not restore the prior dial"
+    return 1
+  fi
+  if ! observed="$(casein_caddy_admin_curl -s \
+      "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" 2>/dev/null)" ||
+      [ "$(printf '%s' "$observed" | tr -d '"')" != "$previous_dial" ]; then
+    log "warning: Caddy rollback did not verify the prior dial"
+    return 1
+  fi
+
+  log "Caddy rollback restored and verified the prior upstream"
+}
+
+# Atomically restore current.sock and prove its exact target before rollback is
+# allowed to stop the candidate. Callers leave the candidate running on any
+# failure; best-effort symlink restoration is not safe for a pooled proxy.
+casein_restore_current_symlink_after_handoff() {
+  local old_target="$1"
+  local current_symlink="$2"
+  local run_root=""
+  local expected_prefix=""
+  local target_name=""
+  local observed=""
+
+  case "$current_symlink" in
+    */current.sock) run_root="${current_symlink%/current.sock}" ;;
+    *) return 1 ;;
+  esac
+  expected_prefix="${run_root}/instances/"
+  case "$old_target" in
+    "${expected_prefix}"*.sock)
+      target_name="${old_target#"${expected_prefix}"}"
+      ;;
+    *) target_name="" ;;
+  esac
+  if ! [[ "$target_name" =~ ^[0-9a-f]{16}\.sock$ ]]; then
+      log "warning: refusing invalid predecessor symlink target"
+      return 1
+    fi
+
+  if ! sudo ln -sfn "$old_target" "${current_symlink}.rollback" ||
+      ! sudo mv -f "${current_symlink}.rollback" "$current_symlink"; then
+    log "warning: failed to restore the predecessor symlink"
+    return 1
+  fi
+  if ! observed="$(sudo readlink "$current_symlink" 2>/dev/null)" ||
+      [ "$observed" != "$old_target" ]; then
+    log "warning: predecessor symlink restoration was not verified"
+    return 1
+  fi
+
+  log "predecessor symlink restored and verified"
 }

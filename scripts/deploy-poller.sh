@@ -281,7 +281,7 @@ ensure_agent_shims() {
 }
 
 ensure_caddy_upstream() {
-  local host
+  local host configured_socket="" current_target="" trusted_direct_dial=""
   # This helper is sourced by a long-lived poller. Never let a prior eligible
   # outcome authorize the canonical attestation if this tick returns early.
   CADDY_RECONCILE_OUTCOME="not_attempted"
@@ -300,7 +300,20 @@ ensure_caddy_upstream() {
     return 1
   fi
 
-  casein_reconcile_caddy_upstream "$host" repair
+  configured_socket="$(
+    if [ -r "$ENV_FILE" ]; then
+      awk -F= '/^CASEIN_HTTP_SOCKET=/{print $2}' "$ENV_FILE" | tail -n 1
+    elif sudo test -r "$ENV_FILE" 2>/dev/null; then
+      sudo awk -F= '/^CASEIN_HTTP_SOCKET=/{print $2}' "$ENV_FILE" | tail -n 1
+    fi
+  )"
+  current_target="$(readlink "$CURRENT_SOCK" 2>/dev/null || true)"
+  if [ -n "$configured_socket" ] && [ "$current_target" = "$configured_socket" ] &&
+      [[ "$configured_socket" =~ ^/run/casein/instances/[0-9a-f]{16}\.sock$ ]]; then
+    trusted_direct_dial="unix/${configured_socket}"
+  fi
+
+  casein_reconcile_caddy_upstream "$host" repair "$trusted_direct_dial"
 }
 
 read_casein_api_token() {
