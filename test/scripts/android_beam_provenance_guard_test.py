@@ -288,11 +288,12 @@ completed = subprocess.run(
     cwd=os.environ["CASEIN_FAKE_DEVICE_ROOT"],
     env=os.environ.copy(),
     stdin=subprocess.DEVNULL,
-    stdout=subprocess.PIPE,
+    stdout=(sys.stdout.buffer if mode == "stream" else subprocess.PIPE),
     stderr=subprocess.DEVNULL,
     check=False,
 )
-sys.stdout.buffer.write(completed.stdout)
+if completed.stdout is not None:
+    sys.stdout.buffer.write(completed.stdout)
 # Android 9 raw exec-out reports only the host-side stream result.
 raise SystemExit(0)
 """,
@@ -310,9 +311,11 @@ sys.stdout.write(f"9:{info.st_ino}:81a4:{info.st_size}:0:0\\n")
             + """import hashlib
 import os
 import sys
+import time
 
 if os.environ.get("CASEIN_FAKE_SHA_MODE") == "fail":
     raise SystemExit(1)
+time.sleep(float(os.environ.get("CASEIN_FAKE_SHA_DELAY", "0")))
 sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest() + "  -\\n")
 """,
             "casein_same_fd": f"#!{sys.executable}\n"
@@ -415,7 +418,19 @@ sys.stdout.buffer.write(payload)
                 argv[:9],
             )
             self.assertNotIn("shell", argv)
-            self.assertEqual(guard.COMMAND_TIMEOUT_SECONDS, kwargs["timeout_seconds"])
+            if argv[-1] == guard._MANIFEST_SCRIPT:
+                self.assertEqual(
+                    guard._manifest_timeout_seconds(len(self.payloads)),
+                    kwargs["timeout_seconds"],
+                )
+                self.assertEqual(
+                    guard.MANIFEST_IDLE_TIMEOUT_SECONDS,
+                    kwargs["idle_timeout_seconds"],
+                )
+            else:
+                self.assertEqual(
+                    guard.COMMAND_TIMEOUT_SECONDS, kwargs["timeout_seconds"]
+                )
         self.assertEqual(guard.MAX_MANIFEST_BYTES, runner.calls[0][1]["stdout_limit"])
         for argv, kwargs in runner.calls[1:]:
             expected_limit = (
@@ -532,6 +547,28 @@ sys.stdout.buffer.write(payload)
         self.assertEqual(16 * 1024 * 1024, guard.MAX_BEAM_BYTES)
         self.assertEqual(128 * 1024 * 1024, guard.MAX_AGGREGATE_BEAM_BYTES)
         self.assertLessEqual(guard.MAX_SOURCE_DIRS, 512)
+        self.assertAlmostEqual(198.36, guard._manifest_timeout_seconds(1403))
+        self.assertEqual(
+            guard.MANIFEST_TIMEOUT_MIN_SECONDS,
+            guard._manifest_timeout_seconds(1),
+        )
+        self.assertEqual(
+            guard.MANIFEST_TIMEOUT_MAX_SECONDS,
+            guard._manifest_timeout_seconds(guard.MAX_BEAMS),
+        )
+
+    def test_manifest_timeout_policy_rejects_malformed_and_huge_counts(self) -> None:
+        for count in (None, True, 0, -1, "4", guard.MAX_BEAMS + 1):
+            with self.subTest(count=count):
+                self.assertIsNone(guard._manifest_timeout_seconds(count))
+
+        runner = self.runner(*self.payloads)
+        status, installed = guard._read_installed_manifest(
+            SERIAL, PACKAGE, runner, guard.MAX_BEAMS + 1
+        )
+        self.assertEqual("installed_manifest_failed", status)
+        self.assertIsNone(installed)
+        self.assertEqual([], runner.calls)
 
     def test_fixed_device_shell_programs_pass_shell_syntax(self) -> None:
         for program in (guard._MANIFEST_SCRIPT, guard._READ_SCRIPT):
@@ -579,6 +616,40 @@ sys.stdout.buffer.write(payload)
 
         self.assertEqual("exact", result.status)
         self.assertTrue(result.exact)
+
+    def test_streaming_slow_manifest_completes_under_count_calibrated_cap(self) -> None:
+        fake_root, environment = self.fake_adb_environment("streaming-slow")
+        installed_root = fake_root / guard.INSTALLED_BEAM_DIR
+        installed_root.mkdir(parents=True)
+        for name, payload in self.payloads.items():
+            (installed_root / name).write_bytes(payload)
+
+        runner = guard.SubprocessCommandRunner()
+        with mock.patch.dict(
+            os.environ,
+            {
+                **environment,
+                "CASEIN_FAKE_ADB_MODE": "stream",
+                "CASEIN_FAKE_SHA_DELAY": "0.15",
+            },
+        ), mock.patch.object(
+            guard, "MANIFEST_TIMEOUT_BASE_SECONDS", 1.0
+        ), mock.patch.object(
+            guard, "MANIFEST_TIMEOUT_PER_BEAM_SECONDS", 0.5
+        ), mock.patch.object(
+            guard, "MANIFEST_TIMEOUT_MIN_SECONDS", 1.0
+        ), mock.patch.object(
+            guard, "MANIFEST_TIMEOUT_MAX_SECONDS", 4.0
+        ), mock.patch.object(
+            guard, "MANIFEST_IDLE_TIMEOUT_SECONDS", 0.75
+        ):
+            status, installed = guard._read_installed_manifest(
+                SERIAL, PACKAGE, runner, len(self.payloads)
+            )
+
+        self.assertEqual("ok", status)
+        self.assertIsNotNone(installed)
+        self.assertEqual(len(self.payloads), len(installed.entries))
 
     def test_fake_adb_fd_alias_mismatch_fails_closed(self) -> None:
         fake_root, environment = self.fake_adb_environment("fd-alias-mismatch")
@@ -1239,6 +1310,83 @@ sys.stdout.buffer.write(payload)
         self.assertEqual("failed", result.category)
         child_pid = int(marker.read_text(encoding="ascii"))
         self.assertTrue(self._wait_for_process_exit(child_pid))
+
+    def test_streaming_progress_completes_within_total_and_idle_caps(self) -> None:
+        program = (
+            "import sys,time; "
+            "[(sys.stdout.write('x'),sys.stdout.flush(),time.sleep(0.04)) "
+            "for _ in range(5)]"
+        )
+        result = guard.SubprocessCommandRunner().run(
+            (sys.executable, "-c", program),
+            stdout_limit=16,
+            timeout_seconds=1.0,
+            idle_timeout_seconds=0.1,
+        )
+        self.assertEqual("ok", result.category)
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(b"xxxxx", result.stdout)
+
+    def test_stalled_mid_record_hits_idle_timeout_and_cleans_child(self) -> None:
+        marker = Path(self.temp.name) / "idle-stall"
+        program = textwrap.dedent(
+            """
+            import os
+            import sys
+            import time
+
+            with open(sys.argv[1], "w", encoding="ascii") as stream:
+                stream.write(str(os.getpid()))
+            sys.stdout.write("partial")
+            sys.stdout.flush()
+            time.sleep(60)
+            """
+        )
+        result = guard.SubprocessCommandRunner().run(
+            (sys.executable, "-c", program, str(marker)),
+            stdout_limit=32,
+            timeout_seconds=1.0,
+            idle_timeout_seconds=0.1,
+        )
+        self.assertEqual("timeout", result.category)
+        self.assertEqual(b"partial", result.stdout)
+        self.assertTrue(
+            self._wait_for_process_exit(int(marker.read_text(encoding="ascii")))
+        )
+
+    def test_continuous_trickle_cannot_extend_total_timeout(self) -> None:
+        program = textwrap.dedent(
+            """
+            import sys
+            import time
+
+            while True:
+                sys.stdout.write("x")
+                sys.stdout.flush()
+                time.sleep(0.03)
+            """
+        )
+        started = time.monotonic()
+        result = guard.SubprocessCommandRunner().run(
+            (sys.executable, "-c", program),
+            stdout_limit=64,
+            timeout_seconds=0.25,
+            idle_timeout_seconds=0.1,
+        )
+        elapsed = time.monotonic() - started
+        self.assertEqual("timeout", result.category)
+        self.assertLess(elapsed, 0.75)
+        self.assertGreater(len(result.stdout), 1)
+
+    def test_no_output_hits_idle_timeout(self) -> None:
+        result = guard.SubprocessCommandRunner().run(
+            (sys.executable, "-c", "import time; time.sleep(60)"),
+            stdout_limit=8,
+            timeout_seconds=1.0,
+            idle_timeout_seconds=0.1,
+        )
+        self.assertEqual("timeout", result.category)
+        self.assertEqual(b"", result.stdout)
 
     def test_runner_success_and_failure_return_without_signaling_caller(self) -> None:
         runner = guard.SubprocessCommandRunner()
