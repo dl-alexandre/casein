@@ -6,6 +6,14 @@
 
 See [`development-workflow.md`](development-workflow.md) for the full workflow.
 
+## Windows development bootstrap
+
+- Owner: `feature/windows-development-bootstrap`
+- Direction: one-time unsigned bootstrap with a pinned application-level RSA
+  development channel; production Authenticode remains fail-closed and separate.
+- Frozen paths: `windows/`, `scripts/package-windows-desktop.ps1`,
+  `scripts/test-windows-desktop-package.ps1`, Windows desktop contract tests.
+
 ## Windows workstream A — native terminal/session and agent runtime
 
 - **Owner:** Codex workstream A

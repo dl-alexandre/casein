@@ -868,12 +868,21 @@ function Start-CaseinTray {
     })
     $updateItem.Add_Click({
         try {
-            $updater = Join-Path (Join-Path $env:LOCALAPPDATA 'Programs\Casein') 'Update-Casein.ps1'
-            if (-not (Test-Path -LiteralPath $updater)) { throw 'The installed updater is missing. Reinstall a signed Casein package.' }
-            Start-Process powershell.exe -ArgumentList @(
-                '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                '-File', $updater, '-Install'
-            )
+            $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\Casein'
+            $currentPath = Join-Path $installRoot 'current.json'
+            $current = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
+            $signer = $current.PSObject.Properties['signer_thumbprint']
+            $developmentBootstrap = Join-Path $installRoot 'Casein.DevelopmentBootstrap.exe'
+            if ((-not $signer -or -not [string]$signer.Value) -and (Test-Path -LiteralPath $developmentBootstrap -PathType Leaf)) {
+                Start-Process -FilePath $developmentBootstrap
+            } else {
+                $updater = Join-Path $installRoot 'Update-Casein.ps1'
+                if (-not (Test-Path -LiteralPath $updater)) { throw 'The installed updater is missing. Reinstall a signed Casein package.' }
+                Start-Process powershell.exe -ArgumentList @(
+                    '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                    '-File', $updater, '-Install'
+                )
+            }
             $tray.ShowBalloonTip(3000, 'Casein update', 'Checking the signed update channel.', [Windows.Forms.ToolTipIcon]::Info)
         } catch {
             Write-CaseinLog "Update check failed: $($_.Exception.Message)"

@@ -246,6 +246,13 @@ try {
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\New-CaseinSupportBundle.ps1') -Destination (Join-Path $installRoot 'New-CaseinSupportBundle.ps1') -Force
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Casein.Backup.ps1') -Destination (Join-Path $installRoot 'Casein.Backup.ps1') -Force
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Update-Casein.ps1') -Destination (Join-Path $installRoot 'Update-Casein.ps1') -Force
+    $developmentBootstrap = Join-Path $packageRoot 'windows\Casein.DevelopmentBootstrap.exe'
+    $installedDevelopmentBootstrap = Join-Path $installRoot 'Casein.DevelopmentBootstrap.exe'
+    if (Test-Path -LiteralPath $developmentBootstrap -PathType Leaf) {
+        Copy-Item -LiteralPath $developmentBootstrap -Destination $installedDevelopmentBootstrap -Force
+    } elseif (Test-Path -LiteralPath $installedDevelopmentBootstrap) {
+        Remove-Item -LiteralPath $installedDevelopmentBootstrap -Force
+    }
     Set-Content -LiteralPath (Join-Path $installRoot 'Casein.cmd') -Encoding ascii -Value "@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0Casein.Launcher.ps1`""
 
     $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein'
