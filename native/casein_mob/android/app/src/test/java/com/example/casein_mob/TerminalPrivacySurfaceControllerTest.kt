@@ -102,10 +102,37 @@ class TerminalPrivacySurfaceControllerTest {
     fun `activity recreation cannot replay an already forwarded generation`() {
         val fence = TerminalBaselineSignalFence()
 
-        assertTrue(fence.claim(41))
-        assertFalse(fence.claim(41))
-        assertFalse(fence.claim(40))
-        assertTrue(fence.claim(42))
+        assertTrue(fence.eligible(41))
+        assertTrue(fence.commit(41))
+        assertFalse(fence.eligible(41))
+        assertFalse(fence.commit(41))
+        assertFalse(fence.eligible(40))
+        assertTrue(fence.eligible(42))
+        assertTrue(fence.commit(42))
+
+        val recreatedHost = Host()
+        val recreated = TerminalPrivacySurfaceController(recreatedHost)
+        recreated.onResume()
+        recreated.mount()
+        if (fence.eligible(42)) recreated.freshBaseline(42)
+        assertTrue(recreated.coveredForTest())
+    }
+
+    @Test
+    fun `pre resume baseline rejection does not consume the process generation`() {
+        val host = Host()
+        val controller = TerminalPrivacySurfaceController(host)
+        val fence = TerminalBaselineSignalFence()
+        controller.mount()
+
+        assertTrue(fence.eligible(9))
+        assertFalse(controller.freshBaseline(9))
+        assertTrue(fence.eligible(9))
+
+        controller.onResume()
+        assertTrue(controller.freshBaseline(9))
+        assertTrue(fence.commit(9))
+        assertFalse(fence.eligible(9))
     }
 
     @Test

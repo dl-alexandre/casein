@@ -240,9 +240,8 @@ class MainActivity : ComponentActivity() {
 
     internal fun terminalPrivacySurfaceUnmounted() = terminalPrivacy.unmount()
 
-    internal fun terminalPrivacyFreshBaseline(generation: Long) {
+    internal fun terminalPrivacyFreshBaseline(generation: Long): Boolean =
         terminalPrivacy.freshBaseline(generation)
-    }
 
     private fun initFirebaseFallbackIfNeeded() {
         try {

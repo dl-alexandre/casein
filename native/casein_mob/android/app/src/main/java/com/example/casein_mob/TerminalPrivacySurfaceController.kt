@@ -86,8 +86,11 @@ internal class TerminalBaselineSignalFence {
     private var highestClaimed = -1L
 
     @Synchronized
-    fun claim(generation: Long): Boolean {
-        if (generation < 0 || generation <= highestClaimed) return false
+    fun eligible(generation: Long): Boolean = generation >= 0 && generation > highestClaimed
+
+    @Synchronized
+    fun commit(generation: Long): Boolean {
+        if (!eligible(generation)) return false
         highestClaimed = generation
         return true
     }
@@ -176,10 +179,18 @@ object AndroidTerminalPrivacy {
     @JvmStatic
     fun freshBaseline(generation: Long) {
         val target = activity ?: return
-        // A configuration change may recompose an old declarative tree. Do not
-        // let that replayed prop uncover the new activity; only a newly claimed
-        // process-local generation may cross the platform boundary.
-        if (!baselineSignals.claim(generation)) return
-        target.runOnUiThread { target.terminalPrivacyFreshBaseline(generation) }
+        target.runOnUiThread {
+            // Main-thread serialization makes the two-stage fence atomic with
+            // Activity acceptance. A callback that races before onResume is
+            // rejected without consuming its generation; the shared adapter
+            // must explicitly signal again after accepting a foreground
+            // baseline. Activity recreation still cannot replay a committed
+            // prop generation.
+            if (baselineSignals.eligible(generation) &&
+                target.terminalPrivacyFreshBaseline(generation)
+            ) {
+                check(baselineSignals.commit(generation))
+            }
+        }
     }
 }
