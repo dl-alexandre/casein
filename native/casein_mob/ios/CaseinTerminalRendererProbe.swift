@@ -127,7 +127,7 @@ private extension Character {
 private final class CaseinTerminalProbeModel: ObservableObject {
     @Published private(set) var generation = 1
     @Published private(set) var completedCycles = 0
-    @Published private(set) var firstFrameMilliseconds: Double?
+    @Published private(set) var firstSurfaceMountMilliseconds: Double?
     @Published private(set) var surfaceVisible = true
 
     let rendererName: String
@@ -135,6 +135,9 @@ private final class CaseinTerminalProbeModel: ObservableObject {
     let baselineResidentBytes: UInt64
 
     private let started = ContinuousClock.now
+    private let automaticCyclesRequested = ProcessInfo.processInfo.arguments.contains(
+        "--casein-terminal-probe-auto-cycles"
+    )
 
     init(renderer: some CaseinTerminalRendererFacade) {
         rendererName = renderer.rendererName
@@ -142,11 +145,24 @@ private final class CaseinTerminalProbeModel: ObservableObject {
         baselineResidentBytes = Self.residentBytes()
     }
 
-    func markFirstFrame() {
-        guard firstFrameMilliseconds == nil else { return }
-        let duration = started.duration(to: .now)
-        firstFrameMilliseconds = Double(duration.components.seconds) * 1_000 +
-            Double(duration.components.attoseconds) / 1_000_000_000_000_000
+    private var presentedGenerations: Set<Int> = []
+
+    func surfaceDidAppear(generation: Int) {
+        guard presentedGenerations.insert(generation).inserted else { return }
+        if firstSurfaceMountMilliseconds == nil {
+            let duration = started.duration(to: .now)
+            firstSurfaceMountMilliseconds = Double(duration.components.seconds) * 1_000 +
+                Double(duration.components.attoseconds) / 1_000_000_000_000_000
+        }
+        if generation > 1 {
+            completedCycles += 1
+        }
+        if automaticCyclesRequested, completedCycles < 10 {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(80))
+                self?.recreate()
+            }
+        }
     }
 
     func recreate() {
@@ -154,17 +170,6 @@ private final class CaseinTerminalProbeModel: ObservableObject {
         generation += 1
         DispatchQueue.main.async { [weak self] in
             self?.surfaceVisible = true
-            self?.completedCycles += 1
-        }
-    }
-
-    func runAutomaticCyclesIfRequested() async {
-        guard ProcessInfo.processInfo.arguments.contains("--casein-terminal-probe-auto-cycles") else {
-            return
-        }
-        for _ in 0..<10 {
-            recreate()
-            try? await Task.sleep(for: .milliseconds(80))
         }
     }
 
@@ -187,7 +192,7 @@ private final class CaseinTerminalProbeModel: ObservableObject {
 private struct CaseinTerminalProbeSurface: View {
     let frame: CaseinTerminalProbeFrame
     let generation: Int
-    let onFirstFrame: () -> Void
+    let onSurfaceAppear: (Int) -> Void
 
     private let cellWidth: CGFloat = 8.4
     private let cellHeight: CGFloat = 17
@@ -215,7 +220,7 @@ private struct CaseinTerminalProbeSurface: View {
         .id(generation)
         .accessibilityHidden(true)
         .onAppear {
-            DispatchQueue.main.async(execute: onFirstFrame)
+            DispatchQueue.main.async { onSurfaceAppear(generation) }
         }
     }
 }
@@ -238,7 +243,7 @@ private struct CaseinTerminalRendererProbeView: View {
                     CaseinTerminalProbeSurface(
                         frame: model.frame,
                         generation: model.generation,
-                        onFirstFrame: model.markFirstFrame
+                        onSurfaceAppear: model.surfaceDidAppear
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(.gray.opacity(0.4)))
@@ -263,7 +268,6 @@ private struct CaseinTerminalRendererProbeView: View {
                     .accessibilityLabel("Terminal hidden while inactive")
             }
         }
-        .task { await model.runAutomaticCyclesIfRequested() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             applicationIsActive = true
         }
@@ -273,14 +277,63 @@ private struct CaseinTerminalRendererProbeView: View {
     }
 
     private var metricsLabel: String {
-        let first = model.firstFrameMilliseconds.map { String(format: "%.2f", $0) } ?? "pending"
-        return "renderer=\(model.rendererName) generation=\(model.generation) cycles=\(model.completedCycles) first_ms=\(first) rss_delta=\(model.residentDeltaBytes)"
+        let first = model.firstSurfaceMountMilliseconds.map { String(format: "%.2f", $0) } ?? "pending"
+        return "renderer=\(model.rendererName) generation=\(model.generation) cycles=\(model.completedCycles) surface_mount_ms=\(first) rss_delta=\(model.residentDeltaBytes)"
     }
 
     private var metricsAccessibilityValue: String {
-        let first = model.firstFrameMilliseconds.map { String(format: "%.2f", $0) } ?? "pending"
-        return "renderer \(model.rendererName), generation \(model.generation), cycles \(model.completedCycles), first frame milliseconds \(first), resident delta bytes \(model.residentDeltaBytes)"
+        let first = model.firstSurfaceMountMilliseconds.map { String(format: "%.2f", $0) } ?? "pending"
+        return "renderer \(model.rendererName), generation \(model.generation), cycles \(model.completedCycles), surface mount milliseconds \(first), resident delta bytes \(model.residentDeltaBytes)"
     }
+}
+
+/// UIKit-owned foreground-transition cover. It is installed before the probe
+/// is presented and becomes opaque synchronously on will-resign-active. This
+/// narrows snapshot exposure, but the probe does not claim that XCUITest can
+/// inspect or prove the OS-owned app-switcher snapshot.
+@MainActor
+private final class CaseinTerminalProbeHostingController: UIHostingController<CaseinTerminalRendererProbeView> {
+    private let privacyCover = UIView()
+
+    init() {
+        super.init(rootView: CaseinTerminalRendererProbeView())
+        privacyCover.backgroundColor = .black
+        privacyCover.isAccessibilityElement = true
+        privacyCover.accessibilityLabel = "Terminal hidden while inactive"
+        privacyCover.isHidden = UIApplication.shared.applicationState == .active
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
+    @available(*, unavailable)
+    required dynamic init?(coder aDecoder: NSCoder) { fatalError("init(coder:) unavailable") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        privacyCover.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(privacyCover)
+        NSLayoutConstraint.activate([
+            privacyCover.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            privacyCover.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            privacyCover.topAnchor.constraint(equalTo: view.topAnchor),
+            privacyCover.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    @objc private func applicationWillResignActive() { privacyCover.isHidden = false }
+    @objc private func applicationDidBecomeActive() { privacyCover.isHidden = true }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 }
 
 @objc(CaseinTerminalProbeFactory)
@@ -289,13 +342,13 @@ public final class CaseinTerminalProbeFactory: NSObject {
         ProcessInfo.processInfo.arguments.contains("--casein-terminal-probe")
     }
 
-    @objc public static func makeRootViewController() -> UIViewController {
-        UIHostingController(rootView: CaseinTerminalRendererProbeView())
+    @MainActor @objc public static func makeRootViewController() -> UIViewController {
+        CaseinTerminalProbeHostingController()
     }
 
     /// Registration proves the same Casein-owned surface can cross Mob's
     /// native_view seam. Product screens intentionally do not emit it yet.
-    @objc public static func registerMobNativeView() {
+    @MainActor @objc public static func registerMobNativeView() {
         MobNativeViewRegistry.shared.register("CaseinMob_IosTerminalProbeComponent") { _, _ in
             AnyView(CaseinTerminalRendererProbeView())
         }
@@ -303,6 +356,9 @@ public final class CaseinTerminalProbeFactory: NSObject {
 }
 
 @_cdecl("casein_register_terminal_probe")
+@MainActor
 public func casein_register_terminal_probe() {
-    CaseinTerminalProbeFactory.registerMobNativeView()
+    if CaseinTerminalProbeFactory.isEnabled() {
+        CaseinTerminalProbeFactory.registerMobNativeView()
+    }
 }

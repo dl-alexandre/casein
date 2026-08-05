@@ -390,7 +390,12 @@ static BOOL MobStoreDeepLinkURL(NSURL* url) {
     (void)app;
 
     [UNUserNotificationCenter currentNotificationCenter].delegate = self;
-    casein_register_terminal_probe();
+    // The synthetic renderer registry seam must not exist in an ordinary app
+    // process. Keep both registration and presentation behind the same explicit
+    // launch argument so a product screen cannot discover the probe by name.
+    if ([CaseinTerminalProbeFactory isEnabled]) {
+        casein_register_terminal_probe();
+    }
 
     // Must run before mob_init_ui() so the registry has every plugin view
     // factory in place by the time the BEAM mounts its first screen.

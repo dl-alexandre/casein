@@ -8,12 +8,17 @@ the signed app is launched with `--casein-terminal-probe`.
 
 - `CaseinTerminalRendererProbe.swift` owns a small renderer façade and a
   Canvas implementation for one fixed ANSI fixture.
-- The same view is registered through Mob's `MobNativeViewRegistry`, but no
-  product screen emits the component yet.
+- The same view is registered through Mob's `MobNativeViewRegistry` only in a
+  process launched with the explicit probe flag; no product screen emits the
+  component. An ordinary launch neither registers nor presents the probe.
 - Fixture pixels are excluded from accessibility. Accessibility contains only
   bounded renderer/lifecycle metrics and the recreate control.
-- UIKit activation notifications drive an opaque inactive-state mask. Mob owns
-  the UIKit scene lifecycle, so SwiftUI `scenePhase` is not authoritative.
+- A UIKit hosting controller installs an opaque cover before presentation and
+  shows it synchronously on `willResignActive`; the SwiftUI view carries a
+  second inactive-state mask. Mob owns the UIKit scene lifecycle, so SwiftUI
+  `scenePhase` is not authoritative. This narrows foreground-transition
+  exposure, but the test cannot inspect the OS-owned app-switcher snapshot and
+  therefore does not claim proof of snapshot protection.
 - There is no SSH, Citadel, SFTP, tmux-control, credential, socket, or Casein
   session dependency in this probe.
 
@@ -67,12 +72,12 @@ was not cleared.
 | Observation | Result |
 | --- | --- |
 | Native compile/link/sign/install | pass |
-| Fixed ANSI first visible frame | 41.10 ms (single physical observation) |
+| Fixed ANSI first surface mount (`onAppear`) | 41.10 ms (single physical observation; not a committed-frame measurement) |
 | Create/destroy/recreate cycles | 10 automatic + 1 UI-driven, pass |
-| Background/foreground | pass |
+| Background/foreground lifecycle | pass; OS-owned app-switcher snapshot not asserted |
 | Portrait/landscape/portrait | pass |
-| Fixture absent from accessibility | pass |
-| Signed XCUITest | 1/1 pass, `CaseinTerminalRendererProbeUITests` |
+| Fixture absent from all enumerated accessibility labels/values/identifiers | pass |
+| Signed XCUITest | 2/2 pass, flagged lifecycle/privacy-boundary coverage plus an unflagged-launch absence proof in `CaseinTerminalRendererProbeUITests` |
 | Installed `.app` size | 185,420 KiB (non-slim development bundle) |
 | Main executable size | 9,700,304 bytes |
 | Reported RSS delta | 62,570,496 bytes |
@@ -93,5 +98,5 @@ stack or prebuilt GhosttyKit. The next renderer comparison is specifically:
 1. source-build and pin libghostty-vt/GhosttyKit on a compatible toolchain;
 2. place it behind `CaseinTerminalRendererFacade` without transport changes;
 3. repeat this exact synthetic lifecycle/accessibility gate;
-4. compare repeated first-frame, renderer-isolated memory, and signed bundle
+4. compare repeated committed-frame timing, renderer-isolated memory, and signed bundle
    size before selecting it.

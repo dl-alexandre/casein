@@ -1,8 +1,8 @@
 import XCTest
 
 /// Physical-device acceptance for the explicit, synthetic-only renderer gate.
-/// The signed Casein app must already be foregrounded with
-/// `--casein-terminal-probe --casein-terminal-probe-auto-cycles`.
+/// The signed app is launched externally through `devicectl` before each test.
+/// This avoids Xcode replacing Mob's signed bundle with the provisioning stub.
 final class CaseinTerminalRendererProbeUITests: XCTestCase {
     private let bundleIdentifier = "com.alexandrefamilyfarm.casein-mob"
     private var app: XCUIApplication!
@@ -17,11 +17,7 @@ final class CaseinTerminalRendererProbeUITests: XCTestCase {
     }
 
     func testSignedSyntheticRendererLifecycleAndPrivacyBoundary() throws {
-        XCTAssertNotEqual(
-            app.state,
-            .notRunning,
-            "Launch the installed app through the explicit terminal probe arguments first"
-        )
+        XCTAssertNotEqual(app.state, .notRunning, "Launch the flagged signed app first")
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
 
@@ -37,7 +33,7 @@ final class CaseinTerminalRendererProbeUITests: XCTestCase {
 
         // Fixture pixels are Canvas-only. They must not enter the native
         // accessibility tree as a label or value.
-        XCTAssertFalse(app.staticTexts["CASEIN SYNTHETIC TERMINAL"].exists)
+        assertFixtureAbsentFromAccessibilityTree()
 
         let previousValue = stringValue(metrics)
         let recreate = app.descendants(matching: .any)["casein.terminal.probe.recreate"]
@@ -58,6 +54,38 @@ final class CaseinTerminalRendererProbeUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         XCTAssertTrue(waitForPortrait(timeout: 8))
         XCTAssertTrue(root.exists)
+    }
+
+    func testUnflaggedLaunchDoesNotExposeProbeRootOrControl() throws {
+        XCTAssertNotEqual(app.state, .notRunning, "Launch the unflagged signed app first")
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
+        XCTAssertFalse(app.descendants(matching: .any)["casein.terminal.probe.root"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["casein.terminal.probe.recreate"].exists)
+    }
+
+    private func assertFixtureAbsentFromAccessibilityTree(
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let forbidden = [
+            "CASEIN SYNTHETIC TERMINAL",
+            "renderer: canvas",
+            "lifecycle: create resize destroy recreate",
+            "privacy: fixture only"
+        ]
+        for element in app.descendants(matching: .any).allElementsBoundByAccessibilityElement {
+            let exposed = [element.identifier, element.label, stringValue(element)]
+                .joined(separator: "\n")
+            for fragment in forbidden {
+                XCTAssertFalse(
+                    exposed.localizedCaseInsensitiveContains(fragment),
+                    "Fixture fragment leaked through accessibility: \(fragment)",
+                    file: file,
+                    line: line
+                )
+            }
+        }
     }
 
     private func stringValue(_ element: XCUIElement) -> String {
