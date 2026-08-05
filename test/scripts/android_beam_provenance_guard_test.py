@@ -377,6 +377,8 @@ sys.stdout.buffer.write(payload)
                 "installed_manifest_complete": True,
                 "beam_name_set_match": True,
                 "beam_digest_match": True,
+                "timeout_reason": "none",
+                "completed_record_count": 0,
                 "exact": True,
             },
             result.public(),
@@ -563,11 +565,12 @@ sys.stdout.buffer.write(payload)
                 self.assertIsNone(guard._manifest_timeout_seconds(count))
 
         runner = self.runner(*self.payloads)
-        status, installed = guard._read_installed_manifest(
+        status, installed, diagnostics = guard._read_installed_manifest(
             SERIAL, PACKAGE, runner, guard.MAX_BEAMS + 1
         )
         self.assertEqual("installed_manifest_failed", status)
         self.assertIsNone(installed)
+        self.assertEqual(guard.ManifestDiagnostics(), diagnostics)
         self.assertEqual([], runner.calls)
 
     def test_fixed_device_shell_programs_pass_shell_syntax(self) -> None:
@@ -643,12 +646,14 @@ sys.stdout.buffer.write(payload)
         ), mock.patch.object(
             guard, "MANIFEST_IDLE_TIMEOUT_SECONDS", 0.75
         ):
-            status, installed = guard._read_installed_manifest(
+            status, installed, diagnostics = guard._read_installed_manifest(
                 SERIAL, PACKAGE, runner, len(self.payloads)
             )
 
         self.assertEqual("ok", status)
         self.assertIsNotNone(installed)
+        self.assertEqual("none", diagnostics.timeout_reason)
+        self.assertEqual(len(self.payloads), diagnostics.completed_record_count)
         self.assertEqual(len(self.payloads), len(installed.entries))
 
     def test_fake_adb_fd_alias_mismatch_fails_closed(self) -> None:
@@ -880,6 +885,65 @@ sys.stdout.buffer.write(payload)
                 self.assertFalse(result.exact)
                 self.assertNotIn(SECRET, json.dumps(result.public()))
                 self.assertEqual(1, len(runner.calls))
+
+    def test_manifest_failure_diagnostics_are_fixed_capped_and_nonreflecting(self) -> None:
+        names = tuple(sorted(self.payloads)[:2])
+        complete = manifest(*names, payloads=self.payloads)
+        partial = b"\n".join(complete.split(b"\n")[:-3]) + b"\n"
+
+        cases = (
+            (
+                guard.CommandResult("timeout", -15, partial, "idle"),
+                "installed_manifest_failed",
+                "idle",
+            ),
+            (
+                guard.CommandResult("timeout", -15, partial, "total"),
+                "installed_manifest_failed",
+                "total",
+            ),
+            (
+                guard.CommandResult("ok", 7, partial),
+                "installed_manifest_failed",
+                "none",
+            ),
+            (
+                guard.CommandResult("ok", 0, partial),
+                "installed_manifest_malformed",
+                "none",
+            ),
+        )
+        for command, status, reason in cases:
+            with self.subTest(status=status, reason=reason):
+                runner = FakeRunner(command, runtime_result=self.runtime_result())
+                result = self.verify(runner)
+                public = json.dumps(result.public(), sort_keys=True)
+                self.assertEqual(status, result.status)
+                self.assertEqual(reason, result.timeout_reason)
+                self.assertEqual(len(names), result.completed_record_count)
+                self.assertNotIn(SECRET, public)
+                self.assertNotIn(SERIAL, public)
+                self.assertNotIn(PACKAGE, public)
+
+        oversized = (
+            guard._MANIFEST_HEADER
+            + b"\n"
+            + (b"opaque\topaque\topaque\n" * (guard.MAX_BEAMS + 2))
+        )
+        self.assertEqual(
+            guard.MAX_BEAMS,
+            guard._completed_manifest_record_count(oversized),
+        )
+
+    def test_manifest_diagnostic_sanitizes_untrusted_values(self) -> None:
+        result = guard.GuardResult(
+            "installed_manifest_failed",
+            timeout_reason=SECRET,
+            completed_record_count=guard.MAX_BEAMS + 1,
+        )
+        self.assertEqual("none", result.timeout_reason)
+        self.assertEqual(0, result.completed_record_count)
+        self.assertNotIn(SECRET, json.dumps(result.public()))
 
     def test_truncated_and_malformed_manifest_frames_are_rejected(self) -> None:
         digest = b"0" * 64
@@ -1176,6 +1240,8 @@ sys.stdout.buffer.write(payload)
                 "installed_manifest_complete",
                 "beam_name_set_match",
                 "beam_digest_match",
+                "timeout_reason",
+                "completed_record_count",
                 "exact",
             },
             set(decoded),
@@ -1349,6 +1415,7 @@ sys.stdout.buffer.write(payload)
             idle_timeout_seconds=0.1,
         )
         self.assertEqual("timeout", result.category)
+        self.assertEqual("idle", result.timeout_reason)
         self.assertEqual(b"partial", result.stdout)
         self.assertTrue(
             self._wait_for_process_exit(int(marker.read_text(encoding="ascii")))
@@ -1375,6 +1442,7 @@ sys.stdout.buffer.write(payload)
         )
         elapsed = time.monotonic() - started
         self.assertEqual("timeout", result.category)
+        self.assertEqual("total", result.timeout_reason)
         self.assertLess(elapsed, 0.75)
         self.assertGreater(len(result.stdout), 1)
 
@@ -1386,6 +1454,7 @@ sys.stdout.buffer.write(payload)
             idle_timeout_seconds=0.1,
         )
         self.assertEqual("timeout", result.category)
+        self.assertEqual("idle", result.timeout_reason)
         self.assertEqual(b"", result.stdout)
 
     def test_runner_success_and_failure_return_without_signaling_caller(self) -> None:
@@ -1494,6 +1563,7 @@ sys.stdout.buffer.write(payload)
             )
 
         self.assertEqual("timeout", result.category)
+        self.assertEqual("total", result.timeout_reason)
         self.assertIsNotNone(result.returncode)
         child_pid = int(marker.read_text(encoding="ascii"))
         self.assertTrue(self._wait_for_process_exit(child_pid))
