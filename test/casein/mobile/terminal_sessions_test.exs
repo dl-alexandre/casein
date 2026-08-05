@@ -492,6 +492,47 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     assert Tmux.kills() == [lease.tmux_session]
   end
 
+  test "delete sanitizes secret-bearing adapter errors from return, logs, and audit" do
+    assert {:ok, lease} = TerminalSessions.create(attrs(), tmux: Tmux)
+    secret = "delete adapter credential-like output"
+    Tmux.kill_error({:subprocess_failed, secret})
+
+    log =
+      capture_log(fn ->
+        assert {:error, :tmux_teardown_failed} =
+                 TerminalSessions.delete(lease.id, tmux: Tmux)
+      end)
+
+    refute log =~ secret
+    refute inspect(Casein.Audit.list(limit: 20)) =~ secret
+    assert Repo.get!(TerminalSession, lease.id).state == "deleting"
+  end
+
+  test "ordinary reconcile return sanitizes secret-bearing adapter errors" do
+    now = ~U[2026-08-05 10:00:00Z]
+
+    assert {:ok, lease} =
+             TerminalSessions.create(attrs(), tmux: Tmux, now: now, ttl_seconds: 60)
+
+    secret = "reaper adapter token-like output"
+    Tmux.kill_error({:subprocess_failed, secret})
+
+    log =
+      capture_log(fn ->
+        assert [{:error, :tmux_teardown_failed}] =
+                 Casein.Mobile.TerminalReaper.safe_reconcile(fn ->
+                   TerminalSessions.reconcile_due(
+                     tmux: Tmux,
+                     now: DateTime.add(now, 61, :second)
+                   )
+                 end)
+      end)
+
+    refute log =~ secret
+    refute inspect(Casein.Audit.list(limit: 20)) =~ secret
+    assert Repo.get!(TerminalSession, lease.id).state == "deleting"
+  end
+
   test "reaper retry of an explicit delete preserves deleted rather than expired audit semantics" do
     now = ~U[2026-08-05 10:00:00Z]
 

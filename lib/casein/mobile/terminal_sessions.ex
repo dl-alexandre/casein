@@ -411,7 +411,19 @@ defmodule Casein.Mobile.TerminalSessions do
   defp normalize_kill(:ok), do: :ok
   defp normalize_kill({:error, reason}) when reason in [:not_found, :no_session], do: :ok
   defp normalize_kill({:error, {1, _}}), do: :ok
-  defp normalize_kill(other), do: other
+
+  defp normalize_kill({:error, reason})
+       when reason in [
+              :temporarily_unavailable,
+              :mobile_terminal_identity_mismatch,
+              :invalid_mobile_terminal_identity
+            ],
+       do: {:error, reason}
+
+  # Adapter failures may include tmux output. Teardown and the supervised
+  # reaper expose only a fixed code; raw subprocess values never cross this
+  # boundary into callers, logs, or audit metadata.
+  defp normalize_kill(_other), do: {:error, :tmux_teardown_failed}
 
   defp with_lease_lock(id, fun) when is_binary(id) and is_function(fun, 0) do
     case Repo.transaction(fn ->
