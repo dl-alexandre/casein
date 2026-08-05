@@ -11,9 +11,12 @@ sudo() {
   return 93
 }
 
-upstream_path="/apps/http/servers/srv0/routes/0/handle/0/upstreams/0/dial"
+upstream_path="/apps/http/servers/srv0/routes/1/handle/0/upstreams/0/dial"
+unrelated_dial="127.0.0.1:9999"
 current_dial="unix//run/casein/current.sock"
 patch_count=0
+last_patch_url=""
+last_patch_data=""
 admin_url="${CASEIN_CADDY_ADMIN_URL}"
 admin_config_fail=0
 admin_read_fail=0
@@ -79,9 +82,11 @@ curl() {
   if [ "$url" = "${admin_url}/config/" ]; then
     [ "$admin_config_fail" -eq 0 ] || return 28
     printf '%s\n' \
-      '{"apps":{"http":{"servers":{"srv0":{"routes":[{"match":[{"host":["casein.devbox.milcgroup.com"]}],"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"unix//run/casein/current.sock"}]}]}]}}}}}'
+      '{"apps":{"http":{"servers":{"srv0":{"routes":[{"match":[{"host":["unrelated.devbox.milcgroup.com"]}],"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"127.0.0.1:9999"}]}]},{"match":[{"host":["casein.devbox.milcgroup.com"]}],"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"unix//run/casein/current.sock"}]}]}]}}}}}'
   elif [ "$method" = "PATCH" ]; then
     [ "$admin_patch_fail" -eq 0 ] || return 28
+    last_patch_url="$url"
+    last_patch_data="$data"
     current_dial="${data%\"}"
     current_dial="${current_dial#\"}"
     patch_count=$((patch_count + 1))
@@ -152,10 +157,27 @@ casein_caddy_reconcile_allows_attestation
 casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
 [ "$patch_count" -eq 0 ]
 
+# Activation must refresh Caddy's connection pool even though the configured
+# scalar is already canonical. Repeating the refresh is idempotent: the route
+# value remains unchanged and only the exact discovered upstream is patched.
+casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" migration
+[ "$current_dial" = "unix//run/casein/current.sock" ]
+[ "$patch_count" -eq 1 ]
+[ "$last_patch_url" = "${admin_url}/config${upstream_path}" ]
+[ "$last_patch_data" = '"unix//run/casein/current.sock"' ]
+[ "$unrelated_dial" = "127.0.0.1:9999" ]
+[ "$CADDY_RECONCILE_OUTCOME" = "verified_known_dial" ]
+casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" migration
+[ "$current_dial" = "unix//run/casein/current.sock" ]
+[ "$patch_count" -eq 2 ]
+[ "$last_patch_url" = "${admin_url}/config${upstream_path}" ]
+[ "$last_patch_data" = '"unix//run/casein/current.sock"' ]
+[ "$unrelated_dial" = "127.0.0.1:9999" ]
+
 current_dial="unix//run/devide/current.sock"
 casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair
 [ "$current_dial" = "unix//run/casein/current.sock" ]
-[ "$patch_count" -eq 1 ]
+[ "$patch_count" -eq 3 ]
 
 current_dial="unix//unexpected/current.sock"
 if casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair; then
@@ -163,7 +185,7 @@ if casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" repair; then
   exit 1
 fi
 [ "$current_dial" = "unix//unexpected/current.sock" ]
-[ "$patch_count" -eq 1 ]
+[ "$patch_count" -eq 3 ]
 [ "$CADDY_RECONCILE_OUTCOME" = "unknown_dial" ]
 if casein_caddy_reconcile_allows_attestation; then
   echo "unknown Caddy dial unexpectedly allowed attestation" >&2
@@ -173,7 +195,7 @@ fi
 current_dial="unix//unexpected/current.sock"
 casein_reconcile_caddy_upstream "casein.devbox.milcgroup.com" migration
 [ "$current_dial" = "unix//run/casein/current.sock" ]
-[ "$patch_count" -eq 2 ]
+[ "$patch_count" -eq 4 ]
 [ "$CADDY_RECONCILE_OUTCOME" = "unknown_dial_repaired" ]
 if casein_caddy_reconcile_allows_attestation; then
   echo "repaired unknown Caddy dial unexpectedly allowed attestation" >&2

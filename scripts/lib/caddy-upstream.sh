@@ -278,14 +278,25 @@ casein_reconcile_caddy_upstream() {
 
   case "$CADDY_PREVIOUS_DIAL" in
     "$CASEIN_CADDY_CANONICAL_DIAL")
-      CADDY_RECONCILE_OUTCOME="verified_known_dial"
-      log "Caddy upstream for ${host} points at the canonical socket"
-      return 0
+      if [ "$mode" = "repair" ]; then
+        CADDY_RECONCILE_OUTCOME="verified_known_dial"
+        log "Caddy upstream for ${host} points at the canonical socket"
+        return 0
+      fi
+      # current.sock is an atomic symlink. Caddy may keep a pooled Unix
+      # connection to the old target after the symlink changes, so activation
+      # deliberately re-applies the same scalar value. The narrowly-scoped
+      # config mutation reprovisions this reverse proxy without changing any
+      # route or relying on a broad Caddy reload.
+      log "refreshing canonical Caddy upstream for ${host} after socket handoff"
       ;;
     "$CASEIN_CADDY_LOOPBACK_DIAL")
-      CADDY_RECONCILE_OUTCOME="verified_known_dial"
-      log "Caddy upstream for ${host} uses the supported loopback proxy"
-      return 0
+      if [ "$mode" = "repair" ]; then
+        CADDY_RECONCILE_OUTCOME="verified_known_dial"
+        log "Caddy upstream for ${host} uses the supported loopback proxy"
+        return 0
+      fi
+      log "refreshing supported loopback Caddy upstream for ${host} after socket handoff"
       ;;
     "$CASEIN_CADDY_LEGACY_DIAL")
       log "migrating known legacy Caddy upstream for ${host}: ${CADDY_PREVIOUS_DIAL} -> ${CASEIN_CADDY_CANONICAL_DIAL}"
@@ -301,10 +312,17 @@ casein_reconcile_caddy_upstream() {
       ;;
   esac
 
+  local desired_dial="$CASEIN_CADDY_CANONICAL_DIAL"
+  case "$CADDY_PREVIOUS_DIAL" in
+    "$CASEIN_CADDY_CANONICAL_DIAL" | "$CASEIN_CADDY_LOOPBACK_DIAL")
+      desired_dial="$CADDY_PREVIOUS_DIAL"
+      ;;
+  esac
+
   if ! casein_caddy_admin_curl -fsS -X PATCH \
       "${CASEIN_CADDY_ADMIN_URL}/config${CADDY_UPSTREAM_PATH}" \
       -H "content-type: application/json" \
-      -d "\"${CASEIN_CADDY_CANONICAL_DIAL}\"" >/dev/null; then
+      -d "\"${desired_dial}\"" >/dev/null; then
     CADDY_RECONCILE_OUTCOME="patch_failed"
     log "warning: Caddy upstream PATCH failed; leaving ${CADDY_PREVIOUS_DIAL:-unknown} in place"
     return 1
@@ -319,9 +337,9 @@ casein_reconcile_caddy_upstream() {
     return 1
   fi
   observed="$(printf '%s' "$observed" | tr -d '"')"
-  if [ "$observed" != "$CASEIN_CADDY_CANONICAL_DIAL" ]; then
+  if [ "$observed" != "$desired_dial" ]; then
     CADDY_RECONCILE_OUTCOME="verification_failed"
-    log "warning: Caddy upstream verification read ${observed:-empty}, expected ${CASEIN_CADDY_CANONICAL_DIAL}"
+    log "warning: Caddy upstream verification read ${observed:-empty}, expected ${desired_dial}"
     return 1
   fi
 
