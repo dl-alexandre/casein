@@ -32,12 +32,27 @@ esac
 
 [[ -d "$WT_ROOT" ]] || { echo "no worktree root at $WT_ROOT"; exit 0; }
 
-# The primary checkout owns `git worktree remove`; resolve it once. Read the
-# whole list before picking the first entry so the producer never sees SIGPIPE
-# (which `set -o pipefail` would treat as fatal).
-mapfile -t _worktrees < <(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2}')
-primary="${_worktrees[0]:-}"
+# The worktree root is SHARED across repositories (and users): the agent
+# worktrees under it may belong to casein, mira, or anything else on the box.
+# Resolving the removing repo once from the CURRENT directory was wrong — every
+# eligibility check below already asks the worktree's own repo via `git -C`, but
+# the removal used the current repo, so a foreign worktree passed every check,
+# was advertised as "would remove", and then failed with "is not a working
+# tree". A dry run that promises cleanup it cannot deliver is worse than one
+# that declines: resolve the owner per worktree instead.
+#
+# The first entry of `worktree list` is the repo's MAIN worktree, which is the
+# one that can remove the others. Read the whole list before taking an entry so
+# the producer never sees SIGPIPE (which `set -o pipefail` would treat as fatal).
+owner_worktree() { # $1 = worktree path -> main worktree of the owning repo, or ""
+  local -a list
+  mapfile -t list < <(git -C "$1" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2}')
+  printf '%s\n' "${list[0]:-}"
+}
+
+self_repo="$(owner_worktree .)"
 self="$(pwd -P)"
+declare -A pruned_repos=()
 
 # current_path of every pane in the Casein tmux server = "something is running
 # here". This is the safety probe: if we CANNOT reach tmux we must not delete,
@@ -103,22 +118,45 @@ for wt in "$WT_ROOT"/*/; do
     fi
   fi
 
+  # Resolve the repo that actually owns this worktree — it may not be ours.
+  owner="$(owner_worktree "$wt")"
+  if [[ -z "$owner" ]]; then
+    echo "keep    $name  (cannot resolve owning repo)"; kept=$((kept+1)); continue
+  fi
+  # A repo's MAIN worktree is somebody's checkout, not an agent leftover.
+  # Landing one under the shared root would otherwise make it a deletion
+  # candidate that passes every check.
+  if [[ "$owner" == "$wt" ]]; then
+    echo "keep    $name  (main worktree of its repo, not an agent leftover)"
+    kept=$((kept+1)); continue
+  fi
+  # Name the owner when it is not us, so the operator can see that this sweep
+  # reaches across repositories rather than discovering it afterwards.
+  foreign=""
+  [[ -n "$self_repo" && "$owner" != "$self_repo" ]] && foreign="  [owner: $owner]"
+
   # clean + idle + fully pushed → safe to remove
   if [[ "$APPLY" == "1" ]]; then
-    if git -C "${primary:-$wt}" worktree remove "$wt" 2>/dev/null \
-       || git -C "${primary:-$wt}" worktree remove --force "$wt" 2>/dev/null; then
-      echo "removed $name"
+    if git -C "$owner" worktree remove "$wt" 2>/dev/null \
+       || git -C "$owner" worktree remove --force "$wt" 2>/dev/null; then
+      echo "removed $name$foreign"
+      pruned_repos["$owner"]=1
     else
-      echo "FAILED  $name  (git worktree remove errored — left in place)"
+      echo "FAILED  $name  (git worktree remove errored — left in place)$foreign"
       kept=$((kept+1)); continue
     fi
   else
-    echo "would remove  $name  (clean, idle, pushed)"
+    echo "would remove  $name  (clean, idle, pushed)$foreign"
   fi
   removed=$((removed+1))
 done
 
-git worktree prune 2>/dev/null || true
+# Prune every repo we touched, not just the current one — a foreign repo would
+# otherwise keep a stale administrative entry for a directory we just deleted.
+pruned_repos["${self_repo:-$PWD}"]=1
+for repo in "${!pruned_repos[@]}"; do
+  git -C "$repo" worktree prune 2>/dev/null || true
+done
 
 if [[ "$APPLY" == "1" ]]; then
   echo "--- removed: $removed   kept: $kept ---"
