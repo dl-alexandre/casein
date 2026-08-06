@@ -1,0 +1,60 @@
+# Durable cgroup anchor for the host Casein tmux server (`-L casein`).
+#
+# Install (once per box):
+#   bash scripts/ensure-casein-tmux-anchor.sh
+#
+# WHY THIS EXISTS
+#
+# tmux servers are started incidentally, by whichever process first issues a
+# tmux command — in practice the running Casein canary. cgroup membership is
+# inherited and daemonising does not change it, so the server lands in that
+# canary's transient cgroup and stays there forever. Deploys replace the
+# canary with `KillMode=process`, which kills only the release's main process,
+# so the server survives inside the cgroup of a unit that is now inactive or
+# failed. Measured on the devbox: 355% of CPU — close to half the box's active
+# load — was running inside cgroups of dead units, because every agent pane
+# inherits the server's cgroup too.
+#
+# That is not just untidy. Any `systemctl stop`/`kill` aimed at one of those
+# stale canary units would take the tmux server and every terminal with it,
+# which is the most likely explanation for previously unattributable `-L
+# casein` server deaths.
+#
+# This unit owns a cgroup that belongs to no deploy. The tmux server is moved
+# into it once (see ensure-casein-tmux-anchor.sh) and every pane the server
+# spawns from then on inherits it, so agent work stops accumulating in
+# throwaway canary cgroups.
+#
+# The anchor's own main process is a `sleep`, whose only job is to keep the
+# cgroup alive. KillMode=process is deliberate and load-bearing: stopping or
+# restarting this unit kills only that sleep, never the adopted tmux server.
+
+[Unit]
+Description=Casein tmux server cgroup anchor (deploy-independent)
+After=network.target
+
+[Service]
+Type=exec
+User=devbox
+Group=devbox
+Environment=HOME=/home/devbox
+
+ExecStart=/bin/sleep infinity
+
+# Guarantee a server exists on a fresh box. Started from here it is born in
+# this cgroup, so no migration is ever needed for it. On a box that already
+# has a server this is a no-op connect.
+ExecStartPost=/bin/sh -c '__TMUX_BIN__ -L casein has-session -t __casein_keepalive 2>/dev/null || __TMUX_BIN__ -L casein new-session -d -s __casein_keepalive -c /tmp || true'
+
+# Only ever signal our own sleep. The adopted tmux server must outlive any
+# stop, restart, or daemon-reload of this unit.
+KillMode=process
+
+# Hands off: the processes in this cgroup were not started by systemd.
+Delegate=yes
+
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
