@@ -29,6 +29,9 @@ internal class TerminalPrivacySurfaceController(
     private var foreground = false
     private var covered = false
     private var highestBaselineGeneration = -1L
+    private var activeBaselineGeneration = -1L
+    private var highestFirstPaintGeneration = -1L
+    private var firstPaintCount = 0L
 
     fun mount() {
         mounts += 1
@@ -42,6 +45,7 @@ internal class TerminalPrivacySurfaceController(
         if (mounts == 0) return
         mounts -= 1
         if (mounts == 0) {
+            activeBaselineGeneration = -1L
             uncover()
             host.setSecure(false)
         }
@@ -54,6 +58,7 @@ internal class TerminalPrivacySurfaceController(
 
     fun onPauseOrStop() {
         if (mounts > 0) cover()
+        activeBaselineGeneration = -1L
         foreground = false
     }
 
@@ -62,9 +67,29 @@ internal class TerminalPrivacySurfaceController(
         if (!foreground || mounts == 0) return false
 
         highestBaselineGeneration = generation
+        activeBaselineGeneration = generation
         uncover()
         return true
     }
+
+    fun firstPaint(generation: Long): Boolean {
+        if (!foreground || mounts == 0 || covered) return false
+        if (generation != activeBaselineGeneration || generation <= highestFirstPaintGeneration) return false
+
+        highestFirstPaintGeneration = generation
+        firstPaintCount += 1
+        return true
+    }
+
+    internal fun fixedDiagnostic(): LongArray =
+        longArrayOf(
+            highestBaselineGeneration,
+            activeBaselineGeneration,
+            highestFirstPaintGeneration,
+            firstPaintCount,
+            mounts.toLong(),
+            if (covered) 1L else 0L
+        )
 
     internal fun mountedCountForTest(): Int = mounts
     internal fun coveredForTest(): Boolean = covered
@@ -104,6 +129,12 @@ internal fun terminalBaselineGeneration(value: Any?): Long? =
         is Long -> value
         else -> null
     }?.takeIf { it >= 0 }
+
+internal fun reportTerminalFirstPaint(generation: Long?, report: (Long) -> Unit): Boolean {
+    if (generation == null) return false
+    report(generation)
+    return true
+}
 
 /** Android window implementation. All calls are made on the activity main thread. */
 internal class TerminalPrivacyWindowHost(private val activity: Activity) :
@@ -193,4 +224,14 @@ object AndroidTerminalPrivacy {
             }
         }
     }
+
+    @JvmStatic
+    fun firstPaint(generation: Long) {
+        val target = activity ?: return
+        target.terminalPrivacyFirstPaint(generation)
+    }
+
+    /** Fixed lifecycle counters only; never contains terminal identity or content. */
+    @JvmStatic
+    fun fixedDiagnostic(): LongArray = activity?.terminalPrivacyFixedDiagnostic() ?: longArrayOf()
 }

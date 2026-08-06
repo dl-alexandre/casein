@@ -243,6 +243,11 @@ class MainActivity : ComponentActivity() {
     internal fun terminalPrivacyFreshBaseline(generation: Long): Boolean =
         terminalPrivacy.freshBaseline(generation)
 
+    internal fun terminalPrivacyFirstPaint(generation: Long): Boolean =
+        terminalPrivacy.firstPaint(generation)
+
+    internal fun terminalPrivacyFixedDiagnostic(): LongArray = terminalPrivacy.fixedDiagnostic()
+
     private fun initFirebaseFallbackIfNeeded() {
         try {
             if (com.google.firebase.FirebaseApp.getApps(this).isNotEmpty()) {

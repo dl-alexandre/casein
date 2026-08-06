@@ -105,6 +105,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -1918,6 +1920,8 @@ fun RenderNode(node: MobNode, modifier: Modifier = Modifier) {
     }
 }
 
+private val LocalTerminalBaselineGeneration = compositionLocalOf<Long?> { null }
+
 @Composable
 private fun RenderNodeInner(node: MobNode, modifier: Modifier) {
     // Apply on_tap as a clickable modifier for any node type except button —
@@ -1964,7 +1968,16 @@ private fun RenderNodeInner(node: MobNode, modifier: Modifier) {
                 modifier = finalModifier,
                 contentAlignment = boxAlignProp(node.props)
             ) {
-                node.children.forEach { RenderNode(it) }
+                if (node.props["id"] == "terminal-surface") {
+                    CompositionLocalProvider(
+                        LocalTerminalBaselineGeneration provides
+                            terminalBaselineGeneration(node.props["fresh_baseline_generation"])
+                    ) {
+                        node.children.forEach { RenderNode(it) }
+                    }
+                } else {
+                    node.children.forEach { RenderNode(it) }
+                }
             }
         }
         "scroll" -> {
@@ -2723,8 +2736,10 @@ private fun MobCanvas(node: MobNode, modifier: Modifier) {
         }
     }
 
+    val terminalBaselineGeneration = LocalTerminalBaselineGeneration.current
     Canvas(modifier = sized) {
         ops.forEach { op -> drawCanvasOp(op) }
+        reportTerminalFirstPaint(terminalBaselineGeneration, AndroidTerminalPrivacy::firstPaint)
     }
 }
 
