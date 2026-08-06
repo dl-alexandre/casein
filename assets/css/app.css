@@ -463,6 +463,13 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   background-color: var(--color-base-300);
 }
 
+/* The rails' filter line is permanent chrome so type-to-filter is discoverable
+   without a keystroke; it reads as a placeholder until one arrives. */
+[data-picker-filter][data-picker-filter-empty] {
+  color: color-mix(in oklch, var(--color-base-content) 45%, transparent);
+  font-style: italic;
+}
+
 /* Font size CSS variable — managed by app.js; the A- / A+ controls in the
    mobile keybar and the header ⋯ menu adjust it, and ghostty_terminal.js writes
    it onto the grid <pre>. --casein-terminal-line-height is kept in sync by

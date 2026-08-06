@@ -197,6 +197,44 @@ defmodule CaseinWeb.WorkspaceHeaderChromeTest do
     assert MapSet.member?(state.sidebar_expanded_workspaces, workspace_id)
   end
 
+  test "closing the sessions rail keeps its tree warm for the next open", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+    assigns = fn -> :sys.get_state(view.pid).socket.assigns end
+    assert assigns.().sessions_sidebar_tree != []
+
+    render_hook(view, "sidebar:close", %{})
+    state = assigns.()
+
+    # Hidden, but still populated: reopening must paint from this rather than
+    # blocking on a fresh workspace-summary build (a git call per workspace).
+    # Not asserted equal to the open-time tree — async summaries can land in
+    # between and legitimately rebuild it; what matters is that it stays filled.
+    refute state.sessions_sidebar_open?
+    assert state.sessions_sidebar_tree != []
+    assert MapSet.member?(state.sidebar_expanded_workspaces, workspace_id)
+
+    # Windows are rebuilt from live tmux topology on open, so they do reset.
+    assert state.windows_sidebar_tree == []
+  end
+
+  test "sessions rail renders its chrome before any workspace summary lands", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    html = render_hook(view, "sidebar:open", %{"mode" => "both"})
+
+    assert html =~ ~s(id="sessions-sidebar-#{workspace_id}")
+    assert html =~ "Type to filter"
+    assert html =~ "o open"
+  end
+
   test "restore_sort applies a client-persisted sort mode per column", %{
     conn: conn,
     workspace_id: workspace_id

@@ -1574,6 +1574,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:previews_count, length(previews))
         |> assign(:session_tabs, data[:session_tabs] || [])
         |> assign_workspace_summaries(data[:workspace_summaries] || [])
+        # Build the sessions tree now, while the rail is still closed: mount
+        # hydration already paid for the summaries, so the first C-b s paints
+        # from this instead of kicking off its own build_many/1.
+        |> Sidebar.assign_sessions_sidebar_tree()
         |> assign_hydrated_templates(
           data[:saved_session_templates] || [],
           data[:saved_session_template_tags] || []
