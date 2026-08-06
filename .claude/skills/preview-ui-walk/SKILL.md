@@ -134,7 +134,13 @@ is throwaway**. The app's own walk manifest documents that risk under `safety`. 
    against `step.event`).
 3. The manifest carries the app's `safety` block. Honor it. Log what you skipped.
    When in doubt, screenshot; never click.
-4. A non-production `env_check` is necessary but does not authorize mutation of
+4. **Real data is a publication question, not just a mutation one.** If the
+   target holds real records, declare `safety.data: "real"`. The walk still
+   runs, but the Artifact is refused: `dom` evidence keeps rendered HTML,
+   `a11y` keeps node text, and screenshots cannot be redacted, so publishing
+   copies customer data into a durable store. A dev database holding real
+   records looks safe by every `env_check` signal — this one has to be declared.
+5. A non-production `env_check` is necessary but does not authorize mutation of
    a shared dev or stage dataset. When product policy marks a data source
    read-only, use an isolated/disposable target with persistence, attribution,
    and cleanup evidence for create/update/delete checks.

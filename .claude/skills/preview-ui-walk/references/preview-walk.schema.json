@@ -969,6 +969,15 @@
           "default": false,
           "description": "When true, any browser HTTP(S)/WebSocket request to a non-loopback host is an actionable network failure."
         },
+        "data": {
+          "type": "string",
+          "enum": [
+            "synthetic",
+            "real"
+          ],
+          "default": "synthetic",
+          "description": "What kind of records the target holds. \"real\" REFUSES artifact publication for the run: walk evidence carries rendered page content (dom keeps up to 512KB of HTML with only input values and CSRF redacted, a11y keeps node textContent, and screenshots cannot be redacted at all), and an Artifact is durable and login-gated but deliberately outlives the workspace. The walk still runs and still writes evidence locally \u2014 the control is on publication, not collection, because redaction cannot cover screenshots and text-stripping HTML would give false confidence. This must be DECLARED rather than inferred: a dev environment holding real customer records is exactly the case that looks safe by every environment signal, which is why env_check cannot answer it."
+        },
         "read_only": {
           "type": "boolean",
           "default": true,

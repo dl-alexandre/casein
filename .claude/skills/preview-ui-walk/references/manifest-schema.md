@@ -358,6 +358,36 @@ Only **digests** of the two results are recorded — never rows — because this
 evidence rides into a published report. A snapshot that could not be taken
 yields no evidence and BLOCKS; it never reports an unproven "nothing changed".
 
+### Publishing against real data (`safety.data`)
+
+```jsonc
+{ "safety": { "data": "real" } }     // default: "synthetic"
+```
+
+`"real"` **refuses artifact publication** for the run. The walk still executes
+and still writes evidence locally; `artifact_publish` exits non-zero with the
+reason.
+
+Why publication rather than content: walk evidence carries rendered page data.
+`dom` keeps up to 512KB of HTML with only `<input value>` and CSRF redacted,
+`a11y` keeps node `textContent`, and **screenshots cannot be redacted at all**.
+An Artifact is durable, login-gated, and deliberately outlives the workspace.
+Text-stripping the HTML would leave screenshots wide open while *looking* safe —
+the exact false confidence this suite exists to prevent — so the control sits
+where it can actually hold.
+
+It must be **declared, not inferred**. A dev environment holding real customer
+records looks safe by every environment signal, which is precisely why
+`env_check` cannot answer this question.
+
+The decision is recorded into `results.json` by the driver and read from there
+by the publisher, so pointing `artifact_publish` at an older run directory
+cannot launder it.
+
+Collectors that are safe regardless: `har` (sanitized URL + status, no bodies),
+`ws` (shape/size/timing, never payloads), `api` (no bodies), `downloads`
+(filenames), `db_before_after` (digests), `resource_metrics`, `prereq`.
+
 ### Fixture identity (`fixtures`)
 
 ```jsonc

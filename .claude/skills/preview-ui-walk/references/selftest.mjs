@@ -1030,6 +1030,38 @@ assert(
   );
 }
 
+// ── Publication gate: real data collects locally, never publishes ──────────
+{
+  const { publishGate, readPublishGate } = await import("./artifact_publish.mjs");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+
+  // Default is permissive: v1 runs and synthetic targets publish unchanged.
+  assert(publishGate(null).allowed === true, "no results means no gate");
+  assert(publishGate({}).allowed === true, "a run with no publish block is publishable");
+  assert(publishGate({ publish: { allowed: true } }).allowed === true, "synthetic runs publish");
+
+  const blocked = publishGate({ publish: { allowed: false, reason: "real records" } });
+  assert(blocked.allowed === false, "a real-data run is refused");
+  assert(blocked.reason === "real records", "the recorded reason is surfaced verbatim");
+  assert(
+    publishGate({ publish: { allowed: false } }).reason.includes("safety.data"),
+    "a reasonless block still names the manifest key that caused it",
+  );
+
+  // The decision travels in results.json rather than being re-derived, so a
+  // stale run directory cannot be laundered by pointing the publisher at it.
+  const dir = mkdtempSync(join(tmpdir(), "gate-"));
+  writeFileSync(join(dir, "results.json"), JSON.stringify({ publish: { allowed: false, reason: "r" } }));
+  assert(readPublishGate(dir).allowed === false, "the gate is read from the run output");
+  const empty = mkdtempSync(join(tmpdir(), "gate-empty-"));
+  assert(
+    readPublishGate(empty).allowed === true,
+    "a directory that is not a walk output is out of scope, not a bypass",
+  );
+}
+
 // ── base_identity: catching a recycled port before it reports on a stranger ─
 {
   const { identityVerdict, readPath, probeBaseIdentity } = await import("./base_identity.mjs");
@@ -2876,6 +2908,10 @@ assert(
   assert(
     src.includes("runActionCleanup") && src.includes("no cleanup_steps declared for a mutating action"),
     "packed driver runs action-scoped cleanup and flags a mutating action that declares none",
+  );
+  assert(
+    src.includes('m.safety?.data === "real"') && src.includes("will NOT be publishable"),
+    "packed driver records the publication gate and warns BEFORE the walk",
   );
   assert(
     src.includes("probeBaseIdentity") && src.includes("identityVerdict") &&
