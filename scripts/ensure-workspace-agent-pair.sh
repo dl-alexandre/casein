@@ -151,31 +151,90 @@ export CASEIN_CHECKOUT="$CHECKOUT"
 export CASEIN_AGENT_MCP_HOME="$STAGING"
 export CASEIN_WORKSPACE_NAME="$WORKSPACE_NAME"
 
-# Host skills live in the casein tree. Prefer this script's repo, then common
-# checkouts, then release overlays if present.
-skill_source_dir() {
-  local candidate
+# The revision the running app was deployed from, or empty when unknown.
+deployed_revision() {
+  sed -n 's/^CASEIN_GIT_REVISION=//p' /etc/casein/casein.env 2>/dev/null | head -1
+}
+
+# HEAD of the checkout containing a skills dir, or empty when it is not a repo
+# (the release overlay is a plain directory).
+skill_src_revision() {
+  local top
+  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 0
+  git -C "$top" rev-parse HEAD 2>/dev/null || true
+}
+
+skill_source_candidates() {
   # NOTE: the Casein rename did not move the on-box checkout, which is still
   # named dev_ide — probe both names so this list does not silently rot down to
   # the deploy-build candidate.
-  for candidate in \
-    "${ROOT}/.claude/skills" \
+  printf '%s\n' \
+    "/opt/casein/deploy-build/.claude/skills" \
     "/data/workspaces/dalexandre/casein/.claude/skills" \
     "/data/workspaces/dalexandre/dev_ide/.claude/skills" \
-    "/opt/casein/deploy-build/.claude/skills" \
     "/opt/casein/release/lib/casein-0.1.0/priv/claude/skills"
-  do
-    if [[ -d "${candidate}/preview-ui-walk" || -d "${candidate}/workspace-agent-pair" ]]; then
+}
+
+has_skills() {
+  [[ -d "${1}/preview-ui-walk" || -d "${1}/workspace-agent-pair" ]]
+}
+
+# Host skills live in the casein tree. Resolution order:
+#
+#   1. CASEIN_SKILL_SRC — explicit override, always wins.
+#   2. ${ROOT}/.claude/skills — you ran this script FROM a checkout, so that is
+#      a deliberate choice (iterating on a skill locally).
+#   3. whichever candidate is at the DEPLOYED revision.
+#   4. the historical fallback order.
+#
+# Step 3 is the fix for a real silent failure: /data/workspaces/dalexandre/
+# dev_ide is a working checkout that sits on whatever branch someone is using,
+# and it outranked the deploy-build. Pairing after a deploy therefore installed
+# whatever that branch happened to contain — in one case a skill several
+# features out of date — with nothing in the log to say so.
+skill_source_dir() {
+  if [[ -n "${CASEIN_SKILL_SRC:-}" ]]; then
+    printf '%s\n' "$CASEIN_SKILL_SRC"
+    return 0
+  fi
+
+  if has_skills "${ROOT}/.claude/skills"; then
+    printf '%s\n' "${ROOT}/.claude/skills"
+    return 0
+  fi
+
+  local want candidate
+  want="$(deployed_revision)"
+  if [[ -n "$want" ]]; then
+    while IFS= read -r candidate; do
+      has_skills "$candidate" || continue
+      [[ "$(skill_src_revision "$candidate")" == "$want" ]] || continue
+      printf '%s\n' "$candidate"
+      return 0
+    done < <(skill_source_candidates)
+  fi
+
+  while IFS= read -r candidate; do
+    if has_skills "$candidate"; then
       printf '%s\n' "$candidate"
       return 0
     fi
-  done
+  done < <(skill_source_candidates)
+
   # Fall back to ROOT even if incomplete — agent_skills_install skips missing.
   printf '%s\n' "${ROOT}/.claude/skills"
 }
 
 SKILL_SRC="$(skill_source_dir)"
-log "skill source: ${SKILL_SRC}"
+SKILL_SRC_REV="$(skill_src_revision "$SKILL_SRC")"
+DEPLOYED_REV="$(deployed_revision)"
+log "skill source: ${SKILL_SRC}${SKILL_SRC_REV:+ (${SKILL_SRC_REV:0:8})}"
+# Staleness must be loud. Installing an out-of-date skill is not an error — a
+# dev may be pairing deliberately from a feature branch — but it must never be
+# something you discover later by wondering why a documented feature is absent.
+if [[ -n "$DEPLOYED_REV" && -n "$SKILL_SRC_REV" && "$SKILL_SRC_REV" != "$DEPLOYED_REV" ]]; then
+  log "WARNING: skill source is at ${SKILL_SRC_REV:0:8}, deployed is ${DEPLOYED_REV:0:8} — staging skills that do NOT match the running app. Set CASEIN_SKILL_SRC to override."
+fi
 log "workspace: ${WORKSPACE_NAME} (${CASEIN_WORKSPACE_ID})"
 log "checkout: ${CHECKOUT}"
 log "staging: ${STAGING}"
