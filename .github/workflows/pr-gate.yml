@@ -79,6 +79,16 @@ jobs:
           else
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
           fi
+          # Skills own executable test suites. The full gate runs them via
+          # pre-push-check.sh, but a skill-only PR takes the skip path — which
+          # made a skill change the ONE case where nothing ran the skill's own
+          # tests: .githooks/pre-push only fires on master pushes, and this gate
+          # skipped. Record the signal so the skip path can still test them.
+          if echo "$changed" | grep -qE '^\.claude/skills/'; then
+            echo "skills_touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skills_touched=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run pre-push gate
         if: steps.detect.outputs.docs_only != 'true'
@@ -101,10 +111,35 @@ jobs:
           command -v mise >/dev/null || { echo "mise not found on runner PATH"; exit 1; }
           MIX="mise exec -- mix" bash scripts/release-smoke.sh
 
+      - name: Test changed skills (skill-only PR)
+        if: steps.detect.outputs.docs_only == 'true' && steps.detect.outputs.skills_touched == 'true'
+        shell: bash
+        run: |
+          # Cheap and Elixir-free (~2s), so this does not reintroduce the queue
+          # cost the skip exists to avoid — but it means a skill-only PR is no
+          # longer the one path where a skill's tests never run. Discovered by
+          # convention so a new skill is covered the day it lands a suite.
+          set -euo pipefail
+          found=0
+          for suite in .claude/skills/*/references/selftest.mjs; do
+            [ -f "$suite" ] || continue
+            found=1
+            echo "::group::$suite"
+            node "$suite"
+            echo "::endgroup::"
+          done
+          if [ "$found" = "0" ]; then
+            echo "No skill selftest suites found — nothing to run."
+          fi
+
       - name: Skip gate (docs-only PR)
         if: steps.detect.outputs.docs_only == 'true'
         run: |
           # The job still SUCCEEDS so the required check reports green — we do
           # NOT use a workflow `paths:` filter, which would leave the required
           # check pending forever on docs-only PRs.
-          echo "Docs/skill-only PR — skipping the heavy gate and reporting success."
+          #
+          # "Skipped" means the heavy mix/npm suite. Any changed skill's own
+          # tests ran in the step above; this step is the docs case and the
+          # green-reporting terminator for both.
+          echo "Docs/skill-only PR — skipped the heavy gate and reported success."
