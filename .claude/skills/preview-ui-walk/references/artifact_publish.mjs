@@ -211,6 +211,51 @@ export async function publishReport({
   }
 }
 
+/**
+ * Publication gate for runs against real data.
+ *
+ * Walk evidence carries rendered page content: `dom` keeps up to 512KB of HTML
+ * with only input values and CSRF tokens redacted, `a11y` keeps node
+ * textContent, and screenshots cannot be redacted at all. Publishing copies all
+ * of it into a durable, login-gated Artifact that deliberately outlives the
+ * workspace.
+ *
+ * That is fine against synthetic data and a data-boundary expansion against
+ * real data — and "dev" is exactly the case that looks safe while holding real
+ * records, which is why this must be DECLARED (safety.data) rather than
+ * inferred. No environment signal distinguishes them.
+ *
+ * Redaction is deliberately not the mechanism: screenshots defeat it outright,
+ * and text-stripping HTML would give false confidence, which is the failure
+ * this suite exists to prevent. So the control is on publication, not content —
+ * the walk still runs and still writes its evidence locally.
+ *
+ * The decision travels in results.json rather than being re-derived here, so
+ * pointing the publisher at an old run directory cannot launder it.
+ */
+export function publishGate(results) {
+  const gate = results && typeof results === "object" ? results.publish : null;
+  if (!gate || gate.allowed !== false) return { allowed: true, reason: null };
+  return {
+    allowed: false,
+    reason:
+      gate.reason ||
+      "manifest declares safety.data:\"real\" — evidence carries rendered customer data",
+  };
+}
+
+/** Read the gate recorded by the driver for this run. */
+export function readPublishGate(outDir) {
+  try {
+    const raw = fs.readFileSync(path.join(outDir, "results.json"), "utf8");
+    return publishGate(JSON.parse(raw));
+  } catch {
+    // No results.json means this is not a walk output directory. Publishing
+    // arbitrary trees is out of scope for the gate, not a bypass of it.
+    return { allowed: true, reason: null };
+  }
+}
+
 async function main() {
   const args = argsFrom(process.argv.slice(2));
   if (args.help) {
@@ -218,6 +263,18 @@ async function main() {
     return;
   }
   if (!args.out || !args.name) die("--out and --name are required");
+
+  const gate = readPublishGate(args.out);
+  if (!gate.allowed) {
+    die(
+      `refusing to publish: ${gate.reason}\n` +
+        `       The walk ran and its evidence is in ${args.out} — read it there.\n` +
+        `       Screenshots and dom/a11y evidence carry rendered records, and an\n` +
+        `       Artifact is durable and outlives this workspace.\n` +
+        `       To publish, point the walk at synthetic data.`,
+    );
+  }
+
   try {
     console.log(JSON.stringify(await publishReport({
       outDir: args.out,
