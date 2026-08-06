@@ -57,6 +57,61 @@ defmodule Scripts.SpawnAgentWorkerTest do
     refute out =~ ~r{^checkout=\S*/linked$}m
   end
 
+  # The dry-run test above passes even against the broken resolver, because its
+  # fixture has two worktrees: `git worktree list` finishes writing before the
+  # consumer stops reading, so nothing ever gets SIGPIPE'd. On a real checkout
+  # (41 worktrees) git is still emitting when the consumer quits, the pipeline
+  # reports failure under `set -o pipefail`, and the resolver silently returned
+  # the ORCHESTRATOR's worktree — the exact outcome it exists to prevent.
+  #
+  # Reproduce that deterministically with a slow `git` instead of dozens of real
+  # worktrees: emit the primary, flush, then keep writing. Any implementation
+  # that stops reading early fails here.
+  test "primary resolution survives a git that is still writing when parsing stops" do
+    tmp =
+      Path.join(System.tmp_dir!(), "spawn-worker-sigpipe-#{System.unique_integer([:positive])}")
+
+    primary = Path.join(tmp, "primary")
+    linked = Path.join(tmp, "linked")
+    fakebin = Path.join(tmp, "bin")
+    Enum.each([primary, linked, fakebin], &File.mkdir_p!/1)
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(Path.join(fakebin, "git"), """
+    #!/usr/bin/env bash
+    printf 'worktree %s\\nHEAD 0000\\nbranch refs/heads/master\\n\\n' "#{primary}"
+    sleep 0.4
+    for i in $(seq 1 200); do
+      printf 'worktree %s/w$i\\nHEAD 0000\\ndetached\\n\\n' "#{tmp}"
+    done
+    """)
+
+    File.chmod!(Path.join(fakebin, "git"), 0o755)
+
+    resolver =
+      @script
+      |> File.read!()
+      |> then(fn text ->
+        [_, body] = String.split(text, "\nspawn_worker_resolve_primary_checkout() {\n", parts: 2)
+        [body, _] = String.split(body, "\n}\n", parts: 2)
+        "spawn_worker_resolve_primary_checkout() {\n#{body}\n}"
+      end)
+
+    script = """
+    set -euo pipefail
+    #{resolver}
+    spawn_worker_resolve_primary_checkout '#{linked}'
+    """
+
+    {out, 0} =
+      System.cmd("bash", ["-c", script],
+        env: [{"PATH", fakebin <> ":" <> System.get_env("PATH")}]
+      )
+
+    assert String.trim(out) == primary
+    refute String.trim(out) == linked
+  end
+
   test "cross-repo dry run sources pairing env and uses Casein's launcher" do
     tmp =
       Path.join(

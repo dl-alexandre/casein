@@ -249,15 +249,33 @@ spawn_worker_pane_tail() {
 # would silently share the orchestrator's checkout and branch. git lists the
 # main working tree first in `worktree list`, so resolve to that — worktrees
 # must be branched from the primary.
+#
+# Deliberately no pipeline. `git worktree list | awk '/^worktree /{print $2; exit}'`
+# reads naturally, but awk's early exit closes the pipe, git dies on SIGPIPE, and
+# `set -o pipefail` then reports the whole pipeline as failed — so the guard fell
+# through and returned the ORCHESTRATOR's own worktree, silently defeating the
+# protection this function exists to provide. It only reproduces once the repo has
+# enough worktrees for git's output to outrun awk (41 here), which is why it
+# survived review: on a small checkout git finishes writing first and it looks
+# correct.
 spawn_worker_resolve_primary_checkout() {
   local candidate="$1"
-  local primary
-  if primary="$(git -C "$candidate" worktree list --porcelain 2>/dev/null |
-    awk '/^worktree /{print $2; exit}')" &&
-    [[ -n "$primary" && -d "$primary" ]]; then
+  local listing line primary=""
+
+  if listing="$(git -C "$candidate" worktree list --porcelain 2>/dev/null)"; then
+    while IFS= read -r line; do
+      if [[ "$line" == "worktree "* ]]; then
+        primary="${line#worktree }"
+        break
+      fi
+    done <<<"$listing"
+  fi
+
+  if [[ -n "$primary" && -d "$primary" ]]; then
     printf '%s\n' "$primary"
     return 0
   fi
+
   printf '%s\n' "$candidate"
 }
 

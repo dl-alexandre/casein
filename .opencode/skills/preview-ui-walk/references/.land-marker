@@ -1,3 +1,0 @@
-backlog-land: use python3 /tmp/finish_preview_ui_walk_land.py to complete full file push
-export=/tmp/preview-ui-walk-backlog-export
-selftest=green
