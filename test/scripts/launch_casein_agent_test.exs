@@ -172,6 +172,60 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert text =~ ~S(printf '%s\0' --model "$model")
   end
 
+  # Extracts the real opencode model helpers out of the launcher and runs them,
+  # so this asserts behavior rather than the presence of source text.
+  # `prefix` is prepended verbatim to the call, so a test can express "set but
+  # empty" — which System.cmd's env cannot: Erlang treats an empty value as unset.
+  defp opencode_model_args(argv, prefix \\ "") do
+    text = File.read!(@script)
+
+    functions =
+      ~w(opencode_arg_sets_model opencode_arg_uses_model_capable_command opencode_model_args)
+      |> Enum.map_join("\n", &extract_function!(text, &1))
+
+    script = """
+    set -euo pipefail
+    #{functions}
+    #{prefix} opencode_model_args #{Enum.map_join(argv, " ", &"'#{&1}'")}
+    """
+
+    {out, 0} = System.cmd("bash", ["-c", script])
+    String.split(out, <<0>>, trim: true)
+  end
+
+  defp extract_function!(text, name) do
+    [_, body] = String.split(text, "\n#{name}() {\n", parts: 2)
+    [body, _] = String.split(body, "\n}\n", parts: 2)
+    "#{name}() {\n#{body}\n}"
+  end
+
+  test "opencode launches pin a default model, since the host-global one is shared" do
+    # Default TUI invocation — the one delegation uses.
+    assert opencode_model_args([]) == ["--model", "opencode/grok-4.5"]
+
+    # `run` accepts --model; the flag rides ahead of the subcommand.
+    assert opencode_model_args(["run", "do x"]) == ["--model", "opencode/grok-4.5"]
+
+    # Overridable per launch.
+    assert opencode_model_args([], "CASEIN_OPENCODE_DEFAULT_MODEL=opencode/claude-fable-5") ==
+             ["--model", "opencode/claude-fable-5"]
+
+    # Set-but-empty opts out entirely, letting ~/.config/opencode win.
+    assert opencode_model_args([], "CASEIN_OPENCODE_DEFAULT_MODEL=") == []
+  end
+
+  test "opencode model injection yields to an explicit flag and to subcommands that reject it" do
+    # An operator's own choice always wins.
+    assert opencode_model_args(["--model", "xai/grok-4.5"]) == []
+    assert opencode_model_args(["-m", "xai/grok-4.5"]) == []
+
+    # `opencode --model X models` abandons the command and prints usage, so these
+    # subcommands must never receive the injected flag.
+    assert opencode_model_args(["models"]) == []
+    assert opencode_model_args(["serve"]) == []
+    assert opencode_model_args(["export"]) == []
+  end
+
   test "managed Codex tabs prefer the thread title while allowing an explicit override" do
     text = File.read!(@script)
 

@@ -281,6 +281,57 @@ opencode_install_skills() {
   fi
 }
 
+opencode_arg_sets_model() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --model | --model=* | -m | -m=* | -m?*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+# `--model` belongs to the default TUI command and to `run`; the other
+# subcommands reject it. `opencode --model X models` and `opencode models
+# --model X` both abandon the command and print usage, so injecting
+# unconditionally would break every non-TUI invocation. Scan for a subcommand
+# anywhere in the args rather than tracking flag arity: a false negative only
+# costs the injection, a false positive breaks the launch.
+opencode_arg_uses_model_capable_command() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      completion | acp | mcp | attach | debug | providers | auth | agent | upgrade | uninstall | serve | web | models | stats | export | import | github | pr)
+        return 1
+        ;;
+    esac
+  done
+
+  return 0
+}
+
+# OpenCode resolves its model from ~/.config/opencode, which is host-global and
+# shared by every opencode session on the box (Casein-launched or not). The
+# project config Casein writes carries only `mcp`, so it cannot pin a model
+# without clobbering whatever else the operator put there. Inject the flag
+# instead, mirroring codex_model_args.
+#
+# Unset -> the default below. Set to empty -> inject nothing, so the host-global
+# preference wins. An explicit --model/-m on the command line always wins.
+opencode_model_args() {
+  opencode_arg_sets_model "$@" && return 0
+  opencode_arg_uses_model_capable_command "$@" || return 0
+
+  local model="${CASEIN_OPENCODE_DEFAULT_MODEL-opencode/grok-4.5}"
+
+  if [[ -n "$model" ]]; then
+    printf '%s\0' --model "$model"
+  fi
+}
+
 sync_project_mcp_config "$RUNTIME"
 if [[ "$RUNTIME" == "opencode" ]]; then
   opencode_install_skills
@@ -1427,7 +1478,11 @@ case "$RUNTIME" in
     exec "$(runtime_bin codex)" "${codex_args[@]}" "$@"
     ;;
   opencode)
-    exec "$(runtime_bin opencode)" "$@"
+    opencode_args=()
+    while IFS= read -r -d '' arg; do
+      opencode_args+=("$arg")
+    done < <(opencode_model_args "$@")
+    exec "$(runtime_bin opencode)" "${opencode_args[@]}" "$@"
     ;;
   claude)
     sidechat_target=""
