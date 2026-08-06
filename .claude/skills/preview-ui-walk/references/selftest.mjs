@@ -948,6 +948,113 @@ assert(
   assert(none.evaluated === true && none.results.length === 0, "no prerequisites is not a failure");
 }
 
+// ── Manifest validation: a typo must not produce a green walk ───────────────
+{
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, join } = await import("node:path");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const S = JSON.parse(readFileSync(join(here, "preview-walk.schema.json"), "utf8"));
+  const { validateManifest, unsupportedKeywords } = await import("./schema_validate.mjs");
+  const { missingCollectorConfig } = await import("./preflight_run.mjs");
+
+  // Drift signal: an unimplemented keyword makes the validator permissive, so
+  // adding one to the schema must not silently under-validate.
+  assert(
+    unsupportedKeywords(S).length === 0,
+    `validator implements every keyword the schema uses (missing: ${unsupportedKeywords(S).join(", ")})`,
+  );
+
+  // NEVER reject a valid manifest — a false "invalid" blocks a working walk.
+  for (const name of ["authed-admin-example.json", "login-click-example.json", "actions-example.json"]) {
+    const r = validateManifest(S, JSON.parse(readFileSync(join(here, name), "utf8")));
+    assert(r.ok, `${name} validates (${JSON.stringify(r.errors.slice(0, 2))})`);
+  }
+
+  // The bug this module exists for: a misspelled key produced a walk that
+  // asserted nothing, cleaned up nothing, and reported PASS.
+  const typo = {
+    version: 2, report: { name: "t" }, login: { kind: "none" },
+    actions: [{ name: "A", phases: [{ path: "/", step: [{ action: "assert_text", text: "x" }] }],
+                cleanup_step: [{ action: "click", selector: "#x" }] }],
+  };
+  const bad = validateManifest(S, typo);
+  assert(!bad.ok, "a misspelled key is invalid, not a silent no-op");
+  assert(
+    bad.errors.some((e) => e.message.includes('did you mean "steps"')),
+    "the error names the intended key",
+  );
+  assert(
+    bad.errors.filter((e) => e.path.endsWith(".step")).length === 1,
+    "each error is reported once, not once per allOf/anyOf branch",
+  );
+
+  // The conditional the schema has always declared and nothing enforced.
+  assert(
+    !validateManifest(S, { report: { name: "t" }, login: { kind: "click" }, pages: [{ name: "P", path: "/" }] }).ok,
+    "a click login without path/lands_on is invalid",
+  );
+  assert(
+    validateManifest(S, { report: { name: "t" }, login: { kind: "none" }, pages: [{ name: "P", path: "/" }] }).ok,
+    "...but kind:none needs neither",
+  );
+
+  // Nested and registry shapes.
+  assert(!validateManifest(S, { report: { name: "t" }, logins: { "Bad Key": { kind: "none" } },
+    actions: [{ name: "A", phases: [{ path: "/" }] }] }).ok, "login registry keys are pattern-checked");
+  assert(!validateManifest(S, { report: { name: "t" }, login: { kind: "none" },
+    pages: [{ name: "P", path: "/", steps: [{ action: "teleport" }] }] }).ok, "an unknown step action is invalid");
+  assert(validateManifest(S, { report: { name: "t" }, login: { kind: "none" },
+    pages: [{ name: "P", path: "/", steps: [
+      { action: "assert_count", selector: "li", min: 1, max: 9 },
+      { action: "assert_text", text: "Delete", state: "absent" }] }] }).ok,
+    "assert_count and negative assert_text validate");
+
+  // Config-bearing collectors: requiring one without its config can only BLOCK.
+  const gap = { report: { name: "g" }, login: { kind: "none" }, actions: [{ name: "A",
+    require_evidence: ["db_before_after"],
+    phases: [{ path: "/a" }, { path: "/b", runtime: { db_before_after: { sql: "SELECT 1" } } }] }] };
+  const msg = missingCollectorConfig(gap);
+  assert(msg && msg.includes("db_before_after"), "action-wide requirement without per-phase config is caught");
+  assert(msg.includes("not the whole action"), "...and the message says where to declare it");
+  assert(
+    missingCollectorConfig({ report: { name: "g" }, login: { kind: "none" }, actions: [{ name: "A",
+      phases: [{ path: "/b", require_evidence: ["db_before_after"],
+                 runtime: { db_before_after: { sql: "SELECT 1" } } }] }] }) === null,
+    "correct placement passes",
+  );
+  assert(
+    missingCollectorConfig({ report: { name: "g" }, login: { kind: "none" },
+      actions: [{ name: "A", require_evidence: ["cleanup"], phases: [{ path: "/a" }] }] }) !== null,
+    "requiring cleanup with no cleanup_steps is caught too",
+  );
+}
+
+// ── Fixture identity: the only attribution left without an audit trail ──────
+{
+  const A = await import("./actions.mjs");
+  const fx = A.fixtureIdentity({ fixtures: { prefix: "uat" } }, "abc123");
+  assert(fx.tag === "uat-abc123", "the tag is prefix-run");
+  assert(A.fixtureIdentity({}, "r1").prefix === "walk", "prefix defaults");
+
+  assert(A.usesFixture("{{fixture.tag}}-sku") === true, "fixture references are detected");
+  assert(A.applyFixture("{{fixture.tag}}-sku", fx) === "uat-abc123-sku", "fixture tokens substitute");
+
+  const t = A.applyCarryToPhase(
+    { path: "/x", steps: [{ action: "fill", text: "{{fixture.tag}}-sku" }],
+      runtime: { db_before_after: { sql: "SELECT * FROM t WHERE name LIKE '{{fixture.tag}}%'" } } },
+    {}, fx);
+  assert(t.phase.steps[0].text === "uat-abc123-sku", "fixture tokens reach step text");
+  assert(t.phase.runtime.db_before_after.sql.includes("'uat-abc123%'"), "...and the sweep query");
+  assert(t.missing.length === 0, "fixture tokens always resolve (unlike carry)");
+
+  // Both token families coexist.
+  const both = A.applyCarryToPhase(
+    { path: "/x/{{carry.id}}", steps: [{ action: "fill", text: "{{fixture.tag}}" }] }, { id: "9" }, fx);
+  assert(both.phase.path === "/x/9" && both.phase.steps[0].text === "uat-abc123",
+    "carry and fixture substitute together");
+}
+
 // ── db_before_after: proving a claim instead of asserting it ────────────────
 {
   const { dbSnapshotSpec, dbBeforeAfterEvidence } = await import("./runtime_evidence.mjs");
@@ -1292,9 +1399,16 @@ assert(
 
   // Manifest fan-in: role prefixes, evidence and mutation intent merge across
   // ALL selected manifests, not just the first.
-  const a = manifest({ login: { kind: "click", params_from_env: ["WALK_A_EMAIL", "WALK_A_PASSWORD"] } });
+  const a = manifest({
+    login: {
+      kind: "click",
+      path: "/login",
+      lands_on: "/one",
+      params_from_env: ["WALK_A_EMAIL", "WALK_A_PASSWORD"],
+    },
+  });
   const b = manifest({
-    login: { kind: "click", params_from_env: ["WALK_B_EMAIL"] },
+    login: { kind: "click", path: "/login", lands_on: "/one", params_from_env: ["WALK_B_EMAIL"] },
     require_evidence: ["har"],
     pages: [{ name: "P", path: "/p", require_evidence: ["dom"] }],
   });

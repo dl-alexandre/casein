@@ -2,7 +2,7 @@
 //
 // Read-only steps always allowed:
 //   wait_for, assert_selector, assert_text, assert_url, assert_value,
-//   assert_iframe, assert_http, settle, screenshot
+//   assert_count, assert_iframe, assert_http, settle, screenshot
 // Mutating steps (click, fill, type, press, select, check) require:
 //   safety.allow_interactions === true  AND  no prod_like env_check hits
 // and still refuse names listed in safety.deny_events (matched against step.event).
@@ -23,6 +23,7 @@ const READ_ONLY = new Set([
   "assert_text",
   "assert_url",
   "assert_value",
+  "assert_count",
   "assert_iframe",
   "assert_http",
   "settle",
@@ -324,11 +325,47 @@ async function executeStep(page, step, { timeout, base }) {
       if (!needle) throw new Error("assert_text needs text");
       const scope = resolveScope(page, step);
       const body = await scope.locator("body").innerText();
+      // Symmetric with assert_selector: state:"absent" inverts the assertion.
+      // Permission-negative checks often read "the word Delete must not appear",
+      // and without this only selector-shaped absence was expressible.
+      if (step.state === "absent") {
+        if (body.includes(needle)) {
+          throw new Error(
+            `text present (expected absent): ${needle.slice(0, 80)}` +
+              (frameSelector(step) ? ` (frame ${frameSelector(step)})` : ""),
+          );
+        }
+        return;
+      }
       if (!body.includes(needle)) {
         throw new Error(
           `text not found: ${needle.slice(0, 80)}` +
             (frameSelector(step) ? ` (frame ${frameSelector(step)})` : ""),
         );
+      }
+      return;
+    }
+    case "assert_count": {
+      // UI cardinality. The SELECT-only SQL probe covers DATA counts; this is
+      // the rendered list — "nine rows in the database" and "nine rows on the
+      // screen" are different claims, and pagination is where they diverge.
+      if (!sel) throw new Error("assert_count needs selector");
+      const scope = resolveScope(page, step);
+      const actual = await scope.locator(sel).count();
+      const exact = step.count;
+      const min = step.min;
+      const max = step.max;
+      if (exact == null && min == null && max == null) {
+        throw new Error("assert_count needs count, min or max");
+      }
+      if (exact != null && actual !== Number(exact)) {
+        throw new Error(`counted ${actual} of ${sel}, expected ${exact}`);
+      }
+      if (min != null && actual < Number(min)) {
+        throw new Error(`counted ${actual} of ${sel}, expected at least ${min}`);
+      }
+      if (max != null && actual > Number(max)) {
+        throw new Error(`counted ${actual} of ${sel}, expected at most ${max}`);
       }
       return;
     }

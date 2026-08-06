@@ -26,6 +26,7 @@ import {
 import { checkVisualBaselineReadiness, storeFromEnv } from "./visual_baseline.mjs";
 import { normalizeViewports } from "./a11y_collector.mjs";
 import { expandActionCases, normalizeActions } from "./actions.mjs";
+import { validateManifest } from "./schema_validate.mjs";
 
 /** Role env prefixes a manifest needs, derived from login.params_from_env. */
 export function roleEnvPrefixes(manifests) {
@@ -81,10 +82,72 @@ export function isMutating(manifests) {
   return manifests.some((m) => m?.safety && m.safety.read_only === false);
 }
 
-export function checkSchema(loaded) {
+/**
+ * Some evidence keys need per-phase CONFIG to produce anything: requiring them
+ * without it can only ever BLOCK mid-walk. Catch it at preflight, where the
+ * message can name the phase instead of reading as a mysterious collector gap.
+ *
+ * This is the footgun that action-level require_evidence creates: the list
+ * unions into EVERY phase, so one query on one phase does not satisfy a
+ * requirement declared for the whole action.
+ */
+export function missingCollectorConfig(manifest) {
+  const needsConfig = {
+    db_before_after: (phase, action) =>
+      Boolean(phase?.runtime?.db_before_after || action?.runtime?.db_before_after ||
+        manifest?.runtime?.per_page?.[phase?.name]?.db_before_after),
+    cleanup: (phase, action) =>
+      Boolean((phase?.cleanup_steps || []).length || (action?.cleanup_steps || []).length),
+    prereq: (phase, action) => Boolean((action?.prereq || []).length),
+  };
+  const walkLevel = manifest?.require_evidence || [];
+
+  for (const action of normalizeActions(manifest)) {
+    for (const phase of action.phases || []) {
+      const required = new Set([
+        ...walkLevel,
+        ...(action.require_evidence || []),
+        ...(phase.require_evidence || []),
+      ]);
+      for (const [key, hasConfig] of Object.entries(needsConfig)) {
+        if (!required.has(key)) continue;
+        if (hasConfig(phase, action)) continue;
+        const where = action.synthetic
+          ? `page "${phase.name}"`
+          : `action "${action.name}" phase "${phase.name || phase.path}"`;
+        return (
+          `${where} requires evidence "${key}" but declares no ${key} config — ` +
+          `it can only BLOCK. Declare it on the phase that produces the evidence, not the whole action.`
+        );
+      }
+    }
+  }
+  return null;
+}
+
+export function checkSchema(loaded, schemaDoc = null) {
   const bad = loaded.filter((l) => l.error);
   if (bad.length) {
     return row("schema", STATE.BLOCKED, `${bad.length} manifest(s) failed to load: ${bad[0].error}`);
+  }
+
+  // Validate against the committed JSON Schema. `additionalProperties: false`
+  // already describes every legal key, but until this ran at preflight a
+  // misspelled key ("step" for "steps") silently produced a walk that asserted
+  // nothing and reported PASS.
+  if (schemaDoc) {
+    for (const { manifest, path: file } of loaded) {
+      const result = validateManifest(schemaDoc, manifest);
+      if (!result.ok) {
+        const first = result.errors[0];
+        return row(
+          "schema",
+          STATE.BLOCKED,
+          `${file || manifest?.report?.name || "manifest"} is invalid: ${first.path ? `${first.path}: ` : ""}${first.message}` +
+            (result.errors.length > 1 ? ` (+${result.errors.length - 1} more)` : ""),
+        );
+      }
+    }
   }
   // v2: a manifest declares pages[] OR actions[]. Requiring pages[] would
   // BLOCK every actions-only manifest at preflight.
@@ -126,6 +189,11 @@ export function checkSchema(loaded) {
     if (expanded.errors.length > 0) {
       return row("schema", STATE.BLOCKED, `${manifest.report.name}: ${expanded.errors[0]}`);
     }
+    const configGap = missingCollectorConfig(manifest);
+    if (configGap) {
+      return row("schema", STATE.BLOCKED, `${manifest.report.name}: ${configGap}`);
+    }
+
     const actions = normalizeActions(manifest);
     logicalPages += actions.reduce((n, act) => n + act.phases.length, 0);
     viewportVisits += expanded.cases.reduce((n, c) => n + c.phases.length, 0);
@@ -558,7 +626,20 @@ export async function buildMatrix(args, deps = {}) {
   );
 
   const rows = [];
-  rows.push(checkSchema(loaded));
+  // The schema ships beside the drivers; read it here so a manifest is
+  // validated by the same file the authoring docs point at.
+  let schemaDoc = null;
+  try {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, join } = await import("node:path");
+    schemaDoc = JSON.parse(
+      readFileSync(join(dirname(fileURLToPath(import.meta.url)), "preview-walk.schema.json"), "utf8"),
+    );
+  } catch {
+    schemaDoc = null; // unreadable schema must not block a walk
+  }
+  rows.push(checkSchema(loaded, schemaDoc));
   rows.push(checkEnvSafety(env, { mutating }));
   // Credentials are demanded ONLY for the manifests actually selected on the
   // command line — a repo full of other walks must not block this one.

@@ -131,6 +131,7 @@ If Tidewave is unreachable: **still walk the browser path**, mark runtime as
 | `wait_for` / `wait_for_selector` | no | CSS selector; optional `frame` |
 | `assert_selector` / `assert_text` / `assert_url` | no | always allowed; `frame`/`iframe` scopes into embeds |
 | `assert_value` | no | reads a form control's **value** (`input`/`select`/`textarea`); optional `contains`, `normalize` |
+| `assert_count` | no | **rendered** cardinality — `count`, `min`, `max` on a selector |
 | `assert_iframe` | no | **embed loaded** — body length / text / URL (kills shell-only false greens) |
 | `assert_http` | no | session cookie GET (path status + optional body text) |
 | `settle` | no | fixed sleep |
@@ -152,7 +153,12 @@ as navigate-only). Set `"required": false` to SKIP instead.
 * `state: "absent"` — `assert_selector` *throws* when a selector is missing, so
   absence could not be asserted at all. `absent` (selector matches nothing) is
   distinct from `hidden` (present, not visible) and is what permission-negative
-  checks need: *this control must not exist for a limited account*.
+  checks need: *this control must not exist for a limited account*. It works on
+  **`assert_text`** too (the text must not appear), because permission-negative
+  checks are as often about a word as about a selector.
+* `assert_count` — the SELECT-only SQL probe covers **data** counts; this is
+  **rendered** cardinality. "Nine rows in the database" and "nine rows on the
+  screen" are different claims, and pagination is where they part company.
 
 Comparison is literal by default. Opt into `normalize`
 (`{ as, precision, unit, trim, case_fold }`) to compare at the displayed
@@ -217,6 +223,31 @@ click. Each page/viewport row has a stable fragment URL for directing review.
 Top strip: Tidewave yes/no + MCP URL, app cwd/SHA, `env_check` results,
 walk-level probes, server log delta total.
 `actionable/raw` console counts remain for CSP noise transparency.
+
+## Validation (enforced at preflight)
+
+Manifests are validated against `preview-walk.schema.json` **by the preflight
+run**, not only by hand. An invalid manifest is `BLOCKED` (exit 2) before the
+browser opens, with the offending path and a spelling suggestion:
+
+```
+schema BLOCKED  feed.json is invalid: actions[0].cleanup_step:
+                unknown key "cleanup_step" (did you mean "cleanup_steps"?)
+```
+
+This exists because `additionalProperties: false` described every legal key and
+nothing ran it: a misspelled `steps` produced a walk that navigated, asserted
+**nothing**, cleaned up nothing — and reported **PASS**. `schema_validate.mjs`
+is dependency-free and deliberately permissive about keywords it does not
+implement (a false "invalid" would block a working walk); `selftest.mjs` asserts
+it implements every keyword the schema actually uses.
+
+Requiring a **config-bearing** collector without its config is also caught here.
+`db_before_after`, `cleanup` and `prereq` need per-phase configuration, so
+declaring them at *action* level — where `require_evidence` unions into **every**
+phase — blocks phases that have no query or steps of their own. Preflight names
+the phase and says to move the requirement rather than letting it surface as a
+mysterious mid-walk collector gap.
 
 ## Validation
 
@@ -326,6 +357,23 @@ writes as this action's delta.
 Only **digests** of the two results are recorded — never rows — because this
 evidence rides into a published report. A snapshot that could not be taken
 yields no evidence and BLOCKS; it never reports an unproven "nothing changed".
+
+### Fixture identity (`fixtures`)
+
+```jsonc
+{ "fixtures": { "prefix": "uat",
+                "sweep_sql": "SELECT count(*) FROM skus WHERE name LIKE '{{fixture.tag}}%'" } }
+```
+
+`{{fixture.prefix}}` / `{{fixture.run}}` / `{{fixture.tag}}` substitute in step
+text and runtime SQL (alongside `{{carry.*}}`, and unlike carry they always
+resolve). `sweep_sql` runs once at the end of the walk; a non-zero result is
+reported loudly and recorded in `results.json`.
+
+This is **weak attribution, and the only kind available.** It marks records the
+walk *created* — never ones it *edited* — but cleanup is best-effort, so the
+last question worth answering is what this run left behind. On a shared dataset
+those leftovers become the next run's preconditions.
 
 **`audit_actor` has no generic collector.** Attribution needs an app-side audit
 trail with an actor column, and the target app has none. Requiring it BLOCKS at

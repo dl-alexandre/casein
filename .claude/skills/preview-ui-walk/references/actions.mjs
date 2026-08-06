@@ -196,11 +196,42 @@ const DEFAULT_CASE_VIEWPORT = {
   implicit: true,
 };
 
+/**
+ * Fixture identity for records this walk creates.
+ *
+ * With no app-side audit trail there is no way to ask the database WHO changed
+ * a row, so a naming convention is the only attribution available. It is
+ * deliberately weak — it can only mark records the walk CREATED, never ones it
+ * edited — but on a shared dataset "weak" is the difference between finding the
+ * fixtures a failed cleanup left behind and never knowing they exist.
+ *
+ * `run` is passed in rather than generated here so the whole walk shares one id
+ * and the value stays testable.
+ */
+export function fixtureIdentity(manifest = {}, run = null) {
+  const prefix = manifest?.fixtures?.prefix || "walk";
+  const id = run || "unknown";
+  return { prefix, run: id, tag: `${prefix}-${id}` };
+}
+
+const FIXTURE_RE = /\{\{\s*fixture\.(prefix|run|tag)\s*\}\}/gi;
+
+/** Substitute {{fixture.*}}. Unlike carry, these always resolve. */
+export function applyFixture(value, fixture) {
+  if (typeof value !== "string" || !fixture) return value;
+  return value.replace(FIXTURE_RE, (_all, key) => String(fixture[key] ?? ""));
+}
+
 const CARRY_RE = /\{\{\s*carry\.([a-z][a-z0-9_]*)\s*\}\}/gi;
 
 /** Does this string reference the carry bag at all? */
 export function usesCarry(value) {
   return typeof value === "string" && /\{\{\s*carry\./i.test(value);
+}
+
+/** Does this string reference the fixture identity? */
+export function usesFixture(value) {
+  return typeof value === "string" && /\{\{\s*fixture\./i.test(value);
 }
 
 /**
@@ -226,11 +257,12 @@ export function applyCarry(value, bag = {}) {
 }
 
 /** Apply carry to every templated field of an effective phase. */
-export function applyCarryToPhase(effective, bag = {}) {
+export function applyCarryToPhase(effective, bag = {}, fixture = null) {
   const out = { ...effective };
   const missing = [];
+  const resolve = (v) => applyCarry(applyFixture(v, fixture), bag);
   for (const key of ["path", "lands_on"]) {
-    const r = applyCarry(out[key], bag);
+    const r = resolve(out[key]);
     out[key] = r.text;
     missing.push(...r.missing);
   }
@@ -238,8 +270,8 @@ export function applyCarryToPhase(effective, bag = {}) {
     out.steps = out.steps.map((step) => {
       const next = { ...step };
       for (const key of ["text", "value", "path", "url", "lands_on", "selector"]) {
-        if (usesCarry(next[key])) {
-          const r = applyCarry(next[key], bag);
+        if (usesCarry(next[key]) || usesFixture(next[key])) {
+          const r = resolve(next[key]);
           next[key] = r.text;
           missing.push(...r.missing);
         }
@@ -254,8 +286,8 @@ export function applyCarryToPhase(effective, bag = {}) {
   // change-detector without carry is a false-positive generator.
   if (out.runtime && typeof out.runtime === "object") {
     const rt = { ...out.runtime };
-    if (usesCarry(rt.sql)) {
-      const r = applyCarry(rt.sql, bag);
+    if (usesCarry(rt.sql) || usesFixture(rt.sql)) {
+      const r = resolve(rt.sql);
       rt.sql = r.text;
       missing.push(...r.missing);
     }
@@ -263,8 +295,8 @@ export function applyCarryToPhase(effective, bag = {}) {
       const spec = typeof rt.db_before_after === "string"
         ? { sql: rt.db_before_after }
         : { ...rt.db_before_after };
-      if (usesCarry(spec.sql)) {
-        const r = applyCarry(spec.sql, bag);
+      if (usesCarry(spec.sql) || usesFixture(spec.sql)) {
+        const r = resolve(spec.sql);
         spec.sql = r.text;
         missing.push(...r.missing);
       }
@@ -272,8 +304,8 @@ export function applyCarryToPhase(effective, bag = {}) {
     }
     if (Array.isArray(rt.probes)) {
       rt.probes = rt.probes.map((probe) => {
-        if (!usesCarry(probe?.eval)) return probe;
-        const r = applyCarry(probe.eval, bag);
+        if (!usesCarry(probe?.eval) && !usesFixture(probe?.eval)) return probe;
+        const r = resolve(probe.eval);
         missing.push(...r.missing);
         return { ...probe, eval: r.text };
       });

@@ -64,6 +64,24 @@
       },
       "description": "v2 unit of work: one user-observable action (usually one UAT issue) made of ordered phases that share a browser context, a carried-state bag and a single folded verdict. This is the only way to express a multi-navigation check such as edit → save → REOPEN → assert persisted, which pages[] cannot represent (each pages[] entry is an independent verdict). A v1 pages[] entry normalizes to a one-phase action internally."
     },
+    "fixtures": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "default": "walk",
+          "description": "Names records this walk creates, as {{fixture.prefix}} / {{fixture.run}} / {{fixture.tag}} in step text and runtime SQL. With no app-side audit trail this convention is the ONLY attribution available: it marks what the run CREATED (never what it edited), which on a shared dataset is the difference between finding the fixtures a failed cleanup left behind and never knowing they exist."
+        },
+        "sweep_sql": {
+          "type": "string",
+          "pattern": "^\\s*[Ss][Ee][Ll][Ee][Cc][Tt]\\b",
+          "description": "SELECT-only, run once at the end of the walk, normally counting rows still matching {{fixture.tag}}. A non-zero result is reported loudly and recorded: cleanup is best-effort, so the last question worth answering is what this run left behind."
+        }
+      },
+      "description": "Fixture identity and orphan sweep for records the walk creates."
+    },
     "prereq_policy": {
       "type": "string",
       "enum": [
@@ -715,6 +733,7 @@
             "assert_text",
             "assert_url",
             "assert_value",
+            "assert_count",
             "assert_iframe",
             "assert_http",
             "settle",
@@ -777,6 +796,21 @@
         "contains": {
           "type": "string",
           "description": "assert_value: substring match instead of equality. Mutually exclusive with text/value."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "assert_count: exact number of matches."
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "assert_count: minimum matches."
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "assert_count: maximum matches."
         },
         "normalize": {
           "$ref": "#/definitions/normalize"
