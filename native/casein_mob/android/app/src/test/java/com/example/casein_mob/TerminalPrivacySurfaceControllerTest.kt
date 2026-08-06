@@ -144,4 +144,68 @@ class TerminalPrivacySurfaceControllerTest {
         assertEquals(null, terminalBaselineGeneration("7"))
         assertEquals(null, terminalBaselineGeneration(null))
     }
+
+    @Test
+    fun `first paint advances once only for the active accepted baseline`() {
+        val controller = TerminalPrivacySurfaceController(Host())
+        controller.onResume()
+        controller.mount()
+
+        assertTrue(controller.freshBaseline(7))
+        assertTrue(controller.firstPaint(7))
+        assertFalse(controller.firstPaint(7))
+
+        assertEquals(listOf(7L, 7L, 7L, 1L, 1L, 0L), controller.fixedDiagnostic().toList())
+    }
+
+    @Test
+    fun `stale baseline and stale draw cannot advance first paint`() {
+        val controller = TerminalPrivacySurfaceController(Host())
+        controller.onResume()
+        controller.mount()
+
+        assertTrue(controller.freshBaseline(8))
+        assertFalse(controller.firstPaint(7))
+        assertFalse(controller.freshBaseline(7))
+        assertFalse(controller.firstPaint(7))
+        assertEquals(-1L, controller.fixedDiagnostic()[2])
+        assertEquals(0L, controller.fixedDiagnostic()[3])
+    }
+
+    @Test
+    fun `unrelated UI invalidation has no terminal first paint callback`() {
+        val controller = TerminalPrivacySurfaceController(Host())
+        controller.onResume()
+        controller.mount()
+        assertTrue(controller.freshBaseline(3))
+
+        val beforeUnrelatedDraw = controller.fixedDiagnostic().toList()
+        assertFalse(reportTerminalFirstPaint(null) { controller.firstPaint(it) })
+        val afterUnrelatedDraw = controller.fixedDiagnostic().toList()
+
+        assertEquals(beforeUnrelatedDraw, afterUnrelatedDraw)
+        assertEquals(0L, controller.fixedDiagnostic()[3])
+    }
+
+    @Test
+    fun `background cover and close clear active paint eligibility`() {
+        val controller = TerminalPrivacySurfaceController(Host())
+        controller.onResume()
+        controller.mount()
+        assertTrue(controller.freshBaseline(4))
+
+        controller.onPauseOrStop()
+        assertFalse(controller.firstPaint(4))
+        assertEquals(-1L, controller.fixedDiagnostic()[1])
+        assertEquals(1L, controller.fixedDiagnostic()[5])
+
+        controller.onResume()
+        assertTrue(controller.freshBaseline(5))
+        assertTrue(controller.firstPaint(5))
+        controller.unmount()
+        assertFalse(controller.firstPaint(5))
+        assertEquals(-1L, controller.fixedDiagnostic()[1])
+        assertEquals(0L, controller.fixedDiagnostic()[4])
+        assertEquals(1L, controller.fixedDiagnostic()[3])
+    }
 }
