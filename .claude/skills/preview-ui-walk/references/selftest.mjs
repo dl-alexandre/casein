@@ -1030,6 +1030,63 @@ assert(
   );
 }
 
+// ── base_identity: catching a recycled port before it reports on a stranger ─
+{
+  const { identityVerdict, readPath, probeBaseIdentity } = await import("./base_identity.mjs");
+
+  assert(identityVerdict(null, {}).pass === true, "no base_identity block means no probe");
+  assert(readPath({ app: { name: "one" } }, "app.name") === "one", "dotted key paths resolve");
+  assert(readPath({ a: 1 }, "a.b.c") === undefined, "a missing path is undefined, never a throw");
+
+  const ok = (body, status = 200) => ({ ok: true, status, body, error: null });
+  const spec = { path: "/health", expect: { app: "one", environment: "dev" } };
+
+  assert(identityVerdict(spec, ok('{"app":"one","environment":"dev"}')).pass === true,
+    "the expected app passes");
+
+  // THE case this exists for: a live, healthy, 200-answering DIFFERENT app.
+  const wrong = identityVerdict(spec, ok('{"app":"mira","environment":"dev"}'));
+  assert(wrong.pass === false, "a different app on a recycled port is caught");
+  assert(wrong.reason.includes("mira") && wrong.reason.includes("one"),
+    "...and the reason names what it found AND what was wanted");
+  assert(wrong.reason.includes("recycled"), "...and says why this happens");
+
+  // Right app, wrong build — a different problem, must be distinguishable.
+  const revSpec = { path: "/health", expect: { app: "one", revision: "abc123" } };
+  const stale = identityVerdict(revSpec, ok('{"app":"one","revision":"def456"}'));
+  assert(stale.pass === false && stale.reason.includes("revision"),
+    "right app / wrong build is caught and named");
+
+  // Unreachable or unhealthy is BLOCKED too — never assumed fine.
+  assert(identityVerdict(spec, { error: "ECONNREFUSED" }).pass === false, "connection refused fails");
+  assert(identityVerdict(spec, ok("{}", 503)).pass === false, "a 5xx health check fails");
+  assert(identityVerdict(spec, ok("{}", 302)).pass === false, "a redirect is not a healthy identity");
+  assert(identityVerdict({ path: "/h", min_status: 200, max_status: 399 }, ok("", 302)).pass === true,
+    "...unless the manifest widens the accepted range");
+
+  // A non-JSON body cannot satisfy key expectations, and says so.
+  const html = identityVerdict(spec, ok("<html>ok</html>"));
+  assert(html.pass === false && html.reason.includes("not JSON"), "non-JSON body is reported clearly");
+  assert(identityVerdict({ path: "/h", expect_text: "casein" }, ok("<html>casein</html>")).pass === true,
+    "expect_text covers non-JSON identifying endpoints");
+
+  assert(identityVerdict(spec, ok('{"app":1,"environment":"dev"}')).pass === false,
+    "a mismatched value fails even when the key exists");
+  assert(identityVerdict({ path: "/h", expect: { n: 3 } }, ok('{"n":"3"}')).pass === true,
+    "values compare as strings — identity, not typing");
+  assert(identityVerdict({ path: "/h", expect: { missing: "x" } }, ok("{}")).pass === false,
+    "an absent key fails closed");
+
+  // The probe itself: a failure must become a verdict, never an exception.
+  const boom = await probeBaseIdentity("http://127.0.0.1:1", { path: "/health" }, {
+    fetchImpl: async () => {
+      throw new Error("ECONNREFUSED");
+    },
+  });
+  assert(boom.error != null && boom.ok === false, "an unreachable base returns an error, not a throw");
+  assert(identityVerdict({ path: "/health" }, boom).pass === false, "...which the verdict turns into a fail");
+}
+
 // ── Fixture identity: the only attribution left without an audit trail ──────
 {
   const A = await import("./actions.mjs");
@@ -2819,6 +2876,15 @@ assert(
   assert(
     src.includes("runActionCleanup") && src.includes("no cleanup_steps declared for a mutating action"),
     "packed driver runs action-scoped cleanup and flags a mutating action that declares none",
+  );
+  assert(
+    src.includes("probeBaseIdentity") && src.includes("identityVerdict") &&
+      src.includes("--base is not the expected app"),
+    "packed driver gates each surface on base identity before walking it",
+  );
+  assert(
+    src.indexOf("probeBaseIdentity") < src.indexOf("const runtimeBag = await beginRuntime"),
+    "the identity gate precedes runtime probing and the walk (a stranger must not be measured)",
   );
   assert(
     src.includes('prereq_policy === "seed"'),
