@@ -381,6 +381,31 @@ preflight (exit 2) — loud and early, never a false pass. Until such a trail
 exists, a mutation on a **shared** dataset cannot be attributed to the walk:
 `db_before_after` can prove something changed, never that it was us.
 
+### Proving `--base` is the right app (`base_identity`)
+
+```jsonc
+{ "base_identity": { "path": "/health", "expect": { "app": "one", "environment": "dev" } } }
+```
+
+Probed **before** login, Tidewave, or any browser work. A mismatch is
+**BLOCKED**, never FAILED: the app under test was never reached, so nothing
+about it was proved.
+
+This exists because preview ports are **recycled** (`41000..41049` preview envs,
+`41050..41079` runtime-owned). A hardcoded `--base` has two failure modes and
+only one is loud — nothing listening is obvious, but *someone else's app*
+navigates, asserts, screenshots and publishes a confident report about the wrong
+software. No page-level assertion can catch that: another app's 200s look
+exactly like the right app's.
+
+* `expect` keys may be **dotted** (`"app.name"`) and are compared as strings —
+  the question is identity, not typing.
+* Name the **revision** as well as the app where it matters: *wrong app* and
+  *right app, wrong build* are different problems, and the failure message
+  reports which one it saw.
+* `expect_text` covers identifying endpoints that are not JSON.
+* Omit the block entirely to keep v1 behaviour (no probe).
+
 ### Prerequisites
 
 `prereq` answers *"is this action testable on this dataset right now?"* — so the

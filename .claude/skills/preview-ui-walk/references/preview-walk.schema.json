@@ -64,6 +64,42 @@
       },
       "description": "v2 unit of work: one user-observable action (usually one UAT issue) made of ordered phases that share a browser context, a carried-state bag and a single folded verdict. This is the only way to express a multi-navigation check such as edit → save → REOPEN → assert persisted, which pages[] cannot represent (each pages[] entry is an independent verdict). A v1 pages[] entry normalizes to a one-phase action internally."
     },
+    "base_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Prove --base points at the app you meant to walk, BEFORE walking it. Preview ports are ephemeral and RECYCLED (41000-41049 preview envs, 41050-41079 runtime-owned), so a hardcoded base has two failure modes and only one is loud: nothing listening is obvious, but SOMEONE ELSE'S app navigates, asserts, screenshots and publishes a confident report about the wrong application. A walk cannot catch that by looking at pages \u2014 another app's 200s look exactly like the right app's. A failed check is BLOCKED, never FAILED: the app under test was never reached, so nothing about it was proved.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "default": "/health",
+          "description": "App-relative path that identifies the application (a health or version endpoint)."
+        },
+        "expect": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "description": "Key/value pairs the JSON response must carry. Keys may be dotted paths (\"app.name\"). Compared as strings, since the question is identity rather than typing. Name the app AND, where it matters, the revision \u2014 \"wrong app\" and \"right app, wrong build\" are different problems."
+        },
+        "expect_text": {
+          "type": "string",
+          "description": "Substring the response body must contain. Use when the identifying endpoint is not JSON."
+        },
+        "min_status": {
+          "type": "integer",
+          "description": "Inclusive minimum acceptable status (default 200)."
+        },
+        "max_status": {
+          "type": "integer",
+          "description": "Inclusive maximum acceptable status (default 299)."
+        }
+      }
+    },
     "fixtures": {
       "type": "object",
       "additionalProperties": false,

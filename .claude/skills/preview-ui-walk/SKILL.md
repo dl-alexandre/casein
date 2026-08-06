@@ -223,6 +223,56 @@ Cookie injection also did *not* carry the session through the block, and in-page
 A durable follow-up would be teaching Casein preview to carry an injected
 cookie/storage-state so the MCP path works for authed apps too.
 
+## 1b. Resolve `--base` — never hardcode a port
+
+**Preview ports are ephemeral and recycled.** There are two families, and they
+behave differently:
+
+| Range | What |
+|-------|------|
+| the workspace's declared `ports.http` | stable per workspace (4000, 4003, …) |
+| `41000..41049` | ephemeral preview environments |
+| `41050..41079` | runtime-owned preview servers |
+| `41080` / `41081` | preview router + its admin listener |
+
+(Bands are defined in `lib/casein/previews/env_ports.ex`.)
+
+**Resolve the base every run, from `preview_surfaces`** — take the `url` of the
+live `app` surface. Do not copy a port out of an old run-book or a previous
+report. A surface with `server_active: false` (`server_status.liveness: "dead"`)
+is a registration that outlived its server: the port is listed, but nothing is
+answering.
+
+**To run your own dev server, use `preview_ensure_server_here`** rather than
+launching `PORT=<n> mix phx.server` yourself. It allocates a runtime-owned port
+and records it against the workspace, so the preview survives a Casein restart.
+A hand-picked port is only authorized while its pane registration is live, and
+is refused for a few minutes after every deploy.
+
+### Why this is a correctness problem, not a convenience one
+
+A stale base has two failure modes and **only one of them is loud**:
+
+- nothing listening → connection refused, obvious
+- **someone else's app on a recycled port** → the walk navigates, asserts,
+  screenshots and publishes a confident report about the wrong application
+
+The second cannot be caught by looking at pages — another app's 200s look
+exactly like the right app's. So declare `base_identity` in the manifest and let
+the driver ask the target who it is before walking:
+
+```jsonc
+"base_identity": {
+  "path": "/health",
+  "expect": { "app": "one", "environment": "dev" }
+}
+```
+
+Checked before login, before Tidewave, before the browser does anything. A
+mismatch is **BLOCKED**, never FAILED — the app under test was never reached, so
+nothing about it was proved. Keys may be dotted (`"app.name"`), and naming the
+revision as well as the app separates "wrong app" from "right app, wrong build".
+
 ## 2. Reuse the running preview (do not open fresh)
 
 Get the live app surface and its session, don't spin a new one:
