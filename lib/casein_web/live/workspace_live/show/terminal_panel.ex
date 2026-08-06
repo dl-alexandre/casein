@@ -8,6 +8,55 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
   alias CaseinWeb.WorkspaceLive.Show.SessionBar
   alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
 
+  attr :active_window_pane_count, :any, required: true
+  attr :chrome_visible, :any, required: true
+  attr :default_terminal_sid, :any, required: true
+  attr :desktop_terminal?, :any, required: true
+  attr :desktop_terminal_pty, :any, required: true
+  attr :desktop_terminal_refresh, :any, required: true
+  attr :desktop_terminal_status, :any, required: true
+  attr :desktop_terminal_term, :any, required: true
+  attr :entered_preview_pane_id, :any, required: true
+  attr :feature_panes, :any, required: true
+  attr :file_pane_dirty, :any, required: true
+  attr :focused_pane_id, :any, required: true
+  attr :host_loc, :any, required: true
+  attr :mobile_nav_focus, :any, required: true
+  attr :mobile_nav_open, :any, required: true
+  attr :mobile_nav_view, :any, required: true
+  attr :pane_data, :any, required: true
+  attr :pane_history, :any, required: true
+  attr :preview_panes, :any, required: true
+  attr :session_tabs, :any, required: true
+  attr :sessions_sidebar_needs_you, :any, required: true
+  attr :sessions_sidebar_open?, :any, required: true
+  attr :sessions_sidebar_sort, :any, required: true
+  attr :sessions_sidebar_tree, :any, required: true
+  attr :shell_button_detail, :any, required: true
+  attr :shell_button_label, :any, required: true
+  attr :terminal_mode, :any, required: true
+  attr :terminal_sid, :any, required: true
+  attr :terminal_surface_pane_id, :any, required: true
+  attr :terminal_themes, :any, required: true
+  attr :tmux_active_pane_id, :any, required: true
+  attr :tmux_mutations_enabled?, :any, required: true
+  attr :tmux_rename_session_id, :any, required: true
+  attr :tmux_rename_window_id, :any, required: true
+  attr :tmux_session, :any, required: true
+  attr :tmux_topology_layout_version, :any, required: true
+  attr :tmux_topology_structure_version, :any, required: true
+  attr :tmux_window_tabs, :any, required: true
+  attr :tmux_windows, :any, required: true
+  attr :ui_highlight_pane_id, :any, required: true
+  attr :window_sidebar_open?, :any, required: true
+  attr :window_zoomed?, :any, required: true
+  attr :windows_sidebar_sort, :any, required: true
+  attr :windows_sidebar_tree, :any, required: true
+  attr :workspace, :any, required: true
+  attr :workspace_route, :any, required: true
+  attr :workspace_start_error, :any, required: true
+  attr :agent_approval_count, :any, required: true
+
   def terminal_tab(assigns) do
     assigns =
       assign_new(assigns, :tmux_topology_layout_version, fn ->

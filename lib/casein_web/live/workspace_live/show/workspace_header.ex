@@ -9,6 +9,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
   attr :notif_unread_count, :integer, default: 0
   attr :agent_approval_count, :integer, default: 0
 
+  attr :active_window_pane_count, :any, required: true
+  attr :host_loc, :any, required: true
+  attr :tab, :any, required: true
+  attr :terminal_mode, :any, required: true
+  attr :terminal_sid, :any, required: true
+  attr :tmux_mutations_enabled?, :any, required: true
+  attr :tmux_session, :any, required: true
+  attr :tmux_window_tabs, :any, required: true
+  attr :workspace, :any, required: true
+  attr :workspace_start_error, :any, required: true
+
   def header_overflow_menu(assigns) do
     ~H"""
     <span

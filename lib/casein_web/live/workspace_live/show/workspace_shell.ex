@@ -33,6 +33,162 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   alias CaseinWeb.WorkspaceLive.Show.ContextMenu
   alias CaseinWeb.WorkspaceLive.Show.SessionBar
 
+  attr :active_run, :any, required: true
+  attr :active_session_kind, :any, required: true
+  attr :active_window_pane_count, :any, required: true
+  attr :agent_pending_approval_count, :any, required: true
+  attr :agent_write_unlock, :any, required: true
+  attr :artifact_projects, :any, required: true
+  attr :artifact_projects_error, :any, required: true
+  attr :artifact_selected_id, :any, required: true
+  attr :audit_drawer_open, :any, required: true
+  attr :chrome_visible, :any, required: true
+  attr :clipboard_count, :any, required: true
+  attr :clipboard_drawer_open, :any, required: true
+  attr :clipboard_entries, :any, required: true
+  attr :codex_error, :any, required: true
+  attr :codex_exec_form, :any, required: true
+  attr :codex_exec_run, :any, required: true
+  attr :codex_live_delta, :any, required: true
+  attr :codex_loaded?, :any, required: true
+  attr :codex_pending_approval_count, :any, required: true
+  attr :codex_pending_requests, :any, required: true
+  attr :codex_selected_thread_id, :any, required: true
+  attr :codex_threads, :any, required: true
+  attr :codex_timeline, :any, required: true
+  attr :connect_error, :any, required: true
+  attr :connect_info, :any, required: true
+  attr :connect_mcp_json, :any, required: true
+  attr :connect_new_token, :any, required: true
+  attr :connect_tokens, :any, required: true
+  attr :context_menu, :any, required: true
+  attr :current_user, :any, required: true
+  attr :db_isolation, :any, required: true
+  attr :default_terminal_sid, :any, required: true
+  attr :delete_confirm, :any, required: true
+  attr :deploy_drift, :any, required: true
+  attr :deploy_failure, :any, required: true
+  attr :deploy_in_progress, :any, required: true
+  attr :desktop_terminal?, :any, required: true
+  attr :desktop_terminal_pty, :any, required: true
+  attr :desktop_terminal_refresh, :any, required: true
+  attr :desktop_terminal_status, :any, required: true
+  attr :desktop_terminal_term, :any, required: true
+  attr :entered_preview_pane_id, :any, required: true
+  attr :feature_panes, :any, required: true
+  attr :file_diff, :any, required: true
+  attr :file_error, :any, required: true
+  attr :file_pane_dirty, :any, required: true
+  attr :file_symbols, :any, required: true
+  attr :flash, :any, required: true
+  attr :focused_pane_id, :any, required: true
+  attr :git_status, :any, required: true
+  attr :grok_permission_requests, :any, required: true
+  attr :history_error, :any, required: true
+  attr :history_form, :any, required: true
+  attr :history_loaded?, :any, required: true
+  attr :history_payload, :any, required: true
+  attr :history_results, :any, required: true
+  attr :host_loc, :any, required: true
+  attr :host_path, :any, required: true
+  attr :log_ref, :any, required: true
+  attr :log_service, :any, required: true
+  attr :mobile_nav_focus, :any, required: true
+  attr :mobile_nav_open, :any, required: true
+  attr :mobile_nav_view, :any, required: true
+  attr :new_input, :any, required: true
+  attr :node_delete, :any, required: true
+  attr :node_rename, :any, required: true
+  attr :notif_admin?, :any, required: true
+  attr :notif_device_stats, :any, required: true
+  attr :notif_devices, :any, required: true
+  attr :notif_drawer_open, :any, required: true
+  attr :notif_error, :any, required: true
+  attr :notif_info, :any, required: true
+  attr :notif_loaded?, :any, required: true
+  attr :notif_preferences, :any, required: true
+  attr :notif_preferences_form, :any, required: true
+  attr :notif_unread_count, :any, required: true
+  attr :notif_user_id, :any, required: true
+  attr :notifications, :any, required: true
+  attr :open_file, :any, required: true
+  attr :palette_category, :any, required: true
+  attr :palette_items, :any, required: true
+  attr :palette_open, :any, required: true
+  attr :palette_query, :any, required: true
+  attr :palette_selected_idx, :any, required: true
+  attr :pane_data, :any, required: true
+  attr :pane_history, :any, required: true
+  attr :preview_panes, :any, required: true
+  attr :project_meta, :any, required: true
+  attr :rename_input, :any, required: true
+  attr :review_commands, :any, required: true
+  attr :run_ledger, :any, required: true
+  attr :save_error, :any, required: true
+  attr :saved_session_template_tags, :any, required: true
+  attr :saved_session_templates, :any, required: true
+  attr :search_query, :any, required: true
+  attr :search_results, :any, required: true
+  attr :search_state, :any, required: true
+  attr :selected_dir, :any, required: true
+  attr :selected_run_artifacts, :any, required: true
+  attr :selected_run_can_retry, :any, required: true
+  attr :selected_run_failure_reason, :any, required: true
+  attr :selected_run_id, :any, required: true
+  attr :selected_run_summary, :any, required: true
+  attr :selected_run_timeline, :any, required: true
+  attr :session_tabs, :any, required: true
+  attr :sessions_sidebar_needs_you, :any, required: true
+  attr :sessions_sidebar_open?, :any, required: true
+  attr :sessions_sidebar_sort, :any, required: true
+  attr :sessions_sidebar_tree, :any, required: true
+  attr :shell_button_detail, :any, required: true
+  attr :shell_button_label, :any, required: true
+  attr :show_hidden_files, :any, required: true
+  attr :situation_drawer_open, :any, required: true
+  attr :situation_enabled, :any, required: true
+  attr :situation_risks, :any, required: true
+  attr :streams, :any, required: true
+  attr :tab, :any, required: true
+  attr :template_duplicate_form, :any, required: true
+  attr :template_duplicate_id, :any, required: true
+  attr :template_edit_form, :any, required: true
+  attr :template_edit_id, :any, required: true
+  attr :template_library_open, :any, required: true
+  attr :template_preview, :any, required: true
+  attr :template_save_form, :any, required: true
+  attr :template_tag_filter, :any, required: true
+  attr :terminal_mode, :any, required: true
+  attr :terminal_sid, :any, required: true
+  attr :terminal_surface_pane_id, :any, required: true
+  attr :terminal_themes, :any, required: true
+  attr :tmux_active_pane_id, :any, required: true
+  attr :tmux_active_window_id, :any, required: true
+  attr :tmux_mutations_enabled?, :any, required: true
+  attr :tmux_panes, :any, required: true
+  attr :tmux_rename_session_id, :any, required: true
+  attr :tmux_rename_window_id, :any, required: true
+  attr :tmux_session, :any, required: true
+  attr :tmux_topology_layout_version, :any, required: true
+  attr :tmux_topology_structure_version, :any, required: true
+  attr :tmux_window_tabs, :any, required: true
+  attr :tmux_windows, :any, required: true
+  attr :tooling, :any, required: true
+  attr :tree, :any, required: true
+  attr :tree_error, :any, required: true
+  attr :tree_filter, :any, required: true
+  attr :ui_highlight_pane_id, :any, required: true
+  attr :update_available, :any, required: true
+  attr :update_commits_behind, :any, required: true
+  attr :window_sidebar_open?, :any, required: true
+  attr :window_zoomed?, :any, required: true
+  attr :windows_sidebar_sort, :any, required: true
+  attr :windows_sidebar_tree, :any, required: true
+  attr :workspace, :any, required: true
+  attr :workspace_mode_source, :any, required: true
+  attr :workspace_route, :any, required: true
+  attr :workspace_start_error, :any, required: true
+
   slot :header_back_nav, required: true, doc: "Frozen navigation back-link (stays owned by Show)."
 
   def workspace_shell(assigns) do
@@ -75,7 +231,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
-      data-tmux-windows={swipe_window_json(assigns)}
+      data-tmux-windows={swipe_window_json(@tmux_window_tabs)}
       class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 pointer-coarse:pt-0 pointer-coarse:pb-0 lg:px-6"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
@@ -181,7 +337,27 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           <% end %>
 
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
-            <.header_overflow_menu {header_overflow_attrs(assigns)} />
+            <.header_overflow_menu
+              active_window_pane_count={@active_window_pane_count}
+              desktop_terminal?={@desktop_terminal?}
+              host_loc={@host_loc}
+              notif_unread_count={@notif_unread_count}
+              tab={@tab}
+              terminal_mode={@terminal_mode}
+              terminal_sid={@terminal_sid}
+              tmux_mutations_enabled?={@tmux_mutations_enabled?}
+              tmux_session={@tmux_session}
+              tmux_window_tabs={@tmux_window_tabs}
+              workspace={@workspace}
+              workspace_start_error={@workspace_start_error}
+              agent_approval_count={
+                agent_approval_count(
+                  @agent_pending_approval_count,
+                  @codex_pending_approval_count,
+                  @grok_permission_requests
+                )
+              }
+            />
           </div>
         </header>
 
@@ -244,14 +420,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
         >
           <span class="sr-only">Show chrome</span>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-            <% win = active_tmux_window_name(assigns) %>
+            <% win = active_tmux_window_name(@tmux_active_window_id, @tmux_windows) %>
             <span class="hidden pointer-coarse:flex min-w-0 items-center gap-1.5 text-[11px] leading-none text-base-content/70">
               <span
                 class={["size-2 shrink-0 rounded-full", workspace_status_dot_class(@workspace.status)]}
                 aria-hidden="true"
               ></span>
               <span class="truncate font-medium text-base-content/80">
-                {mobile_active_session_label(assigns)}
+                {mobile_active_session_label(
+                  @terminal_sid,
+                  @default_terminal_sid,
+                  @shell_button_label,
+                  @session_tabs
+                )}
               </span>
 
               <%= if is_binary(win) and win != "" do %>
@@ -284,7 +465,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             type="button"
             tabindex="-1"
             data-leader-action="copy-link"
-            data-copy-session-link={current_share_url(assigns)}
+            data-copy-session-link={
+              current_share_url(@workspace, @terminal_sid, %{
+                tmux_active_window_id: @tmux_active_window_id,
+                workspace_route: @workspace_route,
+                tmux_panes: @tmux_panes,
+                tmux_active_pane_id: @tmux_active_pane_id,
+                window_zoomed?: @window_zoomed?
+              })
+            }
             data-copy-link-kind="view"
           ></button>
           <button
@@ -463,7 +652,63 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       <% end %>
 
       <div class="min-h-0 flex-1">
-        <.terminal_tab :if={@tab == "terminal"} {terminal_tab_attrs(assigns)} />
+        <.terminal_tab
+          :if={@tab == "terminal"}
+          active_window_pane_count={@active_window_pane_count}
+          chrome_visible={@chrome_visible}
+          default_terminal_sid={@default_terminal_sid}
+          desktop_terminal?={@desktop_terminal?}
+          desktop_terminal_pty={@desktop_terminal_pty}
+          desktop_terminal_refresh={@desktop_terminal_refresh}
+          desktop_terminal_status={@desktop_terminal_status}
+          desktop_terminal_term={@desktop_terminal_term}
+          entered_preview_pane_id={@entered_preview_pane_id}
+          feature_panes={@feature_panes}
+          file_pane_dirty={@file_pane_dirty}
+          focused_pane_id={@focused_pane_id}
+          host_loc={@host_loc}
+          mobile_nav_focus={@mobile_nav_focus}
+          mobile_nav_open={@mobile_nav_open}
+          mobile_nav_view={@mobile_nav_view}
+          pane_data={@pane_data}
+          pane_history={@pane_history}
+          preview_panes={@preview_panes}
+          session_tabs={@session_tabs}
+          sessions_sidebar_needs_you={@sessions_sidebar_needs_you}
+          sessions_sidebar_open?={@sessions_sidebar_open?}
+          sessions_sidebar_sort={@sessions_sidebar_sort}
+          sessions_sidebar_tree={@sessions_sidebar_tree}
+          shell_button_detail={@shell_button_detail}
+          shell_button_label={@shell_button_label}
+          terminal_mode={@terminal_mode}
+          terminal_sid={@terminal_sid}
+          terminal_surface_pane_id={@terminal_surface_pane_id}
+          terminal_themes={@terminal_themes}
+          tmux_active_pane_id={@tmux_active_pane_id}
+          tmux_mutations_enabled?={@tmux_mutations_enabled?}
+          tmux_rename_session_id={@tmux_rename_session_id}
+          tmux_rename_window_id={@tmux_rename_window_id}
+          tmux_session={@tmux_session}
+          tmux_topology_layout_version={@tmux_topology_layout_version}
+          tmux_topology_structure_version={@tmux_topology_structure_version}
+          tmux_window_tabs={@tmux_window_tabs}
+          tmux_windows={@tmux_windows}
+          ui_highlight_pane_id={@ui_highlight_pane_id}
+          window_sidebar_open?={@window_sidebar_open?}
+          window_zoomed?={@window_zoomed?}
+          windows_sidebar_sort={@windows_sidebar_sort}
+          windows_sidebar_tree={@windows_sidebar_tree}
+          workspace={@workspace}
+          workspace_route={@workspace_route}
+          workspace_start_error={@workspace_start_error}
+          agent_approval_count={
+            agent_approval_count(
+              @agent_pending_approval_count,
+              @codex_pending_approval_count,
+              @grok_permission_requests
+            )
+          }
+        />
         <.files_panel
           :if={@tab == "files"}
           host_loc={@host_loc}
@@ -608,9 +853,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   # window" no matter how many were open. Carry the little the bar needs on the
   # always-mounted leader root instead; the strip stays the preferred source
   # when it is there, since a drag can reorder it client-side.
-  defp swipe_window_json(assigns) do
-    assigns
-    |> Map.get(:tmux_window_tabs)
+  defp swipe_window_json(tmux_window_tabs) do
+    tmux_window_tabs
     |> List.wrap()
     |> Enum.map(
       &%{
@@ -624,106 +868,42 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
     |> Jason.encode!()
   end
 
-  defp header_overflow_attrs(assigns) do
-    assigns
-    |> Map.take([
-      :workspace,
-      :workspace_start_error,
-      :desktop_terminal?,
-      :tab,
-      :host_loc,
-      :tmux_mutations_enabled?,
-      :tmux_window_tabs,
-      :terminal_mode,
-      :tmux_session,
-      :terminal_sid,
-      :active_window_pane_count,
-      :notif_unread_count
-    ])
-    |> Map.put(:agent_approval_count, agent_approval_count(assigns))
+  # These helpers take explicit values rather than the whole `assigns` map on
+  # purpose: referencing bare `assigns` inside ~H is a strong taint, so LiveView
+  # gives up and re-renders that dynamic on every update. Naming the inputs keeps
+  # each expression change-tracked against just the assigns it actually reads.
+  defp agent_approval_count(agent_pending, codex_pending, grok_requests) do
+    agent_pending || (codex_pending || 0) + length(grok_requests || [])
   end
 
-  defp terminal_tab_attrs(assigns) do
-    assigns
-    |> Map.take([
-      :workspace,
-      :host_loc,
-      :terminal_mode,
-      :tmux_windows,
-      :preview_panes,
-      :feature_panes,
-      :tmux_session,
-      :ui_highlight_pane_id,
-      :tmux_active_pane_id,
-      :window_zoomed?,
-      :tmux_mutations_enabled?,
-      :entered_preview_pane_id,
-      :terminal_surface_pane_id,
-      :pane_history,
-      :terminal_themes,
-      :focused_pane_id,
-      :file_pane_dirty,
-      :pane_data,
-      :desktop_terminal?,
-      :desktop_terminal_term,
-      :desktop_terminal_pty,
-      :desktop_terminal_status,
-      :desktop_terminal_refresh,
-      :workspace_start_error,
-      :mobile_nav_open,
-      :mobile_nav_view,
-      :mobile_nav_focus,
-      :session_tabs,
-      :terminal_sid,
-      :default_terminal_sid,
-      :shell_button_label,
-      :shell_button_detail,
-      :workspace_route,
-      :active_window_pane_count,
-      :tmux_window_tabs,
-      :tmux_topology_structure_version,
-      :tmux_topology_layout_version,
-      :tmux_rename_window_id,
-      :tmux_rename_session_id,
-      :window_sidebar_open?,
-      :sessions_sidebar_open?,
-      :sessions_sidebar_tree,
-      :sessions_sidebar_needs_you,
-      :windows_sidebar_tree,
-      :sessions_sidebar_sort,
-      :windows_sidebar_sort,
-      :chrome_visible
-    ])
-    |> Map.put(:agent_approval_count, agent_approval_count(assigns))
-  end
-
-  defp agent_approval_count(assigns) do
-    assigns[:agent_pending_approval_count] ||
-      (assigns[:codex_pending_approval_count] || 0) +
-        length(assigns[:grok_permission_requests] || [])
-  end
-
-  defp current_share_url(assigns) do
+  defp current_share_url(workspace, terminal_sid, deep_link_assigns) do
     SessionBar.share_url(
-      assigns.workspace.id,
-      assigns.terminal_sid,
-      assigns[:tmux_active_window_id],
-      CaseinWeb.WorkspaceLive.Show.ViewDeepLink.share_query_opts(assigns)
+      workspace.id,
+      terminal_sid,
+      deep_link_assigns[:tmux_active_window_id],
+      CaseinWeb.WorkspaceLive.Show.ViewDeepLink.share_query_opts(deep_link_assigns)
     )
   end
 
-  defp active_tmux_window_name(assigns) do
-    CaseinWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
+  defp active_tmux_window_name(tmux_active_window_id, tmux_windows) do
+    CaseinWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{
+      assigns: %{tmux_active_window_id: tmux_active_window_id, tmux_windows: tmux_windows}
+    })
   end
 
-  defp mobile_active_session_label(assigns) do
-    if assigns.terminal_sid == assigns.default_terminal_sid do
-      case assigns.shell_button_label do
+  defp mobile_active_session_label(
+         terminal_sid,
+         default_terminal_sid,
+         shell_button_label,
+         session_tabs
+       ) do
+    if terminal_sid == default_terminal_sid do
+      case shell_button_label do
         label when is_binary(label) and label != "" -> label
         _ -> "Shell"
       end
     else
-      case Enum.find(assigns.session_tabs, &(&1.id == assigns.terminal_sid)) do
+      case Enum.find(session_tabs, &(&1.id == terminal_sid)) do
         %{label: label} when is_binary(label) and label != "" -> label
         _ -> "Session"
       end
