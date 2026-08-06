@@ -31,6 +31,40 @@ Casein refuses to boot in prod with any of these missing — see
 | `ECTO_IPV6`                 | Set to `true` or `1` for IPv6 DB connections.                         |
 | `DNS_CLUSTER_QUERY`         | Optional. For libcluster-style multi-node discovery (unused in v1).   |
 
+### Desktop installer downloads (optional)
+
+Casein can publish one operator-named desktop installer at a fixed public URL,
+so a link can be handed to someone who is not set up to build from source. Both
+variables are required together:
+
+| Variable                         | Purpose                                                            |
+|----------------------------------|--------------------------------------------------------------------|
+| `CASEIN_WINDOWS_DOWNLOAD_PATH`   | Absolute path to the installer. Must be a regular file, not a symlink or directory. |
+| `CASEIN_WINDOWS_DOWNLOAD_SHA256` | Expected SHA-256 of that file, 64 hexadecimal characters.           |
+
+```bash
+export CASEIN_WINDOWS_DOWNLOAD_PATH=/srv/casein/Casein-Setup.exe
+export CASEIN_WINDOWS_DOWNLOAD_SHA256=$(sha256sum /srv/casein/Casein-Setup.exe | cut -d' ' -f1)
+```
+
+Casein hashes the file once and refuses to serve it if the bytes do not match,
+so the checksum must be updated whenever the installer is replaced. When either
+variable is missing or verification fails, the header menu entry disappears and
+both routes return 404; the reason is written to the log once per distinct
+configuration. Casein never scans the directory, follows symlinks, or accepts a
+path from the request — exactly one file is reachable:
+
+- `GET /downloads/windows/Casein-Setup.exe` — the verified installer, served as
+  an attachment with `Range` and `ETag` support so a resumed download cannot
+  splice two different builds.
+- `GET /downloads/windows/Casein-Setup.exe.sha256` — the same checksum in
+  `sha256sum` format, for recipients to verify what they downloaded.
+
+Both routes are deliberately unauthenticated so the link works for someone
+without a Casein account. Anyone who knows the hostname can fetch the
+installer; do not configure these variables if the build is not meant to be
+public.
+
 ### Operator overlay contract
 
 Portable Casein does not require host deployment automation. Operators that
