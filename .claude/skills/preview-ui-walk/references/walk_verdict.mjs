@@ -215,6 +215,22 @@ export function liveViewClientFailure(state) {
 export const RESULT_CLASSES = ["PASS", "FAILED", "BLOCKED", "NOT_TESTED"];
 
 /**
+ * Diagnostic status for the one action outcome the page-level taxonomy has no
+ * word for: a mutation landed and the verification that was supposed to prove
+ * it never produced an answer.
+ *
+ * It is not BLOCKED (something DID happen), not FAILED (no assertion ran and
+ * lost), not PASS, and not NOT_TESTED. Left unnamed it collapses into one of
+ * those and the operator loses the only signal that says "data was changed and
+ * nobody knows into what" — which on a shared dataset also silently becomes the
+ * next run's precondition.
+ *
+ * It is a STATUS, not a fifth RESULT_CLASS: consumers still see BLOCKED
+ * ("nothing was proved"), so no dashboard or gate needs to learn a new class.
+ */
+export const MUTATED_UNVERIFIED = "MUTATED_UNVERIFIED";
+
+/**
  * BLOCKED is a first-class *diagnostic* status too: it means a precondition or
  * required evidence was unavailable, so the assertion never got to run. It is
  * distinct from FAILED (the assertion ran and lost) and from NOT_TESTED (we
@@ -240,6 +256,7 @@ export function isBlockedStatus(status) {
  * role sweeps. The diagnostic status stays BOUNCED either way.
  */
 export function resultClass(status, row = {}, opts = {}) {
+  if (status === MUTATED_UNVERIFIED) return "BLOCKED";
   if (isBlockedStatus(status)) return "BLOCKED";
   if (isPassingStatus(status)) return "PASS";
   if (status === "SKIPPED") return "NOT_TESTED";
@@ -280,6 +297,141 @@ export function evidenceGuard(requiredEvidence, collected = {}) {
 }
 
 /**
+ * Fold a v2 action's phase rows into ONE verdict.
+ *
+ * An action is a sequence of navigations sharing a browser context, a carried
+ * state bag, and a single outcome — the unit that maps to one tracker issue.
+ * Folding is where the taxonomy earns its keep, because the interesting cases
+ * are asymmetric: the SAME phase status means different things depending on
+ * whether a mutation has already landed.
+ *
+ *   any phase FAILED (not TIMEOUT)          -> FAILED
+ *   BLOCKED/TIMEOUT, nothing mutated yet    -> BLOCKED / FAILED (v1 semantics)
+ *   BLOCKED/TIMEOUT, a mutation landed      -> MUTATED_UNVERIFIED
+ *   every phase passed                      -> PASS
+ *
+ * The fold is derived from facts (did a mutating phase execute), never from a
+ * declared phase role: a label like role:"verify" can be mis-set by whoever
+ * writes the manifest, and the dangerous state is exactly the one you cannot
+ * afford to have mis-labelled.
+ *
+ * Conservative on "did it mutate": a mutating phase that was ATTEMPTED counts,
+ * even if it then failed, because a half-applied mutation is indistinguishable
+ * from an unapplied one at this layer. Only SKIPPED (the interactions gate
+ * refused it) proves nothing ran.
+ *
+ * @param phases rows in execution order: { status, mutating, name }
+ * @returns { status, reason, mutated, cleanupRequired, phaseIndex, phase }
+ */
+export function actionVerdict(phases = [], opts = {}) {
+  const list = Array.isArray(phases) ? phases : [];
+  if (list.length === 0) {
+    return {
+      status: "BLOCKED",
+      reason: "action ran no phases",
+      mutated: false,
+      cleanupRequired: false,
+      phaseIndex: -1,
+      phase: null,
+    };
+  }
+
+  let mutated = false;
+  for (let i = 0; i < list.length; i += 1) {
+    const phase = list[i] || {};
+    const status = phase.status;
+    // SKIPPED means the interactions gate refused the step, so nothing ran.
+    if (phase.mutating === true && status !== "SKIPPED") mutated = true;
+
+    const cls = resultClass(status, phase, opts);
+    if (cls === "PASS" || cls === "NOT_TESTED") continue;
+
+    const at = { phaseIndex: i, phase: phase.name || `phase ${i + 1}`, mutated };
+    const label = at.phase;
+
+    // Unproven outcomes: nothing answered the question.
+    if (status === "BLOCKED" || status === "TIMEOUT" || status === MUTATED_UNVERIFIED) {
+      if (mutated) {
+        return {
+          ...at,
+          status: MUTATED_UNVERIFIED,
+          reason:
+            `mutation landed, then "${label}" returned ${status} — the change was ` +
+            `applied but never verified; fixtures may be left behind`,
+          cleanupRequired: true,
+        };
+      }
+      // Nothing mutated: keep v1 semantics exactly (TIMEOUT stays a failure).
+      return {
+        ...at,
+        status: status === "TIMEOUT" ? "TIMEOUT" : "BLOCKED",
+        reason: `"${label}" returned ${status} before anything was changed`,
+        cleanupRequired: false,
+      };
+    }
+
+    // An assertion ran and lost. This outranks MUTATED_UNVERIFIED: a concrete
+    // failed assertion is more actionable than "could not verify" — but if a
+    // mutation landed first, cleanup is still owed.
+    return {
+      ...at,
+      status: status || "FAIL",
+      reason: `"${label}" returned ${status}`,
+      cleanupRequired: mutated,
+    };
+  }
+
+  return {
+    status: "PASS",
+    reason: "",
+    mutated,
+    cleanupRequired: mutated,
+    phaseIndex: -1,
+    phase: null,
+  };
+}
+
+/**
+ * Settle the check-then-act race on a shared dataset.
+ *
+ * Prerequisites are evaluated before phase 1 and re-evaluated after any action
+ * failure. If a predicate held before and does not hold after, the app was
+ * probably not at fault — another session or a human consumed the record
+ * mid-run.
+ *
+ * CRITICAL asymmetry: this reclassification only applies when the action did
+ * NOT mutate. If the action changed data, the action ITSELF is a candidate
+ * cause of the precondition delta, and silently rewriting FAILED to BLOCKED
+ * would hide real defects behind our own side effects. For mutating actions the
+ * delta is recorded as `preconditionDelta` for triage and the status is left
+ * exactly as the fold decided.
+ *
+ * @param verdict output of actionVerdict
+ * @param before/after arrays of { name, ok }
+ */
+export function reclassifyPreconditionLost(verdict, before = [], after = []) {
+  if (!verdict || resultClass(verdict.status, verdict) === "PASS") return verdict;
+
+  const held = new Map((Array.isArray(before) ? before : []).map((p) => [p?.name, p?.ok === true]));
+  const lost = (Array.isArray(after) ? after : [])
+    .filter((p) => held.get(p?.name) === true && p?.ok !== true)
+    .map((p) => p.name);
+
+  if (lost.length === 0) return verdict;
+  if (verdict.mutated) {
+    // Our own writes could explain this. Surface it; never act on it.
+    return { ...verdict, preconditionDelta: lost };
+  }
+  return {
+    ...verdict,
+    status: "BLOCKED",
+    reason: `precondition_lost: ${lost.join(", ")} held before the action and not after`,
+    preconditionLost: lost,
+    preconditionDelta: lost,
+  };
+}
+
+/**
  * Exit-code hard-fail set.
  *
  * Access-gating bounces (e.g. resource → /dashboard) are often expected on
@@ -298,6 +450,11 @@ export function isHardFailStatus(
   { strictAccess = false, failRuntimeError = true, failBlocked = true } = {},
 ) {
   if (isPassingStatus(status)) return false;
+  // A mutation landed and could not be verified. Deliberately NOT downgradable
+  // by --soft-blocked: on a shared dataset this is the one state that also
+  // corrupts the NEXT run's preconditions, so an exploratory run is exactly
+  // when you least want it hidden.
+  if (status === MUTATED_UNVERIFIED) return true;
   // FAIL CLOSED: missing required evidence hard-fails by default. A walk that
   // could not collect what it was told to collect has not proved anything, so
   // it must not exit green. `failBlocked:false` (--soft-blocked) downgrades it
@@ -407,13 +564,19 @@ export function runtimeErrorEvidence(runtimePage = {}) {
   const sqlFail = runtimePage.sql?.status === "FAIL" ? 1 : 0;
   const liveviewFail =
     runtimePage.required_tidewave === true && runtimePage.liveview?.status === "error" ? 1 : 0;
+  // db_before_after must count here, not merely in runtime.evidence_failed:
+  // this function is the channel the page VERDICT reads. Collected-but-uncounted
+  // is the worst shape available — the report shows a proven violation while the
+  // page reports PASS.
+  const dbFail = runtimePage.db_before_after?.status === "FAIL" ? 1 : 0;
   return {
-    count: unique + probes + sqlFail + liveviewFail, // gate/verdict signal (deduped)
+    count: unique + probes + sqlFail + liveviewFail + dbFail, // gate/verdict signal (deduped)
     unique,
     total,
     probes_failed: probes,
     sql_failed: sqlFail,
     liveview_failed: liveviewFail,
+    db_before_after_failed: dbFail,
     sample,
   };
 }
@@ -613,6 +776,10 @@ export function statusColor(status) {
     // red so a reader never mistakes missing evidence for either.
     case "BLOCKED":
       return "#8957e5";
+    // Distinct from BLOCKED's purple: this one says "we changed data and cannot
+    // prove what happened", which is a different call to action (go clean up).
+    case MUTATED_UNVERIFIED:
+      return "#db6d28";
     case "CRASHED":
     case "RUNTIME_ERROR":
     case "ASSERT_FAILED":
@@ -620,6 +787,11 @@ export function statusColor(status) {
     default:
       return "#f85149";
   }
+}
+
+/** Minimal synthetic phase row for action-fold fixture tests. */
+export function phaseFixture(status = "PASS", overrides = {}) {
+  return { name: `phase-${status}`, status, mutating: false, ...overrides };
 }
 
 /** Minimal synthetic input for fixture tests. */

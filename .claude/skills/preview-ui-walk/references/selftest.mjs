@@ -48,6 +48,7 @@ import {
   walkNeedsRequiredInteractions,
 } from "./page_steps.mjs";
 import {
+  actionVerdict,
   countRuntimeErrors,
   defaultAppFramePrefixes,
   evidenceGuard,
@@ -57,7 +58,10 @@ import {
   isHardFailStatus,
   isSignificantErrorLine,
   liveViewClientFailure,
+  MUTATED_UNVERIFIED,
   normalizeAppFramePrefixes,
+  phaseFixture,
+  reclassifyPreconditionLost,
   RESULT_CLASSES,
   resultClass,
   runtimeErrorEvidence,
@@ -655,7 +659,21 @@ assert(
   const here = dirname(fileURLToPath(import.meta.url));
   const schema = JSON.parse(readFileSync(join(here, "preview-walk.schema.json"), "utf8"));
   const loginProps = schema.definitions.login.properties;
-  const pageProps = schema.definitions.page.properties;
+  // v2 split page into a shared body plus two required-lists: `page` (v1, needs
+  // name+path) and `phase` (needs path only — a phase name defaults from its
+  // action). The body is the single place properties live, so the two can never
+  // drift apart.
+  const pageProps = schema.definitions.page_body.properties;
+  assert(
+    schema.definitions.page.allOf?.[0]?.$ref === "#/definitions/page_body" &&
+      JSON.stringify(schema.definitions.page.required) === JSON.stringify(["name", "path"]),
+    "page wraps page_body and still requires name+path (v1 unchanged)",
+  );
+  assert(
+    schema.definitions.phase.allOf?.[0]?.$ref === "#/definitions/page_body" &&
+      JSON.stringify(schema.definitions.phase.required) === JSON.stringify(["path"]),
+    "phase wraps the same body and relaxes only `name`",
+  );
 
   for (const key of ["steps", "budget_ms", "params_from_env", "kind", "path", "lands_on"]) {
     assert(key in loginProps, `schema login.${key} exists (driver reads it)`);
@@ -680,15 +698,557 @@ assert(
   assert("require_evidence" in schema.properties, "schema declares require_evidence");
   assert("retries" in schema.properties, "schema declares retries/flakiness");
   assert("viewport" in schema.definitions, "viewport definition present");
-  const ev = schema.properties.require_evidence.items.enum;
+  // One enum, referenced from walk-, action- and phase-level require_evidence.
+  // Three inline copies is how enums drift.
+  const ev = schema.definitions.evidence_key.enum;
   for (const key of ["har", "a11y", "dom", "server_timing", "ws", "cleanup", "audit_actor"]) {
     assert(ev.includes(key), `require_evidence enum covers ${key}`);
+  }
+  for (const node of [
+    schema.properties.require_evidence.items,
+    schema.definitions.page_body.properties.require_evidence.items,
+    schema.definitions.action.properties.require_evidence.items,
+  ]) {
+    assert(node.$ref === "#/definitions/evidence_key", "every require_evidence shares one enum");
   }
   // v1 compatibility: the shipped examples must still validate unchanged.
   for (const name of ["authed-admin-example.json", "login-click-example.json"]) {
     const doc = JSON.parse(readFileSync(join(here, name), "utf8"));
     assert(doc && typeof doc === "object", `${name} parses (v1 example retained)`);
   }
+
+  // ── v2 actions[] surface ──────────────────────────────────────────────────
+  assert("actions" in schema.properties, "schema declares actions[]");
+  assert("logins" in schema.properties, "schema declares the logins registry");
+  assert("prereq_policy" in schema.properties, "schema declares prereq_policy");
+  assert(
+    JSON.stringify(schema.required) === JSON.stringify(["report"]) &&
+      JSON.stringify(schema.anyOf) ===
+        JSON.stringify([{ required: ["login", "pages"] }, { required: ["actions"] }]),
+    "manifest requires report plus EITHER login+pages (v1) OR actions (v2)",
+  );
+  assert(
+    JSON.stringify(schema.properties.version.enum) === JSON.stringify([1, 2]),
+    "version accepts 1 and 2",
+  );
+  assert(schema.properties.actions.items.$ref === "#/definitions/action", "actions[] items are actions");
+  assert(schema.definitions.action.properties.phases.minItems === 1, "an action needs >=1 phase");
+  for (const key of ["uat", "login", "prereq", "phases", "cleanup_steps"]) {
+    assert(key in schema.definitions.action.properties, `action.${key} declared`);
+  }
+  assert(
+    "contract_hash" in schema.definitions.action.properties.uat.properties,
+    "action.uat carries contract_hash (the human contract can move under us)",
+  );
+  for (const key of ["carry", "mutates"]) {
+    assert(key in schema.definitions.page_body.properties, `phase.${key} declared`);
+  }
+  assert(
+    schema.definitions.page_body.properties.mutates.description.includes("NOT honored"),
+    "mutates is documented as escalate-only (inference stays authoritative)",
+  );
+  assert(
+    schema.definitions.action.properties.viewports.description.includes("pinned to a single viewport"),
+    "schema warns that a mutating action must not fan out across viewports",
+  );
+
+  // Step-enum additions, each forced by something previously unexpressible.
+  const stepActions = schema.definitions.step.properties.action.enum;
+  assert(stepActions.includes("assert_value"), "assert_value declared (assert_text cannot see input values)");
+  assert(
+    schema.definitions.step.properties.state.enum.includes("absent"),
+    "state:absent declared (permission-negative checks need absence)",
+  );
+  assert("normalize" in schema.definitions, "normalize is a shared definition, not assert_value-private");
+  assert(
+    schema.definitions.step.properties.normalize.$ref === "#/definitions/normalize",
+    "assert_value consumes the shared normalize spec",
+  );
+
+  // Prereq is a facade over primitives that already exist.
+  const prereqTypes = schema.definitions.prereq.properties.type.enum;
+  for (const t of ["record_exists", "feature_enabled", "account_can", "sql", "eval"]) {
+    assert(prereqTypes.includes(t), `prereq type ${t} declared`);
+  }
+  assert(
+    prereqTypes.includes("sql") && prereqTypes.includes("eval"),
+    "prereq keeps raw escape hatches so a new precondition never waits on a schema change",
+  );
+  assert(ev.includes("prereq"), "prereq rides the existing evidence guard rather than a new branch");
+
+  // The v2 surface shipped marked x-driver:"pending" while the driver caught
+  // up. The driver now reads all of it, so NO marker may remain: schema that
+  // describes something inert is the reverse drift that produced login.form,
+  // and this assertion is what stops a marker from quietly becoming permanent.
+  const pending = [];
+  (function scan(node, path) {
+    if (!node || typeof node !== "object") return;
+    if (node["x-driver"] === "pending") pending.push(path);
+    for (const [k, v] of Object.entries(node)) scan(v, `${path}.${k}`);
+  })(schema, "#");
+  assert(
+    pending.length === 0,
+    `no schema node may stay x-driver:pending — the driver must read it or the schema must drop it (${pending.join(", ")})`,
+  );
+  assert("cleanup_path" in schema.definitions.action.properties, "action.cleanup_path declared");
+
+  const v2 = JSON.parse(readFileSync(join(here, "actions-example.json"), "utf8"));
+  assert(v2.version === 2 && Array.isArray(v2.actions), "actions-example.json is a v2 manifest");
+  assert(
+    !v2.actions[0].phases.some((p) => "login" in p),
+    "login is an ACTION-level axis, never per-phase (an action must not split contexts)",
+  );
+}
+
+// ── Value normalization: the parity bar as code ─────────────────────────────
+{
+  const { compareValues, parseValue } = await import("./normalize.mjs");
+
+  assert(parseValue("50.00%").number === 50 && parseValue("50.00%").unit === "%", "percent parses");
+  assert(parseValue("$125.00").unit === "$" && parseValue("$125.00").number === 125, "currency parses");
+  assert(parseValue("125.00 USD").unit === "USD", "trailing currency code parses");
+  assert(parseValue("1,250 lb").number === 1250, "thousands separators parse");
+
+  // Literal by default — normalization is opt-in, so v1 behaviour is untouched.
+  assert(compareValues("50", "50.00").equal === false, "literal comparison is the default");
+  assert(compareValues("50", "50.00", { as: "number", precision: 2 }).equal === true,
+    "same value at the displayed precision compares equal");
+  assert(compareValues("50.0", "50.5", { as: "number", precision: 2 }).equal === false,
+    "a real difference is not rounded away");
+
+  // Units must match exactly — the quiet false-pass this exists to stop.
+  const unitMismatch = compareValues("1 lb", "1 kg", { as: "number" });
+  assert(unitMismatch.equal === false && unitMismatch.reason === "unit",
+    "same number, different unit is NOT equal");
+  assert(compareValues("50%", "50", { as: "number", unit: "%" }).equal === true,
+    "an expectation that omits the unit still matches when the spec pins it");
+  assert(compareValues("50 kg", "50", { as: "number", unit: "%" }).reason === "unit(actual)",
+    "a wrong unit on the actual side names which side was wrong");
+  assert(compareValues("abc", "50", { as: "number" }).reason === "unparseable",
+    "unparseable input is reported, never coerced to 0");
+}
+
+// ── Actions: normalization, inheritance, carry, viewport pinning ────────────
+{
+  const A = await import("./actions.mjs");
+
+  // v1 pages normalize to one-phase actions -> ONE internal code path.
+  const v1 = A.normalizeActions({ pages: [{ name: "Dash", path: "/a" }] });
+  assert(v1.length === 1 && v1[0].phases.length === 1 && v1[0].synthetic === true,
+    "a v1 page becomes a synthetic one-phase action");
+  assert(A.normalizeActions({ actions: [{ name: "X", phases: [{ path: "/" }] }] })[0].synthetic === false,
+    "an authored action is not synthetic");
+
+  // Inheritance: phase -> action -> walk; unions for the list-valued keys.
+  const action = {
+    name: "Edit thing",
+    budget_ms: 8000,
+    require_evidence: ["cleanup"],
+    noise_patterns: ["a"],
+    cleanup_steps: [{ action: "click", selector: "#x" }],
+  };
+  const inherited = A.resolvePhase({}, action, { path: "/p" }, 0);
+  assert(inherited.budget_ms === 8000, "phase inherits budget_ms from its action");
+  assert(inherited.name === "Edit thing · 1", "an unnamed phase is named from its action");
+  assert(inherited.lands_on === "/p", "lands_on defaults to path");
+  const overridden = A.resolvePhase({}, action, { path: "/p", budget_ms: 12000 }, 1);
+  assert(overridden.budget_ms === 12000, "a phase overrides its action");
+  const unioned = A.resolvePhase({}, action, { path: "/p", require_evidence: ["har"] }, 0);
+  assert(unioned.require_evidence.includes("har") && unioned.require_evidence.includes("cleanup"),
+    "require_evidence unions rather than overriding");
+  assert(inherited.cleanup_steps === undefined,
+    "cleanup is action-scoped and never inherited by a phase (it must run once, not per phase)");
+
+  // Mutation inference is authoritative; `mutates` may only escalate.
+  assert(A.phaseMutates({ steps: [{ action: "click" }] }) === true, "a click makes a phase mutating");
+  assert(A.phaseMutates({ steps: [{ action: "click" }], mutates: false }) === true,
+    "mutates:false cannot opt out of being treated as mutating");
+  assert(A.phaseMutates({ steps: [], mutates: true }) === true, "mutates:true escalates a read-only phase");
+  assert(A.phaseMutates({ steps: [{ action: "assert_text", text: "x" }] }) === false,
+    "assertions alone are not mutating");
+
+  // Login resolution — the axis the session pool groups on.
+  const reg = { logins: { sup: { kind: "none" }, view: { kind: "none" } } };
+  assert(A.resolveLogin(reg, { name: "a", login: "sup" }).key === "sup", "an action selects its account");
+  assert(A.resolveLogin(reg, { name: "a", login: "nope" }).error != null, "an unknown login key is an error");
+  assert(A.resolveLogin({ login: { kind: "none" } }, { name: "a" }).key === "__default__",
+    "actions fall back to a single top-level login");
+  assert(A.resolveLogin(reg, { name: "a" }).error != null,
+    "an ambiguous registry forces the action to name its account");
+
+  // Viewport pinning: the cartesian trap.
+  const vps = [
+    { name: "wide", width: 1440, height: 900, deviceScaleFactor: 1 },
+    { name: "narrow", width: 480, height: 900, deviceScaleFactor: 1 },
+  ];
+  const ro = A.expandActionCases(
+    { login: { kind: "none" }, actions: [{ name: "read", phases: [{ path: "/" }] }] }, vps);
+  assert(ro.cases.length === 2, "a read-only action still fans out across viewports");
+  const mut = A.expandActionCases(
+    { login: { kind: "none" },
+      actions: [{ name: "write", phases: [{ path: "/", steps: [{ action: "click", selector: "#s" }] }] }] },
+    vps);
+  assert(mut.cases.length === 1, "a MUTATING action is pinned to one viewport");
+  assert(mut.pinned.length === 1 && mut.pinned[0].viewport === "narrow",
+    "...and the dropped viewport is recorded, never silently skipped");
+
+  // Carry templating: an unresolved reference must never reach a URL.
+  assert(A.applyCarry("/skus/{{carry.id}}/edit", { id: "s1" }).text === "/skus/s1/edit", "carry substitutes");
+  const missing = A.applyCarry("/skus/{{carry.id}}/edit", {});
+  assert(missing.missing.includes("id"), "a missing carry key is reported");
+  assert(missing.text.includes("{{carry.id}}"),
+    "...and left unsubstituted, so the caller must BLOCK rather than navigate to a literal");
+  const tpl = A.applyCarryToPhase(
+    { path: "/a/{{carry.id}}", lands_on: "/a/{{carry.id}}", steps: [{ action: "fill", text: "{{carry.id}}" }] },
+    { id: "42" });
+  assert(tpl.phase.path === "/a/42" && tpl.phase.lands_on === "/a/42" && tpl.phase.steps[0].text === "42",
+    "carry applies to path, lands_on and step text");
+
+  const read = { url: async () => "http://x/skus/s9/edit", text: async () => "  hi  ", attr: async () => "s9" };
+  assert((await A.extractCarry("id", { from: "url", pattern: "/skus/([^/]+)/" }, read)).value === "s9",
+    "carry reads a capture group out of the URL");
+  assert((await A.extractCarry("id", { from: "text", selector: "x" }, read)).value === "hi", "carry trims text");
+  const bad = await A.extractCarries({ carry: { id: { from: "url" } } }, read);
+  assert(bad.failed.length === 1, "a carry spec missing its pattern fails closed");
+  const optional = await A.extractCarries({ carry: { id: { from: "url", required: false } } }, read);
+  assert(optional.failed.length === 0, "required:false opts out of blocking");
+}
+
+// ── Prereq: a facade over primitives that already exist ─────────────────────
+{
+  const P = await import("./prereq.mjs");
+
+  const rec = P.compilePrereq({ type: "record_exists", of: "skus", where: { status: "active" }, min: 2 }, 0);
+  assert(rec.kind === "sql" && rec.sql === "SELECT count(*) FROM skus WHERE status = 'active'",
+    "record_exists compiles to a SELECT count(*)");
+  assert(rec.expect_min === 2, "...carrying its minimum");
+  assert(P.compilePrereq({ type: "record_exists", of: "skus", where: { deleted_at: null } }, 0).sql
+    .includes("deleted_at IS NULL"), "null compiles to IS NULL, not = NULL");
+  assert(P.compilePrereq({ type: "record_exists", of: "a'; DROP TABLE b;--" }, 0).error != null,
+    "an unsafe table identifier is refused, not interpolated");
+  assert(P.compilePrereq({ type: "record_exists", of: "t", where: { "x; DROP": 1 } }, 0).error != null,
+    "an unsafe column identifier is refused");
+  assert(P.compilePrereq({ type: "record_exists", of: "t", where: { name: "O'Brien" } }, 0).sql
+    .includes("'O''Brien'"), "string literals are escaped");
+
+  assert(P.compilePrereq({ type: "sql", query: "DELETE FROM t" }, 0).error != null,
+    "a non-SELECT prereq is refused by the same gate runtime SQL uses");
+  assert(P.compilePrereq({ type: "eval", eval: "1 + 1", expect: 2 }).kind === "eval", "eval passes through");
+  assert(P.compilePrereq({ type: "account_can", permission: "edit" }, 0).error != null,
+    "account_can refuses to GUESS an app-specific permission lookup");
+  assert(P.compilePrereq({ type: "vibes" }, 0).error != null, "an unknown type is an error");
+
+  // Unevaluable is BLOCKED, never skipped — the rule the whole gate rests on.
+  const noTw = await P.evaluatePrereqs([{ type: "eval", eval: "true" }], { tidewave: { status: "down" } });
+  assert(noTw.evaluated === false && noTw.blocked != null,
+    "no Tidewave means prerequisites are BLOCKED, not skipped");
+  assert(P.prereqEvidence(noTw) === null,
+    "...and yield NO evidence, so require_evidence:['prereq'] fails closed through the existing guard");
+  const none = await P.evaluatePrereqs([], {});
+  assert(none.evaluated === true && none.results.length === 0, "no prerequisites is not a failure");
+}
+
+// ── Manifest validation: a typo must not produce a green walk ───────────────
+{
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, join } = await import("node:path");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const S = JSON.parse(readFileSync(join(here, "preview-walk.schema.json"), "utf8"));
+  const { validateManifest, unsupportedKeywords } = await import("./schema_validate.mjs");
+  const { missingCollectorConfig } = await import("./preflight_run.mjs");
+
+  // Drift signal: an unimplemented keyword makes the validator permissive, so
+  // adding one to the schema must not silently under-validate.
+  assert(
+    unsupportedKeywords(S).length === 0,
+    `validator implements every keyword the schema uses (missing: ${unsupportedKeywords(S).join(", ")})`,
+  );
+
+  // NEVER reject a valid manifest — a false "invalid" blocks a working walk.
+  for (const name of ["authed-admin-example.json", "login-click-example.json", "actions-example.json"]) {
+    const r = validateManifest(S, JSON.parse(readFileSync(join(here, name), "utf8")));
+    assert(r.ok, `${name} validates (${JSON.stringify(r.errors.slice(0, 2))})`);
+  }
+
+  // The bug this module exists for: a misspelled key produced a walk that
+  // asserted nothing, cleaned up nothing, and reported PASS.
+  const typo = {
+    version: 2, report: { name: "t" }, login: { kind: "none" },
+    actions: [{ name: "A", phases: [{ path: "/", step: [{ action: "assert_text", text: "x" }] }],
+                cleanup_step: [{ action: "click", selector: "#x" }] }],
+  };
+  const bad = validateManifest(S, typo);
+  assert(!bad.ok, "a misspelled key is invalid, not a silent no-op");
+  assert(
+    bad.errors.some((e) => e.message.includes('did you mean "steps"')),
+    "the error names the intended key",
+  );
+  assert(
+    bad.errors.filter((e) => e.path.endsWith(".step")).length === 1,
+    "each error is reported once, not once per allOf/anyOf branch",
+  );
+
+  // The conditional the schema has always declared and nothing enforced.
+  assert(
+    !validateManifest(S, { report: { name: "t" }, login: { kind: "click" }, pages: [{ name: "P", path: "/" }] }).ok,
+    "a click login without path/lands_on is invalid",
+  );
+  assert(
+    validateManifest(S, { report: { name: "t" }, login: { kind: "none" }, pages: [{ name: "P", path: "/" }] }).ok,
+    "...but kind:none needs neither",
+  );
+
+  // Nested and registry shapes.
+  assert(!validateManifest(S, { report: { name: "t" }, logins: { "Bad Key": { kind: "none" } },
+    actions: [{ name: "A", phases: [{ path: "/" }] }] }).ok, "login registry keys are pattern-checked");
+  assert(!validateManifest(S, { report: { name: "t" }, login: { kind: "none" },
+    pages: [{ name: "P", path: "/", steps: [{ action: "teleport" }] }] }).ok, "an unknown step action is invalid");
+  assert(validateManifest(S, { report: { name: "t" }, login: { kind: "none" },
+    pages: [{ name: "P", path: "/", steps: [
+      { action: "assert_count", selector: "li", min: 1, max: 9 },
+      { action: "assert_text", text: "Delete", state: "absent" }] }] }).ok,
+    "assert_count and negative assert_text validate");
+
+  // Config-bearing collectors: requiring one without its config can only BLOCK.
+  const gap = { report: { name: "g" }, login: { kind: "none" }, actions: [{ name: "A",
+    require_evidence: ["db_before_after"],
+    phases: [{ path: "/a" }, { path: "/b", runtime: { db_before_after: { sql: "SELECT 1" } } }] }] };
+  const msg = missingCollectorConfig(gap);
+  assert(msg && msg.includes("db_before_after"), "action-wide requirement without per-phase config is caught");
+  assert(msg.includes("not the whole action"), "...and the message says where to declare it");
+  assert(
+    missingCollectorConfig({ report: { name: "g" }, login: { kind: "none" }, actions: [{ name: "A",
+      phases: [{ path: "/b", require_evidence: ["db_before_after"],
+                 runtime: { db_before_after: { sql: "SELECT 1" } } }] }] }) === null,
+    "correct placement passes",
+  );
+  assert(
+    missingCollectorConfig({ report: { name: "g" }, login: { kind: "none" },
+      actions: [{ name: "A", require_evidence: ["cleanup"], phases: [{ path: "/a" }] }] }) !== null,
+    "requiring cleanup with no cleanup_steps is caught too",
+  );
+}
+
+// ── Fixture identity: the only attribution left without an audit trail ──────
+{
+  const A = await import("./actions.mjs");
+  const fx = A.fixtureIdentity({ fixtures: { prefix: "uat" } }, "abc123");
+  assert(fx.tag === "uat-abc123", "the tag is prefix-run");
+  assert(A.fixtureIdentity({}, "r1").prefix === "walk", "prefix defaults");
+
+  assert(A.usesFixture("{{fixture.tag}}-sku") === true, "fixture references are detected");
+  assert(A.applyFixture("{{fixture.tag}}-sku", fx) === "uat-abc123-sku", "fixture tokens substitute");
+
+  const t = A.applyCarryToPhase(
+    { path: "/x", steps: [{ action: "fill", text: "{{fixture.tag}}-sku" }],
+      runtime: { db_before_after: { sql: "SELECT * FROM t WHERE name LIKE '{{fixture.tag}}%'" } } },
+    {}, fx);
+  assert(t.phase.steps[0].text === "uat-abc123-sku", "fixture tokens reach step text");
+  assert(t.phase.runtime.db_before_after.sql.includes("'uat-abc123%'"), "...and the sweep query");
+  assert(t.missing.length === 0, "fixture tokens always resolve (unlike carry)");
+
+  // Both token families coexist.
+  const both = A.applyCarryToPhase(
+    { path: "/x/{{carry.id}}", steps: [{ action: "fill", text: "{{fixture.tag}}" }] }, { id: "9" }, fx);
+  assert(both.phase.path === "/x/9" && both.phase.steps[0].text === "uat-abc123",
+    "carry and fixture substitute together");
+}
+
+// ── db_before_after: proving a claim instead of asserting it ────────────────
+{
+  const { dbSnapshotSpec, dbBeforeAfterEvidence } = await import("./runtime_evidence.mjs");
+
+  assert(dbSnapshotSpec({}) === null, "no config means no snapshot");
+  assert(dbSnapshotSpec({ db_before_after: "SELECT 1" }).sql === "SELECT 1", "string shorthand works");
+  assert(dbSnapshotSpec({ db_before_after: { sql: "SELECT 1", expect_change: false } })
+    .expect_change === false, "expect_change is carried");
+  assert(dbSnapshotSpec({ db_before_after: { expect_change: true } }) === null,
+    "a spec without sql is not a snapshot");
+
+  const ok = (t) => ({ ok: true, error: null, text: t });
+  const spec = (e) => ({ sql: "SELECT 1", expect_change: e });
+
+  // The read-only proof — the direction that turns safety.read_only from a
+  // claim into something the run verifies.
+  const wrote = dbBeforeAfterEvidence(ok("a"), ok("b"), spec(false));
+  assert(wrote.status === "FAIL" && wrote.changed === true,
+    "a 'read-only' phase that changed the database FAILS");
+  assert(dbBeforeAfterEvidence(ok("a"), ok("a"), spec(false)).status === "PASS",
+    "a genuinely read-only phase passes");
+
+  // The write-landed direction.
+  assert(dbBeforeAfterEvidence(ok("a"), ok("a"), spec(true)).status === "FAIL",
+    "a mutation that never reached the store FAILS even if the UI said it saved");
+  assert(dbBeforeAfterEvidence(ok("a"), ok("b"), spec(true)).status === "PASS", "a real write passes");
+
+  // No expectation: record, do not judge.
+  assert(dbBeforeAfterEvidence(ok("a"), ok("b"), spec(undefined)).status === "PASS",
+    "without expect_change the delta is recorded, not judged");
+
+  // Could-not-ask is missing evidence, never a silent pass.
+  assert(dbBeforeAfterEvidence({ ok: false, error: "x" }, ok("b"), spec(false)) === null,
+    "a failed BEFORE snapshot yields no evidence");
+  assert(dbBeforeAfterEvidence(ok("a"), { ok: false, error: "x" }, spec(false)) === null,
+    "a failed AFTER snapshot yields no evidence");
+  assert(evidenceGuard(["db_before_after"], { db_before_after: null }) != null,
+    "...so require_evidence:['db_before_after'] BLOCKS through the existing guard");
+
+  // Evidence rides into a published report: digests, never rows.
+  const ev = dbBeforeAfterEvidence(ok("secret-row-data"), ok("secret-row-data"), spec(false));
+  const blob = JSON.stringify(ev);
+  assert(!blob.includes("secret-row-data"), "result rows never reach the evidence payload");
+  assert(ev.before_digest && ev.after_digest, "only digests are recorded");
+
+  // Carry must reach the query, or a shared-dataset delta is unattributable.
+  const A = await import("./actions.mjs");
+  const tpl = A.applyCarryToPhase(
+    { path: "/x", steps: [],
+      runtime: { db_before_after: { sql: "SELECT * FROM skus WHERE id = '{{carry.id}}'", expect_change: true },
+                 sql: "SELECT count(*) FROM t WHERE id = '{{carry.id}}'",
+                 probes: [{ name: "p", eval: "Repo.get(S, \"{{carry.id}}\")" }] } },
+    { id: "s9" },
+  );
+  assert(tpl.phase.runtime.db_before_after.sql.includes("'s9'"), "carry reaches the before/after query");
+  assert(tpl.phase.runtime.db_before_after.expect_change === true, "...without losing expect_change");
+  assert(tpl.phase.runtime.sql.includes("'s9'"), "carry reaches per-page SQL");
+  assert(tpl.phase.runtime.probes[0].eval.includes("s9"), "carry reaches probe eval");
+  const un = A.applyCarryToPhase(
+    { path: "/x", steps: [], runtime: { db_before_after: "SELECT 1 WHERE id='{{carry.nope}}'" } }, {});
+  assert(un.missing.includes("nope"), "an unresolved carry in runtime SQL is reported, not sent");
+
+  // The config must survive the page/walk runtime merge, or the collector is
+  // silently never configured and reports "no evidence" for a declared query.
+  const { mergePageRuntime } = await import("./runtime_evidence.mjs");
+  assert(
+    mergePageRuntime({}, { name: "P", runtime: { db_before_after: { sql: "SELECT 1" } } })
+      .db_before_after?.sql === "SELECT 1",
+    "db_before_after survives mergePageRuntime from the page",
+  );
+  assert(
+    mergePageRuntime({ runtime: { per_page: { P: { db_before_after: "SELECT 2" } } } }, { name: "P" })
+      .db_before_after === "SELECT 2",
+    "...and from runtime.per_page",
+  );
+
+  // REGRESSION: the collector must reach the page VERDICT, not only the
+  // evidence payload. Collected-but-uncounted was a real false green — the
+  // report showed a proven violation while the page said PASS.
+  assert(
+    runtimeErrorEvidence({ db_before_after: { status: "FAIL" } }).count === 1,
+    "a failed db_before_after counts toward the runtime-error verdict",
+  );
+  assert(
+    runtimeErrorEvidence({ db_before_after: { status: "PASS" } }).count === 0,
+    "a passing db_before_after does not",
+  );
+  assert(
+    runtimeErrorEvidence({ db_before_after: null }).count === 0,
+    "an absent db_before_after is not a failure (only require_evidence makes it one)",
+  );
+}
+
+// ── Action fold: one verdict per action ─────────────────────────────────────
+// The page taxonomy answers "what happened on this screen". The fold answers
+// "what happened to this user action", and the interesting cases are the ones
+// where an identical phase status means different things depending on whether
+// data has already been changed.
+{
+  const P = phaseFixture;
+  const mut = (status) => P(status, { mutating: true, name: "Edit" });
+
+  assert(actionVerdict([P("PASS"), P("PASS")]).status === "PASS", "all phases pass -> PASS");
+  assert(actionVerdict([]).status === "BLOCKED", "an action that ran no phases is BLOCKED, not PASS");
+
+  // Nothing changed yet: v1 semantics survive exactly.
+  assert(
+    actionVerdict([P("BLOCKED"), P("PASS")]).status === "BLOCKED",
+    "BLOCKED before any mutation -> BLOCKED (nothing was proved)",
+  );
+  assert(
+    actionVerdict([P("TIMEOUT")]).status === "TIMEOUT",
+    "TIMEOUT before any mutation keeps its v1 failing status",
+  );
+  assert(
+    actionVerdict([P("ASSERT_FAILED")]).status === "ASSERT_FAILED",
+    "a lost assertion keeps its diagnostic status",
+  );
+
+  // The asymmetry: same statuses, after a mutation landed.
+  const dirty = actionVerdict([P("PASS"), mut("PASS"), P("BLOCKED", { name: "Reopen" })]);
+  assert(dirty.status === MUTATED_UNVERIFIED, "mutation then BLOCKED verify -> MUTATED_UNVERIFIED");
+  assert(dirty.mutated === true && dirty.cleanupRequired === true, "MUTATED_UNVERIFIED owes cleanup");
+  assert(dirty.reason.includes("Reopen"), "the fold names the phase that could not verify");
+  assert(
+    actionVerdict([mut("PASS"), P("TIMEOUT")]).status === MUTATED_UNVERIFIED,
+    "TIMEOUT after a mutation is unverified, not merely failed",
+  );
+
+  // A concrete failed assertion outranks "could not verify" — but still owes cleanup.
+  const failedAfterMutation = actionVerdict([mut("PASS"), P("ASSERT_FAILED", { name: "Reopen" })]);
+  assert(failedAfterMutation.status === "ASSERT_FAILED", "a lost assertion outranks MUTATED_UNVERIFIED");
+  assert(failedAfterMutation.cleanupRequired === true, "...and cleanup is still owed");
+
+  // A mutating phase that the interactions gate refused never ran.
+  assert(
+    actionVerdict([P("SKIPPED", { mutating: true }), P("BLOCKED")]).status === "BLOCKED",
+    "SKIPPED mutating phase does not count as a mutation",
+  );
+  // A mutating phase that FAILED is still conservatively treated as applied.
+  assert(
+    actionVerdict([mut("ASSERT_FAILED")]).cleanupRequired === true,
+    "an attempted mutation owes cleanup even when it failed (half-applied is indistinguishable)",
+  );
+
+  // Consumers never learn a fifth class, and --soft-blocked cannot hide this one.
+  assert(resultClass(MUTATED_UNVERIFIED) === "BLOCKED", "MUTATED_UNVERIFIED normalizes to BLOCKED");
+  assert(RESULT_CLASSES.length === 4, "the normalized class set stays four");
+  assert(
+    isHardFailStatus(MUTATED_UNVERIFIED, {}, { failBlocked: false }) === true,
+    "--soft-blocked downgrades BLOCKED but never an unverified mutation",
+  );
+  assert(
+    isHardFailStatus("BLOCKED", {}, { failBlocked: false }) === false,
+    "...while plain BLOCKED still downgrades (v1 behaviour intact)",
+  );
+  assert(
+    statusColor(MUTATED_UNVERIFIED) !== statusColor("BLOCKED"),
+    "MUTATED_UNVERIFIED reads differently from BLOCKED in the report",
+  );
+}
+
+// ── precondition_lost: settling the check-then-act race ─────────────────────
+{
+  const held = [{ name: "an_active_sku", ok: true }];
+  const gone = [{ name: "an_active_sku", ok: false }];
+
+  const readOnlyFail = actionVerdict([phaseFixture("ASSERT_FAILED")]);
+  const rescued = reclassifyPreconditionLost(readOnlyFail, held, gone);
+  assert(rescued.status === "BLOCKED", "read-only action: precondition lost mid-run -> BLOCKED");
+  assert(rescued.reason.includes("precondition_lost"), "the reason names precondition_lost");
+
+  // The asymmetry that keeps this honest: if WE wrote, we are a candidate cause
+  // of the delta, so the status must not be rewritten or real defects hide
+  // behind our own side effects.
+  const mutatingFail = actionVerdict([
+    phaseFixture("PASS", { mutating: true }),
+    phaseFixture("ASSERT_FAILED"),
+  ]);
+  const annotated = reclassifyPreconditionLost(mutatingFail, held, gone);
+  assert(annotated.status === "ASSERT_FAILED", "mutating action: status is NOT rewritten");
+  assert(
+    Array.isArray(annotated.preconditionDelta) && annotated.preconditionDelta.includes("an_active_sku"),
+    "...the delta is recorded for triage instead",
+  );
+
+  assert(
+    reclassifyPreconditionLost(actionVerdict([phaseFixture("PASS")]), held, gone).status === "PASS",
+    "a passing action is never reclassified",
+  );
+  assert(
+    reclassifyPreconditionLost(readOnlyFail, held, held).status === "ASSERT_FAILED",
+    "preconditions that still hold leave the verdict alone",
+  );
 }
 
 // ── Preflight: one fixture per exit state ───────────────────────────────────
@@ -839,9 +1399,16 @@ assert(
 
   // Manifest fan-in: role prefixes, evidence and mutation intent merge across
   // ALL selected manifests, not just the first.
-  const a = manifest({ login: { kind: "click", params_from_env: ["WALK_A_EMAIL", "WALK_A_PASSWORD"] } });
+  const a = manifest({
+    login: {
+      kind: "click",
+      path: "/login",
+      lands_on: "/one",
+      params_from_env: ["WALK_A_EMAIL", "WALK_A_PASSWORD"],
+    },
+  });
   const b = manifest({
-    login: { kind: "click", params_from_env: ["WALK_B_EMAIL"] },
+    login: { kind: "click", path: "/login", lands_on: "/one", params_from_env: ["WALK_B_EMAIL"] },
     require_evidence: ["har"],
     pages: [{ name: "P", path: "/p", require_evidence: ["dom"] }],
   });
@@ -2220,12 +2787,47 @@ assert(
     "packed driver wires every collector required by the full product manifests",
   );
   assert(
-    src.includes("expandWalkCases") &&
+    src.includes("expandActionCases") &&
       src.includes("applyViewport") &&
       src.includes("collectViewportEvidence") &&
-      src.includes("casesByDpr") &&
+      src.includes("casesByGroup") &&
       src.includes("deviceScaleFactor,"),
     "packed driver executes and attests every declared viewport in a DPR-correct context",
+  );
+  // v2 driver wiring: the action loop, per-account batching, and the pieces
+  // that must not silently disappear (they are what make a walk provable).
+  assert(
+    src.includes("walkOneAction") && src.includes("walkPhaseWithRetries"),
+    "packed driver walks actions as phase sequences",
+  );
+  assert(
+    src.includes("group.login") && src.includes("key: walkCase.loginKey"),
+    "packed driver batches logins per account (one context per account+DPR)",
+  );
+  assert(
+    src.includes("evaluatePrereqs") && src.includes("prereqEvidence"),
+    "packed driver evaluates prerequisites and routes them through the evidence guard",
+  );
+  assert(
+    src.includes("reclassifyPreconditionLost"),
+    "packed driver re-checks preconditions after a failure",
+  );
+  assert(
+    src.includes("extractCarries") && src.includes("carry value(s) unavailable"),
+    "packed driver captures carry values and BLOCKS on an unresolved template",
+  );
+  assert(
+    src.includes("runActionCleanup") && src.includes("no cleanup_steps declared for a mutating action"),
+    "packed driver runs action-scoped cleanup and flags a mutating action that declares none",
+  );
+  assert(
+    src.includes('prereq_policy === "seed"'),
+    "packed driver refuses the unimplemented seed policy instead of silently checking",
+  );
+  assert(
+    src.includes("mutating action pinned to one viewport") ||
+      src.includes('NOT_TESTED for'),
+    "packed driver reports viewports a mutating action was pinned away from",
   );
   assert(
     src.includes("const page = await context.newPage()") &&

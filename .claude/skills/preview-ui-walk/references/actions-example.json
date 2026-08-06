@@ -1,0 +1,194 @@
+{
+  "$schema": "./preview-walk.schema.json",
+  "version": 2,
+  "_note": "FICTIONAL shape-only example of the v2 actions[] unit. Not a real app. Copy the shape, never the routes. Product manifests live in the product repo under .casein/, never in this skill tree.",
+  "report": {
+    "name": "inventory-uat"
+  },
+  "prereq_policy": "check",
+  "logins": {
+    "warehouse-supervisor": {
+      "kind": "redirect_cookie",
+      "path": "/dev/login",
+      "params": {
+        "role": "supervisor"
+      },
+      "params_from_env": [
+        "WALK_SUPERVISOR_EMAIL"
+      ],
+      "lands_on": "/inventory",
+      "site": "North Yard",
+      "unit_system": "imperial",
+      "use_cases": [
+        "reorder thresholds",
+        "automated replenishment"
+      ]
+    },
+    "warehouse-readonly": {
+      "kind": "redirect_cookie",
+      "path": "/dev/login",
+      "params": {
+        "role": "viewer"
+      },
+      "lands_on": "/inventory",
+      "site": "North Yard",
+      "use_cases": [
+        "permission-negative checks"
+      ]
+    }
+  },
+  "safety": {
+    "read_only": false,
+    "allow_interactions": true,
+    "require_loopback_network": true,
+    "env_check": [
+      "INVENTORY_API_URL"
+    ],
+    "deny_events": [
+      "delete",
+      "confirm_delete"
+    ]
+  },
+  "performance": {
+    "default_budget_ms": 6000,
+    "fail_on_slow": true
+  },
+  "runtime": {
+    "tidewave": true,
+    "require_tidewave": true,
+    "required_tools": [
+      "get_logs",
+      "project_eval",
+      "execute_sql_query"
+    ],
+    "log_levels": [
+      "error",
+      "warning"
+    ]
+  },
+  "actions": [
+    {
+      "name": "Change reorder threshold",
+      "note": "Persistence is the point: the save flash is not evidence, the reopened value is.",
+      "uat": {
+        "issue": 4210,
+        "url": "https://example.invalid/issues/4210",
+        "contract_hash": "9f2c41ab7d3e5580"
+      },
+      "login": "warehouse-supervisor",
+      "budget_ms": 8000,
+      "require_evidence": [
+        "prereq",
+        "cleanup"
+      ],
+      "prereq": [
+        {
+          "type": "record_exists",
+          "name": "an_active_sku",
+          "of": "skus",
+          "where": {
+            "status": "active"
+          },
+          "min": 1
+        },
+        {
+          "type": "feature_enabled",
+          "name": "replenishment",
+          "flag": "auto_replenishment"
+        }
+      ],
+      "phases": [
+        {
+          "path": "/inventory/skus",
+          "carry": {
+            "sku_id": {
+              "from": "attr",
+              "selector": "[data-sku-id]",
+              "attr": "data-sku-id"
+            }
+          },
+          "steps": [
+            {
+              "action": "assert_selector",
+              "selector": "[data-sku-id]"
+            }
+          ]
+        },
+        {
+          "name": "Edit",
+          "path": "/inventory/skus/{{carry.sku_id}}/edit",
+          "budget_ms": 12000,
+          "steps": [
+            {
+              "action": "fill",
+              "selector": "#reorder_threshold",
+              "text": "50"
+            },
+            {
+              "action": "click",
+              "selector": "#save",
+              "event": "save",
+              "wait_ms": 2000
+            },
+            {
+              "action": "assert_text",
+              "text": "SKU updated"
+            }
+          ]
+        },
+        {
+          "name": "Reopen",
+          "path": "/inventory/skus/{{carry.sku_id}}/edit",
+          "lands_on": "/inventory/skus/{{carry.sku_id}}/edit",
+          "steps": [
+            {
+              "action": "assert_value",
+              "selector": "#reorder_threshold",
+              "value": "50.00",
+              "normalize": {
+                "as": "number",
+                "precision": 2
+              }
+            }
+          ]
+        }
+      ],
+      "cleanup_steps": [
+        {
+          "action": "fill",
+          "selector": "#reorder_threshold",
+          "text": "25"
+        },
+        {
+          "action": "click",
+          "selector": "#save",
+          "event": "save"
+        }
+      ]
+    },
+    {
+      "name": "Viewer cannot edit a SKU",
+      "note": "Permission-negative: needs state absent, which assert_selector could not express before v2.",
+      "uat": {
+        "issue": 4211
+      },
+      "login": "warehouse-readonly",
+      "phases": [
+        {
+          "path": "/inventory/skus",
+          "steps": [
+            {
+              "action": "assert_selector",
+              "selector": "[data-sku-id]"
+            },
+            {
+              "action": "assert_selector",
+              "selector": "[data-role=edit-sku]",
+              "state": "absent"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

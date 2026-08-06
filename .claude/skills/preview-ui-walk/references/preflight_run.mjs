@@ -24,7 +24,9 @@ import {
   verdict,
 } from "./preflight.mjs";
 import { checkVisualBaselineReadiness, storeFromEnv } from "./visual_baseline.mjs";
-import { expandWalkCases, normalizeViewports } from "./a11y_collector.mjs";
+import { normalizeViewports } from "./a11y_collector.mjs";
+import { expandActionCases, normalizeActions } from "./actions.mjs";
+import { validateManifest } from "./schema_validate.mjs";
 
 /** Role env prefixes a manifest needs, derived from login.params_from_env. */
 export function roleEnvPrefixes(manifests) {
@@ -44,6 +46,10 @@ export function requiredEvidence(manifests) {
   for (const m of manifests) {
     for (const k of m?.require_evidence || []) req.add(k);
     for (const p of m?.pages || []) for (const k of p?.require_evidence || []) req.add(k);
+    for (const act of m?.actions || []) {
+      for (const k of act?.require_evidence || []) req.add(k);
+      for (const ph of act?.phases || []) for (const k of ph?.require_evidence || []) req.add(k);
+    }
   }
   return [...req].sort();
 }
@@ -76,14 +82,85 @@ export function isMutating(manifests) {
   return manifests.some((m) => m?.safety && m.safety.read_only === false);
 }
 
-export function checkSchema(loaded) {
+/**
+ * Some evidence keys need per-phase CONFIG to produce anything: requiring them
+ * without it can only ever BLOCK mid-walk. Catch it at preflight, where the
+ * message can name the phase instead of reading as a mysterious collector gap.
+ *
+ * This is the footgun that action-level require_evidence creates: the list
+ * unions into EVERY phase, so one query on one phase does not satisfy a
+ * requirement declared for the whole action.
+ */
+export function missingCollectorConfig(manifest) {
+  const needsConfig = {
+    db_before_after: (phase, action) =>
+      Boolean(phase?.runtime?.db_before_after || action?.runtime?.db_before_after ||
+        manifest?.runtime?.per_page?.[phase?.name]?.db_before_after),
+    cleanup: (phase, action) =>
+      Boolean((phase?.cleanup_steps || []).length || (action?.cleanup_steps || []).length),
+    prereq: (phase, action) => Boolean((action?.prereq || []).length),
+  };
+  const walkLevel = manifest?.require_evidence || [];
+
+  for (const action of normalizeActions(manifest)) {
+    for (const phase of action.phases || []) {
+      const required = new Set([
+        ...walkLevel,
+        ...(action.require_evidence || []),
+        ...(phase.require_evidence || []),
+      ]);
+      for (const [key, hasConfig] of Object.entries(needsConfig)) {
+        if (!required.has(key)) continue;
+        if (hasConfig(phase, action)) continue;
+        const where = action.synthetic
+          ? `page "${phase.name}"`
+          : `action "${action.name}" phase "${phase.name || phase.path}"`;
+        return (
+          `${where} requires evidence "${key}" but declares no ${key} config — ` +
+          `it can only BLOCK. Declare it on the phase that produces the evidence, not the whole action.`
+        );
+      }
+    }
+  }
+  return null;
+}
+
+export function checkSchema(loaded, schemaDoc = null) {
   const bad = loaded.filter((l) => l.error);
   if (bad.length) {
     return row("schema", STATE.BLOCKED, `${bad.length} manifest(s) failed to load: ${bad[0].error}`);
   }
-  const missing = loaded.filter((l) => !l.manifest?.pages || !l.manifest?.report?.name);
+
+  // Validate against the committed JSON Schema. `additionalProperties: false`
+  // already describes every legal key, but until this ran at preflight a
+  // misspelled key ("step" for "steps") silently produced a walk that asserted
+  // nothing and reported PASS.
+  if (schemaDoc) {
+    for (const { manifest, path: file } of loaded) {
+      const result = validateManifest(schemaDoc, manifest);
+      if (!result.ok) {
+        const first = result.errors[0];
+        return row(
+          "schema",
+          STATE.BLOCKED,
+          `${file || manifest?.report?.name || "manifest"} is invalid: ${first.path ? `${first.path}: ` : ""}${first.message}` +
+            (result.errors.length > 1 ? ` (+${result.errors.length - 1} more)` : ""),
+        );
+      }
+    }
+  }
+  // v2: a manifest declares pages[] OR actions[]. Requiring pages[] would
+  // BLOCK every actions-only manifest at preflight.
+  const missing = loaded.filter(
+    (l) =>
+      (!l.manifest?.pages && !l.manifest?.actions) || !l.manifest?.report?.name,
+  );
   if (missing.length) {
-    return row("schema", STATE.BLOCKED, `${missing.length} manifest(s) missing pages/report.name`);
+    return row(
+      "schema",
+      STATE.BLOCKED,
+      `${missing.length} manifest(s) missing pages[]/actions[] or report.name`,
+    );
   }
   let logicalPages = 0;
   let viewportVisits = 0;
@@ -100,7 +177,7 @@ export function checkSchema(loaded) {
     if (new Set(names).size !== names.length) {
       return row("schema", STATE.BLOCKED, `${manifest.report.name} has duplicate viewport names`);
     }
-    const expanded = expandWalkCases(manifest.pages, manifest.viewports);
+    const expanded = expandActionCases(manifest, manifest.viewports);
     if (expanded.unknown.length > 0) {
       const first = expanded.unknown[0];
       return row(
@@ -109,8 +186,17 @@ export function checkSchema(loaded) {
         `${manifest.report.name} page ${first.page} references unknown viewport ${first.name}`,
       );
     }
-    logicalPages += manifest.pages.length;
-    viewportVisits += expanded.cases.length;
+    if (expanded.errors.length > 0) {
+      return row("schema", STATE.BLOCKED, `${manifest.report.name}: ${expanded.errors[0]}`);
+    }
+    const configGap = missingCollectorConfig(manifest);
+    if (configGap) {
+      return row("schema", STATE.BLOCKED, `${manifest.report.name}: ${configGap}`);
+    }
+
+    const actions = normalizeActions(manifest);
+    logicalPages += actions.reduce((n, act) => n + act.phases.length, 0);
+    viewportVisits += expanded.cases.reduce((n, c) => n + c.phases.length, 0);
   }
   return row(
     "schema",
@@ -540,7 +626,20 @@ export async function buildMatrix(args, deps = {}) {
   );
 
   const rows = [];
-  rows.push(checkSchema(loaded));
+  // The schema ships beside the drivers; read it here so a manifest is
+  // validated by the same file the authoring docs point at.
+  let schemaDoc = null;
+  try {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, join } = await import("node:path");
+    schemaDoc = JSON.parse(
+      readFileSync(join(dirname(fileURLToPath(import.meta.url)), "preview-walk.schema.json"), "utf8"),
+    );
+  } catch {
+    schemaDoc = null; // unreadable schema must not block a walk
+  }
+  rows.push(checkSchema(loaded, schemaDoc));
   rows.push(checkEnvSafety(env, { mutating }));
   // Credentials are demanded ONLY for the manifests actually selected on the
   // command line — a repo full of other walks must not block this one.
@@ -565,13 +664,16 @@ export async function buildMatrix(args, deps = {}) {
     required.has("audit_actor") ||
     required.has("db_before_after") ||
     manifests.some((m) => m?.runtime?.require_tidewave === true);
-  rows.push(
-    await checkTidewave(args.tidewaveUrl || env.CASEIN_TIDEWAVE_MCP_URL, {
-      fetchImpl,
-      required: tidewaveRequired,
-      requiredTools: requiredTidewaveTools(manifests, required),
-    }),
-  );
+  const tidewaveRow = await checkTidewave(args.tidewaveUrl || env.CASEIN_TIDEWAVE_MCP_URL, {
+    fetchImpl,
+    required: tidewaveRequired,
+    requiredTools: requiredTidewaveTools(manifests, required),
+  });
+  rows.push(tidewaveRow);
+  // db_before_after rides Tidewave's SELECT-only path: it is provable exactly
+  // when Tidewave is. Without this it would stay unprovable and BLOCK a
+  // manifest that requires a collector the driver actually implements.
+  const dbReadProven = tidewaveRow.state === STATE.OK;
   // Visual baseline is stricter than the generic collector check: when
   // required, missing Artifact connectivity or a missing accepted baseline is
   // BLOCKED outright (a walk that cannot compare cannot prove anything), and
@@ -627,7 +729,12 @@ export async function buildMatrix(args, deps = {}) {
     rows.push(
       checkCollector(id, {
         required: required.has(key) || id === "screenshot" || (id === "viewport" && viewportRequired),
-        proven: PROBED[id] ? PROBED[id](deps.collectorProbe) : PROVEN_COLLECTORS.has(id),
+        proven:
+          id === "db_read"
+            ? dbReadProven
+            : PROBED[id]
+              ? PROBED[id](deps.collectorProbe)
+              : PROVEN_COLLECTORS.has(id),
       }),
     );
   }

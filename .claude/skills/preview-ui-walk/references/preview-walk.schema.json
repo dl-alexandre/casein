@@ -6,9 +6,20 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "login",
-    "pages",
     "report"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "login",
+        "pages"
+      ]
+    },
+    {
+      "required": [
+        "actions"
+      ]
+    }
   ],
   "properties": {
     "$schema": {
@@ -17,8 +28,11 @@
     },
     "version": {
       "type": "integer",
-      "const": 1,
-      "description": "Schema version. Omit or set 1 for this revision."
+      "enum": [
+        1,
+        2
+      ],
+      "description": "Schema version. Omit or set 1 for pages[]-only manifests. Set 2 when the manifest declares actions[] and/or the logins{} registry. v1 manifests remain valid unchanged."
     },
     "login": {
       "$ref": "#/definitions/login"
@@ -30,6 +44,52 @@
         "$ref": "#/definitions/page"
       },
       "description": "Screens to visit in order. Derive from the app router, not guesses."
+    },
+    "logins": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/definitions/login"
+      },
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      },
+      "description": "v2 account registry: login key → login definition. actions[].login selects one by key; the driver opens ONE browser context per key and logs in once per group (login-batching). Keys only ever name an account — secrets still resolve from params_from_env, never from this file. Omit to keep the single top-level login block."
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/action"
+      },
+      "description": "v2 unit of work: one user-observable action (usually one UAT issue) made of ordered phases that share a browser context, a carried-state bag and a single folded verdict. This is the only way to express a multi-navigation check such as edit → save → REOPEN → assert persisted, which pages[] cannot represent (each pages[] entry is an independent verdict). A v1 pages[] entry normalizes to a one-phase action internally."
+    },
+    "fixtures": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "default": "walk",
+          "description": "Names records this walk creates, as {{fixture.prefix}} / {{fixture.run}} / {{fixture.tag}} in step text and runtime SQL. With no app-side audit trail this convention is the ONLY attribution available: it marks what the run CREATED (never what it edited), which on a shared dataset is the difference between finding the fixtures a failed cleanup left behind and never knowing they exist."
+        },
+        "sweep_sql": {
+          "type": "string",
+          "pattern": "^\\s*[Ss][Ee][Ll][Ee][Cc][Tt]\\b",
+          "description": "SELECT-only, run once at the end of the walk, normally counting rows still matching {{fixture.tag}}. A non-zero result is reported loudly and recorded: cleanup is best-effort, so the last question worth answering is what this run left behind."
+        }
+      },
+      "description": "Fixture identity and orphan sweep for records the walk creates."
+    },
+    "prereq_policy": {
+      "type": "string",
+      "enum": [
+        "check",
+        "seed"
+      ],
+      "default": "check",
+      "description": "How unmet action prerequisites are handled. \"check\" (default, and the only mode implemented): an unmet predicate BLOCKS the action — correct for shared datasets, where the walk must never manufacture the state it is about to test. \"seed\" is reserved for isolated/disposable targets where the driver may create the missing fixture and re-check; declaring it now means adopting an isolated target later costs an executor, never a manifest rewrite."
     },
     "safety": {
       "$ref": "#/definitions/safety"
@@ -85,24 +145,10 @@
     "require_evidence": {
       "type": "array",
       "items": {
-        "type": "string",
-        "enum": [
-          "har",
-          "a11y",
-          "dom",
-          "server_timing",
-          "ws",
-          "resource_metrics",
-          "db_before_after",
-          "audit_actor",
-          "cleanup",
-          "downloads",
-          "api",
-          "visual_baseline"
-        ]
+        "$ref": "#/definitions/evidence_key"
       },
       "uniqueItems": true,
-      "description": "Collectors that MUST produce evidence. A page whose required collector yields nothing is BLOCKED (not PASS, not FAILED) and the run fails closed. Omit for v1 behaviour: nothing is required."
+      "description": "Collectors that MUST produce evidence. A page whose required collector yields nothing is BLOCKED (not PASS, not FAILED) and the run fails closed. Omit for v1 behaviour: nothing is required. \"prereq\" routes action prerequisites through this same guard: a predicate that could not be EVALUATED (Tidewave down, SQL rejected) is missing evidence and BLOCKS — it must never inherit runtime's skipped: tidewave_unavailable degradation, which would delete the gate exactly when the environment is unhealthy."
     },
     "visual_baseline": {
       "type": "object",
@@ -203,6 +249,25 @@
           "type": "integer",
           "minimum": 1,
           "description": "Wall-clock budget for the whole login prelude. Read by the driver (login.budget_ms); the post-login landing mount is usually the slowest hop in a walk."
+        },
+        "site": {
+          "type": "string",
+          "description": "Registry annotation: the tenant/site this account operates on. Surfaced in the report so a reader can tell WHICH dataset an action ran against."
+        },
+        "unit_system": {
+          "type": "string",
+          "enum": [
+            "imperial",
+            "metric"
+          ],
+          "description": "Registry annotation: the account's display unit system. A mismatch between two accounts compared against each other is a SETUP error, not a finding."
+        },
+        "use_cases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Registry annotation: what this account can exercise (e.g. \"VFD mixer\", \"fixed loads\"). Human selection aid for choosing actions[].login; never read as a capability assertion — assert capability with a prereq predicate instead."
         }
       },
       "anyOf": [
@@ -238,13 +303,313 @@
         }
       ]
     },
-    "page": {
+    "evidence_key": {
+      "type": "string",
+      "enum": [
+        "har",
+        "a11y",
+        "dom",
+        "server_timing",
+        "ws",
+        "resource_metrics",
+        "db_before_after",
+        "audit_actor",
+        "cleanup",
+        "downloads",
+        "api",
+        "visual_baseline",
+        "prereq"
+      ],
+      "description": "The single source of truth for evidence keys. Walk-, action- and phase-level require_evidence all reference this; three inline copies would drift. NOTE on \"audit_actor\": no generic collector exists, because attribution needs an app-side audit trail with an actor column and the target app has none. Requiring it BLOCKS at preflight (exit 2) rather than mid-walk \u2014 loud and early, not a false pass. Until such a trail exists, a mutation on a SHARED dataset cannot be attributed to this walk: db_before_after can prove something changed, never that it was us."
+    },
+    "action": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "name",
+        "phases"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable label. Groups the report, keys runtime.per_page, and is the unit written back to a tracker."
+        },
+        "uat": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "issue": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Tracker issue this action verifies. One action ↔ one issue."
+            },
+            "url": {
+              "type": "string",
+              "description": "Canonical issue URL, for the report and any write-back adapter."
+            },
+            "contract_hash": {
+              "type": "string",
+              "minLength": 8,
+              "description": "Hash of the issue's authored steps at the time this action was written. A mismatch means the human contract moved and the automation may no longer be testing what the issue says — surfaced, never auto-resolved. This is why issue Steps must not be edited cosmetically."
+            }
+          },
+          "description": "Link to the human-authored contract. The issue owns WHAT should happen; this manifest owns HOW to drive it and what proves it."
+        },
+        "login": {
+          "type": "string",
+          "description": "Key into logins{}. Omit to use the single top-level login block. The driver groups actions by resolved login and logs in once per group."
+        },
+        "prereq": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/prereq"
+          },
+          "description": "Preconditions evaluated after session establishment and before phase 1 — 'is this action testable on this dataset right now?'. Unmet under prereq_policy:\"check\" BLOCKS the action (never FAILED: nothing was proved). Re-evaluated after ANY action failure; if a predicate held before and does not hold after, the verdict is reclassified BLOCKED/precondition_lost rather than charging the app for a record another session consumed mid-run."
+        },
+        "phases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/phase"
+          },
+          "description": "Ordered navigations sharing one browser context and one carried-state bag. Phases never reorder and an action never splits across contexts."
+        },
+        "cleanup_steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          },
+          "description": "Action-scoped finally: runs after the LAST phase regardless of which phase failed, so teardown still happens when a middle phase dies. Gated exactly like mutating steps."
+        },
+        "cleanup_path": {
+          "type": "string",
+          "description": "Where cleanup_steps run. Defaults to the LAST phase's resolved path (where the mutation happened). Cleanup opens its own page so a dead phase cannot block teardown — and that page must be navigated somewhere real, because steps on a blank page match no selector and would report a clean teardown that never happened. Supports {{carry.*}}."
+        },
+        "cleanup_budget_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Time budget for cleanup_steps (default 20000)."
+        },
+        "require_evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/evidence_key"
+          },
+          "uniqueItems": true,
+          "description": "Action-level evidence requirements, unioned into every phase."
+        },
+        "budget_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Default readiness budget inherited by phases that do not set their own."
+        },
+        "fail_on_slow": {
+          "type": "boolean",
+          "description": "Inheritable default for phases."
+        },
+        "strict_errors": {
+          "type": "boolean",
+          "description": "Inheritable default for phases."
+        },
+        "noise_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Inheritable default for phases; unioned rather than overridden."
+        },
+        "viewports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Subset of declared viewport names. NOTE: a MUTATING action is pinned to a single viewport regardless — the case expander is a cartesian product, so an unpinned mutating action would execute its mutation once per viewport. The remaining viewports are recorded NOT_TESTED with a reason."
+        },
+        "runtime": {
+          "$ref": "#/definitions/page_runtime"
+        },
+        "note": {
+          "type": "string",
+          "description": "Annotation only: why this action exists."
+        }
+      },
+      "description": "One user-observable action, folded to a single verdict. See definitions.phase for inheritance and the fold rules in walk_verdict.actionVerdict."
+    },
+    "prereq": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "record_exists",
+            "feature_enabled",
+            "account_can",
+            "sql",
+            "eval"
+          ],
+          "description": "Predicate kind. Every kind compiles to an EXISTING runtime primitive — record_exists/sql to a SELECT-only execute_sql_query with expect/expect_min, feature_enabled/account_can/eval to a project_eval probe with expect. This is a typed facade, not a new checking engine. sql and eval are the escape hatches, so an unanticipated precondition never waits on a schema change."
+        },
+        "name": {
+          "type": "string",
+          "description": "Stable id in the report and in precondition_lost accounting."
+        },
+        "of": {
+          "type": "string",
+          "description": "record_exists: the table or resource to count."
+        },
+        "where": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "description": "record_exists: equality filters, compiled to a parameterized WHERE — never string-interpolated."
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "record_exists: minimum matching rows (default 1)."
+        },
+        "flag": {
+          "type": "string",
+          "description": "feature_enabled: the flag to read."
+        },
+        "permission": {
+          "type": "string",
+          "description": "account_can: the permission the logged-in account must hold."
+        },
+        "query": {
+          "type": "string",
+          "description": "sql: SELECT-only. Drivers must reject non-SELECT and cap rows, exactly as runtime.sql does."
+        },
+        "eval": {
+          "type": "string",
+          "description": "eval: small read-only Elixir expression for project_eval."
+        },
+        "expect": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ],
+          "description": "Exact expected single-cell result."
+        },
+        "expect_min": {
+          "type": "number",
+          "description": "Minimum numeric result."
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "description": "One action precondition. Requires Tidewave: a predicate that cannot be EVALUATED is missing evidence (require_evidence: [\"prereq\"]) and BLOCKS — it must never degrade to skipped."
+    },
+    "carry_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "enum": [
+            "url",
+            "text",
+            "attr"
+          ],
+          "description": "Where to read the value: the landed URL, a selector's text, or a selector's attribute. Deliberately three sources — enough to capture the id of the thing just created, small enough to stay auditable."
+        },
+        "pattern": {
+          "type": "string",
+          "description": "from:\"url\" — regex with exactly one capture group."
+        },
+        "selector": {
+          "type": "string",
+          "description": "from:\"text\" / \"attr\" — CSS selector, first match."
+        },
+        "attr": {
+          "type": "string",
+          "description": "from:\"attr\" — attribute name to read."
+        },
+        "required": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true (default), a capture that yields nothing BLOCKS the action — a later phase templating {{carry.x}} into a path would otherwise navigate to a literal, land somewhere unintended, and report a confident wrong answer."
+        }
+      }
+    },
+    "normalize": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "as": {
+          "type": "string",
+          "enum": [
+            "number",
+            "string",
+            "currency",
+            "percent"
+          ],
+          "description": "Coercion applied to both sides before comparison."
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12,
+          "description": "Decimal places compared. \"50\" == \"50.00\" at precision 2; \"50.0\" != \"50.5\"."
+        },
+        "unit": {
+          "type": "string",
+          "description": "Required unit. Units must match exactly — 1 lb vs 1 kg is a difference even when the number agrees."
+        },
+        "trim": {
+          "type": "boolean",
+          "default": true
+        },
+        "case_fold": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "description": "Opt-in comparison normalization; literal comparison remains the default. Deliberately a shared definition rather than assert_value-private: this encodes the parity bar (units, displayed precision, currency placement) once, so a future envelope differ consumes the same module instead of reimplementing it."
+    },
+    "page": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/page_body"
+        }
+      ],
+      "required": [
+        "name",
         "path"
       ],
+      "description": "A v1 top-level page: one navigation with its own verdict. `name` is required because it keys runtime.per_page and labels the report."
+    },
+    "phase": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/page_body"
+        }
+      ],
+      "required": [
+        "path"
+      ],
+      "description": "One navigation inside an action. Identical to a page except `name` is optional (it defaults to \"<action.name> · <ordinal>\") and inheritable keys resolve upward: phase → action → walk → driver default. Scalars override; require_evidence and noise_patterns union; runtime deep-merges."
+    },
+    "page_body": {
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string",
@@ -330,24 +695,25 @@
         "require_evidence": {
           "type": "array",
           "items": {
-            "type": "string",
-            "enum": [
-              "har",
-              "a11y",
-              "dom",
-              "server_timing",
-              "ws",
-              "resource_metrics",
-              "db_before_after",
-              "audit_actor",
-              "cleanup",
-              "downloads",
-              "api",
-              "visual_baseline"
-            ]
+            "$ref": "#/definitions/evidence_key"
           },
           "uniqueItems": true,
-          "description": "Per-page evidence requirements, merged with the walk-level list."
+          "description": "Per-page (per-phase) evidence requirements, merged as a union with the action-level and walk-level lists."
+        },
+        "carry": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/definitions/carry_source"
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "description": "Phase-scoped exports into the action's carried-state bag, consumed by later phases as {{carry.<key>}} in path, lands_on and step text. This is what makes \"reopen the record I just created\" expressible: capture the id here, template it into the next phase's path. Ignored on a v1 top-level page (no action scope to carry into)."
+        },
+        "mutates": {
+          "type": "boolean",
+          "description": "Escalate-only override. Mutation is INFERRED from steps/cleanup_steps and that inference is authoritative: a phase containing click/fill/type/... is mutating whether or not this says so, and `false` is NOT honored. Set true for a phase whose navigation alone mutates (e.g. a GET that fires a job), so retry pinning, viewport pinning and the MUTATED_UNVERIFIED fold treat it correctly."
         }
       }
     },
@@ -366,6 +732,8 @@
             "assert_selector",
             "assert_text",
             "assert_url",
+            "assert_value",
+            "assert_count",
             "assert_iframe",
             "assert_http",
             "settle",
@@ -379,7 +747,7 @@
             "uncheck",
             "hover"
           ],
-          "description": "Step kind. assert_*/wait_for/settle/assert_iframe/assert_http are always allowed; click/fill/type/press/select/check/uncheck/hover are mutating."
+          "description": "Step kind. assert_*/wait_for/settle/assert_iframe/assert_http are always allowed; click/fill/type/press/select/check/uncheck/hover are mutating. assert_value reads a form control's VALUE (input/select/textarea) — assert_text cannot see it, because it matches body.innerText and an input's value contributes nothing to innerText. Without assert_value a persistence check is unexpressible."
         },
         "name": {
           "type": "string",
@@ -423,7 +791,29 @@
             "number",
             "boolean"
           ],
-          "description": "Alias for fill/select value."
+          "description": "Alias for fill/select value, and the expected value for assert_value."
+        },
+        "contains": {
+          "type": "string",
+          "description": "assert_value: substring match instead of equality. Mutually exclusive with text/value."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "assert_count: exact number of matches."
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "assert_count: minimum matches."
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "assert_count: maximum matches."
+        },
+        "normalize": {
+          "$ref": "#/definitions/normalize"
         },
         "path": {
           "type": "string",
@@ -482,9 +872,10 @@
           "enum": [
             "visible",
             "attached",
-            "hidden"
+            "hidden",
+            "absent"
           ],
-          "description": "wait_for / assert_selector visibility state."
+          "description": "wait_for / assert_selector visibility state. \"absent\" asserts the selector matches NOTHING in the DOM — distinct from \"hidden\" (present but not visible). assert_selector throws when a selector is missing, so absence was previously unassertable, which blocked permission-negative checks (\"this control must NOT exist for a limited account\")."
         },
         "timeout_ms": {
           "type": "integer",
@@ -663,7 +1054,34 @@
         "sql": {
           "type": "string",
           "pattern": "^\\s*[Ss][Ee][Ll][Ee][Cc][Tt]\\b",
-          "description": "SELECT-only probe. Drivers must reject non-SELECT and cap rows."
+          "description": "SELECT-only probe. Drivers must reject non-SELECT and cap rows. Supports {{carry.*}}."
+        },
+        "db_before_after": {
+          "description": "Run a SELECT before navigation and again after the phase's steps, then compare. The window deliberately SPANS navigation, so expect_change:false also catches a plain GET that writes \u2014 something the interactions gate cannot see, because no mutating step ever runs. Only digests of the two results are recorded, never rows. Requires Tidewave; a snapshot that could not be taken yields no evidence and BLOCKS under require_evidence.",
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Shorthand: the SELECT to compare, recorded without an expectation."
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sql"
+              ],
+              "properties": {
+                "sql": {
+                  "type": "string",
+                  "pattern": "^\\s*[Ss][Ee][Ll][Ee][Cc][Tt]\\b",
+                  "description": "SELECT-only. Scope it to the record under test with {{carry.*}} \u2014 an unscoped count over a shared dataset reports another session's writes as this action's delta."
+                },
+                "expect_change": {
+                  "type": "boolean",
+                  "description": "true: this phase MUST have changed the result (proves the write reached the store, not just that the UI said so). false: it must NOT have \u2014 the read-only proof, and the higher-value direction, because it turns safety.read_only from a claim into something the run verifies. Omit to record the delta without asserting."
+                }
+              }
+            }
+          ]
         },
         "expect_min": {
           "type": "number",

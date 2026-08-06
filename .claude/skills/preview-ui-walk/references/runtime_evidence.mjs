@@ -810,6 +810,7 @@ export function mergePageRuntime(manifest, page) {
     expect_min: fromPage.expect_min ?? fromMap.expect_min,
     liveview: fromPage.liveview ?? fromMap.liveview,
     log_levels: fromPage.log_levels || fromMap.log_levels,
+    db_before_after: fromPage.db_before_after ?? fromMap.db_before_after,
   };
 }
 
@@ -954,6 +955,77 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
  * as walk-level, between-page evidence and advance the cursor before page B
  * starts. The driver gates significant error samples at the walk level.
  */
+/**
+ * Normalized db_before_after config, or null when the page declares none.
+ * Accepts a bare SQL string as shorthand for record-only.
+ */
+export function dbSnapshotSpec(pageRt = {}) {
+  const raw = pageRt.db_before_after;
+  if (!raw) return null;
+  if (typeof raw === "string") return { sql: raw, expect_change: undefined };
+  if (!raw.sql) return null;
+  return { sql: raw.sql, expect_change: raw.expect_change };
+}
+
+/**
+ * One side of a before/after pair.
+ *
+ * Compares the RAW result text rather than a parsed scalar: "did this change"
+ * must work for any query shape (multi-column, multi-row), and parse fidelity
+ * is not something a change-detector should depend on.
+ */
+export async function dbSnapshot(mcpUrl, sql) {
+  const gate = assertSelectOnly(sql);
+  if (!gate.ok) return { ok: false, error: gate.error, text: null };
+  try {
+    const text = await tidewaveCall(mcpUrl, "execute_sql_query", { query: gate.query }, 20000);
+    return { ok: true, error: null, text: String(text ?? "") };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err), text: null };
+  }
+}
+
+/**
+ * Compare a before/after pair into page evidence.
+ *
+ * Returns null when either side could not be taken — that is missing evidence,
+ * so `require_evidence: ["db_before_after"]` BLOCKS through the existing guard
+ * rather than reporting an unproven "nothing changed".
+ */
+export function dbBeforeAfterEvidence(before, after, spec) {
+  if (!before?.ok || !after?.ok) {
+    return null;
+  }
+  const changed = before.text !== after.text;
+  const out = {
+    changed,
+    expect_change: spec?.expect_change,
+    query: String(spec?.sql || "").slice(0, 200),
+    // Digests, not payloads: this evidence rides into a published report.
+    before_digest: digest(before.text),
+    after_digest: digest(after.text),
+  };
+  if (spec?.expect_change === true && !changed) {
+    return { ...out, status: "FAIL", error: "expected a change; the query result was identical" };
+  }
+  if (spec?.expect_change === false && changed) {
+    // The read-only proof. A walk that claims read_only but writes anyway is
+    // exactly what this exists to catch, and the interactions gate cannot see
+    // it: a plain GET that mutates never runs a mutating step.
+    return { ...out, status: "FAIL", error: "expected NO change; the query result moved" };
+  }
+  return { ...out, status: "PASS" };
+}
+
+function digest(text) {
+  const s = String(text ?? "");
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  return `len${s.length}:${(h >>> 0).toString(16)}`;
+}
+
 export async function beginPageRuntime(runtimeBag, page, manifest) {
   const pageName = page?.name || null;
   if (!runtimeBag || runtimeBag.tidewave?.status !== "ok") {
@@ -966,6 +1038,15 @@ export async function beginPageRuntime(runtimeBag, page, manifest) {
   }
 
   const pageRt = mergePageRuntime(manifest || runtimeBag._manifest || {}, page || {});
+
+  // db_before_after: the "before" side must be taken BEFORE navigation, or
+  // expect_change:false misses the case it exists to catch — a plain GET that
+  // writes. Stashed on the bag and consumed by pageRuntimeEvidence.
+  const dbSpec = dbSnapshotSpec(pageRt);
+  runtimeBag._db_before = dbSpec
+    ? { page: pageName, spec: dbSpec, snap: await dbSnapshot(runtimeBag.tidewave.url, dbSpec.sql) }
+    : null;
+
   const levels = pageRt.log_levels || runtimeBag.log_levels || ["error"];
   const logs = await fetchLogs(runtimeBag.tidewave.url, levels, 80);
   const previousPage = runtimeBag._last_page || null;
@@ -1130,6 +1211,15 @@ export async function pageRuntimeEvidence(runtimeBag, page, manifest) {
 
   const sql = await runSql(mcpUrl, pageRt);
 
+  // db_before_after: "after" side, compared against the pre-navigation snapshot.
+  let dbBeforeAfter = null;
+  const pending = runtimeBag._db_before;
+  if (pending && pending.page === page?.name) {
+    const after = await dbSnapshot(mcpUrl, pending.spec.sql);
+    dbBeforeAfter = dbBeforeAfterEvidence(pending.snap, after, pending.spec);
+  }
+  runtimeBag._db_before = null;
+
   const lvPolicy = defaultLiveviewPolicy(manifest || runtimeBag._manifest, pageRt);
   let liveview = { status: "disabled" };
   if (lvPolicy.enabled) {
@@ -1140,6 +1230,7 @@ export async function pageRuntimeEvidence(runtimeBag, page, manifest) {
 
   const probesFailed = probes.filter((p) => p.status !== "PASS").length;
   const sqlFailed = sql && sql.status === "FAIL" ? 1 : 0;
+  const dbFailed = dbBeforeAfter && dbBeforeAfter.status === "FAIL" ? 1 : 0;
   const liveviewFailed =
     runtimeBag.require_tidewave && lvPolicy.enabled && liveview.status === "error" ? 1 : 0;
 
@@ -1149,8 +1240,9 @@ export async function pageRuntimeEvidence(runtimeBag, page, manifest) {
     probes_failed: probesFailed,
     sql,
     liveview,
+    db_before_after: dbBeforeAfter,
     required_tidewave: runtimeBag.require_tidewave,
-    evidence_failed: probesFailed + sqlFailed + liveviewFailed,
+    evidence_failed: probesFailed + sqlFailed + liveviewFailed + dbFailed,
   };
 }
 
