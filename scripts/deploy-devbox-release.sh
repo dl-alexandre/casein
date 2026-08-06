@@ -431,6 +431,23 @@ else
   log "operator profile not installed; deployment capabilities remain disabled"
 fi
 
+# Casein is the interactive surface on a box that also runs agent build/test
+# fleets: 40+ worktrees whose `mix compile` bursts past 600% CPU across the 32
+# cores. At the default CPUWeight (100) the LiveView and its tmux subprocess
+# forks schedule no better than a batch compile, so a ~40ms window-create can
+# stretch into seconds and read as the whole UI freezing.
+#
+# 1000 gives the viewer ~10x the share of each competing sibling cgroup under
+# contention. It is a *weight*, not a quota: when the box is idle the agents
+# still get every core, so this costs throughput nothing.
+#
+# Scope: this only orders the app against its siblings inside system.slice —
+# which is where the tmux server and opencode live (they get parented into
+# whichever canary cgroup spawned them). Agent shells that run under
+# user.slice contend at the root instead, and this property does not reach
+# them; that needs a slice-level policy, deliberately not set here.
+CPU_PRIORITY_PROPERTY="CPUWeight=${CASEIN_CPU_WEIGHT:-1000}"
+
 sudo systemd-run \
   --unit="casein-${NEW_UUID}" \
   --description="Casein canary ${REVISION} (${NEW_UUID})" \
@@ -440,6 +457,7 @@ sudo systemd-run \
   "${operator_property[@]}" \
   --property="WorkingDirectory=${APP_ROOT}" \
   --property="KillMode=process" \
+  --property="${CPU_PRIORITY_PROPERTY}" \
   --property="Environment=RELEASE_NODE=${NEW_RELEASE_NODE}" \
   --property="ExecStartPre=/usr/bin/docker compose -f /opt/casein/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/clean_casein_socket" \
