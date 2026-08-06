@@ -1,0 +1,8 @@
+[Unit]
+Description=Casein orphaned agent-browser Chrome tree sweep
+
+[Service]
+Type=oneshot
+User=devbox
+EnvironmentFile=-/etc/casein/casein.env
+ExecStart=__CHECKOUT__/scripts/casein-browser-janitor-sweep.sh --apply

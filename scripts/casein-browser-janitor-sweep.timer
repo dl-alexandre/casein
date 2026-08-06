@@ -1,0 +1,16 @@
+[Unit]
+Description=Hourly Casein orphaned agent-browser Chrome tree sweep
+
+# Hourly, not daily like the other janitors: an orphaned tree pegs a core for
+# its whole lifetime (observed 43-95% each, up to 20.9 days), so the cost of a
+# miss is continuous CPU rather than accumulated disk. Leaks reappeared within
+# roughly an hour of a manual cleanup, so a daily cadence would leave a core
+# burning for most of the day.
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5m
+Unit=casein-browser-janitor-sweep.service
+
+[Install]
+WantedBy=timers.target
