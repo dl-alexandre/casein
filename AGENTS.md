@@ -367,6 +367,113 @@ at launch, after the workspace token has been resolved: Claude gets
 writing new ones, so plain agent starts do not inherit workspace-specific MCP
 servers without `CASEIN_API_TOKEN`.
 
+### Telling a wedged agent from an idle one
+
+Every *cooperative* signal — `terminal_report_agent_state`, hook reports, the
+pane-title spinner heuristic — describes an agent that is well enough to
+describe itself. A wedged agent (provider rejecting every request, TUI accepting
+keystrokes but discarding them) reports nothing and leaves its last spinner
+frame on screen, so it looks exactly like a busy one, and later exactly like an
+idle one.
+
+These three checks each **give false readings** and should not be used alone:
+
+| Check | How it lies |
+|-------|-------------|
+| Pane text / spinner | A stale spinner persists after the agent stops — looks alive when dead |
+| Process count | Only catches shell-exec moments — looks dead while thinking |
+| `find -newermt` one-liner | A bad invocation silently matches nothing, and a silent zero is indistinguishable from real inactivity |
+
+Use the observed signal instead. `Casein.Terminals.AgentLiveness` watches the
+worktree from outside (newest write, commit count), which needs no cooperation
+from the agent:
+
+```jsonc
+// terminal_topology
+{ "session": "casein_...", "include_liveness": true }
+```
+
+Each pane then carries `worktree_path` and:
+
+```jsonc
+"liveness": {
+  "state": "active",          // active | quiet | unknown
+  "quiet_for_seconds": 12,
+  "last_write_at": "...",
+  "commit_count": 37
+}
+```
+
+**`unknown` is not `quiet`.** It means the worktree could not be scanned, and
+says nothing about the agent. Treating it as inactivity is exactly how false
+stall reports get made — never collapse the two.
+
+Where the observed verdict contradicts the spinner, `agent_state` resolves to
+**`stalled`**: the pane looks busy and nothing has happened on disk for 10+
+minutes. `stalled` deliberately does not claim a cause (an agent may think for
+minutes without writing); `errored` is a claim about cause and stays
+report-only. Both surface as `attention` in the session picker.
+
+**Poisoned sessions.** Some wedges are unrecoverable from inside — e.g. once an
+OpenCode session stores a `reasoning` item the provider later rejects
+(`[400] validation failed: input[3]: unknown item type "reasoning"`), every
+subsequent request fails on stored history. `/new` does not clear it. Start a
+fresh session; check `~/.local/share/opencode/log/opencode.log` to confirm.
+
+### Multiple windows in one worktree
+
+Launching an agent *inside* an existing linked worktree makes it adopt that
+worktree (`scripts/lib/agent-worktree.sh`). This is deliberate — a human
+resuming work in a tree wants it — but it means opening several windows from one
+worktree's cwd silently puts N agents on one git index, where concurrent
+operations corrupt state rather than failing cleanly.
+
+`terminal_topology` now flags this: panes carry `worktree_shared_with` (the
+other pane ids in that tree) and the payload carries a top-level
+`shared_worktrees` warning. To force isolation at spawn, use
+`scripts/spawn-agent-worker.sh`, which sets `CASEIN_AGENT_FORCE_FRESH_WORKTREE=1`
+and always branches off the primary checkout.
+
+Note that `launch-casein-agent.sh` binds `CASEIN_CHECKOUT` to the cwd you launch
+from, so `cd <worktree> && opencode` places the agent in that worktree for every
+runtime. (Before 2026-08, this ran for `grok` only, and other runtimes were
+silently relocated to the workspace root.)
+
+### Setting an agent's model from outside (orchestration)
+
+Launch-time env vars are the **only** scriptable way to pin a runtime's model.
+Driving the in-TUI picker (`/models`, `/model`) with `tmux send-keys` does not
+work and is not worth retrying: the search field accumulates keystrokes across
+attempts, and `C-u` closes the picker instead of clearing it.
+
+| Runtime | Launch-time override | Default when unset |
+|---------|---------------------|--------------------|
+| **OpenCode** | `CASEIN_OPENCODE_DEFAULT_MODEL=<provider>/<model>` | `opencode/grok-4.5` |
+| **Codex** | operator model preserved across owner auth profiles (see `codex_model_args`) | runtime default |
+
+```bash
+# Pin one worker's model at spawn.
+CASEIN_OPENCODE_DEFAULT_MODEL=opencode/gpt-5.6-luna \
+  bash scripts/launch-casein-agent.sh opencode
+```
+
+Set-but-empty (`CASEIN_OPENCODE_DEFAULT_MODEL=`) opts out of injection entirely
+and lets the runtime's own config win. An explicit `--model`/`-m` in the launch
+args always beats the env var, and the flag is withheld from subcommands that
+reject it (`models`, `serve`, `export`).
+
+**Precedence, and the surprising part.** OpenCode's resolution order is:
+
+1. explicit `--model` on the command line (what the launcher injects), then
+2. **the per-project persisted model choice**, then
+3. `~/.config/opencode/opencode.json`.
+
+Step 2 is why editing the global config appears to do nothing: a project that
+has ever had a model selected in the TUI keeps that choice, and it silently
+outranks the config default. `~/.config/opencode` is also host-global and shared
+by *every* opencode session on the box, Casein-launched or not — which is why
+the launcher injects `--model` per launch instead of writing config.
+
 ### Raw terminal + workspace mode
 
 Raw multi-pane terminal requires workspace mode **`:manual`**. Manager workspaces now default to `:manual` (`Casein.Policy.WorkspaceMode`'s fallback) so split-screen works out of the box; switch a workspace to `:review` (or another mode) explicitly via UI (**Agents → Safety → mode**) or DB if you need agent-proposal-only access instead:
@@ -417,6 +524,10 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 | Live MCP activity invisible | Agents tab → **Live MCP activity**; mutating calls are also audited |
 | `codex update` EACCES on `/usr/lib/node_modules`, or update replacing the Casein `codex` shim | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets a user-writable prefix under `~/.local/share/npm-global`, separate from the `~/.casein/agent-shims` launchers |
 | Codex sandbox hangs / `bwrap: loopback: Failed RTM_NEWADDR` | Ubuntu 24.04+ blocks unprivileged user namespaces via AppArmor. Codex's Linux sandbox uses `bubblewrap`, which needs userns. Run `bash scripts/ensure-devbox-codex-sandbox.sh` (also in `setup-devbox-agent-pairing.sh`) to install `apparmor-profiles` and load the `bwrap-userns-restrict` profile. Canary: `bwrap --dev-bind / / --unshare-net echo ok` |
+| Agent window looks idle but is wedged | Pane text, process count, and a bare `find -newermt` all lie here — see "Telling a wedged agent from an idle one" below. Use `terminal_topology` with `include_liveness: true` |
+| Agent `git push` times out / looks hung | This repo's pre-push gate runs a full lint+test suite (2–8 min). Anything wrapping `git push` for an agent must allow **~10 min**; a 2-minute default kills the push mid-gate and is indistinguishable from a hang |
+| Scripted `tmux kill-window` closes the wrong windows | tmux renumbers remaining windows after each close, so a loop over captured indices drifts. Iterate over **window ids** (`@1`, `@2` — stable for the window's life) from `terminal_topology`, not indices |
+| Spawned worker never answered its brief | `spawn-agent-worker.sh` now probes the pane before printing its id and exits non-zero with the pane's output if the launch died. If you are on an older copy, a printed pane id did **not** mean the worker was running |
 
 ### Key files
 

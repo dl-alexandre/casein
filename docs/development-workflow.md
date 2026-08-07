@@ -53,14 +53,23 @@
 
 ### Enforcement at launch
 
-`scripts/launch-casein-agent.sh` calls `scripts/lib/agent-worktree.sh` after
-resolving agent env:
+`scripts/launch-casein-agent.sh` binds `CASEIN_CHECKOUT` to the repo you launch
+from (`agent_env_bind_current_checkout`, for **every** runtime — it was gated to
+`grok` until 2026-08, which silently relocated other runtimes to the workspace
+root). It then calls `scripts/lib/agent-worktree.sh`:
 
 1. Skip when `CASEIN_AGENT_SKIP_WORKTREE=1`.
-2. Reuse `CASEIN_AGENT_WORKTREE_PATH` when set.
-3. Reuse the current directory when already inside a linked worktree.
-4. Otherwise create `agent/<runtime>/<task>-<timestamp>` under the worktree root,
+2. Branch a fresh worktree unconditionally when
+   `CASEIN_AGENT_FORCE_FRESH_WORKTREE=1` (set by `spawn-agent-worker.sh`, so a
+   spawned worker can never share the orchestrator's checkout).
+3. Reuse `CASEIN_AGENT_WORKTREE_PATH` when set.
+4. Reuse the current directory when already inside a linked worktree.
+5. Otherwise create `agent/<runtime>/<task>-<timestamp>` under the worktree root,
    `cd` there, and call `terminal_report_worktree` over the session-scoped MCP URL.
+
+Steps 3 and 4 are *adoption* paths and are deliberate, but they let several
+windows end up in one worktree. `terminal_topology` flags that: panes carry
+`worktree_shared_with`, and the payload carries a `shared_worktrees` warning.
 
 Environment knobs:
 

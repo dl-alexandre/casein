@@ -78,8 +78,22 @@ defmodule Casein.Terminals.SessionDirectory.Attention do
     end
   end
 
-  defp normalize_state(state) when state in [:blocked, "blocked", :attention, "attention"],
-    do: :blocked
+  # `:errored` and `:stalled` both need a human and neither resolves on its own,
+  # so they route to the same section as `:blocked`. Without this they fall
+  # through to `:other` and a wedged session sits in "recent" looking finished —
+  # the exact failure the states were added to surface.
+  defp normalize_state(state)
+       when state in [
+              :blocked,
+              "blocked",
+              :attention,
+              "attention",
+              :errored,
+              "errored",
+              :stalled,
+              "stalled"
+            ],
+       do: :blocked
 
   defp normalize_state(state) when state in [:done, "done", :completed, "completed"],
     do: :done

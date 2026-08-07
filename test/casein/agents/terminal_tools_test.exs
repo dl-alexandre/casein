@@ -419,6 +419,71 @@ defmodule Casein.Agents.TerminalToolsTest do
       assert payload.active_pane_note =~ "operator"
     end
 
+    test "terminal_topology warns when panes share one git worktree" do
+      session = Tmux.session_name("alpha", "main")
+      shared = tmp_repo!("shared")
+      own = tmp_repo!("own")
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{id: "@1", index: 0, name: "w1", active: true, panes: 1, activity: 10},
+          %{id: "@2", index: 1, name: "w2", active: false, panes: 1, activity: 10},
+          %{id: "@3", index: 2, name: "w3", active: false, panes: 1, activity: 10}
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          agent_pane_at("%1", "@1", shared),
+          agent_pane_at("%2", "@2", shared),
+          agent_pane_at("%3", "@3", own)
+        ]
+      })
+
+      assert {:ok, payload} =
+               TerminalTools.invoke("terminal_topology", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+
+      # Three agents in one worktree corrupt each other's git index rather than
+      # failing cleanly; the operator should not have to discover that by hand.
+      assert %{paths: paths, note: note} = payload.shared_worktrees
+      assert Map.keys(paths) == [shared]
+      assert Enum.sort(paths[shared]) == ["%1", "%2"]
+      assert note =~ "same git worktree"
+
+      by_id = Map.new(payload.panes, &{&1.id, &1})
+      assert by_id["%1"].worktree_shared_with == ["%2"]
+      assert by_id["%3"].worktree_path == own
+      refute Map.has_key?(by_id["%3"], :worktree_shared_with)
+    end
+
+    test "terminal_topology omits the warning when every pane has its own worktree" do
+      session = Tmux.session_name("alpha", "main")
+      a = tmp_repo!("solo-a")
+      b = tmp_repo!("solo-b")
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{id: "@1", index: 0, name: "w1", active: true, panes: 1, activity: 10},
+          %{id: "@2", index: 1, name: "w2", active: false, panes: 1, activity: 10}
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [agent_pane_at("%1", "@1", a), agent_pane_at("%2", "@2", b)]
+      })
+
+      assert {:ok, payload} =
+               TerminalTools.invoke("terminal_topology", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+
+      refute Map.has_key?(payload, :shared_worktrees)
+    end
+
     test "terminal_agent_pane never resolves to the caller's own pane" do
       session = Tmux.session_name("alpha", "main")
 
@@ -1286,6 +1351,22 @@ defmodule Casein.Agents.TerminalToolsTest do
       restore_app_env(:workspaces_root, previous_root)
       File.rm_rf(root)
     end)
+  end
+
+  defp agent_pane_at(id, window_id, current_path) do
+    %{
+      id: id,
+      window_id: window_id,
+      index: 0,
+      active: true,
+      current_command: "opencode",
+      current_path: current_path,
+      role: "agent",
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 50
+    }
   end
 
   defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)

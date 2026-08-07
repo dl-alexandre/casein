@@ -189,6 +189,57 @@ spawn_worker_resolve_env_file() {
   return 1
 }
 
+# `tmux new-window -P` prints a pane id the moment the *window* exists, but the
+# launch command runs inside that pane afterwards. A command that dies instantly
+# — a product checkout with no launch-casein-agent.sh, a pairing env that fails
+# to source — therefore still yields a pane id and a zero exit, and the caller
+# goes on to address a worker that was never running. A false success costs more
+# than a failure: you brief a pane that will never answer.
+#
+# Probe that the pane outlives its first moment. Returns nonzero when the pane
+# has vanished (the window closed with its command) or is dead-but-retained
+# (`remain-on-exit`).
+spawn_worker_probe_pane() {
+  local pane_id="$1"
+  local budget="${CASEIN_SPAWN_PROBE_SECONDS:-2}"
+
+  # Escape hatch for callers running their own readiness check.
+  if [[ "$budget" == "0" ]]; then
+    return 0
+  fi
+
+  local deadline=$((budget * 10))
+  local elapsed=0
+  local dead
+
+  while ((elapsed < deadline)); do
+    # `list-panes -a` + exact match: `-t <pane>` silently falls back to the
+    # current pane for some tmux targets, which would mask a vanished pane.
+    dead="$(
+      tmux list-panes -a -F '#{pane_id} #{pane_dead}' 2>/dev/null |
+        awk -v p="$pane_id" '$1 == p { print $2; found = 1 } END { exit !found }'
+    )" || return 1
+
+    if [[ "$dead" == "1" ]]; then
+      return 1
+    fi
+
+    sleep 0.1
+    elapsed=$((elapsed + 1))
+  done
+
+  return 0
+}
+
+# Best-effort diagnostic output from a pane that failed its probe. A retained
+# dead pane still has scrollback; a vanished one does not, so this may print
+# nothing.
+spawn_worker_pane_tail() {
+  local pane_id="$1"
+  tmux capture-pane -p -t "$pane_id" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -20 ||
+    echo "(pane is gone — no output captured)"
+}
+
 # Resolve the primary (main) working tree for a candidate checkout.
 #
 # In an agent's environment CASEIN_CHECKOUT points at *that agent's own* linked
@@ -305,6 +356,15 @@ PANE_ID="$(
 
 if [[ -z "$PANE_ID" ]]; then
   echo "error: tmux new-window did not return a pane id" >&2
+  exit 1
+fi
+
+if ! spawn_worker_probe_pane "$PANE_ID"; then
+  echo "error: worker pane ${PANE_ID} died immediately after launch" >&2
+  echo "hint: the launch command failed inside the pane — common causes are a" \
+    "product checkout with no launch-casein-agent.sh, or pairing env that" \
+    "failed to source. Last pane output:" >&2
+  spawn_worker_pane_tail "$PANE_ID" >&2
   exit 1
 fi
 

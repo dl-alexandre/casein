@@ -128,6 +128,19 @@ defmodule Casein.Agents.TerminalTools.Helpers do
   end
 
   @doc false
+  def include_liveness_param do
+    %{
+      type: "boolean",
+      description:
+        "Observe each agent pane's worktree from outside (newest write, quiet time, commit " <>
+          "count) and fold the verdict into agent_state. This is the only signal that " <>
+          "separates a wedged agent from an idle one — a wedged agent reports nothing and " <>
+          "leaves its last spinner frame on screen. Costs one pruned directory walk per " <>
+          "worktree, cached briefly. Defaults to false."
+    }
+  end
+
+  @doc false
   def exit_status_param do
     %{
       type: "string",

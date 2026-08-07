@@ -333,6 +333,146 @@ defmodule Casein.Terminals.AgentStateTest do
     end
   end
 
+  describe "resolve/4 with observed liveness" do
+    @stale 700
+
+    test "a frozen spinner over a silent worktree is stalled, not working" do
+      # The wedge signature: the TUI stopped processing but left its last
+      # spinner frame on screen, so the title heuristic reads :working forever.
+      assert AgentState.resolve(nil, :working, now(), :quiet) == {:stalled, nil}
+
+      assert AgentState.resolve(entry(:blocked, @stale, "perm"), :working, now(), :quiet) ==
+               {:stalled, nil}
+
+      assert AgentState.resolve(entry(:working, @stale), :working, now(), :quiet) ==
+               {:stalled, nil}
+    end
+
+    test "a spinner backed by real worktree activity stays working" do
+      assert AgentState.resolve(nil, :working, now(), :active) == {:working, nil}
+
+      assert AgentState.resolve(entry(:blocked, @stale, "perm"), :working, now(), :active) ==
+               {:working, nil}
+    end
+
+    test "a busy pane is not called stalled before the stall window elapses" do
+      # Long tool calls and model thinking are normal; a premature :stalled costs
+      # more trust than a late one.
+      assert AgentState.resolve(entry(:blocked, 60, "perm"), :working, now(), :quiet) ==
+               {:working, nil}
+    end
+
+    test "unknown liveness changes nothing, so a failed check cannot invent a stall" do
+      # This is the false-stall bug: a check that did not run must not read as
+      # evidence of inactivity.
+      for liveness <- [nil, :unknown] do
+        assert AgentState.resolve(nil, :working, now(), liveness) == {:working, nil}
+
+        assert AgentState.resolve(entry(:blocked, @stale, "perm"), :working, now(), liveness) ==
+                 {:working, nil}
+      end
+    end
+
+    test "worktree activity rescues a working report the title calls ready" do
+      # Default behaviour assumes a missed Stop hook and downgrades to idle. If
+      # the worktree is still being written, the report was simply right.
+      assert AgentState.resolve(entry(:working, 300), :ready, now(), :active) == {:working, nil}
+      assert AgentState.resolve(entry(:working, 300), :ready, now(), :quiet) == {:idle, nil}
+      assert AgentState.resolve(entry(:working, 300), :ready, now(), nil) == {:idle, nil}
+    end
+
+    test "liveness never overrides a fresh report" do
+      assert AgentState.resolve(entry(:blocked, 1, "perm"), :working, now(), :quiet) ==
+               {:blocked, "perm"}
+    end
+
+    test "errored is reportable and outranks a stale title" do
+      assert AgentState.resolve(entry(:errored, 60, "provider 400"), :ready) ==
+               {:errored, "provider 400"}
+    end
+
+    test "a stalled pane is surfaced even without a report" do
+      # The one case where an unreported pane earns a label: it is displaying
+      # activity that is not happening.
+      assert AgentState.resolve_for_display(nil, :working, now(), :quiet) == {:stalled, nil}
+      assert AgentState.resolve_for_display(nil, :working, now(), :active) == {:unknown, nil}
+      assert AgentState.resolve_for_display(nil, :ready, now(), :quiet) == {:unknown, nil}
+    end
+
+    test "an expired report still yields stalled when the spinner is frozen" do
+      assert AgentState.resolve_for_display(entry(:working, 2_000), :working, now(), :quiet) ==
+               {:stalled, nil}
+    end
+
+    defp now, do: DateTime.utc_now()
+  end
+
+  describe "folding pane liveness into topology enrichment" do
+    setup do
+      AgentState.clear()
+      :ok
+    end
+
+    test "a recently-written worktree is never called stalled" do
+      # The false positive worth guarding: PaneLiveness calls a 4-minute-quiet
+      # worktree :quiet against its short activity window, but that is nowhere
+      # near long enough to stop believing a spinner.
+      topology = topology_with_liveness(%{state: :quiet, quiet_for_seconds: 240})
+
+      assert %{panes: [pane]} = AgentState.enrich_topology(topology, "casein_x")
+      # Unreported panes stay unlabeled so a plain shell does not read as an
+      # agent; the point here is that 4 minutes of quiet earns no stall claim.
+      refute Map.has_key?(pane, :agent_state)
+    end
+
+    test "a long-silent worktree under a live spinner is stalled" do
+      topology = topology_with_liveness(%{state: :quiet, quiet_for_seconds: 3_600})
+
+      assert %{panes: [%{agent_state: :stalled}]} =
+               AgentState.enrich_topology(topology, "casein_x")
+    end
+
+    test "an unobservable worktree yields no stall claim" do
+      # PaneLiveness reports :unknown with a reason and no duration. That is the
+      # absence of evidence, not evidence of absence.
+      topology = topology_with_liveness(%{state: :unknown, reason: :enoent})
+
+      assert %{panes: [pane]} = AgentState.enrich_topology(topology, "casein_x")
+      refute Map.get(pane, :agent_state) == :stalled
+    end
+
+    test "panes with no liveness at all behave exactly as before" do
+      topology = topology_with_liveness(nil)
+
+      assert %{panes: [pane]} = AgentState.enrich_topology(topology, "casein_x")
+      refute Map.get(pane, :agent_state) == :stalled
+    end
+
+    defp topology_with_liveness(liveness) do
+      pane =
+        %{id: "%1", window_id: "@1", pane_state: :working, active: true}
+        |> then(fn p -> if liveness, do: Map.put(p, :liveness, liveness), else: p end)
+
+      %{panes: [pane], windows: [%{id: "@1", pane_list: [pane]}]}
+    end
+  end
+
+  describe "reportable states" do
+    test "errored is reportable but stalled is not" do
+      # :stalled is derived from evidence — the agents that most need it are the
+      # ones that have stopped reporting anything.
+      assert :errored in AgentState.report_states()
+      refute :stalled in AgentState.report_states()
+    end
+
+    test "both errored and stalled ask for a human in the picker" do
+      AgentState.clear()
+      :ok = AgentState.report("ws-1", "casein_x", "%1", :errored, "provider 400")
+
+      assert AgentState.session_status("casein_x") == "attention"
+    end
+  end
+
   describe "resolve_for_display/3" do
     test "returns unknown without a live report, so the heuristic is not mislabeled" do
       assert AgentState.resolve_for_display(nil, :ready) == {:unknown, nil}

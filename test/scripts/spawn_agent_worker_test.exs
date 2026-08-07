@@ -235,6 +235,52 @@ defmodule Scripts.SpawnAgentWorkerTest do
     assert out =~ "window=worker-iso"
   end
 
+  # `tmux new-window -P` returns a pane id before the launch command has proven
+  # it can run, so a worker that dies on startup used to be reported as a
+  # success. Callers then brief a pane that will never answer.
+  test "reports failure when the worker pane dies immediately" do
+    ctx = preflight_fixture!("dead-pane", ~s({"agent_write":{"write_enabled":true}}))
+
+    {out, code} = spawn_worker(ctx, "codex", [{"FAKE_PANE_STATE", "dead"}])
+
+    assert code == 1
+    assert out =~ "died immediately after launch"
+    # The pane's own output is what tells you *why*.
+    assert out =~ "No such file or directory"
+    refute out =~ ~r/^%99$/m
+  end
+
+  test "reports failure when the worker window closed with its command" do
+    ctx = preflight_fixture!("gone-pane", ~s({"agent_write":{"write_enabled":true}}))
+
+    {out, code} = spawn_worker(ctx, "codex", [{"FAKE_PANE_STATE", "gone"}])
+
+    assert code == 1
+    assert out =~ "died immediately after launch"
+    refute out =~ ~r/^%99$/m
+  end
+
+  test "prints the pane id when the worker survives its first moment" do
+    ctx = preflight_fixture!("live-pane", ~s({"agent_write":{"write_enabled":true}}))
+
+    {out, 0} = spawn_worker(ctx, "codex", [{"FAKE_PANE_STATE", "alive"}])
+
+    assert out =~ ~r/^%99$/m
+    refute out =~ "died immediately"
+  end
+
+  test "the probe can be waived by callers running their own readiness check" do
+    ctx = preflight_fixture!("waived", ~s({"agent_write":{"write_enabled":true}}))
+
+    {out, 0} =
+      spawn_worker(ctx, "codex", [
+        {"FAKE_PANE_STATE", "dead"},
+        {"CASEIN_SPAWN_PROBE_SECONDS", "0"}
+      ])
+
+    assert out =~ ~r/^%99$/m
+  end
+
   # Builds a checkout plus stub tmux/curl on PATH. `body` is the JSON the status
   # endpoint returns, or :fail to simulate an unreachable control plane.
   defp preflight_fixture!(label, body) do
@@ -260,7 +306,27 @@ defmodule Scripts.SpawnAgentWorkerTest do
       "export CASEIN_API_TOKEN='test-token'\nexport CASEIN_WORKSPACE_ID='test-ws'\n"
     )
 
-    File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
+    # Stub tmux: `has-session` succeeds, `new-window` hands back a pane id, and
+    # `list-panes` reports whatever liveness FAKE_PANE_STATE asks for so the
+    # post-launch probe can be exercised without a real server.
+    File.write!(Path.join(fakebin, "tmux"), """
+    #!/usr/bin/env bash
+    case "${1:-}" in
+      list-panes)
+        case "${FAKE_PANE_STATE:-alive}" in
+          alive) printf '%%99 0\\n' ;;
+          dead) printf '%%99 1\\n' ;;
+          gone) : ;;
+        esac
+        ;;
+      new-window) printf '%%99\\n' ;;
+      capture-pane)
+        printf 'bash: launch-casein-agent.sh: No such file or directory\\n'
+        ;;
+    esac
+    exit 0
+    """)
+
     File.chmod!(Path.join(fakebin, "tmux"), 0o755)
 
     curl =
@@ -285,6 +351,25 @@ defmodule Scripts.SpawnAgentWorkerTest do
           {"CASEIN_WORKSPACE_ID", "test-ws"},
           {"CASEIN_API_BASE_URL", "http://127.0.0.1:4000"},
           {"CASEIN_AGENT_ENV_FILE", ctx.env_file},
+          {"PATH", ctx.fakebin <> ":" <> System.get_env("PATH")}
+        ] ++ extra_env,
+      stderr_to_stdout: true
+    )
+  end
+
+  # Non-dry-run: exercises the real new-window + probe path against stub tmux.
+  # The probe budget is trimmed so the surviving-pane case does not idle for the
+  # full production window.
+  defp spawn_worker(ctx, runtime, extra_env) do
+    System.cmd("bash", [@script, runtime, "iso", "casein_test_u-x"],
+      env:
+        [
+          {"CASEIN_CHECKOUT", ctx.product},
+          {"CASEIN_API_TOKEN", "test-token"},
+          {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_API_BASE_URL", "http://127.0.0.1:4000"},
+          {"CASEIN_AGENT_ENV_FILE", ctx.env_file},
+          {"CASEIN_SPAWN_PROBE_SECONDS", "1"},
           {"PATH", ctx.fakebin <> ":" <> System.get_env("PATH")}
         ] ++ extra_env,
       stderr_to_stdout: true
