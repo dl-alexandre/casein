@@ -61,9 +61,18 @@ if [[ "$DISABLE" -eq 1 ]]; then
 fi
 
 # ── locate the running server ───────────────────────────────────────────────
+# `display-message` needs a session to answer, so it cannot find a server that
+# is running with zero sessions — exactly the state abandoned test/probe
+# servers end up in, and they are the ones most likely to be stranded. Derive
+# the conventional socket path as a fallback so those are still reachable.
 socket_path="$("$TMUX_BIN" -L "$LABEL" display-message -p '#{socket_path}' 2>/dev/null || true)"
+
+if [[ -z "$socket_path" || ! -S "$socket_path" ]]; then
+  socket_path="${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/${LABEL}"
+fi
+
 server_pid=""
-if [[ -n "$socket_path" && -S "$socket_path" ]]; then
+if [[ -S "$socket_path" ]]; then
   server_pid="$(sudo lsof -t "$socket_path" 2>/dev/null | head -1 || true)"
 fi
 
