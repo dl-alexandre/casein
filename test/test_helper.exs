@@ -57,7 +57,15 @@ end
 # green tree. Suffixing with the OS pid makes the label unique among *live*
 # runs, which is exactly the property the reaping needs. Applied before the app
 # starts so `Casein.Terminals.TmuxServer.label/0` reads the per-run value.
-if is_binary(Application.get_env(:casein, :tmux_server_label)) do
+#
+# The base label still gets used for a moment: `mix test` starts the
+# application *before* it evaluates this file, so anything tmux-ish during boot
+# lands on the unsuffixed `casein_test` server. Remember the base label so the
+# reaper below cleans up both, otherwise every run leaves one socket behind
+# under a name no per-run reaper will ever look at.
+casein_base_tmux_label = Application.get_env(:casein, :tmux_server_label)
+
+if is_binary(casein_base_tmux_label) do
   Application.put_env(:casein, :tmux_server_label, "casein_test_#{System.pid()}")
 end
 
@@ -84,13 +92,55 @@ end
 # config/test.exs) when the run finishes, so leaked test sessions don't pile up.
 # Best-effort and scoped to the sandbox server — it can never touch the default
 # server's live workspace sessions.
+defmodule Casein.TestTmuxReaper do
+  @moduledoc false
+
+  # `tmux kill-server` stops the server but does NOT unlink its socket, and the
+  # per-run `casein_test_<pid>` label means every single run left a fresh one
+  # behind. 378 had accumulated in /tmp/tmux-1001 on the devbox — 283 from this
+  # suite, still growing at ~28/day — which is also what makes the live server
+  # list unreadable when triaging a real tmux problem. Remove the socket after
+  # reaping the server.
+  #
+  # Deleting is safe precisely because the label carries the OS pid: no
+  # concurrent suite, and no live workspace server, can be using this path.
+  def socket_path(label) do
+    case System.cmd("id", ["-u"], stderr_to_stdout: true) do
+      {out, 0} ->
+        Path.join([System.get_env("TMUX_TMPDIR") || "/tmp", "tmux-#{String.trim(out)}", label])
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  def reap(tmux \\ "tmux", labels) do
+    labels
+    |> List.wrap()
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+    |> Enum.each(fn label ->
+      _ = System.cmd(tmux, ["-L", label, "kill-server"], stderr_to_stdout: true)
+
+      case socket_path(label) do
+        nil -> :ok
+        path -> File.rm(path)
+      end
+    end)
+
+    :ok
+  end
+end
+
 case {:os.type(), Casein.Terminals.TmuxServer.label()} do
   {{:win32, _}, _label} ->
     :ok
 
   {_os, label} when is_binary(label) ->
     System.at_exit(fn _ ->
-      _ = System.cmd("tmux", ["-L", label, "kill-server"], stderr_to_stdout: true)
+      Casein.TestTmuxReaper.reap([label, casein_base_tmux_label])
     end)
 
   _other ->
@@ -126,10 +176,11 @@ ExUnit.after_suite(fn _result ->
     end
 
     # Reap this run's own server only — a hardcoded label here would both miss
-    # the per-run server and kill a concurrent suite's.
+    # the per-run server and kill a concurrent suite's. Goes through the reaper
+    # so the socket file is unlinked too, not just the server stopped.
     case Casein.Terminals.TmuxServer.label() do
       label when is_binary(label) ->
-        _ = System.cmd(tmux, ["-L", label, "kill-server"], stderr_to_stdout: true)
+        Casein.TestTmuxReaper.reap(tmux, [label, casein_base_tmux_label])
 
       _ ->
         :ok
