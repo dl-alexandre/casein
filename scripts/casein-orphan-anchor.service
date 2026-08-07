@@ -1,0 +1,39 @@
+# Durable cgroup anchor for workloads that outlived the deploy that spawned them.
+#
+# Install + migrate (idempotent):
+#   bash scripts/casein-adopt-stranded.sh --apply
+#
+# Sibling of casein-tmux-anchor.service, which prevents the tmux case at the
+# source. This one is the general remediation: a canary spawns more than tmux
+# — workspace dev servers, agent-browser launchers, grok sandboxes, language
+# servers — and all of them inherit its transient cgroup and stay there after
+# the unit goes inactive at the next deploy.
+#
+# Measured on the devbox after the tmux servers were anchored: 96 processes
+# still sat in two dead canary cgroups, and they were emphatically NOT
+# abandoned — nine held listening sockets, including two workspace dev servers
+# on 0.0.0.0:4003 and 0.0.0.0:4010 and the agent-browser launchers that
+# supervise the live headless-Chrome trees. Reaping them would have taken out
+# other people's running work; the correct remedy is to move them somewhere
+# that is not about to be garbage-collected.
+#
+# KillMode=process is load-bearing: stopping or restarting this unit signals
+# only its own sleep, never anything adopted into the cgroup.
+
+[Unit]
+Description=Casein anchor for deploy-orphaned workloads
+After=network.target
+
+[Service]
+Type=exec
+User=devbox
+Group=devbox
+ExecStart=/bin/sleep infinity
+
+KillMode=process
+Delegate=yes
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
