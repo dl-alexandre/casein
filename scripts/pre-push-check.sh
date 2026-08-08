@@ -115,6 +115,9 @@ bash scripts/test-canary-drain.sh
 log "running hermetic shell unit tests (canonical Caddy upstream repair)"
 bash scripts/test-caddy-upstream.sh
 
+log "running hermetic shell unit tests (preview router reap/rebind)"
+bash scripts/test-preview-router-reap.sh
+
 log "running hermetic shell unit tests (release extraction cleanup)"
 bash scripts/test-build-release-extraction.sh
 
@@ -128,8 +131,10 @@ if command -v shellcheck >/dev/null 2>&1; then
     scripts/lib/agent-doctor.sh \
     scripts/lib/canary-drain.sh \
     scripts/lib/caddy-upstream.sh \
+    scripts/lib/preview-router-reap.sh \
     scripts/test-canary-drain.sh \
     scripts/test-caddy-upstream.sh \
+    scripts/test-preview-router-reap.sh \
     scripts/test-build-release-extraction.sh \
     scripts/test-agent-shims.sh
 else
