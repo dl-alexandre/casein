@@ -94,6 +94,55 @@ and `/run/casein/last-deploy.json`.
 
 The running release also performs a deploy-drift check at boot. If `/etc/casein/casein.env` has a manual revision label or a SHA that differs from `origin/master`, Casein logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
 
+### Checking whether a deploy actually landed
+
+**There is no `casein.service`.** Each release runs as a *transient* per-instance
+unit named for its instance hash — `casein-<hash>.service` — and activation is a
+symlink flip of `/run/casein/current.sock`. Both obvious health checks lie:
+
+| Wrong check | What it reports | Why it lies |
+|-------------|-----------------|-------------|
+| `systemctl is-active casein` | `inactive` | systemd answers `inactive` for a unit that *does not exist*, which is indistinguishable from a stopped app |
+| `curl -fsS .../health` | prints nothing | a healthy release answers **401** (auth-enforcing); `-f` makes curl exit non-zero and suppress the body, so "up and secured" renders as "no response" |
+
+Resolve the live instance from the socket, then check that unit:
+
+```bash
+live=$(basename "$(readlink /run/casein/current.sock)" .sock)
+systemctl is-active "casein-${live}.service"          # → active
+systemctl show "casein-${live}.service" -p Description # → Casein canary <sha>
+curl -s -o /dev/null -w '%{http_code}\n' \
+  --unix-socket /run/casein/current.sock http://localhost/health   # → 401
+```
+
+A **401 is the healthy answer** — it proves the app is up and enforcing auth. A
+down release refuses the connection instead. Note `-s -o /dev/null -w` rather
+than `-f`, so the status code survives.
+
+Cross-check the deployed SHA three ways; they must agree:
+`/run/casein/last-deploy.json` (`outcome: success`, `target_sha`), the live
+unit's `Description`, and `CASEIN_GIT_REVISION` in `/etc/casein/casein.env`.
+
+**Failed canary units accumulate.** Superseded instances stay as `failed`
+transient units. They hold no process (`MainPID=0`) and own no socket, but they
+clutter `systemctl` and make a real failure hard to spot. Prune only units that
+are failed **and** are not the live instance:
+
+```bash
+live=$(basename "$(readlink /run/casein/current.sock)" .sock)
+systemctl list-units --type=service --all --no-legend \
+  | sed 's/^[[:space:]]*●\?[[:space:]]*//' | awk '$3=="failed"{print $1}' \
+  | grep -E '^casein-[0-9a-f]{16}\.service' \
+  | grep -v "casein-${live}.service" \
+  | xargs -r -n1 sudo systemctl reset-failed
+```
+
+`reset-failed` is the right verb: these are transient units under
+`/run/systemd/transient/`, so there is no file in `/etc/systemd/system` to
+delete. Always confirm `MainPID=0` first — a unit that still owns a beam is a
+lingering canary running *old code against the prod database*, and must be
+drained rather than forgotten.
+
 ### Source control before deploy (required)
 
 **Everything that must stay deployed must land in git first.** A push to `master` is picked up by the on-box poller (`casein-deploy.timer` → `scripts/deploy-poller.sh`), which builds `origin/master` from a clean worktree and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/casein/release` entirely. (The GitHub Actions path in `.github/workflows/deploy-devbox.yml` does the same thing but is dormant while Actions billing is blocked.)
@@ -525,6 +574,9 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 | `codex update` EACCES on `/usr/lib/node_modules`, or update replacing the Casein `codex` shim | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets a user-writable prefix under `~/.local/share/npm-global`, separate from the `~/.casein/agent-shims` launchers |
 | Codex sandbox hangs / `bwrap: loopback: Failed RTM_NEWADDR` | Ubuntu 24.04+ blocks unprivileged user namespaces via AppArmor. Codex's Linux sandbox uses `bubblewrap`, which needs userns. Run `bash scripts/ensure-devbox-codex-sandbox.sh` (also in `setup-devbox-agent-pairing.sh`) to install `apparmor-profiles` and load the `bwrap-userns-restrict` profile. Canary: `bwrap --dev-bind / / --unshare-net echo ok` |
 | Agent window looks idle but is wedged | Pane text, process count, and a bare `find -newermt` all lie here — see "Telling a wedged agent from an idle one" below. Use `terminal_topology` with `include_liveness: true` |
+| `systemctl is-active casein` says `inactive` | There is no `casein.service`; systemd says `inactive` for units that do not exist. Resolve the live instance from `current.sock` — see "Checking whether a deploy actually landed" |
+| `curl` to `/health` returns nothing | `-f` suppresses the body on 4xx and a healthy release answers **401**. Use `curl -s -o /dev/null -w '%{http_code}\n'`; 401 means up and enforcing auth |
+| `systemctl` littered with failed `casein-<hash>` units | Superseded canaries. Prune with `reset-failed` (they are transient units), never touching the instance that owns `current.sock` — recipe in the deploy section |
 | Agent `git push` times out / looks hung | This repo's pre-push gate runs a full lint+test suite (2–8 min). Anything wrapping `git push` for an agent must allow **~10 min**; a 2-minute default kills the push mid-gate and is indistinguishable from a hang |
 | Scripted `tmux kill-window` closes the wrong windows | tmux renumbers remaining windows after each close, so a loop over captured indices drifts. Iterate over **window ids** (`@1`, `@2` — stable for the window's life) from `terminal_topology`, not indices |
 | Spawned worker never answered its brief | `spawn-agent-worker.sh` now probes the pane before printing its id and exits non-zero with the pane's output if the launch died. If you are on an older copy, a printed pane id did **not** mean the worker was running |
