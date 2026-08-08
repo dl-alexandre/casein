@@ -29,6 +29,7 @@ defmodule Casein.Agents.TerminalTools do
   alias Casein.Agents.TerminalTools.{
     AgentPane,
     AgentTranscript,
+    BindIssue,
     Capture,
     CaptureAgent,
     ClearNextPrompt,
@@ -78,6 +79,7 @@ defmodule Casein.Agents.TerminalTools do
     SendCommand,
     OpenFileInPane,
     SetAgentLabel,
+    BindIssue,
     ReportWorktree,
     ReportAgentState,
     WaitAgentState,
@@ -158,6 +160,7 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate open_file_in_pane(params), to: Command
   @doc false
   defdelegate set_agent_label(params), to: Agent
+  defdelegate bind_issue(params), to: Agent
   @doc false
   defdelegate report_agent_state(params), to: Agent
   @doc false

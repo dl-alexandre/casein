@@ -4,6 +4,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   alias Casein.Agents.{TerminalOutputFormat, Transcripts}
   alias Casein.AgentSessions.GrokACP.Attachments
   alias Casein.Labels
+  alias Casein.Terminals.IssueBinding
   alias Casein.Mobile.Clarification
   alias Casein.Terminals.AgentState
   alias Casein.Terminals.NextPrompt
@@ -271,6 +272,47 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
          frozen: freeze?,
          status: "set"
        }}
+    end
+  end
+
+  @doc """
+  Bind (or clear) the GitHub issue a pane is working.
+
+  Passing no issue — or an explicit null — clears the binding, so the same tool
+  handles claim and release rather than needing a second verb the caller might
+  forget on the way out.
+  """
+  @spec bind_issue(map()) :: {:ok, map()} | {:error, term()}
+  def bind_issue(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_or_default_arg(params),
+         {:ok, pane} <- label_target_pane(session, params) do
+      raw = Map.get(params, "issue") || Map.get(params, :issue)
+
+      case raw do
+        nil ->
+          :ok = IssueBinding.clear(workspace_id, session, pane.id)
+          {:ok, %{session: session, target: pane.id, issue: nil, status: "cleared"}}
+
+        value ->
+          case IssueBinding.bind(workspace_id, session, pane.id, value,
+                 url: Map.get(params, "url") || Map.get(params, :url),
+                 title: Map.get(params, "title") || Map.get(params, :title)
+               ) do
+            {:ok, entry} ->
+              {:ok,
+               %{
+                 session: session,
+                 target: pane.id,
+                 issue: entry.issue,
+                 url: entry.url,
+                 status: "bound"
+               }}
+
+            {:error, :invalid_issue} ->
+              {:error, {:invalid_issue, value}}
+          end
+      end
     end
   end
 

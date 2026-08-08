@@ -168,6 +168,87 @@ uncommitted or undeployed work.
 
 A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/casein` is for editing; `/opt/casein/release` is the ephemeral runtime artifact.
 
+### Issue queue: claiming async work (required for runners)
+
+GitHub Issues are the **cold queue**. Work that should happen without anyone
+watching a terminal goes here; a runner finds it by label, claims it, does it in
+its own worktree, and closes it with a PR link.
+
+**Issues schedule work. Casein runs work. next-prompt steers work.** Do not open
+an issue to redirect an agent that is already running — that is the hot path
+(sticky next-prompt over MCP). Issues are for work nobody is watching yet.
+
+#### The label machine
+
+| Label | Meaning |
+|-------|---------|
+| `queue/ready` | Unclaimed and self-contained. **This is the only label a runner may claim from.** |
+| `queue/claimed` | A runner owns it. The claim comment says who and when. |
+| `queue/blocked` | Needs a human. The issue body or a comment says exactly what under **Needs**. |
+| `queue/done` | Landed. Applied as the issue is closed. |
+| `workspace/<name>` | Which checkout it belongs to, e.g. `workspace/devide`. Create on demand. |
+| `kind/<type>` | `implement`, `docs`, `ops`. |
+| `priority/<n>` | `p0` ship first, `p1` next, `p2` follow-up. |
+
+Exactly one `queue/*` label at a time — it is a state machine, not a tag set.
+
+#### Claim protocol
+
+```bash
+# 1. Find work for YOUR workspace. Never claim another workspace's issue.
+gh issue list --label queue/ready --label workspace/devide \
+  --state open --json number,title,labels
+
+# 2. Claim it BEFORE starting: comment, then flip the label. Comment first —
+#    if the label write fails you still leave a trace of the attempt.
+gh issue comment <N> --body "CLAIMED by $(hostname):${TMUX_PANE:-no-pane} at $(date -u +%FT%TZ)"
+gh issue edit <N> --add-label queue/claimed --remove-label queue/ready
+
+# 3. Work in your OWN worktree, branched from current master.
+git -C <primary> worktree add /data/casein-agent-worktrees/agent-<runtime>-issue<N> \
+  -b agent/<runtime>/issue-<N> origin/master
+
+# 4a. Landed → PR, comment the URL on the issue, close it.
+gh issue comment <N> --body "PR: <url>"
+gh issue edit <N> --add-label queue/done --remove-label queue/claimed
+gh issue close <N>
+
+# 4b. Blocked → hand it back with what you need, and DROP the claim so someone
+#     else can pick it up. A blocked issue still labelled claimed is invisible.
+gh issue comment <N> --body $'BLOCKED\n\n**Needs:** <the specific decision or access>'
+gh issue edit <N> --add-label queue/blocked --remove-label queue/claimed
+```
+
+Claim **before** you start, not when you finish: the label is how a second
+runner knows to skip it. Two runners on one issue is the failure this prevents.
+
+#### Stale claims
+
+A claim is a lease, not a lock. If an issue has been `queue/claimed` for more
+than **~2 hours** with no PR and no comment, treat it as abandoned — the runner
+that claimed it probably died with its pane. Reclaim it by commenting what you
+observed and re-claiming:
+
+```bash
+gh issue comment <N> --body "RECLAIMED — prior claim stale since <ts>, no PR"
+```
+
+Do not silently take over: the comment is what stops a returning runner from
+duplicating the work. And check the claimant is actually gone before reclaiming
+— a long-running job is not an abandoned one (`terminal_topology` with
+`include_liveness: true` answers this; see "Telling a wedged agent from an idle
+one").
+
+#### Filing work for the queue
+
+Use the **Agent work item** template (`.github/ISSUE_TEMPLATE/agent-work.yml`).
+It requires Goal, Workspace and Acceptance, and prompts for Constraints and
+Forbidden. Fill in Forbidden — it is what keeps a runner from a drive-by
+refactor, and it is cheaper to write than to review.
+
+A runner cannot ask you a follow-up question. If an issue is not self-contained
+it will either guess or stop; leave `queue/ready` off until it is.
+
 ### Coordinating concurrent agents on master (required)
 
 Read **`docs/development-workflow.md`** first (primary checkout is deploy-only;
@@ -579,7 +660,7 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 | `systemctl` littered with failed `casein-<hash>` units | Superseded canaries. Prune with `reset-failed` (they are transient units), never touching the instance that owns `current.sock` — recipe in the deploy section |
 | Agent `git push` times out / looks hung | This repo's pre-push gate runs a full lint+test suite (2–8 min). Anything wrapping `git push` for an agent must allow **~10 min**; a 2-minute default kills the push mid-gate and is indistinguishable from a hang |
 | Scripted `tmux kill-window` closes the wrong windows | tmux renumbers remaining windows after each close, so a loop over captured indices drifts. Iterate over **window ids** (`@1`, `@2` — stable for the window's life) from `terminal_topology`, not indices |
-| Spawned worker never answered its brief | `spawn-agent-worker.sh` now probes the pane before printing its id and exits non-zero with the pane's output if the launch died. If you are on an older copy, a printed pane id did **not** mean the worker was running |
+| Spawned worker never answered its brief | `spawn-agent-worker.sh` now waits for the agent *process* in the pane's tree before printing its id, and exits non-zero (closing the window) if the launch died or never got past a shell. A printed pane id means a live agent; on an older copy it meant only that a window existed. Verify a box with `bash scripts/smoke-spawn-agent-worker.sh <runtime>` |
 
 ### Key files
 
@@ -594,6 +675,8 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 - `scripts/ensure-devbox-codex-sandbox.sh` — AppArmor + bubblewrap setup so Codex Linux sandbox can create user namespaces
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-casein-agent.sh` — start an agent runtime with MCP injected
+- `scripts/spawn-agent-worker.sh` — open a worker in a fresh tmux window; prints its pane id only once the agent process is live
+- `scripts/smoke-spawn-agent-worker.sh` — end-to-end check that a spawn leaves a live agent (spawns, verifies the pane's process tree independently, cleans up)
 - `scripts/casein-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
 - `scripts/ensure-casein-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
 - `scripts/casein-grok-janitor-sweep.sh` — daily reap of orphaned Grok leader processes (cwd deleted) + stale leader dirs/bundles across the casein and legacy casein roots; dry-run by default, `--apply` to act (systemd units alongside, installed pointing at `/opt/casein/deploy-build`)

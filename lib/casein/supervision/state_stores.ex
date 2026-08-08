@@ -13,6 +13,9 @@ defmodule Casein.Supervision.StateStores do
       Casein.Labels.Server,
       Casein.Terminals.AgentState.Server,
       Casein.Terminals.NextPrompt.Server,
+      # Joins a claimed GitHub issue to the pane working it. Deliberately not in
+      # AgentState: bindings must not expire the way state reports do.
+      Casein.Terminals.IssueBinding,
       Casein.Terminals.ClipboardHistory,
       Casein.Audit.MemoryAdapter,
       Casein.Agents.AgentEvents.MemoryAdapter,

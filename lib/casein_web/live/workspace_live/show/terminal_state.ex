@@ -56,6 +56,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
       # the message has no recipient, and holding it would fire into whatever
       # pane id tmux recycles next.
       Casein.Terminals.NextPrompt.prune_session(topology.session, pane_ids)
+      Casein.Terminals.IssueBinding.prune_session(topology.session, pane_ids)
     end
 
     prev_window = socket.assigns[:tmux_active_window_id]

@@ -27,6 +27,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
     terminal_report_agent_state
     terminal_report_worktree
     terminal_set_agent_label
+    terminal_bind_issue
   )
 
   @type tool_map :: %{String.t() => [String.t()]}

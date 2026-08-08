@@ -5,6 +5,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Agents.TerminalOutputFormat
   alias Casein.Operator.SituationServer
   alias Casein.Terminals.AgentState
+  alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
   alias Casein.Terminals.PaneLiveness
   alias Casein.Terminals.TmuxTopology
@@ -104,6 +105,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         |> put_liveness(params)
         |> AgentState.enrich_topology(session)
         |> NextPrompt.enrich_topology(session)
+        |> IssueBinding.enrich_topology(session)
         |> put_window_active_panes()
         |> put_shared_worktree_warning()
         |> Map.put(:active_pane_note, @active_pane_note)

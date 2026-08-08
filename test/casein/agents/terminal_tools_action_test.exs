@@ -10,10 +10,10 @@ defmodule Casein.Agents.TerminalToolsActionTest do
   alias Casein.Agents.TerminalTools
 
   describe "definitions/0" do
-    test "exposes 23 terminal tools plus annotation tools" do
+    test "exposes 24 terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 25
+      assert length(names) == 26
 
       for expected <- [
             "terminal_list_sessions",
@@ -31,6 +31,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_get_next_prompt",
             "terminal_send_keys",
             "terminal_send_command",
+            "terminal_bind_issue",
             "file_open_in_pane",
             "terminal_set_agent_label",
             "terminal_report_worktree",
