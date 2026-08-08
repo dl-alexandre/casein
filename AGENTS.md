@@ -194,6 +194,45 @@ Exactly one `queue/*` label at a time — it is a state machine, not a tag set.
 
 #### Claim protocol
 
+Steps 1 and 2 below are what `scripts/claim-next-issue.sh` does, so prefer it —
+it claims atomically and hands back a brief you can paste straight into a worker:
+
+```bash
+bash scripts/claim-next-issue.sh                 # claim the next one, print a brief
+bash scripts/claim-next-issue.sh --list          # what is claimable, ranked
+bash scripts/claim-next-issue.sh --dry-run       # the brief, claiming nothing
+bash scripts/claim-next-issue.sh --issue 691     # claim a specific issue
+bash scripts/claim-next-issue.sh --format json   # same, for an orchestrator
+```
+
+It picks by priority then oldest-first, swaps `queue/ready` → `queue/claimed`,
+comments the claim, and prints Goal / Acceptance / Constraints / Forbidden plus a
+`spawn-agent-worker.sh` line with a ready-made task slug.
+
+Two properties matter when several runners share one queue:
+
+- **Claiming is a compare-and-swap**, not a label edit. GitHub's "remove a label
+  from an issue" returns 404 when the label is not applied, so exactly one racing
+  runner wins `queue/ready`; the losers see the 404 and move to the next
+  candidate. `gh issue edit --remove-label` cannot do this — it succeeds either
+  way, so two runners would both "claim" the same issue.
+- **The call is idempotent.** A runner that already holds an open claim in the
+  workspace gets *that* issue back rather than consuming a second one. Asking
+  twice continues your work; it does not start more of it.
+
+Exit codes are meant to be branched on: `4` = queue empty (not an error — go
+idle), `3` = lost every race, `5` = that issue belongs to another runner, `2` =
+GitHub call failed. The claimant identity defaults to `<host>:<pane>` and can be
+pinned with `CASEIN_CLAIM_OWNER`.
+
+The workspace label is resolved by asking the repo which `workspace/*` labels
+exist, so `CASEIN_WORKSPACE_NAME=dalexandre-devide` finds `workspace/devide`.
+Override with `--workspace <name>`. It fails loudly on an unknown workspace
+rather than reporting an empty queue — for an unattended runner those two look
+identical and only one of them means "go to sleep".
+
+The raw protocol, for the steps the script does not cover (and for other repos):
+
 ```bash
 # 1. Find work for YOUR workspace. Never claim another workspace's issue.
 gh issue list --label queue/ready --label workspace/devide \
@@ -688,6 +727,8 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 - `scripts/launch-casein-agent.sh` — start an agent runtime with MCP injected
 - `scripts/spawn-agent-worker.sh` — open a worker in a fresh tmux window; prints its pane id only once the agent process is live
 - `scripts/smoke-spawn-agent-worker.sh` — end-to-end check that a spawn leaves a live agent (spawns, verifies the pane's process tree independently, cleans up)
+- `scripts/claim-next-issue.sh` — take the next `queue/ready` issue for a workspace and print it as a runner brief (atomic claim, idempotent)
+- `scripts/lib/issue-brief.py` — renders a `gh issue view --json` payload as that brief (or as JSON)
 - `scripts/casein-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
 - `scripts/ensure-casein-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
 - `scripts/casein-grok-janitor-sweep.sh` — daily reap of orphaned Grok leader processes (cwd deleted) + stale leader dirs/bundles across the casein and legacy casein roots; dry-run by default, `--apply` to act (systemd units alongside, installed pointing at `/opt/casein/deploy-build`)
