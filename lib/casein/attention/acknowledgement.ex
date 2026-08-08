@@ -231,7 +231,10 @@ defmodule Casein.Attention.Acknowledgement do
   Safe to re-run (merge-by-max). Used by deploy/ops and the migration test so
   drawer state does not mass-unread after the schema lands.
   """
-  @spec backfill_from_notifications(keyword()) :: %{seen: non_neg_integer(), resolved: non_neg_integer()}
+  @spec backfill_from_notifications(keyword()) :: %{
+          seen: non_neg_integer(),
+          resolved: non_neg_integer()
+        }
   def backfill_from_notifications(opts \\ []) do
     now = Keyword.get(opts, :now, DateTime.utc_now()) |> to_usec()
 
