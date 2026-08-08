@@ -49,6 +49,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias CaseinWeb.WorkspaceLive.Show.FilePaneEvents
   alias CaseinWeb.WorkspaceLive.Show.HistoryEvents
   alias CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents
+  alias CaseinWeb.WorkspaceLive.Show.InspectorEvents
   alias CaseinWeb.WorkspaceLive.Show.LogsEvents
   alias CaseinWeb.WorkspaceLive.Show.NavEvents
   alias CaseinWeb.WorkspaceLive.Show.PaletteEvents
@@ -161,6 +162,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
     pane:input file-pane:dirty
+    inspector:open inspector:close inspector:close_all inspector:set_placement
     run:cancel set_log_service
     ctx:open ctx:close
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:open
@@ -305,6 +307,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         # derivation of it (plus later, preview-only observation updates).
         # Empty on both static and connected first paint — same as :tree.
         |> assign(:feature_panes, %{})
+        # LiveView-owned inspector viewports + geometry tree (issue #690).
+        # Not registry-backed — reopening re-derives them.
+        |> InspectorEvents.mount_assigns()
         # Viewer-local set of {pane_id, path} with unsaved edits. Never persisted
         # or broadcast — it's this browser's dirty buffers, so the file-pane tab
         # strip shows a dot only for the viewer who has the unsaved edit. Kept in
@@ -428,6 +433,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> subscribe_agent_write_unlock()
         |> subscribe_previews()
         |> subscribe_pane_events()
+        |> InspectorEvents.subscribe()
         |> subscribe_browser_control()
         |> subscribe_open_links()
         |> subscribe_pane_labels()
@@ -877,6 +883,11 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
   def handle_event("tree:open_in_pane" = event, params, socket),
     do: FilePaneEvents.handle_event(event, params, socket)
+
+  # LiveView-owned inspector region (issue #690) — ordinary socket events, not
+  # the registry-backed pane:input path.
+  def handle_event("inspector:" <> _ = event, params, socket),
+    do: InspectorEvents.handle_event(event, params, socket)
 
   # File-tree / editor events are handled by FileEvents (extracted from this
   # module — pure code motion). All "tree:*" and "file:*" events delegate there.
@@ -1513,6 +1524,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # without tmux focus churn.
   def handle_info({:pane_event, _} = msg, socket),
     do: FilePaneEvents.handle_info(msg, socket)
+
+  # Agent/workspace surface request for a LiveView-owned inspector viewport.
+  def handle_info({:inspector_open, _} = msg, socket),
+    do: InspectorEvents.handle_info(msg, socket)
 
   # Legacy "preview:" lifecycle messages are no-ops in the LiveView since the
   # runtime cutover (the topic itself stays for MCP/controller consumers and
@@ -2501,6 +2516,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       desktop_terminal_term={@desktop_terminal_term}
       entered_preview_pane_id={@entered_preview_pane_id}
       feature_panes={@feature_panes}
+      cockpit_geometry={@cockpit_geometry}
+      inspector_fraction={@inspector_fraction}
+      inspector_panes={@inspector_panes}
+      inspector_placement={@inspector_placement}
       file_diff={@file_diff}
       file_error={@file_error}
       file_pane_dirty={@file_pane_dirty}

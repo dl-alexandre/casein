@@ -28,6 +28,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   import CaseinWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import CaseinWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
+  alias Casein.Cockpit.Geometry
   alias CaseinWeb.NotificationsDrawer
   alias CaseinWeb.WorkspaceLive.Show.ActionAvailability
   alias CaseinWeb.WorkspaceLive.Show.ClipboardDrawer
@@ -78,6 +79,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :desktop_terminal_term, :any, required: true
   attr :entered_preview_pane_id, :any, required: true
   attr :feature_panes, :any, required: true
+  attr :cockpit_geometry, :any, required: true
+  attr :inspector_fraction, :any, required: true
+  attr :inspector_panes, :any, required: true
+  attr :inspector_placement, :any, required: true
   attr :file_diff, :any, required: true
   attr :file_error, :any, required: true
   attr :file_pane_dirty, :any, required: true
@@ -197,7 +202,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
     # One availability context per render, shared by the hidden leader-key
     # dispatch buttons below — the same module the command palette filters with,
     # so a key is never bound to an action the palette hides (ActionAvailability).
-    assigns = assign(assigns, :action_ctx, ActionAvailability.context(assigns))
+    assigns =
+      assigns
+      |> assign(:action_ctx, ActionAvailability.context(assigns))
+      |> assign(:inspector_entries, List.wrap(assigns[:inspector_panes]))
 
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
@@ -660,63 +668,110 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       <% end %>
 
       <div class="min-h-0 flex-1">
-        <.terminal_tab
-          :if={@tab == "terminal"}
-          active_window_pane_count={@active_window_pane_count}
-          chrome_visible={@chrome_visible}
-          default_terminal_sid={@default_terminal_sid}
-          desktop_terminal?={@desktop_terminal?}
-          desktop_terminal_pty={@desktop_terminal_pty}
-          desktop_terminal_refresh={@desktop_terminal_refresh}
-          desktop_terminal_status={@desktop_terminal_status}
-          desktop_terminal_term={@desktop_terminal_term}
-          entered_preview_pane_id={@entered_preview_pane_id}
-          feature_panes={@feature_panes}
-          file_pane_dirty={@file_pane_dirty}
-          focused_pane_id={@focused_pane_id}
-          host_loc={@host_loc}
-          mobile_nav_focus={@mobile_nav_focus}
-          mobile_nav_open={@mobile_nav_open}
-          mobile_nav_view={@mobile_nav_view}
-          pane_data={@pane_data}
-          pane_history={@pane_history}
-          preview_panes={@preview_panes}
-          session_tabs={@session_tabs}
-          sessions_sidebar_needs_you={@sessions_sidebar_needs_you}
-          sessions_sidebar_open?={@sessions_sidebar_open?}
-          sessions_sidebar_sort={@sessions_sidebar_sort}
-          sessions_sidebar_tree={@sessions_sidebar_tree}
-          shell_button_detail={@shell_button_detail}
-          shell_button_label={@shell_button_label}
-          terminal_mode={@terminal_mode}
-          terminal_sid={@terminal_sid}
-          terminal_surface_pane_id={@terminal_surface_pane_id}
-          terminal_themes={@terminal_themes}
-          tmux_active_pane_id={@tmux_active_pane_id}
-          tmux_mutations_enabled?={@tmux_mutations_enabled?}
-          tmux_rename_session_id={@tmux_rename_session_id}
-          tmux_rename_window_id={@tmux_rename_window_id}
-          tmux_session={@tmux_session}
-          tmux_topology_layout_version={@tmux_topology_layout_version}
-          tmux_topology_structure_version={@tmux_topology_structure_version}
-          tmux_window_tabs={@tmux_window_tabs}
-          tmux_windows={@tmux_windows}
-          ui_highlight_pane_id={@ui_highlight_pane_id}
-          window_sidebar_open?={@window_sidebar_open?}
-          window_zoomed?={@window_zoomed?}
-          windows_sidebar_sort={@windows_sidebar_sort}
-          windows_sidebar_tree={@windows_sidebar_tree}
-          workspace={@workspace}
-          workspace_route={@workspace_route}
-          workspace_start_error={@workspace_start_error}
-          agent_approval_count={
-            agent_approval_count(
-              @agent_pending_approval_count,
-              @codex_pending_approval_count,
-              @grok_permission_requests
-            )
-          }
-        />
+        <%= if @tab == "terminal" do %>
+          <% geometry = @cockpit_geometry || Geometry.terminal_only() %>
+          <% inspectors_open? = Geometry.inspector_open?(geometry) %>
+          <% placement = Geometry.placement(geometry) %>
+          <% fraction = Geometry.inspector_fraction(geometry) %>
+          <div
+            id={"cockpit-split-" <> @workspace.id}
+            data-cockpit-split={if(inspectors_open?, do: "open", else: "closed")}
+            data-inspector-placement={if(inspectors_open?, do: Atom.to_string(placement), else: nil)}
+            data-inspector-fraction={if(inspectors_open?, do: to_string(fraction), else: nil)}
+            data-geometry-kind={geometry.kind}
+            class={[
+              "flex h-full min-h-0 min-w-0",
+              inspectors_open? && placement == :bottom && "flex-col",
+              inspectors_open? && placement == :right && "flex-row"
+            ]}
+          >
+            <div
+              id={"terminal-region-" <> @workspace.id}
+              data-terminal-region="true"
+              data-inspector-open={to_string(inspectors_open?)}
+              class={[
+                "min-h-0 min-w-0 overflow-hidden",
+                not inspectors_open? && "h-full w-full flex-1"
+              ]}
+              style={terminal_region_style(geometry)}
+            >
+              <.terminal_tab
+                active_window_pane_count={@active_window_pane_count}
+                chrome_visible={@chrome_visible}
+                default_terminal_sid={@default_terminal_sid}
+                desktop_terminal?={@desktop_terminal?}
+                desktop_terminal_pty={@desktop_terminal_pty}
+                desktop_terminal_refresh={@desktop_terminal_refresh}
+                desktop_terminal_status={@desktop_terminal_status}
+                desktop_terminal_term={@desktop_terminal_term}
+                entered_preview_pane_id={@entered_preview_pane_id}
+                feature_panes={@feature_panes}
+                file_pane_dirty={@file_pane_dirty}
+                focused_pane_id={@focused_pane_id}
+                host_loc={@host_loc}
+                mobile_nav_focus={@mobile_nav_focus}
+                mobile_nav_open={@mobile_nav_open}
+                mobile_nav_view={@mobile_nav_view}
+                pane_data={@pane_data}
+                pane_history={@pane_history}
+                preview_panes={@preview_panes}
+                session_tabs={@session_tabs}
+                sessions_sidebar_needs_you={@sessions_sidebar_needs_you}
+                sessions_sidebar_open?={@sessions_sidebar_open?}
+                sessions_sidebar_sort={@sessions_sidebar_sort}
+                sessions_sidebar_tree={@sessions_sidebar_tree}
+                shell_button_detail={@shell_button_detail}
+                shell_button_label={@shell_button_label}
+                terminal_mode={@terminal_mode}
+                terminal_sid={@terminal_sid}
+                terminal_surface_pane_id={@terminal_surface_pane_id}
+                terminal_themes={@terminal_themes}
+                tmux_active_pane_id={@tmux_active_pane_id}
+                tmux_mutations_enabled?={@tmux_mutations_enabled?}
+                tmux_rename_session_id={@tmux_rename_session_id}
+                tmux_rename_window_id={@tmux_rename_window_id}
+                tmux_session={@tmux_session}
+                tmux_topology_layout_version={@tmux_topology_layout_version}
+                tmux_topology_structure_version={@tmux_topology_structure_version}
+                tmux_window_tabs={@tmux_window_tabs}
+                tmux_windows={@tmux_windows}
+                ui_highlight_pane_id={@ui_highlight_pane_id}
+                window_sidebar_open?={@window_sidebar_open?}
+                window_zoomed?={@window_zoomed?}
+                windows_sidebar_sort={@windows_sidebar_sort}
+                windows_sidebar_tree={@windows_sidebar_tree}
+                workspace={@workspace}
+                workspace_route={@workspace_route}
+                workspace_start_error={@workspace_start_error}
+                agent_approval_count={
+                  agent_approval_count(
+                    @agent_pending_approval_count,
+                    @codex_pending_approval_count,
+                    @grok_permission_requests
+                  )
+                }
+              />
+            </div>
+            <aside
+              :if={inspectors_open?}
+              id={"inspector-region-" <> @workspace.id}
+              data-inspector-region="true"
+              data-inspector-placement={Atom.to_string(placement)}
+              class={[
+                "min-h-0 min-w-0 overflow-hidden border-base-300/70 bg-base-200/40",
+                placement == :right && "border-l",
+                placement == :bottom && "border-t"
+              ]}
+              style={inspector_region_style(geometry)}
+            >
+              <.inspector_region
+                workspace_id={@workspace.id}
+                entries={@inspector_entries}
+                placement={placement}
+              />
+            </aside>
+          </div>
+        <% end %>
         <.files_panel
           :if={@tab == "files"}
           host_loc={@host_loc}
@@ -917,4 +972,85 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       end
     end
   end
+
+  # --- inspector region (LiveView-owned viewports, issue #690) ------------------
+
+  defp terminal_region_style(geometry) do
+    case Geometry.terminal_basis_percent(geometry) do
+      nil ->
+        nil
+
+      pct ->
+        case Geometry.placement(geometry) do
+          :bottom -> "flex: 0 0 #{pct}%; max-height: #{pct}%"
+          _ -> "flex: 0 0 #{pct}%; max-width: #{pct}%"
+        end
+    end
+  end
+
+  defp inspector_region_style(geometry) do
+    case Geometry.inspector_basis_percent(geometry) do
+      nil ->
+        nil
+
+      pct ->
+        case Geometry.placement(geometry) do
+          :bottom -> "flex: 0 0 #{pct}%; max-height: #{pct}%"
+          _ -> "flex: 0 0 #{pct}%; max-width: #{pct}%"
+        end
+    end
+  end
+
+  attr :workspace_id, :string, required: true
+  attr :entries, :list, required: true
+  attr :placement, :atom, required: true
+
+  defp inspector_region(assigns) do
+    ~H"""
+    <div class="flex h-full min-h-0 flex-col">
+      <div class="flex shrink-0 items-center justify-between gap-2 border-b border-base-300/60 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-base-content/60">
+        <span>Inspector</span>
+        <span class="normal-case tracking-normal text-base-content/40">
+          {length(@entries)} open
+        </span>
+      </div>
+      <div class="min-h-0 flex-1 overflow-auto p-3 text-sm">
+        <div
+          :for={entry <- @entries}
+          id={"inspector-pane-" <> entry.id}
+          data-inspector-pane-id={entry.id}
+          data-inspector-kind={entry.kind}
+          class="mb-2 rounded-md border border-base-300/50 bg-base-100/60 px-3 py-2 last:mb-0"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="font-medium text-base-content/90">
+                {inspector_title(entry)}
+              </div>
+              <div class="mt-0.5 font-mono text-[11px] text-base-content/50">
+                {entry.id}
+              </div>
+            </div>
+            <button
+              type="button"
+              id={"inspector-close-" <> entry.id}
+              phx-click="inspector:close"
+              phx-value-id={entry.id}
+              class="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-base-content/50 hover:bg-base-300/40 hover:text-base-content"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp inspector_title(%{title: title}) when is_binary(title) and title != "", do: title
+
+  defp inspector_title(%{kind: kind}) when is_atom(kind),
+    do: kind |> Atom.to_string() |> String.capitalize()
+
+  defp inspector_title(_), do: "Inspector"
 end
