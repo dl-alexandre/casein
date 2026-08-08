@@ -66,6 +66,18 @@ defmodule Casein.CommandPalette.Actions do
         label: "Open sessions sidebar",
         detail: "Miller-column workspace and session rail beside the terminal (desktop)",
         payload: %{event: "sidebar:open", params: %{"mode" => "both"}}
+      },
+      # Diff inspector. Until #691 lands this falls back to the full-area diff
+      # tab (same contract as tree:open_in_pane → files tab). The event name is
+      # stable so the inspector region can pick it up without a second catalog.
+      %Item{
+        id: "diff:open_in_pane",
+        kind: :action,
+        category: :view,
+        label: "Open diff inspector",
+        detail: "Review git changes beside the terminal (falls back to the diff tab)",
+        keywords: ~w(git changes patch review),
+        payload: %{event: "diff:open_in_pane", params: %{}}
       }
     ]
   end
@@ -340,6 +352,7 @@ defmodule Casein.CommandPalette.Actions do
       "isolation:refresh",
       "annotation:open",
       "tree:open_in_pane",
+      "diff:open_in_pane",
       "attach_terminal_session",
       "terminal:set_mode",
       "terminal:switch_to_shell",

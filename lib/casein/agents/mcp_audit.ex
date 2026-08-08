@@ -156,7 +156,8 @@ defmodule Casein.Agents.MCPAudit do
         "annotation_propose",
         "terminal_set_agent_label",
         "gate_report",
-        "file_open_in_pane"
+        "file_open_in_pane",
+        "diff_open"
       ]
 
   defp mutating_preview_tool?(tool),
@@ -318,6 +319,18 @@ defmodule Casein.Agents.MCPAudit do
       |> Enum.reject(&is_nil/1)
 
     if parts == [], do: "file_open_in_pane", else: "file_open_in_pane · " <> Enum.join(parts, " ")
+  end
+
+  defp terminal_summary("diff_open", args) do
+    path = Map.get(args, "path") || Map.get(args, :path)
+
+    parts =
+      [
+        if(is_binary(path) and path != "", do: "path=#{truncate(path)}")
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: "diff_open", else: "diff_open · " <> Enum.join(parts, " ")
   end
 
   defp terminal_summary(tool, args) do

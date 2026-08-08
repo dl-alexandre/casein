@@ -63,6 +63,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.ActionAvailability do
   # Pane navigation addresses a live tmux target.
   @requires_tmux_session ~w(pane:navigate)
 
+  # Diff inspector open always falls back to the full-area diff tab, so it is
+  # never hard-denied. Listed here so the rule lives next to the other action
+  # gates rather than as a second id list in the palette filter.
+  @always_available ~w(diff:open_in_pane)
+
   # Pointless with a single pane, but not denied — soft.
   @requires_multi_pane ~w(
     tmux:next_pane tmux:previous_pane tmux:swap_previous tmux:swap_next
@@ -91,6 +96,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ActionAvailability do
   @spec available?(String.t(), t()) :: boolean()
   def available?(action, %__MODULE__{} = ctx) do
     cond do
+      action in @always_available -> true
       action in @requires_mutations -> ctx.tmux_mutations_allowed?
       action in @requires_raw_terminal -> ctx.raw_terminal?
       action in @requires_tmux_session -> ctx.tmux_session?

@@ -52,6 +52,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.ActionAvailabilityTest do
       assert Avail.available?("palette:open", ctx(%{tmux_mutations_enabled?: false}))
       assert Avail.available?("", ctx())
     end
+
+    test "diff:open_in_pane is always available (falls back to the diff tab)" do
+      assert Avail.available?("diff:open_in_pane", ctx(%{tmux_session: nil, tmux_panes: []}))
+      assert Avail.available?("diff:open_in_pane", ctx(%{terminal_mode: :governed}))
+    end
   end
 
   describe "relevant?/2 — soft gate" do

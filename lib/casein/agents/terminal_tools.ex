@@ -37,6 +37,7 @@ defmodule Casein.Agents.TerminalTools do
     GateReport,
     GetNextPrompt,
     ListSessions,
+    OpenDiff,
     OpenFileInPane,
     PasteAgentText,
     RequestClarification,
@@ -77,6 +78,7 @@ defmodule Casein.Agents.TerminalTools do
     RequestHumanInput,
     SendKeys,
     SendCommand,
+    OpenDiff,
     OpenFileInPane,
     SetAgentLabel,
     BindIssue,
@@ -158,6 +160,8 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate send_command(params), to: Command
   @doc false
   defdelegate open_file_in_pane(params), to: Command
+  @doc false
+  defdelegate open_diff(params), to: Command
   @doc false
   defdelegate set_agent_label(params), to: Agent
   defdelegate bind_issue(params), to: Agent
