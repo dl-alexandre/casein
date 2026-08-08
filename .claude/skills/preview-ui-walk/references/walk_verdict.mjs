@@ -66,7 +66,15 @@ export function pageVerdict({
   }
 
   // Known-route bounce only (not every wrong URL — those are TIMEOUT/FAIL).
-  if (bounceHit || navOutcome === "bounce") {
+  //
+  // `uok !== true` is load-bearing: a page that TRANSITED a known route and
+  // then arrived on lands_on has not bounced. Without it, any flow whose
+  // redirect chain passes through a known route is reported BOUNCED while
+  // every step passes and landed === wantPath — the reason string literally
+  // reads "expected /x, landed http://host/x". That verdict can never be
+  // cleared by fixing the product, and a page permanently stuck at not-PASS
+  // trains readers to stop reading the report at all.
+  if ((bounceHit || navOutcome === "bounce") && uok !== true) {
     return {
       status: "BOUNCED",
       reason: `expected ${wantPath}, landed ${landed || "?"}${

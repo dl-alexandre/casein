@@ -256,6 +256,24 @@ assert(
   "access bounce → BOUNCED",
 );
 
+// Transiting a known route on the way to lands_on is NOT a bounce. Seen on a
+// superadmin support-view walk: entry redirected through /superadmin and
+// arrived on /one/dashboard with all 7 steps passing, yet the page was
+// reported BOUNCED with "expected /one/dashboard, landed
+// http://x/one/dashboard" — the same URL. Nothing in the product could clear
+// that verdict, so the walk could never show all pages PASS.
+assert(
+  verdictFixture({
+    mainStatus: 200,
+    uok: true,
+    landed: "http://x/one/dashboard",
+    wantPath: "/one/dashboard",
+    bounceHit: "/superadmin",
+    navOutcome: "bounce",
+  }).status !== "BOUNCED",
+  "transited a known route but landed on lands_on → not BOUNCED",
+);
+
 assert(
   verdictFixture({
     mainStatus: 200,
