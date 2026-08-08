@@ -52,6 +52,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
     if is_binary(topology.session) do
       pane_ids = Enum.map(topology.panes, &Map.get(&1, :id))
       Labels.prune_session(topology.session, pane_ids)
+      Casein.Terminals.IssueBinding.prune_session(topology.session, pane_ids)
     end
 
     prev_window = socket.assigns[:tmux_active_window_id]
