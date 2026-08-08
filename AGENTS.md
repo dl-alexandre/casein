@@ -569,11 +569,41 @@ resuming work in a tree wants it — but it means opening several windows from o
 worktree's cwd silently puts N agents on one git index, where concurrent
 operations corrupt state rather than failing cleanly.
 
-`terminal_topology` now flags this: panes carry `worktree_shared_with` (the
-other pane ids in that tree) and the payload carries a top-level
-`shared_worktrees` warning. To force isolation at spawn, use
-`scripts/spawn-agent-worker.sh`, which sets `CASEIN_AGENT_FORCE_FRESH_WORKTREE=1`
-and always branches off the primary checkout.
+`terminal_topology` flags this: panes carry `worktree_shared_with` (the other
+pane ids in that tree) and the payload carries a top-level `shared_worktrees`
+warning. To force isolation at spawn, use `scripts/spawn-agent-worker.sh`, which
+sets `CASEIN_AGENT_FORCE_FRESH_WORKTREE=1` and always branches off the primary
+checkout.
+
+That warning reaches whoever asked for the topology, which is not the caller
+about to run `git reset --hard` in the shared tree — so the same signal also
+answers at the write. **`terminal_send_command` and `terminal_send_keys` refuse a
+git command that would write a worktree another pane is working in**, with
+`shared_worktree_mutation`:
+
+```json
+{"error": "shared_worktree_mutation", "worktree_path": "/data/…/wt-x",
+ "shared_with": ["%7", "%9"], "git_subcommand": "reset",
+ "escape_hatch": "allow_shared_worktree"}
+```
+
+The refusal names the tree, the other occupants, and the remedy, so acting on it
+costs no second round trip.
+
+**Escape hatch — `allow_shared_worktree: true`** on the call sends anyway. The
+block is *soft* on purpose: adoption is a real mode (a human resuming work in a
+tree wants it), so the guard's job is to make the sharing known, not impossible.
+Use the flag when the share is deliberate; otherwise take the remedy and branch
+your own worktree.
+
+What is and is not refused, so it stays predictable:
+
+| | |
+|---|---|
+| **Refused** | Subcommands that write the index or working copy: `add am apply checkout cherry-pick clean commit merge mv pull rebase reset restore revert rm stash switch`, plus `branch` with a delete/move/force flag |
+| **Allowed** | Reads (`status`, `log`, `diff`, …), `push` and `fetch` (they move refs, not the tree), plain `git branch`, `worktree`, `config` |
+| **Allowed** | `git -C <other-tree> commit` from a shared pane — the tree checked is the one being *written*, and Casein's own scripts use `git -C` constantly |
+| **Not seen** | A git command inside another program (`bash -c '…'`, a make target). This guards the accident, not a determined caller — which has the flag and does not need to smuggle |
 
 Note that `launch-casein-agent.sh` binds `CASEIN_CHECKOUT` to the cwd you launch
 from, so `cd <worktree> && opencode` places the agent in that worktree for every
