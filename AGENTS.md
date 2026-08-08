@@ -474,6 +474,8 @@ Same-host agents may use `http://127.0.0.1:4000/api/...` instead. Read `docs/ter
 
 For wiring an **off-box** agent end-to-end (both transports, ready-to-paste `.mcp.json` + agent prompts, pinned vs durable/workspace-agnostic config), see **`docs/external-agent-connect.md`** and the host-side `casein-remote` skill.
 
+For a **host laptop Grok** (or similar) that uses Casein Terminal/Preview/Artifact MCP while its shell stays on the Mac — dual-plane ground truth, multi-workspace ops, and when *not* to assume `agent_pair` / `safe_to_mutate` — see **`docs/agents/host-grok-dual-plane.md`**.
+
 **Always pass `workspace_id`** on terminal MCP calls. For `dalexandre-casein` the manager UUID is in `.devbox-agent.env` as `CASEIN_WORKSPACE_ID`. Scoping resolves both UUID and workspace **name** to tmux prefixes — sessions are named `casein_<workspace_name>_<sid>`, not `casein_<uuid>_`.
 
 Agent workflow:
