@@ -660,7 +660,7 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 | `systemctl` littered with failed `casein-<hash>` units | Superseded canaries. Prune with `reset-failed` (they are transient units), never touching the instance that owns `current.sock` — recipe in the deploy section |
 | Agent `git push` times out / looks hung | This repo's pre-push gate runs a full lint+test suite (2–8 min). Anything wrapping `git push` for an agent must allow **~10 min**; a 2-minute default kills the push mid-gate and is indistinguishable from a hang |
 | Scripted `tmux kill-window` closes the wrong windows | tmux renumbers remaining windows after each close, so a loop over captured indices drifts. Iterate over **window ids** (`@1`, `@2` — stable for the window's life) from `terminal_topology`, not indices |
-| Spawned worker never answered its brief | `spawn-agent-worker.sh` now probes the pane before printing its id and exits non-zero with the pane's output if the launch died. If you are on an older copy, a printed pane id did **not** mean the worker was running |
+| Spawned worker never answered its brief | `spawn-agent-worker.sh` now waits for the agent *process* in the pane's tree before printing its id, and exits non-zero (closing the window) if the launch died or never got past a shell. A printed pane id means a live agent; on an older copy it meant only that a window existed. Verify a box with `bash scripts/smoke-spawn-agent-worker.sh <runtime>` |
 
 ### Key files
 
@@ -675,6 +675,8 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 - `scripts/ensure-devbox-codex-sandbox.sh` — AppArmor + bubblewrap setup so Codex Linux sandbox can create user namespaces
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-casein-agent.sh` — start an agent runtime with MCP injected
+- `scripts/spawn-agent-worker.sh` — open a worker in a fresh tmux window; prints its pane id only once the agent process is live
+- `scripts/smoke-spawn-agent-worker.sh` — end-to-end check that a spawn leaves a live agent (spawns, verifies the pane's process tree independently, cleans up)
 - `scripts/casein-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
 - `scripts/ensure-casein-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
 - `scripts/casein-grok-janitor-sweep.sh` — daily reap of orphaned Grok leader processes (cwd deleted) + stale leader dirs/bundles across the casein and legacy casein roots; dry-run by default, `--apply` to act (systemd units alongside, installed pointing at `/opt/casein/deploy-build`)
