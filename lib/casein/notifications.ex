@@ -12,6 +12,7 @@ defmodule Casein.Notifications do
 
   alias Casein.Audit.Event
   alias Casein.Alerts
+  alias Casein.Attention.Acknowledgement
   alias Casein.Attention.Delivery
   alias Casein.Mobile.{AttentionInbox, ResumeCard}
   alias Casein.Notifications.Notification
@@ -206,7 +207,10 @@ defmodule Casein.Notifications do
 
   @spec mark_read(String.t(), String.t(), keyword()) ::
           {:ok, Notification.t()} | {:error, :not_found | Ecto.Changeset.t()}
-  def mark_read(id, user_id, opts \\ []), do: update_lifecycle(id, user_id, :read_at, opts)
+  def mark_read(id, user_id, opts \\ []) do
+    # SEEN is the cross-surface fact; the notification row projects read_at.
+    update_lifecycle_with_ack(id, user_id, :read_at, opts)
+  end
 
   @doc """
   Mark every unread, unresolved notification for a user as read in one
@@ -214,17 +218,32 @@ defmodule Casein.Notifications do
 
   Returns the number of rows updated. Broadcasts a single
   `{:notification_updated, :mark_all_read}` so connected viewers refresh
-  without an N-row PubSub fan-out.
+  without an N-row PubSub fan-out. Also SEEN-settles each row's acknowledgement
+  subject so phone / session surfaces quiet with the drawer.
   """
   @spec mark_all_read(String.t(), keyword()) :: non_neg_integer()
   def mark_all_read(user_id, opts \\ []) when is_binary(user_id) do
     now = opts |> Keyword.get(:now, DateTime.utc_now()) |> to_usec()
+
+    open =
+      from(n in Notification,
+        where: n.user_id == ^user_id and is_nil(n.read_at) and is_nil(n.resolved_at)
+      )
+      |> Repo.all()
 
     {count, _} =
       from(n in Notification,
         where: n.user_id == ^user_id and is_nil(n.read_at) and is_nil(n.resolved_at)
       )
       |> Repo.update_all(set: [read_at: now])
+
+    Enum.each(open, fn notification ->
+      _ =
+        Acknowledgement.mark_seen(user_id, Acknowledgement.subject_for_notification(notification),
+          now: now,
+          sync_notifications: false
+        )
+    end)
 
     if count > 0 do
       Phoenix.PubSub.broadcast(
@@ -239,7 +258,10 @@ defmodule Casein.Notifications do
 
   @spec resolve(String.t(), String.t(), keyword()) ::
           {:ok, Notification.t()} | {:error, :not_found | Ecto.Changeset.t()}
-  def resolve(id, user_id, opts \\ []), do: update_lifecycle(id, user_id, :resolved_at, opts)
+  def resolve(id, user_id, opts \\ []) do
+    # RESOLVED (implies SEEN) is the cross-surface fact.
+    update_lifecycle_with_ack(id, user_id, :resolved_at, opts)
+  end
 
   @spec mute(String.t(), String.t(), keyword()) ::
           {:ok, Notification.t()} | {:error, :not_found | Ecto.Changeset.t()}
@@ -311,6 +333,54 @@ defmodule Casein.Notifications do
 
       {:error, _changeset} ->
         notification
+    end
+  end
+
+  defp update_lifecycle_with_ack(id, user_id, field, opts) do
+    now = opts |> Keyword.get(:now, DateTime.utc_now()) |> to_usec()
+
+    case Repo.get_by(Notification, id: id, user_id: user_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Notification{} = notification ->
+        changes =
+          case field do
+            :resolved_at -> [{field, now}, {:read_at, notification.read_at || now}]
+            _ -> [{field, now}]
+          end
+
+        notification
+        |> Ecto.Changeset.change(changes)
+        |> Repo.update()
+        |> case do
+          {:ok, notification} ->
+            subject = Acknowledgement.subject_for_notification(notification)
+
+            _ =
+              case field do
+                :resolved_at ->
+                  Acknowledgement.mark_resolved(user_id, subject,
+                    now: now,
+                    sync_notifications: false
+                  )
+
+                :read_at ->
+                  Acknowledgement.mark_seen(user_id, subject,
+                    now: now,
+                    sync_notifications: false
+                  )
+
+                _ ->
+                  :ok
+              end
+
+            broadcast(notification, {:notification_updated, notification})
+            {:ok, notification}
+
+          {:error, _changeset} = error ->
+            error
+        end
     end
   end
 

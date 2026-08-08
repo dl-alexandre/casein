@@ -12,6 +12,7 @@ defmodule Casein.Mobile.AttentionInbox do
   import Ecto.Query
 
   alias Casein.Attention.{Salience, Signal}
+  alias Casein.Attention.Acknowledgement
   alias Casein.Mobile.{AttentionCursor, AttentionTransition, ResumeCard}
   alias Casein.Origin
   alias Casein.Repo
@@ -124,7 +125,8 @@ defmodule Casein.Mobile.AttentionInbox do
       AttentionCursor
       |> where(
         [c],
-        c.user_id == ^user_id and c.origin_id == ^origin_id and c.card_id in ^card_ids
+        c.user_id == ^user_id and c.origin_id == ^origin_id and c.subject_kind == "card" and
+          c.card_id in ^card_ids
       )
       |> Repo.all()
       |> Map.new(&{&1.card_id, &1})
@@ -213,77 +215,22 @@ defmodule Casein.Mobile.AttentionInbox do
   end
 
   @doc """
-  Atomically advance the shared per-user/origin/card cursor to an exact
+  Atomically advance the shared per-user/origin/card SEEN watermark to an exact
   server-issued marker. A lower concurrent marker can never reset it.
+
+  Delegates to `Casein.Attention.Acknowledgement` so phone SEEN settles the
+  drawer (and other surfaces) for the same subject.
   """
   def mark_viewed(user_id, origin_id, card_id, marker, opts \\ [])
 
   def mark_viewed(user_id, origin_id, card_id, marker, opts)
       when is_binary(user_id) and is_binary(origin_id) and is_binary(card_id) and
              is_integer(marker) and marker > 0 do
-    if store_enabled?() do
-      do_mark_viewed(user_id, origin_id, card_id, marker, opts)
-    else
-      {:error, :attention_store_unavailable}
-    end
+    Acknowledgement.mark_card_seen_through(user_id, origin_id, card_id, marker, opts)
   end
 
   def mark_viewed(_user_id, _origin_id, _card_id, _marker, _opts),
     do: {:error, :invalid_attention_marker}
-
-  defp do_mark_viewed(user_id, origin_id, card_id, marker, opts) do
-    now = Keyword.get(opts, :now, DateTime.utc_now())
-
-    Repo.transaction(fn ->
-      transition =
-        Repo.one(
-          from t in AttentionTransition,
-            where:
-              t.id == ^marker and t.user_id == ^user_id and t.origin_id == ^origin_id and
-                t.card_id == ^card_id
-        )
-
-      if is_nil(transition), do: Repo.rollback(:invalid_attention_marker)
-
-      attrs = %{
-        user_id: user_id,
-        origin_id: origin_id,
-        card_id: card_id,
-        through_transition_id: marker,
-        viewed_at: now
-      }
-
-      %AttentionCursor{}
-      |> AttentionCursor.changeset(attrs)
-      |> Repo.insert(
-        on_conflict: :nothing,
-        conflict_target: [:user_id, :origin_id, :card_id]
-      )
-
-      cursor_query =
-        from c in AttentionCursor,
-          where: c.user_id == ^user_id and c.origin_id == ^origin_id and c.card_id == ^card_id
-
-      cursor =
-        if Atom.to_string(Repo.__adapter__()) == "Elixir.Ecto.Adapters.SQLite3" do
-          Repo.one!(cursor_query)
-        else
-          cursor_query |> lock("FOR UPDATE") |> Repo.one!()
-        end
-
-      if marker > cursor.through_transition_id do
-        cursor
-        |> AttentionCursor.changeset(%{through_transition_id: marker, viewed_at: now})
-        |> Repo.update!()
-      else
-        cursor
-      end
-    end)
-    |> case do
-      {:ok, cursor} -> {:ok, cursor}
-      {:error, reason} -> {:error, reason}
-    end
-  end
 
   @doc """
   Stable lifecycle/read key. Typed task identity wins; a session is a scoped

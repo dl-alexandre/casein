@@ -1,10 +1,11 @@
 # Acknowledgement as a cross-surface fact — phase 1 design (#698)
 
-Status: **design only** — transitively blocked on #697 (which is itself blocked on #696).
+Status: **phase 2 implemented** — stacked on #697 (`PR #720` / branch
+`agent/opencode/oc-issue-697-attention-model-20260808142115`).
 Date: 2026-08-08
 Owner: worktree `agent-opencode-oc-issue-698-ack-cross-surface-*` (pane `%354`)
 Parent: epic #695
-Depends on: #697 (shared Attention model: signal / salience / delivery)
+Depends on: #697 (shared Attention model: signal / salience / delivery) — open as PR #720
 
 ## Ordering
 
@@ -292,8 +293,13 @@ When implementing, **read #697's landed module names** (`Casein.Attention.Signal
 
 ---
 
-## Current status (2026-08-08)
+## Current status (2026-08-08, phase 2)
 
-- Issue #698 claimed; pane bound; this design committed to the worktree.
-- #696 / #697 still open; #697 design-only in sibling worktree.
-- **Holding at phase 1.** Next action when #697 has a branch or merges: stack and implement. Until then, idle rather than guess APIs.
+- #696 merged as #703. #697 open as PR #720; this branch is rebased onto it.
+- Implemented `Casein.Attention.Acknowledgement` (SEEN + RESOLVED) on the
+  evolved `mobile_attention_cursors` table (no third store).
+- Facades: `AttentionInbox.mark_viewed`, `Notifications.mark_read` /
+  `resolve` / `mark_all_read`, web `acknowledge_quiet_window`.
+- Backfill helper `backfill_from_notifications/0` + tests for cross-surface
+  settling and no mass-unread.
+- Open PR against #697 base (or master once #697 lands); do not merge.
