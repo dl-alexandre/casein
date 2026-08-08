@@ -15,6 +15,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
   alias Casein.CommandPalette.Usage
   alias Casein.Workspaces.FileAccess
   alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.ActionAvailability
+  alias CaseinWeb.WorkspaceLive.Show.Overlay
   alias CaseinWeb.WorkspaceLive.Show.PaletteItems
   alias CaseinWeb.WorkspaceLive.Show.TerminalEvents
   alias CaseinWeb.WorkspaceLive.Show.TerminalState
@@ -169,7 +171,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
   # when denied, so they never reach this point.
   defp maybe_record_usage(socket, id) do
     denied_mutation? =
-      id in PaletteItems.mutation_gated_ids() and
+      id in ActionAvailability.mutation_gated() and
         not TerminalState.tmux_mutations_allowed?(socket)
 
     unless denied_mutation? do
@@ -187,6 +189,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
 
     socket =
       socket
+      |> Overlay.close_others(:palette)
       |> assign(:palette_category, category)
       |> assign(:palette_usage, usage)
       |> assign(:palette_query, query)

@@ -2,13 +2,29 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
-  LEADER_ACTIONS,
   leaderSecondKey,
   leaderSecondKeyDecision,
 } from "../js/workspace_leader_election.mjs"
 
-const inactive = {leaderActive: false}
-const armed = {leaderActive: true}
+// The real keymap is served by the server (LeaderBindings) and threaded in as
+// opts.actions; these tests cover the decision branches, not the map contents,
+// so they supply a fixture with just the keys they exercise. The real map is
+// pinned in CaseinWeb.WorkspaceLive.Show.LeaderBindingsTest.
+const TEST_ACTIONS = {
+  s: "session-picker",
+  w: "window-picker",
+  n: "next-window",
+  z: "zoom",
+  q: "pane-overlay",
+  y: "copy-link",
+  "?": "help",
+  ",": "rename-window",
+  $: "rename-session",
+  ArrowUp: "pane-up",
+}
+
+const inactive = {leaderActive: false, actions: TEST_ACTIONS}
+const armed = {leaderActive: true, actions: TEST_ACTIONS}
 
 test("leaderSecondKey prefers e.code for Arrow keys", () => {
   assert.equal(leaderSecondKey({key: "Left", code: "ArrowLeft"}), "ArrowLeft")
@@ -63,7 +79,6 @@ test("bound action keys dispatch the mapped leader action", () => {
     action: "pane-up",
     clearLeader: true,
   })
-  assert.equal(LEADER_ACTIONS.n, "next-window")
 })
 
 test("unrecognised keys only clear leader", () => {

@@ -29,8 +29,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   import CaseinWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
   alias CaseinWeb.NotificationsDrawer
+  alias CaseinWeb.WorkspaceLive.Show.ActionAvailability
   alias CaseinWeb.WorkspaceLive.Show.ClipboardDrawer
   alias CaseinWeb.WorkspaceLive.Show.ContextMenu
+  alias CaseinWeb.WorkspaceLive.Show.LeaderBindings
   alias CaseinWeb.WorkspaceLive.Show.SessionBar
 
   attr :active_run, :any, required: true
@@ -192,6 +194,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   slot :header_back_nav, required: true, doc: "Frozen navigation back-link (stays owned by Show)."
 
   def workspace_shell(assigns) do
+    # One availability context per render, shared by the hidden leader-key
+    # dispatch buttons below — the same module the command palette filters with,
+    # so a key is never bound to an action the palette hides (ActionAvailability).
+    assigns = assign(assigns, :action_ctx, ActionAvailability.context(assigns))
+
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
 
@@ -231,6 +238,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
+      data-leader-bindings={Jason.encode!(LeaderBindings.key_map())}
       data-tmux-windows={swipe_window_json(@tmux_window_tabs)}
       class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 pointer-coarse:pt-0 pointer-coarse:pb-0 lg:px-6"
     >
@@ -562,7 +570,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             phx-click="terminal:rename_session_start"
             phx-value-session-id={@terminal_sid}
           ></button>
-          <%= if @tmux_mutations_enabled? do %>
+          <%= if ActionAvailability.available?("tmux:new_window", @action_ctx) do %>
             <button
               type="button"
               tabindex="-1"
@@ -577,7 +585,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             ></button>
           <% end %>
           <%!-- Pane focus arrows work across all tmux pane tiles. --%>
-          <%= if is_binary(@tmux_session) do %>
+          <%= if ActionAvailability.available?("pane:navigate", @action_ctx) do %>
             <button
               type="button"
               tabindex="-1"
@@ -615,7 +623,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             ></button>
           <% end %>
 
-          <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+          <%= if ActionAvailability.available?("split_right", @action_ctx) do %>
             <button
               type="button"
               tabindex="-1"
