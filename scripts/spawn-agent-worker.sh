@@ -10,6 +10,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/agent-env.sh
 source "${ROOT}/scripts/lib/agent-env.sh"
+# Resolves the executable the launcher will exec — the readiness check below
+# looks for exactly that process, not a guess at its name.
+# shellcheck source=lib/real-agent-bin.sh
+source "${ROOT}/scripts/lib/real-agent-bin.sh"
 
 usage() {
   cat <<'EOF'
@@ -23,9 +27,15 @@ Arguments:
   session     optional casein_* tmux session; defaults to CASEIN_TMUX_SESSION
               or the current attached session
 
-Prints the new pane id (e.g. %42) on stdout — use it for explicit-pane MCP calls.
+Prints the new pane id (e.g. %42) on stdout, and only once the agent process is
+actually running in that window — use it for explicit-pane MCP calls. A window
+that never gets an agent is closed and the script exits non-zero, so a printed
+pane id always means a live agent.
 
-Environment: same as launch-casein-agent.sh (resolve via .devbox-agent.env or tmux).
+Environment: same as launch-casein-agent.sh (resolve via .devbox-agent.env or tmux), plus:
+  CASEIN_SPAWN_READY_SECONDS        seconds to wait for the agent process (default 120; 0 waives)
+  CASEIN_SPAWN_KEEP_FAILED_WINDOW   1 keeps a failed window (renamed failed-*) instead of closing it
+  CASEIN_SPAWN_DRY_RUN              1 prints the resolved launch plan without opening a window
 EOF
 }
 
@@ -189,6 +199,22 @@ spawn_worker_resolve_env_file() {
   return 1
 }
 
+# Nonzero when the pane has vanished (the window closed with its command) or is
+# dead-but-retained (`remain-on-exit`).
+spawn_worker_pane_alive() {
+  local pane_id="$1"
+  local dead
+
+  # `list-panes -a` + exact match: `-t <pane>` silently falls back to the
+  # current pane for some tmux targets, which would mask a vanished pane.
+  dead="$(
+    tmux list-panes -a -F '#{pane_id} #{pane_dead}' 2>/dev/null |
+      awk -v p="$pane_id" '$1 == p { print $2; found = 1 } END { exit !found }'
+  )" || return 1
+
+  [[ "$dead" != "1" ]]
+}
+
 # `tmux new-window -P` prints a pane id the moment the *window* exists, but the
 # launch command runs inside that pane afterwards. A command that dies instantly
 # — a product checkout with no launch-casein-agent.sh, a pairing env that fails
@@ -196,9 +222,8 @@ spawn_worker_resolve_env_file() {
 # goes on to address a worker that was never running. A false success costs more
 # than a failure: you brief a pane that will never answer.
 #
-# Probe that the pane outlives its first moment. Returns nonzero when the pane
-# has vanished (the window closed with its command) or is dead-but-retained
-# (`remain-on-exit`).
+# Probe that the pane outlives its first moment. This is only the fast fail;
+# spawn_worker_wait_for_agent below covers the launcher dying *later*.
 spawn_worker_probe_pane() {
   local pane_id="$1"
   local budget="${CASEIN_SPAWN_PROBE_SECONDS:-2}"
@@ -210,25 +235,129 @@ spawn_worker_probe_pane() {
 
   local deadline=$((budget * 10))
   local elapsed=0
-  local dead
 
   while ((elapsed < deadline)); do
-    # `list-panes -a` + exact match: `-t <pane>` silently falls back to the
-    # current pane for some tmux targets, which would mask a vanished pane.
-    dead="$(
-      tmux list-panes -a -F '#{pane_id} #{pane_dead}' 2>/dev/null |
-        awk -v p="$pane_id" '$1 == p { print $2; found = 1 } END { exit !found }'
-    )" || return 1
-
-    if [[ "$dead" == "1" ]]; then
-      return 1
-    fi
-
+    spawn_worker_pane_alive "$pane_id" || return 1
     sleep 0.1
     elapsed=$((elapsed + 1))
   done
 
   return 0
+}
+
+spawn_worker_escape_ere() {
+  printf '%s' "$1" | sed 's/[][(){}.*+?^$|\\]/\\&/g'
+}
+
+# An ERE matching the argv of the process the launcher execs for this runtime.
+#
+# Prefer the resolved absolute path: it is the exact executable
+# launch-casein-agent.sh runs (both resolve through real_agent_bin), and it never
+# appears in the launch command itself — so the launcher's own trailing
+# `launch-casein-agent.sh claude` argument cannot masquerade as a running agent.
+# The name fallback covers a runtime installed only behind a shim, and is
+# anchored to a path segment plus an argument boundary for the same reason.
+spawn_worker_agent_pattern() {
+  local runtime="$1"
+  local names bin=""
+
+  case "$runtime" in
+    claude) names='claude([.](exe|js))?' ;;
+    codex) names='codex([.]js)?' ;;
+    opencode) names='opencode' ;;
+    grok) names='grok' ;;
+    # `agent` is the Grok-family runtime under its generic name.
+    agent) names='(grok|agent)' ;;
+    *) names="$runtime" ;;
+  esac
+
+  bin="$(real_agent_bin "$runtime" 2>/dev/null || true)"
+  if [[ -n "$bin" ]]; then
+    printf '(%s)( |$)|(^|/)%s( |$)\n' "$(spawn_worker_escape_ere "$bin")" "$names"
+    return 0
+  fi
+
+  printf '(^|/)%s( |$)\n' "$names"
+}
+
+# Print the argv of the first process in the pane's tree whose command matches
+# `pattern`. Nonzero when the pane holds no such process.
+#
+# The whole tree, not just the pane's own process: tmux runs the launch command
+# under a shell, and bash does not exec the tail of an `&&` chain, so the agent
+# is a child of the pane process rather than the pane process itself.
+spawn_worker_agent_process() {
+  local root_pid="$1" pattern="$2"
+
+  # -ww so long agent argv is not truncated to terminal width. awk reads the
+  # whole listing (no early exit) — an early exit would SIGPIPE ps and, under
+  # `set -o pipefail`, report a found agent as a failure.
+  ps -eww -o pid=,ppid=,args= 2>/dev/null |
+    SPAWN_PATTERN="$pattern" SPAWN_ROOT_PID="$root_pid" awk '
+      BEGIN { pattern = ENVIRON["SPAWN_PATTERN"]; root = ENVIRON["SPAWN_ROOT_PID"] }
+      {
+        pid = $1
+        args = $0
+        sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+/, "", args)
+        parent[pid] = $2
+        command[pid] = args
+        order[++seen] = pid
+      }
+      END {
+        for (i = 1; i <= seen; i++) {
+          pid = order[i]
+          if (command[pid] !~ pattern) continue
+          cursor = pid
+          for (depth = 0; depth < 64; depth++) {
+            if (cursor == root) { print command[pid]; exit 0 }
+            if (!(cursor in parent)) break
+            cursor = parent[cursor]
+          }
+        }
+        exit 1
+      }
+    '
+}
+
+# Surviving the first moment is not the same as running an agent. A spawn has
+# already returned "success" for a window holding nothing but a shell — the
+# launcher got far enough to keep the pane alive, then failed before its exec —
+# and the caller went on to brief a pane that could never answer. Wait for the
+# agent process itself.
+#
+# Returns 0 once it is running, 2 if the pane died while starting, 1 if the
+# budget elapsed with no agent in the pane.
+spawn_worker_wait_for_agent() {
+  local pane_id="$1" runtime="$2"
+  local budget="${CASEIN_SPAWN_READY_SECONDS:-120}"
+
+  # Escape hatch for callers running their own readiness check.
+  if [[ "$budget" == "0" ]]; then
+    return 0
+  fi
+
+  local pattern pane_pid elapsed=0
+  pattern="$(spawn_worker_agent_pattern "$runtime")"
+
+  while ((elapsed < budget)); do
+    spawn_worker_pane_alive "$pane_id" || return 2
+
+    pane_pid="$(tmux display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null || true)"
+    if [[ -n "$pane_pid" ]] && spawn_worker_agent_process "$pane_pid" "$pattern" >/dev/null; then
+      return 0
+    fi
+
+    # Startup is 30-90s (fresh worktree, fetch, MCP materialize), so say what
+    # the wait is for rather than looking hung.
+    if ((elapsed > 0 && elapsed % 15 == 0)); then
+      echo "waiting for ${runtime} to come up in ${pane_id} (${elapsed}s of ${budget}s)" >&2
+    fi
+
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  return 1
 }
 
 # Best-effort diagnostic output from a pane that failed its probe. A retained
@@ -238,6 +367,24 @@ spawn_worker_pane_tail() {
   local pane_id="$1"
   tmux capture-pane -p -t "$pane_id" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -20 ||
     echo "(pane is gone — no output captured)"
+}
+
+# A failed spawn must not leave a window that looks like a worker. Close it by
+# default — the diagnosis the operator needs is the pane tail, which is already
+# on stderr, and an abandoned window is indistinguishable in the picker from a
+# live worker waiting on a briefing. Keep it when asked, renamed so it reads as
+# wreckage rather than as a worker.
+spawn_worker_dispose_window() {
+  local pane_id="$1" window_name="$2"
+
+  if [[ "${CASEIN_SPAWN_KEEP_FAILED_WINDOW:-0}" == "1" ]]; then
+    tmux rename-window -t "$pane_id" "failed-${window_name}" 2>/dev/null || true
+    echo "note: left the window open as 'failed-${window_name}' — close it when you are done" >&2
+    return 0
+  fi
+
+  tmux kill-window -t "$pane_id" 2>/dev/null || true
+  echo "note: closed the failed worker window (CASEIN_SPAWN_KEEP_FAILED_WINDOW=1 keeps it for inspection)" >&2
 }
 
 # Resolve the primary (main) working tree for a candidate checkout.
@@ -383,6 +530,28 @@ if ! spawn_worker_probe_pane "$PANE_ID"; then
     "product checkout with no launch-casein-agent.sh, or pairing env that" \
     "failed to source. Last pane output:" >&2
   spawn_worker_pane_tail "$PANE_ID" >&2
+  spawn_worker_dispose_window "$PANE_ID" "$WINDOW_NAME"
+  exit 1
+fi
+
+READY_STATUS=0
+spawn_worker_wait_for_agent "$PANE_ID" "$RUNTIME" || READY_STATUS=$?
+
+if ((READY_STATUS != 0)); then
+  if ((READY_STATUS == 2)); then
+    echo "error: worker pane ${PANE_ID} died while ${RUNTIME} was starting" >&2
+  else
+    echo "error: no ${RUNTIME} process appeared in worker pane ${PANE_ID} within" \
+      "${CASEIN_SPAWN_READY_SECONDS:-120}s" >&2
+    echo "hint: the window is alive but holds only a shell — the launcher never" \
+      "reached its exec, so this window would never have answered a briefing." \
+      "Reproduce it with CASEIN_SPAWN_DRY_RUN=1 and run the printed launch" \
+      "command by hand to see where it stops. Raise" \
+      "CASEIN_SPAWN_READY_SECONDS if the runtime is genuinely just slow." >&2
+  fi
+  echo "hint: last pane output:" >&2
+  spawn_worker_pane_tail "$PANE_ID" >&2
+  spawn_worker_dispose_window "$PANE_ID" "$WINDOW_NAME"
   exit 1
 fi
 

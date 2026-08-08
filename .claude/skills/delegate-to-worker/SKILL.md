@@ -153,12 +153,24 @@ Preflight with `CASEIN_SPAWN_DRY_RUN=1` when unsure — it prints the resolved
 session, checkout, env file, launcher, and full launch command without opening a
 window.
 
-Wait until the worker is at prompt:
+**A printed pane id means a live agent.** The helper does not return until the
+runtime's own process is running in that pane's process tree; a window that never
+gets one is closed and the helper exits non-zero with the pane's output. So there
+is no "spawned but empty" state to check for — if you got a pane id, something is
+there to talk to.
+
+It does *not* mean the agent has finished drawing its prompt, so still confirm
+that before sending:
 
 1. `terminal_topology(pane: <id>)` until `pane_state` settles out of startup churn.
 2. `terminal_capture(pane: <id>, lines: 40)` shows that runtime's input prompt.
 
-Re-issue every ~10s; startup can take 30–90s (worktree + MCP materialize).
+Re-issue every ~10s. Spawn itself absorbs most of the 30–90s startup (worktree +
+MCP materialize) before it returns; it gives up after
+`CASEIN_SPAWN_READY_SECONDS` (default 120). Raise that for a genuinely slow box
+rather than treating the failure as transient — it is reporting a window that
+would never have answered. `CASEIN_SPAWN_KEEP_FAILED_WINDOW=1` keeps the failed
+window (renamed `failed-worker-<slug>`) when you want to look at it yourself.
 
 **Collision note:** branch stamps are per-second; two spawns in the same second
 can collide — serialize spawns or use distinct task slugs.
