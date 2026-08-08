@@ -83,6 +83,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :inspector_fraction, :any, required: true
   attr :inspector_panes, :any, required: true
   attr :inspector_placement, :any, required: true
+  attr :active_inspector_id, :any, required: true
+  attr :inspector_focus_id, :any, required: true
+  attr :inspector_zoomed?, :any, required: true
   attr :file_diff, :any, required: true
   attr :file_error, :any, required: true
   attr :file_pane_dirty, :any, required: true
@@ -207,6 +210,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       assigns
       |> assign(:action_ctx, ActionAvailability.context(assigns))
       |> assign(:inspector_entries, List.wrap(assigns[:inspector_panes]))
+      |> assign(
+        :active_inspector_id,
+        CaseinWeb.WorkspaceLive.Show.InspectorFocus.active_id(assigns)
+      )
+      |> assign(:inspector_region_focused?, is_binary(assigns[:inspector_focus_id]))
 
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
@@ -672,6 +680,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
         <%= if @tab == "terminal" do %>
           <% geometry = @cockpit_geometry || Geometry.terminal_only() %>
           <% inspectors_open? = Geometry.inspector_open?(geometry) %>
+          <% inspector_zoomed? = inspectors_open? and @inspector_zoomed? == true %>
           <% placement = Geometry.placement(geometry) %>
           <% fraction = Geometry.inspector_fraction(geometry) %>
           <div
@@ -679,22 +688,27 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             data-cockpit-split={if(inspectors_open?, do: "open", else: "closed")}
             data-inspector-placement={if(inspectors_open?, do: Atom.to_string(placement), else: nil)}
             data-inspector-fraction={if(inspectors_open?, do: to_string(fraction), else: nil)}
+            data-inspector-zoomed={to_string(inspector_zoomed?)}
+            data-inspector-focused={to_string(@inspector_region_focused?)}
             data-geometry-kind={geometry.kind}
             class={[
               "flex h-full min-h-0 min-w-0",
-              inspectors_open? && placement == :bottom && "flex-col",
-              inspectors_open? && placement == :right && "flex-row"
+              inspectors_open? && not inspector_zoomed? && placement == :bottom && "flex-col",
+              inspectors_open? && not inspector_zoomed? && placement == :right && "flex-row",
+              inspector_zoomed? && "flex-col"
             ]}
           >
             <div
               id={"terminal-region-" <> @workspace.id}
               data-terminal-region="true"
               data-inspector-open={to_string(inspectors_open?)}
+              data-inspector-zoomed={to_string(inspector_zoomed?)}
               class={[
                 "min-h-0 min-w-0 overflow-hidden",
-                not inspectors_open? && "h-full w-full flex-1"
+                not inspectors_open? && "h-full w-full flex-1",
+                inspector_zoomed? && "hidden"
               ]}
-              style={terminal_region_style(geometry)}
+              style={if(inspector_zoomed?, do: nil, else: terminal_region_style(geometry))}
             >
               <.terminal_tab
                 active_window_pane_count={@active_window_pane_count}
@@ -758,17 +772,30 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
               id={"inspector-region-" <> @workspace.id}
               data-inspector-region="true"
               data-inspector-placement={Atom.to_string(placement)}
+              data-inspector-focused={to_string(@inspector_region_focused?)}
+              data-inspector-zoomed={to_string(inspector_zoomed?)}
+              data-active-inspector-id={@active_inspector_id}
               class={[
                 "min-h-0 min-w-0 overflow-hidden border-base-300/70 bg-base-200/40",
-                placement == :right && "border-l",
-                placement == :bottom && "border-t"
+                not inspector_zoomed? && placement == :right && "border-l",
+                not inspector_zoomed? && placement == :bottom && "border-t",
+                inspector_zoomed? && "h-full w-full flex-1 border-0",
+                @inspector_region_focused? && "ring-1 ring-inset ring-primary/70"
               ]}
-              style={inspector_region_style(geometry)}
+              style={
+                if(inspector_zoomed?,
+                  do: "flex: 1 1 auto; max-width: 100%; max-height: 100%",
+                  else: inspector_region_style(geometry)
+                )
+              }
             >
               <.inspector_region
                 workspace_id={@workspace.id}
                 entries={@inspector_entries}
                 placement={placement}
+                active_id={@active_inspector_id}
+                focused?={@inspector_region_focused?}
+                zoomed?={inspector_zoomed?}
               />
             </aside>
           </div>
@@ -1006,30 +1033,89 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :workspace_id, :string, required: true
   attr :entries, :list, required: true
   attr :placement, :atom, required: true
+  attr :active_id, :any, required: true
+  attr :focused?, :boolean, required: true
+  attr :zoomed?, :boolean, required: true
 
   defp inspector_region(assigns) do
     ~H"""
-    <div class="flex h-full min-h-0 flex-col">
-      <div class="flex shrink-0 items-center justify-between gap-2 border-b border-base-300/60 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-base-content/60">
-        <span>Inspector</span>
-        <span class="normal-case tracking-normal text-base-content/40">
-          {length(@entries)} open
-        </span>
+    <div class="flex h-full min-h-0 flex-col" data-inspector-chrome="true">
+      <div class="flex shrink-0 items-center gap-1 border-b border-base-300/60 bg-base-200/80 px-1.5 py-1">
+        <div
+          id={"inspector-tabs-" <> @workspace_id}
+          class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+          role="tablist"
+          aria-label="Inspector panes"
+        >
+          <button
+            :for={{entry, index} <- Enum.with_index(@entries)}
+            id={"inspector-tab-" <> entry.id}
+            type="button"
+            role="tab"
+            aria-selected={to_string(entry.id == @active_id)}
+            data-inspector-tab={entry.id}
+            data-pane-kind="inspector"
+            data-pane-index={index}
+            data-active={to_string(entry.id == @active_id)}
+            data-focused={to_string(@focused? and entry.id == @active_id)}
+            phx-click="inspector:select"
+            phx-value-id={entry.id}
+            class={[
+              "group flex max-w-[14rem] items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition",
+              entry.id == @active_id &&
+                "bg-base-100 text-base-content shadow-sm ring-1 ring-base-300/80",
+              entry.id != @active_id &&
+                "text-base-content/60 hover:bg-base-100/70 hover:text-base-content/80",
+              (@focused? and entry.id == @active_id) && "ring-primary/60"
+            ]}
+          >
+            <span class="font-mono text-[10px] text-base-content/40">{index}</span>
+            <span class="truncate font-medium">{inspector_title(entry)}</span>
+            <span class="rounded bg-base-300/50 px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide text-base-content/45">
+              {inspector_kind_label(entry)}
+            </span>
+            <span
+              role="button"
+              tabindex="-1"
+              data-inspector-tab-close={entry.id}
+              phx-click="inspector:close"
+              phx-value-id={entry.id}
+              class="ml-0.5 rounded p-0.5 text-base-content/35 opacity-70 hover:bg-base-300/60 hover:text-base-content/80 group-hover:opacity-100"
+              aria-label={"Close " <> inspector_title(entry)}
+            >
+              <.icon name="hero-x-mark" class="h-3 w-3" />
+            </span>
+          </button>
+        </div>
+        <div class="flex shrink-0 items-center gap-1 pl-1 text-[10px] text-base-content/45">
+          <span :if={@zoomed?} class="rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
+            zoomed
+          </span>
+          <span class="font-mono uppercase tracking-wide">z/x</span>
+        </div>
       </div>
-      <div class="min-h-0 flex-1 overflow-auto p-3 text-sm">
+
+      <div class="min-h-0 flex-1 overflow-auto">
         <div
           :for={entry <- @entries}
           id={"inspector-pane-" <> entry.id}
           data-inspector-pane-id={entry.id}
           data-inspector-kind={entry.kind}
-          class="mb-2 rounded-md border border-base-300/50 bg-base-100/60 px-3 py-2 last:mb-0"
+          data-pane-kind="inspector"
+          data-focused={to_string(@focused? and entry.id == @active_id)}
+          hidden={entry.id != @active_id}
+          class={[
+            "flex h-full min-h-0 flex-col",
+            entry.id != @active_id && "hidden",
+            (@focused? and entry.id == @active_id) && "bg-base-100/40"
+          ]}
         >
-          <div class="flex items-start justify-between gap-2">
+          <div class="flex shrink-0 items-center justify-between gap-2 border-b border-base-300/40 px-3 py-1.5">
             <div class="min-w-0">
-              <div class="font-medium text-base-content/90">
+              <div class="truncate text-sm font-medium text-base-content/90">
                 {inspector_title(entry)}
               </div>
-              <div class="mt-0.5 font-mono text-[11px] text-base-content/50">
+              <div class="truncate font-mono text-[11px] text-base-content/45">
                 {entry.id}
               </div>
             </div>
@@ -1038,10 +1124,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
               id={"inspector-close-" <> entry.id}
               phx-click="inspector:close"
               phx-value-id={entry.id}
-              class="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-base-content/50 hover:bg-base-300/40 hover:text-base-content"
+              class="btn btn-ghost btn-xs"
+              data-leader-second-key="x"
             >
               Close
             </button>
+          </div>
+          <div class="min-h-0 flex-1 overflow-auto p-3 text-sm text-base-content/80">
+            <div class="rounded-md border border-base-300/50 bg-base-100/70 px-3 py-2">
+              <div class="text-[11px] uppercase tracking-wide text-base-content/45">
+                {inspector_kind_label(entry)}
+              </div>
+              <div class="mt-1 font-medium">{inspector_title(entry)}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1055,4 +1150,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
     do: kind |> Atom.to_string() |> String.capitalize()
 
   defp inspector_title(_), do: "Inspector"
+
+  defp inspector_kind_label(%{kind: kind}) when is_atom(kind), do: Atom.to_string(kind)
+  defp inspector_kind_label(%{kind: kind}) when is_binary(kind), do: kind
+  defp inspector_kind_label(_), do: "insp"
 end

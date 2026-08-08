@@ -9,6 +9,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents do
 
   alias Casein.{Audit, Terminals}
   alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.InspectorFocus
   alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
   alias CaseinWeb.WorkspaceLive.Show.TerminalEvents
   alias CaseinWeb.WorkspaceLive.Show.TerminalState
@@ -22,33 +23,46 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents do
   end
 
   def handle_event("pane:close_focused", _params, socket) do
-    # Re-read live tmux topology before the last-pane guard and pane target.
-    # The cached count/active pane can lag reality (e.g. a degraded socket on
-    # a draining release, or a split that hasn't broadcast yet), which made
-    # close wrongly refuse with "Cannot close the last pane" on windows that
-    # actually had multiple panes. Refreshing first decides against real state.
-    with session when is_binary(session) <- socket.assigns[:tmux_session],
-         socket = TerminalState.refresh_tmux_topology(socket),
-         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id] do
-      cond do
-        tmux_active_window_pane_count(socket) > 1 ->
-          close_focused_pane(socket, session, pane_id)
+    # Inspector viewports are socket state — never kill_pane on an insp id.
+    case InspectorFocus.focus_target(socket.assigns) do
+      {:inspector, _id} ->
+        case InspectorFocus.close_focused(socket) do
+          {:ok, socket} ->
+            {:noreply, socket}
 
-        # Last pane in the window: killing it removes the window (real tmux
-        # closes the window when its final pane dies). Mirror that — close the
-        # whole window — as long as another window survives. C-b x on a
-        # single-pane tab is the common way operators close a tab.
-        length(socket.assigns[:tmux_windows] || []) > 1 ->
-          close_focused_window(socket)
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Could not close inspector: #{inspect(reason)}")}
+        end
 
-        # Last pane of the last window: closing it ends this tmux session.
-        # Instead of refusing, close it and drop the operator into another
-        # existing session (only refuse when this is the only session left).
-        true ->
-          close_focused_last_window(socket, session)
-      end
-    else
-      _ -> {:noreply, socket}
+      {:tmux, _} ->
+        # Re-read live tmux topology before the last-pane guard and pane target.
+        # The cached count/active pane can lag reality (e.g. a degraded socket on
+        # a draining release, or a split that hasn't broadcast yet), which made
+        # close wrongly refuse with "Cannot close the last pane" on windows that
+        # actually had multiple panes. Refreshing first decides against real state.
+        with session when is_binary(session) <- socket.assigns[:tmux_session],
+             socket = TerminalState.refresh_tmux_topology(socket),
+             pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id] do
+          cond do
+            tmux_active_window_pane_count(socket) > 1 ->
+              close_focused_pane(socket, session, pane_id)
+
+            # Last pane in the window: killing it removes the window (real tmux
+            # closes the window when its final pane dies). Mirror that — close the
+            # whole window — as long as another window survives. C-b x on a
+            # single-pane tab is the common way operators close a tab.
+            length(socket.assigns[:tmux_windows] || []) > 1 ->
+              close_focused_window(socket)
+
+            # Last pane of the last window: closing it ends this tmux session.
+            # Instead of refusing, close it and drop the operator into another
+            # existing session (only refuse when this is the only session left).
+            true ->
+              close_focused_last_window(socket, session)
+          end
+        else
+          _ -> {:noreply, socket}
+        end
     end
   end
 
@@ -77,8 +91,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents do
     TerminalEvents.handle_event("pane:navigate", %{"dir" => "prev"}, socket)
   end
 
-  def handle_event("pane:zoom_focused", _params, socket),
-    do: request_tmux_zoom_transition(socket)
+  def handle_event("pane:zoom_focused", _params, socket) do
+    # Inspector zoom is pure socket state; tmux zoom path stays untouched for %N.
+    case InspectorFocus.focus_target(socket.assigns) do
+      {:inspector, _} ->
+        {:noreply, InspectorFocus.toggle_zoom(socket)}
+
+      {:tmux, _} ->
+        request_tmux_zoom_transition(socket)
+    end
+  end
 
   def handle_event("pane:commit_zoom", params, socket), do: commit_tmux_zoom(params, socket)
 
