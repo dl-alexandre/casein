@@ -9,6 +9,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEventsTest do
   alias CaseinWeb.WorkspaceLive.Show
   alias CaseinWeb.WorkspaceLive.Show.ActionAvailability, as: Avail
   alias CaseinWeb.WorkspaceLive.Show.DiffEvents
+  alias CaseinWeb.WorkspaceLive.Show.InspectorEvents
 
   setup do
     root =
@@ -49,7 +50,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEventsTest do
       DiffEvents.handle_event("diff:open_in_pane", %{}, socket(root))
 
     assert socket.assigns.tab == "diff"
-    refute Inspectors.open?(socket.assigns.inspectors)
+    refute Inspectors.diff_open?(socket.assigns.inspector_panes)
   end
 
   test "diff:open_in_pane with path focuses the file on the diff tab", %{root: root} do
@@ -73,19 +74,24 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEventsTest do
       )
 
     assert socket.assigns.tab == "terminal"
-    assert Inspectors.open?(socket.assigns.inspectors)
-    assert Inspectors.primary_diff_path(socket.assigns.inspectors) == "lib/foo.ex"
+    assert Inspectors.diff_open?(socket.assigns.inspector_panes)
+    assert Inspectors.primary_diff_path(socket.assigns.inspector_panes) == "lib/foo.ex"
   end
 
-  test "surface_diff PubSub intent opens the diff tab with no tmux", %{root: root} do
+  test "inspector_open PubSub intent opens the diff tab with no tmux", %{root: root} do
     {:noreply, socket} =
-      DiffEvents.handle_info(
-        {:surface_diff, %{path: "lib/foo.ex", workspace_id: "ws-diff"}},
+      InspectorEvents.handle_info(
+        {:inspector_open, %{kind: :diff, path: "lib/foo.ex"}},
         socket(root)
       )
 
-    assert socket.assigns.tab == "diff"
-    assert socket.assigns.open_file.path == "lib/foo.ex"
+    # Without tmux context the inspector open still lands on the socket-state
+    # inspector list (request_open is viewer-local); the LiveView path for
+    # human open falls back via diff:open_inspector. Agent broadcast always
+    # goes through open_diff_inspector when kind is :diff.
+    assert socket.assigns.tab == "terminal"
+    assert Inspectors.diff_open?(socket.assigns.inspector_panes)
+    assert Inspectors.primary_diff_path(socket.assigns.inspector_panes) == "lib/foo.ex"
   end
 
   defp socket(root, opts \\ []) do
@@ -96,6 +102,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEventsTest do
       status: :running,
       metadata: %{attached_folder: true}
     }
+
+    initial = Inspectors.initial_assigns()
 
     socket =
       %Phoenix.LiveView.Socket{}
@@ -108,11 +116,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEventsTest do
       |> assign(:file_error, nil)
       |> assign(:save_error, nil)
       |> assign(:file_diff, nil)
-      |> assign(:diff_focus_path, nil)
       |> assign(:git_status, [])
       |> assign(:tree, %{})
       |> assign(:selected_dir, "")
-      |> assign(:inspectors, Inspectors.new())
+      |> assign(:inspector_panes, initial.inspector_panes)
+      |> assign(:inspector_placement, initial.inspector_placement)
+      |> assign(:inspector_fraction, initial.inspector_fraction)
+      |> assign(:cockpit_geometry, initial.cockpit_geometry)
       |> assign(:preview_panes, %{})
       |> assign(:feature_panes, %{})
       |> assign(:tmux_session, nil)

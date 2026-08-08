@@ -4,6 +4,7 @@ defmodule Casein.Agents.TerminalToolsOpenDiffTest do
   alias Casein.Agents.MCPAudit
   alias Casein.Agents.TerminalTools
   alias Casein.Audit
+  alias Casein.Cockpit.Inspectors
   alias Casein.Inspectors.Diff
 
   setup do
@@ -31,7 +32,7 @@ defmodule Casein.Agents.TerminalToolsOpenDiffTest do
 
   test "surfaces a diff when a viewer is watching" do
     {_root, workspace} = seed_workspace!()
-    :ok = Diff.subscribe(workspace.id)
+    :ok = Inspectors.subscribe(workspace.id)
     :ok = Diff.register_viewer(workspace.id)
 
     assert {:ok, %{status: "surfaced", workspace_id: ws_id, path: "lib/foo.ex"}} =
@@ -41,7 +42,8 @@ defmodule Casein.Agents.TerminalToolsOpenDiffTest do
              })
 
     assert ws_id == workspace.id
-    assert_receive {:surface_diff, %{path: "lib/foo.ex", workspace_id: ^ws_id}}, 200
+    assert_receive {:inspector_open, attrs}, 200
+    assert attrs[:path] == "lib/foo.ex" or attrs["path"] == "lib/foo.ex"
   end
 
   test "is a no-op when nobody is watching" do

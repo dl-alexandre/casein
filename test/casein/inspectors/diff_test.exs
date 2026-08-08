@@ -1,10 +1,12 @@
 defmodule Casein.Inspectors.DiffTest do
   use ExUnit.Case, async: true
 
+  alias Casein.Cockpit.Inspectors
   alias Casein.Inspectors.Diff
 
   setup do
     ws = "ws-diff-#{System.unique_integer([:positive])}"
+    :ok = Inspectors.subscribe(ws)
     {:ok, ws: ws}
   end
 
@@ -13,12 +15,12 @@ defmodule Casein.Inspectors.DiffTest do
 
     assert {:ok, %{status: "no_viewer", workspace_id: ^ws}} = Diff.surface(ws, %{})
 
-    # Nothing was queued for a later viewer — a second call is still no_viewer.
+    # Nothing was queued — a second call is still no_viewer and no broadcast.
     assert {:ok, %{status: "no_viewer"}} = Diff.surface(ws, %{path: "lib/foo.ex"})
+    refute_receive {:inspector_open, _}, 50
   end
 
-  test "surface broadcasts when a viewer is registered", %{ws: ws} do
-    :ok = Diff.subscribe(ws)
+  test "surface broadcasts inspector_open when a viewer is registered", %{ws: ws} do
     :ok = Diff.register_viewer(ws)
     assert Diff.viewer_present?(ws)
 
@@ -27,8 +29,9 @@ defmodule Casein.Inspectors.DiffTest do
 
     assert is_binary(rid)
 
-    assert_receive {:surface_diff, %{workspace_id: ^ws, path: "lib/a.ex", request_id: ^rid}},
-                   200
+    assert_receive {:inspector_open, attrs}, 200
+    assert attrs[:kind] == :diff or attrs["kind"] == :diff or attrs["kind"] == "diff"
+    assert attrs[:path] == "lib/a.ex" or attrs["path"] == "lib/a.ex"
   end
 
   test "viewer registration is process-linked", %{ws: ws} do
@@ -45,7 +48,6 @@ defmodule Casein.Inspectors.DiffTest do
     assert Diff.viewer_present?(ws)
 
     Process.exit(pid, :kill)
-    # Registry drops dead processes on next lookup after DOWN.
     wait_until(fn -> not Diff.viewer_present?(ws) end)
     refute Diff.viewer_present?(ws)
   end

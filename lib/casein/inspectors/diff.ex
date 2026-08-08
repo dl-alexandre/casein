@@ -4,15 +4,15 @@ defmodule Casein.Inspectors.Diff do
 
   A diff is a viewport over derived git state — not a durable pane handle. Agents
   declare **what** to show; Casein owns placement. If nobody is watching the
-  workspace the broadcast is a no-op (do not queue, retry, or persist).
+  workspace the call is a no-op (do not queue, retry, or persist).
 
-  The LiveView-owned inspector region (#690/#691) is not required for the
-  full-area `diff` tab fallback used today. When that API lands, the mounted
-  cockpit upgrades the same `{:surface_diff, intent}` message.
+  Surfacing goes through `Casein.Cockpit.Inspectors.request_open/2` (epic #689 /
+  #690/#691): mounted cockpits receive `{:inspector_open, attrs}` and open a
+  LiveView-owned inspector (or fall back to the full-area `diff` tab).
   """
 
-  @pubsub Casein.PubSub
-  @topic_prefix "inspectors:diff:"
+  alias Casein.Cockpit.Inspectors
+
   @viewer_registry Casein.Inspectors.Diff.ViewerRegistry
 
   @type intent :: %{
@@ -21,23 +21,12 @@ defmodule Casein.Inspectors.Diff do
           optional(:request_id) => String.t()
         }
 
-  @doc "PubSub topic for diff surface intents on a workspace."
-  @spec topic(String.t()) :: String.t()
-  def topic(workspace_id) when is_binary(workspace_id), do: @topic_prefix <> workspace_id
-
-  @doc "Subscribe the calling LiveView to diff surface intents."
-  @spec subscribe(String.t()) :: :ok | {:error, term()}
-  def subscribe(workspace_id) when is_binary(workspace_id) and workspace_id != "" do
-    Phoenix.PubSub.subscribe(@pubsub, topic(workspace_id))
-  end
-
-  def subscribe(_), do: {:error, :workspace_id_required}
-
   @doc """
   Register the calling process as a watching cockpit viewer.
 
   Uses a duplicate Registry so presence is process-linked: when the LiveView
-  exits the registration vanishes with no explicit unregister.
+  exits the registration vanishes with no explicit unregister. Required so
+  `surface/2` can distinguish "nobody watching" from "broadcast delivered".
   """
   @spec register_viewer(String.t()) :: :ok | {:error, term()}
   def register_viewer(workspace_id) when is_binary(workspace_id) and workspace_id != "" do
@@ -64,7 +53,7 @@ defmodule Casein.Inspectors.Diff do
   Returns `{:ok, %{status: "surfaced" | "no_viewer", ...}}`. Never queues when
   idle — a viewport with no watcher is correctly a no-op.
   """
-  @spec surface(String.t(), intent()) :: {:ok, map()}
+  @spec surface(String.t(), intent()) :: {:ok, map()} | {:error, term()}
   def surface(workspace_id, intent \\ %{})
 
   def surface(workspace_id, intent)
@@ -72,18 +61,13 @@ defmodule Casein.Inspectors.Diff do
     request_id = intent_request_id(intent)
     path = intent_path(intent)
 
-    payload =
-      %{
-        workspace_id: workspace_id,
-        path: path,
-        actor_id: intent_actor(intent),
-        request_id: request_id
-      }
-      |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
-      |> Map.new()
-
     if viewer_present?(workspace_id) do
-      :ok = Phoenix.PubSub.broadcast(@pubsub, topic(workspace_id), {:surface_diff, payload})
+      attrs =
+        %{kind: :diff, id: "insp-diff", title: path || "Diff", path: path}
+        |> Enum.reject(fn {_k, v} -> v in [nil, ""] end)
+        |> Map.new()
+
+      :ok = Inspectors.request_open(workspace_id, attrs)
 
       {:ok,
        %{
@@ -115,13 +99,6 @@ defmodule Casein.Inspectors.Diff do
 
       _ ->
         nil
-    end
-  end
-
-  defp intent_actor(intent) do
-    case Map.get(intent, :actor_id) || Map.get(intent, "actor_id") do
-      actor when is_binary(actor) and actor != "" -> actor
-      _ -> nil
     end
   end
 

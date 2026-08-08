@@ -1575,9 +1575,6 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     open_resolved_target(socket, target)
   end
 
-  def handle_info({:surface_diff, _intent} = msg, socket),
-    do: DiffEvents.handle_info(msg, socket)
-
   def handle_info(:prewarm_raw_session, socket) do
     {:noreply, maybe_prewarm_raw_session(socket)}
   end
@@ -2800,7 +2797,8 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         _ = Open.subscribe(workspace_id)
-        _ = Casein.Inspectors.Diff.subscribe(workspace_id)
+        # Presence for one-shot inspector surface intents (diff_open MCP).
+        # Inspectors.request_open/2 itself is subscribed via InspectorEvents.
         _ = Casein.Inspectors.Diff.register_viewer(workspace_id)
       end
     end

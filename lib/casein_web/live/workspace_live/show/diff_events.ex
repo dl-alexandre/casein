@@ -1,10 +1,13 @@
 defmodule CaseinWeb.WorkspaceLive.Show.DiffEvents do
-  # Palette / MCP entry points for opening a diff inspector.
+  # Palette entry point for opening a diff inspector (#693).
   #
-  # #693 owns the human-facing event name (`diff:open_in_pane`) and the
-  # one-shot MCP surface. The actual open/fallback lives in #691's
-  # `InspectorEvents` (`diff:open_inspector` + `Casein.Cockpit.Inspectors`).
-  # This module is the thin bridge so palette/MCP never invent geometry.
+  # Human-facing event name is `diff:open_in_pane` (palette / chrome). The open
+  # path itself is #691's `InspectorEvents` / `diff:open_inspector`, which uses
+  # `Casein.Cockpit.Inspectors.open/3` (`inspector_panes` + geometry tree).
+  #
+  # Agent MCP surfaces go through `Casein.Inspectors.Diff.surface/2` →
+  # `Inspectors.request_open/2` → `{:inspector_open, attrs}` (already handled
+  # by Show → InspectorEvents). This module does not invent a second bus.
   @moduledoc false
 
   alias CaseinWeb.WorkspaceLive.Show.InspectorEvents
@@ -15,14 +18,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEvents do
 
   def handle_event("diff:open_in_pane", _params, socket), do: {:noreply, socket}
 
-  @doc false
-  def handle_info({:surface_diff, intent}, socket) when is_map(intent) do
-    InspectorEvents.handle_event("diff:open_inspector", normalize_params(intent), socket)
-  end
-
-  def handle_info({:surface_diff, _}, socket), do: {:noreply, socket}
-
-  # InspectorEvents reads string keys; MCP / PubSub may send atom keys.
+  # InspectorEvents reads string keys; palette params are already string-keyed,
+  # but normalize for atom-keyed callers in unit tests.
   defp normalize_params(params) when is_map(params) do
     path = Map.get(params, "path") || Map.get(params, :path)
 
