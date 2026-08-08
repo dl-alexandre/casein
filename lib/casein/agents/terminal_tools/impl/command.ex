@@ -6,6 +6,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
   alias Casein.FilePanes.LinkResolver
   alias Casein.Files.BrowserViewable
   alias Casein.Previews
+  alias Casein.Runs.AgentLifecycle
   alias Casein.Terminals.SharedWorktreeGuard
   alias Casein.Workspaces
 
@@ -38,11 +39,37 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
 
       with :ok <- guard_shared_worktree(session, target, command, params) do
         case tmux().send_command(target, command) do
-          :ok -> {:ok, raw_sent_payload(session, target, implicit?, params)}
-          {:error, reason} -> {:error, reason}
-          {out, _code} -> {:error, String.trim(out)}
+          :ok ->
+            # Fallback open for silent runtimes (Grok/OpenCode). Primary open is
+            # still `:working` via AgentLifecycle.observe_state/1.
+            note_lifecycle_send_command(params, session, target, command)
+            {:ok, raw_sent_payload(session, target, implicit?, params)}
+
+          {:error, reason} ->
+            {:error, reason}
+
+          {out, _code} ->
+            {:error, String.trim(out)}
         end
       end
+    end
+  end
+
+  defp note_lifecycle_send_command(params, session, target, command) do
+    case workspace_id(params) do
+      id when is_binary(id) and id != "" ->
+        AgentLifecycle.note_send_command(%{
+          workspace_id: id,
+          tmux_session: session,
+          pane_id: target,
+          actor_id: string_param(params, "actor_id") || "agent",
+          tool: "terminal_send_command",
+          message: command,
+          source: :send_command
+        })
+
+      _ ->
+        :ok
     end
   end
 

@@ -4,9 +4,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   alias Casein.Agents.{TerminalOutputFormat, Transcripts}
   alias Casein.AgentSessions.GrokACP.Attachments
   alias Casein.Labels
-  alias Casein.Terminals.IssueBinding
   alias Casein.Mobile.Clarification
+  alias Casein.Runs.AgentLifecycle
   alias Casein.Terminals.AgentState
+  alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
   alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.TmuxTopology
@@ -102,6 +103,14 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       case tmux().send_command(session, command, target: pane.id) do
         :ok ->
           report_dispatch_working(
+            params,
+            session,
+            pane.id,
+            command,
+            "terminal_send_agent_command"
+          )
+
+          note_lifecycle_send_command(
             params,
             session,
             pane.id,
@@ -250,6 +259,26 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       source: :dispatch,
       tool: tool
     )
+  end
+
+  # Design fallback: first send_command opens a Run when `:working` is never
+  # reported (Grok/OpenCode). Idempotent when observe_state already opened one.
+  defp note_lifecycle_send_command(params, session, pane_id, message, tool) do
+    case workspace_id(params) do
+      id when is_binary(id) and id != "" ->
+        AgentLifecycle.note_send_command(%{
+          workspace_id: id,
+          tmux_session: session,
+          pane_id: pane_id,
+          actor_id: string_param(params, "actor_id") || "agent",
+          tool: tool,
+          message: message,
+          source: :send_command
+        })
+
+      _ ->
+        :ok
+    end
   end
 
   @doc "Set a Casein chrome label for an agent pane."
