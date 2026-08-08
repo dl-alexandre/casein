@@ -4,10 +4,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.Overlay do
 
   The cockpit renders several surfaces that float above the workspace — the
   command palette, the context menu, the audit drawer, the notifications
-  drawer, the session-template library, and the template preview. Each one
-  owned an independent open flag, so nothing prevented the palette, a drawer,
-  and a modal being open simultaneously (stacked overlays, ambiguous `Escape`,
-  two competing keyboard-focus owners).
+  drawer, the clipboard drawer, the session-template library, and the template
+  preview. Each one owned an independent open flag, so nothing prevented the
+  palette, a drawer, and a modal being open simultaneously (stacked overlays,
+  ambiguous `Escape`, two competing keyboard-focus owners).
 
   This module makes "at most one floating surface at a time" a property of the
   socket rather than a convention. Every genuine *open* transition calls
@@ -36,6 +36,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.Overlay do
           | :context_menu
           | :audit_drawer
           | :notifications
+          | :clipboard_drawer
           | :template_library
           | :template_preview
 
@@ -48,6 +49,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.Overlay do
     context_menu: [context_menu: nil],
     audit_drawer: [audit_drawer_open: false],
     notifications: [notif_drawer_open: false],
+    clipboard_drawer: [clipboard_drawer_open: false],
     template_library: [template_library_open: false],
     template_preview: [template_preview: nil]
   }
