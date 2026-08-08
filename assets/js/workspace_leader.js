@@ -57,12 +57,13 @@ function phxValuePayload(el) {
 
 function leaderHelpVisible() {
   const help = document.getElementById("leader-cheatsheet")
-  return help && getComputedStyle(help).display !== "none"
+  return !!help && getComputedStyle(help).display !== "none"
 }
 
-function closeLeaderHelp() {
-  const help = document.getElementById("leader-cheatsheet")
-  if (help) help.style.display = "none"
+function closeLeaderHelp(hook) {
+  // Open/closed is server state under the overlay arbiter; Esc and other
+  // client close paths must push rather than toggle display locally.
+  if (hook?.pushEvent) hook.pushEvent("leader_help:close", {})
 }
 
 // Cycle the help overlay's active tab (Shortcuts → Preview → …). Pass dir = -1
@@ -297,7 +298,7 @@ export const WorkspaceLeader = {
     if (e.key === "Escape" && leaderHelpVisible()) {
       e.preventDefault()
       e.stopImmediatePropagation()
-      closeLeaderHelp()
+      closeLeaderHelp(this)
       return
     }
 

@@ -98,6 +98,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :history_results, :any, required: true
   attr :host_loc, :any, required: true
   attr :host_path, :any, required: true
+  attr :leader_help_open, :any, required: true
   attr :log_ref, :any, required: true
   attr :log_service, :any, required: true
   attr :mobile_nav_focus, :any, required: true
@@ -503,7 +504,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             type="button"
             tabindex="-1"
             data-leader-action="help"
-            phx-click={JS.toggle(to: "#leader-cheatsheet")}
+            phx-click="leader_help:toggle"
           ></button>
           <button
             type="button"
@@ -901,6 +902,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       count={@clipboard_count}
     />
     <.leader_help_overlay
+      open={@leader_help_open}
       connect_new_token={@connect_new_token}
       connect_mcp_json={@connect_mcp_json}
       connect_tokens={@connect_tokens}

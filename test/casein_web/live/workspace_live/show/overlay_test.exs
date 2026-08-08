@@ -3,6 +3,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
 
   alias CaseinWeb.WorkspaceLive.Show.AgentEvents
   alias CaseinWeb.WorkspaceLive.Show.ClipboardDrawerEvents
+  alias CaseinWeb.WorkspaceLive.Show.LeaderHelpEvents
   alias CaseinWeb.WorkspaceLive.Show.Overlay
 
   # Every floating surface open at once — the state the arbiter exists to make
@@ -14,7 +15,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
     notif_drawer_open: true,
     clipboard_drawer_open: true,
     template_library_open: true,
-    template_preview: %{template: %{id: "t1"}}
+    template_preview: %{template: %{id: "t1"}},
+    leader_help_open: true
   }
 
   defp socket(assigns) do
@@ -37,6 +39,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
         :clipboard_drawer -> socket.assigns.clipboard_drawer_open
         :template_library -> socket.assigns.template_library_open
         :template_preview -> not is_nil(socket.assigns.template_preview)
+        :leader_help -> socket.assigns.leader_help_open
       end
     end)
   end
@@ -49,7 +52,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
           :notifications,
           :clipboard_drawer,
           :template_library,
-          :template_preview
+          :template_preview,
+          :leader_help
         ] do
       test "keeping #{overlay} closes every other surface" do
         socket = Overlay.close_others(socket(@all_open), unquote(overlay))
@@ -130,6 +134,25 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
         ClipboardDrawerEvents.handle_event("clipboard:toggle", %{}, socket(@all_open))
 
       refute socket.assigns.clipboard_drawer_open
+      assert socket.assigns.palette_open
+    end
+
+    test "opening the leader cheatsheet closes the palette" do
+      {:noreply, socket} =
+        LeaderHelpEvents.handle_event(
+          "leader_help:toggle",
+          %{},
+          socket(%{@all_open | leader_help_open: false})
+        )
+
+      assert open_overlays(socket) == [:leader_help]
+    end
+
+    test "closing the leader cheatsheet leaves other surfaces alone" do
+      {:noreply, socket} =
+        LeaderHelpEvents.handle_event("leader_help:toggle", %{}, socket(@all_open))
+
+      refute socket.assigns.leader_help_open
       assert socket.assigns.palette_open
     end
   end
