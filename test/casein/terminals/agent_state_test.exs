@@ -2,15 +2,18 @@ defmodule Casein.Terminals.AgentStateTest do
   use Casein.TestCase, async: false
 
   alias Casein.Agents.AgentEvents
+  alias Casein.Runs.AgentLifecycle
   alias Casein.Terminals.AgentState
 
   setup do
     AgentState.clear()
     AgentEvents.clear()
+    AgentLifecycle.clear()
 
     on_exit(fn ->
       AgentState.clear()
       AgentEvents.clear()
+      AgentLifecycle.clear()
     end)
 
     :ok
@@ -27,6 +30,15 @@ defmodule Casein.Terminals.AgentStateTest do
       agent_session_id: nil,
       reported_at: DateTime.add(DateTime.utc_now(), -seconds_ago, :second)
     }
+  end
+
+  # AgentLifecycle writes run.* into the same audit stream; these tests own
+  # agent.state_changed volume only.
+  defp state_changed_actions(workspace_id) do
+    workspace_id
+    |> Casein.Audit.recent_for(20)
+    |> Enum.map(& &1.action)
+    |> Enum.filter(&(&1 == "agent.state_changed"))
   end
 
   describe "report/get/for_session" do
@@ -213,8 +225,9 @@ defmodule Casein.Terminals.AgentStateTest do
       :ok = AgentState.report("ws-evict-probe", "casein_evict", "%0", :working, "step")
       assert %{state: :working} = AgentState.get("casein_evict", "%0")
 
-      actions =
-        "ws-evict-probe" |> Casein.Audit.recent_for(10) |> Enum.map(& &1.action)
+      # Lifecycle altitude (run.*) shares the audit stream; assert only the
+      # agent.state_changed volume this test owns.
+      actions = state_changed_actions("ws-evict-probe")
 
       assert actions == ["agent.state_changed"]
     end
@@ -227,8 +240,7 @@ defmodule Casein.Terminals.AgentStateTest do
       :ok = AgentState.report("ws-prune-probe", "casein_prune", "%1", :working, "step")
       assert %{state: :working} = AgentState.get("casein_prune", "%1")
 
-      actions =
-        "ws-prune-probe" |> Casein.Audit.recent_for(10) |> Enum.map(& &1.action)
+      actions = state_changed_actions("ws-prune-probe")
 
       assert actions == ["agent.state_changed"]
     end
