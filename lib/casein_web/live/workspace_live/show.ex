@@ -162,7 +162,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
     pane:input file-pane:dirty
-    inspector:open inspector:close inspector:close_all inspector:set_placement
+    inspector:open inspector:close inspector:close_all inspector:select inspector:set_placement
     run:cancel set_log_service
     ctx:open ctx:close
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:open
@@ -2520,6 +2520,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       inspector_fraction={@inspector_fraction}
       inspector_panes={@inspector_panes}
       inspector_placement={@inspector_placement}
+      active_inspector_id={@active_inspector_id}
+      inspector_focus_id={@inspector_focus_id}
+      inspector_zoomed?={@inspector_zoomed?}
       file_diff={@file_diff}
       file_error={@file_error}
       file_pane_dirty={@file_pane_dirty}
