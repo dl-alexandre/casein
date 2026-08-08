@@ -167,7 +167,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       attention_section: attention_cls.section,
       attention_reason: attention_cls.reason,
       attention_message: attention_message(attention_cls.reason, windows),
-      agent_blocked_count: Enum.count(windows, &(&1.agent_state == :blocked)),
+      # Counts every window that will not progress without a human, not just
+      # the ones that asked. A wedged agent never asks.
+      agent_blocked_count:
+        Enum.count(windows, &(&1.agent_state in [:blocked, :errored, :stalled])),
       pane_ids: windows |> Enum.flat_map(& &1.pane_ids) |> Enum.uniq(),
       preview_count: 0,
       activity_state: activity_state,
@@ -1400,11 +1403,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   defp normalized_pane_state("unknown"), do: :unknown
   defp normalized_pane_state(_state), do: :unknown
 
-  defp normalized_agent_state(state) when state in [:working, :blocked, :done, :idle], do: state
+  defp normalized_agent_state(state)
+       when state in [:working, :blocked, :done, :idle, :errored, :stalled],
+       do: state
+
   defp normalized_agent_state("working"), do: :working
   defp normalized_agent_state("blocked"), do: :blocked
   defp normalized_agent_state("done"), do: :done
   defp normalized_agent_state("idle"), do: :idle
+  defp normalized_agent_state("errored"), do: :errored
+  defp normalized_agent_state("stalled"), do: :stalled
   defp normalized_agent_state(_state), do: nil
 
   # `Attention.classify/1` consumes directory-shaped windows (`:quiet`), while
@@ -1444,13 +1452,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   defp apply_agent_state(_class, _label, state, message),
     do: {agent_state_class(state), agent_state_label(state, message)}
 
-  defp present_agent_state(state) when state in [:working, :blocked, :done, :idle], do: state
+  defp present_agent_state(state)
+       when state in [:working, :blocked, :done, :idle, :errored, :stalled],
+       do: state
+
   defp present_agent_state(_state), do: nil
 
   defp agent_state_class(:blocked), do: "bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.25)]"
   defp agent_state_class(:working), do: window_activity_class(:fresh)
   defp agent_state_class(:done), do: "bg-sky-400"
   defp agent_state_class(:idle), do: window_activity_class(:idle)
+  # A failed agent reads as urgent as a blocked one — it will not recover alone.
+  defp agent_state_class(:errored), do: "bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.25)]"
+  # Amber, not red: the pane looks busy and nothing is happening on disk, which
+  # is a strong hint rather than a proven failure.
+  defp agent_state_class(:stalled), do: "bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.25)]"
 
   defp agent_state_label(:blocked, message),
     do: "Agent blocked: " <> (blank_to_nil(message) || "needs input")
@@ -1464,6 +1480,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp agent_state_label(:done, _message), do: "Agent done"
   defp agent_state_label(:idle, _message), do: "Agent idle"
+
+  defp agent_state_label(:errored, message),
+    do: "Agent errored: " <> (blank_to_nil(message) || "check the pane")
+
+  # Says what was observed, not what it means — the operator decides whether a
+  # long quiet spell is a wedge or just a long think.
+  defp agent_state_label(:stalled, message) do
+    case blank_to_nil(message) do
+      nil -> "Agent looks busy but its worktree has been idle — may be wedged"
+      detail -> "Agent may be wedged — " <> detail
+    end
+  end
 
   defp resolve_topology_agent_state(window, pane_state, opts) do
     reports = Keyword.get_lazy(opts, :agent_reports, fn -> topology_agent_reports(opts) end)

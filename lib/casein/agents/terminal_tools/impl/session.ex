@@ -5,6 +5,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Agents.TerminalOutputFormat
   alias Casein.Operator.SituationServer
   alias Casein.Terminals.AgentState
+  alias Casein.Terminals.PaneLiveness
   alias Casein.Terminals.TmuxTopology
 
   import Casein.Agents.TerminalTools.Impl.Shared
@@ -96,8 +97,13 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
 
       payload =
         snapshot
+        # Before AgentState: it folds the observed verdict in, so a frozen
+        # spinner over a silent worktree resolves to :stalled instead of
+        # :working.
+        |> put_liveness(params)
         |> AgentState.enrich_topology(session)
         |> put_window_active_panes()
+        |> put_shared_worktree_warning()
         |> Map.put(:active_pane_note, @active_pane_note)
         |> put_caller_anchor(snapshot, params)
         |> put_agent_pane_guidance(session, params)
@@ -114,6 +120,35 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
     |> TmuxTopology.snapshot(tmux: tmux())
     |> AgentState.enrich_topology(session)
   end
+
+  # Worktree resolution is cheap and always useful — an orchestrator should not
+  # have to shell out to `tmux list-panes` to learn where a window is working.
+  # The liveness *walk* is the part that costs, so it stays opt-in.
+  defp put_liveness(snapshot, params) do
+    PaneLiveness.enrich_topology(snapshot, liveness: truthy?(Map.get(params, :include_liveness)))
+  end
+
+  # Several panes in one worktree share a git index. Adoption is deliberate
+  # (`scripts/lib/agent-worktree.sh`), so this is a warning, not a refusal — but
+  # concurrent git operations corrupt state rather than merely failing, and the
+  # only reason the last incident went unnoticed is that nothing said so.
+  defp put_shared_worktree_warning(%{panes: panes} = payload) when is_list(panes) do
+    case PaneLiveness.shared_worktrees(panes) do
+      shared when map_size(shared) == 0 ->
+        payload
+
+      shared ->
+        Map.put(payload, :shared_worktrees, %{
+          paths: shared,
+          note:
+            "More than one pane is working in the same git worktree. Concurrent git " <>
+              "operations there corrupt index state rather than failing cleanly. Give each " <>
+              "agent its own worktree unless the sharing is intentional."
+        })
+    end
+  end
+
+  defp put_shared_worktree_warning(payload), do: payload
 
   # Per-window active panes are stable anchors (they only change when the
   # window's own layout changes); the session-level active pane is not.

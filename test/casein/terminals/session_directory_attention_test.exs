@@ -14,6 +14,16 @@ defmodule Casein.Terminals.SessionDirectory.AttentionTest do
       assert Attention.classify(failed) == %{section: :needs_you, reason: :error}
     end
 
+    test "puts errored and stalled agents in Needs You" do
+      # Neither recovers on its own, and a wedged agent never asks for help — so
+      # without this they fall through to Recent, looking finished.
+      for state <- [:errored, "errored", :stalled, "stalled"] do
+        assert Attention.classify(session(agent_state: state)) ==
+                 %{section: :needs_you, reason: :blocked},
+               "expected #{inspect(state)} to need attention"
+      end
+    end
+
     test "puts completed and quiet agents in Needs You" do
       assert Attention.classify(session(agent_state: "done")) ==
                %{section: :needs_you, reason: :completed}

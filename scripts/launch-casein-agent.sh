@@ -78,8 +78,20 @@ grok_tmux_bind_hint() {
   done
 }
 
+# Bind CASEIN_CHECKOUT to the repo the operator actually launched from, for
+# every runtime. This ran for grok only, so `cd <worktree> && opencode` (or
+# claude/codex) kept the checkout that `agent_env_default_checkout` derives from
+# the workspace *name* — always the workspace root, never the worktree — and the
+# `cd "${CASEIN_CHECKOUT}"` below then silently relocated the agent out of the
+# directory it was launched in. An orchestrator placing a worker in a specific
+# worktree had no way to make the placement stick.
+#
+# Safe for all runtimes: it is a no-op outside a git repo, and inside the
+# primary checkout it resolves to the primary, so `agent_worktree_ensure` still
+# branches a fresh worktree rather than adopting it.
+agent_env_bind_current_checkout
+
 if [[ "$RUNTIME" == "grok" ]]; then
-  agent_env_bind_current_checkout
   if ! agent_env_bind_current_tmux_session; then
     echo "error: managed Grok launch requires an exact current tmux session" >&2
     grok_tmux_bind_hint

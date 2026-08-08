@@ -4,11 +4,38 @@ defmodule Casein.Terminals.AgentState do
   hooks or the `terminal_report_agent_state` MCP tool) and merged with the
   title-derived heuristic from `Casein.Terminals.PaneState`.
 
-  States are `:working | :blocked | :done | :idle | :unknown`. `:blocked` and
-  `:done` are **report-only** — the title heuristic can never claim them. Claude's
-  heavy-asterisk marker means "ready *or waiting for input*" (see
-  `Casein.Terminals.PaneState`), so treating it as `:done` would render a blocked
-  permission prompt as finished whenever hooks are absent.
+  States are `:working | :blocked | :done | :idle | :errored | :stalled |
+  :unknown`, split by who is allowed to claim them:
+
+    * **Report-only** — `:blocked`, `:done`, `:errored`. The title heuristic can
+      never claim these. Claude's heavy-asterisk marker means "ready *or waiting
+      for input*" (see `Casein.Terminals.PaneState`), so treating it as `:done`
+      would render a blocked permission prompt as finished whenever hooks are
+      absent.
+
+    * **Derived-only** — `:stalled`. Never reported, because the agents that
+      most need it are exactly the ones that have stopped reporting anything.
+      See "Stale spinners" below.
+
+  ## Stale spinners
+
+  A wedged agent — one whose provider rejects every request, or whose TUI has
+  stopped processing input — leaves its last spinner frame on screen. The title
+  heuristic reads that frozen spinner as `:working` and, because a live title
+  outranks a stale report, it used to overwrite every other signal indefinitely.
+  A wedged window was therefore indistinguishable from a busy one, and a
+  wedged-then-abandoned window looked identical to an idle one.
+
+  `resolve/4` accepts an *externally observed* liveness verdict from
+  `Casein.Terminals.AgentLiveness` (worktree writes and commits, which need no
+  cooperation from the agent). When the title claims `:working` but nothing has
+  happened on disk for `@stall_seconds`, the spinner is not believed and the
+  state resolves to `:stalled`.
+
+  `:stalled` deliberately does not claim the agent is *broken* — an agent can
+  legitimately think for minutes without writing. It claims only what is
+  observed: the pane looks busy and there is no external evidence of work.
+  `:errored` remains a claim about cause, and so stays report-only.
 
   Entries are keyed by `{tmux_session, pane_id}`, held in an in-memory GenServer,
   and broadcast to workspace LiveViews. They never mutate tmux titles.
@@ -33,10 +60,15 @@ defmodule Casein.Terminals.AgentState do
   # Beyond this a report is stale enough to discard entirely and fall back to the
   # title heuristic. Matches `Activity`'s attention window.
   @max_report_ttl_seconds 1_800
+  # How long a pane may look busy with no observed worktree activity before its
+  # spinner stops being believed. Generous on purpose: long tool calls and model
+  # thinking time are normal, and a false `:stalled` costs operator trust.
+  @stall_seconds 600
 
-  @report_states [:working, :blocked, :done, :idle]
+  @report_states [:working, :blocked, :done, :idle, :errored]
 
-  @type state :: :working | :blocked | :done | :idle | :unknown
+  @type state :: :working | :blocked | :done | :idle | :errored | :stalled | :unknown
+  @type liveness :: :active | :quiet | :unknown | nil
   @type entry :: %{
           state: state(),
           message: String.t() | nil,
@@ -153,23 +185,56 @@ defmodule Casein.Terminals.AgentState do
   @spec resolve(entry() | nil, PaneState.state(), DateTime.t()) :: {state(), String.t() | nil}
   def resolve(entry, heuristic, now \\ DateTime.utc_now())
 
-  def resolve(nil, heuristic, _now), do: {semantic_from_heuristic(heuristic), nil}
+  def resolve(entry, heuristic, now), do: resolve(entry, heuristic, now, nil)
 
-  def resolve(%{state: rstate, message: msg, reported_at: at}, heuristic, now) do
+  @doc """
+  `resolve/3` with an externally observed liveness verdict.
+
+  `liveness` is `:active | :quiet | :unknown | nil` — see
+  `Casein.Terminals.AgentLiveness.classify/2`. `:unknown` and `nil` are treated
+  identically and change nothing: a liveness check that could not run is not
+  evidence of a stall, and inferring one from it is how false stall reports get
+  made.
+  """
+  @spec resolve(entry() | nil, PaneState.state(), DateTime.t(), liveness()) ::
+          {state(), String.t() | nil}
+  def resolve(nil, heuristic, _now, liveness) do
+    case {semantic_from_heuristic(heuristic), liveness} do
+      # An unreported pane whose spinner is frozen and whose worktree is silent.
+      # Without this, an abandoned agent shows `:working` forever.
+      {:working, :quiet} -> {:stalled, nil}
+      {state, _liveness} -> {state, nil}
+    end
+  end
+
+  def resolve(%{state: rstate, message: msg, reported_at: at}, heuristic, now, liveness) do
     age = DateTime.diff(now, at, :second)
 
     cond do
       age > @max_report_ttl_seconds ->
-        {semantic_from_heuristic(heuristic), nil}
+        resolve(nil, heuristic, now, liveness)
 
       age < @grace_seconds ->
         {rstate, msg}
 
+      # A live title outranks a stale report — but only while the title is
+      # believable. A frozen spinner over a silent worktree is the wedge
+      # signature, and promoting it to `:working` is what made a wedged window
+      # indistinguishable from a busy one.
       heuristic == :working and rstate != :working ->
-        {:working, nil}
+        if liveness == :quiet and age > @stall_seconds, do: {:stalled, nil}, else: {:working, nil}
 
+      # The agent claims to be working and the title agrees, but nothing has
+      # touched the worktree. Believe the evidence over both.
+      heuristic == :working and rstate == :working and liveness == :quiet and
+          age > @stall_seconds ->
+        {:stalled, nil}
+
+      # The hook probably missed a `Stop` event... unless the worktree says the
+      # agent is still writing, in which case the report was right and the title
+      # is merely between spinner frames.
       heuristic == :ready and rstate == :working and age > @working_ttl_seconds ->
-        {:idle, nil}
+        if liveness == :active, do: {:working, msg}, else: {:idle, nil}
 
       true ->
         {rstate, msg}
@@ -182,17 +247,26 @@ defmodule Casein.Terminals.AgentState do
   without a real report fall back to the title heuristic instead of being labeled
   from it (e.g. a plain shell showing `ready` must not read as an idle agent).
   """
-  @spec resolve_for_display(entry() | nil, PaneState.state(), DateTime.t()) ::
+  @spec resolve_for_display(entry() | nil, PaneState.state(), DateTime.t(), liveness()) ::
           {state(), String.t() | nil}
-  def resolve_for_display(entry, heuristic, now \\ DateTime.utc_now())
+  def resolve_for_display(entry, heuristic, now \\ DateTime.utc_now(), liveness \\ nil)
 
-  def resolve_for_display(nil, _heuristic, _now), do: {:unknown, nil}
+  # A pane with no report is normally left unlabeled, so a plain shell showing
+  # `ready` does not read as an idle agent. A frozen spinner over a silent
+  # worktree is the exception worth naming: that pane is displaying activity
+  # that is not happening, and saying nothing lets the lie stand.
+  def resolve_for_display(nil, heuristic, now, liveness) do
+    case resolve(nil, heuristic, now, liveness) do
+      {:stalled, message} -> {:stalled, message}
+      _other -> {:unknown, nil}
+    end
+  end
 
-  def resolve_for_display(%{reported_at: at} = entry, heuristic, now) do
+  def resolve_for_display(%{reported_at: at} = entry, heuristic, now, liveness) do
     if DateTime.diff(now, at, :second) > @max_report_ttl_seconds do
-      {:unknown, nil}
+      resolve_for_display(nil, heuristic, now, liveness)
     else
-      resolve(entry, heuristic, now)
+      resolve(entry, heuristic, now, liveness)
     end
   end
 
@@ -200,7 +274,12 @@ defmodule Casein.Terminals.AgentState do
   Enrich a topology map with resolved `:agent_state` / `:agent_state_message` on
   every pane and window. Runs after `PaneState.enrich_topology/1` so panes and
   windows already carry the title heuristic in `:pane_state`. Only panes/windows
-  with a live report are labeled (see `resolve_for_display/3`).
+  with a live report are labeled (see `resolve_for_display/4`).
+
+  When `Casein.Terminals.PaneLiveness` has already attached `:liveness` to the
+  panes, its verdict is folded in so a frozen spinner over a silent worktree
+  resolves to `:stalled` instead of `:working`. Without it the behaviour is
+  unchanged, so callers that cannot afford a worktree walk lose nothing.
   """
   @spec enrich_topology(map(), String.t()) :: map()
   def enrich_topology(%{panes: panes, windows: windows} = topology, tmux_session)
@@ -215,7 +294,7 @@ defmodule Casein.Terminals.AgentState do
         heuristic = PaneState.window_state(window)
         pane = PaneState.agent_or_active_pane(window)
         entry = pane && Map.get(reports, PaneState.map_get(pane, :id))
-        resolved = resolve_for_display(entry, heuristic, now)
+        resolved = resolve_for_display(entry, heuristic, now, pane_liveness(pane))
 
         window
         |> put_state(resolved)
@@ -230,7 +309,7 @@ defmodule Casein.Terminals.AgentState do
   defp enrich_pane(pane, reports, now) when is_map(pane) do
     heuristic = normalize_heuristic(PaneState.map_get(pane, :pane_state))
     entry = Map.get(reports, PaneState.map_get(pane, :id))
-    resolved = resolve_for_display(entry, heuristic, now)
+    resolved = resolve_for_display(entry, heuristic, now, pane_liveness(pane))
 
     pane
     |> put_state(resolved)
@@ -264,6 +343,29 @@ defmodule Casein.Terminals.AgentState do
 
   defp put_agent_session_id(map, _entry, _resolved), do: map
 
+  # `PaneLiveness` attaches `:liveness` only when a worktree was actually
+  # observed. Anything else — absent, unknown, unreadable — must stay nil so
+  # `resolve/4` treats it as "no evidence" rather than "no activity".
+  #
+  # The verdict is re-derived against `@stall_seconds` rather than reusing
+  # `liveness.state`, because the two thresholds answer different questions.
+  # `PaneLiveness` classifies against a short activity window (is this agent
+  # doing something *right now*), while a stall claim needs a much longer
+  # silence to be worth making. Reusing the short verdict would mark an agent
+  # that wrote four minutes ago as stalled — a false positive of exactly the
+  # kind these states exist to eliminate.
+  defp pane_liveness(pane) when is_map(pane) do
+    case PaneState.map_get(pane, :liveness) do
+      %{quiet_for_seconds: quiet_for} when is_integer(quiet_for) ->
+        if quiet_for > @stall_seconds, do: :quiet, else: :active
+
+      _ ->
+        nil
+    end
+  end
+
+  defp pane_liveness(_pane), do: nil
+
   defp normalize_heuristic(:working), do: :working
   defp normalize_heuristic(:ready), do: :ready
   defp normalize_heuristic("working"), do: :working
@@ -279,6 +381,10 @@ defmodule Casein.Terminals.AgentState do
 
   defp picker_status(:working), do: "running"
   defp picker_status(:blocked), do: "attention"
+  # Both need a human: one has failed, the other is displaying work it is not
+  # doing. Neither is something the fleet will resolve on its own.
+  defp picker_status(:errored), do: "attention"
+  defp picker_status(:stalled), do: "attention"
   defp picker_status(:done), do: "done"
   defp picker_status(:idle), do: "noop"
   defp picker_status(_), do: nil

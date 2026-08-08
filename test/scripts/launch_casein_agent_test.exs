@@ -18,6 +18,66 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert bind_at < materialize_at
   end
 
+  test "every runtime binds the launch cwd, not just grok" do
+    text = File.read!(@script)
+
+    grok_block =
+      text
+      |> String.split(~S<if [[ "$RUNTIME" == "grok" ]]; then>, parts: 2)
+      |> List.last()
+      |> String.split("\nfi\n", parts: 2)
+      |> List.first()
+
+    # Gating this on grok meant `cd <worktree> && opencode` came up in the
+    # workspace root, because CASEIN_CHECKOUT stayed at the name-derived default.
+    refute grok_block =~ "agent_env_bind_current_checkout"
+
+    # And it has to bind before the worktree logic reads CASEIN_CHECKOUT/PWD.
+    assert byte_offset!(text, "agent_env_bind_current_checkout") <
+             byte_offset!(text, "agent_worktree_ensure ")
+  end
+
+  test "binding the launch cwd resolves a linked worktree over an inherited checkout" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "bind-checkout-#{System.unique_integer([:positive])}"
+      )
+
+    primary = Path.join(tmp, "primary")
+    linked = Path.join(tmp, "linked")
+    File.mkdir_p!(primary)
+    on_exit(fn -> File.rm_rf(tmp) end)
+
+    git!(["init", "--quiet", "--initial-branch=main", primary])
+    git!(["-C", primary, "config", "user.email", "test@example.com"])
+    git!(["-C", primary, "config", "user.name", "Test"])
+    File.write!(Path.join(primary, "README"), "x")
+    git!(["-C", primary, "add", "README"])
+    git!(["-C", primary, "commit", "--quiet", "-m", "init"])
+    git!(["-C", primary, "worktree", "add", "--quiet", "-b", "linked", linked])
+
+    {output, 0} =
+      System.cmd(
+        "bash",
+        [
+          "-c",
+          """
+          set -euo pipefail
+          source "#{Path.expand("../../scripts/lib/agent-env.sh", __DIR__)}"
+          cd "#{linked}"
+          agent_env_bind_current_checkout
+          printf '%s\n' "$CASEIN_CHECKOUT"
+          """
+        ],
+        env: [{"CASEIN_CHECKOUT", "/data/workspaces/some-workspace"}],
+        stderr_to_stdout: true
+      )
+
+    # The linked worktree the operator launched in wins over the inherited path.
+    assert String.trim(output) == realpath!(linked)
+  end
+
   test "current tmux binding replaces stale URL scope exactly" do
     tmp =
       Path.join(
@@ -378,6 +438,16 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert {"tmux_session", session} in query
 
     Enum.each(extra, fn pair -> assert pair in query end)
+  end
+
+  defp git!(args) do
+    {_, 0} = System.cmd("git", args, stderr_to_stdout: true)
+    :ok
+  end
+
+  defp realpath!(path) do
+    {out, 0} = System.cmd("realpath", ["-m", path])
+    String.trim(out)
   end
 
   defp byte_offset!(text, needle) do
