@@ -6,6 +6,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   alias Casein.Labels
   alias Casein.Mobile.Clarification
   alias Casein.Terminals.AgentState
+  alias Casein.Terminals.NextPrompt
+  alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.TmuxTopology
 
   import Casein.Agents.TerminalTools.Impl.Shared
@@ -24,6 +26,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
          reason: pane.agent_match,
          safe_to_mutate: pane.agent_match == "agent_pair_marker"
        }
+       |> put_pending_next_prompt(session, pane.id)
        |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))}
     end
   end
@@ -105,7 +108,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
             "terminal_send_agent_command"
           )
 
-          {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
+          confirm_sent(session, pane.id, params, enter_already_sent: true)
 
         {:error, reason} ->
           {:error, reason}
@@ -129,9 +132,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
         :ok ->
           if submit? do
             report_dispatch_working(params, session, pane.id, text, "terminal_paste_agent_text")
+            confirm_sent(session, pane.id, params, enter_already_sent: true)
+          else
+            {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
           end
-
-          {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
 
         {:error, reason} ->
           {:error, reason}
@@ -140,6 +144,35 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
           {:error, String.trim(out)}
       end
     end
+  end
+
+  # tmux accepting an Enter is not the agent consuming it. `PaneSubmit` watches
+  # the pane afterwards and re-presses once if nothing happened, so the tool's
+  # `status: "sent"` stops meaning "we wrote bytes at a pty" and starts meaning
+  # "the agent took the input". Callers that genuinely only want the keystroke
+  # (a TUI menu, a y/n prompt) pass `confirm: false`.
+  defp confirm_sent(session, pane_id, params, opts) do
+    confirm? = Map.get(params, "confirm") != false and Map.get(params, :confirm) != false
+    payload = sent_payload(session, pane_id, "terminal_capture_agent", params)
+
+    case PaneSubmit.confirm_submit(session, pane_id, Keyword.put(opts, :confirm, confirm?)) do
+      {:ok, confirmation} ->
+        {:ok, Map.merge(payload, stringify_confirmation(confirmation))}
+
+      {:error, error} ->
+        {:error, Map.merge(payload, stringify_confirmation(error))}
+    end
+  end
+
+  defp stringify_confirmation(result) do
+    Map.new(result, fn
+      {key, value}
+      when key in [:confirmation, :delivery] and is_atom(value) and not is_nil(value) ->
+        {key, Atom.to_string(value)}
+
+      pair ->
+        pair
+    end)
   end
 
   @doc "Create a durable clarification request for an exact role-marked agent pane."
@@ -308,6 +341,155 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   end
 
   defp validate_grok_attachment(_runtime, _attrs), do: :ok
+
+  @doc """
+  Stage the sticky next operator prompt for an agent pane.
+
+  Replaces whatever was pending for that pane — one slot, latest wins. When the
+  pane is already in the requested state the message is injected immediately
+  instead of waiting for an edge that has already gone by.
+  """
+  @spec set_next_prompt(map()) :: {:ok, map()} | {:error, term()}
+  def set_next_prompt(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_or_default_arg(params),
+         {:ok, text} <- string_arg(params, "text"),
+         {:ok, pane} <- label_target_pane(session, params, :other),
+         {:ok, deliver_when} <- deliver_when_arg(params) do
+      {current_state, _message} = current_agent_state(session, pane.id)
+
+      opts = [
+        workspace_id: workspace_id,
+        deliver_when: deliver_when,
+        coalesce_key: string_param(params, "coalesce_key"),
+        agent_session_id: bound_agent_session_id(session, pane.id, params),
+        expires_at: NextPrompt.expires_at(expires_in_param(params)),
+        set_by: string_param(params, "actor_id"),
+        current_state: current_state
+      ]
+
+      case NextPrompt.set(session, pane.id, text, opts) do
+        {:ok, %{status: status, entry: entry, replaced: replaced}} ->
+          {:ok,
+           %{
+             session: session,
+             target: pane.id,
+             status: Atom.to_string(status),
+             agent_state: Atom.to_string(current_state),
+             replaced_pending: replaced != nil,
+             replaced_coalesce_key: replaced && replaced.coalesce_key
+           }
+           |> Map.merge(entry_payload(entry))
+           |> put_next(
+             "terminal_get_next_prompt",
+             next_prompt_next_args(session, pane.id, params)
+           )
+           |> compact()}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc "Drop the pending sticky prompt for an agent pane."
+  @spec clear_next_prompt(map()) :: {:ok, map()} | {:error, term()}
+  def clear_next_prompt(params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, pane} <- label_target_pane(session, params, :other) do
+      cleared =
+        NextPrompt.clear(session, pane.id, coalesce_key: string_param(params, "coalesce_key"))
+
+      {:ok,
+       %{
+         session: session,
+         target: pane.id,
+         status: if(cleared, do: "cleared", else: "not_pending")
+       }
+       |> Map.merge(if(cleared, do: entry_payload(cleared), else: %{}))
+       |> compact()}
+    end
+  end
+
+  @doc "Read the pending sticky prompt for an agent pane, if any."
+  @spec get_next_prompt(map()) :: {:ok, map()} | {:error, term()}
+  def get_next_prompt(params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, pane} <- label_target_pane(session, params, :other) do
+      entry = NextPrompt.get(session, pane.id)
+
+      {:ok,
+       %{
+         session: session,
+         target: pane.id,
+         pending_next_prompt: entry != nil
+       }
+       |> Map.merge(if(entry, do: entry_payload(entry), else: %{}))
+       |> compact()}
+    end
+  end
+
+  # Only the truthy flag is written, so the common "nothing staged" payload is
+  # byte-identical to what callers see today.
+  defp put_pending_next_prompt(payload, session, pane_id) do
+    case NextPrompt.get(session, pane_id) do
+      nil ->
+        payload
+
+      entry ->
+        Map.merge(payload, %{
+          pending_next_prompt: true,
+          pending_next_prompt_deliver_when: Atom.to_string(entry.deliver_when)
+        })
+    end
+  end
+
+  defp entry_payload(entry) do
+    compact(%{
+      text: entry.text,
+      deliver_when: Atom.to_string(entry.deliver_when),
+      coalesce_key: entry.coalesce_key,
+      agent_session_id: entry.agent_session_id,
+      set_at: DateTime.to_iso8601(entry.set_at),
+      expires_at: entry.expires_at && DateTime.to_iso8601(entry.expires_at)
+    })
+  end
+
+  defp next_prompt_next_args(session, pane_id, params) do
+    compact(%{workspace_id: workspace_id(params), session: session, pane: pane_id})
+  end
+
+  defp deliver_when_arg(params) do
+    case NextPrompt.parse_deliver_when(string_param(params, "deliver_when")) do
+      {:ok, deliver_when} -> {:ok, deliver_when}
+      :error -> {:error, :invalid_deliver_when}
+    end
+  end
+
+  defp expires_in_param(params) do
+    case Map.get(params, "expires_in_seconds") || Map.get(params, :expires_in_seconds) do
+      seconds when is_integer(seconds) -> seconds
+      _ -> nil
+    end
+  end
+
+  # Binding the runtime session id is what makes "drop when the agent restarts"
+  # possible. An explicit argument wins so an orchestrator that already knows
+  # which session it is addressing is not at the mercy of report timing; absent
+  # that, the pane's last report is the best available answer, and nil (no hooks
+  # wired) simply means the entry is never dropped for this reason.
+  defp bound_agent_session_id(session, pane_id, params) do
+    case string_param(params, "agent_session_id") do
+      id when is_binary(id) ->
+        id
+
+      nil ->
+        case AgentState.get(session, pane_id) do
+          %{agent_session_id: id} when is_binary(id) and id != "" -> id
+          _ -> nil
+        end
+    end
+  end
 
   @doc "Block until an agent pane reaches one of the requested semantic states."
   @spec wait_agent_state(map()) :: {:ok, map()} | {:error, term()}

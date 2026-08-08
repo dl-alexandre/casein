@@ -50,6 +50,7 @@ defmodule CaseinWeb.API.MCPToolSearch do
       terminal_topology
       terminal_capture
       terminal_send_agent_command
+      terminal_set_next_prompt
       terminal_wait_agent_state
     ),
     preview: ~w(

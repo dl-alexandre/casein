@@ -149,6 +149,8 @@ defmodule Casein.Agents.MCPAudit do
         "terminal_send_agent_keys",
         "terminal_send_agent_command",
         "terminal_paste_agent_text",
+        "terminal_set_next_prompt",
+        "terminal_clear_next_prompt",
         "terminal_request_clarification",
         "terminal_request_human_input",
         "annotation_propose",
@@ -282,6 +284,13 @@ defmodule Casein.Agents.MCPAudit do
   defp terminal_summary("terminal_set_agent_label", args) do
     label = Map.get(args, "label") || Map.get(args, :label)
     if is_binary(label), do: "set label · " <> truncate(label), else: "terminal_set_agent_label"
+  end
+
+  defp terminal_summary("terminal_set_next_prompt", args) do
+    when_ = Map.get(args, "deliver_when") || Map.get(args, :deliver_when) || "next_idle"
+    text = Map.get(args, "text") || Map.get(args, :text)
+    base = "next prompt · " <> to_string(when_)
+    if is_binary(text), do: base <> " · " <> truncate(text), else: base
   end
 
   defp terminal_summary("terminal_report_agent_state", args) do
