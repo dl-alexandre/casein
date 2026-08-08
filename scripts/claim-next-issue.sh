@@ -128,9 +128,15 @@ fi
 
 # Resolve `workspace/<name>` by asking the repo which such labels exist, rather
 # than guessing: CASEIN_WORKSPACE_NAME is `<owner>-<workspace>` (dalexandre-devide)
-# while the label is the bare workspace (workspace/devide), and a guess that is
-# wrong by one prefix silently returns an empty queue — indistinguishable from
-# "no work", which is the worst possible failure for an unattended runner.
+# while the label is the bare workspace, and a guess that is wrong by one prefix
+# silently returns an empty queue — indistinguishable from "no work", which is
+# the worst possible failure for an unattended runner.
+#
+# The repo name is the last candidate because the workspace name can outlive a
+# rename: this checkout is still called `dalexandre-devide` after the project
+# became `casein`, so the derived `workspace/devide` stopped existing while
+# `workspace/casein` did. Falling back to the repo name keeps a renamed project
+# resolvable without pinning CASEIN_QUEUE_WORKSPACE on every runner.
 claim_resolve_workspace_label() {
   local explicit="$1"
   local labels candidates candidate
@@ -146,7 +152,12 @@ claim_resolve_workspace_label() {
     die "no label 'workspace/${explicit}' in ${REPO} — create it, or pass an existing one"
   fi
 
-  candidates=("${CASEIN_QUEUE_WORKSPACE:-}" "${CASEIN_WORKSPACE_NAME:-}" "${CASEIN_WORKSPACE_NAME##*-}")
+  candidates=(
+    "${CASEIN_QUEUE_WORKSPACE:-}"
+    "${CASEIN_WORKSPACE_NAME:-}"
+    "${CASEIN_WORKSPACE_NAME##*-}"
+    "${REPO##*/}"
+  )
   for candidate in "${candidates[@]}"; do
     [[ -n "$candidate" ]] || continue
     if printf '%s\n' "$labels" | grep -qx "workspace/${candidate}"; then
