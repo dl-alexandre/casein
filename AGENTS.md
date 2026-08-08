@@ -604,6 +604,7 @@ What is and is not refused, so it stays predictable:
 | **Allowed** | Reads (`status`, `log`, `diff`, …), `push` and `fetch` (they move refs, not the tree), plain `git branch`, `worktree`, `config` |
 | **Allowed** | `git -C <other-tree> commit` from a shared pane — the tree checked is the one being *written*, and Casein's own scripts use `git -C` constantly |
 | **Not seen** | A git command inside another program (`bash -c '…'`, a make target). This guards the accident, not a determined caller — which has the flag and does not need to smuggle |
+| **Allowed** | Panes sharing a worktree *inside one window* — Casein runs one agent per window, so those are that agent's own surfaces (shell, file pane, preview split). The topology warning still lists them; only another **window** in the tree is a conflict |
 
 Note that `launch-casein-agent.sh` binds `CASEIN_CHECKOUT` to the cwd you launch
 from, so `cd <worktree> && opencode` places the agent in that worktree for every

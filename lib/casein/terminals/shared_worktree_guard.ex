@@ -14,7 +14,8 @@ defmodule Casein.Terminals.SharedWorktreeGuard do
   existing tree on purpose — so the guard's job is to make the sharing *known*,
   not to make it impossible. What it removes is the silent case.
 
-  Two properties keep it cheap and honest:
+  Three properties keep it cheap, and keep it from being wrong more often than
+  right:
 
     * The command is classified first (`Casein.Git.MutationScan`), so a send that
       is not a git write never pays for a topology snapshot. Nearly all of them
@@ -24,6 +25,11 @@ defmodule Casein.Terminals.SharedWorktreeGuard do
       commit` from a shared pane writes elsewhere and is allowed; the repo's own
       scripts use `git -C` constantly, and a guard that blocked them would be
       turned off within a day.
+
+    * The conflict is with another *window*. Casein runs one agent per window, so
+      panes sharing a worktree inside one window are that agent's own surfaces —
+      its shell, a file pane, a preview split. Half the shared-worktree hits on a
+      real box are that shape.
   """
 
   alias Casein.Git.MutationScan
@@ -62,7 +68,7 @@ defmodule Casein.Terminals.SharedWorktreeGuard do
 
     with {:ok, target} <- target_pane(panes, pane),
          {:ok, worktree} <- mutation_worktree(target, mutation),
-         [_ | _] = others <- shared_with(panes, worktree, PaneState.map_get(target, :id)) do
+         [_ | _] = others <- shared_with(panes, worktree, target) do
       {:error, refusal(target, worktree, others, mutation)}
     else
       _ -> :ok
@@ -117,11 +123,26 @@ defmodule Casein.Terminals.SharedWorktreeGuard do
   defp expand_against(dir, cwd) when is_binary(cwd) and cwd != "", do: Path.expand(dir, cwd)
   defp expand_against(dir, _cwd), do: Path.expand(dir)
 
-  defp shared_with(panes, worktree, pane_id) do
+  # Other *windows* in this worktree — not other panes.
+  #
+  # Casein runs one agent per window, so panes sharing a worktree inside one
+  # window are that agent's own surfaces: its shell, a file pane, a preview split,
+  # all inheriting its cwd. On this box roughly half the shared-worktree hits are
+  # exactly that shape, and refusing them would refuse an agent's own commits —
+  # the guard would be wrong far more often than right, and off within a day.
+  #
+  # The topology *warning* still reports every sharing pane, which is correct for
+  # a warning; the difference is that a refusal has to be sure. The incident this
+  # exists for was windows 2, 3 and 4 adopting one worktree.
+  defp shared_with(panes, worktree, target) do
+    windows = Map.new(panes, &{PaneState.map_get(&1, :id), PaneState.map_get(&1, :window_id)})
+    target_id = PaneState.map_get(target, :id)
+    target_window = PaneState.map_get(target, :window_id)
+
     panes
     |> PaneLiveness.shared_worktrees()
     |> Map.get(worktree, [])
-    |> Enum.reject(&(&1 == pane_id))
+    |> Enum.reject(&(&1 == target_id or Map.get(windows, &1) == target_window))
   end
 
   defp refusal(target, worktree, others, mutation) do

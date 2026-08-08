@@ -593,6 +593,76 @@ defmodule Casein.Agents.TerminalToolsTest do
       assert Enum.sort(error.shared_with) == ["%1", "%2"]
     end
 
+    # Casein runs one agent per window, so panes sharing a worktree *inside* one
+    # window are that agent's own surfaces — its shell plus a file pane or a
+    # preview split, all inheriting its cwd. On the live box that is roughly half
+    # of all shared-worktree hits, and refusing them would refuse an agent its own
+    # commits. The topology warning still reports them, which is right for a
+    # warning; a refusal has to be sure.
+    test "panes sharing a worktree inside one window are one agent, not a conflict" do
+      session = Tmux.session_name("alpha", "main")
+      shared = tmp_repo!("one-window")
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [%{id: "@1", index: 0, name: "w1", active: true, panes: 2, activity: 10}]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          agent_pane_at("%1", "@1", shared),
+          agent_pane_at("%2", "@1", shared)
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      assert {:ok, _payload} =
+               TerminalTools.invoke("terminal_send_command", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "pane" => "%1",
+                 "command" => "git commit -am wip"
+               })
+
+      assert_receive {:fake_tmux_send_command, _, "%1", "git commit -am wip", _}
+    end
+
+    # ...but a third window in that same tree is the incident this exists for,
+    # and the refusal names only the other windows.
+    test "a pane in another window makes the same tree a conflict" do
+      session = Tmux.session_name("alpha", "main")
+      shared = tmp_repo!("two-windows")
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{id: "@1", index: 0, name: "w1", active: true, panes: 2, activity: 10},
+          %{id: "@2", index: 1, name: "w2", active: false, panes: 1, activity: 10}
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          agent_pane_at("%1", "@1", shared),
+          agent_pane_at("%2", "@1", shared),
+          agent_pane_at("%3", "@2", shared)
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      assert {:error, error} =
+               TerminalTools.invoke("terminal_send_command", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "pane" => "%1",
+                 "command" => "git commit -am wip"
+               })
+
+      assert error.error == :shared_worktree_mutation
+      # %2 is this agent's own second pane; only the other window is named.
+      assert error.shared_with == ["%3"]
+    end
+
     # send_keys is the same command line, typed one keystroke short of Enter.
     test "terminal_send_keys is guarded too" do
       %{session: session} = shared_worktree_session!()
