@@ -107,17 +107,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspacePolicyEvents do
       ws_id = socket.assigns.workspace.id
       granter = current_actor_id(socket)
       until = DateTime.add(DateTime.utc_now(), minutes * 60, :second)
+      # The `workspace.agent_write_unlock_granted` audit event is emitted by
+      # Workspaces.grant_agent_write_unlock/3 itself, so every caller — this
+      # handler, a release console, any future path — is traceable. Do not
+      # re-emit it here.
       {:ok, _} = Workspaces.grant_agent_write_unlock(ws_id, until, granter)
-
-      _ =
-        Audit.emit!(%{
-          action: "workspace.agent_write_unlock_granted",
-          workspace_id: ws_id,
-          actor_id: granter,
-          target_type: "workspace",
-          target_ref: ws_id,
-          metadata: %{"until" => DateTime.to_iso8601(until), "minutes" => minutes}
-        })
 
       {:noreply,
        socket

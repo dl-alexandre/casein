@@ -585,6 +585,46 @@ if casein_reconcile_caddy_upstream \
   caddy_reconcile_ok=1
 fi
 
+# Names of the deploy_status checks that are not `true` (or `{"ok": true}`).
+# Prints nothing when everything passed.
+casein_failing_deploy_checks() {
+  printf '%s' "${1:-}" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print("unparseable_deploy_status"); raise SystemExit(0)
+checks = data.get("checks") or {}
+if not isinstance(checks, dict):
+    print("unparseable_deploy_status"); raise SystemExit(0)
+for name, value in sorted(checks.items()):
+    ok = value.get("ok") if isinstance(value, dict) else value
+    if ok is not True:
+        print(name)
+' 2>/dev/null || printf 'unparseable_deploy_status\n'
+}
+
+# `deploy_revision_current` is a TIP-equality test: Casein.Deployment.Drift
+# compares the running SHA against `git ls-remote` head. The poller's gate takes
+# 11-15 min and several agents merge PRs an hour on this box, so a branch that
+# advances *during* the build makes a perfectly durable artifact look like drift
+# and blocks its own activation. Observed 2026-08-04: PR #596 passed the gate,
+# then failed handoff because #589 merged while it ran; the poller then rebuilt
+# the newer tip from scratch, so the box lost a full cycle for nothing.
+#
+# An ancestor of the branch head is published and durable — exactly what the
+# handoff is meant to certify. Accept it (loudly), and keep failing for a
+# revision that is genuinely absent from the branch.
+casein_revision_on_branch_history() {
+  local revision="${1:-}" branch="${2:-master}"
+  local repo="${DEPLOY_SCRIPT_SELF_DIR:-}"
+
+  [[ -n "$repo" && -n "$revision" && "$revision" != "manual" ]] || return 1
+  git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || return 1
+  git -C "$repo" fetch --quiet origin "$branch" 2>/dev/null || true
+  git -C "$repo" merge-base --is-ancestor "$revision" "origin/${branch}" 2>/dev/null
+}
+
 log "verifying deploy handoff health"
 deploy_status_json="$(curl -sS --unix-socket "${CURRENT_SYMLINK}" \
   -H "authorization: Bearer ${token}" \
@@ -597,6 +637,10 @@ elif [ "${CADDY_RECONCILE_OUTCOME}" = "admin_unavailable" ] &&
     casein_canonical_route_attests_caddy_unavailable \
     "${CADDY_HOST}" "${REVISION}" "${NEW_SOCKET}" "${token}"; then
   log "warning: accepting exact canonical attestation after Caddy admin unavailability"
+elif [[ "$(casein_failing_deploy_checks "${deploy_status_json}")" == "deploy_revision_current" ]] &&
+    casein_revision_on_branch_history "${REVISION}"; then
+  log "warning: origin/master advanced during this deploy; ${REVISION} is an ancestor of the"
+  log "warning:   branch head, so the release is published and durable. Accepting the handoff."
 elif [[ "${CASEIN_ALLOW_DEPLOY_DRIFT:-0}" == "1" ]]; then
   if printf '%s' "${deploy_status_json}" | grep -q '"deploy_revision_current":false'; then
     log "warning: deploy_revision_current=false — revision ${REVISION} is not on origin/master"

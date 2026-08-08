@@ -55,6 +55,17 @@ defmodule Casein.Proposals.AutoApplyTest do
   defp unlock!(root),
     do: Workspaces.grant_agent_write_unlock(root, DateTime.add(DateTime.utc_now(), 3600), "alice")
 
+  # Everything this module is actually asserting about, newest last. Granting an
+  # agent-write unlock is audited in its own right (Workspaces.State), so tests
+  # here must scope to auto-apply's own decisions rather than assume they are
+  # the only writer to the workspace's audit log.
+  defp auto_apply_events(root) do
+    root
+    |> Audit.recent_for(10)
+    |> Enum.filter(&(&1.action in ["proposals.auto_apply_skipped", "proposals.auto_applied"]))
+    |> Enum.reverse()
+  end
+
   defp run_ctx(run_id, overrides \\ %{}) do
     Map.merge(
       %{run_id: run_id, command_id: "test-cmd", status: :succeeded, output_kind: :proposal},
@@ -103,7 +114,11 @@ defmodule Casein.Proposals.AutoApplyTest do
     assert :ok =
              AutoApply.maybe_auto_apply(root, root, run_ctx("r2", %{output_kind: :diagnostic}))
 
-    assert Audit.recent_for(root, 10) == []
+    # Scoped to this module's own events: `unlock!/1` grants an agent-write
+    # unlock, and granting is itself audited, so the workspace's recent audit
+    # list is legitimately non-empty here. What "silent no-op" means is that
+    # auto-apply recorded nothing.
+    assert auto_apply_events(root) == []
   end
 
   test "disabled kill switch skips and audits, touches no files", %{root: root} do
@@ -113,7 +128,7 @@ defmodule Casein.Proposals.AutoApplyTest do
     assert :ok = AutoApply.maybe_auto_apply(root, root, run_ctx("r1"))
     refute File.read!(Path.join(root, "a.txt")) =~ "line 2 EDITED"
 
-    [event] = Audit.recent_for(root, 5)
+    assert [event] = auto_apply_events(root)
     assert event.action == "proposals.auto_apply_skipped"
     assert event.reason == :auto_apply_disabled
   end
@@ -139,7 +154,7 @@ defmodule Casein.Proposals.AutoApplyTest do
 
     assert :ok = AutoApply.maybe_auto_apply(root, root, run_ctx("no-such-run"))
 
-    [_authorize, skip] = Audit.recent_for(root, 5) |> Enum.reverse()
+    assert [skip] = auto_apply_events(root)
     assert skip.action == "proposals.auto_apply_skipped"
     assert skip.reason == :invalid_proposal
   end
