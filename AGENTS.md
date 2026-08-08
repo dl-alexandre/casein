@@ -186,7 +186,7 @@ an issue to redirect an agent that is already running — that is the hot path
 | `queue/claimed` | A runner owns it. The claim comment says who and when. |
 | `queue/blocked` | Needs a human. The issue body or a comment says exactly what under **Needs**. |
 | `queue/done` | Landed. Applied as the issue is closed. |
-| `workspace/<name>` | Which checkout it belongs to, e.g. `workspace/devide`. Create on demand. |
+| `workspace/<name>` | Which checkout it belongs to, e.g. `workspace/casein`. Create on demand. |
 | `kind/<type>` | `implement`, `docs`, `ops`. |
 | `priority/<n>` | `p0` ship first, `p1` next, `p2` follow-up. |
 
@@ -228,7 +228,9 @@ GitHub call failed. The claimant identity defaults to `<host>:<pane>` and can be
 pinned with `CASEIN_CLAIM_OWNER`.
 
 The workspace label is resolved by asking the repo which `workspace/*` labels
-exist, so `CASEIN_WORKSPACE_NAME=dalexandre-devide` finds `workspace/devide`.
+exist, trying `CASEIN_QUEUE_WORKSPACE`, then `CASEIN_WORKSPACE_NAME`, then its
+last segment, then the repo name. The repo-name fallback matters after a rename:
+this checkout is still `dalexandre-devide` while the label is `workspace/casein`.
 Override with `--workspace <name>`. It fails loudly on an unknown workspace
 rather than reporting an empty queue — for an unattended runner those two look
 identical and only one of them means "go to sleep".
@@ -237,7 +239,7 @@ The raw protocol, for the steps the script does not cover (and for other repos):
 
 ```bash
 # 1. Find work for YOUR workspace. Never claim another workspace's issue.
-gh issue list --label queue/ready --label workspace/devide \
+gh issue list --label queue/ready --label workspace/casein \
   --state open --json number,title,labels
 
 # 2. Claim it BEFORE starting: comment, then flip the label. Comment first —
