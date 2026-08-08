@@ -1,0 +1,104 @@
+name: Agent work item
+description: A unit of work a Casein runner can claim and land without further chat
+title: "<verb> <object> (one line, no ticket prefix)"
+labels: ["queue/ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the **cold queue**: work that should happen without anyone
+        watching a terminal. A runner will find this issue by label, claim it,
+        do it in its own worktree, and close it with a PR link.
+
+        That means the issue has to stand on its own. A runner cannot ask you a
+        follow-up question — if something is ambiguous it will either guess or
+        stop and label the issue `queue/blocked`. Both cost more than spending
+        another minute here.
+
+        For steering work that is *already running*, do not open an issue —
+        use the sticky next-prompt (hot path). See the claim protocol in
+        `AGENTS.md`.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true when this is done? Outcome, not implementation.
+      placeholder: |
+        Preview router must never serve stale config after a restart.
+    validations:
+      required: true
+
+  - type: input
+    id: workspace
+    attributes:
+      label: Workspace
+      description: >
+        Which workspace this belongs to. Gets the matching `workspace/<name>`
+        label so runners can filter to their own checkout — create the label if
+        it does not exist yet.
+      placeholder: devide
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: >
+        Checklist a reviewer can tick without re-deriving intent. Prefer things
+        that can be observed (a command, a test, an endpoint) over things that
+        must be judged.
+      value: |
+        - [ ]
+        - [ ] Tests or a smoke script covering the change
+        - [ ] PR URL commented on this issue
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: >
+        Anything that narrows *how* this is done — files to touch or avoid,
+        patterns to mirror, ordering against other work, performance or
+        compatibility limits.
+      placeholder: |
+        Mirror the reap pattern in scripts/lib/canary-drain.sh.
+        Do not change the systemd unit; it lives in the host overlay.
+    validations:
+      required: false
+
+  - type: textarea
+    id: forbidden
+    attributes:
+      label: Forbidden
+      description: >
+        Explicit non-goals and things a runner must not do. This is the field
+        that prevents drive-by refactors and blast-radius surprises — be blunt.
+      placeholder: |
+        No refactor of the surrounding module.
+        Do not delete artifacts or stop services on the shared box.
+        Do not merge; open the PR and stop.
+    validations:
+      required: false
+
+  - type: input
+    id: parent
+    attributes:
+      label: Parent epic
+      description: Issue number of the epic this rolls up to, if any.
+      placeholder: "#673"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: ready
+    attributes:
+      label: Ready to claim
+      options:
+        - label: >
+            This issue is self-contained: a runner can finish it without asking
+            a question. If not, drop the `queue/ready` label until it is.
+          required: true
