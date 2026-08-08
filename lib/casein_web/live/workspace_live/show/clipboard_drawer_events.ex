@@ -16,6 +16,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawerEvents do
   import Phoenix.LiveView, only: [connected?: 1]
 
   alias Casein.Terminals.ClipboardHistory
+  alias CaseinWeb.WorkspaceLive.Show.Overlay
 
   # --- state -----------------------------------------------------------------
 
@@ -38,7 +39,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawerEvents do
 
   @doc "Open the drawer and run the first (connected-only) load of the copies."
   def open(socket) do
-    socket = assign(socket, :clipboard_drawer_open, true)
+    socket =
+      socket
+      |> Overlay.close_others(:clipboard_drawer)
+      |> assign(:clipboard_drawer_open, true)
+
     if connected?(socket), do: load_state(socket), else: socket
   end
 

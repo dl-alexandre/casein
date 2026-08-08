@@ -2,6 +2,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
   use Casein.TestCase, async: true
 
   alias CaseinWeb.WorkspaceLive.Show.AgentEvents
+  alias CaseinWeb.WorkspaceLive.Show.ClipboardDrawerEvents
   alias CaseinWeb.WorkspaceLive.Show.Overlay
 
   # Every floating surface open at once — the state the arbiter exists to make
@@ -11,6 +12,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
     context_menu: %{menu: "pane", items: []},
     audit_drawer_open: true,
     notif_drawer_open: true,
+    clipboard_drawer_open: true,
     template_library_open: true,
     template_preview: %{template: %{id: "t1"}}
   }
@@ -32,6 +34,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
         :context_menu -> not is_nil(socket.assigns.context_menu)
         :audit_drawer -> socket.assigns.audit_drawer_open
         :notifications -> socket.assigns.notif_drawer_open
+        :clipboard_drawer -> socket.assigns.clipboard_drawer_open
         :template_library -> socket.assigns.template_library_open
         :template_preview -> not is_nil(socket.assigns.template_preview)
       end
@@ -44,6 +47,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
           :context_menu,
           :audit_drawer,
           :notifications,
+          :clipboard_drawer,
           :template_library,
           :template_preview
         ] do
@@ -107,6 +111,25 @@ defmodule CaseinWeb.WorkspaceLive.Show.OverlayTest do
       {:noreply, socket} = AgentEvents.handle_event("audit_drawer:toggle", %{}, socket(@all_open))
 
       refute socket.assigns.audit_drawer_open
+      assert socket.assigns.palette_open
+    end
+
+    test "opening the clipboard drawer closes the palette" do
+      {:noreply, socket} =
+        ClipboardDrawerEvents.handle_event(
+          "clipboard:toggle",
+          %{},
+          socket(%{@all_open | clipboard_drawer_open: false})
+        )
+
+      assert open_overlays(socket) == [:clipboard_drawer]
+    end
+
+    test "closing the clipboard drawer leaves other surfaces alone" do
+      {:noreply, socket} =
+        ClipboardDrawerEvents.handle_event("clipboard:toggle", %{}, socket(@all_open))
+
+      refute socket.assigns.clipboard_drawer_open
       assert socket.assigns.palette_open
     end
   end
