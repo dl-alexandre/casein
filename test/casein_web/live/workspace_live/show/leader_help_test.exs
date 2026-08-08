@@ -9,6 +9,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelpTest do
   test "agents tab hosts the connect mint form and empty-token state" do
     html =
       render_component(&LeaderHelp.leader_help_overlay/1,
+        open: true,
         connect_tokens: []
       )
 
@@ -24,6 +25,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelpTest do
   test "a freshly minted token is revealed with copy buttons and the config" do
     html =
       render_component(&LeaderHelp.leader_help_overlay/1,
+        open: true,
         connect_new_token: "RAW-TOKEN-VALUE",
         connect_mcp_json: ~s({"mcpServers":{}}),
         connect_tokens: []
@@ -50,6 +52,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelpTest do
 
     html =
       render_component(&LeaderHelp.leader_help_overlay/1,
+        open: true,
         connect_tokens: [token]
       )
 
@@ -62,6 +65,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelpTest do
   test "connect error and info banners render when set" do
     html =
       render_component(&LeaderHelp.leader_help_overlay/1,
+        open: true,
         connect_error: "Could not mint a token.",
         connect_info: "Token revoked.",
         connect_tokens: []
