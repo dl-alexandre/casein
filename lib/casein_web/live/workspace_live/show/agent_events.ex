@@ -14,10 +14,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentEvents do
   alias Casein.Proposals.AutoApply
   alias Casein.Runs.Ledger
   alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.Overlay
   alias CaseinWeb.WorkspaceLive.Show.RunEvents
 
   def handle_event("audit_drawer:toggle", _params, socket) do
-    {:noreply, assign(socket, :audit_drawer_open, not socket.assigns.audit_drawer_open)}
+    if socket.assigns.audit_drawer_open do
+      {:noreply, assign(socket, :audit_drawer_open, false)}
+    else
+      {:noreply,
+       socket
+       |> Overlay.close_others(:audit_drawer)
+       |> assign(:audit_drawer_open, true)}
+    end
   end
 
   def handle_event("audit_drawer:close", _params, socket) do

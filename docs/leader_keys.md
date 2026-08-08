@@ -16,10 +16,18 @@ Mounted on the persistent workspace container so it survives tab switches.
 - **Capture phase:** the `keydown` listener runs in the capture phase, before
   the terminal textarea sees the key, so `C-b` works even while the terminal
   has focus.
+- **Keymap comes from the server:** the key → action-name map is defined once
+  in `CaseinWeb.WorkspaceLive.Show.LeaderBindings` and serialized onto the hook
+  element as `data-leader-bindings`. The hook parses it and threads it into
+  `leaderSecondKeyDecision` as `opts.actions`; no keymap literal lives in JS, so
+  the cheatsheet, the palette's `C-b …` hints, the visible chrome glyphs, and
+  dispatch cannot disagree about a key.
 - **Action dispatch:** each bound key looks up a
   `[data-leader-action="<name>"]` element and calls `.click()` on it. The
   click fires the `phx-click` binding, so the server handles the action
-  through the same handler the visible button uses.
+  through the same handler the visible button uses. Actions with special client
+  behavior (`pane-overlay`, `copy-link`, the two pickers) branch on the action
+  *name*, so rebinding a key never touches that logic.
 - **Central dispatch targets:** every action lives on exactly one hidden
   `<button>` in a dispatch div in the workspace LiveView, rendered outside
   the chrome block — so bindings keep working in focus mode (chrome hidden).
@@ -146,17 +154,23 @@ All of these require the `C-b` prefix first (except where noted).
 
 ## Adding a binding
 
-1. Add the key → action name to `LEADER_ACTIONS` in
-   `assets/js/workspace_leader.js`.
+1. Add an entry to `@bindings` in
+   `lib/casein_web/live/workspace_live/show/leader_bindings.ex` — the key(s),
+   the action name, its `group`/`display`/`desc` for the cheatsheet, and
+   `palette_ids` if a palette item should show the `C-b …` hint.
 2. Add a hidden `<button>` with `data-leader-action="<name>"` to the central
    dispatch div in the workspace LiveView template (search for
    "Central leader-key dispatch targets") whose `phx-click` performs the
    action. Keep the contract: exactly one element per action, and the
    dispatch div stays outside the chrome block so focus mode keeps working.
+   (`LeaderBindingsTest` fails if a `:dispatch` binding has no button.)
 3. Optionally add a `<kbd class="leader-kbd">` hint near the visible control
    (the visible button does **not** get `data-leader-action`).
 
-Keep the contract: the JS map only routes keys to clicks. Business logic stays
+That is the whole edit — the browser hook, the in-app cheatsheet, the palette
+hints, and the chrome glyphs all read that one table.
+
+Keep the contract: the key map only routes keys to clicks. Business logic stays
 in LiveView event handlers.
 
 ## Adoption roadmap

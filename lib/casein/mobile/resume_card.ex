@@ -7,11 +7,14 @@ defmodule Casein.Mobile.ResumeCard do
   carries an allowlisted navigation locator.
   """
 
+  alias Casein.Cockpit.Tabs
   alias Casein.Origin
 
   @version 1
   @locator_keys ~w(tmux_session window pane tab artifact)a
-  @tabs ~w(terminal files search diff artifacts run proposals logs history)
+  # The locator's `tab` must name a surface the cockpit can actually open —
+  # same list the cockpit gates on. See Casein.Cockpit.Tabs.
+  @tabs Tabs.all()
   @task_types ~w(run command agent_task)
   @max_locator_value 256
 

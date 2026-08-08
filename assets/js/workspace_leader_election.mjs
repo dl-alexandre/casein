@@ -6,45 +6,11 @@
 
 import {pickerToggleDecision} from "./workspace_picker_toggle.mjs"
 
-// Standard tmux C-b second-key → data-leader-action name.
-// The command palette shows these bindings as per-item `hint` strings
-// (lib/casein/command_palette/actions.ex + palette_items.ex) — keep the
-// two in sync when rebinding keys.
-export const LEADER_ACTIONS = {
-  s: "session-picker",
-  w: "window-picker",
-  "(": "prev-session",
-  ")": "next-session",
-  c: "new-window",
-  C: "new-window-tab",
-  n: "next-window",
-  p: "prev-window",
-  l: "last-window",
-  y: "copy-link",
-  d: "detach",
-  o: "pane-next",
-  "{": "pane-swap-previous",
-  "}": "pane-swap-next",
-  ";": "last-pane",
-  ":": "palette",
-  "?": "help",
-  "&": "kill-window",
-  "%": "split-right",
-  "|": "split-right",
-  '"': "split-down",
-  "-": "split-down",
-  z: "zoom",
-  x: "close-pane",
-  q: "pane-overlay",
-  ",": "rename-window",
-  // Undo the last window close while it is still in its grace period.
-  r: "restore-window",
-  $: "rename-session",
-  ArrowLeft: "pane-left",
-  ArrowRight: "pane-right",
-  ArrowUp: "pane-up",
-  ArrowDown: "pane-down",
-}
+// The C-b second-key → data-leader-action map is NOT defined here. It is
+// served by CaseinWeb.WorkspaceLive.Show.LeaderBindings on the hook element's
+// data-leader-bindings attribute and threaded in as `opts.actions`, so the
+// same table also drives the cheatsheet, the palette's "C-b z" hints, and the
+// visible chrome glyphs. A local copy would be one more thing to keep in sync.
 
 // Arrow keys report as e.code on some platforms; normalize before lookup.
 export function leaderSecondKey(e) {
@@ -69,7 +35,10 @@ export function leaderSecondKey(e) {
  *   windowsOpen?: boolean,
  *   windowSidebarVisible?: boolean,
  *   sessionsSidebarVisible?: boolean,
- * }} [opts]
+ *   actions?: Record<string, string>,
+ * }} [opts] `actions` is the server-supplied key → action map. Without it no
+ *   key resolves and every second key reads as unknown, which is the intended
+ *   failure mode: the mouse-reachable chrome still drives all of these.
  * @returns {{
  *   type: string,
  *   clearLeader?: boolean,
@@ -88,6 +57,7 @@ export function leaderSecondKeyDecision(key, opts = {}) {
     mobileOpen = false,
     sessionsOpen = false,
     windowsOpen = false,
+    actions = {},
     windowSidebarVisible = false,
     sessionsSidebarVisible = false,
   } = opts
@@ -108,7 +78,7 @@ export function leaderSecondKeyDecision(key, opts = {}) {
     return {type: "window-index", index: key, clearLeader: true}
   }
 
-  const action = LEADER_ACTIONS[key]
+  const action = actions[key]
   if (!action) {
     return {type: "unknown", clearLeader: true}
   }

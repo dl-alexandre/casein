@@ -21,6 +21,7 @@ defmodule CaseinWeb.NotificationsDrawerEvents do
   alias Casein.Notifications
   alias Casein.Push
   alias CaseinWeb.Plugs.ForwardAuth
+  alias CaseinWeb.WorkspaceLive.Show.Overlay
 
   @list_opts [limit: 80, open_only: true]
 
@@ -79,7 +80,11 @@ defmodule CaseinWeb.NotificationsDrawerEvents do
 
   @doc "Open the drawer and run the first (connected-only) inbox load."
   def open(socket) do
-    socket = assign(socket, :notif_drawer_open, true)
+    socket =
+      socket
+      |> Overlay.close_others(:notifications)
+      |> assign(:notif_drawer_open, true)
+
     if connected?(socket), do: load_state(socket), else: socket
   end
 

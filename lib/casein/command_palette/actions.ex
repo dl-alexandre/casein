@@ -17,11 +17,13 @@ defmodule Casein.CommandPalette.Actions do
   never sends arbitrary keystrokes to a pane.
   """
 
+  alias Casein.Cockpit.Tabs
   alias Casein.Commands.Allowlist
   alias Casein.CommandPalette.Item
   alias Casein.Terminals.Theme
 
-  @tabs ~w(terminal files search diff artifacts run proposals logs history)
+  # Shared with the cockpit's switch_tab / ?tab= gate — see Casein.Cockpit.Tabs.
+  @tabs Tabs.all()
 
   @spec all() :: [Item.t()]
   def all do
@@ -95,8 +97,10 @@ defmodule Casein.CommandPalette.Actions do
   # in an explicit `category` tab (Tmux for the raw-shell entry, View for the
   # chrome toggle).
   #
-  # `hint` strings mirror the leader bindings in
-  # assets/js/workspace_leader.js (LEADER_ACTIONS) — keep the two in sync.
+  # Leader-key hints are NOT set here. A keybinding is presentation, and the
+  # domain may not depend on the web tier, so the catalog describes what an
+  # action is and `CaseinWeb.WorkspaceLive.Show.LeaderBindings` decorates each
+  # item with its `C-b` hint on the way to the palette.
   defp tmux_items do
     [
       %Item{
@@ -105,7 +109,6 @@ defmodule Casein.CommandPalette.Actions do
         category: :tmux,
         label: "New tmux window",
         detail: "Create a window in the active session",
-        hint: "C-b c",
         payload: %{event: "tmux:new_window", params: %{}}
       },
       %Item{
@@ -114,7 +117,6 @@ defmodule Casein.CommandPalette.Actions do
         category: :tmux,
         label: "Last tmux window",
         detail: "Toggle back to the previous window",
-        hint: "C-b l",
         payload: %{event: "tmux:last_window", params: %{}}
       },
       %Item{
@@ -132,7 +134,6 @@ defmodule Casein.CommandPalette.Actions do
         label: "Split Horizontal",
         detail: "New pane beside the focused one",
         keywords: ~w(vsplit),
-        hint: "C-b %",
         payload: %{event: "split_right", params: %{}}
       },
       %Item{
@@ -142,7 +143,6 @@ defmodule Casein.CommandPalette.Actions do
         label: "Split Vertical",
         detail: "New pane below the focused one",
         keywords: ~w(hsplit),
-        hint: "C-b \"",
         payload: %{event: "split_down", params: %{}}
       },
       %Item{
@@ -151,7 +151,6 @@ defmodule Casein.CommandPalette.Actions do
         category: :tmux,
         label: "Next Pane",
         detail: "Focus the next pane in layout order",
-        hint: "C-b o",
         payload: %{event: "pane:focus_next", params: %{}}
       },
       %Item{
@@ -169,7 +168,6 @@ defmodule Casein.CommandPalette.Actions do
         label: "Swap Pane Backward",
         detail: "Move the focused pane backward in layout order",
         keywords: ~w(move reorder),
-        hint: "C-b {",
         payload: %{event: "pane:swap_previous", params: %{}}
       },
       %Item{
@@ -179,7 +177,6 @@ defmodule Casein.CommandPalette.Actions do
         label: "Swap Pane Forward",
         detail: "Move the focused pane forward in layout order",
         keywords: ~w(move reorder),
-        hint: "C-b }",
         payload: %{event: "pane:swap_next", params: %{}}
       },
       %Item{
@@ -189,7 +186,6 @@ defmodule Casein.CommandPalette.Actions do
         label: "Zoom / Unzoom",
         detail: "Toggle the focused pane full-size",
         keywords: ~w(maximize fullscreen),
-        hint: "C-b z",
         payload: %{event: "pane:zoom_focused", params: %{}}
       },
       %Item{
@@ -215,7 +211,6 @@ defmodule Casein.CommandPalette.Actions do
         category: :tmux,
         label: "Close Pane",
         detail: "Kill the focused pane's tmux session",
-        hint: "C-b x",
         payload: %{event: "pane:close_focused", params: %{}}
       },
       %Item{
