@@ -70,6 +70,11 @@ root). It then calls `scripts/lib/agent-worktree.sh`:
 Steps 3 and 4 are *adoption* paths and are deliberate, but they let several
 windows end up in one worktree. `terminal_topology` flags that: panes carry
 `worktree_shared_with`, and the payload carries a `shared_worktrees` warning.
+`terminal_send_command` / `terminal_send_keys` also refuse a git command that
+would write a shared tree (`shared_worktree_mutation`) — soft, so
+`allow_shared_worktree: true` sends anyway when the sharing is intended. See
+"Multiple windows in one worktree" in AGENTS.md for exactly which subcommands
+that covers.
 
 Environment knobs:
 

@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.SendKeys do
   use Jido.Action,
     name: "terminal_send_keys",
     description:
-      "Send raw keystrokes to a pane WITHOUT a trailing Enter. Use tmux key names for control keys (e.g. \"C-c\", \"Up\", \"Enter\"). Defaults to the active pane; pass `pane` to target the agent pane from terminal_topology. For running a shell command, prefer terminal_send_command.",
+      "Send raw keystrokes to a pane WITHOUT a trailing Enter. Use tmux key names for control keys (e.g. \"C-c\", \"Up\", \"Enter\"). Defaults to the active pane; pass `pane` to target the agent pane from terminal_topology. For running a shell command, prefer terminal_send_command. A git command that would write a worktree another pane is also working in is refused (shared_worktree_mutation); pass allow_shared_worktree when the sharing is deliberate.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",
@@ -12,7 +12,8 @@ defmodule Casein.Agents.TerminalTools.SendKeys do
       workspace_id: [type: :string],
       session: [type: :string, required: true],
       keys: [type: :string, required: true],
-      pane: [type: :string]
+      pane: [type: :string],
+      allow_shared_worktree: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction
@@ -27,7 +28,8 @@ defmodule Casein.Agents.TerminalTools.SendKeys do
         Map.merge(Helpers.workspace_props(), %{
           session: Helpers.session_param(),
           keys: Helpers.keys_param(),
-          pane: Helpers.pane_param()
+          pane: Helpers.pane_param(),
+          allow_shared_worktree: Helpers.allow_shared_worktree_param()
         }),
         ["session", "keys"]
       )

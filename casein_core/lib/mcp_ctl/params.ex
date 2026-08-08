@@ -52,6 +52,18 @@ defmodule McpCtl.Params do
     }
   end
 
+  @spec allow_shared_worktree() :: map()
+  def allow_shared_worktree do
+    %{
+      type: "boolean",
+      description:
+        "Send a git command that writes a worktree another pane is also working in. " <>
+          "Refused by default: concurrent git in one worktree corrupts index state rather " <>
+          "than failing cleanly, so it lands on the other pane's uncommitted work. Set true " <>
+          "only when the sharing is deliberate; otherwise give this work its own worktree."
+    }
+  end
+
   @spec lines() :: map()
   def lines do
     %{

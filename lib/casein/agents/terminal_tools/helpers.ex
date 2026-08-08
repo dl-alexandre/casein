@@ -132,6 +132,9 @@ defmodule Casein.Agents.TerminalTools.Helpers do
   end
 
   @doc false
+  def allow_shared_worktree_param, do: Params.allow_shared_worktree()
+
+  @doc false
   def since_param do
     %{
       type: "string",

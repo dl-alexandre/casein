@@ -519,6 +519,11 @@ curl -sS -X POST "$CASEIN_URL/api/terminals/mcp" \
 shell. Access control is the API token plus the `casein_` session guardrail and
 workspace scoping; command execution can additionally be constrained with the
 configurable [command policy](#command-policy).
+Both also refuse a git command that would write a worktree another pane is
+working in — `shared_worktree_mutation`, naming the tree and the other panes,
+overridable per call with `allow_shared_worktree: true`. Concurrent git in one
+worktree corrupts index state rather than failing cleanly, so this is the one
+class of command where a `sent` receipt was worse than an error.
 `terminal_capture` returns the full scrollback by default; pass `lines` to
 bound what the agent reads.
 When `workspace_id` is omitted, `terminal_list_sessions` omits the field from

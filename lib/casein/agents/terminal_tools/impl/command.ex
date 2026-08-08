@@ -6,6 +6,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
   alias Casein.FilePanes.LinkResolver
   alias Casein.Files.BrowserViewable
   alias Casein.Previews
+  alias Casein.Terminals.SharedWorktreeGuard
   alias Casein.Workspaces
 
   import Casein.Agents.TerminalTools.Impl.Shared
@@ -18,9 +19,11 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
          {:ok, raw_target} <- target_arg(session, params) do
       {target, implicit?} = resolve_implicit_target(session, raw_target)
 
-      case tmux().send_keys(target, keys) do
-        {_out, 0} -> {:ok, raw_sent_payload(session, target, implicit?, params)}
-        {out, _code} -> {:error, String.trim(out)}
+      with :ok <- guard_shared_worktree(session, target, keys, params) do
+        case tmux().send_keys(target, keys) do
+          {_out, 0} -> {:ok, raw_sent_payload(session, target, implicit?, params)}
+          {out, _code} -> {:error, String.trim(out)}
+        end
       end
     end
   end
@@ -33,12 +36,29 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
          {:ok, raw_target} <- target_arg(session, params) do
       {target, implicit?} = resolve_implicit_target(session, raw_target)
 
-      case tmux().send_command(target, command) do
-        :ok -> {:ok, raw_sent_payload(session, target, implicit?, params)}
-        {:error, reason} -> {:error, reason}
-        {out, _code} -> {:error, String.trim(out)}
+      with :ok <- guard_shared_worktree(session, target, command, params) do
+        case tmux().send_command(target, command) do
+          :ok -> {:ok, raw_sent_payload(session, target, implicit?, params)}
+          {:error, reason} -> {:error, reason}
+          {out, _code} -> {:error, String.trim(out)}
+        end
       end
     end
+  end
+
+  # `terminal_topology` has reported shared worktrees for a while, but the
+  # warning reaches whoever asked for the topology — not the caller about to run
+  # `git reset --hard` in the shared tree. Answer at the write instead. Soft:
+  # `allow_shared_worktree: true` goes through, because adoption of an existing
+  # worktree is a deliberate mode, not a mistake.
+  defp guard_shared_worktree(session, target, command, params) do
+    SharedWorktreeGuard.check(session, target, command,
+      allow_shared_worktree:
+        truthy?(
+          Map.get(params, "allow_shared_worktree") || Map.get(params, :allow_shared_worktree)
+        ),
+      tmux: tmux()
+    )
   end
 
   @doc """
