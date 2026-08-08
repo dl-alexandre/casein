@@ -864,11 +864,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   defp needs_you_row_badge(%{reason: :completed}),
     do: %{dot: "bg-sky-400", class: "bg-sky-400/15 text-sky-600 dark:text-sky-300", text: "done"}
 
+  defp needs_you_row_badge(%{reason: :idle}),
+    do: %{
+      dot: "bg-violet-400",
+      class: "bg-violet-400/15 text-violet-500 dark:text-violet-300",
+      text: "idle"
+    }
+
   defp needs_you_row_badge(_row),
     do: %{
       dot: "bg-violet-400",
       class: "bg-violet-400/15 text-violet-500 dark:text-violet-300",
-      text: "quiet"
+      text: "idle"
     }
 
   defp needs_you_row_title(row) do
@@ -877,7 +884,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         :blocked -> "Agent is blocked on input"
         :error -> "Session hit an error"
         :completed -> "Agent finished — review its result"
-        _ -> "Agent window is quiet — likely finished or awaiting input"
+        :idle -> "Agent window is idle — likely finished or awaiting input"
+        _ -> "Agent window is idle — likely finished or awaiting input"
       end
 
     scope = if(row.current?, do: base, else: base <> " · " <> row.workspace_label)

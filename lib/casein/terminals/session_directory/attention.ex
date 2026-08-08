@@ -9,6 +9,19 @@ defmodule Casein.Terminals.SessionDirectory.Attention do
 
   `group/1` is a stable partition. Callers can retain their existing recency or
   name ordering before grouping into `:needs_you`, `:working`, and `:recent`.
+
+  ## `:idle` means you are needed
+
+  Reason `:idle` is the session-picker signal for *an agent window has gone
+  quiet, therefore the operator is needed* (`%{section: :needs_you, reason: :idle}`).
+  It is raised from the directory window's quantized `:quiet` flag (see
+  `Casein.Terminals.Activity`) and is ranked inside `:needs_you` after
+  blocked/error/completed.
+
+  It deliberately does **not** mean "suppress this notification". Delivery
+  routing — whether to stay silent, render inline chrome, or request an OS
+  notification — lives in `Casein.Attention.Policy` under the `delivery_*`
+  vocabulary. Do not reuse `:idle` or "quiet" there.
   """
 
   alias Casein.Terminals.Session.Info, as: SessionInfo
@@ -19,7 +32,7 @@ defmodule Casein.Terminals.SessionDirectory.Attention do
           :blocked
           | :error
           | :completed
-          | :quiet
+          | :idle
           | :working
           | :recent
 
@@ -49,7 +62,7 @@ defmodule Casein.Terminals.SessionDirectory.Attention do
         %{section: :needs_you, reason: :completed}
 
       Enum.any?(windows, &truthy?(value(&1, :quiet))) ->
-        %{section: :needs_you, reason: :quiet}
+        %{section: :needs_you, reason: :idle}
 
       :working in states ->
         %{section: :working, reason: :working}

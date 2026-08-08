@@ -632,7 +632,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   Stable-partitions session rows for attention-first rendering.
 
   Within the `:needs_you` section, rows are ordered by urgency (blocked/error
-  before completed before quiet) so the most actionable sessions rise to the
+  before completed before idle) so the most actionable sessions rise to the
   top; the `:working` and `:recent` sections keep their incoming order.
   """
   @spec session_attention_groups([map()]) :: [{Attention.section(), [map()]}]
@@ -655,7 +655,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   @doc """
   Urgency rank for a needs-you row: lower sorts first. Blocked and lifecycle
   errors are the most actionable, then completed agents awaiting review, then
-  quiet windows.
+  idle (quiet-window) sessions.
   """
   @spec tab_reason_rank(map()) :: non_neg_integer()
   def tab_reason_rank(session) when is_map(session) do
@@ -663,7 +663,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       :blocked -> 0
       :error -> 0
       :completed -> 1
-      :quiet -> 2
+      :idle -> 2
       _ -> 3
     end
   end
@@ -1415,8 +1415,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   defp normalized_agent_state("stalled"), do: :stalled
   defp normalized_agent_state(_state), do: nil
 
-  # `Attention.classify/1` consumes directory-shaped windows (`:quiet`), while
-  # tab windows carry `:quiet?` — map them back so quiet sessions reach
+  # `Attention.classify/1` consumes directory-shaped windows (`:quiet` flag),
+  # while tab windows carry `:quiet?` — map them back so idle sessions reach
   # :needs_you the same way SessionDirectory-side callers do.
   defp tab_attention_classification(info, windows) do
     Attention.classify(%{
@@ -1533,7 +1533,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp quiet_attention(quiet?, false) do
     %{quiet?: quiet?}
-    |> AttentionPolicy.quiet_agent_window()
+    |> AttentionPolicy.window_delivery()
     |> AttentionPolicy.reaction_label()
   end
 
