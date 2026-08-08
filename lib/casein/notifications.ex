@@ -12,6 +12,7 @@ defmodule Casein.Notifications do
 
   alias Casein.Audit.Event
   alias Casein.Alerts
+  alias Casein.Attention.Delivery
   alias Casein.Mobile.{AttentionInbox, ResumeCard}
   alias Casein.Notifications.Notification
   alias Casein.Origin
@@ -387,7 +388,8 @@ defmodule Casein.Notifications do
   defp mobile_card_attrs(card) do
     attention = AttentionInbox.project(card)
 
-    if attention.notify, do: mobile_attention_attrs(card, attention)
+    # Threshold: Casein.Attention.Delivery.drawer_eligible?/1 (rank floor 400).
+    if Delivery.drawer_eligible?(attention), do: mobile_attention_attrs(card, attention)
   end
 
   defp mobile_attention_attrs(card, attention) do
@@ -402,7 +404,7 @@ defmodule Casein.Notifications do
       workspace_id: workspace_id,
       session_id: session_id,
       type: mobile_notification_type(card),
-      severity: if(attention.priority in ~w(critical high), do: "warning", else: "info"),
+      severity: Delivery.drawer_severity(attention.priority),
       title: mobile_attention_title(card),
       body: mobile_attention_body(card),
       metadata: %{

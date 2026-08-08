@@ -178,7 +178,7 @@ defmodule Casein.Mobile.AttentionInbox do
     lifecycle = lifecycle(Enum.reverse(lifecycle_transitions))
     latest = latest_transition(card, lifecycle)
     ranking = ranking(card, resume, latest)
-    unresolved? = unresolved_needs_me?(card, ranking)
+    unresolved? = Casein.Attention.Delivery.needs_me_pin?(card)
     unread_count = Keyword.get(opts, :unread_count, length(unread))
 
     %{
@@ -193,8 +193,10 @@ defmodule Casein.Mobile.AttentionInbox do
       # This is deliberately independent of the read cursor. Viewing only
       # acknowledges delivery; an authoritative handled/resolved card state (or
       # removal from the observer) is what releases a Needs Me request.
+      # Pin threshold: Casein.Attention.Delivery.needs_me_pin?/1
       unresolved?: unresolved?,
       pin: if(unresolved?, do: "needs_me", else: nil),
+      # notify bit from Salience; eligibility floor is Delivery.notify_eligible?/1
       notify: ranking.notify,
       changed_at: transition_value(latest, :occurred_at) || card.updated_at,
       notification_group: "#{origin_id}:#{key(card)}:#{ranking.reason_code}",
@@ -371,14 +373,6 @@ defmodule Casein.Mobile.AttentionInbox do
       :required_decision,
       :notify
     ])
-  end
-
-  defp unresolved_needs_me?(card, _ranking) do
-    type = normalized(Map.get(card, :type))
-    status = normalized(Map.get(card, :status))
-
-    type in ~w(clarification needs_review) and
-      status not in ~w(resolved done handled dismissed)
   end
 
   defp reason_code(_card, event_action, resume) do
@@ -583,10 +577,6 @@ defmodule Casein.Mobile.AttentionInbox do
   end
 
   defp normalize_action(_action), do: "mobile.card_changed"
-
-  defp normalized(nil), do: ""
-  defp normalized(value) when is_atom(value), do: value |> Atom.to_string() |> normalized()
-  defp normalized(value), do: value |> to_string() |> String.trim() |> String.downcase()
 
   defp bounded(nil), do: nil
   defp bounded(value) when is_binary(value), do: value |> String.trim() |> String.slice(0, 240)

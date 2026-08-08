@@ -17,6 +17,7 @@ defmodule Casein.Push.Dispatcher do
   require Logger
 
   alias Casein.Audit.Event
+  alias Casein.Attention.Delivery
   alias Casein.Mobile.{AttentionInbox, Observability}
   alias Casein.Mobile.UserObserver
   alias Casein.Mobile.ResumeCard
@@ -124,7 +125,11 @@ defmodule Casein.Push.Dispatcher do
     attention = AttentionInbox.project(card)
     resume = ResumeCard.project(card)
 
-    if attention.notify do
+    # Threshold: Casein.Attention.Delivery.push_eligible?/1 (rank floor 400).
+    # Channel prefs / quiet hours / push_allowed still apply outside this gate.
+    # PUSH BEFORE/AFTER (#699): same floor as pre-migration AttentionInbox.notify
+    # (critical/high/normal actionable ≥400). Working/informational still false.
+    if Delivery.push_eligible?(attention) do
       %{
         workspace_id: card.workspace_id,
         workspace_name: card.workspace_name,
