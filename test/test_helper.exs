@@ -150,14 +150,16 @@ end
 # When run with `--no-start` (e.g. for pure unit tests under memory pressure),
 # the Repo isn't running — skip sandbox setup rather than crash on boot.
 if Process.whereis(Casein.Repo) do
-  Ecto.Adapters.SQL.Sandbox.mode(Casein.Repo, :manual)
-
   # Shared-box heal: unfinished attention branches (#698) have rewritten
   # mobile_attention_cursors_scope_index to include subject_kind. Master code
   # still ON CONFLICT (user_id, origin_id, card_id). When the live index does
   # not match that target, mark_viewed/5 raises 42P10 and the cover gate goes
   # red for every PR sharing casein_test — not just the attention lane.
   # Restore the master unique scope without dropping polluted columns.
+  #
+  # MUST run before Sandbox.mode(:manual). After :manual, Repo.query/1 without
+  # a checkout returns OwnershipError, the case falls through to _other, and
+  # the heal is a silent no-op — which is exactly how master stayed red.
   if function_exported?(Casein.Repo, :query, 1) do
     case Casein.Repo.query("""
          SELECT indexdef FROM pg_indexes
@@ -180,6 +182,8 @@ if Process.whereis(Casein.Repo) do
         :ok
     end
   end
+
+  Ecto.Adapters.SQL.Sandbox.mode(Casein.Repo, :manual)
 end
 
 ExUnit.after_suite(fn _result ->
