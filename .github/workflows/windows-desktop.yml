@@ -77,3 +77,9 @@ jobs:
             dist/*.zip.sha256
             dist/casein-*.json
             dist/casein-*.json.cat
+          # Matches macos-desktop.yml and deploy-devbox.yml. Without it this step
+          # inherits the repo default (90 days) — at ~382 MB per commit that
+          # accumulated 20.6 GB in four days and hit the account artifact storage
+          # quota, which fails the *upload* step of every desktop job (and only
+          # that step) with "Artifact storage quota has been hit".
+          retention-days: 7
