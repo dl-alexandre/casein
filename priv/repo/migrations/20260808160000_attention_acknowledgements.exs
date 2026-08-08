@@ -84,6 +84,7 @@ defmodule Casein.Repo.Migrations.AttentionAcknowledgements do
 
   defp column_exists?(table, column) do
     repo = repo()
+
     %{rows: rows} =
       repo.query!("""
       SELECT 1
