@@ -12,7 +12,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
 
   alias Casein.Terminals
   alias Casein.Terminals.WindowTrash
-  alias Casein.Attention.Policy, as: AttentionPolicy
+  alias Casein.Attention.Delivery
   alias Casein.Workspaces.Scratch
   alias CaseinWeb.WorkspaceLive.PaneHistoryWorker
   alias CaseinWeb.WorkspaceLive.Show
@@ -31,7 +31,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   def handle_event("terminal:attention_surface", %{"state" => state}, socket) do
-    {:noreply, assign(socket, :attention_surface_state, AttentionPolicy.surface_state(state))}
+    # Normalizes focus input for Delivery.delivery_decision/1 — not classification.
+    {:noreply, assign(socket, :attention_surface_state, Delivery.surface_state(state))}
   end
 
   def handle_event("tmux:refresh_windows", _params, socket) do

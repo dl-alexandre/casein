@@ -8,7 +8,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias Casein.Attention.Policy, as: AttentionPolicy
+  alias Casein.Attention.Delivery
   alias Casein.Codex.SessionTitles
   alias Casein.Terminals
   alias Casein.Terminals.WindowTrash
@@ -1072,7 +1072,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         |> Enum.reject(fn {key, _entry} -> MapSet.member?(previous_ids, key) end)
         |> Enum.reduce(socket, fn {_key, entry}, acc ->
           decision =
-            AttentionPolicy.delivery_decision(%{
+            Delivery.delivery_decision(%{
               surface_state: socket.assigns[:attention_surface_state],
               target_state: quiet_target_state(socket, entry),
               observed_working?: MapSet.member?(observed_working_ids, quiet_entry_key(entry))
@@ -1308,14 +1308,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   end
 
   defp current_workspace_focused?(socket) do
-    AttentionPolicy.surface_state(socket.assigns[:attention_surface_state]) == :focused
+    Delivery.surface_state(socket.assigns[:attention_surface_state]) == :focused
   end
 
   defp maybe_push_quiet_agent_event(socket, entry, workspace_name, :notify) do
     payload =
       entry
       |> Map.put(:workspace, workspace_name)
-      |> Map.put(:reaction, AttentionPolicy.reaction_label(:notify))
+      |> Map.put(:reaction, Delivery.reaction_label(:notify))
 
     push_event(socket, "casein:agent_quiet", payload)
   end

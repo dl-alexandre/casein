@@ -2253,7 +2253,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   defp unseen_quiet_window_count(_tabs), do: 0
 
   defp quiet_badge_attention(tabs) do
-    if unseen_quiet_window_count(tabs) > 0, do: "unseen", else: "inline"
+    Casein.Attention.Delivery.chrome_attention_label(
+      unseen_quiet_window_count(tabs),
+      quiet_window_count(tabs)
+    )
   end
 
   defp quiet_badge_class("unseen") do
