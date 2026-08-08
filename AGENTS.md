@@ -207,7 +207,9 @@ bash scripts/claim-next-issue.sh --format json   # same, for an orchestrator
 
 It picks by priority then oldest-first, swaps `queue/ready` → `queue/claimed`,
 comments the claim, and prints Goal / Acceptance / Constraints / Forbidden plus a
-`spawn-agent-worker.sh` line with a ready-made task slug.
+`spawn-agent-worker.sh` line with a ready-made task slug. It does not bind the
+issue to your pane — do that yourself with `terminal_bind_issue` (step 3 below)
+so `terminal_topology` can answer "is anyone on #N?".
 
 Two properties matter when several runners share one queue:
 
