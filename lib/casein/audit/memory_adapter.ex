@@ -8,7 +8,10 @@ defmodule Casein.Audit.MemoryAdapter do
 
   alias Casein.Audit.Event
 
-  @max 1_000
+  # Lifecycle altitude (AgentLifecycle) writes run.* beside agent.state_changed.
+  # A 500-pane eviction flood used to fit at 1_000; with one ledger open per
+  # pane it does not. Keep enough headroom for multi-pane agent suites.
+  @max 5_000
 
   ## API
 

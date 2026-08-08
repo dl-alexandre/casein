@@ -151,6 +151,35 @@ end
 # the Repo isn't running — skip sandbox setup rather than crash on boot.
 if Process.whereis(Casein.Repo) do
   Ecto.Adapters.SQL.Sandbox.mode(Casein.Repo, :manual)
+
+  # Shared-box heal: unfinished attention branches (#698) have rewritten
+  # mobile_attention_cursors_scope_index to include subject_kind. Master code
+  # still ON CONFLICT (user_id, origin_id, card_id). When the live index does
+  # not match that target, mark_viewed/5 raises 42P10 and the cover gate goes
+  # red for every PR sharing casein_test — not just the attention lane.
+  # Restore the master unique scope without dropping polluted columns.
+  if function_exported?(Casein.Repo, :query, 1) do
+    case Casein.Repo.query("""
+         SELECT indexdef FROM pg_indexes
+         WHERE tablename = 'mobile_attention_cursors'
+           AND indexname = 'mobile_attention_cursors_scope_index'
+         """) do
+      {:ok, %{rows: [[def]]}} when is_binary(def) ->
+        if String.contains?(def, "subject_kind") do
+          _ = Casein.Repo.query("DROP INDEX IF EXISTS mobile_attention_cursors_user_kind_index")
+          _ = Casein.Repo.query("DROP INDEX IF EXISTS mobile_attention_cursors_scope_index")
+
+          _ =
+            Casein.Repo.query("""
+            CREATE UNIQUE INDEX mobile_attention_cursors_scope_index
+            ON mobile_attention_cursors (user_id, origin_id, card_id)
+            """)
+        end
+
+      _other ->
+        :ok
+    end
+  end
 end
 
 ExUnit.after_suite(fn _result ->
