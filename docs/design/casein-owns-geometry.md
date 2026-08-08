@@ -52,11 +52,52 @@ After this change there are two different things that today share one word.
 
 They are one-to-one only for terminals, and not at all for feature panes.
 
-**Do not let both be called "pane" in code.** The cheapest fix is to name the tmux side for
-what it now is — PTY, or terminal process — and keep "pane" for the layout node, since that
-is what the web tier, the pane behaviour, and the templates already mean by it. A codebase
-where `pane_id` sometimes means a rectangle and sometimes a process is the predictable way
-this goes wrong.
+**Do not let both be called "pane" in code** — but the fix is not the one that first suggests
+itself. Renaming the tmux side is unaffordable: `pane_id` appears **~1,655 times in the
+domain, 908 in the web tier, and 92 in JS**. That is not a rename, it is touching every file
+that deals with panes.
+
+The affordable direction is the opposite, and it works because **Casein's layout tree barely
+exists yet** — `Cockpit.Inspectors` is days old. We are naming a new concept, not renaming an
+entrenched one.
+
+- **`pane_id` keeps its current meaning**: a tmux pane, which after this is simply a PTY with
+  a size. Zero churn.
+- **The layout node gets its own word from day one** and never borrows "pane".
+
+This also keeps the agent-facing contract correct as it stands. `terminal_send_keys(pane:
+"%3")` is right and should stay right — agents address *processes*, not layout, and should
+not acquire a layout concept they never needed.
+
+### The word: `slot`
+
+It is already in the codebase meaning exactly this, in the `Casein.Panes.Pane` moduledoc:
+
+> Start the pane's backend on an **already-allocated slot**… Called by the execute/reconcile
+> pipeline after geometry exists (**the slot is a real tmux pane**).
+
+Existing usage is negligible (~18 in the domain; most web hits are LiveView's `slot :`
+template DSL), and it has a natural verb the docs already use — *"a new pane type slots into
+any layout."*
+
+The alternatives are taken or weaker: `node` (~320 uses — tree nodes, file-tree nodes),
+`frame` (~115 — render frames, the frozen frame in the transitions), `region` (~23, already
+meaning the inspector region specifically). `tile` is free but carries no existing meaning
+here.
+
+**A slot is a position in Casein's layout tree. A slot is filled by something — a PTY
+(referenced by `pane_id`), a preview, a file editor, an inspector.**
+
+### Where the churn actually is
+
+Not the 2,655 sites. The real work is the feature-pane registries: today a preview or file
+pane holds a *tmux* `pane_id` (its holder's rectangle), and after this they have no tmux pane
+at all and need a `slot_id`. That is `pane_ref` territory — 27 sites plus the two registries.
+
+One honest wrinkle: `Casein.Panes.Pane` ends up slightly misnamed, since it becomes the
+behaviour for *things that fill slots* rather than for panes. Leave it rather than churn a
+merged behaviour, but know the name is a little off rather than pretending the split is
+perfectly clean.
 
 ## Sizing is the load-bearing flow
 
