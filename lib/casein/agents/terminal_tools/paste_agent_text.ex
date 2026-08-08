@@ -13,7 +13,8 @@ defmodule Casein.Agents.TerminalTools.PasteAgentText do
       session: [type: :string],
       caller_pane: [type: :string],
       text: [type: :string, required: true],
-      submit: [type: :boolean]
+      submit: [type: :boolean],
+      confirm: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction
@@ -29,7 +30,8 @@ defmodule Casein.Agents.TerminalTools.PasteAgentText do
           session: Helpers.session_param(),
           caller_pane: Helpers.caller_pane_param(),
           text: Helpers.paste_text_param(),
-          submit: Helpers.submit_param()
+          submit: Helpers.submit_param(),
+          confirm: Helpers.confirm_param()
         }),
         ["text"]
       )

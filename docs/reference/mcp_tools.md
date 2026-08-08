@@ -80,8 +80,11 @@ is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 | `terminal_agent_pane` | Find the `agent_pair` agent pane (marker, then process fallback) | `session`, `workspace_id` | `agent_pane/1` |
 | `terminal_capture_agent` | Capture scrollback from the dedicated agent pane | `session`, `lines`, `ansi` | `capture_agent/1` |
 | `terminal_send_agent_keys` | Send raw keys to the agent pane only (requires marker) | `keys`\*, `session` | `send_agent_keys/1` |
-| `terminal_send_agent_command` | Type command + Enter into the agent pane (requires marker) | `command`\*, `session` | `send_agent_command/1` |
-| `terminal_paste_agent_text` | Paste literal/multiline text into the agent pane via tmux paste buffer | `text`\*, `submit`, `session` | `paste_agent_text/1` |
+| `terminal_send_agent_command` | Type command + Enter into the agent pane (requires marker) | `command`\*, `confirm`, `session` | `send_agent_command/1` |
+| `terminal_paste_agent_text` | Paste literal/multiline text into the agent pane via tmux paste buffer | `text`\*, `submit`, `confirm`, `session` | `paste_agent_text/1` |
+| `terminal_set_next_prompt` | Stage the one sticky operator message for an agent pane, delivered on its next state edge | `workspace_id`\*, `text`\*, `deliver_when`, `coalesce_key`, `expires_in_seconds`, `session`, `pane` | `set_next_prompt/1` |
+| `terminal_clear_next_prompt` | Retract the staged message (only when `coalesce_key` matches, if given) | `workspace_id`\*, `coalesce_key`, `session`, `pane` | `clear_next_prompt/1` |
+| `terminal_get_next_prompt` | Read the staged message for a pane | `workspace_id`\*, `session`, `pane` | `get_next_prompt/1` |
 | `terminal_send_keys` | Send raw keys to a pane, no trailing Enter (tmux key names) | `session`\*, `keys`\*, `pane` | `send_keys/1` |
 | `terminal_send_command` | Type command + Enter into a targeted pane | `session`\*, `command`\*, `pane` | `send_command/1` |
 | `terminal_set_agent_label` | Set a Casein chrome label for an agent pane (`freeze` to pin) | `workspace_id`\*, `label`\*, `session`, `pane` | `set_agent_label/1` |

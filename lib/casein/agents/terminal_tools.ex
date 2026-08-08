@@ -29,10 +29,13 @@ defmodule Casein.Agents.TerminalTools do
   alias Casein.Agents.TerminalTools.{
     AgentPane,
     AgentTranscript,
+    BindIssue,
     Capture,
     CaptureAgent,
+    ClearNextPrompt,
     Context,
     GateReport,
+    GetNextPrompt,
     ListSessions,
     OpenFileInPane,
     PasteAgentText,
@@ -45,7 +48,7 @@ defmodule Casein.Agents.TerminalTools do
     SendCommand,
     SendKeys,
     SetAgentLabel,
-    BindIssue,
+    SetNextPrompt,
     Topology,
     WaitAgentState,
     WorkspaceDigest
@@ -67,6 +70,9 @@ defmodule Casein.Agents.TerminalTools do
     SendAgentKeys,
     SendAgentCommand,
     PasteAgentText,
+    SetNextPrompt,
+    ClearNextPrompt,
+    GetNextPrompt,
     RequestClarification,
     RequestHumanInput,
     SendKeys,
@@ -136,6 +142,12 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate send_agent_command(params), to: Agent
   @doc false
   defdelegate paste_agent_text(params), to: Agent
+  @doc false
+  defdelegate set_next_prompt(params), to: Agent
+  @doc false
+  defdelegate clear_next_prompt(params), to: Agent
+  @doc false
+  defdelegate get_next_prompt(params), to: Agent
   @doc false
   defdelegate request_clarification(params), to: Agent
   @doc false

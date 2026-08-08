@@ -52,6 +52,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
     if is_binary(topology.session) do
       pane_ids = Enum.map(topology.panes, &Map.get(&1, :id))
       Labels.prune_session(topology.session, pane_ids)
+      # A staged operator message is addressed to a pane. When the pane is gone
+      # the message has no recipient, and holding it would fire into whatever
+      # pane id tmux recycles next.
+      Casein.Terminals.NextPrompt.prune_session(topology.session, pane_ids)
       Casein.Terminals.IssueBinding.prune_session(topology.session, pane_ids)
     end
 
