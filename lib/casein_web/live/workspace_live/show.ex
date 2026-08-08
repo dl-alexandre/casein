@@ -165,6 +165,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
     pane:input file-pane:dirty
     inspector:open inspector:close inspector:close_all inspector:select inspector:set_placement
+    diff:open_inspector
     run:cancel set_log_service
     ctx:open ctx:close
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:open
@@ -887,9 +888,12 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_event("tree:open_in_pane" = event, params, socket),
     do: FilePaneEvents.handle_event(event, params, socket)
 
-  # LiveView-owned inspector region (issue #690) — ordinary socket events, not
-  # the registry-backed pane:input path.
+  # LiveView-owned inspector region (issue #690) + diff open path (#691) —
+  # ordinary socket events, not the registry-backed pane:input path.
   def handle_event("inspector:" <> _ = event, params, socket),
+    do: InspectorEvents.handle_event(event, params, socket)
+
+  def handle_event("diff:open_inspector" = event, params, socket),
     do: InspectorEvents.handle_event(event, params, socket)
 
   # File-tree / editor events are handled by FileEvents (extracted from this

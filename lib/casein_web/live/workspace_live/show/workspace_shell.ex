@@ -796,6 +796,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
                 active_id={@active_inspector_id}
                 focused?={@inspector_region_focused?}
                 zoomed?={inspector_zoomed?}
+                git_status={@git_status}
+                open_file={@open_file}
+                file_diff={@file_diff}
               />
             </aside>
           </div>
@@ -1036,6 +1039,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :active_id, :any, required: true
   attr :focused?, :boolean, required: true
   attr :zoomed?, :boolean, required: true
+  attr :git_status, :any, required: true
+  attr :open_file, :any, required: true
+  attr :file_diff, :any, required: true
 
   defp inspector_region(assigns) do
     ~H"""
@@ -1100,7 +1106,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           :for={entry <- @entries}
           id={"inspector-pane-" <> entry.id}
           data-inspector-pane-id={entry.id}
-          data-inspector-kind={entry.kind}
+          data-inspector-kind={inspector_kind_attr(entry.kind)}
           data-pane-kind="inspector"
           data-focused={to_string(@focused? and entry.id == @active_id)}
           hidden={entry.id != @active_id}
@@ -1131,12 +1137,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             </button>
           </div>
           <div class="min-h-0 flex-1 overflow-auto p-3 text-sm text-base-content/80">
-            <div class="rounded-md border border-base-300/50 bg-base-100/70 px-3 py-2">
-              <div class="text-[11px] uppercase tracking-wide text-base-content/45">
-                {inspector_kind_label(entry)}
+            <%= if entry.kind == :diff do %>
+              <.diff_panel
+                git_status={@git_status}
+                open_file={@open_file}
+                file_diff={@file_diff}
+              />
+            <% else %>
+              <div class="rounded-md border border-base-300/50 bg-base-100/70 px-3 py-2">
+                <div class="text-[11px] uppercase tracking-wide text-base-content/45">
+                  {inspector_kind_label(entry)}
+                </div>
+                <div class="mt-1 font-medium">{inspector_title(entry)}</div>
               </div>
-              <div class="mt-1 font-medium">{inspector_title(entry)}</div>
-            </div>
+            <% end %>
           </div>
         </div>
       </div>
@@ -1154,4 +1168,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   defp inspector_kind_label(%{kind: kind}) when is_atom(kind), do: Atom.to_string(kind)
   defp inspector_kind_label(%{kind: kind}) when is_binary(kind), do: kind
   defp inspector_kind_label(_), do: "insp"
+
+  defp inspector_kind_attr(kind) when is_atom(kind), do: Atom.to_string(kind)
+  defp inspector_kind_attr(kind) when is_binary(kind), do: kind
+  defp inspector_kind_attr(_), do: "inspector"
 end

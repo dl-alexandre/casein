@@ -48,4 +48,32 @@ defmodule Casein.Cockpit.InspectorsTest do
     assert assigns.cockpit_geometry == Geometry.terminal_only()
     assert assigns.inspector_placement == :right
   end
+
+  test "serialize/restore re-derives path only (no content snapshot)" do
+    {panes, _} =
+      Inspectors.open([], %{kind: :diff, id: "insp-diff", title: "lib/foo.ex", path: "lib/foo.ex"})
+
+    assert Inspectors.serialize(panes) == [
+             %{"type" => "inspector", "kind" => "diff", "path" => "lib/foo.ex"}
+           ]
+
+    assert Inspectors.primary_diff_path(panes) == "lib/foo.ex"
+    assert Inspectors.diff_open?(panes)
+
+    {restored, geo} = Inspectors.restore(Inspectors.serialize(panes))
+    assert Geometry.inspector_open?(geo)
+    assert Inspectors.primary_diff_path(restored) == "lib/foo.ex"
+    # Fresh id — identity is not durable.
+    refute hd(restored).id == hd(panes).id
+  end
+
+  test "serialize omits path when unscoped; restore rejects non-lists" do
+    {panes, _} = Inspectors.open([], %{kind: :diff, id: "d", title: "Diff"})
+    assert Inspectors.serialize(panes) == [%{"type" => "inspector", "kind" => "diff"}]
+    assert Inspectors.primary_diff_path(panes) == nil
+
+    {empty, geo} = Inspectors.restore(nil)
+    assert empty == []
+    assert geo == Geometry.terminal_only()
+  end
 end
