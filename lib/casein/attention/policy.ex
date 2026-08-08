@@ -6,20 +6,32 @@ defmodule Casein.Attention.Policy do
   tmux topology) and pass only low-cardinality values here. The policy returns a
   small reaction enum so UI surfaces can stay consistent: stay quiet, render
   inline chrome, or ask the browser for an OS notification.
+
+  ## `delivery_*` means how (or whether) to surface a signal
+
+  `delivery_reason`, `delivery_decision/1`, `delivery_reaction/1`, and
+  `window_delivery/1` answer *suppress / inline / notify* for an already-known
+  operator-facing transition. A `delivery_reason` of `:focused_target` means
+  "do not page the operator" — not "the agent is idle".
+
+  It deliberately does **not** mean "an agent has gone quiet, therefore you are
+  needed". That session-picker signal is `Casein.Terminals.SessionDirectory.Attention`
+  reason `:idle` (raised from the directory window's `:quiet` flag). Do not
+  reuse `:idle` or name delivery helpers `quiet_*`.
   """
 
   @type surface_state :: :focused | :visible | :hidden | :unknown
   @type target_state :: :focused | :visible | :hidden | :unknown
   @type reaction :: :nothing | :inline | :notify
-  @type quiet_reason ::
+  @type delivery_reason ::
           :cold_ready
           | :focused_target
           | :focused_workspace
           | :background_surface
 
-  @type quiet_decision :: %{
+  @type delivery_decision :: %{
           reaction: reaction(),
-          reason: quiet_reason(),
+          reason: delivery_reason(),
           surface_state: surface_state(),
           target_state: target_state(),
           observed_working?: boolean()
@@ -50,18 +62,21 @@ defmodule Casein.Attention.Policy do
   cold ready window still gets inline chrome, but it should not page the
   operator just because they loaded or reconnected to the workspace.
   """
-  @spec quiet_agent_transition(map()) :: reaction()
-  def quiet_agent_transition(attrs) when is_map(attrs) do
+  @spec delivery_reaction(map()) :: reaction()
+  def delivery_reaction(attrs) when is_map(attrs) do
     attrs
-    |> quiet_agent_decision()
+    |> delivery_decision()
     |> Map.fetch!(:reaction)
   end
 
   @doc """
-  Full quiet-agent decision with normalized inputs and a reason for telemetry.
+  Full delivery decision with normalized inputs and a reason for telemetry.
+
+  Names the suppress/inline/notify choice for a quiet-agent transition — not
+  the session-picker `:idle` reason.
   """
-  @spec quiet_agent_decision(map()) :: quiet_decision()
-  def quiet_agent_decision(attrs) when is_map(attrs) do
+  @spec delivery_decision(map()) :: delivery_decision()
+  def delivery_decision(attrs) when is_map(attrs) do
     surface = surface_state(Map.get(attrs, :surface_state))
     target = target_state(Map.get(attrs, :target_state))
     observed_working? = Map.get(attrs, :observed_working?) == true
@@ -91,8 +106,8 @@ defmodule Casein.Attention.Policy do
   end
 
   @doc "Attention reaction for steady quiet-agent chrome."
-  @spec quiet_agent_window(map()) :: reaction()
-  def quiet_agent_window(attrs) when is_map(attrs) do
+  @spec window_delivery(map()) :: reaction()
+  def window_delivery(attrs) when is_map(attrs) do
     if Map.get(attrs, :quiet?) == true, do: :inline, else: :nothing
   end
 

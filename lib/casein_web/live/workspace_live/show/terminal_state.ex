@@ -1072,7 +1072,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         |> Enum.reject(fn {key, _entry} -> MapSet.member?(previous_ids, key) end)
         |> Enum.reduce(socket, fn {_key, entry}, acc ->
           decision =
-            AttentionPolicy.quiet_agent_decision(%{
+            AttentionPolicy.delivery_decision(%{
               surface_state: socket.assigns[:attention_surface_state],
               target_state: quiet_target_state(socket, entry),
               observed_working?: MapSet.member?(observed_working_ids, quiet_entry_key(entry))

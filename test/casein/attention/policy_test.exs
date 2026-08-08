@@ -67,10 +67,10 @@ defmodule Casein.Attention.PolicyTest do
     end
   end
 
-  describe "quiet_agent_decision/1" do
+  describe "delivery_decision/1" do
     test "not observed_working? -> {:inline, :cold_ready} regardless of surface/target" do
       decision =
-        Policy.quiet_agent_decision(%{
+        Policy.delivery_decision(%{
           surface_state: :hidden,
           target_state: :hidden,
           observed_working?: false
@@ -84,7 +84,7 @@ defmodule Casein.Attention.PolicyTest do
 
       # Cold-ready wins over a focused pair that would otherwise be :nothing.
       focused_cold =
-        Policy.quiet_agent_decision(%{
+        Policy.delivery_decision(%{
           surface_state: :focused,
           target_state: :focused,
           observed_working?: false
@@ -102,7 +102,7 @@ defmodule Casein.Attention.PolicyTest do
             %{surface_state: :hidden, target_state: :hidden, observed_working?: "true"},
             %{surface_state: :hidden, target_state: :hidden, observed_working?: 1}
           ] do
-        decision = Policy.quiet_agent_decision(attrs)
+        decision = Policy.delivery_decision(attrs)
         assert decision.reaction == :inline
         assert decision.reason == :cold_ready
         assert decision.observed_working? == false
@@ -111,7 +111,7 @@ defmodule Casein.Attention.PolicyTest do
 
     test "surface focused and target focused -> {:nothing, :focused_target}" do
       decision =
-        Policy.quiet_agent_decision(%{
+        Policy.delivery_decision(%{
           surface_state: :focused,
           target_state: :focused,
           observed_working?: true
@@ -134,7 +134,7 @@ defmodule Casein.Attention.PolicyTest do
     test "surface focused with non-focused target -> {:inline, :focused_workspace}" do
       for target <- [:visible, :hidden, :unknown] do
         decision =
-          Policy.quiet_agent_decision(%{
+          Policy.delivery_decision(%{
             surface_state: :focused,
             target_state: target,
             observed_working?: true
@@ -158,7 +158,7 @@ defmodule Casein.Attention.PolicyTest do
       for surface <- [:visible, :hidden, :unknown],
           target <- [:focused, :visible, :hidden, :unknown] do
         decision =
-          Policy.quiet_agent_decision(%{
+          Policy.delivery_decision(%{
             surface_state: surface,
             target_state: target,
             observed_working?: true
@@ -180,7 +180,7 @@ defmodule Casein.Attention.PolicyTest do
 
     test "normalizes string surface/target inputs in the returned decision" do
       decision =
-        Policy.quiet_agent_decision(%{
+        Policy.delivery_decision(%{
           surface_state: "focused",
           target_state: "visible",
           observed_working?: true
@@ -197,22 +197,22 @@ defmodule Casein.Attention.PolicyTest do
 
     test "the four decision branches yield four distinct {reaction, reason} pairs" do
       branches = [
-        Policy.quiet_agent_decision(%{
+        Policy.delivery_decision(%{
           surface_state: :hidden,
           target_state: :hidden,
           observed_working?: false
         }),
-        Policy.quiet_agent_decision(%{
+        Policy.delivery_decision(%{
           surface_state: :focused,
           target_state: :focused,
           observed_working?: true
         }),
-        Policy.quiet_agent_decision(%{
+        Policy.delivery_decision(%{
           surface_state: :focused,
           target_state: :visible,
           observed_working?: true
         }),
-        Policy.quiet_agent_decision(%{
+        Policy.delivery_decision(%{
           surface_state: :hidden,
           target_state: :visible,
           observed_working?: true
@@ -235,8 +235,8 @@ defmodule Casein.Attention.PolicyTest do
     end
   end
 
-  describe "quiet_agent_transition/1" do
-    test "returns only the reaction from quiet_agent_decision" do
+  describe "delivery_reaction/1" do
+    test "returns only the reaction from delivery_decision" do
       attrs_cold = %{
         surface_state: :hidden,
         target_state: :hidden,
@@ -261,21 +261,21 @@ defmodule Casein.Attention.PolicyTest do
         observed_working?: true
       }
 
-      assert Policy.quiet_agent_transition(attrs_cold) == :inline
-      assert Policy.quiet_agent_transition(attrs_focused_target) == :nothing
-      assert Policy.quiet_agent_transition(attrs_focused_workspace) == :inline
-      assert Policy.quiet_agent_transition(attrs_background) == :notify
+      assert Policy.delivery_reaction(attrs_cold) == :inline
+      assert Policy.delivery_reaction(attrs_focused_target) == :nothing
+      assert Policy.delivery_reaction(attrs_focused_workspace) == :inline
+      assert Policy.delivery_reaction(attrs_background) == :notify
 
       # Mirrors decision.reaction for each branch (transition is a thin projection).
       for attrs <- [attrs_cold, attrs_focused_target, attrs_focused_workspace, attrs_background] do
-        assert Policy.quiet_agent_transition(attrs) ==
-                 Policy.quiet_agent_decision(attrs).reaction
+        assert Policy.delivery_reaction(attrs) ==
+                 Policy.delivery_decision(attrs).reaction
       end
 
       reactions =
         Enum.map(
           [attrs_cold, attrs_focused_target, attrs_focused_workspace, attrs_background],
-          &Policy.quiet_agent_transition/1
+          &Policy.delivery_reaction/1
         )
 
       assert reactions == [:inline, :nothing, :inline, :notify]
@@ -284,33 +284,33 @@ defmodule Casein.Attention.PolicyTest do
     end
   end
 
-  describe "quiet_agent_window/1" do
+  describe "window_delivery/1" do
     test "quiet? true -> :inline" do
-      assert Policy.quiet_agent_window(%{quiet?: true}) == :inline
-      refute Policy.quiet_agent_window(%{quiet?: true}) == :nothing
+      assert Policy.window_delivery(%{quiet?: true}) == :inline
+      refute Policy.window_delivery(%{quiet?: true}) == :nothing
     end
 
     test "quiet? false -> :nothing" do
-      assert Policy.quiet_agent_window(%{quiet?: false}) == :nothing
-      refute Policy.quiet_agent_window(%{quiet?: false}) == :inline
+      assert Policy.window_delivery(%{quiet?: false}) == :nothing
+      refute Policy.window_delivery(%{quiet?: false}) == :inline
     end
 
     test "quiet? missing or non-true -> :nothing" do
-      assert Policy.quiet_agent_window(%{}) == :nothing
-      assert Policy.quiet_agent_window(%{quiet?: nil}) == :nothing
-      assert Policy.quiet_agent_window(%{quiet?: "true"}) == :nothing
-      assert Policy.quiet_agent_window(%{quiet?: 1}) == :nothing
+      assert Policy.window_delivery(%{}) == :nothing
+      assert Policy.window_delivery(%{quiet?: nil}) == :nothing
+      assert Policy.window_delivery(%{quiet?: "true"}) == :nothing
+      assert Policy.window_delivery(%{quiet?: 1}) == :nothing
 
-      refute Policy.quiet_agent_window(%{}) == :inline
+      refute Policy.window_delivery(%{}) == :inline
     end
 
     test "true vs false produce distinct reactions" do
-      assert Policy.quiet_agent_window(%{quiet?: true}) !=
-               Policy.quiet_agent_window(%{quiet?: false})
+      assert Policy.window_delivery(%{quiet?: true}) !=
+               Policy.window_delivery(%{quiet?: false})
 
       assert [
-               Policy.quiet_agent_window(%{quiet?: true}),
-               Policy.quiet_agent_window(%{quiet?: false})
+               Policy.window_delivery(%{quiet?: true}),
+               Policy.window_delivery(%{quiet?: false})
              ] ==
                [:inline, :nothing]
     end

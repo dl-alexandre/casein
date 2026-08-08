@@ -24,15 +24,15 @@ defmodule Casein.Terminals.SessionDirectory.AttentionTest do
       end
     end
 
-    test "puts completed and quiet agents in Needs You" do
+    test "puts completed and idle (quiet-window) agents in Needs You" do
       assert Attention.classify(session(agent_state: "done")) ==
                %{section: :needs_you, reason: :completed}
 
       assert Attention.classify(session(quiet: true)) ==
-               %{section: :needs_you, reason: :quiet}
+               %{section: :needs_you, reason: :idle}
     end
 
-    test "blocked wins over done, quiet, and working signals" do
+    test "blocked wins over done, idle, and working signals" do
       info =
         session(
           windows: [
@@ -69,10 +69,10 @@ defmodule Casein.Terminals.SessionDirectory.AttentionTest do
       blocked = session(id: "blocked", agent_state: :blocked)
       recent_new = session(id: "recent-new")
       working_new = session(id: "working-new", agent_state: :working)
-      quiet = session(id: "quiet", quiet: true)
+      idle = session(id: "idle", quiet: true)
 
       assert %{
-               needs_you: [^blocked, ^quiet],
+               needs_you: [^blocked, ^idle],
                working: [^working_old, ^working_new],
                recent: [^recent_old, ^recent_new]
              } =
@@ -82,7 +82,7 @@ defmodule Casein.Terminals.SessionDirectory.AttentionTest do
                  blocked,
                  recent_new,
                  working_new,
-                 quiet
+                 idle
                ])
     end
   end

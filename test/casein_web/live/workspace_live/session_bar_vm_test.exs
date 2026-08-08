@@ -701,15 +701,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
     end
 
     test "quiet window reaches :needs_you despite the tab's quiet? key shape" do
-      # Attention.classify reads :quiet from directory maps; the tab builder must
-      # map its :quiet? windows back so quiet sessions still triage as needs_you.
+      # Attention.classify reads the :quiet flag from directory maps and emits
+      # reason :idle; the tab builder must map :quiet? windows back so idle
+      # sessions still triage as needs_you.
       [tab] =
         SessionBarVM.session_tabs([
           shell_info_with_windows("quiet", [%{id: "@1", index: 0, name: "agent", quiet: true}])
         ])
 
       assert tab.attention_section == :needs_you
-      assert tab.attention_reason == :quiet
+      assert tab.attention_reason == :idle
 
       assert [{:needs_you, [_]}] = SessionBarVM.session_attention_groups([tab])
     end
@@ -797,7 +798,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
   end
 
   describe "session_attention_groups urgency ordering" do
-    test "orders the needs-you section blocked/error, then completed, then quiet" do
+    test "orders the needs-you section blocked/error, then completed, then idle" do
       tabs =
         SessionBarVM.session_tabs([
           shell_info_with_windows("quiet", [%{id: "@1", index: 0, name: "a", quiet: true}]),
@@ -812,7 +813,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
 
       assert blocked.attention_reason == :blocked
       assert done.attention_reason == :completed
-      assert quiet.attention_reason == :quiet
+      assert quiet.attention_reason == :idle
     end
 
     test "leaves working and recent sections in incoming order" do
