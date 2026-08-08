@@ -204,16 +204,25 @@ gh issue list --label queue/ready --label workspace/devide \
 gh issue comment <N> --body "CLAIMED by $(hostname):${TMUX_PANE:-no-pane} at $(date -u +%FT%TZ)"
 gh issue edit <N> --add-label queue/claimed --remove-label queue/ready
 
-# 3. Work in your OWN worktree, branched from current master.
+# 3. Bind the issue to your pane (MCP: terminal_bind_issue) so the claim is
+#    visible in Casein chrome and terminal_topology as issue:#N. This is what
+#    makes "is anyone actually on #N?" answerable without reading comments —
+#    the check that separates an abandoned claim from a slow one below.
+#    Accepts 678, "#678" or a full issue URL. Cleared automatically on pane
+#    close, so a binding can never outlive the agent that claimed the issue.
+terminal_bind_issue {"workspace_id": "<ws>", "issue": "#<N>"}
+
+# 4. Work in your OWN worktree, branched from current master.
 git -C <primary> worktree add /data/casein-agent-worktrees/agent-<runtime>-issue<N> \
   -b agent/<runtime>/issue-<N> origin/master
 
-# 4a. Landed → PR, comment the URL on the issue, close it.
+# 5a. Landed → PR, comment the URL on the issue, close it, release the binding.
 gh issue comment <N> --body "PR: <url>"
 gh issue edit <N> --add-label queue/done --remove-label queue/claimed
 gh issue close <N>
+terminal_bind_issue {"workspace_id": "<ws>"}   # no issue = release
 
-# 4b. Blocked → hand it back with what you need, and DROP the claim so someone
+# 5b. Blocked → hand it back with what you need, and DROP the claim so someone
 #     else can pick it up. A blocked issue still labelled claimed is invisible.
 gh issue comment <N> --body $'BLOCKED\n\n**Needs:** <the specific decision or access>'
 gh issue edit <N> --add-label queue/blocked --remove-label queue/claimed
@@ -235,9 +244,11 @@ gh issue comment <N> --body "RECLAIMED — prior claim stale since <ts>, no PR"
 
 Do not silently take over: the comment is what stops a returning runner from
 duplicating the work. And check the claimant is actually gone before reclaiming
-— a long-running job is not an abandoned one (`terminal_topology` with
-`include_liveness: true` answers this; see "Telling a wedged agent from an idle
-one").
+— a long-running job is not an abandoned one. Two cheap checks, in order:
+`terminal_topology` shows `issue:#N` on whichever pane bound it (step 3), and
+`include_liveness: true` on the same call says whether that pane is doing
+anything (see "Telling a wedged agent from an idle one"). A bound pane with a
+live worktree is working, not abandoned.
 
 #### Filing work for the queue
 
