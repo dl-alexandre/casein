@@ -18,9 +18,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.ConnectEvents do
     {:noreply, assign(socket, connect_drawer_open: open?, connect_error: nil)}
   end
 
-  # Populate the token list without a drawer — the connect UI now lives in the
-  # help overlay's Agents tab, which opens client-side, so it pushes this to
-  # refresh tokens when that tab is selected.
+  # Populate the token list without a drawer — the connect UI lives in the
+  # help overlay's Agents tab; selecting that tab pushes this to refresh tokens.
   def handle_event("connect:load", _params, socket) do
     {:noreply, load_tokens(socket)}
   end

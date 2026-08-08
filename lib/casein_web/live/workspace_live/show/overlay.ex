@@ -4,8 +4,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.Overlay do
 
   The cockpit renders several surfaces that float above the workspace — the
   command palette, the context menu, the audit drawer, the notifications
-  drawer, the clipboard drawer, the session-template library, and the template
-  preview. Each one owned an independent open flag, so nothing prevented the
+  drawer, the clipboard drawer, the session-template library, the template
+  preview, and the leader cheatsheet (which also hosts connect-agent token
+  minting). Each one owned an independent open flag, so nothing prevented the
   palette, a drawer, and a modal being open simultaneously (stacked overlays,
   ambiguous `Escape`, two competing keyboard-focus owners).
 
@@ -20,9 +21,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.Overlay do
 
   ## Not arbitrated
 
-    * **The leader cheatsheet** is client-side only (`JS.toggle` on
-      `#leader-cheatsheet` in `WorkspaceShell`), so there is no socket state to
-      arbitrate. It is a transient help layer, not a focus owner.
     * **The sessions/windows sidebar** and **focus mode** (`chrome_visible`)
       are layout, not overlay — they dock beside the terminal rather than
       floating over it.
@@ -39,6 +37,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.Overlay do
           | :clipboard_drawer
           | :template_library
           | :template_preview
+          | :leader_help
 
   # Reset applied when a surface is closed. `:template_preview` is its own
   # surface rather than a child of `:template_library` — previewing a template
@@ -51,7 +50,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.Overlay do
     notifications: [notif_drawer_open: false],
     clipboard_drawer: [clipboard_drawer_open: false],
     template_library: [template_library_open: false],
-    template_preview: [template_preview: nil]
+    template_preview: [template_preview: nil],
+    leader_help: [leader_help_open: false]
   }
 
   @overlays Map.keys(@resets)

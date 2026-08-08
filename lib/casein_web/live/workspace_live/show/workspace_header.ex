@@ -291,7 +291,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
 
         <button
           type="button"
-          phx-click={JS.toggle(to: "#leader-cheatsheet")}
+          phx-click="leader_help:toggle"
           class={menu_item_class()}
           title="Help & keyboard shortcuts · Ctrl + B ?"
           aria-label="Help and keyboard shortcuts"

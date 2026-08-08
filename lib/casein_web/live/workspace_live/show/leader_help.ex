@@ -5,6 +5,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
 
   alias CaseinWeb.WorkspaceLive.Show.LeaderBindings
 
+  attr :open, :boolean, required: true
   attr :connect_new_token, :string, default: nil
   attr :connect_mcp_json, :string, default: nil
   attr :connect_tokens, :list, default: []
@@ -20,8 +21,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
       ])
 
     ~H"""
-    <div id="leader-cheatsheet" class="fixed inset-0 z-50 hidden">
-      <div class="absolute inset-0 bg-black/30" phx-click={JS.hide(to: "#leader-cheatsheet")}></div>
+    <div :if={@open} id="leader-cheatsheet" class="fixed inset-0 z-50">
+      <div class="absolute inset-0 bg-black/30" phx-click="leader_help:close"></div>
       <div class="absolute top-1/2 left-1/2 max-h-[80vh] w-[30rem] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded border border-base-300 bg-base-100 p-4 text-xs shadow-xl">
         <h2 class="mb-2 text-sm font-semibold">Help</h2>
         <div role="tablist" class="mb-3 flex gap-1 border-b border-base-300">

@@ -50,6 +50,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias CaseinWeb.WorkspaceLive.Show.HistoryEvents
   alias CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents
   alias CaseinWeb.WorkspaceLive.Show.InspectorEvents
+  alias CaseinWeb.WorkspaceLive.Show.LeaderHelpEvents
   alias CaseinWeb.WorkspaceLive.Show.LogsEvents
   alias CaseinWeb.WorkspaceLive.Show.NavEvents
   alias CaseinWeb.WorkspaceLive.Show.PaletteEvents
@@ -156,6 +157,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     clipboard:toggle clipboard:close clipboard:refresh clipboard:clear
     situation_drawer:toggle situation_drawer:close
     connect:toggle connect:close connect:load connect:mint connect:revoke
+    leader_help:toggle leader_help:close
     search:run artifact:refresh artifact:serve artifact:inspect artifact:open
     history:search history:clear history:refresh
     preview-pane:enter preview-pane:exit
@@ -376,6 +378,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:workspace_summaries, [])
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
+        |> assign(:leader_help_open, false)
         |> assign(:connect_drawer_open, false)
         |> assign(:connect_new_token, nil)
         |> assign(:connect_mcp_json, nil)
@@ -912,6 +915,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # Clipboard drawer: the retrievable history of what agents have copied.
   def handle_event("clipboard:" <> _ = event, params, socket),
     do: ClipboardDrawerEvents.handle_event(event, params, socket)
+
+  # Leader cheatsheet open/close (tabs stay client-side).
+  def handle_event("leader_help:" <> _ = event, params, socket),
+    do: LeaderHelpEvents.handle_event(event, params, socket)
 
   # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
   # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
@@ -2535,6 +2542,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       history_results={@history_results}
       host_loc={@host_loc}
       host_path={@host_path}
+      leader_help_open={@leader_help_open}
       log_ref={@log_ref}
       log_service={@log_service}
       mobile_nav_focus={@mobile_nav_focus}
