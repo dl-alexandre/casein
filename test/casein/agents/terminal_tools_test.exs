@@ -1293,6 +1293,83 @@ defmodule Casein.Agents.TerminalToolsTest do
     path
   end
 
+  describe "terminal_bind_issue" do
+    setup do
+      Casein.Terminals.IssueBinding.clear_all()
+      on_exit(&Casein.Terminals.IssueBinding.clear_all/0)
+      :ok
+    end
+
+    test "binds to the agent pane by default and shows up in terminal_topology" do
+      session = agent_pair_session!()
+
+      assert {:ok, bound} =
+               TerminalTools.invoke("terminal_bind_issue", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "issue" => "#678"
+               })
+
+      # Defaults to the dedicated agent pane (%2), not the operator pane (%1).
+      assert bound.target == "%2"
+      assert bound.issue == 678
+      assert bound.status == "bound"
+
+      assert {:ok, topology} =
+               TerminalTools.invoke("terminal_topology", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+
+      by_id = Map.new(topology.panes, &{&1.id, &1})
+      assert by_id["%2"].issue == 678
+      refute Map.has_key?(by_id["%1"], :issue)
+      # The window carries it too, so a collapsed window still says what it is on.
+      assert Enum.find(topology.windows, &(&1.id == "@1")).issue == 678
+    end
+
+    test "omitting the issue releases the binding" do
+      session = agent_pair_session!()
+
+      {:ok, _} =
+        TerminalTools.invoke("terminal_bind_issue", %{
+          "workspace_id" => "alpha",
+          "session" => session,
+          "issue" => "678"
+        })
+
+      assert {:ok, cleared} =
+               TerminalTools.invoke("terminal_bind_issue", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+
+      assert cleared.status == "cleared"
+      assert cleared.issue == nil
+
+      assert {:ok, topology} =
+               TerminalTools.invoke("terminal_topology", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+
+      refute Enum.any?(topology.panes, &Map.has_key?(&1, :issue))
+    end
+
+    test "a malformed issue is refused rather than bound to something wrong" do
+      session = agent_pair_session!()
+
+      assert {:error, _} =
+               TerminalTools.invoke("terminal_bind_issue", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "issue" => "not-an-issue"
+               })
+
+      assert Casein.Terminals.IssueBinding.get(session, "%2") == nil
+    end
+  end
+
   defp agent_pair_session! do
     session = Tmux.session_name("alpha", "wait")
 
