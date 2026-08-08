@@ -453,13 +453,17 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
       assert "terminal_list_sessions" in names
       assert "terminal_send_agent_command" in names
       assert "terminal_wait_agent_state" in names
+      # Steering a busy fleet is a hot loop: an orchestrator must be able to
+      # leave a message without a discovery round-trip first.
+      assert "terminal_set_next_prompt" in names
       # meta-tools advertised
       assert "search_tools" in names
       assert "invoke_tool" in names
       # long tail hidden from the advertised list
       refute "terminal_set_agent_label" in names
       refute "terminal_report_worktree" in names
-      assert length(tools) == 8
+      refute "terminal_get_next_prompt" in names
+      assert length(tools) == 9
     end
 
     test "search_tools finds a long-tail tool by natural-language intent", %{conn: conn} do
