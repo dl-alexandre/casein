@@ -95,6 +95,66 @@ defmodule Casein.Cockpit.Inspectors do
     )
   end
 
+  @doc """
+  Serialize open inspectors for a session template (issue #691).
+
+  Records kind + optional path only — restore reopens the viewport and the
+  LiveView re-derives content from current git state. There is no snapshot.
+  """
+  @spec serialize([pane()]) :: [map()]
+  def serialize(panes) when is_list(panes) do
+    Enum.map(panes, fn pane ->
+      base = %{
+        "type" => "inspector",
+        "kind" => kind_string(pane.kind)
+      }
+
+      path = pane_path(pane)
+
+      if is_binary(path) and path != "" do
+        Map.put(base, "path", path)
+      else
+        base
+      end
+    end)
+  end
+
+  def serialize(_), do: []
+
+  @doc """
+  Restore inspector viewports from a serialized template fragment.
+
+  Returns `{panes, geometry}` with fresh ids — identity is not durable.
+  """
+  @spec restore(term(), keyword()) :: {[pane()], Geometry.t()}
+  def restore(list, opts \\ [])
+
+  def restore(list, opts) when is_list(list) do
+    panes =
+      list
+      |> Enum.map(&cast_serialized/1)
+      |> Enum.reject(&is_nil/1)
+
+    {panes, geometry(panes, opts)}
+  end
+
+  def restore(_, opts), do: {[], Geometry.for_inspectors([], opts)}
+
+  @doc "Primary (first) diff path among open inspectors, if any."
+  @spec primary_diff_path([pane()]) :: String.t() | nil
+  def primary_diff_path(panes) when is_list(panes) do
+    panes
+    |> Enum.filter(&(&1.kind == :diff))
+    |> Enum.find_value(&pane_path/1)
+  end
+
+  def primary_diff_path(_), do: nil
+
+  @doc "True when any open inspector is a diff viewport."
+  @spec diff_open?([pane()]) :: boolean()
+  def diff_open?(panes) when is_list(panes), do: Enum.any?(panes, &(&1.kind == :diff))
+  def diff_open?(_), do: false
+
   defp upsert(panes, pane) do
     case Enum.find_index(panes, &(&1.id == pane.id)) do
       nil -> panes ++ [pane]
@@ -152,4 +212,46 @@ defmodule Casein.Cockpit.Inspectors do
   end
 
   defp stringify_keys(_), do: %{}
+
+  defp kind_string(kind) when is_atom(kind), do: Atom.to_string(kind)
+  defp kind_string(kind) when is_binary(kind), do: kind
+  defp kind_string(_), do: "inspector"
+
+  defp pane_path(%{attrs: attrs}) when is_map(attrs) do
+    case attrs["path"] || attrs[:path] do
+      path when is_binary(path) ->
+        case String.trim(path) do
+          "" -> nil
+          p -> p
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp pane_path(_), do: nil
+
+  defp cast_serialized(%{"type" => "inspector"} = raw), do: cast_serialized_kind(raw)
+  defp cast_serialized(%{type: "inspector"} = raw), do: cast_serialized_kind(raw)
+  defp cast_serialized(%{"kind" => _} = raw), do: cast_serialized_kind(raw)
+  defp cast_serialized(%{kind: _} = raw), do: cast_serialized_kind(raw)
+  defp cast_serialized(_), do: nil
+
+  defp cast_serialized_kind(raw) when is_map(raw) do
+    kind = Map.get(raw, "kind") || Map.get(raw, :kind) || :inspector
+    path = Map.get(raw, "path") || Map.get(raw, :path)
+    title = Map.get(raw, "title") || Map.get(raw, :title)
+
+    attrs =
+      cond do
+        is_binary(path) and String.trim(path) != "" ->
+          %{kind: normalize_kind(kind), title: title || path, path: String.trim(path)}
+
+        true ->
+          %{kind: normalize_kind(kind), title: title}
+      end
+
+    build_pane(attrs)
+  end
 end
