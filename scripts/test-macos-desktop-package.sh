@@ -110,7 +110,17 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 [[ -f "$runtime_file" ]] || { echo "packaged app did not publish runtime.json" >&2; exit 1; }
-"$RELEASE/erts-16.4/bin/epmd" -names | rg -x "name $smoke_release_node at port [0-9]+"
+# Resolve ERTS from the packaged release rather than pinning its version: the
+# directory is named for the ERTS that shipped in the release, so every OTP bump
+# renames it (OTP 28.5 → erts-16.4, OTP 29.0.4 → erts-17.0.4) and a hardcoded
+# path fails this check with a bare "No such file or directory" that reads like
+# a broken package rather than a stale constant.
+epmd_bin=("$RELEASE"/erts-*/bin/epmd)
+if [[ ${#epmd_bin[@]} -ne 1 || ! -x "${epmd_bin[0]}" ]]; then
+  echo "expected exactly one erts-*/bin/epmd in $RELEASE, found: ${epmd_bin[*]}" >&2
+  exit 1
+fi
+"${epmd_bin[0]}" -names | rg -x "name $smoke_release_node at port [0-9]+"
 
 port="$(plutil -extract port raw "$runtime_file")"
 for _ in $(seq 1 30); do
