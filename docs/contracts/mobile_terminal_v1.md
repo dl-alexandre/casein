@@ -15,6 +15,21 @@ Successful create/refresh replies contain `schema`, `status`, `mode=read`,
 and `expires_at`. The token is returned once and is never persisted or logged.
 Delete replies contain only `schema`, `status=deleted`, and `lease_id`.
 
+Join replies and `cards_snapshot` pushes also carry presentation guidance:
+
+```json
+{
+  "capabilities": {
+    "mobile_terminal": {"enabled": false, "reason": "kill_switch_active"}
+  }
+}
+```
+
+When enabled, `mobile_terminal` is `{"enabled": true}`. This field is not
+authority: create/join still require policy + child grant. Clients hide the
+Terminal entry point unless `enabled` is true (fail closed when missing or
+cached-disabled).
+
 ## Byte plane (`mobile_terminal:<lease_id>`)
 
 Join requires `child_grant` and a client-generated `connection_generation`.

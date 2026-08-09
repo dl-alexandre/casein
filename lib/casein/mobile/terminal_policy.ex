@@ -47,6 +47,35 @@ defmodule Casein.Mobile.TerminalPolicy do
 
   def authorize(_context), do: {:error, :invalid_context}
 
+  @doc """
+  Presentation-only mobile-terminal capability for the native feed/profile contract.
+
+  This is not authority: create/join paths still call `authorize/1` and the child
+  grant. Clients use this only to hide entry points when rollout is off.
+  """
+  @spec capability(context() | term()) :: %{
+          required(:enabled) => boolean(),
+          optional(:reason) => denial_reason()
+        }
+  def capability(context) do
+    case authorize(context) do
+      :ok -> %{enabled: true}
+      {:error, reason} -> %{enabled: false, reason: reason}
+    end
+  end
+
+  @doc "JSON-safe capability map for the mobile feed/profile snapshot."
+  @spec wire_capability(context() | term()) :: %{String.t() => boolean() | String.t()}
+  def wire_capability(context) do
+    case capability(context) do
+      %{enabled: true} ->
+        %{"enabled" => true}
+
+      %{enabled: false, reason: reason} ->
+        %{"enabled" => false, "reason" => Atom.to_string(reason)}
+    end
+  end
+
   @spec enabled_for?(context()) :: boolean()
   def enabled_for?(context), do: authorize(context) == :ok
 

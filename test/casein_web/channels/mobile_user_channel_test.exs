@@ -316,6 +316,59 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert joined_socket.assigns.mobile_user_id == user_id
   end
 
+  test "feed snapshot declares fail-closed mobile terminal capability" do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+
+    previous = Application.get_env(:casein, :mobile_terminal)
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:casein, :mobile_terminal),
+        else: Application.put_env(:casein, :mobile_terminal, previous)
+    end)
+
+    Application.put_env(:casein, :mobile_terminal,
+      enabled: false,
+      kill_switch: true,
+      user_ids: [],
+      device_link_ids: [],
+      workspace_ids: []
+    )
+
+    assert {:ok, reply, _socket} =
+             join_mobile(user_id,
+               assigns: %{
+                 device_link_id: "device-1",
+                 pairing_workspace_id: workspace_id
+               }
+             )
+
+    assert reply.capabilities.mobile_terminal == %{
+             "enabled" => false,
+             "reason" => "kill_switch_active"
+           }
+
+    Application.put_env(:casein, :mobile_terminal,
+      enabled: true,
+      kill_switch: false,
+      user_ids: [user_id],
+      device_link_ids: ["device-1"],
+      workspace_ids: [workspace_id]
+    )
+
+    assert {:ok, enabled_reply, _socket} =
+             join_mobile(user_id,
+               assigns: %{
+                 device_link_id: "device-1",
+                 pairing_workspace_id: workspace_id
+               }
+             )
+
+    assert enabled_reply.capabilities.mobile_terminal == %{"enabled" => true}
+  end
+
   test "two mobile channels retain independent validated connection generations" do
     user_id = unique_id("dev")
     first_generation = feed_generation()

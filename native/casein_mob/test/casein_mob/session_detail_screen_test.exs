@@ -108,6 +108,11 @@ defmodule CaseinMob.SessionDetailScreenTest do
       token: "token"
     })
 
+    assert :ok =
+             SessionConfig.cache_cards("origin-devbox", [], nil, %{
+               "mobile_terminal" => %{"enabled" => true}
+             })
+
     SessionConfig.pin_workspace("ws-1")
 
     view = mount_screen(SessionDetailScreen, %{workspace_id: "ws-1"})
@@ -125,6 +130,11 @@ defmodule CaseinMob.SessionDetailScreenTest do
       url: "https://other.test",
       token: "other-token"
     })
+
+    assert :ok =
+             SessionConfig.cache_cards("origin-other", [], nil, %{
+               "mobile_terminal" => %{"enabled" => true}
+             })
 
     rejected = render_info(view, {:tap, :open_terminal})
     assert assigns(rejected).notice == "Terminal is unavailable for this workspace"

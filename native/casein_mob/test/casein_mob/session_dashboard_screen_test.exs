@@ -19,6 +19,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
   end
 
   test "renders root header actions without back chrome" do
+    enable_terminal_entry()
     view = mount_screen(SessionDashboardScreen)
 
     assert_renderable(view)
@@ -32,8 +33,26 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     refute find(view, :button, text: "Home")
   end
 
+  test "terminal entry is hidden when rollout capability is disabled" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    assert :ok =
+             SessionConfig.cache_cards("origin-devbox", [], nil, %{
+               "mobile_terminal" => %{"enabled" => false, "reason" => "kill_switch_active"}
+             })
+
+    view = mount_screen(SessionDashboardScreen)
+
+    refute find(view, :button, text: "Terminal")
+  end
+
   test "direct terminal action stays put and explains when no workspace is selected" do
-    SessionConfig.put_pairing("https://casein.test", "token")
+    enable_terminal_entry("https://casein.test")
 
     view =
       SessionDashboardScreen
@@ -44,7 +63,7 @@ defmodule CaseinMob.SessionDashboardScreenTest do
   end
 
   test "direct terminal action passes an explicit origin-qualified workspace target" do
-    SessionConfig.put_pairing(%{
+    enable_terminal_entry(%{
       origin_id: "origin-devbox",
       display_name: "Devbox",
       url: "https://casein.test",
@@ -2364,6 +2383,39 @@ defmodule CaseinMob.SessionDashboardScreenTest do
 
   defp restore_env(name, nil), do: System.delete_env(name)
   defp restore_env(name, value), do: System.put_env(name, value)
+
+  defp enable_terminal_entry(pairing \\ :default)
+
+  defp enable_terminal_entry(:default) do
+    enable_terminal_entry(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+  end
+
+  defp enable_terminal_entry(url) when is_binary(url) do
+    enable_terminal_entry(%{url: url, token: "token"})
+  end
+
+  defp enable_terminal_entry(pairing) when is_map(pairing) do
+    SessionConfig.put_pairing(pairing)
+
+    origin_id =
+      pairing[:origin_id] || pairing["origin_id"] ||
+        case SessionConfig.connection() do
+          {:ok, %{origin_id: id}} -> id
+          _ -> nil
+        end
+
+    assert is_binary(origin_id)
+
+    assert :ok =
+             SessionConfig.cache_cards(origin_id, [], nil, %{
+               "mobile_terminal" => %{"enabled" => true}
+             })
+  end
 
   defp assert_no_nil_children(%{children: children}) do
     refute Enum.any?(children, &is_nil/1)

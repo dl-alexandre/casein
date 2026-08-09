@@ -543,6 +543,35 @@ defmodule CaseinMob.SessionConfigTest do
            }
   end
 
+  test "mobile terminal entry capability is fail-closed and caches across offline" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    refute SessionConfig.mobile_terminal_entry_enabled?()
+
+    assert :ok =
+             SessionConfig.cache_cards("origin-devbox", [], nil, %{
+               "mobile_terminal" => %{"enabled" => true}
+             })
+
+    assert SessionConfig.mobile_terminal_entry_enabled?()
+
+    assert :ok =
+             SessionConfig.cache_cards("origin-devbox", [], nil, %{
+               "mobile_terminal" => %{"enabled" => false, "reason" => "user_not_allowlisted"}
+             })
+
+    refute SessionConfig.mobile_terminal_entry_enabled?()
+
+    # Offline refresh without a capability block keeps the last declared value.
+    assert :ok = SessionConfig.cache_cards("origin-devbox", [], nil, nil)
+    refute SessionConfig.mobile_terminal_entry_enabled?()
+  end
+
   test "inactive clarification cache never persists the question body" do
     SessionConfig.put_pairing(%{
       origin_id: "origin-mac",
