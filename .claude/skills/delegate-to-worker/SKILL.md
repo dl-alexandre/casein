@@ -24,47 +24,46 @@ what they signal *without* being asked — see [§6](#6-wait-loop).
 
 ## 1. Pick the runtime
 
-Route on **capability**, not preference. The only hard gate is agent-write, and
-it is grok-specific.
+Route on **capability**, not preference. Agent-write unlock is **not** a hard
+gate for write work — it only controls whether a Grok worker may drive live tmux
+panes.
 
-### Gate — agent-write unlock (grok only)
+### Agent-write unlock (grok MCP grant only)
 
-`terminal_context` returns an `agent_write` block. When `write_enabled` is
-`false`, **grok is unavailable** for write work: a Grok pane spawned while locked
-gets a read-only bwrap sandbox. It reaches a normal prompt but cannot write its
-worktree, resolve DNS, or start the BEAM, so `mix` will not run. That sandbox is
-**frozen when the pane's leader starts** — re-granting the unlock later does not
-free a running pane, only a relaunch does.
+`terminal_context` returns an `agent_write` block, but `write_enabled: false` is
+**not a blocker** for write work. The worker's bwrap base is always `strict`, so
+it writes its own worktree, runs `mix`, and commits regardless. The unlock
+governs only the MCP grant — whether the worker may drive live tmux panes
+(`terminal_send_command` / `terminal_send_keys`). Reporting tools stay granted
+while locked, so unattended delegation works either way.
 
-`spawn-agent-worker.sh` enforces this itself: it preflights the unlock and
-**exits 3 without opening a window** when the answer is definitively locked. It
-fails *open* on an inconclusive answer (no token, no API base, unreachable
-endpoint) and only warns. Treat exit 3 as "route elsewhere or ask the operator to
-re-grant", not as a transient failure to retry.
+`spawn-agent-worker.sh` preflights the unlock and, when it is locked, prints a
+`warn:` advisory naming what the worker can and cannot do — then spawns anyway.
+It does not refuse. Set `CASEIN_SPAWN_SKIP_WRITE_PREFLIGHT=1` to suppress the
+advisory. The grant is read at launch and **frozen for the pane's life**, so
+re-granting later does not free a running pane — relaunch it. Ask an operator to
+grant write only when the task genuinely needs pane control.
 
-Two distinct locked states, needing different responses:
+Two distinct locked states (only relevant when you need pane control):
 
 | `unlock_status` | Meaning | Response |
 |---|---|---|
-| `inactive` / `expired` | The unlock lapsed (max 240 min) | Ask the operator to re-grant in the workspace UI |
+| `inactive` / `expired` | The unlock lapsed (max 240 min) | Grant in the workspace UI, then relaunch |
 | `blocked-by-workspace-policy` | Unlock **is** active; workspace is not in manual mode, or DB isolation is `shared_stage`/`unsafe` | Re-granting will not help — resolve the policy first |
-
-`CASEIN_SPAWN_ALLOW_READ_ONLY=1` overrides the refusal. Use it only when you
-deliberately want a read-only worker (analysis, review); never for write work.
 
 **codex, claude, and opencode are not gated** — the preflight runs only for
 `grok`.
 
 ### Preference order
 
-Once the gate is settled, pick on task shape:
+Pick on task shape:
 
 | Situation | Runtime |
 |---|---|
-| Write work while agent-write is locked | **codex** — ungated, and reports `done`/`blocked` via hooks |
 | Long multi-slice implementation | **codex** or **claude** — both report semantic state, so the wait is exact instead of a poll |
-| Bulk / parallel implementation, unlock active | **grok** — cheap to fan out, but budget for capture-based extraction |
-| Read-only analysis or review | any; grok with `CASEIN_SPAWN_ALLOW_READ_ONLY=1` is fine |
+| Bulk / parallel implementation | **grok** — cheap to fan out; works locked for write/commit, needs unlock only for pane control |
+| Work that needs the worker to drive live panes | any runtime with an active agent-write unlock (or codex/claude/opencode) |
+| Read-only analysis or review | any |
 
 ### Which model a worker gets
 

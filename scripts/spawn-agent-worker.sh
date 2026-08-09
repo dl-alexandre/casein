@@ -43,6 +43,7 @@ Environment: same as launch-casein-agent.sh (resolve via .devbox-agent.env or tm
   CASEIN_SPAWN_READY_SECONDS        seconds to wait for the agent process (default 120; 0 waives)
   CASEIN_SPAWN_KEEP_FAILED_WINDOW   1 keeps a failed window (renamed failed-*) instead of closing it
   CASEIN_SPAWN_DRY_RUN              1 prints the resolved launch plan without opening a window
+  CASEIN_SPAWN_SKIP_WRITE_PREFLIGHT 1 skips the Grok locked-MCP-grant advisory
 EOF
 }
 
@@ -85,19 +86,21 @@ spawn_worker_window_name() {
   printf 'worker-%s\n' "$(spawn_worker_sanitize_slug "$slug")"
 }
 
-# A managed Grok worker's bwrap sandbox base is chosen once, when its leader
-# starts, from the workspace's agent-write unlock — and is then frozen for the
-# pane's life. Spawning while locked therefore produces a pane that reaches a
-# normal prompt but cannot write its worktree, resolve DNS, or start the BEAM;
-# re-granting the unlock afterwards does not free it, only a relaunch does.
-# launch-casein-agent.sh warns about this, but the warning is one stderr line at
-# startup that scrolls away, so whole fan-outs have been spawned dead and
-# rediscovered by failure. Refuse to open the window instead.
+# Report what MCP grant a Grok worker will launch with. The grant is read once,
+# when the leader starts, and is then frozen for the pane's life, so re-granting
+# the unlock later does not free a running pane — only a relaunch does. That
+# freeze is the part worth announcing up front.
+#
+# This preflight used to refuse the spawn outright, because a locked unlock also
+# selected a read-only bwrap base that left the pane unable to write its
+# worktree, resolve DNS, or start the BEAM. The base is now always "strict" and
+# the two are decoupled, so a locked worker still writes, runs mix, and commits;
+# only pane control is withheld. Refusing here would now block a worker that
+# works, so this advises and proceeds.
 #
 # Fails *open* when the answer is inconclusive (no token, no API base, endpoint
-# unreachable or unparseable): a degraded control plane must not make spawning
-# impossible, and the launcher's own announce still fires in that case. Only a
-# definitive "locked" blocks.
+# unreachable or unparseable): a degraded control plane must not distort what we
+# tell the operator, and the launcher's own announce still fires in that case.
 spawn_worker_grok_write_state() {
   local token="${CASEIN_API_TOKEN:-}" workspace="${CASEIN_WORKSPACE_ID:-}"
   local base response state
@@ -154,37 +157,36 @@ spawn_worker_preflight_grok_write() {
       return 0
       ;;
     unknown)
-      warn_degraded "could not confirm this workspace's agent-write unlock; if the worker comes up read-only, re-grant agent write and relaunch it"
+      warn_degraded "could not confirm this workspace's agent-write unlock; the worker will still write its worktree and run mix, but if it cannot drive panes, grant agent write and relaunch it"
       return 0
       ;;
   esac
 
+  # A locked unlock no longer produces a read-only sandbox — the bwrap base is
+  # always "strict" and the worker can write its worktree, run mix, and commit.
+  # Only the MCP grant is withheld, so spawning is still worth doing; refusing
+  # here would block a worker that works.
   cat >&2 <<EOF
-error: refusing to spawn a Grok worker — agent write is unavailable (${state}).
-error:   The worker would get a READ-ONLY sandbox: it would reach a normal prompt but
-error:   could not write its worktree, reach the network, or run mix. That state is
-error:   frozen at launch, so re-granting the unlock later would not free this pane.
+warn: spawning a Grok worker with a LOCKED MCP grant (${state}).
+warn:   The worker CAN write its worktree, run mix, and commit. It CANNOT drive
+warn:   live tmux panes (terminal_send_command / terminal_send_keys); reporting
+warn:   tools still work, so unattended delegation is fine.
 EOF
 
   if [[ "$state" == "blocked-by-workspace-policy" ]]; then
     cat >&2 <<'EOF'
-error:   The unlock itself is active — the block is elsewhere: the workspace is not in
-error:   manual mode, or its DB isolation is shared_stage/unsafe. Re-granting the
-error:   unlock will not help; resolve that first.
+warn:   The unlock itself is active — the block is elsewhere: the workspace is not
+warn:   in manual mode, or its DB isolation is shared_stage/unsafe. Re-granting the
+warn:   unlock will not help; resolve that first if you need pane control.
 EOF
   else
     cat >&2 <<'EOF'
-error:   Fix: re-grant agent write for the workspace in the Casein UI, then spawn again.
+warn:   To get pane control, grant agent write for the workspace in the Casein UI,
+warn:   then spawn again — the grant is read at launch and frozen for the pane.
 EOF
   fi
 
-  cat >&2 <<EOF
-error:   For write work right now, spawn a codex worker instead — it is not gated:
-error:     bash scripts/spawn-agent-worker.sh codex ${TASK_SLUG:-<slug>}
-error:   To spawn a deliberately read-only Grok worker anyway, set
-error:   CASEIN_SPAWN_ALLOW_READ_ONLY=1.
-EOF
-  exit 3
+  return 0
 }
 
 # Resolve the generated, workspace-scoped environment file that a fresh tmux
@@ -595,7 +597,7 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   exit 1
 fi
 
-if [[ "$RUNTIME" == "grok" && "${CASEIN_SPAWN_ALLOW_READ_ONLY:-0}" != "1" ]]; then
+if [[ "$RUNTIME" == "grok" && "${CASEIN_SPAWN_SKIP_WRITE_PREFLIGHT:-0}" != "1" ]]; then
   spawn_worker_preflight_grok_write
 fi
 

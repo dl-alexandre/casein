@@ -198,23 +198,34 @@ active, time-boxed write unlock expands the live grant to supported mutations,
 including raw `terminal_send_command` / `terminal_send_keys` for any pane in the
 bound tmux session, so an agent can drive a verify or bash pane. Agent-pane
 shortcuts (`terminal_send_agent_*`) stay pinned to the claimed agent pane.
-Revoking the unlock removes MCP mutations immediately without re-minting. A
-later launch also changes the sandbox signature and restarts an existing leader
-rather than reusing a previously writable native-tool sandbox. Write-enabled
-leaders extend Grok's `strict` profile; locked leaders extend `read-only` with
-explicit credential denies.
+Revoking the unlock removes MCP mutations immediately without re-minting.
 
-The MCP grant and the filesystem sandbox therefore move on different clocks, and
-the difference is the trap: MCP re-intersects per request, but the sandbox base
-is chosen once, when the leader starts, and stays frozen for the pane's life. A
-pane launched while locked reaches a normal-looking prompt yet cannot write its
-worktree, reach the network, or start the BEAM — and a later grant does **not**
-free it; only a relaunch does. Two surfaces make that discoverable instead of
+The unlock governs the **MCP grant only**. Every managed leader extends Grok's
+`strict` profile with explicit credential denies, whether or not write is
+unlocked. A worker's isolation comes from running in its own fresh
+`agent/<runtime>/<slug>-<stamp>` worktree branched off the primary checkout, not
+from denying it write — so a locked worker can still write that worktree, run
+`mix`, and commit, while remaining unable to drive the operator's live panes.
+Locked launches announce exactly that split (`grok_announce_locked_mcp_grant`)
+rather than reaching a normal-looking prompt and failing later.
+
+Earlier builds selected the `read-only` base when write was locked. That
+conflated two unrelated risks — writing an isolated worktree versus driving the
+operator's terminal — and cost several sessions to diagnose, because the
+read-only profile also blocks child network and breaks BEAM startup
+(`Failed to write to erl_child_setup: 1`), so `mix` silently would not run.
+
+The MCP grant and the sandbox no longer move together: the sandbox base is
+constant, and only the grant tracks policy. The grant is still read once, when
+the leader starts, and stays frozen for the pane's life, so a later unlock does
+**not** give a running pane terminal control — only a relaunch does. That freeze
+is the remaining sharp edge, and three surfaces make it discoverable instead of
 leaving it to be rediscovered by failure: the workspace status API and
 `terminal_context` both report an `agent_write` block (`write_enabled`,
 `unlock_status`, `unlock_until`, plus a remedy note when blocked), and
-`scripts/spawn-agent-worker.sh` preflights it — refusing to open a Grok worker
-window with exit 3 rather than spawning a pane that cannot work. Note that
+`scripts/spawn-agent-worker.sh` preflights it. The preflight *advises and
+proceeds* — a locked worker still writes its worktree, runs `mix`, and commits,
+so refusing to open the window would block a worker that works. Note that
 `write_enabled` can be false while the unlock is *active*, when the workspace is
 not in manual mode or its DB isolation is `shared_stage`/`unsafe`; re-granting
 does not help there, so the surfaces say so explicitly.
