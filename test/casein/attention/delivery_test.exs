@@ -222,5 +222,80 @@ defmodule Casein.Attention.DeliveryTest do
       assert Delivery.session_needs_you?(blocked)
       assert Delivery.push_eligible?(blocked)
     end
+
+    test "drawer is not the push gate — idle clears drawer, not phone" do
+      idle =
+        Salience.compute(%{
+          agent_states: [],
+          quiet?: true,
+          lifecycle_status: :other
+        })
+
+      assert Delivery.drawer_eligible?(idle)
+      refute Delivery.push_eligible?(idle)
+    end
+
+    test "unknown / missing quiet fact is not treated as below-threshold calm" do
+      # No agent_states, quiet? false (not unknown collapsed into quiet).
+      # Observation failure must never fabricate quiet?: true before compute.
+      salience =
+        Salience.compute(%{
+          agent_states: [:other],
+          quiet?: false,
+          lifecycle_status: :other
+        })
+
+      refute salience.signal in [:idle, :agent_stalled]
+      refute Delivery.session_needs_you?(salience)
+      assert Delivery.session_classification(salience).section == :recent
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # #699 close-out — old ad-hoc path is gone (not merely bypassed)
+  # ---------------------------------------------------------------------------
+
+  describe "old surface classifiers are deleted (#699)" do
+    test "AttentionInbox no longer owns pin or band ranking helpers" do
+      refute function_exported?(Casein.Mobile.AttentionInbox, :unresolved_needs_me?, 2)
+      refute function_exported?(Casein.Mobile.AttentionInbox, :unresolved_needs_me?, 1)
+      # ranking/3 stays private and only forwards to Salience — no public ranker.
+      refute function_exported?(Casein.Mobile.AttentionInbox, :ranking, 3)
+    end
+
+    test "SessionDirectory.Attention classify is Delivery-only (no local cond)" do
+      source =
+        :code.which(Casein.Terminals.SessionDirectory.Attention)
+        |> to_string()
+        |> String.replace(~r/\.beam$/, ".ex")
+        |> then(fn
+          path when is_binary(path) ->
+            # Prefer source next to beam under _build, else lib/
+            lib = "lib/casein/terminals/session_directory/attention.ex"
+            if File.exists?(lib), do: File.read!(lib), else: File.read!(path)
+
+          _ ->
+            File.read!("lib/casein/terminals/session_directory/attention.ex")
+        end)
+
+      assert source =~ "Delivery.classify_session"
+      refute source =~ "cond do"
+      refute source =~ ":blocked in"
+      refute source =~ "quiet == true"
+    end
+
+    test "Policy is a pure Delivery delegate — no second reaction table" do
+      source = File.read!("lib/casein/attention/policy.ex")
+      assert source =~ "defdelegate delivery_decision"
+      assert source =~ "defdelegate delivery_reaction"
+      assert source =~ "defdelegate window_delivery"
+      refute source =~ "cond do"
+      refute source =~ "def delivery_decision"
+      refute source =~ "def delivery_reaction"
+    end
+
+    test "stall threshold stays 600s — attention migration did not retune it" do
+      assert Casein.Terminals.AgentState.stall_seconds() == 600
+    end
   end
 end
