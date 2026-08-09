@@ -236,7 +236,8 @@ log "checking native plugin supply-chain signatures and committed manifest"
   cd native/casein_mob
   "${MIX[@]}" deps.get
   "${MIX[@]}" test test/casein_mob/plugin_supply_chain_test.exs \
-    test/casein_mob/mob_dev_native_deploy_contract_test.exs
+    test/casein_mob/mob_dev_native_deploy_contract_test.exs \
+    test/casein_mob/android_cmake_zig_fallback_test.exs
   "${MIX[@]}" mob.regen_plugin_manifest --check
 )
 
