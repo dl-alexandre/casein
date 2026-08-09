@@ -234,8 +234,10 @@ defmodule Casein.Agents.AgentEvents do
   @doc """
   List the newest unresolved clarification per exact task target.
 
-  Adapters must perform the open/latest projection before applying the result
-  bound so hydration never loads an unbounded clarification history.
+  Adapters must filter resolved requests **before** newest-per-pane distinct
+  (never after), then apply the result bound so hydration never loads an
+  unbounded clarification history. Distinct-first starves older still-open
+  requests when a newer resolved request exists for the same pane.
   """
   @spec list_open_clarifications(String.t(), String.t(), String.t(), keyword()) ::
           [AgentEvent.t()]

@@ -6,10 +6,17 @@ defmodule Casein.Agents.AgentEvents.ClarificationEctoAdapterTest do
 
   test "projects only the newest unresolved clarification per exact target before limiting" do
     workspace_id = Ecto.UUID.generate()
-    older = insert_request(workspace_id, "task-a", "session-a", "%2", -3)
+    _older = insert_request(workspace_id, "task-a", "session-a", "%2", -3)
     newest = insert_request(workspace_id, "task-a", "session-a", "%2", -2)
     other = insert_request(workspace_id, "task-b", "session-b", "%3", -1)
-    insert_resolution(workspace_id, newest, 0)
+
+    assert [^other, ^newest] =
+             EctoAdapter.list_open_clarifications(
+               workspace_id,
+               "agent.clarification_requested",
+               "agent.clarification_resolved",
+               limit: 10
+             )
 
     assert [^other] =
              EctoAdapter.list_open_clarifications(
@@ -18,6 +25,14 @@ defmodule Casein.Agents.AgentEvents.ClarificationEctoAdapterTest do
                "agent.clarification_resolved",
                limit: 1
              )
+  end
+
+  test "older open request stays reachable when a newer request on the same pane is resolved" do
+    workspace_id = Ecto.UUID.generate()
+    older = insert_request(workspace_id, "task-a", "session-a", "%2", -3)
+    newest = insert_request(workspace_id, "task-a", "session-a", "%2", -2)
+    other = insert_request(workspace_id, "task-b", "session-b", "%3", -1)
+    insert_resolution(workspace_id, newest, 0)
 
     open =
       EctoAdapter.list_open_clarifications(
@@ -34,6 +49,7 @@ defmodule Casein.Agents.AgentEvents.ClarificationEctoAdapterTest do
     refute newest.id in open_ids
     assert other.id in open_ids
     assert length(open) == 2
+    assert [^other, ^older] = open
   end
 
   test "resolved newest request does not hide an older open request on the same pane" do
