@@ -38,6 +38,7 @@ foreach ($name in @('Install-Casein.cmd', 'Repair-Casein.cmd', 'Uninstall-Casein
     }
 }
 Assert-Condition (Test-Path -LiteralPath (Join-Path $packageRoot 'windows\Test-CaseinCleanMachine.ps1')) 'Clean-machine acceptance harness is missing'
+Assert-Condition (Test-Path -LiteralPath (Join-Path $packageRoot 'windows\Test-CaseinRebootPersistence.ps1')) 'Reboot-persistence acceptance harness is missing'
 Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'docs'))) 'Internal docs must not be included in a public desktop package'
 
 $releaseScripts = Get-ChildItem -LiteralPath (Join-Path $packageRoot 'lib') -Directory |

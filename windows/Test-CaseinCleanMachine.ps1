@@ -29,6 +29,36 @@ function Assert-Path {
     if (-not (Test-Path -LiteralPath $Path)) { throw $Message }
 }
 
+function New-CaseinPhaseRecord {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][datetime]$StartedAtUtc,
+        [Parameter(Mandatory)][ValidateSet('passed', 'failed')][string]$Outcome,
+        [string]$Detail = $null
+    )
+
+    $record = [ordered]@{
+        name = $Name
+        started_at_utc = $StartedAtUtc.ToUniversalTime().ToString('o')
+        completed_at_utc = [DateTime]::UtcNow.ToString('o')
+        outcome = $Outcome
+    }
+    if ($Detail) { $record.detail = $Detail }
+    return $record
+}
+
+function Add-CaseinPhase {
+    param(
+        [Parameter(Mandatory)]$Evidence,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][datetime]$StartedAtUtc,
+        [Parameter(Mandatory)][ValidateSet('passed', 'failed')][string]$Outcome,
+        [string]$Detail = $null
+    )
+
+    $Evidence.phases += ,(New-CaseinPhaseRecord -Name $Name -StartedAtUtc $StartedAtUtc -Outcome $Outcome -Detail $Detail)
+}
+
 if (-not $AcceptDestructiveCleanMachineTest) {
     throw 'Pass -AcceptDestructiveCleanMachineTest only on a disposable clean Windows test account. The test removes Casein and its user data.'
 }
@@ -69,11 +99,13 @@ $filesManifestPath = Join-Path $packageRoot 'windows\Casein.Release.Files.json'
 $installCommand = Join-Path $packageRoot 'Install-Casein.cmd'
 $repairCommand = Join-Path $packageRoot 'Repair-Casein.cmd'
 $uninstallCommand = Join-Path $packageRoot 'Uninstall-Casein.cmd'
+$rebootHarness = Join-Path $packageRoot 'windows\Test-CaseinRebootPersistence.ps1'
 Assert-Path $manifestPath 'The signed release manifest is missing.'
 Assert-Path $filesManifestPath 'The signed release file manifest is missing.'
 Assert-Path $installCommand 'The offline install command is missing.'
 Assert-Path $repairCommand 'The offline repair command is missing.'
 Assert-Path $uninstallCommand 'The offline uninstall command is missing.'
+Assert-Path $rebootHarness 'The reboot-persistence acceptance harness is missing.'
 
 $signature = Get-AuthenticodeSignature -FilePath $manifestPath
 if ($signature.Status -ne 'Valid') {
@@ -81,7 +113,7 @@ if ($signature.Status -ne 'Valid') {
 }
 
 $evidence = [ordered]@{
-    schema = 2
+    schema = 3
     started_at_utc = [DateTime]::UtcNow.ToString('o')
     machine = $env:COMPUTERNAME
     os_caption = [string]$os.Caption
@@ -96,6 +128,15 @@ $evidence = [ordered]@{
         unc = [bool]$RequireUncPackageRoot
         minimum_long_path_length = $MinimumLongPathLength
     }
+    path_prerequisites = [ordered]@{
+        package_root_kind = if ($packageRootIsUnc) { 'unc' } else { 'local' }
+        package_root_length = $packageRootLength
+        package_root_has_space = $packageRootHasSpace
+        space_required = [bool]$RequirePackageRootWithSpace
+        long_required = [bool]$RequireLongPackageRoot
+        unc_required = [bool]$RequireUncPackageRoot
+        minimum_long_path_length = $MinimumLongPathLength
+    }
     manifest_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $manifestPath).Hash.ToLowerInvariant()
     signer_subject = [string]$signature.SignerCertificate.Subject
     signer_thumbprint = [string]$signature.SignerCertificate.Thumbprint
@@ -106,6 +147,7 @@ $evidence = [ordered]@{
 }
 
 try {
+    $phaseStarted = [DateTime]::UtcNow
     if ($RequirePackageRootWithSpace -and -not $packageRootHasSpace) {
         throw 'The package root must contain a space for this acceptance run.'
     }
@@ -115,8 +157,9 @@ try {
     if ($RequireUncPackageRoot -and -not $packageRootIsUnc) {
         throw 'The package root must be a UNC path for this acceptance run.'
     }
-    $evidence.phases += 'package_path_contract'
+    Add-CaseinPhase -Evidence $evidence -Name 'package_path_contract' -StartedAtUtc $phaseStarted -Outcome 'passed'
 
+    $phaseStarted = [DateTime]::UtcNow
     Invoke-CheckedCommand $installCommand
     $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\Casein'
     $currentPath = Join-Path $installRoot 'current.json'
@@ -124,8 +167,9 @@ try {
     $current = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
     $repairProbe = Join-Path ([string]$current.release_root) 'windows\New-CaseinSupportBundle.ps1'
     Assert-Path $repairProbe 'Installed release is incomplete.'
-    $evidence.phases += 'install'
+    Add-CaseinPhase -Evidence $evidence -Name 'install' -StartedAtUtc $phaseStarted -Outcome 'passed'
 
+    $phaseStarted = [DateTime]::UtcNow
     $trayLibrary = Join-Path ([string]$current.release_root) 'windows\Casein.Tray.ps1'
     . $trayLibrary -ReleaseRoot ([string]$current.release_root) -LibraryOnly
     Set-CaseinStartup $true
@@ -139,13 +183,15 @@ try {
     if ($startupShortcut.Arguments.Contains([string]$current.release_root)) {
         throw 'Launch at sign-in is pinned to a release-specific path.'
     }
-    $evidence.phases += 'launch_at_sign_in'
+    Add-CaseinPhase -Evidence $evidence -Name 'launch_at_sign_in' -StartedAtUtc $phaseStarted -Outcome 'passed'
 
+    $phaseStarted = [DateTime]::UtcNow
     Remove-Item -LiteralPath $repairProbe -Force
     Invoke-CheckedCommand $repairCommand
     Assert-Path $repairProbe 'Offline repair did not restore a damaged release file.'
-    $evidence.phases += 'repair'
+    Add-CaseinPhase -Evidence $evidence -Name 'repair' -StartedAtUtc $phaseStarted -Outcome 'passed'
 
+    $phaseStarted = [DateTime]::UtcNow
     Invoke-CheckedCommand $uninstallCommand
     if (Test-Path -LiteralPath $installRoot) { throw 'Uninstall left the Casein installation root behind.' }
     if (Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein') {
@@ -157,7 +203,7 @@ try {
         & (Join-Path $packageRoot 'windows\Uninstall-Casein.ps1') -RemoveUserData
     }
     if (Test-Path -LiteralPath $dataRoot) { throw 'Acceptance cleanup left Casein user data behind.' }
-    $evidence.phases += 'uninstall'
+    Add-CaseinPhase -Evidence $evidence -Name 'uninstall' -StartedAtUtc $phaseStarted -Outcome 'passed'
     $evidence.result = 'passed'
 } catch {
     $evidence.result = 'failed'
@@ -167,6 +213,6 @@ try {
     $evidence.completed_at_utc = [DateTime]::UtcNow.ToString('o')
     $evidenceDirectory = Split-Path -Parent ([IO.Path]::GetFullPath($EvidencePath))
     New-Item -ItemType Directory -Force -Path $evidenceDirectory | Out-Null
-    $evidence | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $EvidencePath -Encoding UTF8
+    $evidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $EvidencePath -Encoding UTF8
     Write-Host "Acceptance evidence: $EvidencePath"
 }
