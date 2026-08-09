@@ -22,6 +22,12 @@ defmodule TmuxCtl.Test.InterventionRaceAdapter do
     :ok
   end
 
+  # Mobile terminal lease cleanup calls this unguarded (TerminalSessions).
+  # Sessions seeded into :intervention_race_panes are live; unknown names are not.
+  def session_exists?(session) do
+    FakeState.get(:intervention_race_panes, %{}) |> Map.has_key?(session)
+  end
+
   defp send_to_test(message) do
     if pid = FakeState.get(:intervention_race_test_pid), do: send(pid, message)
     :ok

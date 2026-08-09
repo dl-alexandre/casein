@@ -584,4 +584,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest.CountingAdapter do
   def directory_inventory, do: Casein.Test.FakeTmuxAdapter.directory_inventory()
   def list_session_windows(session), do: Casein.Test.FakeTmuxAdapter.list_session_windows(session)
   def list_session_panes(session), do: Casein.Test.FakeTmuxAdapter.list_session_panes(session)
+
+  # Mobile terminal lease cleanup calls this unguarded (TerminalSessions).
+  defdelegate session_exists?(session), to: Casein.Test.FakeTmuxAdapter
 end
