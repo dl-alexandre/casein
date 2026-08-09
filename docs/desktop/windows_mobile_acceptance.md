@@ -205,7 +205,33 @@ credentials.
 ## Post-deploy verification
 
 After the PR is present on `origin/master`, wait for the on-box poller to deploy
-that exact SHA. Verify the timer/service result and revision, then authenticate
-to the production cockpit and inspect Agents, terminal topology, and a
-read-only MCP/preview path. Capture redacted evidence and confirm no manual
-deployment drift. Do not hand-edit the live release. Attach the result to #378.
+that exact SHA. Run the repository gate (does **not** use `curl -f` on
+`/health` — a healthy auth-enforcing release returns **HTTP 401**, which `-f`
+would hide):
+
+```bash
+source .devbox-agent.env
+bash scripts/verify_post_deploy_cockpit.sh \
+  --evidence "/tmp/casein-378-evidence-$(date -u +%Y%m%dT%H%M%SZ).json"
+```
+
+The script checks, against the **live** instance behind
+`/run/casein/current.sock` (not lingering `casein-<hash>` canaries):
+
+1. `casein-deploy.timer` / latest `casein-deploy.service` result and
+   `/run/casein/last-deploy.json`
+2. `CASEIN_GIT_REVISION` equals `origin/master` and the live unit description
+3. `/health` → 401 (alive + auth) and `/healthz` → ok
+4. Authenticated read-only MCP: `terminal_list_sessions`, `terminal_topology`,
+   `preview_surfaces` (no open/mutate)
+5. Redacted JSON evidence for attachment to #378
+
+Attended override when a deliberate non-tip deploy is under inspection:
+`--allow-drift` or `CASEIN_ALLOW_DEPLOY_DRIFT=1`.
+
+Still operator-manual (not closed by the script alone): OAuth browser cockpit
+load, Agents-tab screenshot, visible manual-drift banner when deliberately
+diverged, and a documented rollback drill. Do not hand-edit
+`/opt/casein/release`. Attach the evidence JSON plus any redacted screenshots
+to #378.
+
