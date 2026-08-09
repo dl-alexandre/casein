@@ -251,6 +251,156 @@
   }
 }
 
+/* -------------------------------------------------------------------------
+   Semantic status / severity tokens (issue #729)
+   Meaning-named colours for cockpit chrome. Not branding (primary/accent)
+   and not terminal themes (Casein.Terminals.Theme).
+
+   Theme contract (three viewer states):
+   - bare :root                    → light defaults (also system-light)
+   - prefers-color-scheme: dark on :root:not([data-theme=light]) → system-dark
+   - :root[data-theme=dark]        → explicit dark
+   Never define a colour ONLY inside a media or [data-theme] block.
+
+   Available utilities (Tailwind color names):
+     status-ok | status-warning | status-danger | status-live | status-idle
+   each with -soft (wash), -border, -fg (text on base), -content (text on solid).
+   ------------------------------------------------------------------------- */
+
+:root {
+  /* status-ok — good / allow / ready / fresh / succeeded (was emerald+green) */
+  --casein-status-ok: oklch(59% 0.145 163);
+  --casein-status-ok-fg: oklch(42% 0.11 163);
+  --casein-status-ok-content: oklch(98% 0.01 163);
+  --casein-status-ok-soft: oklch(96.5% 0.03 163);
+  --casein-status-ok-border: oklch(87% 0.07 163);
+
+  /* status-warning — caution / pending / stalled / dirty (was amber) */
+  --casein-status-warning: oklch(75% 0.15 75);
+  --casein-status-warning-fg: oklch(48% 0.12 65);
+  --casein-status-warning-content: oklch(25% 0.05 65);
+  --casein-status-warning-soft: oklch(97% 0.03 90);
+  --casein-status-warning-border: oklch(88% 0.08 80);
+
+  /* status-danger — bad / error / deny / blocked / failed (was red+rose) */
+  --casein-status-danger: oklch(55% 0.2 25);
+  --casein-status-danger-fg: oklch(45% 0.18 25);
+  --casein-status-danger-content: oklch(98% 0.01 25);
+  --casein-status-danger-soft: oklch(96.5% 0.025 25);
+  --casein-status-danger-border: oklch(88% 0.06 25);
+
+  /* status-live — active pulse / done-review / provisioned / focus (was sky) */
+  --casein-status-live: oklch(65% 0.14 230);
+  --casein-status-live-fg: oklch(48% 0.12 240);
+  --casein-status-live-content: oklch(98% 0.01 230);
+  --casein-status-live-soft: oklch(96.5% 0.025 230);
+  --casein-status-live-border: oklch(88% 0.06 230);
+
+  /* status-idle — quiet / idle agent windows (was violet) */
+  --casein-status-idle: oklch(65% 0.15 295);
+  --casein-status-idle-fg: oklch(50% 0.14 295);
+  --casein-status-idle-content: oklch(98% 0.01 295);
+  --casein-status-idle-soft: oklch(96.5% 0.03 295);
+  --casein-status-idle-border: oklch(88% 0.07 295);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --casein-status-ok: oklch(72% 0.14 163);
+    --casein-status-ok-fg: oklch(82% 0.1 163);
+    --casein-status-ok-content: oklch(18% 0.03 163);
+    --casein-status-ok-soft: oklch(28% 0.04 163);
+    --casein-status-ok-border: oklch(42% 0.08 163);
+
+    --casein-status-warning: oklch(78% 0.14 80);
+    --casein-status-warning-fg: oklch(86% 0.1 85);
+    --casein-status-warning-content: oklch(22% 0.04 75);
+    --casein-status-warning-soft: oklch(30% 0.04 75);
+    --casein-status-warning-border: oklch(48% 0.08 75);
+
+    --casein-status-danger: oklch(68% 0.18 20);
+    --casein-status-danger-fg: oklch(80% 0.12 20);
+    --casein-status-danger-content: oklch(18% 0.03 20);
+    --casein-status-danger-soft: oklch(28% 0.05 20);
+    --casein-status-danger-border: oklch(45% 0.1 20);
+
+    --casein-status-live: oklch(72% 0.12 230);
+    --casein-status-live-fg: oklch(84% 0.08 230);
+    --casein-status-live-content: oklch(18% 0.03 230);
+    --casein-status-live-soft: oklch(28% 0.04 230);
+    --casein-status-live-border: oklch(45% 0.08 230);
+
+    --casein-status-idle: oklch(72% 0.12 295);
+    --casein-status-idle-fg: oklch(84% 0.08 295);
+    --casein-status-idle-content: oklch(18% 0.03 295);
+    --casein-status-idle-soft: oklch(28% 0.04 295);
+    --casein-status-idle-border: oklch(45% 0.08 295);
+  }
+}
+
+:root[data-theme="dark"] {
+  --casein-status-ok: oklch(72% 0.14 163);
+  --casein-status-ok-fg: oklch(82% 0.1 163);
+  --casein-status-ok-content: oklch(18% 0.03 163);
+  --casein-status-ok-soft: oklch(28% 0.04 163);
+  --casein-status-ok-border: oklch(42% 0.08 163);
+
+  --casein-status-warning: oklch(78% 0.14 80);
+  --casein-status-warning-fg: oklch(86% 0.1 85);
+  --casein-status-warning-content: oklch(22% 0.04 75);
+  --casein-status-warning-soft: oklch(30% 0.04 75);
+  --casein-status-warning-border: oklch(48% 0.08 75);
+
+  --casein-status-danger: oklch(68% 0.18 20);
+  --casein-status-danger-fg: oklch(80% 0.12 20);
+  --casein-status-danger-content: oklch(18% 0.03 20);
+  --casein-status-danger-soft: oklch(28% 0.05 20);
+  --casein-status-danger-border: oklch(45% 0.1 20);
+
+  --casein-status-live: oklch(72% 0.12 230);
+  --casein-status-live-fg: oklch(84% 0.08 230);
+  --casein-status-live-content: oklch(18% 0.03 230);
+  --casein-status-live-soft: oklch(28% 0.04 230);
+  --casein-status-live-border: oklch(45% 0.08 230);
+
+  --casein-status-idle: oklch(72% 0.12 295);
+  --casein-status-idle-fg: oklch(84% 0.08 295);
+  --casein-status-idle-content: oklch(18% 0.03 295);
+  --casein-status-idle-soft: oklch(28% 0.04 295);
+  --casein-status-idle-border: oklch(45% 0.08 295);
+}
+
+@theme inline {
+  --color-status-ok: var(--casein-status-ok);
+  --color-status-ok-fg: var(--casein-status-ok-fg);
+  --color-status-ok-content: var(--casein-status-ok-content);
+  --color-status-ok-soft: var(--casein-status-ok-soft);
+  --color-status-ok-border: var(--casein-status-ok-border);
+
+  --color-status-warning: var(--casein-status-warning);
+  --color-status-warning-fg: var(--casein-status-warning-fg);
+  --color-status-warning-content: var(--casein-status-warning-content);
+  --color-status-warning-soft: var(--casein-status-warning-soft);
+  --color-status-warning-border: var(--casein-status-warning-border);
+
+  --color-status-danger: var(--casein-status-danger);
+  --color-status-danger-fg: var(--casein-status-danger-fg);
+  --color-status-danger-content: var(--casein-status-danger-content);
+  --color-status-danger-soft: var(--casein-status-danger-soft);
+  --color-status-danger-border: var(--casein-status-danger-border);
+
+  --color-status-live: var(--casein-status-live);
+  --color-status-live-fg: var(--casein-status-live-fg);
+  --color-status-live-content: var(--casein-status-live-content);
+  --color-status-live-soft: var(--casein-status-live-soft);
+  --color-status-live-border: var(--casein-status-live-border);
+
+  --color-status-idle: var(--casein-status-idle);
+  --color-status-idle-fg: var(--casein-status-idle-fg);
+  --color-status-idle-content: var(--casein-status-idle-content);
+  --color-status-idle-soft: var(--casein-status-idle-soft);
+  --color-status-idle-border: var(--casein-status-idle-border);
+}
 /* Use the data attribute for dark mode  */
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
@@ -494,10 +644,10 @@ body[data-leader-command-active] .leader-key-control > button,
 body[data-leader-active] .leader-prefix-button,
 body[data-leader-command-active] .leader-prefix-button,
 .leader-prefix-button[aria-pressed="true"] {
-  border-color: color-mix(in oklch, var(--color-amber-400) 72%, transparent);
-  background-color: color-mix(in oklch, var(--color-amber-500) 18%, transparent);
-  color: var(--color-amber-500);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-amber-400) 24%, transparent);
+  border-color: color-mix(in oklch, var(--color-status-warning) 72%, transparent);
+  background-color: color-mix(in oklch, var(--color-status-warning) 18%, transparent);
+  color: var(--color-status-warning);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-status-warning) 24%, transparent);
 }
 
 body[data-leader-active] .leader-key-control[data-leader-second-key]::after,
@@ -513,7 +663,7 @@ body[data-leader-command-active] .leader-key-control[data-leader-second-key]::af
   align-items: center;
   justify-content: center;
   border-radius: 0.2rem;
-  background: color-mix(in oklch, var(--color-amber-500) 88%, transparent);
+  background: color-mix(in oklch, var(--color-status-warning) 88%, transparent);
   color: oklch(18% 0.02 80);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.55rem;
@@ -521,7 +671,7 @@ body[data-leader-command-active] .leader-key-control[data-leader-second-key]::af
   line-height: 1;
   padding: 0 0.15rem;
   pointer-events: none;
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-amber-300) 50%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-status-warning) 50%, transparent);
 }
 
 /* Sessions/windows rails are block-level leader targets; keep second-key chips tidy. */
@@ -553,7 +703,7 @@ body[data-leader-command-active]
 /* Window tab strip: soft amber wash while leader is armed (C-b 1–9 / n p c). */
 body[data-leader-active] .header-terminal-pickers,
 body[data-leader-command-active] .header-terminal-pickers {
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-amber-400) 35%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-status-warning) 35%, transparent);
   border-radius: 0.35rem;
 }
 
@@ -572,7 +722,7 @@ body[data-leader-command-active] [data-window-leader-key]::after {
   align-items: center;
   justify-content: center;
   border-radius: 0.2rem;
-  background: color-mix(in oklch, var(--color-amber-500) 88%, transparent);
+  background: color-mix(in oklch, var(--color-status-warning) 88%, transparent);
   color: oklch(18% 0.02 80);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.55rem;
@@ -580,7 +730,7 @@ body[data-leader-command-active] [data-window-leader-key]::after {
   line-height: 1;
   padding: 0 0.15rem;
   pointer-events: none;
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-amber-300) 50%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-status-warning) 50%, transparent);
   text-transform: none;
 }
 
@@ -589,7 +739,7 @@ body[data-leader-active] [data-window-leader-key="n"]::after,
 body[data-leader-active] [data-window-leader-key="p"]::after,
 body[data-leader-command-active] [data-window-leader-key="n"]::after,
 body[data-leader-command-active] [data-window-leader-key="p"]::after {
-  background: color-mix(in oklch, var(--color-amber-400) 92%, transparent);
+  background: color-mix(in oklch, var(--color-status-warning) 92%, transparent);
 }
 
 /* Pane index overlay — tmux C-b q: flash indices, press 0–9 to focus. */
@@ -742,8 +892,8 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 .gesture-coach__card {
   width: min(24rem, 100%);
   border-radius: 0.9rem;
-  border: 1px solid color-mix(in oklch, var(--color-sky-400, #38bdf8) 30%, transparent);
-  background: color-mix(in oklch, var(--color-zinc-950, #09090b) 92%, var(--color-sky-400, #38bdf8));
+  border: 1px solid color-mix(in oklch, var(--color-status-live) 30%, transparent);
+  background: color-mix(in oklch, var(--color-zinc-950, #09090b) 92%, var(--color-status-live));
   color: var(--color-zinc-100, #f4f4f5);
   padding: 1.1rem 1.2rem 1rem;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
@@ -786,8 +936,8 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   display: grid;
   place-items: center;
   border-radius: 0.5rem;
-  background: color-mix(in oklch, var(--color-sky-400, #38bdf8) 18%, transparent);
-  color: var(--color-sky-200, #bae6fd);
+  background: color-mix(in oklch, var(--color-status-live) 18%, transparent);
+  color: var(--color-status-live);
   font-size: 1.1rem;
   font-weight: 700;
 }
@@ -800,7 +950,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   width: 100%;
   border-radius: 0.6rem;
   border: 0;
-  background: var(--color-sky-500, #0ea5e9);
+  background: var(--color-status-live);
   color: white;
   padding: 0.6rem;
   font-size: 0.9rem;
@@ -809,7 +959,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 }
 
 .gesture-coach__dismiss:active {
-  background: var(--color-sky-600, #0284c7);
+  background: var(--color-status-live);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -859,10 +1009,10 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--color-sky-400) 44%, transparent);
+  background: color-mix(in oklch, var(--color-status-live) 44%, transparent);
   color: oklch(97% 0.01 250);
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--color-sky-200) 22%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--color-status-live) 22%, transparent),
     0 8px 20px rgb(0 0 0 / 0.28);
   opacity: 0.82;
   transition:
@@ -1327,8 +1477,8 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
     width: 100% !important;
     height: 100% !important;
     z-index: 20;
-    border-color: color-mix(in oklch, var(--color-sky-400) 42%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-sky-400) 18%, transparent);
+    border-color: color-mix(in oklch, var(--color-status-live) 42%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-status-live) 18%, transparent);
   }
 
   [data-mobile-focus-layout="true"] > section[data-pane-id][data-mobile-pane-active="false"] {
@@ -1396,7 +1546,7 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
 
   [data-mobile-focus-layout="true"] .mobile-pane-rail:active .mobile-pane-rail__track,
   [data-mobile-focus-layout="true"] .mobile-pane-rail:focus-visible .mobile-pane-rail__track {
-    background: color-mix(in oklch, var(--color-sky-300) 72%, transparent);
+    background: color-mix(in oklch, var(--color-status-live) 72%, transparent);
     opacity: 1;
     transform: scale(1.04);
   }
@@ -1530,10 +1680,10 @@ html[data-cockpit-layout="desktop"] .preview-session-badge:not([data-mismatch="t
   border-radius: 0 12px 12px 0;
   background: linear-gradient(
     90deg,
-    color-mix(in oklch, var(--color-sky-400, #38bdf8) 82%, transparent),
-    color-mix(in oklch, var(--color-sky-400, #38bdf8) 22%, transparent)
+    color-mix(in oklch, var(--color-status-live) 82%, transparent),
+    color-mix(in oklch, var(--color-status-live) 22%, transparent)
   );
-  box-shadow: 0 0 22px color-mix(in oklch, var(--color-sky-400, #38bdf8) 38%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--color-status-live) 38%, transparent);
   transition:
     opacity 120ms ease-out,
     width 40ms linear,
@@ -1547,8 +1697,8 @@ html[data-cockpit-layout="desktop"] .preview-session-badge:not([data-mismatch="t
   border-radius: 12px 0 0 12px;
   background: linear-gradient(
     270deg,
-    color-mix(in oklch, var(--color-sky-400, #38bdf8) 82%, transparent),
-    color-mix(in oklch, var(--color-sky-400, #38bdf8) 22%, transparent)
+    color-mix(in oklch, var(--color-status-live) 82%, transparent),
+    color-mix(in oklch, var(--color-status-live) 22%, transparent)
   );
 }
 
@@ -1643,11 +1793,11 @@ html[data-cockpit-layout="desktop"] .preview-session-badge:not([data-mismatch="t
 }
 
 .window-swipe-bar__dot[data-activity="fresh"] {
-  background: var(--color-emerald-400, #34d399);
+  background: var(--color-status-ok);
 }
 
 .window-swipe-bar__dot[data-activity="recent"] {
-  background: var(--color-amber-400, #fbbf24);
+  background: var(--color-status-warning);
 }
 
 .window-swipe-bar__dot[data-activity="idle"] {
@@ -1732,8 +1882,8 @@ html[data-cockpit-layout="desktop"] .preview-session-badge:not([data-mismatch="t
 
   /* Session chip: reads as a switcher, not another tiny mono key. */
   .mobile-key-bar [id^="mobile-key-bar-mode-"] {
-    border-color: color-mix(in oklch, var(--color-sky-400) 28%, var(--color-zinc-700));
-    background: color-mix(in oklch, var(--color-sky-500) 12%, var(--color-zinc-900));
+    border-color: color-mix(in oklch, var(--color-status-live) 28%, var(--color-zinc-700));
+    background: color-mix(in oklch, var(--color-status-live) 12%, var(--color-zinc-900));
     max-width: min(42vw, 11rem);
   }
 

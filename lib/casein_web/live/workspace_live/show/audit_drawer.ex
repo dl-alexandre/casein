@@ -174,14 +174,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
   def ledger_event_count(events),
     do: Enum.count(events, &Casein.Runs.Ledger.ledger_event?/1)
 
-  def audit_dot_class(%{decision: :deny}), do: "bg-red-600"
-  def audit_dot_class(%{decision: :allow}), do: "bg-green-600"
-  def audit_dot_class(%{action: "workspace.mode_set"}), do: "bg-amber-500"
+  def audit_dot_class(%{decision: :deny}), do: "bg-status-danger"
+  def audit_dot_class(%{decision: :allow}), do: "bg-status-ok"
+  def audit_dot_class(%{action: "workspace.mode_set"}), do: "bg-status-warning"
   def audit_dot_class(_), do: "bg-zinc-400"
 
-  def audit_verb_class(%{decision: :deny}), do: "text-red-700"
-  def audit_verb_class(%{decision: :allow}), do: "text-green-700"
-  def audit_verb_class(%{action: "workspace.mode_set"}), do: "text-amber-700"
+  def audit_verb_class(%{decision: :deny}), do: "text-status-danger-fg"
+  def audit_verb_class(%{decision: :allow}), do: "text-status-ok-fg"
+  def audit_verb_class(%{action: "workspace.mode_set"}), do: "text-status-warning-fg"
   def audit_verb_class(_), do: "text-zinc-600"
 
   def audit_verb(%{decision: :deny}), do: "deny"

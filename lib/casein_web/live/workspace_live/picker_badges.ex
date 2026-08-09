@@ -7,13 +7,13 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadges do
   enriched-row rendering stays identical across both surfaces.
   """
 
-  def mode_class(:local), do: "bg-green-50 text-green-700 border border-green-200"
+  def mode_class(:local), do: "bg-status-ok-soft text-status-ok-fg border border-status-ok-border"
   def mode_class(:remote), do: "bg-blue-50 text-blue-700 border border-blue-200"
   def mode_class(_), do: "bg-zinc-50 text-zinc-600 border border-zinc-200"
 
-  def status_class(:running), do: "text-green-700"
+  def status_class(:running), do: "text-status-ok-fg"
   def status_class(:stopped), do: "text-zinc-500"
-  def status_class(_), do: "text-amber-700"
+  def status_class(_), do: "text-status-warning-fg"
 
   def session_agent_status(%{agent_status: status}) when is_binary(status) and status != "",
     do: status
@@ -40,11 +40,11 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadges do
   def workspace_agent_layout_icon("missing_agent_pane"), do: "hero-exclamation-triangle"
 
   def workspace_agent_layout_class("ready") do
-    "inline-flex items-center gap-density-label rounded border border-emerald-200 bg-emerald-50 px-1.5 py-density-label text-density-label font-medium text-emerald-700"
+    "inline-flex items-center gap-density-label rounded border border-status-ok-border bg-status-ok-soft px-1.5 py-density-label text-density-label font-medium text-status-ok-fg"
   end
 
   def workspace_agent_layout_class("missing_agent_pane") do
-    "inline-flex items-center gap-density-label rounded border border-amber-200 bg-amber-50 px-1.5 py-density-label text-density-label font-medium text-amber-800"
+    "inline-flex items-center gap-density-label rounded border border-status-warning-border bg-status-warning-soft px-1.5 py-density-label text-density-label font-medium text-status-warning-fg"
   end
 
   def workspace_agent_layout_title(ws) do
@@ -74,11 +74,11 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadges do
 
   def agent_session_status_class("attention"),
     do:
-      "rounded border border-red-200 bg-red-50 px-1 py-density-label text-density-label font-medium text-red-700"
+      "rounded border border-status-danger-border bg-status-danger-soft px-1 py-density-label text-density-label font-medium text-status-danger-fg"
 
   def agent_session_status_class("done"),
     do:
-      "rounded border border-emerald-200 bg-emerald-50 px-1 py-density-label text-density-label font-medium text-emerald-700"
+      "rounded border border-status-ok-border bg-status-ok-soft px-1 py-density-label text-density-label font-medium text-status-ok-fg"
 
   def agent_session_status_class("running"),
     do:

@@ -196,7 +196,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       id={@preview_id}
       data-preview-window={@preview_id && "true"}
       data-preview-count={@preview_id && @window.preview_count}
-      class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+      class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-status-live/15 text-status-live-fg ring-1 ring-status-live/30"
       title={window_preview_tooltip(@window.preview_count, @preview_aria_hidden?)}
       aria-label={
         if(@preview_aria_hidden?, do: nil, else: window_preview_tooltip(@window.preview_count, false))
@@ -777,7 +777,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       :if={@rows != []}
       id={"sessions-needs-you-" <> @workspace_id}
       data-needs-you-strip
-      class="shrink-0 border-b border-rose-500/20 bg-rose-500/[0.04] px-1 py-1"
+      class="shrink-0 border-b border-status-danger/20 bg-status-danger/[0.04] px-1 py-1"
     >
       <.sessions_sidebar_section_header
         label="Needs you"
@@ -869,67 +869,67 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   defp needs_you_row_badge(%{reason: :blocked, agent_blocked_count: count}) when count > 1,
     do: %{
-      dot: "bg-rose-500",
-      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      dot: "bg-status-danger",
+      class: "bg-status-danger/15 text-status-danger-fg",
       text: "needs input ×#{count}"
     }
 
   defp needs_you_row_badge(%{reason: :blocked}),
     do: %{
-      dot: "bg-rose-500",
-      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      dot: "bg-status-danger",
+      class: "bg-status-danger/15 text-status-danger-fg",
       text: "needs input"
     }
 
   defp needs_you_row_badge(%{reason: :errored, agent_blocked_count: count}) when count > 1,
     do: %{
-      dot: "bg-rose-500",
-      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      dot: "bg-status-danger",
+      class: "bg-status-danger/15 text-status-danger-fg",
       text: "error ×#{count}"
     }
 
   defp needs_you_row_badge(%{reason: :errored}),
     do: %{
-      dot: "bg-rose-500",
-      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      dot: "bg-status-danger",
+      class: "bg-status-danger/15 text-status-danger-fg",
       text: "error"
     }
 
   defp needs_you_row_badge(%{reason: :stalled, agent_blocked_count: count}) when count > 1,
     do: %{
-      dot: "bg-amber-500",
-      class: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
+      dot: "bg-status-warning",
+      class: "bg-status-warning/15 text-status-warning-fg",
       text: "stalled ×#{count}"
     }
 
   defp needs_you_row_badge(%{reason: :stalled}),
     do: %{
-      dot: "bg-amber-500",
-      class: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
+      dot: "bg-status-warning",
+      class: "bg-status-warning/15 text-status-warning-fg",
       text: "stalled"
     }
 
   defp needs_you_row_badge(%{reason: :error}),
     do: %{
-      dot: "bg-rose-500",
-      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      dot: "bg-status-danger",
+      class: "bg-status-danger/15 text-status-danger-fg",
       text: "error"
     }
 
   defp needs_you_row_badge(%{reason: :completed}),
-    do: %{dot: "bg-sky-400", class: "bg-sky-400/15 text-sky-600 dark:text-sky-300", text: "done"}
+    do: %{dot: "bg-status-live", class: "bg-status-live/15 text-status-live-fg", text: "done"}
 
   defp needs_you_row_badge(%{reason: :idle}),
     do: %{
-      dot: "bg-violet-400",
-      class: "bg-violet-400/15 text-violet-500 dark:text-violet-300",
+      dot: "bg-status-idle",
+      class: "bg-status-idle/15 text-status-idle-fg",
       text: "idle"
     }
 
   defp needs_you_row_badge(_row),
     do: %{
-      dot: "bg-violet-400",
-      class: "bg-violet-400/15 text-violet-500 dark:text-violet-300",
+      dot: "bg-status-idle",
+      class: "bg-status-idle/15 text-status-idle-fg",
       text: "idle"
     }
 
@@ -959,7 +959,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     ~H"""
     <p class={[
       "flex items-center justify-between px-2 pb-density-label pt-1 text-density-label font-semibold uppercase tracking-wide",
-      @attention? && "text-rose-500 dark:text-rose-300",
+      @attention? && "text-status-danger-fg",
       !@attention? && "text-base-content/60"
     ]}>
       <span>{@label}</span>
@@ -1298,7 +1298,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           :if={@needs_you_count > 0}
           id={"sidebar-ws-needs-you-" <> @node.dom_id}
           data-needs-you-count={@needs_you_count}
-          class="shrink-0 rounded-full bg-rose-500/15 px-1.5 font-mono text-density-badge font-semibold text-rose-500 dark:text-rose-300"
+          class="shrink-0 rounded-full bg-status-danger/15 px-1.5 font-mono text-density-badge font-semibold text-status-danger-fg"
           title={needs_you_chip_title(@needs_you_count)}
           aria-label={needs_you_chip_title(@needs_you_count)}
         >
@@ -1719,7 +1719,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         <span data-picker-label class="min-w-0 truncate font-medium">{@pane.label}</span>
         <span
           :if={@pane.preview?}
-          class="inline-flex size-3.5 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+          class="inline-flex size-3.5 shrink-0 items-center justify-center rounded bg-status-live/15 text-status-live-fg ring-1 ring-status-live/30"
           title="Preview pane"
           aria-label="Preview pane"
         >
@@ -1989,7 +1989,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       id={@id}
       data-preview-running="true"
       data-preview-count={@count}
-      class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+      class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-status-live/15 text-status-live-fg ring-1 ring-status-live/30"
       title={preview_badge_label(@scope, @count)}
       aria-label={preview_badge_label(@scope, @count)}
     >
@@ -2355,7 +2355,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   end
 
   defp quiet_badge_class(_attention) do
-    "size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+    "size-1.5 shrink-0 rounded-full bg-status-idle shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-status-idle)_25%,transparent)]"
   end
 
   defp quiet_badge_label(_quiet_count, 1), do: "1 unseen quiet agent window"

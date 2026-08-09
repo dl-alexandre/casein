@@ -301,9 +301,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   def parse_activity_timestamp(_), do: :error
 
   def window_activity_class(:fresh),
-    do: "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.18)]"
+    do:
+      "bg-status-ok shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-status-ok)_18%,transparent)]"
 
-  def window_activity_class(:recent), do: "bg-amber-300"
+  def window_activity_class(:recent), do: "bg-status-warning"
   def window_activity_class(:idle), do: "bg-base-content/20"
 
   def window_activity_label(:fresh), do: "Recent tmux window activity"
@@ -334,15 +335,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
     end
   end
 
-  def pane_status_class(:active), do: "bg-primary shadow-[0_0_0_3px_rgba(14,165,233,0.18)]"
+  def pane_status_class(:active),
+    do:
+      "bg-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-status-live)_18%,transparent)]"
 
   def pane_status_class(:bell),
-    do: "animate-pulse bg-rose-400 shadow-[0_0_0_3px_rgba(251,113,133,0.22)]"
+    do:
+      "animate-pulse bg-status-danger shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-status-danger)_22%,transparent)]"
 
-  def pane_status_class(:fresh), do: "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.18)]"
-  def pane_status_class(:recent), do: "bg-amber-300"
-  def pane_status_class(:alive), do: "bg-emerald-400/80"
-  def pane_status_class(:unknown), do: "bg-amber-300"
+  def pane_status_class(:fresh),
+    do:
+      "bg-status-ok shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-status-ok)_18%,transparent)]"
+
+  def pane_status_class(:recent), do: "bg-status-warning"
+  def pane_status_class(:alive), do: "bg-status-ok/80"
+  def pane_status_class(:unknown), do: "bg-status-warning"
 
   def pane_status_label(:active), do: "Active tmux pane"
   def pane_status_label(:bell), do: "Tmux pane bell alert"
@@ -617,12 +624,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
     <%= cond do %>
       <% workspace_terminal_blocked?(@workspace) -> %>
         <div
-          class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-amber-300 p-4"
+          class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-status-warning-fg p-4"
           role="status"
         >
-          <.icon name="hero-power" class="size-5 mb-2 text-amber-400" />
+          <.icon name="hero-power" class="size-5 mb-2 text-status-warning-fg" />
           <div class="font-semibold">Workspace is {@workspace.status}</div>
-          <div class="mt-1 max-w-xs text-density-body leading-5 text-amber-100/70">
+          <div class="mt-1 max-w-xs text-density-body leading-5 text-status-warning-fg/70">
             {workspace_blocked_message(@workspace_start_error)}
           </div>
           <button
@@ -630,7 +637,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
             id="terminal-workspace-start-button"
             type="button"
             phx-click="workspace:start"
-            class="mt-3 rounded border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-density-body font-semibold text-amber-200 hover:bg-amber-400/20 active:bg-amber-400/30 transition-colors duration-motion-state ease-motion-state"
+            class="mt-3 rounded border border-status-warning/40 bg-status-warning/10 px-3 py-1 text-density-body font-semibold text-status-warning-fg hover:bg-status-warning/20 active:bg-status-warning/30 transition-colors duration-motion-state ease-motion-state"
           >
             Start workspace
           </button>
@@ -638,7 +645,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
             :if={workspace_start_blocked?(@workspace_start_error)}
             id="terminal-workspace-start-unavailable"
             navigate={~p"/"}
-            class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-density-body font-semibold text-amber-100/80 transition-colors duration-motion-state ease-motion-state hover:bg-amber-400/20 active:bg-amber-400/30"
+            class="mt-3 rounded border border-status-warning/30 bg-status-warning/10 px-3 py-1 text-density-body font-semibold text-status-warning-fg/80 transition-colors duration-motion-state ease-motion-state hover:bg-status-warning/20 active:bg-status-warning/30"
           >
             Open home terminal
           </.link>
@@ -657,19 +664,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
         />
       <% @raw_pane[:error] -> %>
         <div
-          class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-red-400 p-2"
+          class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-status-danger-fg p-2"
           role="alert"
         >
-          <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-red-500" />
+          <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-status-danger-fg" />
           <div class="font-semibold">{raw_pane_error_title(@raw_pane[:error])}</div>
-          <div class="mt-1 max-w-xs text-density-body leading-5 text-red-200/70">
+          <div class="mt-1 max-w-xs text-density-body leading-5 text-status-danger-fg/70">
             {raw_pane_error_message(@raw_pane[:error])}
           </div>
           <button
             type="button"
             phx-click="retry_pane"
             phx-value-pane-id={@raw_pane_id}
-            class="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-density-label text-density-label text-red-300 hover:bg-red-500/20 active:bg-red-500/30 transition-colors duration-motion-state ease-motion-state"
+            class="mt-2 rounded border border-status-danger/30 bg-status-danger/10 px-2 py-density-label text-density-label text-status-danger-fg hover:bg-status-danger/20 active:bg-status-danger/30 transition-colors duration-motion-state ease-motion-state"
           >
             Retry
           </button>
@@ -873,7 +880,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
               unless(@terminal_surface_pane, do: "border border-zinc-900/35"),
               if(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id),
                 do:
-                  "pointer-events-none z-20 after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-30 after:h-px after:bg-sky-500/45",
+                  "pointer-events-none z-20 after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-30 after:h-px after:bg-status-live/45",
                 else: "pointer-events-auto z-10 cursor-pointer hover:bg-white/[0.03]"
               ),
               if(pane.feature_pane?, do: "bg-zinc-950", else: "bg-transparent")
@@ -887,7 +894,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
           <% end %>
           <%= if Map.get(pane, :paired) == false do %>
             <div
-              class="pointer-events-none absolute right-1 top-1 z-30 rounded-sm border border-amber-500/40 bg-amber-500/15 px-1 font-mono text-density-label leading-4 text-amber-300"
+              class="pointer-events-none absolute right-1 top-1 z-30 rounded-sm border border-status-warning/40 bg-status-warning/15 px-1 font-mono text-density-label leading-4 text-status-warning-fg"
               title={pane_unpaired_title(pane)}
               data-role="pane-unpaired-badge"
             >
@@ -1005,7 +1012,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
               type="button"
               phx-click="pane:history_open"
               phx-value-pane-id={@pane_history.pane_id}
-              class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-zinc-200 transition hover:border-sky-400 hover:text-sky-100"
+              class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-zinc-200 transition hover:border-status-live hover:text-status-live-fg"
               title="Refresh scrollback"
               aria-label="Refresh scrollback"
             >
@@ -1014,7 +1021,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
             <button
               type="button"
               data-history-latest
-              class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-zinc-200 transition hover:border-emerald-400 hover:text-emerald-100"
+              class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-zinc-200 transition hover:border-status-ok hover:text-status-ok-fg"
               title="Jump to latest"
               aria-label="Jump to latest"
             >
@@ -1156,14 +1163,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
             <button
               type="button"
               data-preview-reload
-              class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-sky-400 hover:text-sky-100"
+              class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-status-live hover:text-status-live-fg"
             >
               Reload
             </button>
             <button
               type="button"
               data-preview-reopen
-              class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-amber-400 hover:text-amber-100"
+              class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-status-warning hover:text-status-warning-fg"
             >
               Reopen
             </button>
@@ -1182,7 +1189,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
           class={[
             "preview-session-badge max-w-full truncate rounded border px-2 py-1 text-density-label font-medium leading-none shadow-sm backdrop-blur",
             if(preview_session_mismatch?(@preview, @active_tmux_session),
-              do: "border-amber-300/50 bg-amber-950/85 text-amber-100",
+              do: "border-status-warning-border/50 bg-status-warning-soft/85 text-status-warning-fg",
               else: "border-zinc-700/70 bg-zinc-950/80 text-zinc-200"
             )
           ]}
@@ -1312,7 +1319,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
           <span
             data-dirty-dot
             class={[
-              "shrink-0 text-density-badge leading-none text-amber-400",
+              "shrink-0 text-density-badge leading-none text-status-warning-fg",
               unless(tab.dirty, do: "hidden")
             ]}
             aria-label="Unsaved changes"
@@ -1461,16 +1468,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   defp mobile_pane_rail_icon(:bottom), do: "hero-chevron-down"
 
   defp mobile_pane_rail_track_class(:left),
-    do: "left-0 inset-y-1 w-[0.6rem] border-r border-sky-200/30"
+    do: "left-0 inset-y-1 w-[0.6rem] border-r border-status-live-border/30"
 
   defp mobile_pane_rail_track_class(:right),
-    do: "right-0 inset-y-1 w-[0.6rem] border-l border-sky-200/30"
+    do: "right-0 inset-y-1 w-[0.6rem] border-l border-status-live-border/30"
 
   defp mobile_pane_rail_track_class(:top),
-    do: "top-0 inset-x-1 h-[0.6rem] border-b border-sky-200/30"
+    do: "top-0 inset-x-1 h-[0.6rem] border-b border-status-live-border/30"
 
   defp mobile_pane_rail_track_class(:bottom),
-    do: "bottom-0 inset-x-1 h-[0.6rem] border-t border-sky-200/30"
+    do: "bottom-0 inset-x-1 h-[0.6rem] border-t border-status-live-border/30"
 
   defp zoomed_tmux_pane(panes) do
     Enum.find(panes, &(Map.get(&1, :zoomed?) == true and Map.get(&1, :active) == true)) ||
@@ -1489,7 +1496,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       data-pane-id={@pane_id}
       data-resize-axis="x"
       class={[
-        "absolute inset-y-0 left-0 w-2 cursor-col-resize bg-zinc-800/20 transition hover:bg-emerald-400/45 data-[dragging=true]:bg-emerald-400/65",
+        "absolute inset-y-0 left-0 w-2 cursor-col-resize bg-zinc-800/20 transition hover:bg-status-ok/45 data-[dragging=true]:bg-status-ok/65",
         @z_class
       ]}
       title="Drag to resize pane"
@@ -1502,7 +1509,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       data-pane-id={@pane_id}
       data-resize-axis="x"
       class={[
-        "absolute inset-y-0 right-0 w-2 cursor-col-resize bg-zinc-800/20 transition hover:bg-emerald-400/45 data-[dragging=true]:bg-emerald-400/65",
+        "absolute inset-y-0 right-0 w-2 cursor-col-resize bg-zinc-800/20 transition hover:bg-status-ok/45 data-[dragging=true]:bg-status-ok/65",
         @z_class
       ]}
       title="Drag to resize pane"
@@ -1515,7 +1522,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       data-pane-id={@pane_id}
       data-resize-axis="y"
       class={[
-        "absolute inset-x-0 top-0 h-2 cursor-row-resize bg-zinc-800/20 transition hover:bg-emerald-400/45 data-[dragging=true]:bg-emerald-400/65",
+        "absolute inset-x-0 top-0 h-2 cursor-row-resize bg-zinc-800/20 transition hover:bg-status-ok/45 data-[dragging=true]:bg-status-ok/65",
         @z_class
       ]}
       title="Drag to resize pane"
@@ -1528,7 +1535,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       data-pane-id={@pane_id}
       data-resize-axis="y"
       class={[
-        "absolute inset-x-0 bottom-0 h-2 cursor-row-resize bg-zinc-800/20 transition hover:bg-emerald-400/45 data-[dragging=true]:bg-emerald-400/65",
+        "absolute inset-x-0 bottom-0 h-2 cursor-row-resize bg-zinc-800/20 transition hover:bg-status-ok/45 data-[dragging=true]:bg-status-ok/65",
         @z_class
       ]}
       title="Drag to resize pane"

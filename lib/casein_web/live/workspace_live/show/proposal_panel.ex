@@ -69,7 +69,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ProposalPanel do
             {apply_action(assigns)}
           </div>
           <%= if @proposal_error do %>
-            <p class="mt-1 text-xs text-red-700">{@proposal_error}</p>
+            <p class="mt-1 text-xs text-status-danger-fg">{@proposal_error}</p>
           <% end %>
         <% else %>
           <p class="text-xs text-zinc-500">Select a proposal to review its diff.</p>
@@ -92,10 +92,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.ProposalPanel do
     """
   end
 
-  defp risk_class(:clean), do: "bg-green-100 text-green-800"
-  defp risk_class(:overlap), do: "bg-amber-100 text-amber-800"
-  defp risk_class(:conflict), do: "bg-red-100 text-red-800"
-  defp risk_class(:invalid), do: "bg-red-100 text-red-800"
+  defp risk_class(:clean), do: "bg-status-ok-soft text-status-ok-fg"
+  defp risk_class(:overlap), do: "bg-status-warning-soft text-status-warning-fg"
+  defp risk_class(:conflict), do: "bg-status-danger-soft text-status-danger-fg"
+  defp risk_class(:invalid), do: "bg-status-danger-soft text-status-danger-fg"
 
   defp apply_action(%{proposal_analysis: %{risk: risk}} = assigns)
        when risk in [:conflict, :invalid] do
@@ -111,13 +111,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.ProposalPanel do
        )
        when not is_nil(path) do
     ~H"""
-    <div class="flex items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs">
+    <div class="flex items-center gap-2 rounded border border-status-warning-border bg-status-warning-soft px-2 py-1.5 text-xs">
       <span>Overlaps in-progress changes — apply anyway?</span>
       <button
         phx-click="proposal:apply_confirm"
         phx-target={@target}
         phx-value-path={@proposal_selected.rel_path}
-        class="rounded border border-amber-700 px-2 py-0.5 text-amber-800 hover:bg-amber-100"
+        class="rounded border border-status-warning px-2 py-0.5 text-status-warning-fg hover:bg-status-warning-soft"
       >
         Apply anyway
       </button>

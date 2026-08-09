@@ -14,27 +14,27 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentStateChromeTest do
 
       assert presentations.working.known?
       assert presentations.working.overrides_activity?
-      assert presentations.working.dot_class =~ "success"
+      assert presentations.working.dot_class =~ "status-ok"
       assert presentations.working.chip_text == nil
       assert presentations.working.label == "Agent pane working"
 
       assert presentations.blocked.chip_text == "needs input"
-      assert presentations.blocked.dot_class =~ "error"
+      assert presentations.blocked.dot_class =~ "status-danger"
       assert presentations.blocked.label =~ "blocked"
 
       assert presentations.done.chip_text == "done"
-      assert presentations.done.dot_class =~ "info"
+      assert presentations.done.dot_class =~ "status-live"
 
       assert presentations.idle.known?
       assert presentations.idle.chip_text == nil
       assert presentations.idle.dot_class =~ "base-content"
 
       assert presentations.errored.chip_text == "error"
-      assert presentations.errored.dot_class =~ "error"
+      assert presentations.errored.dot_class =~ "status-danger"
       assert presentations.errored.label =~ "errored"
 
       assert presentations.stalled.chip_text == "stalled"
-      assert presentations.stalled.dot_class =~ "warning"
+      assert presentations.stalled.dot_class =~ "status-warning"
       assert presentations.stalled.label =~ "wedged"
 
       refute presentations.unknown.known?
@@ -64,8 +64,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentStateChromeTest do
       working = AgentStateChrome.present(:working)
       stalled = AgentStateChrome.present(:stalled)
 
-      assert working.dot_class =~ "success"
-      assert stalled.dot_class =~ "warning"
+      assert working.dot_class =~ "status-ok"
+      assert stalled.dot_class =~ "status-warning"
       refute stalled.dot_class == working.dot_class
       assert stalled.chip_text == "stalled"
     end
@@ -84,7 +84,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentStateChromeTest do
       {class, label} =
         AgentStateChrome.apply_to_activity("bg-keep", "keep me", :stalled, nil)
 
-      assert class =~ "warning"
+      assert class =~ "status-warning"
       assert label =~ "wedged"
     end
   end

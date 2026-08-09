@@ -113,20 +113,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.SituationPanel do
 
   defp badge_class(risks) do
     case max_severity(risks) do
-      :critical -> "border-red-300 bg-red-50 text-red-700"
-      :warn -> "border-amber-300 bg-amber-50 text-amber-700"
+      :critical -> "border-status-danger-border bg-status-danger-soft text-status-danger-fg"
+      :warn -> "border-status-warning-border bg-status-warning-soft text-status-warning-fg"
       :info -> "border-zinc-300 bg-white text-zinc-600"
       _ -> "border-zinc-200 bg-white text-zinc-400"
     end
   end
 
-  defp severity_dot_class(:critical), do: "bg-red-600"
-  defp severity_dot_class(:warn), do: "bg-amber-500"
+  defp severity_dot_class(:critical), do: "bg-status-danger"
+  defp severity_dot_class(:warn), do: "bg-status-warning"
   defp severity_dot_class(:info), do: "bg-zinc-400"
   defp severity_dot_class(_), do: "bg-zinc-300"
 
-  defp severity_text_class(:critical), do: "text-red-700"
-  defp severity_text_class(:warn), do: "text-amber-700"
+  defp severity_text_class(:critical), do: "text-status-danger-fg"
+  defp severity_text_class(:warn), do: "text-status-warning-fg"
   defp severity_text_class(_), do: "text-zinc-600"
 
   defp present?(value), do: is_binary(value) and value != ""

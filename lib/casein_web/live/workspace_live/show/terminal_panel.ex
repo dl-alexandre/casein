@@ -71,18 +71,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           id={"agent-terminal-approval-banner-" <> @workspace.id}
           type="button"
           phx-click="notifications:toggle"
-          class="group flex shrink-0 items-center gap-2 border-b border-amber-400/25 bg-amber-400/[0.08] px-3 py-2 text-left text-density-body text-amber-800 transition hover:bg-amber-400/[0.14] dark:text-amber-200"
+          class="group flex shrink-0 items-center gap-2 border-b border-status-warning/25 bg-status-warning/[0.08] px-3 py-2 text-left text-density-body text-status-warning-fg transition hover:bg-status-warning/[0.14] text-status-warning-fg"
         >
           <span class="relative flex size-2 shrink-0">
-            <span class="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-50"></span>
-            <span class="relative inline-flex size-2 rounded-full bg-amber-500"></span>
+            <span class="absolute inline-flex size-full animate-ping rounded-full bg-status-warning opacity-50"></span>
+            <span class="relative inline-flex size-2 rounded-full bg-status-warning"></span>
           </span>
           <span class="font-semibold">
             {@agent_approval_count} agent approval{if @agent_approval_count == 1,
               do: "",
               else: "s"} waiting
           </span>
-          <span class="text-amber-700/70 dark:text-amber-200/60">Review in Notifications</span>
+          <span class="text-status-warning-fg/70">Review in Notifications</span>
           <.icon
             name="hero-arrow-right"
             class="ml-auto size-3.5 transition-transform duration-motion-state ease-motion-state group-hover:translate-x-0.5"
@@ -214,11 +214,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
             >
             </div>
           <% {:error, :missing_path} -> %>
-            <p class="text-sm text-red-700">
+            <p class="text-sm text-status-danger-fg">
               Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
             </p>
           <% {:error, :outside_root} -> %>
-            <p class="text-sm text-red-700">
+            <p class="text-sm text-status-danger-fg">
               Refusing to open terminal: workspace path is outside the allowed roots ({inspect(
                 Workspaces.allowed_roots()
               )}).
@@ -297,7 +297,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           id={"mobile-key-bar-mode-" <> @workspace.id}
           type="button"
           phx-click="mobile_nav:toggle"
-          class="mr-0.5 inline-flex min-h-[1.9rem] shrink-0 items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 text-zinc-100 transition active:opacity-80"
+          class="mr-0.5 inline-flex min-h-[1.9rem] shrink-0 items-center gap-1 rounded-md border border-status-live/30 bg-status-live/10 px-2 text-zinc-100 transition active:opacity-80"
           title={"Switch session or window — " <> mobile_mode_chip_title(assigns)}
           aria-label={
             "Switch session or window. Active session: " <>
@@ -312,7 +312,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                keystroke is going (and what C-b arrows will move). --%>
           <span
             data-mobile-window-number
-            class="inline-flex shrink-0 justify-center font-mono text-density-body font-semibold leading-none text-sky-300/90"
+            class="inline-flex shrink-0 justify-center font-mono text-density-body font-semibold leading-none text-status-live-fg/90"
             aria-hidden="true"
           >
             {mobile_active_pane_address(assigns)}
@@ -333,7 +333,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
             title="tmux prefix — tap, then a key"
             class={[
               mobile_key_class(),
-              "aria-pressed:border-amber-400 aria-pressed:bg-amber-500/20 aria-pressed:text-amber-300"
+              "aria-pressed:border-status-warning aria-pressed:bg-status-warning/20 aria-pressed:text-status-warning-fg"
             ]}
           >
             C-b
@@ -1073,8 +1073,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
     "inline-flex flex-none items-center justify-center rounded border px-2.5 font-mono text-xs leading-none " <>
       "transition-colors duration-motion-state ease-motion-state min-w-[2.5rem] min-h-[1.9rem] " <>
       "border-zinc-700 bg-zinc-800 " <>
-      "data-[mod-state=armed]:border-emerald-400 data-[mod-state=armed]:bg-emerald-500/20 data-[mod-state=armed]:text-emerald-300 " <>
-      "data-[mod-state=locked]:border-amber-400 data-[mod-state=locked]:bg-amber-500/30 data-[mod-state=locked]:text-amber-200"
+      "data-[mod-state=armed]:border-status-ok data-[mod-state=armed]:bg-status-ok/20 data-[mod-state=armed]:text-status-ok-fg" <>
+      "data-[mod-state=locked]:border-status-warning data-[mod-state=locked]:bg-status-warning/30 data-[mod-state=locked]:text-status-warning-fg"
   end
 
   defp active_tmux_window_name(assigns) do

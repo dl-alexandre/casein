@@ -128,14 +128,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
               </.form>
             <% end %>
             <%= if @node_delete do %>
-              <div class="flex items-center justify-between gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-1 text-xs">
+              <div class="flex items-center justify-between gap-1 rounded border border-status-danger-border bg-status-danger-soft px-1.5 py-1 text-xs">
                 <span class="min-w-0 truncate">
                   Delete <span class="font-mono">{@node_delete}</span> and its contents?
                 </span>
                 <span class="flex gap-1">
                   <button
                     phx-click="tree:delete_node_confirm"
-                    class="rounded bg-red-700 text-white px-2 py-0.5"
+                    class="rounded bg-status-danger text-white px-2 py-0.5"
                   >
                     confirm
                   </button>
@@ -146,7 +146,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
               </div>
             <% end %>
             <%= if @tree_error do %>
-              <p class="text-xs text-red-700">{@tree_error}</p>
+              <p class="text-xs text-status-danger-fg">{@tree_error}</p>
             <% end %>
             <.tree_node
               tree={@tree}
@@ -158,7 +158,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
             <.project_card project_meta={@project_meta} tooling={@tooling} />
             <.symbols_panel open_file={@open_file} file_symbols={@file_symbols} />
           <% _ -> %>
-            <p class="text-xs text-red-700">No host path; cannot list files.</p>
+            <p class="text-xs text-status-danger-fg">No host path; cannot list files.</p>
         <% end %>
       </div>
       <div class="border rounded flex flex-col flex-1 min-w-0 min-h-0">
@@ -212,7 +212,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                   </button>
                 </span>
               <% end %>
-              <span id="dirty-indicator" data-dirty="false" class="text-amber-700"></span>
+              <span id="dirty-indicator" data-dirty="false" class="text-status-warning-fg"></span>
               <span id="stale-indicator" data-stale="false" class="text-orange-700"></span>
               <span>{@open_file.size}b</span>
               <button
@@ -231,19 +231,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
               <button
                 type="button"
                 phx-click="file:delete_request"
-                class="rounded border px-2 py-0.5 text-red-700"
+                class="rounded border px-2 py-0.5 text-status-danger-fg"
               >
                 Delete
               </button>
             </span>
           </div>
           <%= if @delete_confirm do %>
-            <div class="px-3 py-1 border-b bg-red-50 text-xs flex justify-between items-center">
+            <div class="px-3 py-1 border-b bg-status-danger-soft text-xs flex justify-between items-center">
               <span>Delete <span class="font-mono">{@delete_confirm}</span>?</span>
               <span class="flex gap-1">
                 <button
                   phx-click="file:delete_confirm"
-                  class="rounded bg-red-700 text-white px-2 py-0.5"
+                  class="rounded bg-status-danger text-white px-2 py-0.5"
                 >
                   confirm
                 </button>
@@ -254,7 +254,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
             </div>
           <% end %>
           <%= if @save_error do %>
-            <div class="px-3 py-1 border-b bg-red-50 text-xs text-red-800">{@save_error}</div>
+            <div class="px-3 py-1 border-b bg-status-danger-soft text-xs text-status-danger-fg">
+              {@save_error}
+            </div>
           <% end %>
         <% else %>
           <div class="px-3 py-1.5 border-b bg-zinc-50 text-xs text-zinc-500">
@@ -330,7 +332,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                       phx-value-path={e.rel_path}
                       class="hover:underline text-left flex-1"
                     >
-                      <span class="font-mono text-amber-700">▸</span> {e.name}/
+                      <span class="font-mono text-status-warning-fg">▸</span> {e.name}/
                     </button>
                     <button
                       phx-click="tree:select_dir"
@@ -522,7 +524,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
         assigns = Map.put(assigns, :reason, reason)
 
         ~H"""
-        <p class="text-xs text-red-700">{search_error_text(@reason)}</p>
+        <p class="text-xs text-status-danger-fg">{search_error_text(@reason)}</p>
         """
     end
   end
@@ -627,10 +629,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
         base <> " text-cyan-300 bg-zinc-900"
 
       String.starts_with?(line, "+") ->
-        base <> " text-emerald-300 bg-emerald-950/40"
+        base <> " text-status-ok-fg bg-status-ok-soft/40"
 
       String.starts_with?(line, "-") ->
-        base <> " text-rose-300 bg-rose-950/40"
+        base <> " text-status-danger-fg bg-status-danger-soft/40"
 
       String.starts_with?(line, "diff ") or String.starts_with?(line, "index ") ->
         base <> " text-zinc-500"
@@ -661,10 +663,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
   defp git_status_badge_class(x, y) do
     color =
       cond do
-        x == "?" or y == "?" -> "text-violet-700"
-        x == "A" or y == "A" -> "text-emerald-700"
-        x == "D" or y == "D" -> "text-rose-700"
-        x == "M" or y == "M" -> "text-amber-700"
+        x == "?" or y == "?" -> "text-status-idle-fg"
+        x == "A" or y == "A" -> "text-status-ok-fg"
+        x == "D" or y == "D" -> "text-status-danger-fg"
+        x == "M" or y == "M" -> "text-status-warning-fg"
         true -> "text-zinc-600"
       end
 
@@ -998,10 +1000,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
   defp artifact_status_class(status) do
     case status do
-      "live" -> "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
-      "running" -> "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
-      "provisioned" -> "border-sky-500/30 bg-sky-500/10 text-sky-700"
-      "draft" -> "border-amber-500/30 bg-amber-500/10 text-amber-700"
+      "live" -> "border-status-ok/30 bg-status-ok/10 text-status-ok-fg"
+      "running" -> "border-status-ok/30 bg-status-ok/10 text-status-ok-fg"
+      "provisioned" -> "border-status-live/30 bg-status-live/10 text-status-live-fg"
+      "draft" -> "border-status-warning/30 bg-status-warning/10 text-status-warning-fg"
       "error" -> "border-error/30 bg-error/10 text-error"
       _ -> "border-base-300 bg-base-200 text-base-content/65"
     end

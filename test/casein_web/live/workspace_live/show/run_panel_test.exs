@@ -123,7 +123,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       # argv joined and status rendered with the running class
       assert html =~ "mix test"
       assert html =~ "running"
-      assert html =~ "text-amber-700"
+      assert html =~ "text-status-warning-fg"
       assert html =~ "compiling project..."
       # exit/started/finished spans omitted when nil
       refute html =~ "exit="
@@ -147,7 +147,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       html = render_panel(active_run: run)
 
       assert html =~ "succeeded"
-      assert html =~ "text-green-700"
+      assert html =~ "text-status-ok-fg"
       assert html =~ "exit=0"
       assert html =~ "started #{DateTime.to_string(started)}"
       assert html =~ "finished #{DateTime.to_string(finished)}"
@@ -169,7 +169,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       html = render_panel(active_run: run)
 
       assert html =~ "failed"
-      assert html =~ "text-red-700"
+      assert html =~ "text-status-danger-fg"
       assert html =~ "exit=1"
     end
 
@@ -309,12 +309,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       assert html =~ "run.command_denied"
       assert html =~ "workspace.mode_set"
       # decision dot/verb classes
-      assert html =~ "bg-green-600"
-      assert html =~ "text-green-700"
-      assert html =~ "bg-red-600"
-      assert html =~ "text-red-700"
-      assert html =~ "bg-amber-500"
-      assert html =~ "text-amber-700"
+      assert html =~ "bg-status-ok"
+      assert html =~ "text-status-ok-fg"
+      assert html =~ "bg-status-danger"
+      assert html =~ "text-status-danger-fg"
+      assert html =~ "bg-status-warning"
+      assert html =~ "text-status-warning-fg"
       # ledger_event_noun: metadata "noun" -> "command", missing -> "event"
       assert html =~ "command"
       assert html =~ "event"

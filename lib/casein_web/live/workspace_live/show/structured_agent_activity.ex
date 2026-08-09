@@ -180,7 +180,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
       </span>
       <span
         :if={waiting?(@entry.thread)}
-        class="rounded-full bg-amber-400 px-1.5 py-density-micro text-density-micro font-bold text-amber-950"
+        class="rounded-full bg-status-warning px-1.5 py-density-micro text-density-micro font-bold text-status-warning-fg"
       >
         !
       </span>
@@ -281,8 +281,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
 
   defp status_dot(thread) do
     cond do
-      waiting?(thread) -> "bg-amber-400"
-      thread.status in ["active", :active] -> "bg-emerald-500"
+      waiting?(thread) -> "bg-status-warning"
+      thread.status in ["active", :active] -> "bg-status-ok"
       thread.status in ["failed", :failed, "error", :error] -> "bg-error"
       true -> "bg-base-content/25"
     end
@@ -321,8 +321,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
   defp timeline_icon(_type), do: "hero-bolt"
 
   defp timeline_dot(type) when type in [:turn_failed, :error], do: "bg-error text-error-content"
-  defp timeline_dot(:approval_requested), do: "bg-amber-400 text-amber-950"
-  defp timeline_dot(:approval_resolved), do: "bg-emerald-500 text-white"
+  defp timeline_dot(:approval_requested), do: "bg-status-warning text-status-warning-content"
+  defp timeline_dot(:approval_resolved), do: "bg-status-ok text-white"
   defp timeline_dot(_type), do: "bg-base-300 text-base-content/55"
 
   defp compact_number(value) when value >= 1_000_000,

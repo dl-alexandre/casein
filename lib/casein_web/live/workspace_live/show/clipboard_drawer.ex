@@ -69,7 +69,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawer do
                   type="button"
                   phx-hook="CopyText"
                   data-copy-text={entry.text}
-                  class="inline-flex items-center gap-1 rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-50 data-[copied]:border-emerald-400 data-[copied]:text-emerald-700 pointer-coarse:px-3 pointer-coarse:py-1.5"
+                  class="inline-flex items-center gap-1 rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-50 data-[copied]:border-status-ok data-[copied]:text-status-ok-fg pointer-coarse:px-3 pointer-coarse:py-1.5"
                 >
                   <.icon name="hero-clipboard" class="size-3.5" /> Copy
                 </button>
@@ -88,7 +88,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawer do
 
             <pre class="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-zinc-50 p-1.5 font-mono text-density-body text-zinc-800">{preview(entry.text)}</pre>
 
-            <p :if={entry.truncated?} class="mt-1 text-density-label text-amber-700">
+            <p :if={entry.truncated?} class="mt-1 text-density-label text-status-warning-fg">
               Truncated — this copy was larger than the retained limit.
             </p>
           </article>

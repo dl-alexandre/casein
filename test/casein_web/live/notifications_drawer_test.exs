@@ -310,7 +310,7 @@ defmodule CaseinWeb.NotificationsDrawerTest do
 
       assert html =~ "hero-bell-alert"
       assert html =~ ~s(id="notifications-bell-dot")
-      assert html =~ "bg-red-600"
+      assert html =~ "bg-status-danger"
     end
 
     test "an available update renders an amber (warning) dot, not red" do
@@ -322,8 +322,8 @@ defmodule CaseinWeb.NotificationsDrawerTest do
         )
 
       assert html =~ ~s(id="notifications-bell-dot")
-      assert html =~ "bg-amber-500"
-      refute html =~ "bg-red-600"
+      assert html =~ "bg-status-warning"
+      refute html =~ "bg-status-danger"
     end
 
     test "unread notifications keep the numeric badge and suppress the deploy dot" do

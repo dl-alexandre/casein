@@ -49,7 +49,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
         <span
           :if={@agent_approval_count > 0}
           id={"header-agent-approval-count-" <> @workspace.id}
-          class="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-density-badge font-bold leading-4 text-amber-950 ring-2 ring-base-100"
+          class="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-status-warning px-1 text-density-badge font-bold leading-4 text-status-warning-fg ring-2 ring-base-100"
         >
           {min(@agent_approval_count, 99)}
         </span>
@@ -75,7 +75,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
 
         <div
           :if={workspace_start_blocked?(@workspace_start_error)}
-          class="px-3 py-1 text-density-body text-amber-600 dark:text-amber-300"
+          class="px-3 py-1 text-density-body text-status-warning-fg"
         >
           Start unavailable
         </div>
@@ -310,8 +310,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
             class={[
               "inline-flex min-w-4 items-center justify-center rounded-full px-1 text-density-label font-semibold leading-4",
               if((@notif_unread_count || 0) > 0,
-                do: "bg-red-600 text-white",
-                else: "bg-amber-400 text-amber-950"
+                do: "bg-status-danger text-white",
+                else: "bg-status-warning text-status-warning-content"
               )
             ]}
           >
@@ -414,12 +414,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
 
   @doc false
   def workspace_status_dot_class(status) when status in [:running, "running"],
-    do: "bg-emerald-500"
+    do: "bg-status-ok"
 
   def workspace_status_dot_class(status) when status in [:stopped, :error, "stopped", "error"],
     do: "bg-base-content/35"
 
-  def workspace_status_dot_class(_status), do: "bg-amber-400"
+  def workspace_status_dot_class(_status), do: "bg-status-warning"
 
   # On touch/narrow viewports the status dot doubles as the start/stop control
   # (see the header identity cluster). Returns the phx-click event for a tap, or

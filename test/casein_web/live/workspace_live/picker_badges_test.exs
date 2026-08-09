@@ -6,7 +6,7 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadgesTest do
   describe "mode_class/1" do
     test "maps local mode to green badge classes" do
       assert PickerBadges.mode_class(:local) ==
-               "bg-green-50 text-green-700 border border-green-200"
+               "bg-status-ok-soft text-status-ok-fg border border-status-ok-border"
     end
 
     test "maps remote mode to blue badge classes" do
@@ -25,7 +25,7 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadgesTest do
 
   describe "status_class/1" do
     test "maps running status to green text" do
-      assert PickerBadges.status_class(:running) == "text-green-700"
+      assert PickerBadges.status_class(:running) == "text-status-ok-fg"
     end
 
     test "maps stopped status to zinc text" do
@@ -33,9 +33,9 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadgesTest do
     end
 
     test "falls through unknown statuses to amber text" do
-      assert PickerBadges.status_class(:starting) == "text-amber-700"
-      assert PickerBadges.status_class(nil) == "text-amber-700"
-      assert PickerBadges.status_class(:error) == "text-amber-700"
+      assert PickerBadges.status_class(:starting) == "text-status-warning-fg"
+      assert PickerBadges.status_class(nil) == "text-status-warning-fg"
+      assert PickerBadges.status_class(:error) == "text-status-warning-fg"
     end
   end
 
@@ -121,12 +121,12 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadgesTest do
   describe "workspace_agent_layout_class/1" do
     test "maps ready to emerald badge classes" do
       assert PickerBadges.workspace_agent_layout_class("ready") ==
-               "inline-flex items-center gap-density-label rounded border border-emerald-200 bg-emerald-50 px-1.5 py-density-label text-density-label font-medium text-emerald-700"
+               "inline-flex items-center gap-density-label rounded border border-status-ok-border bg-status-ok-soft px-1.5 py-density-label text-density-label font-medium text-status-ok-fg"
     end
 
     test "maps missing_agent_pane to amber badge classes" do
       assert PickerBadges.workspace_agent_layout_class("missing_agent_pane") ==
-               "inline-flex items-center gap-density-label rounded border border-amber-200 bg-amber-50 px-1.5 py-density-label text-density-label font-medium text-amber-800"
+               "inline-flex items-center gap-density-label rounded border border-status-warning-border bg-status-warning-soft px-1.5 py-density-label text-density-label font-medium text-status-warning-fg"
     end
   end
 
@@ -202,12 +202,12 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadgesTest do
   describe "agent_session_status_class/1" do
     test "maps attention (highest urgency) to red badge classes" do
       assert PickerBadges.agent_session_status_class("attention") ==
-               "rounded border border-red-200 bg-red-50 px-1 py-density-label text-density-label font-medium text-red-700"
+               "rounded border border-status-danger-border bg-status-danger-soft px-1 py-density-label text-density-label font-medium text-status-danger-fg"
     end
 
     test "maps done to emerald badge classes" do
       assert PickerBadges.agent_session_status_class("done") ==
-               "rounded border border-emerald-200 bg-emerald-50 px-1 py-density-label text-density-label font-medium text-emerald-700"
+               "rounded border border-status-ok-border bg-status-ok-soft px-1 py-density-label text-density-label font-medium text-status-ok-fg"
     end
 
     test "maps running to blue badge classes" do

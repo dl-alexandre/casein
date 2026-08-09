@@ -404,8 +404,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
 
   describe "window_activity_class/1 and window_activity_label/1" do
     test "fresh / recent / idle mappings" do
-      assert TC.window_activity_class(:fresh) =~ "bg-emerald-400"
-      assert TC.window_activity_class(:recent) == "bg-amber-300"
+      assert TC.window_activity_class(:fresh) =~ "bg-status-ok"
+      assert TC.window_activity_class(:recent) == "bg-status-warning"
       assert TC.window_activity_class(:idle) == "bg-base-content/20"
 
       assert TC.window_activity_label(:fresh) == "Recent tmux window activity"
@@ -421,7 +421,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
         assert is_binary(TC.pane_status_label(status))
       end
 
-      assert TC.pane_status_class(:recent) == "bg-amber-300"
+      assert TC.pane_status_class(:recent) == "bg-status-warning"
       assert TC.pane_status_label(:active) == "Active tmux pane"
       assert TC.pane_status_label(:bell) == "Tmux pane bell alert"
       assert TC.pane_status_label(:unknown) == "Tmux pane geometry unavailable"

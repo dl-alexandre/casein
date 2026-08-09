@@ -545,10 +545,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
       assert html =~ "mod.ex"
       assert html =~ "renamed.ex"
       # badge color classes exercised by git_status_badge_class
-      assert html =~ "text-violet-700"
-      assert html =~ "text-emerald-700"
-      assert html =~ "text-rose-700"
-      assert html =~ "text-amber-700"
+      assert html =~ "text-status-idle-fg"
+      assert html =~ "text-status-ok-fg"
+      assert html =~ "text-status-danger-fg"
+      assert html =~ "text-status-warning-fg"
       # R/" " hits the catch-all zinc branch
       assert html =~ "text-zinc-600"
     end
@@ -588,8 +588,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
       # all diff_line_class branches
       assert html =~ "text-zinc-500" || html =~ "text-zinc-400"
       assert html =~ "text-cyan-300"
-      assert html =~ "text-emerald-300"
-      assert html =~ "text-rose-300"
+      assert html =~ "text-status-ok-fg"
+      assert html =~ "text-status-danger-fg"
       assert html =~ "text-zinc-300"
       # content carried through
       assert html =~ "context line"
@@ -795,8 +795,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
       # empty artifacts branch
       assert html =~ "No artifacts recorded for this run."
       # allow-decision dot/verb classes
-      assert html =~ "bg-green-600"
-      assert html =~ "text-green-700"
+      assert html =~ "bg-status-ok"
+      assert html =~ "text-status-ok-fg"
     end
   end
 

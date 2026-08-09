@@ -350,7 +350,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             <span
               :if={workspace_start_blocked?(@workspace_start_error)}
               id="workspace-start-unavailable"
-              class="header-p-touch-hide shrink-0 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-density-label text-density-label font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300"
+              class="header-p-touch-hide shrink-0 rounded border border-status-warning/30 bg-status-warning/10 px-2 py-density-label text-density-label font-semibold uppercase tracking-wide text-status-warning-fg"
             >
               Start unavailable
             </span>
@@ -429,7 +429,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             class={[
               "min-w-0 truncate rounded border px-2 py-density-body text-density-body font-medium leading-none",
               if(preview_chrome.mismatch?,
-                do: "border-amber-300/50 bg-amber-400/10 text-amber-600 dark:text-amber-200",
+                do: "border-status-warning-border/50 bg-status-warning/10 text-status-warning-fg",
                 else: "border-base-300 bg-base-200/60 text-base-content/70"
               )
             ]}
@@ -454,7 +454,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
              thumb-reachable target is a px the operator asked us not to
              spend. --%>
         <div
-          class="mb-1 pointer-coarse:mb-0.5 h-1.5 pointer-coarse:h-5 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors duration-motion-state ease-motion-state flex items-center justify-center pointer-coarse:justify-between pointer-coarse:gap-2 pointer-coarse:px-2"
+          class="mb-1 pointer-coarse:mb-0.5 h-1.5 pointer-coarse:h-5 w-full cursor-pointer rounded bg-base-300/40 hover:bg-status-ok/40 active:bg-status-ok/60 transition-colors duration-motion-state ease-motion-state flex items-center justify-center pointer-coarse:justify-between pointer-coarse:gap-2 pointer-coarse:px-2"
           phx-click="terminal:toggle_chrome"
           title="Show header. Shortcut: Ctrl/Cmd + Shift + F"
           aria-label="Show header and utility bar"
