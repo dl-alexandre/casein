@@ -164,11 +164,104 @@ Equivalent TOML (only if CLI unavailable): under `[mcp_servers.agent]` set
 - Probe or refresh `~/.grok/auth.json` as part of hygiene (auth wipe is a separate failure
   mode; recover with `~/.grok/bin/grok login --device-auth`, never the Casein shim).
 
+## Host secrets hygiene (#715) — Casein Bearer via env ref
+
+**This is host-local only.** Devbox agents must not rewrite laptop `~/.grok/config.toml`.
+That file is box-global and hot-reloaded: a careless write takes out every Grok on the
+machine. Apply on the **host Mac** after operator greenlight. **Show the change first** —
+never a silent in-place edit.
+
+### Goal
+
+Stop storing the Casein MCP Bearer as a plaintext literal in shared/host config. Prefer
+an environment reference that Grok expands from process env at connect time (same pattern
+Casein already materializes for on-box Grok: `Authorization = "Bearer ${CASEIN_API_TOKEN}"`).
+
+### Required shape (headers only — no secret values in the file)
+
+Under each intentional Casein server (`casein-terminal`, `casein-preview`,
+`casein-artifact`), headers must look like:
+
+```toml
+[mcp_servers.casein-terminal.headers]
+Authorization = "Bearer ${CASEIN_API_TOKEN}"
+
+[mcp_servers.casein-preview.headers]
+Authorization = "Bearer ${CASEIN_API_TOKEN}"
+
+[mcp_servers.casein-artifact.headers]
+Authorization = "Bearer ${CASEIN_API_TOKEN}"
+```
+
+URLs stay the durable multi-workspace endpoints (see Mode A / #713). Do **not** paste a
+token into TOML, chat, issues, or git.
+
+### Supply the token via env (not config)
+
+| Source | Notes |
+|--------|--------|
+| Shell profile / private file | e.g. `export CASEIN_API_TOKEN="$(cat ~/.casein-orchestrator-token)"` with the file `chmod 600` |
+| Launch env | Host Grok process must inherit `CASEIN_API_TOKEN` before MCP connect |
+| Casein materializer (Mode B) | On-box only: `scripts/materialize-agent-mcp.sh` already writes the `${CASEIN_API_TOKEN}` placeholder + exports the token in staging `env.sh` |
+
+### Apply (host Mac shell — inventory first, then edit)
+
+```bash
+# 0) Ensure the process env will have the token (no value printed)
+test -n "${CASEIN_API_TOKEN:-}" && echo "CASEIN_API_TOKEN is set" || echo "CASEIN_API_TOKEN missing — export it before doctor"
+
+# 1) Inventory — review Authorization lines; expect either env-ref or a long literal
+#    (do not paste output into chat if it still contains a literal Bearer)
+grep -n 'Authorization\|casein-terminal\|casein-preview\|casein-artifact' ~/.grok/config.toml
+
+# 2) If any Casein header still has a literal Bearer <token>, replace with env-ref.
+#    Prefer a visible edit (diff then write), not a silent rewrite:
+cp -a ~/.grok/config.toml ~/.grok/config.toml.bak.$(date -u +%Y%m%dT%H%M%SZ)
+# Edit the three Casein *.headers Authorization lines to:
+#   Authorization = "Bearer ${CASEIN_API_TOKEN}"
+# Then show the diff of header lines only (values should be the placeholder):
+grep -n 'Authorization' ~/.grok/config.toml
+
+# Equivalent via CLI when re-adding a server (still show intent first):
+# grok mcp add --transport http casein-terminal https://casein.devbox.milcgroup.com/api/terminals/mcp \
+#   --header 'Authorization: Bearer ${CASEIN_API_TOKEN}'
+# (repeat for casein-preview / casein-artifact with their durable URLs)
+
+# 3) Doctor + auth smoke — must succeed with env set, fail closed if unset
+grok mcp doctor casein-terminal
+grok mcp doctor casein-preview
+grok mcp doctor casein-artifact
+# Optional: one MCP call with explicit workspace_id+session (Mode A)
+```
+
+If Grok does not expand `${CASEIN_API_TOKEN}` in headers on your installed version,
+stop and keep the backup; do not invent a second secret store. File a note on #715 with
+the version (`grok --version`) rather than embedding the token again.
+
+### Optional: rotate
+
+If a token may have been logged, pasted, or committed historically: mint a new scoped or
+global token on the Casein host, store it only in the private file / env path above, and
+revoke the old one. Do not put the new value in the runbook, PR, or issue comments.
+
+### Do not
+
+- Commit `~/.grok/config.toml`, `.mcp.json`, or any file with an embedded Bearer literal.
+- Print token values in issues, PRs, or agent chat.
+- Silently rewrite host (or devbox) `~/.grok/config.toml` from an agent session.
+- Probe, refresh, or rewrite `~/.grok/auth.json` as part of this hygiene (recover login
+  with `~/.grok/bin/grok login --device-auth`, never the Casein shim).
+- Narrow Casein MCP to a single workspace as a side effect of secrets work (#718 / #713).
+
 ## Env vars (reference — no secret values)
+
+Names only — never document real values. Host Grok must receive `CASEIN_API_TOKEN` via
+process env (see **Host secrets hygiene (#715)** above); config files hold the
+`Bearer ${CASEIN_API_TOKEN}` placeholder, not the secret.
 
 | Variable | Purpose |
 |----------|---------|
-| `CASEIN_API_TOKEN` | Bearer for Casein MCP |
+| `CASEIN_API_TOKEN` | Bearer for Casein MCP (env only; referenced from MCP headers) |
 | `CASEIN_WORKSPACE_ID` / `CASEIN_WORKSPACE_NAME` | Target workspace |
 | `CASEIN_CHECKOUT` | Product tree path **on the machine where the pane runs** |
 | `CASEIN_TERMINAL_MCP_URL` / `PREVIEW` / `ARTIFACT` | MCP endpoints (optionally pre-scoped) |
