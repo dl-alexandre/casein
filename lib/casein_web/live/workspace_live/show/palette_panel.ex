@@ -31,12 +31,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
 
     ~H"""
     <%= if @palette_open do %>
+      <%!--
+        Narrow layout (width) vs touch targets (pointer-coarse) stay separate:
+        max-sm collapses category chrome and row meta; pointer-coarse only
+        grows hit areas. Tab/Shift+Tab category cycling lives in PaletteHook
+        (pushEvent), not DOM focus on these buttons — inactive tabs may be
+        visually hidden below sm without killing keyboard cycling.
+      --%>
       <div
-        class="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-24"
+        id="palette-modal"
+        class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[max(0.5rem,min(6rem,10svh))] sm:pt-16 md:pt-24"
         phx-click="palette:close"
       >
         <div
-          class="bg-base-100 text-base-content rounded shadow-2xl w-[640px] max-w-[90vw] border border-base-300"
+          class="flex w-full max-w-[calc(100vw-1rem)] flex-col rounded border border-base-300 bg-base-100 text-base-content shadow-2xl sm:w-[640px] sm:max-w-[90vw]"
           phx-click-away="palette:close"
         >
           <.form
@@ -44,7 +52,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
             id="palette-form"
             phx-change="palette:query"
             phx-submit="palette:execute"
-            class="p-2 border-b border-base-300"
+            class="border-b border-base-300 p-2"
           >
             <%!--
               `phx-mounted` runs the focus command every time this input
@@ -62,7 +70,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
               placeholder="Search sessions, windows, files, commands…"
               phx-debounce="150"
               phx-mounted={Phoenix.LiveView.JS.focus()}
-              class="w-full bg-transparent text-sm px-2 py-1.5 outline-none placeholder:text-base-content/40"
+              class="w-full bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-base-content/40 pointer-coarse:py-2.5"
             />
             <%!--
               The hidden _selected_id field carries the currently
@@ -76,10 +84,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
             Category tabs. The active screen sets the default (see
             default_palette_category/1); Tab / Shift+Tab cycle them from the
             PaletteHook, and clicking selects directly. ":all" is always first.
+
+            Below `sm`, inactive tabs are visually collapsed so the row cannot
+            overflow; every category button stays in the DOM and the hook still
+            cycles via palette:category — keyboard reachability is unchanged.
           --%>
           <div
             id="palette-categories"
-            class="flex items-center gap-1 px-2 py-1 border-b border-base-300 text-xs"
+            class="flex items-center gap-1 overflow-x-auto border-b border-base-300 px-2 py-1 text-xs"
           >
             <%= for cat <- palette_categories() do %>
               <button
@@ -87,27 +99,35 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
                 phx-click="palette:category"
                 phx-value-category={Atom.to_string(cat)}
                 class={[
-                  "px-2 py-0.5 rounded font-mono lowercase",
+                  "shrink-0 rounded px-2 py-0.5 font-mono lowercase",
+                  "pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:px-3 pointer-coarse:py-2",
                   if(cat == (@palette_category || :all),
                     do: "bg-primary/20 text-base-content",
-                    else: "text-base-content/55 hover:bg-base-200"
+                    else: "text-base-content/55 hover:bg-base-200 max-sm:hidden"
                   )
                 ]}
               >
                 {palette_category_label(cat)}
               </button>
             <% end %>
+            <span class="ml-auto hidden shrink-0 font-mono text-[10px] text-base-content/45 max-sm:inline">
+              ⇥ cycle
+            </span>
           </div>
-          <ul id="palette-results" class="max-h-[60vh] overflow-auto text-sm">
+          <ul
+            id="palette-results"
+            class="max-h-[min(60vh,calc(100dvh-11rem))] overflow-auto text-sm sm:max-h-[60vh]"
+          >
             <%= if @palette_items == [] do %>
-              <li class="px-3 py-2 text-base-content/60 text-xs">No matches.</li>
+              <li class="px-3 py-2 text-xs text-base-content/60">No matches.</li>
             <% else %>
               <%= for {item, idx} <- Enum.with_index(@palette_items) do %>
                 <li
                   id={"palette-item-" <> Integer.to_string(idx)}
                   data-palette-idx={idx}
                   class={[
-                    "flex items-center gap-2 px-3 py-1.5 border-b border-base-200 last:border-b-0 cursor-pointer hover:bg-base-200",
+                    "flex cursor-pointer items-center gap-2 border-b border-base-200 px-3 py-1.5 last:border-b-0 hover:bg-base-200",
+                    "pointer-coarse:min-h-11 pointer-coarse:py-3",
                     if(idx == (@palette_selected_idx || 0),
                       do: "bg-primary/15 text-base-content",
                       else: ""
@@ -116,12 +136,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
                   phx-click="palette:execute"
                   phx-value-id={item.id}
                 >
-                  <span class="text-[10px] uppercase text-base-content/50 w-14 shrink-0">
+                  <span class="w-14 shrink-0 text-[10px] uppercase text-base-content/50 max-sm:hidden">
                     {item.kind}
                   </span>
-                  <span class="font-mono truncate flex-1">{item.label}</span>
+                  <span class="min-w-0 flex-1 truncate font-mono">{item.label}</span>
                   <%= if item.detail do %>
-                    <span class="text-xs text-base-content/60 truncate">{item.detail}</span>
+                    <span class="truncate text-xs text-base-content/60 max-sm:hidden">{item.detail}</span>
                   <% end %>
                   <%= if item.hint do %>
                     <kbd class="ml-auto shrink-0 rounded border border-base-300 bg-base-200 px-1 font-mono text-[10px] text-base-content/70">
@@ -132,8 +152,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
               <% end %>
             <% end %>
           </ul>
-          <div class="px-3 py-1.5 text-[10px] text-base-content/60 border-t border-base-300 flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-base-300 px-3 py-1.5 text-[10px] text-base-content/60">
+            <div class="hidden items-center gap-2 sm:flex">
               <span class="inline-flex items-center gap-1">
                 <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">↑</kbd>
                 <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">↓</kbd>
