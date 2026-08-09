@@ -76,8 +76,13 @@ defmodule Casein.Terminals.Backends.Tmux do
     # Always use the labeled Casein tmux server on the remote (issue #556).
     # Label matches local isolation (casein / casein_dev / casein_test) so
     # native `tmux -L <label> attach` sees the same sessions and the host's
-    # default tmux server is never touched. Config `-f` lands with remote
-    # bootstrap (`~/.casein/tmux/…`); without it tmux uses label defaults.
+    # default tmux server is never touched.
+    #
+    # Config path is the user-scoped bootstrap target (`~/.casein/tmux/casein.conf`
+    # via scripts/bootstrap-remote-tmux.sh). tmux only reads `-f` when *starting*
+    # a server; once live the flag is ignored. We still pass it so a first
+    # remote spawn after bootstrap (or after a server death) recreates with
+    # Casein defaults rather than empty label defaults.
     remote =
       "cd #{shell_quote(path)} && exec tmux #{remote_tmux_global_flags()}new-session -A -s #{session}"
 
@@ -151,12 +156,37 @@ defmodule Casein.Terminals.Backends.Tmux do
   end
 
   # Space-terminated global flags for embedding in a remote shell command
-  # (e.g. "-L casein "). Empty when no label is configured (default server).
+  # (e.g. "-L casein -f ~/.casein/tmux/casein.conf "). Empty when no label
+  # is configured (default server — avoid on shared hosts).
   defp remote_tmux_global_flags do
-    case TmuxServer.args() do
+    label_args =
+      case TmuxServer.args() do
+        [] -> []
+        args -> args
+      end
+
+    conf_args =
+      case remote_tmux_config_path() do
+        path when is_binary(path) and path != "" -> ["-f", path]
+        _ -> []
+      end
+
+    case label_args ++ conf_args do
       [] -> ""
       args -> Enum.join(args, " ") <> " "
     end
+  end
+
+  # User-scoped conf written by scripts/bootstrap-remote-tmux.sh. Expandable
+  # on the remote shell (`~` / `$HOME`). Override with :tmux_remote_config_file
+  # or CASEIN_TMUX_REMOTE_CONFIG when a remote uses a non-default layout.
+  defp remote_tmux_config_path do
+    [
+      Application.get_env(:casein, :tmux_remote_config_file),
+      System.get_env("CASEIN_TMUX_REMOTE_CONFIG"),
+      "~/.casein/tmux/casein.conf"
+    ]
+    |> Enum.find(&(is_binary(&1) and &1 != ""))
   end
 
   defp shell_quote(value), do: "'" <> String.replace(value, "'", "'\\''") <> "'"
