@@ -19,6 +19,18 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
     |> Map.new()
   end
 
+  # PaneSubmit returns atom confirmation/delivery; MCP payloads stringify them.
+  def stringify_confirmation(result) when is_map(result) do
+    Map.new(result, fn
+      {key, value}
+      when key in [:confirmation, :delivery] and is_atom(value) and not is_nil(value) ->
+        {key, Atom.to_string(value)}
+
+      pair ->
+        pair
+    end)
+  end
+
   def string_arg(params, key) do
     case Map.get(params, key) do
       value when is_binary(value) and value != "" -> {:ok, value}

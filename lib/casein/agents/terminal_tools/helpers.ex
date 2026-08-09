@@ -393,11 +393,12 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       capabilities: [:terminal_mutation],
       policy_tags: [:agent_pane_only],
       recovery_hints: [
-        "Apply the agent_pair template before using agent-pane mutation tools.",
+        "Omit pane to require the agent_pair marker; pass pane to target any pane id.",
         "Use terminal_capture_agent after sending input to inspect output.",
         "On submit_not_confirmed the text reached the pane but was never submitted — " <>
           "capture the pane before resending, or use terminal_set_next_prompt if the " <>
-          "agent is mid-turn."
+          "agent is mid-turn.",
+        "Do not double-Enter yourself: submit paths settle, press Enter, and retry once."
       ]
     }
   end
@@ -451,7 +452,9 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       recovery_hints: [
         "Use terminal_topology to target the intended pane explicitly.",
         "Prefer terminal_send_agent_command when controlling the dedicated agent pane.",
-        "Use terminal_capture after sending input to inspect output."
+        "Use terminal_capture after sending input to inspect output.",
+        "terminal_send_command confirms the submit (one retry Enter) unless confirm:false.",
+        "On submit_not_confirmed capture the pane before resending."
       ],
       examples: [
         %{
@@ -461,7 +464,11 @@ defmodule Casein.Agents.TerminalTools.Helpers do
             "pane" => "%3",
             "command" => "mix test"
           },
-          structured_content: %{"status" => "sent"}
+          structured_content: %{
+            "status" => "sent",
+            "submitted" => true,
+            "delivery" => "delivered"
+          }
         }
       ]
     }

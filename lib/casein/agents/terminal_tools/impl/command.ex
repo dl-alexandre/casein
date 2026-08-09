@@ -8,6 +8,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
   alias Casein.Inspectors.Diff
   alias Casein.Previews
   alias Casein.Runs.AgentLifecycle
+  alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.SharedWorktreeGuard
   alias Casein.Workspaces
 
@@ -44,7 +45,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
             # Fallback open for silent runtimes (Grok/OpenCode). Primary open is
             # still `:working` via AgentLifecycle.observe_state/1.
             note_lifecycle_send_command(params, session, target, command)
-            {:ok, raw_sent_payload(session, target, implicit?, params)}
+            confirm_raw_sent(session, target, implicit?, params)
 
           {:error, reason} ->
             {:error, reason}
@@ -53,6 +54,26 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
             {:error, String.trim(out)}
         end
       end
+    end
+  end
+
+  # Same contract as the agent-pane send tools: tmux accepting Enter is not the
+  # pane consuming it. Fleet ops hit this path with an explicit worker pane id
+  # (no agent_pair), so without confirmation `status: "sent"` was the double-
+  # Enter folklore. Default confirm:true; pass false for TUI menus / y/n.
+  defp confirm_raw_sent(session, target, implicit?, params) do
+    payload = raw_sent_payload(session, target, implicit?, params)
+    confirm? = Map.get(params, "confirm") != false and Map.get(params, :confirm) != false
+
+    case PaneSubmit.confirm_submit(session, target,
+           confirm: confirm?,
+           enter_already_sent: true
+         ) do
+      {:ok, confirmation} ->
+        {:ok, Map.merge(payload, stringify_confirmation(confirmation))}
+
+      {:error, error} ->
+        {:error, Map.merge(payload, stringify_confirmation(error))}
     end
   end
 

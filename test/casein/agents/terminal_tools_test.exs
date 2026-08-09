@@ -241,7 +241,8 @@ defmodule Casein.Agents.TerminalToolsTest do
     assert {:ok, %{target: "%2", status: "sent"}} =
              TerminalTools.invoke("terminal_send_agent_command", %{
                "workspace_id" => "alpha",
-               "command" => "mix test"
+               "command" => "mix test",
+               "confirm" => false
              })
 
     assert_receive {:fake_tmux_send_command, ^session, "%2", "mix test", _opts}
@@ -496,7 +497,8 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "workspace_id" => "alpha",
                  "session" => session,
                  "pane" => "%1",
-                 "command" => "git reset --hard origin/master"
+                 "command" => "git reset --hard origin/master",
+                 "confirm" => false
                })
 
       assert error.error == :shared_worktree_mutation
@@ -522,7 +524,8 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "workspace_id" => "alpha",
                  "session" => session,
                  "pane" => "%3",
-                 "command" => "git reset --hard origin/master"
+                 "command" => "git reset --hard origin/master",
+                 "confirm" => false
                })
 
       assert_receive {:fake_tmux_send_command, _, "%3", "git reset --hard origin/master", _}
@@ -536,7 +539,8 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "workspace_id" => "alpha",
                  "session" => session,
                  "pane" => "%1",
-                 "command" => "git status --porcelain"
+                 "command" => "git status --porcelain",
+                 "confirm" => false
                })
 
       assert_receive {:fake_tmux_send_command, _, "%1", "git status --porcelain", _}
@@ -553,7 +557,8 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "session" => session,
                  "pane" => "%1",
                  "command" => "git commit -am wip",
-                 "allow_shared_worktree" => true
+                 "allow_shared_worktree" => true,
+                 "confirm" => false
                })
 
       assert_receive {:fake_tmux_send_command, _, "%1", "git commit -am wip", _}
@@ -570,7 +575,8 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "workspace_id" => "alpha",
                  "session" => session,
                  "pane" => "%1",
-                 "command" => "git -C #{own} commit -m x"
+                 "command" => "git -C #{own} commit -m x",
+                 "confirm" => false
                })
 
       assert_receive {:fake_tmux_send_command, _, "%1", _, _}
@@ -584,7 +590,8 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "workspace_id" => "alpha",
                  "session" => session,
                  "pane" => "%3",
-                 "command" => "git -C #{shared} reset --hard"
+                 "command" => "git -C #{shared} reset --hard",
+                 "confirm" => false
                })
 
       assert error.error == :shared_worktree_mutation
@@ -621,7 +628,8 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "workspace_id" => "alpha",
                  "session" => session,
                  "pane" => "%1",
-                 "command" => "git commit -am wip"
+                 "command" => "git commit -am wip",
+                 "confirm" => false
                })
 
       assert_receive {:fake_tmux_send_command, _, "%1", "git commit -am wip", _}
@@ -655,7 +663,8 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "workspace_id" => "alpha",
                  "session" => session,
                  "pane" => "%1",
-                 "command" => "git commit -am wip"
+                 "command" => "git commit -am wip",
+                 "confirm" => false
                })
 
       assert error.error == :shared_worktree_mutation
@@ -820,11 +829,68 @@ defmodule Casein.Agents.TerminalToolsTest do
              TerminalTools.invoke("terminal_paste_agent_text", %{
                "workspace_id" => "alpha",
                "text" => "one\ntwo",
-               "submit" => true
+               "submit" => true,
+               "confirm" => false
              })
 
     assert_receive {:fake_tmux_paste_text, ^session, "%2", "one\ntwo", opts}
-    assert opts[:submit] == true
+    # Enter must not ride with the paste — that is the OpenCode double-Enter race.
+    refute opts[:submit]
+    assert_receive {:fake_tmux_keys, ^session, "%2", "Enter", _}
+  end
+
+  test "terminal_paste_agent_text accepts an explicit pane without agent_pair" do
+    session = Tmux.session_name("alpha", "main")
+
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 10}]
+    })
+
+    # No role-marked agent pane — only an ordinary worker pane id.
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{id: "%9", window_id: "@1", index: 0, active: true, current_command: "opencode"}
+      ]
+    })
+
+    assert {:ok, %{target: "%9", status: "sent"}} =
+             TerminalTools.invoke("terminal_paste_agent_text", %{
+               "workspace_id" => "alpha",
+               "session" => session,
+               "pane" => "%9",
+               "text" => "fleet brief\nline two",
+               "submit" => true,
+               "confirm" => false
+             })
+
+    assert_receive {:fake_tmux_paste_text, ^session, "%9", "fleet brief\nline two", opts}
+    refute opts[:submit]
+    # PaneSubmit owns Enter after the paste settles.
+    assert_receive {:fake_tmux_keys, ^session, "%9", "Enter", _}
+  end
+
+  test "terminal_paste_agent_text with submit:true does not fold Enter into paste" do
+    session = agent_pair_session!()
+    Casein.Terminals.AgentState.clear()
+
+    assert {:ok, result} =
+             TerminalTools.invoke("terminal_paste_agent_text", %{
+               "workspace_id" => "alpha",
+               "session" => session,
+               "text" => "long fleet brief\nwith\nmany\nlines",
+               "submit" => true,
+               "confirm" => false
+             })
+
+    assert result.status == "sent"
+    assert_receive {:fake_tmux_paste_text, ^session, "%2", text, opts}
+    assert text =~ "long fleet brief"
+    # Race contract: paste-buffer must not carry Enter; PaneSubmit presses it.
+    refute Keyword.get(opts, :submit)
+    assert_receive {:fake_tmux_keys, ^session, "%2", "Enter", _}
   end
 
   test "capture strips ANSI escapes by default" do
@@ -1121,7 +1187,8 @@ defmodule Casein.Agents.TerminalToolsTest do
                TerminalTools.invoke("terminal_send_agent_command", %{
                  "workspace_id" => "alpha",
                  "session" => session,
-                 "command" => "mix test"
+                 "command" => "mix test",
+                 "confirm" => false
                })
 
       entry = Casein.Terminals.AgentState.get(session, "%2")
@@ -1148,12 +1215,38 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "workspace_id" => "alpha",
                  "session" => session,
                  "text" => "run the suite",
-                 "submit" => true
+                 "submit" => true,
+                 "confirm" => false
                })
 
       entry = Casein.Terminals.AgentState.get(session, "%2")
       assert entry.state == :working
       assert entry.source == :dispatch
+    end
+
+    test "terminal_send_command returns submitted fields after confirm" do
+      session = agent_pair_session!()
+      Casein.Terminals.AgentState.clear()
+
+      # Frozen screen → confirm retries once then reports not_confirmed (not a hard error).
+      TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
+        {session, "%2"} => "> idle composer"
+      })
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_send_command", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "pane" => "%2",
+                 "command" => "echo brief"
+               })
+
+      assert result.status == "sent"
+      assert result.submitted == false
+      assert result.delivery == "not_confirmed"
+      assert result.enter_presses == 2
+      # send_command targets the pane id as the tmux session arg when pane is explicit.
+      assert_receive {:fake_tmux_send_command, "%2", "%2", "echo brief", _}
     end
 
     test "rejects an unknown state" do

@@ -171,8 +171,11 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert text =~ "/grok-agent-capabilities"
     assert text =~ "CASEIN_GROK_BUNDLE_DIR"
     assert text =~ "CASEIN_GROK_SANDBOX_PROFILE"
+    # The bwrap base is deliberately unconditional — see
+    # Casein.Scripts.GrokLockedMcpNoticeTest. The write unlock gates the MCP
+    # grant only, so "read-only" must not reappear as a sandbox base here.
     assert text =~ ~S(sandbox_base="strict")
-    assert text =~ ~S(sandbox_base="read-only")
+    refute text =~ ~S(sandbox_base="read-only")
     assert text =~ ~S|capability_file="$(dirname "$socket")/capability"|
     assert text =~ ~S(.launch-${grok_leader_id}.flock)
     assert text =~ ~S(flock -w 15 "$grok_launch_fd")
