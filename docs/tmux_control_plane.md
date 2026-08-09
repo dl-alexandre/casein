@@ -90,6 +90,13 @@ instead. Because tmux reads `-f` only when it *starts* a server, config is
 per-server, not per-client: a different config means a different `-L` label.
 To attach from a shell: `tmux -L casein attach`.
 
+Remote hosts use the same labels. Bootstrap with
+`bash scripts/bootstrap-remote-tmux.sh` (local) or
+`bash scripts/bootstrap-remote-tmux.sh --host user@box` so
+`~/.casein/tmux/casein.conf` exists and `tmux -L casein …` answers. See
+`docs/subsystems/terminals.md` ("Server isolation & config", remote hosts
+bullet) for dual-access and non-goals.
+
 See `docs/subsystems/terminals.md` ("Server isolation & config") for the full
 table and the operator cutover note (changing a label points Casein at a fresh,
 empty server; existing sessions on the old server become invisible).

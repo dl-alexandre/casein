@@ -124,3 +124,15 @@ future investigation, check these:
   template + agents restarting themselves).
 - More history than the archive cap (raise
   `:tmux_scrollback_archive_bytes` if needed).
+
+## Remote labeled server bootstrap (#556)
+
+Operator labels on a remote (`casein` / `casein_dev` / `casein_test`) are
+prepared by `scripts/bootstrap-remote-tmux.sh`. That tool only starts a labeled
+server when `tmux -L <label> …` reports it down, always from `$HOME`/`/tmp`
+(never a disposable worktree cwd), and never touches the default server or
+suite sockets. It does **not** install a systemd unit on the remote — systemd
+cannot adopt an already-running tmux server, and crash forensics on orphaned
+servers are effectively unavailable (see ground rules above). Compose with the
+test-socket reaper rather than inventing a second inventory.
+

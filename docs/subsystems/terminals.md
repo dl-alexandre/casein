@@ -230,6 +230,20 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
     to Casein's sessions from a shell: `tmux -L casein attach` (or `casein_dev`
     / `casein_test`). The `-f` on such an attach is ignored — the server is
     already running with its own conf.
+  - **Remote hosts (issue #556).** The same labels are reused on every remote
+    (`casein` / `casein_dev` / `casein_test`). `spawn_spec({:remote, …})` always
+    embeds `-L <label> -f ~/.casein/tmux/casein.conf` so Casein sessions never
+    land on the remote's default server. Bootstrap a fresh remote with
+    `bash scripts/bootstrap-remote-tmux.sh` (or `--host user@box`): ensures
+    tmux, writes `~/.casein/tmux/casein.conf`, and starts the labeled server
+    from `$HOME` only when it is down. Dual access after bootstrap: Casein UI
+    drives the labeled server; plain SSH `tmux -L casein list-sessions` /
+    `attach` sees the same sessions; bare `tmux` stays untouched. Mini control
+    agent + prefer-agent control-plane path are follow-ups — not this slice.
+    Ground rules on multi-tenant boxes: exact `-L` only (never bare `tmux`),
+    never `pkill -f`, never restart a live labeled server from a deleted
+    worktree cwd. Suite sockets (`casein_test_<pid>`) stay with
+    `scripts/casein-test-tmux-socket-reaper.sh` (#717/#780).
   - **Operator cutover ⚠️.** Introducing or changing a label points Casein at a
     *fresh, empty* server. Sessions on the previously-used server (e.g. the
     default server before this change) stay alive but become invisible to

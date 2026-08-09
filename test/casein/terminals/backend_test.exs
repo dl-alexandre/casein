@@ -54,17 +54,31 @@ defmodule Casein.Terminals.BackendTest do
     assert command =~ "ssh -tt"
     assert command =~ "dev@example.test"
     # Always isolated on the labeled server (issue #556); label comes from env config.
-    assert command =~ ~r/tmux(?: -L \S+)? new-session -A -s session-1/
+    assert command =~ ~r/tmux(?: -L \S+)?(?: -f \S+)? new-session -A -s session-1/
   end
 
   test "remote spawn_spec uses the configured labeled tmux server (-L)" do
     previous = Application.get_env(:casein, :tmux_server_label)
+    previous_conf = Application.get_env(:casein, :tmux_remote_config_file)
+    previous_env = System.get_env("CASEIN_TMUX_REMOTE_CONFIG")
     Application.put_env(:casein, :tmux_server_label, "casein")
+    Application.delete_env(:casein, :tmux_remote_config_file)
+    System.delete_env("CASEIN_TMUX_REMOTE_CONFIG")
 
     on_exit(fn ->
       case previous do
         nil -> Application.delete_env(:casein, :tmux_server_label)
         value -> Application.put_env(:casein, :tmux_server_label, value)
+      end
+
+      case previous_conf do
+        nil -> Application.delete_env(:casein, :tmux_remote_config_file)
+        value -> Application.put_env(:casein, :tmux_remote_config_file, value)
+      end
+
+      case previous_env do
+        nil -> System.delete_env("CASEIN_TMUX_REMOTE_CONFIG")
+        value -> System.put_env("CASEIN_TMUX_REMOTE_CONFIG", value)
       end
     end)
 
@@ -72,8 +86,43 @@ defmodule Casein.Terminals.BackendTest do
              TmuxBackend.spawn_spec({:remote, "box", "/srv/app"}, "casein_ws_main")
 
     command = to_string(command)
-    assert command =~ "tmux -L casein new-session -A -s casein_ws_main"
+
+    assert command =~
+             "tmux -L casein -f ~/.casein/tmux/casein.conf new-session -A -s casein_ws_main"
+
     refute command =~ ~r/exec tmux new-session/
+  end
+
+  test "remote spawn_spec honors :tmux_remote_config_file override" do
+    previous = Application.get_env(:casein, :tmux_server_label)
+    previous_conf = Application.get_env(:casein, :tmux_remote_config_file)
+    previous_env = System.get_env("CASEIN_TMUX_REMOTE_CONFIG")
+    Application.put_env(:casein, :tmux_server_label, "casein_dev")
+    Application.put_env(:casein, :tmux_remote_config_file, "/opt/casein/tmux.conf")
+    System.delete_env("CASEIN_TMUX_REMOTE_CONFIG")
+
+    on_exit(fn ->
+      case previous do
+        nil -> Application.delete_env(:casein, :tmux_server_label)
+        value -> Application.put_env(:casein, :tmux_server_label, value)
+      end
+
+      case previous_conf do
+        nil -> Application.delete_env(:casein, :tmux_remote_config_file)
+        value -> Application.put_env(:casein, :tmux_remote_config_file, value)
+      end
+
+      case previous_env do
+        nil -> System.delete_env("CASEIN_TMUX_REMOTE_CONFIG")
+        value -> System.put_env("CASEIN_TMUX_REMOTE_CONFIG", value)
+      end
+    end)
+
+    assert {:ok, %Backend.SpawnSpec{command: command}} =
+             TmuxBackend.spawn_spec({:remote, "box", "/srv/app"}, "sess")
+
+    command = to_string(command)
+    assert command =~ "tmux -L casein_dev -f /opt/casein/tmux.conf new-session -A -s sess"
   end
 
   test "tmux backend rejects unknown location types" do
