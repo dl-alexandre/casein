@@ -55,6 +55,58 @@ Two healthy planes, **not** one machine:
 
 Grok config priority (same name replaces, does not deep-merge): cwd → repo → user (`~/.grok/config.toml`).
 
+## Host MCP hygiene (#718) — operator apply on the laptop
+
+**This is host-local only.** Devbox agents must not rewrite laptop `~/.grok/config.toml`.
+That file is box-global and hot-reloaded: a careless write takes out every Grok on the
+machine. Apply on the **host Mac** after operator greenlight (`apply phase 1 only` /
+`apply mode A full`). Prefer `grok mcp disable` over hand-editing TOML.
+
+### Noise to clear
+
+| Server key | Why it is red | Action |
+|------------|---------------|--------|
+| `agent` | Robinhood trading (`agent.robinhood.com`) — auth required / always failed on host Grok | `disable` (or `remove` if you do not use it) |
+| `devide-*-scratch` (any) | Handshake failures when left enabled | `disable` each name `grok mcp list` shows |
+
+### Keep (multi-workspace intentional)
+
+- `casein-terminal`, `casein-preview`, `casein-artifact` — durable/global URLs, **no**
+  single-workspace scope-down (see Mode A above and #713).
+
+### Apply (host Mac shell — show first, then run)
+
+```bash
+# 1) Inventory (names + enabled only; review before changing anything)
+grok mcp list
+# optional machine-readable:
+grok mcp list --json
+
+# 2) Disable permanent red / scratch noise (repeat per scratch name)
+grok mcp disable agent
+# grok mcp disable devide-<name>-scratch   # only if list shows it enabled
+
+# 3) Doctor should be green for intentional servers only
+grok mcp doctor
+grok mcp doctor casein-terminal
+grok mcp doctor casein-preview
+grok mcp doctor casein-artifact
+
+# 4) Confirm Casein multi-ws still works (durable URLs + explicit workspace_id+session)
+#    e.g. terminal_list_sessions with no pin, then one call with workspace_id+session
+```
+
+If a name is unknown to `disable`, it is already absent — do not invent blocks in TOML.
+Equivalent TOML (only if CLI unavailable): under `[mcp_servers.agent]` set
+`enabled = false` (or delete the table). Never commit host config or tokens.
+
+### Do not
+
+- Scope Casein MCP URLs down to one `workspace_id` query (multi-space is the host default).
+- Run this against the **devbox** `~/.grok` as a substitute for the laptop.
+- Probe or refresh `~/.grok/auth.json` as part of hygiene (auth wipe is a separate failure
+  mode; recover with `~/.grok/bin/grok login --device-auth`, never the Casein shim).
+
 ## Env vars (reference — no secret values)
 
 | Variable | Purpose |
