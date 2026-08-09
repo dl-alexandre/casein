@@ -63,6 +63,9 @@ defmodule Casein.Agents.AgentEvents.EctoAdapter do
 
   @impl true
   def list_open_clarifications(workspace_id, request_type, resolved_type, opts) do
+    # Filter resolved BEFORE newest-per-pane distinct. Doing distinct first
+    # permanently hides older OPEN requests when a newer request on the same
+    # pane was resolved (H28 / mobile inbox trap).
     resolved =
       from(resolution in AgentEvent,
         where:
@@ -77,11 +80,17 @@ defmodule Casein.Agents.AgentEvents.EctoAdapter do
         select: 1
       )
 
-    newest_per_target =
+    open_requests =
       from(request in AgentEvent,
+        as: :request,
         where:
           request.workspace_id == ^workspace_id and
             request.event_type == ^request_type,
+        where: not exists(subquery(resolved))
+      )
+
+    newest_open_per_target =
+      from(request in subquery(open_requests),
         distinct: [
           request.agent_session_id,
           request.tmux_session_id,
@@ -96,9 +105,7 @@ defmodule Casein.Agents.AgentEvents.EctoAdapter do
         ]
       )
 
-    from(request in subquery(newest_per_target),
-      as: :request,
-      where: not exists(subquery(resolved)),
+    from(request in subquery(newest_open_per_target),
       order_by: [desc: request.inserted_at, desc: request.id],
       limit: ^Keyword.fetch!(opts, :limit)
     )

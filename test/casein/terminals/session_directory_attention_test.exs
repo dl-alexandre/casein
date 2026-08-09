@@ -14,13 +14,20 @@ defmodule Casein.Terminals.SessionDirectory.AttentionTest do
       assert Attention.classify(failed) == %{section: :needs_you, reason: :error}
     end
 
-    test "puts errored and stalled agents in Needs You" do
+    test "puts errored and stalled agents in Needs You with distinct reasons" do
       # Neither recovers on its own, and a wedged agent never asks for help — so
-      # without this they fall through to Recent, looking finished.
-      for state <- [:errored, "errored", :stalled, "stalled"] do
+      # without this they fall through to Recent, looking finished. Kinds stay
+      # distinct: report-only :errored vs derived-only :stalled (H28 / AgentState).
+      for state <- [:errored, "errored"] do
         assert Attention.classify(session(agent_state: state)) ==
-                 %{section: :needs_you, reason: :blocked},
-               "expected #{inspect(state)} to need attention"
+                 %{section: :needs_you, reason: :errored},
+               "expected #{inspect(state)} to need attention as :errored"
+      end
+
+      for state <- [:stalled, "stalled"] do
+        assert Attention.classify(session(agent_state: state)) ==
+                 %{section: :needs_you, reason: :stalled},
+               "expected #{inspect(state)} to need attention as :stalled"
       end
     end
 

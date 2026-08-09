@@ -125,10 +125,10 @@ defmodule Casein.Push.Dispatcher do
     attention = AttentionInbox.project(card)
     resume = ResumeCard.project(card)
 
-    # Threshold: Casein.Attention.Delivery.push_eligible?/1 (rank floor 400).
+    # Threshold: Casein.Attention.Delivery.push_eligible?/1 — stricter than
+    # cockpit `session_needs_you?` (H28). Rank floor 400 AND signal in
+    # push_signals/0 (excludes :idle quiet-window and :agent_stalled).
     # Channel prefs / quiet hours / push_allowed still apply outside this gate.
-    # PUSH BEFORE/AFTER (#699): same floor as pre-migration AttentionInbox.notify
-    # (critical/high/normal actionable ≥400). Working/informational still false.
     if Delivery.push_eligible?(attention) do
       %{
         workspace_id: card.workspace_id,

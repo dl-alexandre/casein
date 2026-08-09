@@ -45,16 +45,31 @@ defmodule Casein.Attention.DeliveryTest do
                reason: :idle
              }
     end
+
+    test "errored and stalled reasons stay distinct from blocked" do
+      assert Delivery.session_classification(%{signal: :agent_errored}) == %{
+               section: :needs_you,
+               reason: :errored
+             }
+
+      assert Delivery.session_classification(%{signal: :agent_stalled}) == %{
+               section: :needs_you,
+               reason: :stalled
+             }
+    end
   end
 
   # ---------------------------------------------------------------------------
-  # #699 — one known salience → expected presence/absence on each surface gate
+  # #699 / H28 — one known salience → expected presence/absence on each surface
   # ---------------------------------------------------------------------------
 
-  describe "surface thresholds over shared salience (#699)" do
-    test "inspectable floors are readable constants" do
+  describe "surface thresholds over shared salience (#699 / H28)" do
+    test "inspectable floors and push signal set are readable constants" do
       assert Delivery.notify_rank_floor() == 400
       assert Delivery.session_needs_you_rank_floor() == 400
+      assert MapSet.member?(Delivery.push_signals(), :agent_blocked)
+      refute MapSet.member?(Delivery.push_signals(), :idle)
+      refute MapSet.member?(Delivery.push_signals(), :agent_stalled)
     end
 
     test "blocked agent: push + drawer + needs_you; pin when decision card" do
@@ -79,6 +94,39 @@ defmodule Casein.Attention.DeliveryTest do
       refute Delivery.needs_me_pin?(%{type: :run, status: "open"})
     end
 
+    test "errored agent: cockpit needs_you + push; reason errored not blocked" do
+      salience =
+        Salience.compute(%{
+          agent_states: [:errored],
+          quiet?: false,
+          lifecycle_status: :other
+        })
+
+      assert salience.signal == :agent_errored
+      assert Delivery.session_needs_you?(salience)
+      assert Delivery.push_eligible?(salience)
+      assert Delivery.session_classification(salience).reason == :errored
+      assert Delivery.session_reason_urgency(:errored) == 0
+    end
+
+    test "stalled agent: cockpit needs_you, not a phone interrupt" do
+      salience =
+        Salience.compute(%{
+          agent_states: [:stalled],
+          quiet?: false,
+          lifecycle_status: :other
+        })
+
+      assert salience.signal == :agent_stalled
+      assert Delivery.session_needs_you?(salience)
+      assert Delivery.session_classification(salience).reason == :stalled
+      # notify bit is false → neither drawer create nor push
+      refute Delivery.notify_eligible?(salience)
+      refute Delivery.push_eligible?(salience)
+      refute Delivery.drawer_eligible?(salience)
+      assert Delivery.session_reason_urgency(:stalled) == 1
+    end
+
     test "completed work: notify true (rank 400) on push/drawer and needs_you" do
       salience =
         Salience.compute(%{
@@ -92,11 +140,11 @@ defmodule Casein.Attention.DeliveryTest do
       assert Delivery.drawer_eligible?(salience)
       assert Delivery.session_needs_you?(salience)
       assert Delivery.session_classification(salience).reason == :completed
-      assert Delivery.session_reason_urgency(:completed) == 1
+      assert Delivery.session_reason_urgency(:completed) == 2
       assert Delivery.drawer_severity(salience.priority) == "info"
     end
 
-    test "idle (went quiet): needs_you + notify-eligible at floor; chrome labels" do
+    test "idle (went quiet): cockpit needs_you + chrome; not OS push" do
       salience =
         Salience.compute(%{
           agent_states: [],
@@ -106,10 +154,13 @@ defmodule Casein.Attention.DeliveryTest do
 
       assert salience.signal == :idle
       assert salience.rank == 400
-      assert Delivery.push_eligible?(salience)
+      # Drawer/notify floor still true (operator chrome); push is a separate cut.
+      assert Delivery.notify_eligible?(salience)
+      assert Delivery.drawer_eligible?(salience)
+      refute Delivery.push_eligible?(salience)
       assert Delivery.session_needs_you?(salience)
       assert Delivery.session_classification(salience) == %{section: :needs_you, reason: :idle}
-      assert Delivery.session_reason_urgency(:idle) == 2
+      assert Delivery.session_reason_urgency(:idle) == 3
 
       assert Delivery.chrome_attention_label(1, 1) == "unseen"
       assert Delivery.chrome_attention_label(0, 1) == "inline"
@@ -148,6 +199,28 @@ defmodule Casein.Attention.DeliveryTest do
       refute Delivery.drawer_eligible?(salience)
       refute Delivery.session_needs_you?(salience)
       assert Delivery.session_classification(salience).section == :recent
+    end
+
+    test "push and cockpit are distinct decisions over the same salience" do
+      idle =
+        Salience.compute(%{
+          agent_states: [],
+          quiet?: true,
+          lifecycle_status: :other
+        })
+
+      blocked =
+        Salience.compute(%{
+          agent_states: [:blocked],
+          quiet?: false,
+          lifecycle_status: :other
+        })
+
+      # Same definition; different thresholds.
+      assert Delivery.session_needs_you?(idle)
+      refute Delivery.push_eligible?(idle)
+      assert Delivery.session_needs_you?(blocked)
+      assert Delivery.push_eligible?(blocked)
     end
   end
 end
