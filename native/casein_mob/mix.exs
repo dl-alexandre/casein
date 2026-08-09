@@ -64,7 +64,9 @@ defmodule CaseinMob.MixProject do
        github: "dl-alexandre/mob_notify",
        ref: "997b08c08346de7728a95bec306e96c812b92746",
        override: true},
-      {:mob_themes, "~> 0.1"},
+      # Brand theming is CaseinMob.Theme (in-tree), not Hex mob_themes. The stock
+      # showcase pack boots Obsidian violet and is not our product look — see
+      # CaseinMob.Theme moduledoc and docs/subsystems/mob_dev_workflow.md.
       # Code quality — Credo + ex_slop (catches AI-generated patterns
       # like blanket rescue, narrator docs, redundant Enum chains, etc).
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

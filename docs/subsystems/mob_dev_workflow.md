@@ -80,3 +80,22 @@ ghostty` over the whole repo is empty (mix.exs deps 198-226). casein is the real
 [`ghostty_terminal_contract.md`](ghostty_terminal_contract.md). The "native
 ghostty terminal in a Mob app" idea has no basis in either codebase and is
 dropped.
+
+## Companion theme kit (`CaseinMob.Theme`) — settled
+
+Inventory decision for #740: the companion **does** have a theme kit, and it is
+**not** Hex `mob_themes`.
+
+| Candidate | Verdict |
+|---|---|
+| Hex `mob_themes` (Obsidian / Citrus / Birch / …) | **Dead weight for Casein.** Stock Mob showcase pack. Was declared as `:default_style` and made devices boot Obsidian violet after `Mob.Plugins.boot/1` clobbered the brand theme. Removed from `native/casein_mob` deps and `mob.exs`. |
+| Untracked `native/devide_mob/deps/mob_themes` | Working-tree leftover from the rename; not source of truth (do not copy). |
+| In-tree brand theme (git history: `DevideMob.Theme` @ `a0b3563e`) | **Live.** Restored as `CaseinMob.Theme` — web cockpit palette (OKLCH→sRGB), applied via `use Mob.App, theme: CaseinMob.Theme` and re-asserted in `CaseinMob.App.on_start/0`. Home screen light/dark switcher uses `CaseinMob.Theme.light/0` and `.dark/0`. |
+
+Product screens already speak semantic tokens (`:primary`, `:surface`, …); those
+resolve against the active `Mob.Theme`. Severity/status colours are out of scope
+here — consume web cockpit tokens from #729 / PR #771 when they land, do not
+fork a parallel palette in the companion.
+
+`config :mob, :styles` stays `[]` and `:default_style` stays unset so a stock
+style package cannot silently win at boot again.

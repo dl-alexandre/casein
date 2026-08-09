@@ -4,7 +4,7 @@
 # Regenerated whenever `config :mob, :plugins` changes (the deploy/regen hook).
 %{
   composites: [],
-  default_style: :mob_themes,
+  default_style: nil,
   lifecycle: [],
   nifs: [:mob_camera_nif, :mob_scanner_nif, :mob_location_nif,
    :mob_biometric_nif, :mob_notify_nif],
@@ -27,5 +27,5 @@
     }
   ],
   settings: [],
-  styles: [%{name: :mob_themes, theme: MobThemes.Obsidian}]
+  styles: []
 }

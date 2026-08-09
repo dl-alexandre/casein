@@ -71,6 +71,9 @@ config :mob, :trusted_plugins, %{
   mob_ash: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg="
 }
 
-# Style packages (theming). :default_style selects the theme applied at boot.
-config :mob, :styles, [:mob_themes]
-config :mob, :default_style, :mob_themes
+# Style packages (theming). Leave empty: product brand colours live in
+# CaseinMob.Theme and are applied via `use Mob.App, theme: CaseinMob.Theme`
+# (re-asserted in CaseinMob.App.on_start/0). Do not set :default_style to
+# Hex mob_themes — that pack is Mob's Obsidian showcase, not Casein, and
+# Mob.Plugins.boot/1 would clobber the brand theme after App starts.
+config :mob, :styles, []
