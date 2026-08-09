@@ -38,7 +38,19 @@ foreach ($name in @('Install-Casein.cmd', 'Repair-Casein.cmd', 'Uninstall-Casein
     }
 }
 Assert-Condition (Test-Path -LiteralPath (Join-Path $packageRoot 'windows\Test-CaseinCleanMachine.ps1')) 'Clean-machine acceptance harness is missing'
-Assert-Condition (Test-Path -LiteralPath (Join-Path $packageRoot 'windows\Test-CaseinRebootPersistence.ps1')) 'Reboot-persistence acceptance harness is missing'
+$rebootHarness = Join-Path $packageRoot 'windows\Test-CaseinRebootPersistence.ps1'
+Assert-Condition (Test-Path -LiteralPath $rebootHarness) 'Reboot-persistence acceptance harness is missing'
+& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $rebootHarness -SelfTestContinuation
+if ($LASTEXITCODE -ne 0) { throw "Reboot-persistence continuation self-test exited with $LASTEXITCODE" }
+$rebootSource = Get-Content -Raw -LiteralPath $rebootHarness
+Assert-Condition ($rebootSource.Contains("ValidateSet('prepare', 'continue', 'auto')")) 'Reboot harness is missing two-stage Stage selection'
+Assert-Condition ($rebootSource.Contains('casein_reboot_continuation')) 'Reboot harness is missing continuation marker kind'
+Assert-Condition ($rebootSource.Contains('Host boot stamp is unchanged')) 'Reboot harness must fail closed without a real reboot'
+Assert-Condition ($rebootSource.Contains('real_reboot')) 'Reboot harness must record claims.real_reboot'
+Assert-Condition ($rebootSource.Contains('not reboot or clean-machine evidence')) 'Reboot harness must refuse to overclaim self-test/CI runs'
+$cleanMachineSource = Get-Content -Raw -LiteralPath (Join-Path $packageRoot 'windows\Test-CaseinCleanMachine.ps1')
+Assert-Condition ($cleanMachineSource.Contains('real_reboot = $false')) 'Clean-machine harness must not claim real_reboot'
+Assert-Condition ($cleanMachineSource.Contains('claims')) 'Clean-machine harness must expose explicit claims'
 Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'docs'))) 'Internal docs must not be included in a public desktop package'
 
 $releaseScripts = Get-ChildItem -LiteralPath (Join-Path $packageRoot 'lib') -Directory |

@@ -113,10 +113,13 @@ by uninstall, uninstalls, and removes Casein user data. It refuses unsigned pack
 pre-Windows 11 hosts, non-Windows-PowerShell 5.1 execution, installed WSL
 distributions, or language/developer tools on `PATH`. The JSON evidence
 (`schema` 3) records OS/package/certificate identity, safe path
-kind/length/space prerequisites, and per-phase timestamps plus outcomes, but
-never the actual package root, UNC server/share, tokens, URLs, database
-contents, or private-key material. A repository or unsigned CI run is not a
-substitute for attaching the resulting real-host evidence to #376.
+kind/length/space prerequisites, per-phase timestamps plus outcomes, and explicit
+`claims.real_reboot=false` / `claims.clean_machine_no_tooling` (the latter only
+when `-RequireNoDeveloperTooling` was satisfied), but never the actual package
+root, UNC server/share, tokens, URLs, database contents, or private-key material.
+A repository, unsigned CI, or **Linux/devbox run on a host that already has
+toolchains, certificates, and caches** is not clean-machine evidence and must
+not be attached to #376 as such.
 
 Restart and reboot persistence is a separate two-stage harness that survives a
 real host reboot with an explicit continuation marker (no tokens, package
@@ -143,8 +146,10 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
 
 `-Stage auto` resumes when a valid `awaiting_reboot` marker is present and
 otherwise prepares. The continue stage fails closed if the Windows boot stamp
-is unchanged. Attach the redacted JSON to #376; CI cannot substitute a real
-reboot.
+is unchanged and only then sets `claims.real_reboot=true`. Package smoke runs
+`-SelfTestContinuation` (marker round-trip only); that path never sets
+`real_reboot` and is **not** reboot or clean-machine evidence. Attach only
+redacted real-host JSON with `claims.real_reboot=true` to #376.
 
 The Windows package smoke also writes malformed desktop settings and runtime
 marker files into its disposable LocalAppData root. It verifies that the tray
