@@ -227,6 +227,7 @@ defmodule Scripts.AgentDoctorTest do
 
     for label <- ["terminal", "preview", "artifact"] do
       assert output =~ "#{label} MCP initialize → 200"
+
       assert output =~
                "#{label} MCP server/discover 2026-07-28 → complete (supportedVersions includes 2026-07-28)"
     end
