@@ -18,7 +18,7 @@ tmux implementation details on Windows.
 | Agent MCP pairing | launch script injects scoped MCP | native shell injects scoped MCP and project discovery | Verify every supported agent runtime |
 | Grok | launcher-managed `.mcp.json` | project `.mcp.json`, token inherited by shell | Completed by the desktop agent/MCP slice |
 | Claude, Codex, OpenCode, Cursor | runtime-specific injection | generated configs exist, no desktop launch UX | Add runtime launch actions and conformance tests |
-| Preview control and screenshots | Playwright sidecar and preview MCP | packaged Node/Playwright/Chromium runtime, native preview-server lifecycle, shipped-helper executable smoke, and repair diagnostics | Capture clean-machine agent-driven Preview MCP acceptance evidence |
+| Preview control and screenshots | Playwright sidecar and preview MCP | packaged Node/Playwright/Chromium runtime, native preview-server lifecycle, shipped-helper diagnose + daemon action-path smoke (observe/type/click/press/screenshot/reload/close), and repair diagnostics | Capture clean-machine agent-driven Preview MCP acceptance evidence |
 | Multi-pane sessions and templates | tmux windows/panes | one durable PowerShell session | Native session/window/pane backend |
 | Worktrees and agent lifecycle | launcher, hooks, reaper, audit | backend features exist, desktop workflow incomplete | Native worktree launch, state hooks, recovery UI |
 | Updates | git-driven clean release deploy | explicit tray check; trusted catalog, pinned channel/target, archive hash/size verification, encrypted backup, health-triggered rollback | Production-signed channel and clean-VM evidence |

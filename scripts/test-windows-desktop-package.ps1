@@ -12,6 +12,146 @@ function Assert-Condition {
     if (-not $Condition) { throw $Message }
 }
 
+function Invoke-PackagedPreviewBridgeWalk {
+    param(
+        [Parameter(Mandatory)][string]$NodePath,
+        [Parameter(Mandatory)][string]$HelperPath
+    )
+
+    $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("casein-preview-bridge-" + [guid]::NewGuid().ToString('N'))
+    $fixtureHtml = Join-Path $fixtureRoot 'index.html'
+    New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
+
+    @'
+<!doctype html>
+<html>
+  <head><title>Casein Preview Bridge Fixture</title></head>
+  <body>
+    <h1 id="heading">bridge-ready</h1>
+    <input id="name" type="text" value="" />
+    <button id="go" type="button">Go</button>
+    <p id="status">idle</p>
+    <script>
+      document.getElementById("go").addEventListener("click", function () {
+        var name = document.getElementById("name").value || "";
+        document.getElementById("status").textContent = "clicked:" + name;
+        document.getElementById("heading").textContent = "clicked";
+      });
+    </script>
+  </body>
+</html>
+'@ | Set-Content -LiteralPath $fixtureHtml -Encoding utf8
+
+    $fixtureUri = ([Uri]$fixtureHtml).AbsoluteUri
+    $browserId = 'pw-package-smoke'
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $NodePath
+    $psi.Arguments = "`"$HelperPath`" --daemon"
+    $psi.WorkingDirectory = [IO.Path]::GetDirectoryName($HelperPath)
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $psi
+    Assert-Condition $process.Start() 'Failed to start packaged preview_playwright.mjs daemon'
+
+    try {
+        function Send-BridgeCommand {
+            param([hashtable]$Payload)
+            $json = ($Payload | ConvertTo-Json -Compress -Depth 8)
+            $process.StandardInput.WriteLine($json)
+            $process.StandardInput.Flush()
+            $line = $process.StandardOutput.ReadLine()
+            if ($null -eq $line) {
+                $stderr = $process.StandardError.ReadToEnd()
+                throw "Packaged preview bridge closed without a response. stderr=$stderr"
+            }
+            try {
+                return ($line | ConvertFrom-Json)
+            } catch {
+                throw "Packaged preview bridge returned invalid JSON: $line"
+            }
+        }
+
+        $observe = Send-BridgeCommand @{
+            action = 'observe_live'
+            browser_id = $browserId
+            url = $fixtureUri
+            params = @{}
+            default_headers = @{}
+        }
+        Assert-Condition ($observe.ok -eq $true) "Packaged preview observe_live failed: $($observe | ConvertTo-Json -Compress)"
+        Assert-Condition ($observe.observation.title -eq 'Casein Preview Bridge Fixture') 'Packaged preview observe_live did not report the fixture title'
+
+        $typed = Send-BridgeCommand @{
+            action = 'type'
+            browser_id = $browserId
+            url = $fixtureUri
+            params = @{ selector = '#name'; text = 'casein' }
+            default_headers = @{}
+        }
+        Assert-Condition ($typed.ok -eq $true) "Packaged preview type failed: $($typed | ConvertTo-Json -Compress)"
+
+        $clicked = Send-BridgeCommand @{
+            action = 'click'
+            browser_id = $browserId
+            url = $fixtureUri
+            params = @{ selector = '#go' }
+            default_headers = @{}
+        }
+        Assert-Condition ($clicked.ok -eq $true) "Packaged preview click failed: $($clicked | ConvertTo-Json -Compress)"
+
+        $pressed = Send-BridgeCommand @{
+            action = 'press'
+            browser_id = $browserId
+            url = $fixtureUri
+            params = @{ key = 'Tab' }
+            default_headers = @{}
+        }
+        Assert-Condition ($pressed.ok -eq $true) "Packaged preview press failed: $($pressed | ConvertTo-Json -Compress)"
+
+        $shot = Send-BridgeCommand @{
+            action = 'screenshot'
+            browser_id = $browserId
+            url = $fixtureUri
+            params = @{}
+            default_headers = @{}
+        }
+        Assert-Condition ($shot.ok -eq $true) "Packaged preview screenshot failed: $($shot | ConvertTo-Json -Compress)"
+        Assert-Condition ($shot.artifact -like 'data:image/png;base64,*') 'Packaged preview screenshot did not return a PNG data URL'
+        Assert-Condition ($shot.artifact.Length -gt 64) 'Packaged preview screenshot artifact was empty'
+
+        $reloaded = Send-BridgeCommand @{
+            action = 'reload'
+            browser_id = $browserId
+            url = $fixtureUri
+            params = @{}
+            default_headers = @{}
+        }
+        Assert-Condition ($reloaded.ok -eq $true) "Packaged preview reload failed: $($reloaded | ConvertTo-Json -Compress)"
+        Assert-Condition ($reloaded.observation.title -eq 'Casein Preview Bridge Fixture') 'Packaged preview reload lost the fixture title'
+
+        $closed = Send-BridgeCommand @{
+            action = 'close'
+            browser_id = $browserId
+            params = @{}
+            default_headers = @{}
+        }
+        Assert-Condition ($closed.ok -eq $true) "Packaged preview close failed: $($closed | ConvertTo-Json -Compress)"
+        Assert-Condition ($closed.closed -eq $true) 'Packaged preview close did not report closed=true'
+    } finally {
+        try { $process.StandardInput.Close() } catch { }
+        if (-not $process.HasExited) {
+            try { $process.Kill() } catch { }
+        }
+        $process.Dispose()
+        Remove-Item -LiteralPath $fixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $packageRoot = [IO.Path]::GetFullPath($PackageRoot)
 $metadataPath = Join-Path $packageRoot 'releases\casein.relmeta.json'
 $installer = Join-Path $packageRoot 'windows\Install-Casein.ps1'
@@ -84,6 +224,12 @@ try {
     Assert-Condition ($diagnosticResponse.diagnostic.status -eq 'ready') 'Packaged Chromium diagnostic was not ready'
     Assert-Condition ([bool]$diagnosticResponse.diagnostic.node_version) 'Packaged preview helper did not report its Node version'
     Assert-Condition (Test-Path -LiteralPath $diagnosticResponse.diagnostic.chromium_executable) 'Packaged preview helper resolved a missing Chromium executable'
+
+    # One-shot diagnose only proves Chromium launches. Preview MCP on Windows
+    # drives the long-lived daemon protocol, so package smoke must also walk
+    # observe/type/click/press/screenshot/reload/close through that path with
+    # the release-local Node + Playwright + Chromium payload (no ambient PATH).
+    Invoke-PackagedPreviewBridgeWalk -NodePath $previewNode -HelperPath $previewHelper
 } finally {
     $env:PLAYWRIGHT_BROWSERS_PATH = $originalPlaywrightBrowsersPath
 }
