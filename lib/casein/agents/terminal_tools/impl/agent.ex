@@ -129,20 +129,33 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
     end
   end
 
-  @doc "Paste literal text into the dedicated agent pane."
+  @doc """
+  Paste literal text into an agent pane.
+
+  When `pane` is omitted, requires the role-marked agent_pair pane. When an
+  explicit pane id is supplied, that pane is used without the agent_pair
+  marker — fleet orchestrators targeting a known worker pane.
+
+  On `submit: true`, Enter is **not** folded into the paste. The paste lands
+  first; `PaneSubmit` then settles, presses Enter, and re-presses once if the
+  agent did not consume it. Folding Enter into `paste-buffer` is the OpenCode
+  double-Enter race: the TUI is still draining the buffer when the keystroke
+  arrives and treats it as a newline mid-composer rather than a submit.
+  """
   @spec paste_agent_text(map()) :: {:ok, map()} | {:error, term()}
   def paste_agent_text(params) do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, text} <- string_arg(params, "text"),
-         {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: false) do
+         {:ok, pane} <- paste_target_pane(session, params) do
       submit? = truthy?(Map.get(params, "submit") || Map.get(params, :submit))
-      opts = [target: pane.id, submit: submit?]
 
-      case tmux().paste_text(session, text, opts) do
+      # Always paste without Enter. Submit ownership stays in PaneSubmit so the
+      # settle + retry contract is identical for agent_pair and explicit panes.
+      case tmux().paste_text(session, text, target: pane.id, submit: false) do
         :ok ->
           if submit? do
             report_dispatch_working(params, session, pane.id, text, "terminal_paste_agent_text")
-            confirm_sent(session, pane.id, params, enter_already_sent: true)
+            confirm_sent(session, pane.id, params, enter_already_sent: false)
           else
             {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
           end
@@ -156,33 +169,66 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
     end
   end
 
+  # Explicit pane id wins and skips the agent_pair marker. Without a pane, the
+  # dedicated agent pane is required (marker only — no process-name guessing on
+  # a mutating paste path).
+  defp paste_target_pane(session, params) do
+    case Map.get(params, "pane") || Map.get(params, :pane) do
+      pane_id when is_binary(pane_id) and pane_id != "" ->
+        case Enum.find(tmux().list_session_panes(session), &(&1.id == pane_id)) do
+          nil -> {:error, :invalid_pane}
+          pane -> {:ok, pane}
+        end
+
+      _ ->
+        find_agent_pane(session, params, allow_process_fallback: false)
+    end
+  end
+
   # tmux accepting an Enter is not the agent consuming it. `PaneSubmit` watches
   # the pane afterwards and re-presses once if nothing happened, so the tool's
   # `status: "sent"` stops meaning "we wrote bytes at a pty" and starts meaning
   # "the agent took the input". Callers that genuinely only want the keystroke
   # (a TUI menu, a y/n prompt) pass `confirm: false`.
+  #
+  # When paste deferred Enter (`enter_already_sent: false`) and the caller opts
+  # out of confirmation, still press Enter once — otherwise `submit: true` +
+  # `confirm: false` would leave text sitting unsent in the composer.
   defp confirm_sent(session, pane_id, params, opts) do
     confirm? = Map.get(params, "confirm") != false and Map.get(params, :confirm) != false
     payload = sent_payload(session, pane_id, "terminal_capture_agent", params)
 
-    case PaneSubmit.confirm_submit(session, pane_id, Keyword.put(opts, :confirm, confirm?)) do
-      {:ok, confirmation} ->
-        {:ok, Map.merge(payload, stringify_confirmation(confirmation))}
+    if confirm? do
+      case PaneSubmit.confirm_submit(session, pane_id, Keyword.put(opts, :confirm, true)) do
+        {:ok, confirmation} ->
+          {:ok, Map.merge(payload, stringify_confirmation(confirmation))}
 
-      {:error, error} ->
-        {:error, Map.merge(payload, stringify_confirmation(error))}
+        {:error, error} ->
+          {:error, Map.merge(payload, stringify_confirmation(error))}
+      end
+    else
+      presses = press_enter_if_needed(session, pane_id, opts)
+
+      {:ok,
+       Map.merge(
+         payload,
+         stringify_confirmation(%{
+           submitted: nil,
+           delivery: :skipped,
+           confirmation: :unavailable,
+           enter_presses: presses
+         })
+       )}
     end
   end
 
-  defp stringify_confirmation(result) do
-    Map.new(result, fn
-      {key, value}
-      when key in [:confirmation, :delivery] and is_atom(value) and not is_nil(value) ->
-        {key, Atom.to_string(value)}
-
-      pair ->
-        pair
-    end)
+  defp press_enter_if_needed(session, pane_id, opts) do
+    if Keyword.get(opts, :enter_already_sent, false) do
+      1
+    else
+      _ = tmux().send_keys(session, "Enter", target: pane_id)
+      1
+    end
   end
 
   @doc "Create a durable clarification request for an exact role-marked agent pane."

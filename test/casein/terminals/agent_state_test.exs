@@ -220,8 +220,11 @@ defmodule Casein.Terminals.AgentStateTest do
       :ok = AgentState.report("ws-evict-probe", "casein_evict", "%0", :working, "step")
 
       # Push the tracked-pane count past the cap so %0 (oldest) gets evicted.
+      # nil workspace: filler only needs the in-memory map — a real workspace
+      # would serialize 501 AgentEvents/Activity writes on the GenServer and
+      # time out the barrier get/1 under gate load.
       for i <- 1..501 do
-        :ok = AgentState.report("ws-evict-fill", "casein_evict_fill", "%#{i}", :working, "fill")
+        :ok = AgentState.report(nil, "casein_evict_fill", "%#{i}", :working, "fill")
       end
 
       # Casts are async — a call serializes before asserting eviction. The fill
@@ -258,7 +261,7 @@ defmodule Casein.Terminals.AgentStateTest do
       :ok = AgentState.report("ws-evict-flip", "casein_evict2", "%0", :working, "step")
 
       for i <- 1..501 do
-        :ok = AgentState.report("ws-evict-fill2", "casein_evict_fill2", "%#{i}", :working, "f")
+        :ok = AgentState.report(nil, "casein_evict_fill2", "%#{i}", :working, "f")
       end
 
       assert agent_state_get("casein_evict2", "%0") == nil

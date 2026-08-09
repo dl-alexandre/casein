@@ -273,13 +273,19 @@ defmodule Casein.Terminals.AgentState.Server do
 
   defp put_entry(state, key, entry), do: %{state | entries: Map.put(state.entries, key, entry)}
 
-  defp record_transition(prior_state, entry, tmux_session, pane_id) do
+  # No workspace → no durable timeline. Bulk fillers (and any caller that only
+  # needs the in-memory map) must not serialize hundreds of AgentEvents /
+  # Activity writes on the AgentState GenServer, or a subsequent get/1 times out.
+  defp record_transition(prior_state, %{workspace_id: ws} = entry, tmux_session, pane_id)
+       when is_binary(ws) and ws != "" do
     if prior_state == nil or prior_state != entry.state do
       append_transition(prior_state, entry, tmux_session, pane_id)
     else
       :ok
     end
   end
+
+  defp record_transition(_prior_state, _entry, _tmux_session, _pane_id), do: :ok
 
   defp append_transition(prior_state, entry, tmux_session, pane_id) do
     attrs = %{
