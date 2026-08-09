@@ -392,9 +392,10 @@ a per-pane call.
 
 ## Knowing whether a submit actually landed
 
-`terminal_send_agent_command` and `terminal_paste_agent_text` (with
-`submit: true`) now verify that the agent consumed the Enter instead of
-reporting success as soon as tmux accepted the keystroke. Responses carry:
+`terminal_send_agent_command`, `terminal_send_command`, and
+`terminal_paste_agent_text` (with `submit: true`) verify that the agent consumed
+the Enter instead of reporting success as soon as tmux accepted the keystroke.
+Responses carry `submitted`, `delivery`, `confirmation`, and `enter_presses`:
 
 | `delivery` | Meaning |
 |------------|---------|
@@ -403,10 +404,37 @@ reporting success as soon as tmux accepted the keystroke. Responses carry:
 | `uncertain` | The pane could not be captured, so neither signal was readable. |
 | `skipped` | `confirm: false`, or there was nothing to submit. |
 
-An unconfirmed submit is reported, not raised: the signals are heuristics over a
-screen Casein does not own. Pass `confirm: false` when the keystroke itself is
-the point (answering a TUI menu or a y/n prompt), where no new turn starts and
-the confirmation would always read as unconfirmed.
+### Delivery contract (do not double-Enter yourself)
+
+A single Enter often fails when it is folded into the same `paste-buffer` call
+as a multiline brief: OpenCode (and similar TUIs) are still draining the paste
+when the keystroke arrives, so Enter becomes a newline mid-composer rather than
+a submit. Casein owns that race:
+
+1. Paste text **without** Enter (`paste-buffer` only).
+2. Settle briefly, then press Enter.
+3. If the pane did not move and no runtime hook reported a new turn, press
+   Enter **once more** (max two presses).
+4. Return `delivery` honestly — never claim success from tmux write alone.
+
+Operators and orchestrators should **not** send a second Enter as folklore. Call
+with `submit: true` (paste) or the normal command tools and trust
+`delivery: "delivered"` / `submitted: true`. If you still see
+`not_confirmed`, capture the pane before resending, or use
+`terminal_set_next_prompt` when the agent is mid-turn.
+
+### Explicit pane paste (no agent_pair required)
+
+`terminal_paste_agent_text` accepts an optional `pane` id. When `pane` is set,
+the paste goes to that pane without requiring the agent_pair role marker — the
+fleet path for worker briefs. When `pane` is omitted, the dedicated agent_pair
+pane is still required.
+
+An unconfirmed submit is reported, not raised on the fire-and-forget tools: the
+signals are heuristics over a screen Casein does not own. Pass `confirm: false`
+when the keystroke itself is the point (answering a TUI menu or a y/n prompt),
+where no new turn starts and the confirmation would always read as unconfirmed.
+`terminal_set_next_prompt` remains strict and retries on the next edge.
 
 ## Smoke Test
 

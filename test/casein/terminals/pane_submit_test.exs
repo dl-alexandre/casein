@@ -28,6 +28,19 @@ defmodule Casein.Terminals.PaneSubmitTest do
   defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
   defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 
+  # Stay on `baseline` for `after_reads` capture calls (baseline + polls), then
+  # flip to `changed`. Used to model a TUI that only reacts after a second Enter.
+  defp frozen_then_change(baseline, changed, opts) do
+    after_reads = Keyword.fetch!(opts, :after_reads)
+    key = {__MODULE__, :frozen_reads, System.unique_integer([:positive])}
+
+    fn ->
+      n = Process.get(key, 0) + 1
+      Process.put(key, n)
+      if n > after_reads, do: changed, else: baseline
+    end
+  end
+
   # A capture that yields each frame in turn and then repeats the last one,
   # standing in for a pane redrawing (or refusing to redraw) after Enter. State
   # lives in the process dictionary of whichever process runs the confirm loop —
@@ -208,6 +221,28 @@ defmodule Casein.Terminals.PaneSubmitTest do
       # Enter is this module's job, never the paste's: a submit folded into the
       # paste is exactly the race being defended against.
       refute Keyword.get(opts, :submit)
+    end
+
+    test "OpenCode-style race: Enter during drain needs a second press, then delivers" do
+      # Freeze through baseline + first-attempt polls, then redraw on attempt 2.
+      # With settle 0 / timeout 80 / poll 10 ≈ 1 baseline + ~8 polls before retry.
+      capture = frozen_then_change("> long brief", "⏺ working", after_reads: 12)
+
+      assert {:ok, result} =
+               PaneSubmit.deliver(@session, @pane, "long fleet brief\nline 2\nline 3",
+                 capture: capture,
+                 settle_ms: 0,
+                 attempt_timeout_ms: 80,
+                 poll_ms: 10
+               )
+
+      assert result.submitted == true
+      assert result.delivery == :delivered
+      assert result.enter_presses == 2
+      assert_received {:fake_tmux_paste_text, @session, @pane, _text, opts}
+      refute Keyword.get(opts, :submit)
+      assert_received {:fake_tmux_keys, @session, @pane, "Enter", _}
+      assert_received {:fake_tmux_keys, @session, @pane, "Enter", _}
     end
 
     test "an empty prompt sends nothing and never presses Enter" do

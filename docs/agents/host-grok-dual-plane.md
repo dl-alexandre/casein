@@ -23,7 +23,7 @@ Two healthy planes, **not** one machine:
 1. **Dual-plane honesty** — Mac/host shell ≠ remote Casein panes. State which plane you are on when paths matter.
 2. **Remote-path rule** — Never `cd` remote worktree paths (e.g. `/data/casein-agent-worktrees/...`) on the host and never assume a local git root is the pane’s worktree without checking topology `worktree_path` / `current_path`.
 3. **Multi-workspace ops (intentional default for host Grok)** — Keep fleet-wide visibility when this process is an ops console. For every non-trivial terminal/preview/artifact call, pass **`workspace_id` + `session`** (and `pane` when mutating). **Never** rely on “recommended session” alone.
-4. **Agent mutate** — Use `terminal_send_agent_*` / paste-to-agent only when `safe_to_mutate` is true **and** an `agent_pair` (or equivalent role marker) is present. Host-home Grok typically has neither; use explicit `session` + `pane` tools instead.
+4. **Agent mutate** — Use `terminal_send_agent_*` only when `safe_to_mutate` is true **and** an `agent_pair` (or equivalent role marker) is present. Host-home Grok typically has neither; use explicit `session` + `pane` tools instead (`terminal_send_command`, or `terminal_paste_agent_text` with `pane` + `submit: true`). Do **not** double-Enter — paste/submit paths settle, press Enter, and retry once; trust `delivery` / `submitted` on the response.
 5. **Fleet nuance** — Bare OpenCode/Claude worker windows without `agent_pair` are expected for many fleet spawns. That is hygiene, not proof MCP is broken.
 6. **Host config apply gate** — Changes to host `~/.grok/config.toml` (MCP enable/disable, token wiring) only after human greenlight (`apply phase 1 only` / `apply mode A full`). No silent token rewrites in chat or git.
 

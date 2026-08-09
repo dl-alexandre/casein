@@ -4,15 +4,16 @@ defmodule Casein.Agents.TerminalTools.SendCommand do
   use Jido.Action,
     name: "terminal_send_command",
     description:
-      "Type a shell command into a pane and press Enter. Target the agent pane from terminal_topology — do not use the operator's focused pane. Read the result afterward with terminal_capture. A git command that would write a worktree another pane is also working in is refused (shared_worktree_mutation); pass allow_shared_worktree when the sharing is deliberate.",
+      "Type a shell command into a pane and press Enter. Target the agent pane from terminal_topology — do not use the operator's focused pane. Confirms the submit landed (one retry Enter) unless confirm:false. Read the result afterward with terminal_capture. A git command that would write a worktree another pane is also working in is refused (shared_worktree_mutation); pass allow_shared_worktree when the sharing is deliberate.",
     category: "terminal",
     tags: ["terminal"],
-    vsn: "1.0.0",
+    vsn: "1.1.0",
     schema: [
       workspace_id: [type: :string],
       session: [type: :string, required: true],
       command: [type: :string, required: true],
       pane: [type: :string],
+      confirm: [type: :boolean],
       allow_shared_worktree: [type: :boolean]
     ]
 
@@ -29,6 +30,7 @@ defmodule Casein.Agents.TerminalTools.SendCommand do
           session: Helpers.session_param(),
           command: Helpers.command_param(),
           pane: Helpers.pane_param(),
+          confirm: Helpers.confirm_param(),
           allow_shared_worktree: Helpers.allow_shared_worktree_param()
         }),
         ["session", "command"]
