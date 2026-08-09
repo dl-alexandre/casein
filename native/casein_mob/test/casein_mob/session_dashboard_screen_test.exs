@@ -25,6 +25,8 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     assert_renderable(view)
     assert text(view) =~ "Attention Inbox"
     assert find(view, :button, text: "+ Pair").props.fill_width == false
+    assert find(view, :button, text: "Inbox").props.id == "open_inbox"
+    assert find(view, :button, text: "Inbox").props.fill_width == false
     assert find(view, :button, text: "Terminal").props.id == "open_terminal"
     assert find(view, :button, text: "Terminal").props.fill_width == false
     assert find(view, :button, text: "...").props.fill_width == false
@@ -49,6 +51,15 @@ defmodule CaseinMob.SessionDashboardScreenTest do
     view = mount_screen(SessionDashboardScreen)
 
     refute find(view, :button, text: "Terminal")
+  end
+
+  test "header Inbox opens the dedicated inbox screen" do
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:tap, :open_inbox})
+
+    assert navigated_to(view) == CaseinMob.InboxScreen
   end
 
   test "direct terminal action stays put and explains when no workspace is selected" do
