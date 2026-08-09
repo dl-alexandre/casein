@@ -95,7 +95,10 @@ bundled `.app` only — the registration binds to the bundle's path) · Quit
 
 ## Remaining distribution work
 
-- Real signing identity + notarization (`bundle.sh` signs ad-hoc)
+- Production Developer ID + notarization on a release Mac (operator runbook:
+  `docs/desktop/macos_release_evidence.md`, issue #382). Local/CI still signs
+  ad-hoc (`CASEIN_CODESIGN_IDENTITY=-`); set a real identity and
+  `CASEIN_REQUIRE_DEVELOPER_ID=1` for release evidence.
 - Updater (Sparkle or Tauri parity)
 - Auto-restart on sustained `unhealthy` (deliberately manual-only for now:
   a slow-but-alive node must not be restart-looped; crash auto-restart

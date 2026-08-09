@@ -1,8 +1,36 @@
 #!/usr/bin/env bash
 # Static validation for the self-contained macOS desktop package.
+#
+# Flags:
+#   --require-developer-id   fail unless signed by Developer ID Application
+#   --require-notarized      fail unless Gatekeeper + stapler accept the app
+#   (default)               ad-hoc/CI smoke: deep codesign + launch/auth checks
 set -euo pipefail
 
-APP="${1:-native/casein_menubar/build/Casein MenuBar.app}"
+require_developer_id=0
+require_notarized=0
+app_arg=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --require-developer-id) require_developer_id=1; shift ;;
+    --require-notarized) require_notarized=1; shift ;;
+    -*)
+      echo "unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      if [[ -n "$app_arg" ]]; then
+        echo "unexpected argument: $1" >&2
+        exit 1
+      fi
+      app_arg="$1"
+      shift
+      ;;
+  esac
+done
+
+APP="${app_arg:-native/casein_menubar/build/Casein MenuBar.app}"
 APP="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
 RELEASE="$APP/Contents/Resources/release"
 
@@ -22,6 +50,18 @@ esac
 
 plutil -lint "$APP/Contents/Info.plist"
 codesign --verify --deep --strict "$APP"
+
+verify_flags=()
+if [[ "$require_developer_id" -eq 1 ]]; then
+  verify_flags+=(--require-developer-id --require-hardened-runtime)
+fi
+if [[ "$require_notarized" -eq 1 ]]; then
+  verify_flags+=(--require-notarized)
+fi
+if [[ ${#verify_flags[@]} -gt 0 ]]; then
+  bash scripts/verify-macos-desktop-release.sh "${verify_flags[@]}" "$APP"
+fi
+
 env -u TMUX "$tmux_bin" -V | rg -x 'tmux 3\.7b'
 resolver_secret="package-smoke-secret-package-smoke-secret-package-smoke-secret-1234"
 resolved_tmux="$(DATABASE_PATH="${TMPDIR:-/tmp}/casein-resolver-$$.sqlite3" \

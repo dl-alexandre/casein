@@ -49,19 +49,31 @@ ditto "$tmux_runtime/bin" "$app_priv/bin"
 ditto "$tmux_runtime/lib" "$app_priv/lib"
 ditto "$tmux_runtime/licenses" "$app_priv/licenses"
 
+# Production release evidence (issue #382) requires a Developer ID Application
+# identity. Local/CI smoke keeps the ad-hoc default "-".
+codesign_identity="${CASEIN_CODESIGN_IDENTITY:--}"
+if [[ "${CASEIN_REQUIRE_DEVELOPER_ID:-0}" == "1" ]]; then
+  if [[ "$codesign_identity" == "-" || -z "$codesign_identity" ]]; then
+    echo "CASEIN_REQUIRE_DEVELOPER_ID=1 needs CASEIN_CODESIGN_IDENTITY='Developer ID Application: …'" >&2
+    exit 1
+  fi
+fi
+
 (
   cd native/casein_menubar
   CASEIN_RELEASE_ROOT="$release_root" \
   CASEIN_BUNDLE_VERSION="$version" \
   CASEIN_BUILD_NUMBER="$build_number" \
-  CASEIN_CODESIGN_IDENTITY="${CASEIN_CODESIGN_IDENTITY:--}" \
+  CASEIN_CODESIGN_IDENTITY="$codesign_identity" \
+  CASEIN_CODESIGN_ENTITLEMENTS="${CASEIN_CODESIGN_ENTITLEMENTS:-Resources/Casein.entitlements}" \
     ./scripts/bundle.sh release
 )
 
 mkdir -p "$artifact_dir"
 artifact_base="Casein-${version}-macos-${architecture}"
 archive="$artifact_dir/$artifact_base.zip"
-rm -f "$archive" "$archive.sha256" "$artifact_dir/$artifact_base.manifest.plist"
+rm -f "$archive" "$archive.sha256" "$artifact_dir/$artifact_base.manifest.plist" \
+  "$artifact_dir/$artifact_base.evidence.json"
 ditto -c -k --sequesterRsrc --keepParent \
   "native/casein_menubar/build/Casein MenuBar.app" "$archive"
 shasum -a 256 "$archive" > "$archive.sha256"
@@ -74,5 +86,15 @@ plutil -insert revision -string "$revision" "$manifest"
 plutil -insert architecture -string "$architecture" "$manifest"
 plutil -insert tmux -string "3.7b" "$manifest"
 plutil -insert sha256 -string "$(awk '{print $1}' "$archive.sha256")" "$manifest"
+plutil -insert codesign_identity -string "$codesign_identity" "$manifest"
+
+# Durable evidence document lives beside the zip so release operators are not
+# blocked when GitHub Actions artifact storage quota rejects upload-artifact.
+if [[ "${CASEIN_SKIP_EVIDENCE_COLLECT:-0}" != "1" ]]; then
+  bash scripts/collect-macos-desktop-evidence.sh \
+    --app "native/casein_menubar/build/Casein MenuBar.app" \
+    --archive "$archive" \
+    --out "$artifact_dir/$artifact_base.evidence.json"
+fi
 
 echo "Packaged $archive"

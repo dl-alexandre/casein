@@ -48,14 +48,41 @@ fi
 
 # Sign every nested Mach-O before sealing the outer app. OTP releases include
 # ERTS executables, port programs, NIFs, and the bundled tmux runtime.
+#
+# Ad-hoc identity "-" is the local/CI smoke default. A real Developer ID
+# Application identity enables hardened runtime + entitlements required for
+# notarization (issue #382). Never commit a certificate or Team credential.
+identity="${CASEIN_CODESIGN_IDENTITY:--}"
+entitlements="${CASEIN_CODESIGN_ENTITLEMENTS:-Resources/Casein.entitlements}"
+sign_args=(--force --sign "$identity")
+if [[ "$identity" != "-" ]]; then
+  if [[ ! -f "$entitlements" ]]; then
+    echo "Developer ID signing requires entitlements at $entitlements" >&2
+    exit 1
+  fi
+  sign_args+=(--options runtime --timestamp --entitlements "$entitlements")
+fi
+
 while IFS= read -r -d '' candidate; do
   if file "$candidate" | rg -q 'Mach-O'; then
-    codesign --force --sign "${CASEIN_CODESIGN_IDENTITY:--}" "$candidate"
+    codesign "${sign_args[@]}" "$candidate"
   fi
 done < <(find "$APP/Contents" -type f -print0)
 
-codesign --force --sign "${CASEIN_CODESIGN_IDENTITY:--}" "$APP"
+codesign "${sign_args[@]}" "$APP"
 codesign --verify --deep --strict "$APP"
 
-echo "Built $APP"
+if [[ "$identity" != "-" ]]; then
+  detail="$(codesign -dvvv "$APP" 2>&1 || true)"
+  if ! printf '%s\n' "$detail" | grep -q 'Authority=Developer ID Application:'; then
+    echo "CASEIN_CODESIGN_IDENTITY did not produce a Developer ID Application signature" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$detail" | grep -q '(runtime)'; then
+    echo "Developer ID signature is missing the hardened-runtime flag" >&2
+    exit 1
+  fi
+fi
+
+echo "Built $APP (identity=${identity})"
 echo "Run with: open \"$APP\""
