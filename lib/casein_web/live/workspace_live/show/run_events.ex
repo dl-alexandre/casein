@@ -78,36 +78,56 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunEvents do
 
   def refresh_run_ledger(socket, selected_run_id \\ nil) do
     ws_id = socket.assigns.workspace.id
-    summaries = Ledger.recent_runs_for(ws_id, 20)
 
-    selected_run_id =
-      selected_run_id || socket.assigns[:selected_run_id] || first_run_id(summaries)
+    try do
+      summaries = Ledger.recent_runs_for(ws_id, 20)
 
-    timeline =
-      case selected_run_id do
-        id when is_binary(id) -> Ledger.timeline_for(ws_id, id)
-        _ -> []
-      end
+      selected_run_id =
+        selected_run_id || socket.assigns[:selected_run_id] || first_run_id(summaries)
 
-    summary =
-      case selected_run_id do
-        id when is_binary(id) -> Enum.find(summaries, &(&1.id == id))
-        _ -> nil
-      end
+      timeline =
+        case selected_run_id do
+          id when is_binary(id) -> Ledger.timeline_for(ws_id, id)
+          _ -> []
+        end
 
-    failure_reason = Status.failure_reason(summary, timeline)
+      summary =
+        case selected_run_id do
+          id when is_binary(id) -> Enum.find(summaries, &(&1.id == id))
+          _ -> nil
+        end
 
-    socket
-    |> assign(:run_ledger, summaries)
-    |> assign(:selected_run_id, selected_run_id)
-    |> assign(:selected_run_summary, summary)
-    |> assign(:selected_run_timeline, timeline)
-    |> assign(:selected_run_artifacts, WorkspaceStatus.run_artifacts(summary || %{}))
-    |> assign(:selected_run_failure_reason, failure_reason)
-    |> assign(
-      :selected_run_can_retry,
-      Status.retryable?(summary, &decision_for_command(socket, &1))
-    )
+      failure_reason = Status.failure_reason(summary, timeline)
+
+      socket
+      |> assign(:run_ledger, summaries)
+      |> assign(:run_ledger_loaded?, true)
+      |> assign(:run_ledger_error, nil)
+      |> assign(:selected_run_id, selected_run_id)
+      |> assign(:selected_run_summary, summary)
+      |> assign(:selected_run_timeline, timeline)
+      |> assign(:selected_run_artifacts, WorkspaceStatus.run_artifacts(summary || %{}))
+      |> assign(:selected_run_failure_reason, failure_reason)
+      |> assign(
+        :selected_run_can_retry,
+        Status.retryable?(summary, &decision_for_command(socket, &1))
+      )
+    rescue
+      error ->
+        socket
+        |> assign(:run_ledger, [])
+        |> assign(:run_ledger_loaded?, true)
+        |> assign(
+          :run_ledger_error,
+          "Could not load the run ledger: #{Exception.message(error)}"
+        )
+        |> assign(:selected_run_id, nil)
+        |> assign(:selected_run_summary, nil)
+        |> assign(:selected_run_timeline, [])
+        |> assign(:selected_run_artifacts, [])
+        |> assign(:selected_run_failure_reason, nil)
+        |> assign(:selected_run_can_retry, false)
+    end
   end
 
   # Batch command runs were retired with the delegated-execution stack; there

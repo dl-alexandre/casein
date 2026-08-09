@@ -498,18 +498,23 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
     |> assign_sessions_sidebar_tree()
   end
 
-  # A failed read must still resolve the expanded row to a definite empty state
-  # ("No live sessions") — recording an empty list clears `loading?` so the row
-  # never spins forever on a workspace whose SessionDirectory read errored. Set
-  # the map directly (not via assign_sidebar_ws_sessions, which would trigger a
-  # second SessionDirectory read that could fail the same way).
-  def handle_async_sessions(socket, workspace_id, _error) when is_binary(workspace_id) do
+  # A failed read must resolve to a definite *error* state — never to an empty
+  # list that renders as "No live sessions". Empty means the load succeeded and
+  # there are none; error means we could not observe. Set the map directly (not
+  # via assign_sidebar_ws_sessions, which would trigger a second SessionDirectory
+  # read that could fail the same way).
+  def handle_async_sessions(socket, workspace_id, {:error, reason})
+      when is_binary(workspace_id) do
     socket
     |> assign(
       :sidebar_ws_sessions,
-      Map.put(socket.assigns.sidebar_ws_sessions, workspace_id, [])
+      Map.put(socket.assigns.sidebar_ws_sessions, workspace_id, {:error, reason})
     )
     |> assign_sessions_sidebar_tree()
+  end
+
+  def handle_async_sessions(socket, workspace_id, _error) when is_binary(workspace_id) do
+    handle_async_sessions(socket, workspace_id, {:error, :failed})
   end
 
   def handle_async_sessions(socket, _workspace_id, _error) do

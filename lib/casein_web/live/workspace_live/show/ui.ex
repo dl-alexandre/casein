@@ -131,6 +131,110 @@ defmodule CaseinWeb.WorkspaceLive.Show.UI do
 
   def redundant_workspace_path?(_, _), do: false
 
+  @doc """
+  Deliberate empty / degraded / error panel copy.
+
+  Three states must never share markup:
+
+  * `:empty` — the load succeeded and there is nothing here
+  * `:degraded` — a partial or stale view is on screen; action may recover it
+  * `:error` — the load failed; name the failure and the fix when one exists
+
+  Not-yet-loaded is a fourth fact and is handled by the caller (hide the
+  shell, or leave the panel blank). This component deliberately does **not**
+  render a loading branch — loading affordances are owned elsewhere.
+
+  Mirrors `Casein.Terminals.AgentLiveness`: `{:error, reason}` stays distinct
+  from an empty/quiet observation so "could not observe" never reads as quiet.
+  """
+  attr :id, :string, default: nil
+  attr :kind, :atom, required: true, values: [:empty, :degraded, :error]
+  attr :title, :string, default: nil
+  attr :message, :string, required: true
+  attr :action_label, :string, default: nil
+  attr :action_event, :string, default: nil
+  attr :action_values, :map, default: %{}
+  attr :class, :string, default: nil
+  attr :rest, :global
+
+  slot :action, doc: "optional custom action control (overrides action_label/event)"
+
+  def panel_state(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      role={if(@kind == :error, do: "alert", else: "status")}
+      data-panel-state={Atom.to_string(@kind)}
+      class={[
+        "rounded border px-3 py-4 text-xs",
+        panel_state_class(@kind),
+        @class
+      ]}
+      {@rest}
+    >
+      <p :if={@title} class="font-medium">{@title}</p>
+      <p class={[@title && "mt-1", "leading-5"]}>{@message}</p>
+      <div :if={@action != [] or actionable?(@action_label, @action_event)} class="mt-3">
+        <%= if @action != [] do %>
+          {render_slot(@action)}
+        <% else %>
+          <button
+            type="button"
+            phx-click={@action_event}
+            {action_value_attrs(@action_values)}
+            class={[
+              "rounded border px-2.5 py-1 text-[11px] font-medium transition",
+              panel_state_action_class(@kind)
+            ]}
+          >
+            {@action_label}
+          </button>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  defp panel_state_class(:empty),
+    do: "border-base-300/80 bg-base-200/30 text-base-content/60"
+
+  defp panel_state_class(:degraded),
+    do: "border-status-warning-border bg-status-warning-soft text-status-warning-fg"
+
+  defp panel_state_class(:error),
+    do: "border-status-danger-border bg-status-danger-soft text-status-danger-fg"
+
+  defp panel_state_action_class(:empty),
+    do: "border-base-300 bg-base-100 text-base-content/80 hover:bg-base-200"
+
+  defp panel_state_action_class(:degraded),
+    do:
+      "border-status-warning-border bg-base-100 text-status-warning-fg hover:bg-status-warning-soft"
+
+  defp panel_state_action_class(:error),
+    do: "border-status-danger-border bg-base-100 text-status-danger-fg hover:bg-status-danger-soft"
+
+  defp actionable?(label, event)
+       when is_binary(label) and label != "" and is_binary(event) and event != "",
+       do: true
+
+  defp actionable?(_label, _event), do: false
+
+  defp action_value_attrs(values) when is_map(values) do
+    for {key, value} <- values, reduce: %{} do
+      acc ->
+        attr =
+          key
+          |> to_string()
+          |> String.replace("_", "-")
+          |> then(&("phx-value-" <> &1))
+
+        Map.put(acc, attr, value)
+    end
+  end
+
+  defp action_value_attrs(_), do: %{}
+
   attr :key, :string, required: true
   attr :class, :string, default: nil
   attr :title, :string, default: nil

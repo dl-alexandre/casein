@@ -283,6 +283,27 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert other.sessions == []
       # Done loading → the row renders "No live sessions", not a perpetual gap.
       refute other.loading?
+      assert other.sessions_error == nil
+    end
+
+    test "an expanded workspace whose async read failed is error, not empty" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []},
+        %{id: "ws-b", name: "beta", session_count: 3, live?: true, sessions: []}
+      ]
+
+      tree =
+        SessionBarVM.workspace_session_tree(summaries, "ws-a",
+          expanded_workspaces: MapSet.new(["ws-b"]),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{"ws-b" => {:error, :timeout}}
+        )
+
+      other = Enum.find(tree, &(&1.workspace_id == "ws-b"))
+      assert other.sessions == []
+      refute other.loading?
+      assert is_binary(other.sessions_error)
+      assert other.sessions_error =~ "Could not load sessions"
     end
 
     test "tags the current workspace (and scratch) :this and the rest :other" do

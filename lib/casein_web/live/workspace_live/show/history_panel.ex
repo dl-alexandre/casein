@@ -11,6 +11,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
 
   use CaseinWeb, :html
 
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [panel_state: 1]
+
   alias CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity
 
   @limit_options [
@@ -75,15 +77,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
         </button>
       </div>
 
-      <div
-        :if={@history_error}
-        id="history-error"
-        class="border-b border-error/20 bg-error/10 px-3 py-2 text-xs text-error"
-      >
-        {@history_error}
-      </div>
-
       <div class="min-h-0 flex-1 overflow-auto p-3">
+        <.panel_state
+          :if={@history_error}
+          id="history-error"
+          kind={:error}
+          title="Could not load history"
+          message={@history_error}
+          action_label="Retry"
+          action_event="history:refresh"
+          class="mb-3"
+        />
         <StructuredAgentActivity.structured_agent_activity
           loaded?={@agent_activity_loaded?}
           threads={@agent_threads}
@@ -178,24 +182,25 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
         </.form>
 
         <section id="history-results" class="mt-3 space-y-3">
-          <%= if not @history_loaded? do %>
-            <div
-              id="history-loading"
-              class="async-wait rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500"
-              role="status"
-              aria-live="polite"
-            >
-              Loading previous sessions…
-            </div>
-          <% else %>
-            <%= if @history_results == [] do %>
+          <%= cond do %>
+            <% not @history_loaded? -> %>
               <div
-                id="history-empty"
-                class="rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500"
+                id="history-loading"
+                class="async-wait rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500"
+                role="status"
+                aria-live="polite"
               >
-                No matching session context.
+                Loading previous sessions…
               </div>
-            <% else %>
+            <% @history_error -> %>
+              <div id="history-error-results-suppressed" class="hidden" aria-hidden="true"></div>
+            <% @history_results == [] -> %>
+              <.panel_state
+                id="history-empty"
+                kind={:empty}
+                message="No matching session context."
+              />
+            <% true -> %>
               <ol class="space-y-3">
                 <%= for result <- @history_results do %>
                   <li
@@ -258,7 +263,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
                   </li>
                 <% end %>
               </ol>
-            <% end %>
           <% end %>
         </section>
       </div>

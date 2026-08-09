@@ -45,14 +45,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawer do
         </header>
 
         <div class="min-h-0 flex-1 space-y-2 overflow-auto px-3 py-3">
-          <p
+          <CaseinWeb.WorkspaceLive.Show.UI.panel_state
             :if={@entries == []}
             id="clipboard-empty"
-            class="px-1 py-6 text-center text-xs text-zinc-500"
-          >
-            Nothing copied yet. When an agent copies something it lands here, so you can pick it up
-            even if the copy prompt was missed.
-          </p>
+            kind={:empty}
+            message="Nothing copied yet. When an agent copies something it lands here, so you can pick it up even if the copy prompt was missed."
+          />
 
           <article
             :for={entry <- @entries}

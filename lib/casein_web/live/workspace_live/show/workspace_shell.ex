@@ -56,6 +56,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :agent_write_unlock, :any, required: true
   attr :artifact_projects, :any, required: true
   attr :artifact_projects_error, :any, required: true
+  attr :artifact_projects_loaded?, :any, required: true
   attr :artifact_selected_id, :any, required: true
   attr :audit_drawer_open, :any, required: true
   attr :chrome_visible, :any, required: true
@@ -109,6 +110,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :git_status, :any, required: true
   attr :git_status_ready?, :any, required: true
   attr :side_panels_ready?, :any, required: true
+  attr :git_status_error, :any, required: true
   attr :grok_permission_requests, :any, required: true
   attr :history_error, :any, required: true
   attr :history_form, :any, required: true
@@ -117,6 +119,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :history_results, :any, required: true
   attr :host_loc, :any, required: true
   attr :host_path, :any, required: true
+  attr :side_panels_error, :any, required: true
   attr :leader_help_open, :any, required: true
   attr :log_ref, :any, required: true
   attr :log_service, :any, required: true
@@ -152,6 +155,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :rename_input, :any, required: true
   attr :review_commands, :any, required: true
   attr :run_ledger, :any, required: true
+  attr :run_ledger_loaded?, :any, required: true
+  attr :run_ledger_error, :any, required: true
   attr :save_error, :any, required: true
   attr :saved_session_template_tags, :any, required: true
   attr :saved_session_templates, :any, required: true
@@ -824,6 +829,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
                 zoomed?={inspector_zoomed?}
                 git_status={@git_status}
                 git_status_ready?={@git_status_ready?}
+                git_status_error={@git_status_error}
                 open_file={@open_file}
                 file_diff={@file_diff}
               />
@@ -850,6 +856,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           show_hidden_files={@show_hidden_files}
           tree_filter={@tree_filter}
           side_panels_ready?={@side_panels_ready?}
+          side_panels_error={@side_panels_error}
         />
         <.search_panel
           :if={@tab == "search"}
@@ -861,6 +868,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           :if={@tab == "diff"}
           git_status={@git_status}
           git_status_ready?={@git_status_ready?}
+          git_status_error={@git_status_error}
           open_file={@open_file}
           file_diff={@file_diff}
         />
@@ -868,6 +876,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           :if={@tab == "artifacts"}
           artifact_projects={@artifact_projects}
           artifact_projects_error={@artifact_projects_error}
+          artifact_projects_loaded?={@artifact_projects_loaded?}
           artifact_selected_id={@artifact_selected_id}
         />
         <.run_panel
@@ -877,6 +886,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           review_commands={@review_commands}
           agent_write_unlock={@agent_write_unlock}
           run_ledger={@run_ledger}
+          run_ledger_loaded?={@run_ledger_loaded?}
+          run_ledger_error={@run_ledger_error}
           selected_run_id={@selected_run_id}
           selected_run_timeline={@selected_run_timeline}
           selected_run_summary={@selected_run_summary}
@@ -1077,6 +1088,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :zoomed?, :boolean, required: true
   attr :git_status, :any, required: true
   attr :git_status_ready?, :any, required: true
+  attr :git_status_error, :any, default: nil
   attr :open_file, :any, required: true
   attr :file_diff, :any, required: true
 
@@ -1178,6 +1190,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
               <.diff_panel
                 git_status={@git_status}
                 git_status_ready?={@git_status_ready?}
+                git_status_error=""
                 open_file={@open_file}
                 file_diff={@file_diff}
               />

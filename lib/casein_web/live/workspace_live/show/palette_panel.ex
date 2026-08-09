@@ -123,7 +123,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
             class="max-h-[min(60vh,calc(100dvh-11rem))] overflow-auto text-sm sm:max-h-[60vh]"
           >
             <%= if @palette_items == [] do %>
-              <li class="px-3 py-2 text-xs text-base-content/60">No matches.</li>
+              <li class="list-none px-2 py-1">
+                <CaseinWeb.WorkspaceLive.Show.UI.panel_state
+                  id="palette-no-matches"
+                  kind={:empty}
+                  message="No matches."
+                  class="border-0 bg-transparent px-1 py-1 text-base-content/60"
+                />
+              </li>
             <% else %>
               <%= for {item, idx} <- Enum.with_index(@palette_items) do %>
                 <% selected? = idx == (@palette_selected_idx || 0) %>

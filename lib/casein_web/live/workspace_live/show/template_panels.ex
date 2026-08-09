@@ -490,13 +490,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
             </div>
 
             <div id="saved-template-list" class="space-y-2">
-              <div
+              <CaseinWeb.WorkspaceLive.Show.UI.panel_state
                 :if={(@saved_session_templates || []) == []}
                 id="template-library-empty"
-                class="rounded border border-dashed border-base-300 px-3 py-6 text-center text-xs text-base-content/55"
-              >
-                No saved templates
-              </div>
+                kind={:empty}
+                message="No saved templates."
+              />
               <%= for saved <- @saved_session_templates || [] do %>
                 <article
                   id={"saved-template-row-" <> saved.id}

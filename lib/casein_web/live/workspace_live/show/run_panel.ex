@@ -3,7 +3,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
 
   use CaseinWeb, :html
 
-  import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1, panel_state: 1]
 
   alias Casein.Commands.Allowlist
   alias Casein.Runs.Status
@@ -13,6 +13,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
   attr :review_commands, :list, default: []
   attr :agent_write_unlock, :any, default: %{status: :inactive, until: nil, by: nil}
   attr :run_ledger, :list, required: true
+  attr :run_ledger_loaded?, :boolean, default: true
+  attr :run_ledger_error, :string, default: nil
   attr :selected_run_id, :any, default: nil
   attr :selected_run_timeline, :list, required: true
   attr :selected_run_summary, :any, default: nil
@@ -63,7 +65,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
             </div>
             <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded overflow-auto whitespace-pre-wrap h-[40dvh] min-h-[12rem]">{@active_run.buffer}</pre>
           <% else %>
-            <p class="text-xs text-zinc-500">No runs yet.</p>
+            <.panel_state id="run-panel-no-active" kind={:empty} message="No runs yet." />
           <% end %>
 
           <section
@@ -212,47 +214,61 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                   {length(@run_ledger)} runs
                 </span>
               </div>
-              <%= if @run_ledger == [] do %>
-                <p id="run-ledger-empty" class="text-xs text-zinc-500">
-                  No runs recorded.
-                </p>
-              <% else %>
-                <ol class="space-y-1">
-                  <%= for r <- @run_ledger do %>
-                    <li>
-                      <button
-                        id={"run-ledger-run-#{dom_fragment(r.id)}"}
-                        phx-click="run_ledger:select"
-                        phx-value-id={r.id}
-                        data-ctx-menu="run_entry"
-                        data-ctx-run-id={r.id}
-                        data-ctx-command-id={Map.get(r, :command_id) || Map.get(r, :safe_action_id)}
-                        class={[
-                          "w-full rounded border px-2 py-1.5 text-left text-xs transition hover:bg-zinc-50",
-                          @selected_run_id == r.id && "border-zinc-900 bg-zinc-50"
-                        ]}
-                      >
-                        <div class="flex items-center gap-2">
-                          <span class="font-mono">
-                            {Map.get(r, :command_id) || Map.get(r, :safe_action_id) || r.id}
-                          </span>
-                          <span class={run_status_class(Status.status_class(Map.get(r, :status)))}>
-                            {Map.get(r, :status, "unknown")}
-                          </span>
-                        </div>
-                        <div class="mt-1 flex flex-wrap gap-2 font-mono text-density-label text-zinc-500">
-                          <span>{Map.get(r, :protocol, "ledger")}</span>
-                          <%= if Map.get(r, :assignment_id) do %>
-                            <span>assignment={Map.get(r, :assignment_id)}</span>
-                          <% end %>
-                          <%= if Map.get(r, :finished_at) do %>
-                            <span>{Map.get(r, :finished_at)}</span>
-                          <% end %>
-                        </div>
-                      </button>
-                    </li>
-                  <% end %>
-                </ol>
+              <%= cond do %>
+                <% @run_ledger_error -> %>
+                  <.panel_state
+                    id="run-ledger-error"
+                    kind={:error}
+                    title="Could not load runs"
+                    message={@run_ledger_error}
+                  />
+                <% not @run_ledger_loaded? and @run_ledger == [] -> %>
+                  <div id="run-ledger-pending" class="hidden" aria-hidden="true"></div>
+                <% @run_ledger == [] -> %>
+                  <.panel_state
+                    id="run-ledger-empty"
+                    kind={:empty}
+                    message="No runs recorded."
+                  />
+                <% true -> %>
+                  <ol class="space-y-1">
+                    <%= for r <- @run_ledger do %>
+                      <li>
+                        <button
+                          id={"run-ledger-run-#{dom_fragment(r.id)}"}
+                          phx-click="run_ledger:select"
+                          phx-value-id={r.id}
+                          data-ctx-menu="run_entry"
+                          data-ctx-run-id={r.id}
+                          data-ctx-command-id={
+                            Map.get(r, :command_id) || Map.get(r, :safe_action_id)
+                          }
+                          class={[
+                            "w-full rounded border px-2 py-1.5 text-left text-xs transition hover:bg-zinc-50",
+                            @selected_run_id == r.id && "border-zinc-900 bg-zinc-50"
+                          ]}
+                        >
+                          <div class="flex items-center gap-2">
+                            <span class="font-mono">
+                              {Map.get(r, :command_id) || Map.get(r, :safe_action_id) || r.id}
+                            </span>
+                            <span class={run_status_class(Status.status_class(Map.get(r, :status)))}>
+                              {Map.get(r, :status, "unknown")}
+                            </span>
+                          </div>
+                          <div class="mt-1 flex flex-wrap gap-2 font-mono text-density-label text-zinc-500">
+                            <span>{Map.get(r, :protocol, "ledger")}</span>
+                            <%= if Map.get(r, :assignment_id) do %>
+                              <span>assignment={Map.get(r, :assignment_id)}</span>
+                            <% end %>
+                            <%= if Map.get(r, :finished_at) do %>
+                              <span>{Map.get(r, :finished_at)}</span>
+                            <% end %>
+                          </div>
+                        </button>
+                      </li>
+                    <% end %>
+                  </ol>
               <% end %>
             </section>
 
@@ -266,9 +282,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                 <% end %>
               </div>
               <%= if @selected_run_timeline == [] do %>
-                <p id="run-ledger-timeline-empty" class="text-xs text-zinc-500">
-                  Select a run to inspect its canonical events.
-                </p>
+                <.panel_state
+                  id="run-ledger-timeline-empty"
+                  kind={:empty}
+                  message="Select a run to inspect its canonical events."
+                />
               <% else %>
                 <%= if @selected_run_summary do %>
                   <dl
@@ -338,7 +356,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                 <div id="run-ledger-artifacts" class="mt-3 space-y-2">
                   <h3 class="text-xs font-medium text-zinc-700">Artifacts</h3>
                   <%= if @selected_run_artifacts == [] do %>
-                    <p class="text-xs text-zinc-500">No artifacts recorded for this run.</p>
+                    <.panel_state
+                      id="run-ledger-artifacts-empty"
+                      kind={:empty}
+                      message="No artifacts recorded for this run."
+                    />
                   <% else %>
                     <%= for artifact <- @selected_run_artifacts do %>
                       <.run_artifact artifact={artifact} />
@@ -349,9 +371,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
             </section>
           </div>
         <% _ -> %>
-          <p class="text-sm text-status-danger-fg">
-            Cannot run commands: workspace path unavailable.
-          </p>
+          <.panel_state
+            id="run-panel-path-unavailable"
+            kind={:error}
+            title="Path unavailable"
+            message="Cannot run commands: workspace path unavailable."
+          />
       <% end %>
     </section>
     """

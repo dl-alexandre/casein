@@ -165,12 +165,13 @@ defmodule CaseinWeb.NotificationsDrawer do
           </div>
         </header>
 
-        <div
-          :if={@error}
-          id="notifications-error"
-          class="border-b border-status-danger-border bg-status-danger-soft px-4 py-2 text-xs text-status-danger-fg"
-        >
-          {@error}
+        <div :if={@error} class="border-b border-base-300 px-3 py-2">
+          <CaseinWeb.WorkspaceLive.Show.UI.panel_state
+            id="notifications-error"
+            kind={:error}
+            title="Notifications unavailable"
+            message={@error}
+          />
         </div>
         <div
           :if={@info}
@@ -261,20 +262,15 @@ defmodule CaseinWeb.NotificationsDrawer do
           </section>
 
           <%= if not @loaded? do %>
-            <div
-              id="notifications-loading"
-              class="rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500"
-            >
-              Loading notifications…
-            </div>
+            <%!-- not-loaded-yet: hide rather than mock an empty inbox --%>
+            <div id="notifications-pending" class="hidden" aria-hidden="true"></div>
           <% else %>
-            <div
+            <CaseinWeb.WorkspaceLive.Show.UI.panel_state
               :if={@notifications == []}
               id="notifications-empty"
-              class="rounded border border-zinc-200 bg-white p-4 text-sm text-zinc-500"
-            >
-              No open notifications.
-            </div>
+              kind={:empty}
+              message="No open notifications."
+            />
 
             <div class="space-y-2">
               <article

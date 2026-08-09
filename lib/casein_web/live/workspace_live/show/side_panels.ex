@@ -10,6 +10,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
   use CaseinWeb, :html
 
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [panel_state: 1]
+
   alias Casein.Links.Markdown
   alias Casein.Search
   alias CaseinWeb.WorkspaceLive.Show.UI
@@ -29,6 +31,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
   attr :file_error, :string, default: nil
   attr :node_rename, :string, default: nil, doc: "tree-node rename form value (context menu)"
   attr :node_delete, :string, default: nil, doc: "tree-node pending-delete path (context menu)"
+  attr :side_panels_loaded?, :boolean, default: true
+  attr :side_panels_error, :string, default: nil
 
   attr :show_hidden_files, :boolean,
     default: true,
@@ -49,6 +53,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
         data-ctx-menu="tree_root"
         class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2 max-h-56 md:max-h-none md:w-72 md:flex-none 2xl:w-80"
       >
+        <.panel_state
+          :if={@side_panels_error}
+          id="files-panel-load-error"
+          kind={:error}
+          title="Could not load files"
+          message={@side_panels_error}
+        />
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
             <div class="flex flex-wrap gap-1 text-xs">
@@ -158,7 +169,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
             <.project_card project_meta={@project_meta} tooling={@tooling} />
             <.symbols_panel open_file={@open_file} file_symbols={@file_symbols} />
           <% _ -> %>
-            <p class="text-xs text-status-danger-fg">No host path; cannot list files.</p>
+            <.panel_state
+              id="files-panel-no-host"
+              kind={:error}
+              title="No host path"
+              message="Cannot list files until the workspace path is available."
+            />
         <% end %>
       </div>
       <div class="border rounded flex flex-col flex-1 min-w-0 min-h-0">
@@ -473,9 +489,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
     case assigns.search_state do
       :idle ->
         ~H"""
-        <p class="text-xs text-zinc-500">
-          Type {Search.min_query()}+ chars and press Enter. Searches the workspace via <code>rg</code>; results are PathSafety-checked.
-        </p>
+        <.panel_state
+          id="search-panel-idle"
+          kind={:empty}
+          message={"Type #{Search.min_query()}+ chars and press Enter. Searches the workspace via rg; results are PathSafety-checked."}
+        />
         """
 
       :running ->
@@ -487,7 +505,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
       :empty ->
         ~H"""
-        <p class="text-xs text-zinc-500">No matches.</p>
+        <.panel_state id="search-panel-empty" kind={:empty} message="No matches." />
         """
 
       :ok ->
@@ -524,7 +542,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
         assigns = Map.put(assigns, :reason, reason)
 
         ~H"""
-        <p class="text-xs text-status-danger-fg">{search_error_text(@reason)}</p>
+        <.panel_state
+          id="search-panel-error"
+          kind={:error}
+          title="Search failed"
+          message={search_error_text(@reason)}
+        />
         """
     end
   end
@@ -544,6 +567,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
   defp search_error_text(other), do: "search failed: #{inspect(other)}"
 
   attr :git_status, :list, required: true
+  attr :git_status_error, :any, default: nil
+  attr :side_panels_loaded?, :boolean, default: true
   attr :open_file, :any, required: true
   attr :file_diff, :any, required: true, doc: "unified diff string | nil"
 
@@ -560,12 +585,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
           <span class="ml-1 text-density-label font-mono text-zinc-400">{length(@git_status)}</span>
         </h3>
         <%= cond do %>
+          <% is_binary(@git_status_error) and @git_status_error != "" -> %>
+            <.panel_state
+              id="diff-panel-error"
+              kind={:error}
+              title="Could not load changes"
+              message={@git_status_error}
+            />
           <% not @git_status_ready? and @git_status == [] -> %>
             <UI.async_wait id="diff-git-loading" class="text-sm text-zinc-500">
               Querying git…
             </UI.async_wait>
           <% @git_status == [] -> %>
-            <p class="text-sm text-zinc-500">No changes.</p>
+            <.panel_state id="diff-panel-empty" kind={:empty} message="No changes." />
           <% true -> %>
             <ul class="text-xs space-y-0.5 overflow-auto pr-1 max-h-48 md:max-h-none md:flex-1 md:min-h-0">
               <%= for e <- @git_status do %>
@@ -591,11 +623,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
       <div class="flex flex-col min-w-0 min-h-0 flex-1">
         <%= cond do %>
           <% is_nil(@open_file) -> %>
-            <p class="text-sm text-zinc-500">Select a file to view its diff.</p>
+            <.panel_state
+              id="diff-panel-select-file"
+              kind={:empty}
+              message="Select a file to view its diff."
+            />
           <% is_nil(@file_diff) -> %>
-            <p class="text-sm text-zinc-500">
-              No diff for <span class="font-mono">{@open_file.path}</span> (no working-tree changes).
-            </p>
+            <.panel_state
+              id="diff-panel-no-diff"
+              kind={:empty}
+              message={"No diff for #{@open_file.path} (no working-tree changes)."}
+            />
           <% true -> %>
             <div class="flex items-center justify-between mb-2 flex-none">
               <span class="font-mono text-xs text-zinc-700 truncate">{@open_file.path}</span>
@@ -675,6 +713,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
   attr :artifact_projects, :list, default: []
   attr :artifact_projects_error, :string, default: nil
+  attr :artifact_projects_loaded?, :boolean, default: true
   attr :artifact_selected_id, :string, default: nil
 
   def artifact_gallery_panel(assigns) do
@@ -707,21 +746,36 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
         </button>
       </div>
 
-      <div
-        :if={@artifact_projects_error}
-        id="artifact-gallery-error"
-        class="border-b border-error/20 bg-error/10 px-3 py-2 text-xs text-error"
-      >
-        {@artifact_projects_error}
-      </div>
-
       <div class="min-h-0 flex-1 overflow-auto p-3">
-        <div
-          :if={@artifact_projects == []}
+        <.panel_state
+          :if={is_binary(@artifact_projects_error)}
+          id="artifact-gallery-error"
+          kind={:error}
+          title="Could not load artifacts"
+          message={@artifact_projects_error}
+          action_label="Retry"
+          action_event="artifact:refresh"
+        />
+
+        <.panel_state
+          :if={
+            is_nil(@artifact_projects_error) and @artifact_projects_loaded? and
+              @artifact_projects == []
+          }
           id="artifact-gallery-empty"
-          class="flex h-full min-h-44 items-center justify-center border border-dashed border-base-300 bg-base-200/30 p-6 text-center text-sm text-base-content/55"
+          kind={:empty}
+          message="No artifacts yet."
+        />
+
+        <div
+          :if={
+            not @artifact_projects_loaded? and @artifact_projects == [] and
+              is_nil(@artifact_projects_error)
+          }
+          id="artifact-gallery-pending"
+          class="hidden"
+          aria-hidden="true"
         >
-          No artifacts yet.
         </div>
 
         <div
@@ -1063,7 +1117,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
         <% String.ends_with?(@open_file.path, ".heex") -> %>
           <p class="text-zinc-500">HEEx symbols not supported yet.</p>
         <% @file_symbols == [] -> %>
-          <p class="text-zinc-500">No symbols.</p>
+          <.panel_state id="symbols-panel-empty" kind={:empty} message="No symbols." />
         <% true -> %>
           <ul class="font-mono space-y-0.5 mt-1">
             <%= for s <- @file_symbols do %>
