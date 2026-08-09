@@ -1,9 +1,11 @@
 # Native Windows acceptance gap audit
 
-**Snapshot:** 2026-08-09 after #794 reboot-persistence harness + #795 honesty/self-test slice
+**Snapshot:** 2026-08-09 after #794 reboot-persistence harness + #795 honesty/self-test
+slice + #377 physical-lab definition
 **Authority:** issue #371 remains the parent checklist; #376 holds production
-signing and clean-machine evidence. This audit subtracts repository work that is
-already merged or actively owned. It does not replace either issue.
+signing and clean-machine evidence; #377 holds physical iPad/Android matrix
+evidence. This audit subtracts repository work that is already merged or actively
+owned. It does not replace those issues.
 
 ## Subtracted work
 
@@ -24,6 +26,7 @@ already merged or actively owned. It does not replace either issue.
 | #614 | Signed Windows development bootstrap channel (production Authenticode remains separate) |
 | #794 | Two-stage reboot-resumable acceptance runner (`Test-CaseinRebootPersistence.ps1`) with boot-stamp fail-closed continue; clean-machine schema-3 phase timestamps/outcomes and path prerequisites |
 | #795 | Explicit `claims.real_reboot` / `claims.clean_machine_no_tooling` on both harnesses; reboot marker `-SelfTestContinuation` in package smoke; docs prove/cannot-prove matrix (no parallel two-stage in CleanMachine) |
+| #377 lab def | Operator runbook [`windows_physical_device_lab.md`](windows_physical_device_lab.md), fixed evidence schema, and `scripts/verify_windows_physical_device_lab.sh` (`--self-check` never sets `physical_*=true`; `--validate-evidence` rejects secrets and dishonest `matrix_passed`) |
 
 ## Remaining repository-feasible gaps
 
@@ -45,6 +48,7 @@ already merged or actively owned. It does not replace either issue.
 | Production Authenticode on PE/scripts/catalog | Code path exists (`-RequireSigned`) | Yes — production cert on protected Windows runner |
 | Real reboot launch-at-sign-in persistence | Harness stages it; `claims.real_reboot` flips only after boot stamp changes | Yes — disposable Win11 + actual reboot |
 | Clean machine without developer tooling/WSL | Harness can refuse tools when asked | Yes — host without mix/node/git/WSL; **this Linux/devbox never qualifies** |
+| Physical lab procedure + evidence validator | Yes (`windows_physical_device_lab.md` + verify script) | Real devices still external |
 | GitHub Actions desktop artifact upload | Workflow build/smoke may pass | **Blocked account-wide** by Actions artifact storage quota (upload-only red). Pruning this repo cannot clear the quota. |
 
 ## External acceptance blockers
@@ -52,8 +56,11 @@ already merged or actively owned. It does not replace either issue.
 The following cannot be converted into repository evidence: production
 Authenticode/private-key execution, a disposable clean Windows 11 host with no
 developer tooling or WSL distribution, a real reboot between prepare and
-continue, physical iPad/Android coverage (#377), authenticated production
-cockpit verification (#378), and durable GitHub Actions artifact retention while
-the account storage quota is exhausted. A green source test, unsigned package,
-`-SelfTestContinuation` run, simulator, OAuth redirect, zero-step workflow, or
-Linux/devbox host with toolchains/certs/caches is not a substitute.
+continue, **completed** physical iPad/Android matrix rows on real hardware
+(#377 — lab definition can land without devices; `matrix_passed` cannot),
+authenticated production cockpit verification (#378), companion signing/install
+prerequisites (#416), and durable GitHub Actions artifact retention while the
+account storage quota is exhausted. A green source test, unsigned package,
+`-SelfTestContinuation` run, `lab_unreachable_on_this_host` self-check,
+simulator, OAuth redirect, zero-step workflow, or Linux/devbox host with
+toolchains/certs/caches is not a substitute.
