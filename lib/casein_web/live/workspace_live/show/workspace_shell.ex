@@ -27,6 +27,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
 
   import CaseinWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import CaseinWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
+  import CaseinWeb.WorkspaceLive.Show.AgentWriteBanner, only: [agent_write_locked_banner: 1]
 
   alias Casein.Cockpit.Geometry
   alias CaseinWeb.NotificationsDrawer
@@ -475,6 +476,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           </span>
         </div>
       <% end %>
+
+      <.agent_write_locked_banner
+        workspace={@workspace}
+        agent_write_unlock={@agent_write_unlock}
+      />
 
       <%!-- Central leader-key dispatch targets. WorkspaceLeader routes every
             C-b second key to a click on [data-leader-action=...], so each
