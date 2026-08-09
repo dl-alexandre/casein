@@ -124,6 +124,32 @@ fail closed until registered.
   session; rejects input when not `:raw` (`raw_terminal_disabled`).
 - `DeploymentUpdateHook.on_mount/4` — wired in `router.ex` `live_session :default`.
 
+## Responsive rule: pointer vs width (issue #735)
+
+**`pointer-coarse` decides hit targets, spacing, and gesture affordances; width
+decides layout and information density.**
+
+They are not interchangeable. A narrow desktop window with a mouse wants compact
+layout and precise targets. A wide tablet or touchscreen laptop wants desktop
+information density with roomy targets. Deriving touch chrome from width alone
+(or layout from pointer alone) is wrong in both directions.
+
+| Question | Mechanism | Examples |
+|---|---|---|
+| Layout / density | Width (`sm`/`max-sm`, `@media (max-width: …)`, `data-chrome-narrow`, `@container`) | Hide header window tabs, compact identity cluster, in-pane file strip, palette row meta |
+| Hit targets / spacing / gestures | `pointer-coarse` / `(pointer: coarse)` | `min-h-11` controls, taller chrome-reveal strip, safe-area padding, swipe coach, overscroll lock |
+
+Combined conditions are fine when the state is truly both (e.g. coarse **and**
+narrow). Mobile key bar and nav sheet stay available on coarse pointers even at
+desktop widths so touch affordances are not removed; they must not *replace*
+desktop layout on a large coarse device.
+
+TUI “click here” hotspots still need DECSET mouse mode plus a real click —
+pointer-coarse handling on terminal surfaces is not only a CSS concern
+(`ghostty_terminal.js`).
+
+Sibling #736 owns tablet-range density; this rule only says which query to ask.
+
 ## Invariants & gotchas
 
 - **FP-1: the browser is a viewer.** No event handler accepts argv. Input only

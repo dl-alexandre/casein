@@ -9,8 +9,10 @@
 // container establishes a containing block for `position: fixed` descendants,
 // which would unpin the bottom bar), so we measure here instead.
 //
-// Additive: app.css still reveals the mobile chrome on (pointer: coarse) and
-// narrow viewports without JS — this attribute only adds the pane-relative case.
+// Additive: app.css reveals touch chrome (key bar / nav sheet) on
+// (pointer: coarse) or narrow viewports without JS. Compact *layout* (hiding
+// header pickers, etc.) is width-only — see docs/subsystems/web_cockpit.md #735.
+// This attribute only adds the pane-relative narrow case.
 
 const NARROW_PX = 640
 
