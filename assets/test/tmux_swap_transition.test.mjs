@@ -85,10 +85,10 @@ test("animates both frozen panes and layers the active identity above its neighb
   }
 })
 
-test("reduced motion skips frozen-frame animation", async () => {
+test("reduced motion uses a short opacity settle instead of geometry", async () => {
   const previousWindow = globalThis.window
   const previousElement = globalThis.Element
-  let animationCalls = 0
+  const calls = []
 
   globalThis.window = {matchMedia: () => ({matches: true})}
   globalThis.Element = class Element {}
@@ -97,7 +97,18 @@ test("reduced motion skips frozen-frame animation", async () => {
     await animateSwapTransition({
       frozen: {
         panes: new Map([
-          ["%1", {el: {animate: () => (animationCalls += 1)}}],
+          [
+            "%1",
+            {
+              el: {
+                style: {},
+                animate(keyframes, options) {
+                  calls.push({keyframes, options})
+                  return {finished: Promise.resolve(), cancel() {}}
+                },
+              },
+            },
+          ],
         ]),
         layoutRect: {width: 1000, height: 400},
       },
@@ -105,7 +116,10 @@ test("reduced motion skips frozen-frame animation", async () => {
       confirmed: CONFIRMED,
     })
 
-    assert.equal(animationCalls, 0)
+    assert.equal(calls.length, 1)
+    assert.deepEqual(calls[0].keyframes, [{opacity: 1}, {opacity: 0}])
+    assert.equal(calls[0].options.duration, 100)
+    assert.equal(calls[0].keyframes[0].left, undefined)
   } finally {
     if (previousWindow === undefined) delete globalThis.window
     else globalThis.window = previousWindow

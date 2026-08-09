@@ -163,19 +163,21 @@
    Call-site recipe: transition-{colors|opacity|transform|all}
                      duration-motion-<step> ease-motion-<step>
 
-   Reduced-motion (#734/#735): every step is a CSS custom property. A later
-   prefers-reduced-motion rule can set all three --duration-motion-* to 0ms
-   (or animation: none) without renaming call sites. Do not add motion-reduce:
-   variants in this PR — that is a separate track.
+    Reduced-motion (#734): the scale's base under prefers-reduced-motion is
+    "none" — all three --duration-motion-* resolve to 0ms below. Call sites
+    keep their duration-motion-* class names; no motion-reduce: variants and
+    no parallel opt-out mechanism. Tailored components (gesture-coach, toast,
+    window-swipe-bar, terminal scale-frame) keep their own short opacity
+    fades — reduced motion is not "no motion".
 
-   Do not touch tmux_*_transition.mjs — those are the geometry reference,
-   not consumers of this scale.
-   ------------------------------------------------------------------------- */
-/* Durations as custom properties on :root so #734 can zero them under
-   prefers-reduced-motion without renaming call sites. Ease stays in
-   @theme (Tailwind's --ease-* namespace). Duration utilities are
-   @utility-defined because TW 4.1 does not emit --duration-* theme
-   keys the way it does --ease-* / --text-* / --spacing-*. */
+    tmux_*_transition.mjs are not consumers of this scale; they degrade to
+    short opacity fades in JS (same principle).
+    ------------------------------------------------------------------------- */
+/* Durations as custom properties on :root so reduced-motion can zero them
+   without renaming call sites. Ease stays in @theme (Tailwind's --ease-*
+   namespace). Duration utilities are @utility-defined because TW 4.1 does
+   not emit --duration-* theme keys the way it does --ease-* / --text-* /
+   --spacing-*. */
 :root {
   --duration-motion-state: 120ms;
   --duration-motion-surface: 200ms;
@@ -204,6 +206,50 @@
    without waiting for a first call site. Duration utilities above are
    always emitted via @utility. */
 @source inline("ease-motion-{state,surface,geometry}");
+
+/* -------------------------------------------------------------------------
+   Reduced motion default (issue #734)
+
+   The motion scale's reduced base is "none": every duration-motion-* step
+   collapses to 0ms so chrome hover/focus/enter/exit transitions settle
+   instantly without a per-call-site media query. This is not
+   `* { transition: none }` — only the named scale tokens change, and the
+   four tailored blocks below keep short opacity fades where an instantaneous
+   jump would be worse than a brief fade.
+
+   Indefinite loops (spin/pulse/ping) are the highest-cost category for a
+   motion-sensitive user. Static affordance remains; the loop stops. Sites
+   already using motion-safe:animate-* are unchanged under full motion.
+   ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-motion-state: 0ms;
+    --duration-motion-surface: 0ms;
+    --duration-motion-geometry: 0ms;
+  }
+
+  /* Indefinite loops are the highest-cost category. Static colour/affordance
+     stays; the loop stops. motion-safe:animate-* sites already no-op here. */
+  .animate-spin,
+  .animate-pulse,
+  .animate-ping {
+    animation: none;
+  }
+
+  /* Non-scale chrome still using raw transition: declarations. Instant
+     settle is fine (no enter/exit meaning). Tailored blocks below
+     (gesture-coach, toast, window-swipe-bar, scale-frame) keep their own
+     short fades and must not be flattened here. */
+  .casein-term-scrollbar,
+  .casein-term-scrollbar-thumb,
+  .gesture-coach__dismiss,
+  .mobile-pane-rail__track,
+  .terminal-shell,
+  :root[data-chrome-narrow] .terminal-shell,
+  [data-mobile-focus-layout="true"] > section[data-pane-id] {
+    transition-duration: 0ms;
+  }
+}
 
 /* Use the data attribute for dark mode  */
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
