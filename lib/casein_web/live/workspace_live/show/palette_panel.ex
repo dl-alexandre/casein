@@ -168,21 +168,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
                         if(path_like_detail?(item), do: "font-mono", else: "font-sans")
                       ]}
                       title={item.detail}
-                    >
-                      {item.detail}
-                    </span>
+                    >{item.detail}</span>
                   <% end %>
                   <%= if frequent? do %>
                     <span
                       class="shrink-0 text-density-label uppercase tracking-wide text-base-content/40 max-sm:hidden"
                       title="Promoted by recent use in this workspace"
-                    >
-                      freq
-                    </span>
+                    >freq</span>
                   <% end %>
-                  <span class="shrink-0 text-density-label uppercase tracking-wide text-base-content/40 max-sm:hidden">
-                    {item.kind}
-                  </span>
+                  <span class="shrink-0 text-density-label uppercase tracking-wide text-base-content/40 max-sm:hidden">{item.kind}</span>
                   <%= if item.hint do %>
                     <kbd class="shrink-0 rounded border border-base-300 bg-base-200 px-1 font-mono text-density-label text-base-content/70">
                       {item.hint}
