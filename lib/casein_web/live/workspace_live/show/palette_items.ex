@@ -14,8 +14,31 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
 
   @max_results 50
 
+  @type result :: %{
+          items: [PaletteItem.t()],
+          shown: non_neg_integer(),
+          total: non_neg_integer(),
+          cap: pos_integer(),
+          truncated?: boolean(),
+          frequent_ids: MapSet.t(String.t())
+        }
+
+  @doc "Result cap applied after the merged score sort (honest UI surface)."
+  @spec max_results() :: pos_integer()
+  def max_results, do: @max_results
+
   @spec query(map(), String.t() | nil) :: [PaletteItem.t()]
-  def query(socket, q) do
+  def query(socket, q), do: query_with_meta(socket, q).items
+
+  @doc """
+  Ranked palette page plus honest truncation/frecency meta.
+
+  Scoring and sort order match `query/2` exactly — this only exposes the
+  pre-cap total and which item ids received a positive frecency boost so the
+  panel can show "N of M" and a frequent marker without changing rank.
+  """
+  @spec query_with_meta(map(), String.t() | nil) :: result()
+  def query_with_meta(socket, q) do
     query = q || ""
     root = palette_root(socket)
     category = socket.assigns[:palette_category] || :all
@@ -24,11 +47,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
 
     # Frecency (see `Usage.boost/2` for the cap rationale) is threaded INTO
     # CommandPalette.query so static/file items are boosted before that
-    # query's own sort + take — boosting after would never promote an item
-    # the upstream truncation already cut. Dynamic items are boosted here.
+    # query's own sort — boosting after would never promote an item the
+    # upstream sort already ordered. Dynamic items are boosted here.
+    #
+    # Pass a high static limit so the *only* hard cap is `@max_results` below.
+    # A silent double-cap (static 50, then merge take 50) made "N of M" lie
+    # and could drop a static row that would rank in the final top 50 after
+    # dynamic merge. Ranking rule is unchanged: sort by score desc, take 50.
     static_items =
       (root || "")
-      |> CommandPalette.query(query, category: category, usage: usage, now: now)
+      |> CommandPalette.query(query,
+        category: category,
+        usage: usage,
+        now: now,
+        limit: 100_000
+      )
       |> relabel_terminal_mode_items(socket)
       |> filter_static_tmux(socket, query)
       |> LeaderBindings.decorate()
@@ -44,9 +77,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
          preview_surface_items(socket, query, category))
       |> apply_frecency(usage, now)
 
-    (static_items ++ dynamic_items)
-    |> Enum.sort_by(& &1.score, :desc)
-    |> Enum.take(@max_results)
+    sorted =
+      (static_items ++ dynamic_items)
+      |> Enum.sort_by(& &1.score, :desc)
+
+    total = length(sorted)
+    items = Enum.take(sorted, @max_results)
+
+    %{
+      items: items,
+      shown: length(items),
+      total: total,
+      cap: @max_results,
+      truncated?: total > @max_results,
+      frequent_ids: frequent_ids(items, usage, now)
+    }
   end
 
   defp apply_frecency(items, usage, now) when is_map(usage) and map_size(usage) > 0 do
@@ -54,6 +99,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
   end
 
   defp apply_frecency(items, _usage, _now), do: items
+
+  # Presentation-only: which *shown* rows got a positive frecency boost.
+  # Does not change scores or order.
+  defp frequent_ids(items, usage, now) when is_map(usage) and map_size(usage) > 0 do
+    items
+    |> Enum.filter(fn item -> Usage.boost(usage[item.id], now) > 0 end)
+    |> Enum.map(& &1.id)
+    |> MapSet.new()
+  end
+
+  defp frequent_ids(_items, _usage, _now), do: MapSet.new()
 
   @spec resolve(map(), String.t() | nil, String.t()) :: {:ok, map()} | :error
   def resolve(socket, _root, "session:switch:" <> session_id) do

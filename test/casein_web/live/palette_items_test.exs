@@ -123,6 +123,43 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItemsTest do
     assert [%{id: "tmux:zoom"} | _] = PaletteItems.query(socket, "")
   end
 
+  test "query_with_meta marks frecency-promoted rows without changing order", %{root: root} do
+    socket = palette_socket(root, "ws-frecency-meta")
+
+    socket = %{
+      socket
+      | assigns:
+          Map.merge(socket.assigns, %{
+            palette_category: :tmux,
+            palette_usage: %{
+              "tmux:zoom" => %{uses: 10, last_used_at: DateTime.utc_now()}
+            }
+          })
+    }
+
+    result = PaletteItems.query_with_meta(socket, "")
+    assert [%{id: "tmux:zoom"} | _] = result.items
+    assert MapSet.member?(result.frequent_ids, "tmux:zoom")
+    assert result.shown == length(result.items)
+    assert result.total >= result.shown
+    assert result.cap == PaletteItems.max_results()
+  end
+
+  test "query_with_meta surfaces the silent result cap", %{root: root} do
+    socket = palette_socket(root, "ws-cap-meta")
+    # :all + empty query includes every static action and every workspace file
+    # (FileIndex under this root is empty, but Actions alone exceeds the cap).
+    socket = %{socket | assigns: Map.put(socket.assigns, :palette_category, :all)}
+
+    result = PaletteItems.query_with_meta(socket, "")
+
+    assert result.shown == PaletteItems.max_results()
+    assert result.total > result.shown
+    assert result.truncated?
+    assert result.items == Enum.take(result.items, result.cap)
+    assert length(result.items) == result.shown
+  end
+
   test "query works without a usage assign (no frecency)", %{root: root} do
     socket = palette_socket(root, "ws-frecency")
     socket = %{socket | assigns: Map.put(socket.assigns, :palette_category, :tmux)}

@@ -54,7 +54,12 @@ entry point. It:
    pane-focus rows — each independently `Fuzzy.score`d and score-boosted
    (active session +2_000, shell +1_800, active window +1_500, focused pane
    +1_200, etc.).
-4. Re-sorts the merged list by score and takes the top 50.
+  4. Re-sorts the merged list by score and takes the top 50
+     (`PaletteItems.max_results/0`). The pre-cap total is exposed via
+     `query_with_meta/2` so the panel can show an honest `"N of M"` when the
+     cap bites — fuzzy search is least trustworthy exactly when it is
+     working hardest. Frecency-promoted row ids ride in the same meta as
+     `frequent_ids` (presentation only; ranking is unchanged).
 
 `relabel_terminal_mode_items/2` rewrites the `action:terminal:raw` row to name
 the active window; `filter_static_tmux/3` hides multi-pane verbs when only one
