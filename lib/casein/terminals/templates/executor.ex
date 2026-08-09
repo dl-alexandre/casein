@@ -32,7 +32,24 @@ defmodule Casein.Terminals.Templates.Executor do
   @spec execute(String.t(), saved(), keyword()) :: {:ok, map()} | {:error, term()}
   def execute(session, saved, opts \\ []) when is_binary(session) and is_map(saved) do
     with {:ok, dry_run} <- dry_run(saved, opts) do
-      execute_steps(session, dry_run, opts)
+      case execute_steps(session, dry_run, opts) do
+        {:ok, result} ->
+          {:ok, Map.put(result, :inspectors, body_inspectors(saved))}
+
+        error ->
+          error
+      end
+    end
+  end
+
+  # Cockpit-owned inspector viewports (diff/run). Not applied by the tmux
+  # executor — returned so LiveView can re-derive them after layout apply.
+  defp body_inspectors(saved) when is_map(saved) do
+    body = Map.get(saved, :body) || Map.get(saved, "body") || %{}
+
+    case Map.get(body, "inspectors") || Map.get(body, :inspectors) do
+      list when is_list(list) -> list
+      _ -> []
     end
   end
 

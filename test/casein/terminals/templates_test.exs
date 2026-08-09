@@ -155,6 +155,29 @@ defmodule Casein.Terminals.TemplatesTest do
              |> Enum.sort_by(& &1.id)
   end
 
+  test "execute returns body inspectors for LiveView re-derive" do
+    root = temp_workspace_root!()
+
+    body =
+      saved_template_body()
+      |> Map.put("inspectors", [
+        %{"type" => "inspector", "kind" => "diff", "path" => "lib/foo.ex"}
+      ])
+
+    {:ok, saved} = save_saved_template(%{body: body, name: "with-inspectors"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"template-session" => "@9"})
+
+    assert {:ok, result} =
+             Templates.execute("ws-1", "template-session", saved.id,
+               tmux: Casein.Test.FakeTmuxAdapter,
+               workspace_root: root
+             )
+
+    assert result.inspectors == [
+             %{"type" => "inspector", "kind" => "diff", "path" => "lib/foo.ex"}
+           ]
+  end
+
   defp save_saved_template(attrs \\ %{}) do
     Templates.save(
       Map.merge(
