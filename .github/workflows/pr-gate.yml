@@ -14,14 +14,20 @@ name: PR gate
 on:
   pull_request:
     branches: [master]
+  # Manual re-trigger without an empty commit. Prefer this (or an empty commit)
+  # over `gh run rerun` — re-running a stale run cancels the PR's live run because
+  # concurrency is per-PR with cancel-in-progress: true (see AGENTS.md).
+  workflow_dispatch:
 
 # Per-PR group: a newer push to the SAME PR cancels its superseded run (correct).
+# Fall back to github.ref for workflow_dispatch (no pull_request.number) so all
+# manual runs do not collapse into one group `pr-gate-` and cancel each other.
 # Do NOT use one global group with cancel-in-progress: false — GitHub keeps only
 # one pending run per group, so a third PR silently cancels the queued second and
 # the required `gate` check never appears (#753 regression / need-ci-shm-53100).
 # Host-level single-flight for the heavy suite is enforced with flock below.
 concurrency:
-  group: pr-gate-${{ github.event.pull_request.number }}
+  group: pr-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -31,7 +37,8 @@ jobs:
   gate:
     # SECURITY: never run fork-PR code on the self-hosted runner — it executes
     # arbitrary PR code on the devbox. Only branches pushed to this repo qualify.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # workflow_dispatch is same-repo only (UI/API on this repo), so it is allowed.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, devbox]
     timeout-minutes: 60
     steps:
@@ -69,7 +76,9 @@ jobs:
           # with clean:false, the persistent checkout's origin/<base> may be
           # stale. Diff base tree vs HEAD tree (two-dot): a plain tree diff needs
           # no shared history, so it is robust under a shallow checkout.
-          git fetch --no-tags origin "$GITHUB_BASE_REF"
+          # workflow_dispatch has no GITHUB_BASE_REF; fall back to master.
+          base_ref="${GITHUB_BASE_REF:-master}"
+          git fetch --no-tags origin "$base_ref"
           base_sha="$(git rev-parse FETCH_HEAD)"
           changed="$(git diff --name-only "$base_sha" HEAD)"
           echo "Changed files:"; echo "$changed"
