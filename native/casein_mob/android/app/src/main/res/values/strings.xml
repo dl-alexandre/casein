@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Casein</string>
+    <!-- Static cold-start copy only — no boot logs, credentials, or origin URLs. -->
+    <string name="cold_start_starting">Starting up…</string>
+    <string name="cold_start_starting_cd">Casein is starting up</string>
+    <string name="cold_start_failed_title">Couldn\'t start</string>
+    <string name="cold_start_failed_body">Casein did not finish starting. Force-stop the app and try again.</string>
+    <string name="cold_start_failed_cd">Casein could not start</string>
+</resources>

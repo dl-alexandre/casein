@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Casein brand dark surface (CaseinMob.Theme background / web base-300).
+         Window background paints immediately so cold start is never pure black. -->
+    <color name="casein_cold_start_background">#13171C</color>
+</resources>

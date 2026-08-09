@@ -22,14 +22,21 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import java.io.File
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
@@ -131,6 +138,46 @@ class MainActivity : ComponentActivity() {
         setContent {
             val state by MobBridge.rootState
             val themeColors by MobBridge.themeColors
+            val rootPresent = state.node != null
+
+            // Cold-start clock (#410). Starts when Compose first mounts — the
+            // window background already paints the brand color from styles.xml
+            // so the very first frames are never pure black. Elapsed drives
+            // delayed narration (#732) and fail-closed (#731-style distinct
+            // failed state), not a spinner.
+            val coldStartOriginMs = remember { android.os.SystemClock.elapsedRealtime() }
+            var coldStartElapsedMs by remember { mutableLongStateOf(0L) }
+            // Once ready, freeze cold-start chrome so a later null root cannot
+            // steal lifecycle and flash the splash over Action Center.
+            var coldStartSettledReady by remember { mutableStateOf(false) }
+
+            LaunchedEffect(rootPresent) {
+                if (rootPresent) {
+                    coldStartSettledReady = true
+                    return@LaunchedEffect
+                }
+                if (coldStartSettledReady) return@LaunchedEffect
+                while (true) {
+                    coldStartElapsedMs =
+                        android.os.SystemClock.elapsedRealtime() - coldStartOriginMs
+                    if (coldStartElapsedMs >= ColdStartProgress.FAIL_CLOSED_MS) break
+                    delay(50L)
+                }
+                coldStartElapsedMs =
+                    android.os.SystemClock.elapsedRealtime() - coldStartOriginMs
+            }
+
+            val coldStartPhase =
+                if (coldStartSettledReady || rootPresent) {
+                    ColdStartPhase.Ready
+                } else {
+                    ColdStartProgress.phase(
+                        rootPresent = false,
+                        elapsedMs = coldStartElapsedMs,
+                    )
+                }
+            val showColdStartNarration =
+                ColdStartProgress.showStartingNarration(coldStartPhase, coldStartElapsedMs)
 
             BackHandler(enabled = state.node != null) { MobBridge.nativeHandleBack() }
 
@@ -144,7 +191,8 @@ class MainActivity : ComponentActivity() {
             // before the BEAM finishes `mount/3` and pushes the first theme
             // — so the null branch falls back to Material's stock dark
             // scheme, which usually reads as a fine placeholder until the
-            // real palette arrives.
+            // real palette arrives. Cold-start chrome uses brand colors
+            // independently so it does not wait on that push.
             val colorScheme = themeColors?.let { tc ->
                 darkColorScheme(
                     primary          = colorFromMap(tc, "primary",          0xFF6750A4),
@@ -163,30 +211,57 @@ class MainActivity : ComponentActivity() {
                     error            = colorFromMap(tc, "error",            0xFFF2B8B5),
                     onError          = colorFromMap(tc, "on_error",         0xFFFFFFFF),
                 )
-            } ?: darkColorScheme()
+            } ?: darkColorScheme(
+                // Brand fallback while BEAM theme has not arrived (#410).
+                background = ColdStartBackground,
+                onBackground = ColdStartOnBackground,
+                surface = ColdStartBackground,
+                onSurface = ColdStartOnBackground,
+            )
 
             MaterialTheme(colorScheme = colorScheme) {
-                AnimatedContent(
-                    targetState   = state,
-                    contentKey    = { it.navKey },
-                    transitionSpec = {
-                        when (targetState.transition) {
-                            "push" ->
-                                slideInHorizontally(animationSpec = tween(300)) { it } togetherWith
-                                slideOutHorizontally(animationSpec = tween(300)) { -it / 3 }
-                            "pop" ->
-                                slideInHorizontally(animationSpec = tween(300)) { -it / 3 } togetherWith
-                                slideOutHorizontally(animationSpec = tween(300)) { it }
-                            "reset" ->
-                                fadeIn(animationSpec = tween(250)) togetherWith
-                                fadeOut(animationSpec = tween(250))
-                            else ->
-                                EnterTransition.None togetherWith ExitTransition.None
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // BEAM root: only mounted once present so cold-start chrome
+                    // never fights AnimatedContent for the same empty slot, and
+                    // a late root arrival does not replay nav transitions.
+                    if (rootPresent) {
+                        AnimatedContent(
+                            targetState   = state,
+                            contentKey    = { it.navKey },
+                            transitionSpec = {
+                                when (targetState.transition) {
+                                    "push" ->
+                                        slideInHorizontally(animationSpec = tween(300)) { it } togetherWith
+                                        slideOutHorizontally(animationSpec = tween(300)) { -it / 3 }
+                                    "pop" ->
+                                        slideInHorizontally(animationSpec = tween(300)) { -it / 3 } togetherWith
+                                        slideOutHorizontally(animationSpec = tween(300)) { it }
+                                    "reset" ->
+                                        // surface-scale enter/exit (#776): 200ms.
+                                        fadeIn(animationSpec = tween(200)) togetherWith
+                                        fadeOut(animationSpec = tween(200))
+                                    else ->
+                                        // First root paint: no enter flash over cold-start.
+                                        EnterTransition.None togetherWith ExitTransition.None
+                                }
+                            },
+                            label = "nav"
+                        ) { s ->
+                            s.node?.let {
+                                RenderNode(
+                                    it,
+                                    modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+                                )
+                            }
                         }
-                    },
-                    label = "nav"
-                ) { s ->
-                    s.node?.let { RenderNode(it, modifier = Modifier.fillMaxSize().safeDrawingPadding()) }
+                    }
+
+                    if (coldStartPhase != ColdStartPhase.Ready) {
+                        ColdStartSurface(
+                            phase = coldStartPhase,
+                            showNarration = showColdStartNarration,
+                        )
+                    }
                 }
             }
         }
