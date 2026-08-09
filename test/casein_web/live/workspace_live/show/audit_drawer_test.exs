@@ -242,7 +242,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawerTest do
         """)
 
       refute html =~ "Evidence drawer"
-      refute html =~ "no events recorded yet"
+      refute html =~ "No events recorded yet."
     end
   end
 
@@ -274,7 +274,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawerTest do
       assert html =~ "3 ledger"
       assert html =~ "workspace beta"
       assert html =~ ~s(value="shell")
-      assert html =~ "no events recorded yet"
+      assert html =~ "No events recorded yet."
+      assert html =~ ~s(data-panel-state="empty")
       assert html =~ ~s(phx-click="audit_drawer:close")
       assert html =~ ~s(phx-click="audit_drawer:refresh")
       assert html =~ ~s(phx-change="audit_drawer:filter_window")

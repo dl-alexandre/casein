@@ -14,7 +14,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   use CaseinWeb, :html
 
-  import CaseinWeb.WorkspaceLive.Show.UI, only: [leader_key_button: 1, dom_fragment: 1]
+  import CaseinWeb.WorkspaceLive.Show.UI,
+    only: [leader_key_button: 1, dom_fragment: 1, panel_state: 1]
 
   alias CaseinWeb.WorkspaceLive.Show.LeaderBindings
   alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
@@ -1042,21 +1043,30 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
               </div>
             <% end %>
             <p
-              :if={@node.sessions == []}
+              :if={@node.sessions == [] and @node.loading?}
               class={[
-                "flex items-center gap-1.5 px-2 py-1 font-mono text-[10px] italic text-base-content/40",
-                @node.loading? && "async-wait"
+                "flex items-center gap-1.5 px-2 py-1 font-mono text-density-label italic text-base-content/40",
+                "async-wait"
               ]}
-              role={if @node.loading?, do: "status", else: nil}
-              aria-live={if @node.loading?, do: "polite", else: nil}
+              role="status"
+              aria-live="polite"
             >
-              <.icon
-                :if={@node.loading?}
-                name="hero-arrow-path"
-                class="size-3 animate-spin"
-              />
-              {if @node.loading?, do: "Loading sessions…", else: "No live sessions"}
+              <.icon name="hero-arrow-path" class="size-3 animate-spin" /> Loading sessions…
             </p>
+            <.panel_state
+              :if={@node.sessions == [] and not @node.loading? and is_binary(@node.sessions_error)}
+              id={@node.dom_id <> "-sessions-error"}
+              kind={:error}
+              message={@node.sessions_error}
+              class="mx-2 my-1 px-2 py-2"
+            />
+            <.panel_state
+              :if={@node.sessions == [] and not @node.loading? and is_nil(@node.sessions_error)}
+              id={@node.dom_id <> "-sessions-empty"}
+              kind={:empty}
+              message="No live sessions"
+              class="mx-2 my-1 border-0 bg-transparent px-2 py-1 italic"
+            />
           </div>
         </div>
       <% @node.nav_href -> %>

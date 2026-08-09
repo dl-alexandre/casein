@@ -13,6 +13,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       host_loc: {:ok, {:local, "/tmp/ws"}},
       active_run: nil,
       run_ledger: [],
+      run_ledger_loaded?: true,
+      run_ledger_error: nil,
       selected_run_id: nil,
       selected_run_timeline: [],
       selected_run_summary: nil,
@@ -32,6 +34,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       host_loc={@host_loc}
       active_run={@active_run}
       run_ledger={@run_ledger}
+      run_ledger_loaded?={@run_ledger_loaded?}
+      run_ledger_error={@run_ledger_error}
       selected_run_id={@selected_run_id}
       selected_run_timeline={@selected_run_timeline}
       selected_run_summary={@selected_run_summary}

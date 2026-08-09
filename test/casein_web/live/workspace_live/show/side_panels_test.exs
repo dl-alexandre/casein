@@ -51,7 +51,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
 
       html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
-      assert html =~ "No host path; cannot list files."
+      assert html =~ "No host path"
+      assert html =~ "Cannot list files until the workspace path is available."
+      assert html =~ ~s(data-panel-state="error")
       refute html =~ "+File"
     end
 
@@ -498,6 +500,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
     %{
       git_status: [],
       git_status_ready?: true,
+      git_status_error: nil,
       open_file: nil,
       file_diff: nil
     }
@@ -511,6 +514,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
       html = rendered_to_string(~H"<SidePanels.diff_panel {assigns} />")
 
       assert html =~ "No changes."
+      assert html =~ ~s(data-panel-state="empty")
       assert html =~ "Select a file to view its diff."
     end
 
@@ -521,6 +525,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assert html =~ "Querying git…"
       assert html =~ "async-wait"
+      refute html =~ "No changes."
+    end
+
+    test "failed git status is error, not empty" do
+      assigns = base_diff_assigns(git_status_error: "Could not load git status.")
+
+      html = rendered_to_string(~H"<SidePanels.diff_panel {assigns} />")
+
+      assert html =~ ~s(data-panel-state="error")
+      assert html =~ "Could not load git status."
       refute html =~ "No changes."
     end
 
@@ -608,6 +622,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
       host_loc: {:ok, "/work"},
       active_run: nil,
       run_ledger: [],
+      run_ledger_loaded?: true,
+      run_ledger_error: nil,
       selected_run_id: nil,
       selected_run_timeline: [],
       selected_run_summary: nil,
@@ -804,14 +820,35 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
 
   describe "artifact_gallery_panel/1" do
     test "renders the empty state and refresh control" do
-      assigns = %{artifact_projects: [], artifact_projects_error: nil}
+      assigns = %{
+        artifact_projects: [],
+        artifact_projects_error: nil,
+        artifact_projects_loaded?: true
+      }
 
       html = rendered_to_string(~H"<SidePanels.artifact_gallery_panel {assigns} />")
 
       assert html =~ "artifact-gallery-panel"
       assert html =~ "0 artifacts"
       assert html =~ "No artifacts yet."
+      assert html =~ ~s(data-panel-state="empty")
       assert html =~ "artifact:refresh"
+    end
+
+    test "failed load is error, not empty" do
+      assigns = %{
+        artifact_projects: [],
+        artifact_projects_error:
+          "Could not load artifacts: boom. Retry with the refresh control.",
+        artifact_projects_loaded?: true
+      }
+
+      html = rendered_to_string(~H"<SidePanels.artifact_gallery_panel {assigns} />")
+
+      assert html =~ ~s(data-panel-state="error")
+      assert html =~ "Could not load artifacts"
+      refute html =~ "No artifacts yet."
+      assert html =~ ~s(phx-click="artifact:refresh")
     end
 
     test "renders artifact project cards with preview actions" do
@@ -829,7 +866,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
             updated_at: ~U[2026-07-04 02:00:00Z]
           }
         ],
-        artifact_projects_error: nil
+        artifact_projects_error: nil,
+        artifact_projects_loaded?: true
       }
 
       html = rendered_to_string(~H"<SidePanels.artifact_gallery_panel {assigns} />")
@@ -863,6 +901,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
           }
         ],
         artifact_projects_error: nil,
+        artifact_projects_loaded?: true,
         artifact_selected_id: "art-demo"
       }
 
@@ -891,6 +930,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
           }
         ],
         artifact_projects_error: nil,
+        artifact_projects_loaded?: true,
         artifact_selected_id: "art-demo"
       }
 
@@ -902,14 +942,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
       refute html =~ ~s(id="artifact-embedded-preview")
     end
 
-    test "renders load errors above the empty state" do
-      assigns = %{artifact_projects: [], artifact_projects_error: "artifact load failed"}
+    test "renders load errors without claiming empty" do
+      assigns = %{
+        artifact_projects: [],
+        artifact_projects_error: "artifact load failed",
+        artifact_projects_loaded?: true
+      }
 
       html = rendered_to_string(~H"<SidePanels.artifact_gallery_panel {assigns} />")
 
       assert html =~ "artifact-gallery-error"
       assert html =~ "artifact load failed"
-      assert html =~ "No artifacts yet."
+      assert html =~ ~s(data-panel-state="error")
+      refute html =~ "No artifacts yet."
     end
   end
 end

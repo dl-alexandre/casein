@@ -3,6 +3,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.LogsPanel do
 
   use CaseinWeb, :html
 
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [panel_state: 1]
+
   attr :log_service, :string, required: true
   attr :log_ref, :any, required: true
   attr :streams, :map, required: true
@@ -19,13 +21,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.LogsPanel do
         <input name="service" value={@log_service} class="border rounded px-2 py-1 text-sm font-mono" />
       </.form>
       <%= if is_nil(@log_ref) do %>
-        <p class="text-xs text-status-warning-fg">
-          <%= if Casein.WorkspaceSource.impl() == Casein.WorkspaceSource.Local do %>
-            Log streaming is not available for local filesystem workspaces.
-          <% else %>
-            Log stream unavailable (source unreachable or service not started).
-          <% end %>
-        </p>
+        <%= if Casein.WorkspaceSource.impl() == Casein.WorkspaceSource.Local do %>
+          <.panel_state
+            id="logs-panel-local-unavailable"
+            kind={:degraded}
+            title="Logs unavailable"
+            message="Log streaming is not available for local filesystem workspaces."
+          />
+        <% else %>
+          <.panel_state
+            id="logs-panel-stream-unavailable"
+            kind={:error}
+            title="Log stream unavailable"
+            message="Source unreachable or service not started. Start the service, then re-open Logs."
+          />
+        <% end %>
       <% end %>
       <pre
         id="log-lines"

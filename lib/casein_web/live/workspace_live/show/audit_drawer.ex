@@ -77,8 +77,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
         </div>
         <div class="flex-1 overflow-auto px-3 py-2 font-mono text-density-body leading-relaxed">
           <ol id="audit-events" phx-update="stream" class="space-y-1.5">
-            <li id="audit-events-empty" class="hidden only:block text-zinc-400 italic">
-              no events recorded yet
+            <li id="audit-events-empty" class="hidden only:block list-none">
+              <CaseinWeb.WorkspaceLive.Show.UI.panel_state
+                kind={:empty}
+                message="No events recorded yet."
+                class="border-0 bg-transparent px-0 py-2 italic"
+              />
             </li>
             <%= for {dom_id, e} <- @streams.audit_events do %>
               <li id={dom_id} class="flex gap-2 items-baseline">

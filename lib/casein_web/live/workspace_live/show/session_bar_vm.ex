@@ -573,6 +573,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
           expanded?: boolean(),
           flat_session?: boolean(),
           loading?: boolean(),
+          sessions_error: String.t() | nil,
           nav_href: String.t() | nil,
           session: tab() | workspace_tab() | nil,
           sessions: [tab() | workspace_tab()] | nil
@@ -824,6 +825,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       expanded?: false,
       flat_session?: true,
       loading?: false,
+      sessions_error: nil,
       nav_href: nil,
       session: session,
       sessions: nil
@@ -916,34 +918,41 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
 
     loaded_async = Map.get(sidebar_ws, workspace_id)
 
-    {sessions, loading?} =
+    {sessions, loading?, sessions_error} =
       cond do
         current? and is_list(current_tabs) ->
-          {tag_workspace_id(current_tabs, workspace_id), false}
+          {tag_workspace_id(current_tabs, workspace_id), false, nil}
 
         # Direct-nav workspaces never expand into a redundant single child.
         is_binary(nav_href) ->
-          {nil, false}
+          {nil, false, nil}
+
+        match?({:error, _}, loaded_async) ->
+          {[], false, sessions_load_error_message(loaded_async)}
 
         explicitly_expanded? and is_list(loaded_async) ->
-          {tag_workspace_id(loaded_async, workspace_id), false}
+          {tag_workspace_id(loaded_async, workspace_id), false, nil}
 
         # Expanded but the fresh read hasn't landed: seed from the summary so
         # children appear instantly. `loading?` drives a spinner only when even
         # the summary has nothing yet, so expansion is never a silent no-op.
         explicitly_expanded? ->
-          {summary_tabs, true}
+          {summary_tabs, true, nil}
 
         true ->
-          {nil, false}
+          {nil, false, nil}
       end
 
-    flat_session? = is_list(sessions) and length(sessions) == 1
+    flat_session? = is_list(sessions) and sessions_error == nil and length(sessions) == 1
 
     # Rollup for the header chip: collapsed rows may not enumerate `sessions`,
     # but counting over the already-cached tab list stays a cheap summary badge
     # — so a folded workspace can still show how many sessions need you.
-    rollup_sessions = sessions || Map.get(sidebar_ws, workspace_id, [])
+    rollup_sessions =
+      case sessions || Map.get(sidebar_ws, workspace_id, []) do
+        list when is_list(list) -> list
+        _ -> []
+      end
 
     needs_you_count =
       Enum.count(rollup_sessions, &(tab_attention_section(&1) == :needs_you))
@@ -964,11 +973,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       expanded?: explicitly_expanded? and not flat_session?,
       flat_session?: flat_session?,
       loading?: loading? and sessions == [],
+      sessions_error: sessions_error,
       nav_href: nav_href,
       session: if(flat_session?, do: List.first(sessions), else: nil),
       sessions: if(flat_session?, do: nil, else: sessions)
     }
   end
+
+  defp sessions_load_error_message({:error, _reason}),
+    do: "Could not load sessions. Expand again to retry."
 
   defp tag_workspace_id(tabs, workspace_id) when is_list(tabs),
     do: Enum.map(tabs, &Map.put(&1, :workspace_id, workspace_id))

@@ -92,12 +92,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.ArtifactEvents do
     socket
     |> assign(:artifact_projects, projects)
     |> assign(:artifact_projects_error, nil)
+    |> assign(:artifact_projects_loaded?, true)
     |> assign(:artifact_selected_id, valid_artifact_selected_id(projects, selected_id))
   rescue
     error ->
       socket
       |> assign(:artifact_projects, [])
-      |> assign(:artifact_projects_error, Exception.message(error))
+      |> assign(
+        :artifact_projects_error,
+        "Could not load artifacts: #{Exception.message(error)}. Retry with the refresh control."
+      )
+      |> assign(:artifact_projects_loaded?, true)
       |> assign(:artifact_selected_id, nil)
   end
 

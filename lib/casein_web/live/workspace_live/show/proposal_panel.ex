@@ -30,7 +30,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.ProposalPanel do
           </button>
         </div>
         <%= if @proposals == [] do %>
-          <p class="text-xs text-zinc-500">No proposal diffs found.</p>
+          <CaseinWeb.WorkspaceLive.Show.UI.panel_state
+            id="proposal-panel-empty"
+            kind={:empty}
+            message="No proposal diffs found."
+          />
         <% else %>
           <ul class="space-y-1">
             <%= for p <- @proposals do %>

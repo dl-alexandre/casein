@@ -352,10 +352,14 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         # false until :load_side_panels / :refresh_git_status settles (#732).
         |> assign(:git_status_ready?, false)
         |> assign(:side_panels_ready?, false)
+        |> assign(:git_status_error, nil)
+        |> assign(:side_panels_error, nil)
         |> assign(:file_diff, nil)
         |> assign(:active_run, nil)
         |> assign(:review_commands, [])
         |> assign(:run_ledger, [])
+        |> assign(:run_ledger_loaded?, false)
+        |> assign(:run_ledger_error, nil)
         |> assign(:selected_run_id, nil)
         |> assign(:selected_run_summary, nil)
         |> assign(:selected_run_timeline, [])
@@ -364,6 +368,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:selected_run_can_retry, false)
         |> assign(:artifact_projects, [])
         |> assign(:artifact_projects_error, nil)
+        |> assign(:artifact_projects_loaded?, false)
         |> assign(:artifact_selected_id, nil)
         |> HistoryEvents.assign_defaults()
         |> GrokPermissionEvents.mount()
@@ -1706,14 +1711,32 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     {:noreply,
      assign(socket,
        git_status: data.git_status,
+       git_status_error: nil,
        tree: tree,
        side_panels_ready?: true,
-       git_status_ready?: true
+       git_status_ready?: true,
+       side_panels_error: nil
+     )}
+  end
+
+  def handle_async(:load_side_panels, {:exit, reason}, socket) do
+    {:noreply,
+     assign(socket,
+       side_panels_ready?: true,
+       git_status_ready?: true,
+       side_panels_error: side_panels_failure_message(reason),
+       git_status_error: side_panels_failure_message(reason)
      )}
   end
 
   def handle_async(:load_side_panels, _result, socket) do
-    {:noreply, assign(socket, side_panels_ready?: true, git_status_ready?: true)}
+    {:noreply,
+     assign(socket,
+       side_panels_ready?: true,
+       git_status_ready?: true,
+       side_panels_error: "Could not load files and git status.",
+       git_status_error: "Could not load git status."
+     )}
   end
 
   @impl true
@@ -1745,11 +1768,21 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_async(:agents_mount, _result, socket), do: {:noreply, socket}
 
   def handle_async(:refresh_git_status, {:ok, entries}, socket) do
-    {:noreply, assign(socket, git_status: entries, git_status_ready?: true)}
+    {:noreply,
+     assign(socket, git_status: entries, git_status_ready?: true, git_status_error: nil)}
+  end
+
+  def handle_async(:refresh_git_status, {:exit, reason}, socket) do
+    {:noreply,
+     assign(socket,
+       git_status_ready?: true,
+       git_status_error: side_panels_failure_message(reason)
+     )}
   end
 
   def handle_async(:refresh_git_status, _result, socket) do
-    {:noreply, assign(socket, :git_status_ready?, true)}
+    {:noreply,
+     assign(socket, git_status_ready?: true, git_status_error: "Could not refresh git status.")}
   end
 
   def handle_async(:workspace_summaries, {:ok, summaries}, socket) do
@@ -1787,6 +1820,16 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     {:noreply, Sidebar.handle_async_sessions(socket, workspace_id, {:ok, infos})}
   end
 
+  def handle_async({:sidebar_ws_sessions, workspace_id}, {:exit, reason}, socket)
+      when is_binary(workspace_id) do
+    {:noreply, Sidebar.handle_async_sessions(socket, workspace_id, {:error, reason})}
+  end
+
+  def handle_async({:sidebar_ws_sessions, workspace_id}, _result, socket)
+      when is_binary(workspace_id) do
+    {:noreply, Sidebar.handle_async_sessions(socket, workspace_id, {:error, :failed})}
+  end
+
   def handle_async({:sidebar_ws_sessions, _workspace_id}, _result, socket) do
     {:noreply, socket}
   end
@@ -1811,8 +1854,11 @@ defmodule CaseinWeb.WorkspaceLive.Show do
      |> assign(:search_state, {:error, reason})}
   end
 
-  def handle_async(:run_search, {:exit, _reason}, socket) do
-    {:noreply, assign(socket, :search_state, :idle)}
+  def handle_async(:run_search, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:search_results, [])
+     |> assign(:search_state, {:error, {:exit, reason}})}
   end
 
   def handle_async(:saved_session_templates, {:ok, {tags, templates}}, socket) do
@@ -2512,6 +2558,15 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     CockpitData.fetch_side_panels(host_loc, host_path, tree)
   end
 
+  defp side_panels_failure_message({:timeout, _}),
+    do: "Timed out loading this panel. Retry or open a terminal and check the path."
+
+  defp side_panels_failure_message(:timeout),
+    do: "Timed out loading this panel. Retry or open a terminal and check the path."
+
+  defp side_panels_failure_message(_reason),
+    do: "Could not load this panel. Retry, or open a terminal if the workspace path is wrong."
+
   defp fetch_agents_panels(workspace, host_path, actor_id) do
     CockpitData.fetch_agents_panels(workspace, host_path, actor_id)
   end
@@ -2596,6 +2651,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       git_status={@git_status}
       git_status_ready?={@git_status_ready?}
       side_panels_ready?={@side_panels_ready?}
+      git_status_error={@git_status_error}
       grok_permission_requests={@grok_permission_requests}
       history_error={@history_error}
       history_form={@history_form}
@@ -2604,6 +2660,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       history_results={@history_results}
       host_loc={@host_loc}
       host_path={@host_path}
+      side_panels_error={@side_panels_error}
+      run_ledger_loaded?={@run_ledger_loaded?}
+      run_ledger_error={@run_ledger_error}
+      artifact_projects_loaded?={@artifact_projects_loaded?}
       leader_help_open={@leader_help_open}
       log_ref={@log_ref}
       log_service={@log_service}
