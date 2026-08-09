@@ -212,7 +212,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.UI do
       "border-status-warning-border bg-base-100 text-status-warning-fg hover:bg-status-warning-soft"
 
   defp panel_state_action_class(:error),
-    do: "border-status-danger-border bg-base-100 text-status-danger-fg hover:bg-status-danger-soft"
+    do:
+      "border-status-danger-border bg-base-100 text-status-danger-fg hover:bg-status-danger-soft"
 
   defp actionable?(label, event)
        when is_binary(label) and label != "" and is_binary(event) and event != "",
