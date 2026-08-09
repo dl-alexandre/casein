@@ -2,7 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Sanitized contract extracted from the dedicated Casein development profile. -->
+    <!-- Sanitized contract extract for tests — not a real provisioning profile. -->
+    <!-- Obviously fake / non-secret: no cert bytes, no device UDIDs, no portal UUID. -->
     <key>ApplicationIdentifierPrefix</key>
     <array>
         <string>2MP8QWK7R6</string>
