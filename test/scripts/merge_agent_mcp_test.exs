@@ -74,6 +74,9 @@ defmodule Scripts.MergeAgentMcpTest do
 
     data = path |> File.read!() |> Jason.decode!()
     assert data["mcpServers"]["casein-artifact-alpha-workspace"]["url"] =~ "/api/artifacts/mcp"
+    # #751: no forced _meta protocolVersion until runtime schema allows it.
+    refute Jason.encode!(data) =~ "io.modelcontextprotocol/protocolVersion"
+    refute Jason.encode!(data) =~ "2026-07-28"
   end
 
   defp write_config(body) do
