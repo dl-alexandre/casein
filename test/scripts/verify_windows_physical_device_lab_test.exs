@@ -133,7 +133,10 @@ defmodule Scripts.VerifyWindowsPhysicalDeviceLabTest do
     path = Path.join(tmp, "secret.json")
 
     doc = base_doc()
-    doc = put_in(doc, ["platforms", "android", "rows", "initial_pair", "notes"], "pairing_token=abc")
+
+    doc =
+      put_in(doc, ["platforms", "android", "rows", "initial_pair", "notes"], "pairing_token=abc")
+
     File.write!(path, Jason.encode!(doc))
 
     {out, status} =
