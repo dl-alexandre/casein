@@ -28,6 +28,25 @@ defmodule TmuxCtl.Test.InterventionRaceAdapter do
     FakeState.get(:intervention_race_panes, %{}) |> Map.has_key?(session)
   end
 
+  # Topology / agent-prompt naming call this unguarded. Derive windows from the
+  # panes seeded for the scenario — do not invent a constant "yes" window set
+  # (that changed shutdown behaviour when session_exists?/1 was stubbed).
+  def list_session_windows(session) do
+    panes = FakeState.get(:intervention_race_panes, %{}) |> Map.get(session, [])
+
+    panes
+    |> Enum.map(&window_id/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.map(fn id ->
+      %{id: id, name: "shell", active: true, last: false}
+    end)
+  end
+
+  defp window_id(%{window_id: id}) when is_binary(id) and id != "", do: id
+  defp window_id(%{"window_id" => id}) when is_binary(id) and id != "", do: id
+  defp window_id(_), do: nil
+
   defp send_to_test(message) do
     if pid = FakeState.get(:intervention_race_test_pid), do: send(pid, message)
     :ok
