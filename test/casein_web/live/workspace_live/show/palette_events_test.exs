@@ -26,6 +26,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEventsTest do
             palette_open: false,
             palette_query: "",
             palette_items: [],
+            palette_result_meta: %{
+              shown: 0,
+              total: 0,
+              cap: 50,
+              truncated?: false,
+              frequent_ids: MapSet.new()
+            },
             palette_selected_idx: 0,
             palette_category: :all,
             palette_usage: %{},

@@ -417,6 +417,13 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:palette_open, false)
         |> assign(:palette_query, "")
         |> assign(:palette_items, [])
+        |> assign(:palette_result_meta, %{
+          shown: 0,
+          total: 0,
+          cap: PaletteItems.max_results(),
+          truncated?: false,
+          frequent_ids: MapSet.new()
+        })
         |> assign(:palette_selected_idx, 0)
         |> assign(:palette_category, :all)
         |> assign(:session_templates, Terminals.session_templates())
@@ -2594,6 +2601,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       open_file={@open_file}
       palette_category={@palette_category}
       palette_items={@palette_items}
+      palette_result_meta={@palette_result_meta}
       palette_open={@palette_open}
       palette_query={@palette_query}
       palette_selected_idx={@palette_selected_idx}
@@ -2895,16 +2903,13 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   defp live_session_tab?(%{status: :active, id: id}) when is_binary(id) and id != "", do: true
   defp live_session_tab?(_), do: false
 
-  defp palette_query(socket, q), do: PaletteItems.query(socket, q)
-
   defp refresh_open_palette(socket) do
-    assign_palette_items_preserving_selection(
-      socket,
-      palette_query(socket, socket.assigns[:palette_query] || "")
-    )
+    result = PaletteItems.query_with_meta(socket, socket.assigns[:palette_query] || "")
+
+    assign_palette_items_preserving_selection(socket, result)
   end
 
-  defp assign_palette_items_preserving_selection(socket, items) do
+  defp assign_palette_items_preserving_selection(socket, %{items: items} = result) do
     old_count = length(socket.assigns[:palette_items] || [])
     selected_idx = socket.assigns[:palette_selected_idx] || 0
     new_count = length(items)
@@ -2916,9 +2921,23 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         true -> min(selected_idx, new_count - 1)
       end
 
+    meta = Map.take(result, [:shown, :total, :cap, :truncated?, :frequent_ids])
+
     socket
     |> assign(:palette_items, items)
+    |> assign(:palette_result_meta, meta)
     |> assign(:palette_selected_idx, next_idx)
+  end
+
+  defp assign_palette_items_preserving_selection(socket, items) when is_list(items) do
+    assign_palette_items_preserving_selection(socket, %{
+      items: items,
+      shown: length(items),
+      total: length(items),
+      cap: PaletteItems.max_results(),
+      truncated?: false,
+      frequent_ids: MapSet.new()
+    })
   end
 
   defp maybe_select_requested_tmux_window(socket, nil), do: {socket, false}

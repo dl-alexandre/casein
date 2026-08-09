@@ -127,6 +127,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :open_file, :any, required: true
   attr :palette_category, :any, required: true
   attr :palette_items, :any, required: true
+  attr :palette_result_meta, :any, required: true
   attr :palette_open, :any, required: true
   attr :palette_query, :any, required: true
   attr :palette_selected_idx, :any, required: true
@@ -226,6 +227,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       palette_query={@palette_query}
       palette_category={@palette_category}
       palette_items={@palette_items}
+      palette_result_meta={@palette_result_meta}
       palette_selected_idx={@palette_selected_idx}
     /> {ContextMenu.render_context_menu(assigns)}
     <.template_preview_modal template_preview={@template_preview} />

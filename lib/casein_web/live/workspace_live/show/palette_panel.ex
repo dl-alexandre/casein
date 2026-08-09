@@ -22,12 +22,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
   def palette_category_label(:actions), do: "actions"
 
   def palette_overlay(assigns) do
+    meta = palette_meta(assigns[:palette_result_meta], assigns[:palette_items] || [])
+
     assigns =
-      Phoenix.Component.assign(
-        assigns,
+      assigns
+      |> Phoenix.Component.assign(
         :palette_selected_id,
         palette_selected_id(assigns[:palette_items], assigns[:palette_selected_idx])
       )
+      |> Phoenix.Component.assign(:palette_meta, meta)
+      |> Phoenix.Component.assign(:frequent_ids, meta.frequent_ids)
 
     ~H"""
     <%= if @palette_open do %>
@@ -122,29 +126,65 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
               <li class="px-3 py-2 text-xs text-base-content/60">No matches.</li>
             <% else %>
               <%= for {item, idx} <- Enum.with_index(@palette_items) do %>
+                <% selected? = idx == (@palette_selected_idx || 0) %>
+                <% frequent? = MapSet.member?(@frequent_ids, item.id) %>
                 <li
                   id={"palette-item-" <> Integer.to_string(idx)}
                   data-palette-idx={idx}
-                  class={[
-                    "flex cursor-pointer items-center gap-2 border-b border-base-200 px-3 py-1.5 last:border-b-0 hover:bg-base-200",
-                    "pointer-coarse:min-h-11 pointer-coarse:py-3",
-                    if(idx == (@palette_selected_idx || 0),
-                      do: "bg-primary/15 text-base-content",
-                      else: ""
-                    )
-                  ]}
+                  data-palette-kind={to_string(item.kind)}
+                  data-palette-frequent={if(frequent?, do: "true", else: "false")}
+                  class={
+                    [
+                      # Truncation priority (stated, not content-dependent):
+                      #   1. hint  — shrink-0, never truncates (keymap teaching)
+                      #   2. kind  — shrink-0 trailing badge
+                      #   3. label — flex-1 min-w-0, keeps space, truncates last
+                      #   4. detail — max-w + shrink, loses width first
+                      # Below sm (#745): detail/kind/freq collapse; row is label+hint.
+                      "group relative flex cursor-pointer items-center gap-2 border-b border-base-200 border-l-2 py-1.5 pl-3 pr-3 last:border-b-0 hover:bg-base-200",
+                      "pointer-coarse:min-h-11 pointer-coarse:py-3",
+                      if(selected?,
+                        do: "border-l-primary bg-primary/15 text-base-content",
+                        else: "border-l-transparent"
+                      )
+                    ]
+                  }
                   phx-click="palette:execute"
                   phx-value-id={item.id}
                 >
-                  <span class="w-14 shrink-0 text-density-label uppercase text-base-content/50 max-sm:hidden">
+                  <span
+                    class={[
+                      "min-w-0 flex-1 truncate",
+                      if(path_like_label?(item), do: "font-mono", else: "font-sans")
+                    ]}
+                    title={item.label}
+                  >
+                    {item.label}
+                  </span>
+                  <%= if item.detail do %>
+                    <span
+                      class={[
+                        "min-w-0 max-w-[11rem] shrink truncate text-xs text-base-content/55 max-sm:hidden",
+                        if(path_like_detail?(item), do: "font-mono", else: "font-sans")
+                      ]}
+                      title={item.detail}
+                    >
+                      {item.detail}
+                    </span>
+                  <% end %>
+                  <%= if frequent? do %>
+                    <span
+                      class="shrink-0 text-density-label uppercase tracking-wide text-base-content/40 max-sm:hidden"
+                      title="Promoted by recent use in this workspace"
+                    >
+                      freq
+                    </span>
+                  <% end %>
+                  <span class="shrink-0 text-density-label uppercase tracking-wide text-base-content/40 max-sm:hidden">
                     {item.kind}
                   </span>
-                  <span class="min-w-0 flex-1 truncate font-mono">{item.label}</span>
-                  <%= if item.detail do %>
-                    <span class="truncate text-xs text-base-content/60 max-sm:hidden">{item.detail}</span>
-                  <% end %>
                   <%= if item.hint do %>
-                    <kbd class="ml-auto shrink-0 rounded border border-base-300 bg-base-200 px-1 font-mono text-density-label text-base-content/70">
+                    <kbd class="shrink-0 rounded border border-base-300 bg-base-200 px-1 font-mono text-density-label text-base-content/70">
                       {item.hint}
                     </kbd>
                   <% end %>
@@ -176,7 +216,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
                 <span class="text-base-content/70">toggle</span>
               </span>
             </div>
-            <span>{length(@palette_items)} item(s)</span>
+            <span
+              id="palette-result-count"
+              class={[
+                "font-mono tabular-nums",
+                @palette_meta.truncated? && "text-warning"
+              ]}
+              title={
+                if @palette_meta.truncated?,
+                  do: "Showing the top #{@palette_meta.cap} of #{@palette_meta.total} matches",
+                  else: nil
+              }
+            >
+              {result_count_label(@palette_meta)}
+            </span>
           </div>
         </div>
       </div>
@@ -185,6 +238,56 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
     <% end %>
     """
   end
+
+  # Honest cap label. Silent "N item(s)" is gone — when truncated, show "N of M".
+  defp result_count_label(%{shown: 0}), do: "0 items"
+
+  defp result_count_label(%{truncated?: true, shown: shown, total: total}),
+    do: "#{shown} of #{total}"
+
+  defp result_count_label(%{shown: 1}), do: "1 item"
+  defp result_count_label(%{shown: n}), do: "#{n} items"
+
+  defp palette_meta(nil, items) do
+    n = length(items)
+
+    %{
+      shown: n,
+      total: n,
+      cap: CaseinWeb.WorkspaceLive.Show.PaletteItems.max_results(),
+      truncated?: false,
+      frequent_ids: MapSet.new()
+    }
+  end
+
+  defp palette_meta(meta, items) when is_map(meta) do
+    items = items || []
+
+    %{
+      shown: Map.get(meta, :shown, length(items)),
+      total: Map.get(meta, :total, length(items)),
+      cap: Map.get(meta, :cap, CaseinWeb.WorkspaceLive.Show.PaletteItems.max_results()),
+      truncated?: Map.get(meta, :truncated?, false),
+      frequent_ids: Map.get(meta, :frequent_ids) || MapSet.new()
+    }
+  end
+
+  # Mono for path-like labels (files, sessions, windows, panes); sans for verbs.
+  defp path_like_label?(%{kind: :file}), do: true
+
+  defp path_like_label?(%{id: id}) when is_binary(id) do
+    String.starts_with?(id, "session:") or
+      String.starts_with?(id, "window:") or
+      String.starts_with?(id, "pane:") or
+      String.starts_with?(id, "file:") or
+      String.starts_with?(id, "file-pane:")
+  end
+
+  defp path_like_label?(_), do: false
+
+  defp path_like_detail?(%{kind: :file}), do: true
+  defp path_like_detail?(%{id: "preview:surface:" <> _}), do: true
+  defp path_like_detail?(_), do: false
 
   defp palette_selected_id(items, idx) when is_list(items) and items != [] do
     safe_idx = (idx || 0) |> max(0) |> min(length(items) - 1)

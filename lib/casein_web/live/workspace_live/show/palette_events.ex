@@ -86,7 +86,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
     {:noreply,
      socket
      |> assign(:palette_query, q)
-     |> assign(:palette_items, PaletteItems.query(socket, q))
+     |> assign_palette_result(PaletteItems.query_with_meta(socket, q))
      |> assign(:palette_selected_idx, 0)
      |> maybe_preview_selected_theme()}
   end
@@ -194,12 +194,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
       |> assign(:palette_usage, usage)
       |> assign(:palette_query, query)
 
-    items = PaletteItems.query(socket, query)
+    result = PaletteItems.query_with_meta(socket, query)
 
     {:noreply,
      socket
      |> assign(:palette_open, true)
-     |> assign(:palette_items, items)
+     |> assign_palette_result(result)
      |> assign(:palette_selected_idx, 0)
      |> maybe_preview_selected_theme()}
   end
@@ -265,10 +265,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
   # Re-query under the new category and reset selection to the top.
   defp apply_palette_category(socket, category) do
     socket = assign(socket, :palette_category, category)
+    result = PaletteItems.query_with_meta(socket, socket.assigns[:palette_query] || "")
 
     socket
-    |> assign(:palette_items, PaletteItems.query(socket, socket.assigns[:palette_query] || ""))
+    |> assign_palette_result(result)
     |> assign(:palette_selected_idx, 0)
     |> maybe_preview_selected_theme()
+  end
+
+  defp assign_palette_result(socket, %{items: items} = result) do
+    meta = Map.take(result, [:shown, :total, :cap, :truncated?, :frequent_ids])
+
+    socket
+    |> assign(:palette_items, items)
+    |> assign(:palette_result_meta, meta)
   end
 end
