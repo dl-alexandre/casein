@@ -332,4 +332,83 @@ defmodule Casein.Attention.AcknowledgementTest do
     assert Acknowledgement.seen_through?("dev", subject, 42)
     assert cursor.subject_kind == "card"
   end
+
+  test "seen_quiet_window_keys reports SEEN windows and session cards; missing stays unseen" do
+    origin_id = Casein.Origin.id()
+    keys = [{"sid-a", "@1"}, {"sid-b", "@2"}, {"sid-c", "@3"}]
+
+    assert Acknowledgement.seen_quiet_window_keys("dev", "ws-1", keys, origin_id: origin_id) ==
+             MapSet.new()
+
+    assert {:ok, _} =
+             Acknowledgement.mark_session_window_seen("dev", "ws-1", "sid-a", "@1",
+               now: @now,
+               origin_id: origin_id,
+               sync_notifications: false
+             )
+
+    assert {:ok, _} =
+             Acknowledgement.mark_seen(
+               "dev",
+               Acknowledgement.card_subject("ws-1:session:sid-b", origin_id),
+               now: @now,
+               sync_notifications: false
+             )
+
+    seen =
+      Acknowledgement.seen_quiet_window_keys("dev", "ws-1", keys, origin_id: origin_id)
+
+    assert MapSet.member?(seen, {"sid-a", "@1"})
+    assert MapSet.member?(seen, {"sid-b", "@2"})
+    refute MapSet.member?(seen, {"sid-c", "@3"})
+  end
+
+  test "phone mark_viewed settles session-rail quiet keys for the same session card" do
+    origin_id = Casein.Origin.id()
+
+    card =
+      Card.outcome(
+        %{
+          user_id: "dev",
+          workspace_id: "ws-1",
+          session_id: "sid-rail",
+          outcome: :failed
+        },
+        @now
+      )
+
+    assert {:ok, transition} =
+             AttentionInbox.record_card(card, "run.failed",
+               origin_id: origin_id,
+               event_id: "evt-rail-1",
+               occurred_at: @now
+             )
+
+    attention_key = AttentionInbox.key(card)
+
+    keys_before =
+      Acknowledgement.seen_quiet_window_keys(
+        "dev",
+        "ws-1",
+        [{"sid-rail", "@1"}],
+        origin_id: origin_id
+      )
+
+    refute MapSet.member?(keys_before, {"sid-rail", "@1"})
+
+    assert {:ok, _} =
+             AttentionInbox.mark_viewed("dev", origin_id, attention_key, transition.id,
+               now: @later
+             )
+
+    keys_after =
+      Acknowledgement.seen_quiet_window_keys(
+        "dev",
+        "ws-1",
+        [{"sid-rail", "@1"}],
+        origin_id: origin_id
+      )
+
+    assert MapSet.member?(keys_after, {"sid-rail", "@1"})
+  end
 end

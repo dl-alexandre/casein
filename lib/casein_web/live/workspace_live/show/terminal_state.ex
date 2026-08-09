@@ -1055,12 +1055,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
     previous_ids = socket.assigns[:quiet_window_ids]
     previous_entries = socket.assigns[:quiet_window_entries] || %{}
     unseen_ids = normalize_window_id_set(socket.assigns[:unseen_quiet_window_ids])
+    # Drop keys already SEEN on another surface (phone/drawer/other LiveView).
+    durable_seen = durable_seen_quiet_keys(socket, quiet_ids)
+    live_unseen = MapSet.difference(MapSet.intersection(unseen_ids, quiet_ids), durable_seen)
 
     socket =
       socket
       |> assign(:quiet_window_ids, quiet_ids)
       |> assign(:quiet_window_entries, quiet)
-      |> assign(:unseen_quiet_window_ids, MapSet.intersection(unseen_ids, quiet_ids))
+      |> assign(:unseen_quiet_window_ids, live_unseen)
       |> assign(:agent_working_window_ids, observed_working_ids)
 
     if is_nil(previous_ids) or not connected?(socket) do
@@ -1142,10 +1145,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   # with the web focus path (#698). Best-effort: missing user/workspace skips.
   defp persist_session_window_seen(socket, session_id, window_id)
        when is_binary(session_id) and is_binary(window_id) do
-    user_id =
-      socket.assigns[:notif_user_id] ||
-        (socket.assigns[:current_user] || %{}) |> Map.get(:id)
-
+    user_id = notif_user_id(socket)
     workspace_id = socket.assigns[:workspace] && socket.assigns.workspace.id
 
     if is_binary(user_id) and is_binary(workspace_id) do
@@ -1171,13 +1171,39 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   defp maybe_track_unseen_quiet(socket, entry, _decision) do
     key = quiet_entry_key(entry)
 
-    socket
-    |> assign(
-      :unseen_quiet_window_ids,
-      socket.assigns[:unseen_quiet_window_ids]
-      |> normalize_window_id_set()
-      |> MapSet.put(key)
-    )
+    # Durable SEEN (phone/drawer/other LiveView) must quiet the badge here too.
+    # Missing ack stays unseen — never collapse unknown into acknowledged.
+    if durable_quiet_window_seen?(socket, key) do
+      socket
+    else
+      socket
+      |> assign(
+        :unseen_quiet_window_ids,
+        socket.assigns[:unseen_quiet_window_ids]
+        |> normalize_window_id_set()
+        |> MapSet.put(key)
+      )
+    end
+  end
+
+  defp durable_quiet_window_seen?(socket, key) do
+    MapSet.member?(durable_seen_quiet_keys(socket, [key]), key)
+  end
+
+  defp durable_seen_quiet_keys(socket, keys) do
+    user_id = notif_user_id(socket)
+    workspace_id = socket.assigns[:workspace] && socket.assigns.workspace.id
+
+    if is_binary(user_id) and is_binary(workspace_id) do
+      Acknowledgement.seen_quiet_window_keys(user_id, workspace_id, keys)
+    else
+      MapSet.new()
+    end
+  end
+
+  defp notif_user_id(socket) do
+    socket.assigns[:notif_user_id] ||
+      (socket.assigns[:current_user] || %{}) |> Map.get(:id)
   end
 
   defp clear_unseen_quiet_windows(socket, ids) do
