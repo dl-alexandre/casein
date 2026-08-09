@@ -151,6 +151,23 @@ defmodule CaseinWeb.WorkspaceLive.DiffInspectorTest do
     assert function_exported?(InspectorEvents, :restore_inspectors, 2)
   end
 
+  test "session-template inspectors fragment round-trips through serialize/restore" do
+    serialized = [%{"type" => "inspector", "kind" => "diff", "path" => "lib/foo.ex"}]
+
+    # Export body shape matches Casein.Cockpit.Inspectors.serialize/1.
+    {slots, _} =
+      Inspectors.open([], %{kind: :diff, id: "insp-diff", title: "lib/foo.ex", path: "lib/foo.ex"})
+
+    assert Inspectors.serialize(slots) == serialized
+
+    {restored, geo} = Inspectors.restore(serialized)
+    assert Casein.Cockpit.Geometry.inspector_open?(geo)
+    assert Inspectors.diff_open?(restored)
+    assert Inspectors.primary_diff_path(restored) == "lib/foo.ex"
+    # Fresh id — identity is not durable across template restore.
+    refute hd(restored).id == "insp-diff"
+  end
+
   # --- helpers -----------------------------------------------------------------
 
   defp seed_topology(tmux_session, workspace_path) do

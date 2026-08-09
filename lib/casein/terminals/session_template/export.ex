@@ -38,10 +38,20 @@ defmodule Casein.Terminals.SessionTemplate.Export do
         }
         |> compact()
         |> tag_feature_panes(feature_pane_lookup(opts))
+        |> put_inspectors(Keyword.get(opts, :inspectors))
 
       {:ok, template}
     end
   end
+
+  # LiveView-owned inspector viewports (diff/run) are not tmux geometry. The
+  # cockpit passes a serialized list from Casein.Cockpit.Inspectors.serialize/1
+  # so save/restore reopens the viewport and re-derives content (issue #691).
+  defp put_inspectors(template, list) when is_list(list) and list != [] do
+    Map.put(template, "inspectors", list)
+  end
+
+  defp put_inspectors(template, _), do: template
 
   # Live tmux topology can't tell a feature-overlaid pane (preview, file) from a
   # plain terminal — the overlay is a Casein concept, not a tmux one. A caller that

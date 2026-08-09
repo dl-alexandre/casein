@@ -17,6 +17,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias Casein.Agents.PaneEnv
   alias Casein.Agents.PreviewTools.BrowserControl
   alias Casein.Audit
+  alias Casein.Cockpit.Inspectors
   alias Casein.Cockpit.Tabs
   alias Casein.CommandPalette.Actions
   alias Casein.Labels
@@ -3069,6 +3070,24 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     end
   end
 
+  # LiveView-owned inspector viewports travel beside the tmux layout in the
+  # saved template body (`"inspectors"`). Re-derive after apply (#691).
+  defp restore_template_inspectors(socket, result) when is_map(result) do
+    serialized =
+      Map.get(result, :inspectors) ||
+        Map.get(result, "inspectors") ||
+        get_in(result, [:template, :inspectors]) ||
+        []
+
+    if is_list(serialized) and serialized != [] do
+      InspectorEvents.restore_inspectors(socket, serialized)
+    else
+      socket
+    end
+  end
+
+  defp restore_template_inspectors(socket, _), do: socket
+
   defp applied_session_template(socket, template_id, result) do
     # Store under both UUID and workspace name so Session (keyed by name)
     # and LiveView recovery can both resolve the last template.
@@ -3080,6 +3099,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       socket
       |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
       |> assign_workspace_summaries()
+      |> restore_template_inspectors(result)
 
     emit_tmux_template_audit(socket, template_id, result)
 
@@ -3195,7 +3215,8 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       with {:ok, template} <-
              Terminals.export_session_template(topology,
                workspace_root: workspace_cwd(socket),
-               name: name
+               name: name,
+               inspectors: Inspectors.serialize(socket.assigns[:inspector_slots] || [])
              ),
            {:ok, saved} <-
              Terminals.save_template(%{

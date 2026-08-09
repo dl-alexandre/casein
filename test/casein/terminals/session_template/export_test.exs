@@ -696,4 +696,26 @@ defmodule Casein.Terminals.SessionTemplate.ExportTest do
                """
     end
   end
+
+  describe "from_topology/2 — LiveView inspectors" do
+    test "omits inspectors key when opt is empty or absent" do
+      topology = %{windows: [window(%{pane_list: [pane(%{id: "%1"})]})]}
+      {:ok, template} = Export.from_topology(topology)
+      refute Map.has_key?(template, "inspectors")
+
+      {:ok, template} = Export.from_topology(topology, inspectors: [])
+      refute Map.has_key?(template, "inspectors")
+    end
+
+    test "records serialized inspector list beside the tmux layout" do
+      topology = %{windows: [window(%{pane_list: [pane(%{id: "%1"})]})]}
+
+      inspectors = [
+        %{"type" => "inspector", "kind" => "diff", "path" => "lib/foo.ex"}
+      ]
+
+      {:ok, template} = Export.from_topology(topology, inspectors: inspectors)
+      assert template["inspectors"] == inspectors
+    end
+  end
 end
