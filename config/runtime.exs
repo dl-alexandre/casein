@@ -35,6 +35,16 @@ desktop_mode? = System.get_env("CASEIN_PROFILE") == "desktop"
 desktop_lan? = desktop_mode? and truthy_env?.("CASEIN_DESKTOP_LAN")
 portable_mode? = System.get_env("CASEIN_PROFILE") == "portable"
 
+# Optional, exact-path public desktop downloads. Casein never scans this
+# directory and exposes no upload or arbitrary-path route: an operator must
+# explicitly name each file that may be served, along with the SHA-256 it must
+# hash to. Both are required together; see docs/deploy.md.
+config :casein, :desktop_downloads,
+  windows: [
+    path: System.get_env("CASEIN_WINDOWS_DOWNLOAD_PATH"),
+    sha256: System.get_env("CASEIN_WINDOWS_DOWNLOAD_SHA256")
+  ]
+
 operator_config_path = System.get_env("CASEIN_OPERATOR_CONFIG_FILE")
 operator_overlay? = is_binary(operator_config_path) and operator_config_path != ""
 

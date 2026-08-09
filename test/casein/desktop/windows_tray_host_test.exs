@@ -15,6 +15,22 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
   @support Path.expand("../../../windows/New-CaseinSupportBundle.ps1", __DIR__)
   @rollback Path.expand("../../../windows/Rollback-Casein.ps1", __DIR__)
   @trusted_lan Path.expand("../../../windows/Casein.TrustedLan.ps1", __DIR__)
+  @development_bootstrap Path.expand(
+                           "../../../windows/bootstrap/Casein.DevelopmentBootstrap.cs",
+                           __DIR__
+                         )
+  @bootstrap_builder Path.expand(
+                       "../../../scripts/build-windows-development-bootstrap.ps1",
+                       __DIR__
+                     )
+  @manifest_signer Path.expand(
+                     "../../../scripts/sign-windows-development-manifest.ps1",
+                     __DIR__
+                   )
+  @development_packager Path.expand(
+                          "../../../scripts/package-windows-development-release.ps1",
+                          __DIR__
+                        )
 
   test "tray host supervises the loopback desktop release" do
     script = File.read!(@tray_script)
@@ -246,6 +262,38 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)"
     assert script =~ "Get-Process -Id $ownerPid -ErrorAction SilentlyContinue"
     assert script =~ "Remove-StaleReleaseStages -ReleasesRoot $releasesRoot -ReleaseId $releaseId"
+  end
+
+  test "development bootstrap pins its channel key without weakening production trust" do
+    bootstrap = File.read!(@development_bootstrap)
+    builder = File.read!(@bootstrap_builder)
+    signer = File.read!(@manifest_signer)
+    development_packager = File.read!(@development_packager)
+    tray = File.read!(@tray_script)
+    installer = File.read!(@installer)
+    package = File.read!(@package_script)
+
+    assert bootstrap =~ "__CASEIN_RSA_MODULUS__"
+    assert bootstrap =~ "VerifyManifestSignature"
+    assert bootstrap =~ "VerifyArtifactFile"
+    assert bootstrap =~ "Archive path traversal was rejected"
+    assert bootstrap =~ "Development update URLs must be credential-free HTTPS URLs"
+    assert bootstrap =~ "The update artifact must use the manifest origin"
+    assert bootstrap =~ "-AllowUnsignedDevelopment -Launch"
+    assert builder =~ "GetRSAPublicKey"
+    assert signer =~ "RSASignaturePadding]::Pkcs1"
+    assert signer =~ "channel -ne 'development'"
+    assert development_packager =~ "CASEIN_RELEASE_CHANNEL = 'development'"
+    assert development_packager =~ "DevelopmentBootstrapPath"
+    assert development_packager =~ "sign-windows-development-manifest.ps1"
+    assert package =~ "DevelopmentBootstrapPath"
+    assert package =~ "Casein.DevelopmentBootstrap.exe"
+    assert installer =~ "Casein.DevelopmentBootstrap.exe"
+    assert tray =~ "(-not $signer -or -not [string]$signer.Value)"
+    assert tray =~ "Start-Process -FilePath $developmentBootstrap"
+    assert tray =~ "Update-Casein.ps1"
+    assert installer =~ "Get-AuthenticodeSignature"
+    assert package =~ "RequireSigned"
   end
 
   test "Windows package requires a self-contained Playwright runtime" do

@@ -5,6 +5,7 @@ param(
     [switch]$SkipBuild,
     [switch]$AllowDirty,
     [switch]$SkipPreviewRuntime,
+    [string]$DevelopmentBootstrapPath,
     [string]$SigningCertificateThumbprint,
     [switch]$RequireSigned
 )
@@ -311,6 +312,14 @@ Copy-Item -Force -LiteralPath @(
     (Join-Path $root 'windows\Uninstall-Casein.cmd')
 ) -Destination $outputPath
 Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\Casein.png')
+if ($DevelopmentBootstrapPath) {
+    $developmentBootstrap = [IO.Path]::GetFullPath($DevelopmentBootstrapPath)
+    if (-not (Test-Path -LiteralPath $developmentBootstrap -PathType Leaf) -or
+        [IO.Path]::GetExtension($developmentBootstrap) -ne '.exe') {
+        throw 'The development bootstrap must be an existing .exe file.'
+    }
+    Copy-Item -Force -LiteralPath $developmentBootstrap -Destination (Join-Path $outputPath 'windows\Casein.DevelopmentBootstrap.exe')
+}
 Write-ReleaseTrustManifest -PackagePath $outputPath -Revision $sourceRevision -Version $metadata.version
 
 $docsPath = Join-Path $outputPath 'docs'
