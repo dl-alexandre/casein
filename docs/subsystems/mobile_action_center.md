@@ -223,7 +223,7 @@ What the server already exposes vs what `native/casein_mob` uses:
 | `card_action` + review/intervention | `ReviewDecisionScreen` + dashboard action button |
 | Dedicated inbox screen named/routed as inbox | **Missing** — tracked as #739 (out of this vertical) |
 | Full-width action layout fix | #738 (out of this vertical) |
-| Theme kit / scaffolding cleanup | #740 / #741 (out of this vertical) |
+| Theme kit / scaffolding cleanup | #740 settled in `CaseinMob.Theme` + `mob_dev_workflow.md` (Hex `mob_themes` rejected); #741 scaffolding removal remains out of this vertical |
 
 This document restores the **server contract** so surface work has a single
 place to read. Building the dedicated inbox screen is deliberately a separate

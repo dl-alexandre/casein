@@ -40,13 +40,13 @@ defmodule CaseinMob.HomeScreen do
   end
 
   def handle_info({:tap, :theme_light}, socket) do
-    Mob.Theme.set(Mob.Theme.Light)
+    Mob.Theme.set(CaseinMob.Theme.light())
     Mob.State.put(:theme, :light)
     {:noreply, Mob.Socket.assign(socket, :theme, :light)}
   end
 
   def handle_info({:tap, :theme_dark}, socket) do
-    Mob.Theme.set(Mob.Theme.Dark)
+    Mob.Theme.set(CaseinMob.Theme.dark())
     Mob.State.put(:theme, :dark)
     {:noreply, Mob.Socket.assign(socket, :theme, :dark)}
   end
@@ -163,9 +163,9 @@ defmodule CaseinMob.HomeScreen do
 />)
   end
 
-  defp theme_to_module(:light), do: Mob.Theme.Light
-  defp theme_to_module(:dark), do: Mob.Theme.Dark
-  defp theme_to_module(_), do: Mob.Theme.Dark
+  defp theme_to_module(:light), do: CaseinMob.Theme.light()
+  defp theme_to_module(:dark), do: CaseinMob.Theme.dark()
+  defp theme_to_module(_), do: CaseinMob.Theme.dark()
 
   defp logo_src(:light), do: Path.join(rootdir(), "mob_logo_dark.png")
   defp logo_src(_), do: Path.join(rootdir(), "mob_logo_light.png")

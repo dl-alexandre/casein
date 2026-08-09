@@ -1,7 +1,9 @@
 defmodule CaseinMob.App do
   @moduledoc "Application entry point for CaseinMob."
 
-  use Mob.App
+  # Brand theme at boot (Mob.App calls Mob.Theme.set/1). Without it every screen
+  # renders against Mob's neutral grey-and-blue base. See CaseinMob.Theme.
+  use Mob.App, theme: CaseinMob.Theme
 
   @impl Mob.App
   def navigation(_platform) do
@@ -10,6 +12,13 @@ defmodule CaseinMob.App do
 
   @impl Mob.App
   def on_start do
+    # Re-assert the brand theme last. `use Mob.App, theme:` sets it first, but
+    # `Mob.Plugins.boot/1` runs afterwards and would apply any
+    # `config :mob, :default_style` from mob.exs. We keep :default_style unset
+    # (stock mob_themes is not our product look), and still re-assert here so a
+    # future style package cannot silently clobber brand colours at boot.
+    Mob.Theme.set(CaseinMob.Theme.dark())
+
     CaseinMob.ConnectionTiming.start_boot()
     start_scanner_boundary_probe()
     # Configure BEAM's DNS path so Req / Finch / Mint / `gen_tcp:connect/3`

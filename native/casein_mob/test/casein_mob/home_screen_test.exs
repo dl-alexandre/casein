@@ -20,9 +20,21 @@ defmodule CaseinMob.HomeScreenTest do
     assert find(view, :button, text: "Sessions")
   end
 
-  test "switching to the light theme updates the assign" do
+  test "switching to the light theme updates the assign and brand palette" do
     view = HomeScreen |> mount_screen() |> render_info({:tap, :theme_light})
     assert assigns(view).theme == :light
+    assert Mob.Theme.current().primary == CaseinMob.Theme.light().primary
+  end
+
+  test "switching back to dark restores the brand dark palette" do
+    view =
+      HomeScreen
+      |> mount_screen()
+      |> render_info({:tap, :theme_light})
+      |> render_info({:tap, :theme_dark})
+
+    assert assigns(view).theme == :dark
+    assert Mob.Theme.current().primary == CaseinMob.Theme.dark().primary
   end
 
   test "sessions is a first-class navigation target" do
