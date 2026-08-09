@@ -143,7 +143,17 @@ jobs:
           scripts/with-ephemeral-macos-keychain.sh \
             /usr/bin/swift test --package-path native/casein_menubar --filter CrashRecovery
 
+      # Retained only off pull_request. `retention-days: 7` capped how long each
+      # upload lived but not how many there are: at ~382 MB per commit, every
+      # push to every open PR bought another copy, which is what refilled the
+      # account artifact quota after the retention fix. A PR still builds and
+      # smoke-tests the package — it just does not keep it. Grab a PR's package
+      # from a `workflow_dispatch` run on that branch when one is actually
+      # needed.
+      #
+      # Keep this `if` in step with windows-desktop.yml.
       - name: Upload package and integrity metadata
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: Casein-${{ matrix.cache }}

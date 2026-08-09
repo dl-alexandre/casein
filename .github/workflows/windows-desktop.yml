@@ -68,7 +68,14 @@ jobs:
         shell: pwsh
         run: scripts/test-windows-desktop-package.ps1 -PackageRoot dist/Casein-windows-x64-ci
 
+      # Retained only off pull_request — `retention-days` alone capped each
+      # upload's lifetime but not how many there are, so PR pushes refilled the
+      # quota anyway. See the matching note in macos-desktop.yml; keep the two
+      # `if`s in step. This workflow has no `push` trigger, so in practice that
+      # means uploads happen on `workflow_dispatch`, which is when someone
+      # actually wants the package. The build and smoke test still run on PRs.
       - name: Upload package and integrity metadata
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: Casein-windows-x64
