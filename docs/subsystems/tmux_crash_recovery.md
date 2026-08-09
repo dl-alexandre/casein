@@ -67,7 +67,32 @@ bash scripts/ensure-tmux-coredumps.sh
 
 # Watch recoveries
 # (audit action: terminal.session_recreated)
+
+# Inventory leftover test-suite sockets (casein_test_<pid>, …). Dry-run default.
+# Never touches casein / casein_dev / devide / default. See issue #717.
+bash scripts/casein-test-tmux-socket-reaper.sh
+# bash scripts/casein-test-tmux-socket-reaper.sh --apply   # unlink dead files only
 ```
+
+### Stale `casein_test_*` sockets (#717)
+
+`mix test` pins `-L casein_test_<pid>` and the suite reaper unlinks its own
+socket on exit (`test/test_helper.exs`). Killed runs and older code leave dead
+socket files (and occasionally an unlinked-but-running server with a deleted
+cwd). On this multi-tenant box:
+
+| Do | Don't |
+|----|-------|
+| `tmux -L <exact-name> list-sessions` | bare `tmux` (inherited `$TMUX` can name a dead path while `-L casein` is healthy) |
+| Match exact basenames + re-verify PID from `/proc` cmdline before any signal | `pkill -f` / pattern kills |
+| Prefer inventory / dead-file unlink | Auto-kill anything attached, young, or whose label pid is still alive |
+| Leave `casein` / `casein_dev` / `devide` / `devide_dev` / `default` alone | Assume `systemctl enable` protects a running orphan server |
+
+`scripts/casein-test-tmux-socket-reaper.sh` is inventory-first and dry-run by
+default. `--apply` only unlinks dead test socket *files*. Signalling orphaned
+test servers requires an explicit second flag (`--reap-orphaned-servers`) and
+still refuses protected labels, live label pids, attached clients, and young
+processes. Safe answer when unsure: report only.
 
 ## Known gaps (post-mortem is currently near-impossible)
 

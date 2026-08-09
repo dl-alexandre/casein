@@ -128,7 +128,7 @@ If `CASEIN_WORKSPACE_ID` is unset on a host ops console, treat MCP as multi-work
 | P1 | #718 | Host MCP hygiene (disable noise servers) — host apply |
 | P1b | #715 | Env-ref Casein Bearer — host apply |
 | P3 | #716 | Product cwd discipline |
-| P4 | #717 | Reap stale local `casein_test_*` sockets |
+| P4 | #717 | Reap stale local `casein_test_*` sockets — `scripts/casein-test-tmux-socket-reaper.sh` (inventory + dry-run default; see script header) |
 | P5 | #714 | Short agent note (this folder / AGENTS link) |
 
 **Explicitly deferred:** default URL scope-down to a single workspace only; Mode B for host-home Grok.
