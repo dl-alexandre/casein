@@ -18,12 +18,21 @@ defmodule Casein.Terminals.SessionDirectory.Attention do
   quiet, therefore the operator is needed* (`%{section: :needs_you, reason: :idle}`).
   It is raised from the directory window's quantized `:quiet` flag (see
   `Casein.Terminals.Activity`) and is ranked inside `:needs_you` after
-  blocked/error/completed.
+  blocked/errored/stalled/completed.
 
   It deliberately does **not** mean "suppress this notification". Delivery
   routing — whether to stay silent, render inline chrome, or request an OS
   notification — lives in `Casein.Attention.Policy` under the `delivery_*`
   vocabulary. Do not reuse `:idle` or "quiet" there.
+
+  ## `:errored` and `:stalled` stay distinct from `:blocked` (H28)
+
+  - `:blocked` — agent reported it needs a human (report-only)
+  - `:errored` — agent reported failure (report-only)
+  - `:stalled` — derived from liveness; looks busy, worktree quiet
+
+  These project from `Casein.Attention.Delivery.session_classification/1`.
+  UI chrome must not re-derive the kind by re-inspecting window agent_state.
   """
 
   alias Casein.Attention.Delivery

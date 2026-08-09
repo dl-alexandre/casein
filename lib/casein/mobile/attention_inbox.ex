@@ -198,6 +198,8 @@ defmodule Casein.Mobile.AttentionInbox do
       # Pin threshold: Casein.Attention.Delivery.needs_me_pin?/1
       unresolved?: unresolved?,
       pin: if(unresolved?, do: "needs_me", else: nil),
+      # signal + notify from Salience; push uses Delivery.push_eligible?/1 (needs signal)
+      signal: ranking.signal,
       # notify bit from Salience; eligibility floor is Delivery.notify_eligible?/1
       notify: ranking.notify,
       changed_at: transition_value(latest, :occurred_at) || card.updated_at,
@@ -313,6 +315,7 @@ defmodule Casein.Mobile.AttentionInbox do
     |> Salience.facts_from_card(resume, latest)
     |> Salience.compute()
     |> Map.take([
+      :signal,
       :priority,
       :rank,
       :reason_code,

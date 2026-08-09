@@ -141,6 +141,9 @@ defmodule Casein.Agents.AgentEvents.MemoryAdapter do
       )
       |> Enum.sort_by(&{&1.occurred_at, &1.inserted_at, &1.id}, :desc)
 
+    # Filter resolved BEFORE newest-per-pane distinct (H28). Memory path must
+    # match EctoAdapter: an older open request stays answerable when a newer
+    # same-pane request was resolved.
     resolved_ids =
       clarification_events
       |> Enum.filter(&(&1.event_type == resolved_type))
@@ -149,8 +152,8 @@ defmodule Casein.Agents.AgentEvents.MemoryAdapter do
     events =
       clarification_events
       |> Enum.filter(&(&1.event_type == request_type))
-      |> Enum.uniq_by(&{&1.agent_session_id, &1.tmux_session_id, &1.pane_id})
       |> Enum.reject(&MapSet.member?(resolved_ids, &1.id))
+      |> Enum.uniq_by(&{&1.agent_session_id, &1.tmux_session_id, &1.pane_id})
       |> Enum.take(limit)
 
     {:reply, events, state}

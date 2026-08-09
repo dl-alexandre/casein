@@ -881,6 +881,34 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       text: "needs input"
     }
 
+  defp needs_you_row_badge(%{reason: :errored, agent_blocked_count: count}) when count > 1,
+    do: %{
+      dot: "bg-rose-500",
+      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      text: "error ×#{count}"
+    }
+
+  defp needs_you_row_badge(%{reason: :errored}),
+    do: %{
+      dot: "bg-rose-500",
+      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      text: "error"
+    }
+
+  defp needs_you_row_badge(%{reason: :stalled, agent_blocked_count: count}) when count > 1,
+    do: %{
+      dot: "bg-amber-500",
+      class: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
+      text: "stalled ×#{count}"
+    }
+
+  defp needs_you_row_badge(%{reason: :stalled}),
+    do: %{
+      dot: "bg-amber-500",
+      class: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
+      text: "stalled"
+    }
+
   defp needs_you_row_badge(%{reason: :error}),
     do: %{
       dot: "bg-rose-500",
@@ -2350,44 +2378,45 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   defp agent_badge_for_reason(:blocked, session) do
     count = Map.get(session, :agent_blocked_count, 0)
-    stalled? = session_has_agent_state?(session, :stalled)
-    errored? = session_has_agent_state?(session, :errored)
 
-    cond do
-      stalled? and not session_has_agent_state?(session, :blocked) and not errored? ->
-        %{
-          reason: :blocked,
-          class: "bg-warning/15 text-warning",
-          text: if(count > 1, do: "stalled ×#{count}", else: "stalled"),
-          title:
-            with_attention_message(
-              "Agent looks busy but its worktree has been idle — may be wedged",
-              session
-            )
-        }
+    base =
+      if(count > 1,
+        do: "#{count} agent windows are blocked on input",
+        else: "Agent is blocked on input"
+      )
 
-      errored? and not session_has_agent_state?(session, :blocked) ->
-        %{
-          reason: :blocked,
-          class: "bg-error/15 text-error",
-          text: if(count > 1, do: "error ×#{count}", else: "error"),
-          title: with_attention_message("Agent errored", session)
-        }
+    %{
+      reason: :blocked,
+      class: "bg-error/15 text-error",
+      text: if(count > 1, do: "needs input ×#{count}", else: "needs input"),
+      title: with_attention_message(base, session)
+    }
+  end
 
-      true ->
-        base =
-          if(count > 1,
-            do: "#{count} agent windows are blocked on input",
-            else: "Agent is blocked on input"
-          )
+  defp agent_badge_for_reason(:errored, session) do
+    count = Map.get(session, :agent_blocked_count, 0)
 
-        %{
-          reason: :blocked,
-          class: "bg-error/15 text-error",
-          text: if(count > 1, do: "needs input ×#{count}", else: "needs input"),
-          title: with_attention_message(base, session)
-        }
-    end
+    %{
+      reason: :errored,
+      class: "bg-error/15 text-error",
+      text: if(count > 1, do: "error ×#{count}", else: "error"),
+      title: with_attention_message("Agent errored", session)
+    }
+  end
+
+  defp agent_badge_for_reason(:stalled, session) do
+    count = Map.get(session, :agent_blocked_count, 0)
+
+    %{
+      reason: :stalled,
+      class: "bg-warning/15 text-warning",
+      text: if(count > 1, do: "stalled ×#{count}", else: "stalled"),
+      title:
+        with_attention_message(
+          "Agent looks busy but its worktree has been idle — may be wedged",
+          session
+        )
+    }
   end
 
   defp agent_badge_for_reason(:completed, session) do
@@ -2409,12 +2438,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   end
 
   defp agent_badge_for_reason(_reason, _session), do: nil
-
-  defp session_has_agent_state?(session, state) do
-    session
-    |> Map.get(:windows, [])
-    |> Enum.any?(fn window -> Map.get(window, :agent_state) == state end)
-  end
 
   # Append the agent's own status message to a badge tooltip when one is present
   # on the tab, so hovering tells you *why* it needs you, not just that it does.

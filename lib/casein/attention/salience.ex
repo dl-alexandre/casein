@@ -17,6 +17,17 @@ defmodule Casein.Attention.Salience do
   - `signal` — `Casein.Attention.Signal.t()`
 
   Assertable in pure tests with plain maps — no LiveView, channel, or Repo.
+
+  ## Agent-state kinds (H28)
+
+  Session-path `agent_states` keep report-only vs derived-only distinct:
+
+  - `:blocked` → `:agent_blocked` (report-only human need)
+  - `:errored` → `:agent_errored` (report-only failure claim)
+  - `:stalled` → `:agent_stalled` (derived-only; liveness quiet + busy look)
+
+  Never treat observation failure as quiet/idle — that path is not represented
+  here; callers must not pass a fabricated quiet fact when liveness is unknown.
   """
 
   alias Casein.Attention.Signal
@@ -223,28 +234,52 @@ defmodule Casein.Attention.Salience do
     lifecycle = Map.get(facts, :lifecycle_status, :other)
 
     cond do
-      lifecycle == :error or :blocked in states ->
-        if :blocked in states do
-          band(
-            :agent_blocked,
-            "critical",
-            700,
-            "human_blocked",
-            "Agent is blocked on you",
-            "Respond",
-            true
-          )
-        else
-          band(
-            :run_failed,
-            "high",
-            560,
-            "failure",
-            "Work ended with a reported failure",
-            "Inspect failure",
-            true
-          )
-        end
+      # Report-only human need outranks every other session fact.
+      :blocked in states ->
+        band(
+          :agent_blocked,
+          "critical",
+          700,
+          "human_blocked",
+          "Agent is blocked on you",
+          "Respond",
+          true
+        )
+
+      # Report-only error claim — not the same kind as blocked or stalled.
+      :errored in states ->
+        band(
+          :agent_errored,
+          "high",
+          650,
+          "agent_errored",
+          "Agent reported an error",
+          "Inspect failure",
+          true
+        )
+
+      lifecycle == :error ->
+        band(
+          :run_failed,
+          "high",
+          560,
+          "failure",
+          "Work ended with a reported failure",
+          "Inspect failure",
+          true
+        )
+
+      # Derived-only: looks busy, worktree quiet. Cockpit-visible; not a phone interrupt.
+      :stalled in states ->
+        band(
+          :agent_stalled,
+          "normal",
+          450,
+          "agent_stalled",
+          "Agent looks busy but its worktree is quiet",
+          nil,
+          false
+        )
 
       :done in states ->
         band(
@@ -259,6 +294,8 @@ defmodule Casein.Attention.Salience do
 
       quiet? ->
         # #696: session-picker reason :idle — agent went quiet, you are needed.
+        # notify stays true for drawer/chrome eligibility; push is a separate
+        # Delivery decision and excludes :idle (H28).
         band(
           :idle,
           "normal",
@@ -349,18 +386,14 @@ defmodule Casein.Attention.Salience do
     end
   end
 
-  defp normalize_agent_state(state)
-       when state in [
-              :blocked,
-              "blocked",
-              :attention,
-              "attention",
-              :errored,
-              "errored",
-              :stalled,
-              "stalled"
-            ],
-       do: :blocked
+  # Keep kinds distinct. "attention" is a legacy picker synonym for blocked need.
+  # :unknown is never a quiet/idle fact — drop it as :other so it cannot promote.
+  defp normalize_agent_state(state) when state in [:blocked, "blocked", :attention, "attention"],
+    do: :blocked
+
+  defp normalize_agent_state(state) when state in [:errored, "errored"], do: :errored
+
+  defp normalize_agent_state(state) when state in [:stalled, "stalled"], do: :stalled
 
   defp normalize_agent_state(state) when state in [:done, "done", :completed, "completed"],
     do: :done

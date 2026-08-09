@@ -9,16 +9,30 @@ defmodule Casein.Attention.Delivery do
   ## Inspectable thresholds (one place)
 
   | Surface | Clears when | Constant / helper |
-  |---------|-------------|-------------------|
-  | OS push (mobile card path) | `notify` and `rank >= 400` | `push_eligible?/1` → `@notify_rank_floor` |
-  | Notifications drawer create (mobile) | same as push eligibility | `drawer_eligible?/1` |
-  | Mobile inbox `notify` bit | same floor (from Salience) | `notify_eligible?/1` |
-  | Session rail `:needs_you` | signal maps via `session_classification/1` | rank ≥ 400 bands + idle |
-  | Session rail urgency sort | reason order blocked/error < completed < idle | `session_reason_urgency/1` |
+  |---------| | ----------- | ----------------- |
+  | OS push (mobile card path) | `push_eligible?/1` — stricter than cockpit | `@push_signals` + rank floor |
+  | Notifications drawer create (mobile) | `drawer_eligible?/1` (same as push) | `drawer_eligible?/1` |
+  | Mobile inbox `notify` bit | Salience `notify` ∧ rank floor | `notify_eligible?/1` |
+  | Session rail `:needs_you` | signal maps via `session_classification/1` | cockpit-visible bands |
+  | Session rail urgency sort | blocked < errored < stalled < completed < idle | `session_reason_urgency/1` |
   | Quiet chrome badge | unseen count > 0 → `"unseen"`, else quiet → `"inline"` | `chrome_attention_label/2` |
   | Needs Me pin | unresolved decision card types | `needs_me_pin?/1` |
   | Drawer severity chrome | priority critical/high → `"warning"` | `drawer_severity/1` |
   | Browser quiet-agent OS notify | focus table + observed_working? | `delivery_decision/1` |
+
+  ## Push is not cockpit visibility (H28)
+
+  `push_eligible?/1` answers "should this interrupt a human on their phone."
+  `session_needs_you?/1` answers "should this be visible in the cockpit rail."
+  They share **one salience definition** and apply **different thresholds**.
+  Do not collapse them into one boolean.
+
+  Push includes human blockers, approvals, failures, and completed work that
+  already pages today. It deliberately excludes:
+
+  - `:agent_stalled` — derived observation; high cockpit value, low interrupt value
+  - `:idle` — quiet-window chrome on the rail; not a phone page by itself
+  - `:working` / `:informational` / `:offline_resumable` — below the floor
 
   ## Focus-aware quiet-agent routing
 
@@ -51,29 +65,45 @@ defmodule Casein.Attention.Delivery do
         }
 
   @type session_section :: :needs_you | :working | :recent
-  @type session_reason :: :blocked | :error | :completed | :idle | :working | :recent
+  @type session_reason ::
+          :blocked | :errored | :stalled | :error | :completed | :idle | :working | :recent
   @type session_classification :: %{section: session_section(), reason: session_reason()}
 
   # ---------------------------------------------------------------------------
   # Thresholds — the only place surfaces may look for "how high is high enough"
   # ---------------------------------------------------------------------------
 
-  # Mobile notify / OS push / drawer-create floor. Matches Salience bands for
-  # critical/high/normal actionable outcomes (completed_ready = 400). Working
-  # (120) and informational (80) stay below and must not page.
+  # Mobile notify / drawer-create floor (shared band floor with push rank cut).
+  # Critical/high/normal actionable outcomes sit at ≥400. Working (120) and
+  # informational (80) stay below.
   @notify_rank_floor 400
 
-  # Session rail `:needs_you` includes the same actionable bands. Encoded via
-  # `session_classification/1` signal map (not a second ranker).
+  # Session rail `:needs_you` includes the same actionable bands plus stalled.
+  # Encoded via `session_classification/1` signal map (not a second ranker).
   @session_needs_you_rank_floor 400
 
-  # Within `:needs_you`, lower urgency sorts first (blocked before completed
-  # before idle). Presentation order only — not a membership cut.
+  # OS push may interrupt only for these signals. Same salience definition as
+  # the cockpit; stricter membership than `session_needs_you?`.
+  @push_signals MapSet.new([
+                  :agent_blocked,
+                  :agent_errored,
+                  :approval_pending,
+                  :deploy_failed,
+                  :run_failed,
+                  :checks_failed,
+                  :apply_failed,
+                  :deploy_succeeded,
+                  :run_completed
+                ])
+
+  # Within `:needs_you`, lower urgency sorts first.
   @session_reason_urgency %{
     blocked: 0,
+    errored: 0,
     error: 0,
-    completed: 1,
-    idle: 2
+    stalled: 1,
+    completed: 2,
+    idle: 3
   }
 
   # Priorities that paint the notifications drawer row as warning chrome.
@@ -83,13 +113,17 @@ defmodule Casein.Attention.Delivery do
   @needs_me_card_types ~w(clarification needs_review)
   @needs_me_resolved_statuses ~w(resolved done handled dismissed)
 
-  @doc "Rank floor for mobile notify, OS push (mobile path), and drawer create."
+  @doc "Rank floor for mobile notify and drawer create."
   @spec notify_rank_floor() :: non_neg_integer()
   def notify_rank_floor, do: @notify_rank_floor
 
   @doc "Rank floor documented for session-rail needs_you (see session_classification/1)."
   @spec session_needs_you_rank_floor() :: non_neg_integer()
   def session_needs_you_rank_floor, do: @session_needs_you_rank_floor
+
+  @doc "Signals that may clear the OS-push threshold (inspectable set)."
+  @spec push_signals() :: MapSet.t(atom())
+  def push_signals, do: @push_signals
 
   @doc "Normalize browser/workspace surface state from atoms or client strings."
   @spec surface_state(term()) :: surface_state()
@@ -166,11 +200,10 @@ defmodule Casein.Attention.Delivery do
   def reaction_label(:notify), do: "notify"
 
   @doc """
-  Whether shared salience clears the default notify threshold.
+  Whether shared salience clears the default **notify/drawer** threshold.
 
-  Used by mobile inbox `notify`, notifications-drawer create (mobile cards),
-  and OS push (mobile card path). Surfaces must not re-rank; they AND this with
-  channel rules (prefs, quiet hours, `push_allowed`) only.
+  Used by mobile inbox `notify` and notifications-drawer create. This is **not**
+  the OS-push gate — use `push_eligible?/1` for phone interrupts.
   """
   @spec notify_eligible?(Salience.t() | map()) :: boolean()
   def notify_eligible?(%{notify: notify, rank: rank})
@@ -181,9 +214,21 @@ defmodule Casein.Attention.Delivery do
   def notify_eligible?(%{notify: notify}) when is_boolean(notify), do: notify
   def notify_eligible?(_), do: false
 
-  @doc "OS push (mobile card path) — same floor as notify; channel rules apply outside."
+  @doc """
+  OS push (mobile card path) — interrupt the human on their phone.
+
+  Distinct from cockpit visibility (`session_needs_you?/1`) and from the
+  drawer/notify floor (`notify_eligible?/1`). Requires:
+
+  1. `notify_eligible?/1` (rank floor + Salience notify bit), and
+  2. signal ∈ `push_signals/0` (excludes `:idle` and `:agent_stalled`).
+  """
   @spec push_eligible?(Salience.t() | map()) :: boolean()
-  def push_eligible?(salience), do: notify_eligible?(salience)
+  def push_eligible?(%{signal: signal} = salience) do
+    notify_eligible?(salience) and MapSet.member?(@push_signals, signal)
+  end
+
+  def push_eligible?(_), do: false
 
   @doc "Notifications drawer row create from a mobile card — same floor as notify."
   @spec drawer_eligible?(Salience.t() | map()) :: boolean()
@@ -205,14 +250,15 @@ defmodule Casein.Attention.Delivery do
   @doc """
   Urgency rank for needs-you row ordering: lower sorts first.
 
-  Blocked/error before completed before idle. Unknown reasons sort last.
+  Blocked/errored/error before stalled before completed before idle.
+  Unknown reasons sort last.
   """
   @spec session_reason_urgency(session_reason() | term()) :: non_neg_integer()
   def session_reason_urgency(reason) when is_atom(reason) do
-    Map.get(@session_reason_urgency, reason, 3)
+    Map.get(@session_reason_urgency, reason, 4)
   end
 
-  def session_reason_urgency(_), do: 3
+  def session_reason_urgency(_), do: 4
 
   @doc """
   Cockpit quiet-chrome attention label for a window or session aggregate.
@@ -270,13 +316,20 @@ defmodule Casein.Attention.Delivery do
   Session-picker classification as a **projection** over salience.
 
   Preserves today's `SessionDirectory.Attention` membership and #696 reason
-  `:idle` (agent went quiet → needs you).
+  `:idle` (agent went quiet → needs you). H28 keeps report-only `:errored` and
+  derived-only `:stalled` as distinct reasons (not collapsed into `:blocked`).
   """
   @spec session_classification(Salience.t() | map()) :: session_classification()
   def session_classification(%{signal: signal} = salience) do
     case signal do
       :agent_blocked ->
         %{section: :needs_you, reason: :blocked}
+
+      :agent_errored ->
+        %{section: :needs_you, reason: :errored}
+
+      :agent_stalled ->
+        %{section: :needs_you, reason: :stalled}
 
       :run_failed ->
         # Session lifecycle error without a blocked agent window.

@@ -97,21 +97,71 @@ defmodule Casein.Attention.SalienceTest do
   end
 
   describe "compute/1 session path" do
-    test "blocked and stalled agent states need you" do
-      for state <- [:blocked, :errored, :stalled, "blocked"] do
-        end_to_end =
+    test "blocked is report-only human need" do
+      for state <- [:blocked, "blocked", :attention, "attention"] do
+        salience =
           %{windows: [%{agent_state: state}]}
           |> Salience.facts_from_session()
           |> Salience.compute()
 
-        assert end_to_end.signal == :agent_blocked
-        assert end_to_end.rank == 700
+        assert salience.signal == :agent_blocked
+        assert salience.rank == 700
+        assert salience.notify
 
-        assert Delivery.session_classification(end_to_end) == %{
+        assert Delivery.session_classification(salience) == %{
                  section: :needs_you,
                  reason: :blocked
                }
       end
+    end
+
+    test "errored stays distinct from blocked (report-only failure claim)" do
+      for state <- [:errored, "errored"] do
+        salience =
+          %{windows: [%{agent_state: state}]}
+          |> Salience.facts_from_session()
+          |> Salience.compute()
+
+        assert salience.signal == :agent_errored
+        assert salience.rank == 650
+        assert salience.reason_code == "agent_errored"
+        assert salience.notify
+
+        assert Delivery.session_classification(salience) == %{
+                 section: :needs_you,
+                 reason: :errored
+               }
+      end
+    end
+
+    test "stalled stays distinct from blocked (derived-only)" do
+      for state <- [:stalled, "stalled"] do
+        salience =
+          %{windows: [%{agent_state: state}]}
+          |> Salience.facts_from_session()
+          |> Salience.compute()
+
+        assert salience.signal == :agent_stalled
+        assert salience.rank == 450
+        assert salience.reason_code == "agent_stalled"
+        refute salience.notify
+
+        assert Delivery.session_classification(salience) == %{
+                 section: :needs_you,
+                 reason: :stalled
+               }
+      end
+    end
+
+    test "unknown agent state never becomes idle or quiet" do
+      salience =
+        %{windows: [%{agent_state: :unknown}]}
+        |> Salience.facts_from_session()
+        |> Salience.compute()
+
+      refute salience.signal in [:idle, :agent_stalled, :agent_blocked]
+      assert salience.signal == :informational
+      assert Delivery.session_classification(salience).section == :recent
     end
 
     test "quiet window projects to signal :idle (post-#696 vocabulary)" do
@@ -147,6 +197,22 @@ defmodule Casein.Attention.SalienceTest do
 
       assert salience.signal == :run_failed
       assert Delivery.session_classification(salience) == %{section: :needs_you, reason: :error}
+    end
+
+    test "blocked outranks stalled and errored on the same session" do
+      salience =
+        %{
+          windows: [
+            %{agent_state: :stalled},
+            %{agent_state: :errored},
+            %{agent_state: :blocked}
+          ]
+        }
+        |> Salience.facts_from_session()
+        |> Salience.compute()
+
+      assert salience.signal == :agent_blocked
+      assert Delivery.session_classification(salience).reason == :blocked
     end
 
     test "working and ordinary shells partition correctly" do

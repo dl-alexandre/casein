@@ -19,23 +19,38 @@ defmodule Casein.Agents.AgentEvents.ClarificationEctoAdapterTest do
                limit: 1
              )
 
-    assert [^other] =
+    open =
+      EctoAdapter.list_open_clarifications(
+        workspace_id,
+        "agent.clarification_requested",
+        "agent.clarification_resolved",
+        limit: 10
+      )
+
+    open_ids = Enum.map(open, & &1.id)
+    # Filter resolved BEFORE distinct: older open on the same pane stays answerable
+    # when a newer same-pane request was resolved (H28 mobile trap).
+    assert older.id in open_ids
+    refute newest.id in open_ids
+    assert other.id in open_ids
+    assert length(open) == 2
+  end
+
+  test "resolved newest request does not hide an older open request on the same pane" do
+    workspace_id = Ecto.UUID.generate()
+    older_open = insert_request(workspace_id, "task-a", "session-a", "%2", -5)
+    mid_resolved = insert_request(workspace_id, "task-a", "session-a", "%2", -3)
+    insert_resolution(workspace_id, mid_resolved, -2)
+    newest_resolved = insert_request(workspace_id, "task-a", "session-a", "%2", -1)
+    insert_resolution(workspace_id, newest_resolved, 0)
+
+    assert [^older_open] =
              EctoAdapter.list_open_clarifications(
                workspace_id,
                "agent.clarification_requested",
                "agent.clarification_resolved",
                limit: 10
              )
-
-    refute older.id in Enum.map(
-             EctoAdapter.list_open_clarifications(
-               workspace_id,
-               "agent.clarification_requested",
-               "agent.clarification_resolved",
-               limit: 10
-             ),
-             & &1.id
-           )
   end
 
   defp insert_request(workspace_id, task_id, tmux_session, pane_id, seconds) do

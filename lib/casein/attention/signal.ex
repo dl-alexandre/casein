@@ -5,16 +5,29 @@ defmodule Casein.Attention.Signal do
   Signals feed `Casein.Attention.Salience`. Surfaces must not invent parallel
   signal enums; they project from salience.
 
-  ## Vocabulary (post-#696)
+  ## Vocabulary (post-#696 / H28)
 
   - `:idle` — agent window went quiet, therefore the operator is needed.
     Raised from the directory window `:quiet` flag. This is **not** "suppress
     this notification" (that is delivery / `Casein.Attention.Policy`).
-  - Other atoms name lifecycle/domain facts (`:agent_blocked`, `:run_failed`, …).
+  - `:agent_blocked` — agent reported it needs a human (report-only).
+  - `:agent_errored` — agent **reported** failure (`:errored`). Report-only;
+    never derived from liveness.
+  - `:agent_stalled` — pane looks busy and external liveness is quiet
+    (derived-only). Never reported by an agent; never collapsed into blocked.
+  - Other atoms name lifecycle/domain facts (`:run_failed`, …).
+
+  ## Kind discipline (from `Casein.Terminals.AgentState`)
+
+  Report-only and derived-only states must stay distinct through salience.
+  Collapsing `:stalled` or `:errored` into `:agent_blocked` loses that kind
+  boundary and makes cockpit chrome invent a second classifier.
   """
 
   @type t ::
           :agent_blocked
+          | :agent_errored
+          | :agent_stalled
           | :approval_pending
           | :deploy_failed
           | :run_failed
