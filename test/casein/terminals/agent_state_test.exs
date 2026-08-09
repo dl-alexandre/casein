@@ -41,6 +41,13 @@ defmodule Casein.Terminals.AgentStateTest do
     |> Enum.filter(&(&1 == "agent.state_changed"))
   end
 
+  # Drain eviction fill casts before asserting. AgentState.get/2 defaults to a
+  # 5s call timeout; 501 audit-emitting report casts can exceed that under the
+  # shared pr-gate host.
+  defp agent_state_get(tmux_session, pane_id) do
+    GenServer.call(AgentState, {:get, {tmux_session, pane_id}}, 60_000)
+  end
+
   describe "report/get/for_session" do
     test "stores and broadcasts a report, keyed by session and pane" do
       ws = "ws-state-#{System.unique_integer([:positive])}"
@@ -217,13 +224,15 @@ defmodule Casein.Terminals.AgentStateTest do
         :ok = AgentState.report("ws-evict-fill", "casein_evict_fill", "%#{i}", :working, "fill")
       end
 
-      # Casts are async — a call serializes before asserting eviction.
-      assert AgentState.get("casein_evict", "%0") == nil
+      # Casts are async — a call serializes before asserting eviction. The fill
+      # loop queues 501 report casts that each may emit audit/lifecycle work, so
+      # the default 5s call timeout is not enough under a busy shared gate box.
+      assert agent_state_get("casein_evict", "%0") == nil
 
       # The eviction tombstone remembers the last state: this re-report is not
       # a transition, so no new agent.state_changed row for the probe pane.
       :ok = AgentState.report("ws-evict-probe", "casein_evict", "%0", :working, "step")
-      assert %{state: :working} = AgentState.get("casein_evict", "%0")
+      assert %{state: :working} = agent_state_get("casein_evict", "%0")
 
       # Lifecycle altitude (run.*) shares the audit stream; assert only the
       # agent.state_changed volume this test owns.
@@ -252,10 +261,10 @@ defmodule Casein.Terminals.AgentStateTest do
         :ok = AgentState.report("ws-evict-fill2", "casein_evict_fill2", "%#{i}", :working, "f")
       end
 
-      assert AgentState.get("casein_evict2", "%0") == nil
+      assert agent_state_get("casein_evict2", "%0") == nil
 
       :ok = AgentState.report("ws-evict-flip", "casein_evict2", "%0", :blocked, "stuck")
-      assert %{state: :blocked} = AgentState.get("casein_evict2", "%0")
+      assert %{state: :blocked} = agent_state_get("casein_evict2", "%0")
 
       [row | _] =
         "ws-evict-flip"
