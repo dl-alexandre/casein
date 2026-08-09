@@ -121,6 +121,13 @@ defmodule Casein.CommandPalette.ActionsTest do
       assert item.payload.event == "diff:open_in_pane"
       assert item.category == :view
     end
+
+    test "includes the run inspector open action", %{items: items} do
+      item = Enum.find(items, &(&1.id == "run:open_in_pane"))
+      assert item
+      assert item.payload.event == "run:open_in_pane"
+      assert item.category == :view
+    end
   end
 
   describe "allowed_events/0" do

@@ -221,6 +221,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                     kind={:error}
                     title="Could not load runs"
                     message={@run_ledger_error}
+                    data-run-empty-state="error"
                   />
                 <% not @run_ledger_loaded? and @run_ledger == [] -> %>
                   <div id="run-ledger-pending" class="hidden" aria-hidden="true"></div>
@@ -228,7 +229,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                   <.panel_state
                     id="run-ledger-empty"
                     kind={:empty}
-                    message="No runs recorded."
+                    title="No runs yet"
+                    message="This is the ordinary empty ledger — not an error. Start a run from the palette or an agent task, and it will appear here beside the terminal."
+                    data-run-empty-state="no_runs"
                   />
                 <% true -> %>
                   <ol class="space-y-1">
@@ -280,11 +283,23 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                 <% end %>
               </div>
               <%= if @selected_run_timeline == [] do %>
-                <.panel_state
-                  id="run-ledger-timeline-empty"
-                  kind={:empty}
-                  message="Select a run to inspect its canonical events."
-                />
+                <%= if @selected_run_id do %>
+                  <.panel_state
+                    id="run-ledger-timeline-empty"
+                    kind={:empty}
+                    title="Run not in ledger"
+                    message="That run id is gone or finished out of view. The ledger above is still current — pick a run, or wait for the next one. This is a normal empty state, not a failure."
+                    data-run-empty-state="run_gone"
+                  />
+                <% else %>
+                  <.panel_state
+                    id="run-ledger-timeline-empty"
+                    kind={:empty}
+                    title="Nothing selected"
+                    message="Select a run from the ledger to inspect its timeline and artifacts."
+                    data-run-empty-state="no_selection"
+                  />
+                <% end %>
               <% else %>
                 <%= if @selected_run_summary do %>
                   <dl

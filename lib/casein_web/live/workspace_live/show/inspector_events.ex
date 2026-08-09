@@ -14,6 +14,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
   alias CaseinWeb.WorkspaceLive.Show
   alias CaseinWeb.WorkspaceLive.Show.Context
   alias CaseinWeb.WorkspaceLive.Show.InspectorFocus
+  alias CaseinWeb.WorkspaceLive.Show.RunEvents
   alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
   def mount_assigns(socket) do
@@ -65,11 +66,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
 
   def handle_event("inspector:set_placement", _params, socket), do: {:noreply, socket}
 
-  @doc """
-  Open a diff inspector beside the terminal, or fall back to the full-area
-  `diff` tab when there is no workspace/tmux context to sit beside
-  (mirror of FilePaneEvents `tree:open_in_pane` → files tab).
-  """
+  # Open a diff inspector beside the terminal, or fall back to the full-area
+  # `diff` tab when there is no workspace/tmux context to sit beside
+  # (mirror of FilePaneEvents `tree:open_in_pane` → files tab).
   def handle_event("diff:open_inspector", params, socket) do
     path = string_param(params, "path")
 
@@ -80,10 +79,23 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
     end
   end
 
+  # Open a run inspector beside the terminal, or fall back to the full-area
+  # `run` tab when there is no workspace/tmux context (#694).
+  def handle_event("run:open_inspector", params, socket) do
+    run_id = string_param(params, "run_id")
+
+    if inspector_context?(socket) do
+      {:noreply, open_run_inspector(socket, run_id)}
+    else
+      open_in_run_tab(socket, run_id)
+    end
+  end
+
   def handle_info({:inspector_open, attrs}, socket) do
     socket =
       case inspector_kind(attrs) do
         :diff -> open_diff_inspector(socket, path_from_attrs(attrs), attrs)
+        :run -> open_run_inspector(socket, run_id_from_attrs(attrs), attrs)
         _ -> open_inspector(socket, attrs)
       end
 
@@ -142,7 +154,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
     |> assign(:file_diff, nil)
   end
 
-  @doc "Apply a serialized inspector list (session-template restore). Re-derives diff data."
+  @doc """
+  Apply a serialized inspector list (session-template restore).
+
+  Re-derives diff data from path and run ledger from optional run_id. A run id
+  that no longer exists lands on the ledger with nothing selected — normal
+  empty state, not an error.
+  """
   def restore_inspectors(socket, serialized) do
     {slots, geometry} = Inspectors.restore(serialized, geometry_opts(socket))
 
@@ -152,21 +170,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
       |> assign(:cockpit_geometry, geometry)
       |> InspectorFocus.reconcile()
 
-    case Inspectors.primary_diff_path(slots) do
-      path when is_binary(path) ->
-        socket
-        |> assign(:tab, "terminal")
-        |> load_diff_for_path(path)
-
-      _ ->
-        if Inspectors.diff_open?(slots) do
-          socket
-          |> assign(:tab, "terminal")
-          |> Show.refresh_git_status()
-        else
-          socket
-        end
-    end
+    socket = restore_diff_content(socket, slots)
+    restore_run_content(socket, slots)
   end
 
   # --- internals ----------------------------------------------------------------
@@ -193,6 +198,85 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
         Show.refresh_git_status(s)
       end
     end)
+  end
+
+  defp open_run_inspector(socket, run_id, extra \\ %{}) do
+    run_id = normalize_path(run_id) || run_id_from_attrs(extra)
+    id = id_from_attrs(extra) || "insp-run"
+    title = title_from_attrs(extra) || run_title(run_id)
+
+    attrs = %{
+      kind: :run,
+      id: id,
+      title: title,
+      run_id: run_id
+    }
+
+    socket
+    |> open_inspector(attrs)
+    |> assign(:tab, "terminal")
+    |> load_run_for_id(run_id)
+  end
+
+  # Re-derive ledger against current state. A missing run id is a normal empty
+  # state: show the ledger with nothing selected — never error, crash, or blank.
+  defp load_run_for_id(socket, run_id) when is_binary(run_id) and run_id != "" do
+    socket = RunEvents.refresh_run_ledger(socket, run_id)
+
+    case socket.assigns[:selected_run_summary] do
+      %{id: ^run_id} ->
+        socket
+
+      _ ->
+        # Gone / unknown: land on ledger overview, nothing selected.
+        socket
+        |> assign(:selected_run_id, nil)
+        |> assign(:selected_run_summary, nil)
+        |> assign(:selected_run_timeline, [])
+        |> assign(:selected_run_artifacts, [])
+        |> assign(:selected_run_failure_reason, nil)
+        |> assign(:selected_run_can_retry, false)
+    end
+  end
+
+  defp load_run_for_id(socket, _) do
+    RunEvents.refresh_run_ledger(socket, nil)
+    |> then(fn s ->
+      # Overview: keep ledger rows, clear forced selection when none preferred.
+      s
+    end)
+  end
+
+  defp restore_diff_content(socket, slots) do
+    case Inspectors.primary_diff_path(slots) do
+      path when is_binary(path) ->
+        socket
+        |> assign(:tab, "terminal")
+        |> load_diff_for_path(path)
+
+      _ ->
+        if Inspectors.diff_open?(slots) do
+          socket
+          |> assign(:tab, "terminal")
+          |> Show.refresh_git_status()
+        else
+          socket
+        end
+    end
+  end
+
+  defp restore_run_content(socket, slots) do
+    cond do
+      not Inspectors.run_open?(slots) ->
+        socket
+
+      true ->
+        run_id = Inspectors.primary_run_id(slots)
+
+        socket
+        |> assign(:tab, "terminal")
+        |> load_run_for_id(run_id)
+    end
   end
 
   defp load_diff_for_path(socket, path) do
@@ -234,6 +318,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
      socket
      |> assign(:tab, "diff")
      |> Show.refresh_git_status()}
+  end
+
+  defp open_in_run_tab(socket, run_id) when is_binary(run_id) and run_id != "" do
+    {:noreply,
+     socket
+     |> load_run_for_id(run_id)
+     |> assign(:tab, "run")}
+  end
+
+  defp open_in_run_tab(socket, _run_id) do
+    {:noreply,
+     socket
+     |> load_run_for_id(nil)
+     |> assign(:tab, "run")}
   end
 
   # Mirror FilePaneEvents."tree:open_in_pane": need a live tmux session and an
@@ -291,6 +389,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
     case Map.get(attrs, :kind) || Map.get(attrs, "kind") do
       :diff -> :diff
       "diff" -> :diff
+      :run -> :run
+      "run" -> :run
       _ -> :other
     end
   end
@@ -307,6 +407,24 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
   end
 
   defp path_from_attrs(_), do: nil
+
+  defp run_id_from_attrs(attrs) when is_map(attrs) do
+    normalize_path(
+      Map.get(attrs, :run_id) ||
+        Map.get(attrs, "run_id") ||
+        get_in(attrs, [:attrs, "run_id"]) ||
+        get_in(attrs, ["attrs", "run_id"])
+    )
+  end
+
+  defp run_id_from_attrs(_), do: nil
+
+  defp run_title(run_id) when is_binary(run_id) and run_id != "" do
+    short = if byte_size(run_id) > 8, do: String.slice(run_id, 0, 8), else: run_id
+    "Run " <> short
+  end
+
+  defp run_title(_), do: "Run"
 
   defp id_from_attrs(attrs) when is_map(attrs) do
     case Map.get(attrs, :id) || Map.get(attrs, "id") do
@@ -327,13 +445,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
   defp title_from_attrs(_), do: nil
 
   defp string_param(params, key) when is_map(params) and is_binary(key) do
-    raw =
-      Map.get(params, key) ||
-        case key do
-          "path" -> Map.get(params, :path)
-          _ -> nil
-        end
+    atom_key =
+      case key do
+        "path" -> :path
+        "run_id" -> :run_id
+        _ -> nil
+      end
 
+    raw = Map.get(params, key) || (atom_key && Map.get(params, atom_key))
     normalize_path(raw)
   end
 

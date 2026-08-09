@@ -266,6 +266,31 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
     end
   end
 
+  @doc """
+  One-shot intent: surface the run ledger to a connected cockpit viewer.
+
+  Takes **what** (optional run_id), never **where**. No pane handle is returned.
+  A missing run id lands on the ledger with nothing selected. When no viewer is
+  watching the workspace the call is a no-op (`status: "no_viewer"`).
+  """
+  @spec open_run(map()) :: {:ok, map()} | {:error, term()}
+  def open_run(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, workspace} <- fetch_workspace(workspace_id) do
+      Casein.Inspectors.Run.surface(workspace.id, %{
+        run_id: optional_run_id(params),
+        actor_id: string_param(params, "actor_id")
+      })
+    end
+  end
+
+  defp optional_run_id(params) do
+    case string_param(params, "run_id") do
+      id when is_binary(id) and id != "" -> id
+      _ -> nil
+    end
+  end
+
   # Optional path: when present, confine it the same way file opens do. When
   # absent, surface the workspace-wide diff overview.
   defp optional_diff_path(workspace, params) do

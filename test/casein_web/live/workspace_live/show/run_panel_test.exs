@@ -199,7 +199,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       html = render_panel(run_ledger: [])
 
       assert html =~ "run-ledger-empty"
-      assert html =~ "No runs recorded."
+      assert html =~ "No runs yet"
+      assert html =~ ~s(data-run-empty-state="no_runs")
       assert html =~ "0 runs"
     end
 
@@ -257,7 +258,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       html = render_panel(selected_run_timeline: [])
 
       assert html =~ "run-ledger-timeline-empty"
-      assert html =~ "Select a run to inspect its canonical events."
+      assert html =~ "Nothing selected"
+      assert html =~ ~s(data-run-empty-state="no_selection")
     end
 
     test "shows selected_run_id in the timeline header" do

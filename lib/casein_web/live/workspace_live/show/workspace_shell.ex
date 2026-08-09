@@ -832,6 +832,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
                 git_status_error={@git_status_error}
                 open_file={@open_file}
                 file_diff={@file_diff}
+                host_loc={@host_loc}
+                active_run={@active_run}
+                review_commands={@review_commands}
+                agent_write_unlock={@agent_write_unlock}
+                run_ledger={@run_ledger}
+                run_ledger_loaded?={@run_ledger_loaded?}
+                run_ledger_error={@run_ledger_error}
+                selected_run_id={@selected_run_id}
+                selected_run_timeline={@selected_run_timeline}
+                selected_run_summary={@selected_run_summary}
+                selected_run_failure_reason={@selected_run_failure_reason}
+                selected_run_can_retry={@selected_run_can_retry}
+                selected_run_artifacts={@selected_run_artifacts}
+                codex_exec_form={@codex_exec_form}
+                codex_exec_run={@codex_exec_run}
               />
             </aside>
           </div>
@@ -1091,6 +1106,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :git_status_error, :any, default: nil
   attr :open_file, :any, required: true
   attr :file_diff, :any, required: true
+  attr :host_loc, :any, required: true
+  attr :active_run, :any, required: true
+  attr :review_commands, :any, required: true
+  attr :agent_write_unlock, :any, required: true
+  attr :run_ledger, :any, required: true
+  attr :run_ledger_loaded?, :any, required: true
+  attr :run_ledger_error, :any, required: true
+  attr :selected_run_id, :any, required: true
+  attr :selected_run_timeline, :any, required: true
+  attr :selected_run_summary, :any, required: true
+  attr :selected_run_failure_reason, :any, required: true
+  attr :selected_run_can_retry, :any, required: true
+  attr :selected_run_artifacts, :any, required: true
+  attr :codex_exec_form, :any, required: true
+  attr :codex_exec_run, :any, required: true
 
   defp inspector_region(assigns) do
     ~H"""
@@ -1186,21 +1216,40 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             </button>
           </div>
           <div class="min-h-0 flex-1 overflow-auto p-3 text-sm text-base-content/80">
-            <%= if entry.kind == :diff do %>
-              <.diff_panel
-                git_status={@git_status}
-                git_status_ready?={@git_status_ready?}
-                git_status_error=""
-                open_file={@open_file}
-                file_diff={@file_diff}
-              />
-            <% else %>
-              <div class="rounded-md border border-base-300/50 bg-base-100/70 px-3 py-2">
-                <div class="text-density-body uppercase tracking-wide text-base-content/45">
-                  {inspector_kind_label(entry)}
+            <%= cond do %>
+              <% entry.kind == :diff -> %>
+                <.diff_panel
+                  git_status={@git_status}
+                  git_status_ready?={@git_status_ready?}
+                  git_status_error={@git_status_error}
+                  open_file={@open_file}
+                  file_diff={@file_diff}
+                />
+              <% entry.kind == :run -> %>
+                <.run_panel
+                  host_loc={@host_loc}
+                  active_run={@active_run}
+                  review_commands={@review_commands}
+                  agent_write_unlock={@agent_write_unlock}
+                  run_ledger={@run_ledger}
+                  run_ledger_loaded?={@run_ledger_loaded?}
+                  run_ledger_error={@run_ledger_error}
+                  selected_run_id={@selected_run_id}
+                  selected_run_timeline={@selected_run_timeline}
+                  selected_run_summary={@selected_run_summary}
+                  selected_run_failure_reason={@selected_run_failure_reason}
+                  selected_run_can_retry={@selected_run_can_retry}
+                  selected_run_artifacts={@selected_run_artifacts}
+                  codex_exec_form={@codex_exec_form}
+                  codex_exec_run={@codex_exec_run}
+                />
+              <% true -> %>
+                <div class="rounded-md border border-base-300/50 bg-base-100/70 px-3 py-2">
+                  <div class="text-density-body uppercase tracking-wide text-base-content/45">
+                    {inspector_kind_label(entry)}
+                  </div>
+                  <div class="mt-1 font-medium">{inspector_title(entry)}</div>
                 </div>
-                <div class="mt-1 font-medium">{inspector_title(entry)}</div>
-              </div>
             <% end %>
           </div>
         </div>
