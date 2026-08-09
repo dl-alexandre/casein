@@ -3,8 +3,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
 
   alias Casein.Agents.GrokCapabilityPolicy
   alias Casein.Agents.TerminalOutputFormat
+  alias Casein.Labels
   alias Casein.Operator.SituationServer
   alias Casein.Terminals.AgentState
+  alias Casein.Terminals.FleetChrome
   alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
   alias Casein.Terminals.PaneLiveness
@@ -106,6 +108,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         |> AgentState.enrich_topology(session)
         |> NextPrompt.enrich_topology(session)
         |> IssueBinding.enrich_topology(session)
+        |> Labels.enrich_topology(session)
+        # Fleet chrome is a pure projection over the fields above — role from
+        # label/window convention, ready_no_task from idle + no issue + quiet.
+        |> put_agent_state_ages(session)
+        |> put_window_names_on_panes()
+        |> FleetChrome.enrich_topology()
         |> put_window_active_panes()
         |> put_shared_worktree_warning()
         |> Map.put(:active_pane_note, @active_pane_note)
@@ -153,6 +161,61 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   end
 
   defp put_shared_worktree_warning(payload), do: payload
+
+  # FleetChrome prefers liveness.quiet_for_seconds; without include_liveness the
+  # explicit report age still answers "idle how long?" for ready_no_task.
+  defp put_agent_state_ages(%{panes: panes} = payload, session) when is_list(panes) do
+    reports = AgentState.for_session(session)
+    now = DateTime.utc_now()
+
+    %{
+      payload
+      | panes:
+          Enum.map(panes, fn pane ->
+            with id when is_binary(id) <- Map.get(pane, :id) || Map.get(pane, "id"),
+                 %{reported_at: at} <- Map.get(reports, id) do
+              Map.put(pane, :agent_state_age_s, max(DateTime.diff(now, at, :second), 0))
+            else
+              _ -> pane
+            end
+          end)
+    }
+  end
+
+  defp put_agent_state_ages(payload, _session), do: payload
+
+  # Copy tmux window names onto panes so FleetChrome can classify spawn windows
+  # named `worker-<slug>` without a second Labels lookup.
+  defp put_window_names_on_panes(%{panes: panes, windows: windows} = payload)
+       when is_list(panes) and is_list(windows) do
+    names =
+      for window <- windows,
+          id = Map.get(window, :id) || Map.get(window, "id"),
+          is_binary(id),
+          name = Map.get(window, :name) || Map.get(window, "name"),
+          is_binary(name) and name != "",
+          into: %{},
+          do: {id, name}
+
+    if map_size(names) == 0 do
+      payload
+    else
+      %{
+        payload
+        | panes:
+            Enum.map(panes, fn pane ->
+              window_id = Map.get(pane, :window_id) || Map.get(pane, "window_id")
+
+              case Map.get(names, window_id) do
+                name when is_binary(name) -> Map.put(pane, :window_name, name)
+                _ -> pane
+              end
+            end)
+      }
+    end
+  end
+
+  defp put_window_names_on_panes(payload), do: payload
 
   # Per-window active panes are stable anchors (they only change when the
   # window's own layout changes); the session-level active pane is not.

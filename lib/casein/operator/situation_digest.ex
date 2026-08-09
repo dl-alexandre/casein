@@ -25,7 +25,10 @@ defmodule Casein.Operator.SituationDigest do
   alias Casein.Operator.Risks
   alias Casein.Ops.PgProbe
   alias Casein.Runtimes
+  alias Casein.Labels
   alias Casein.Terminals.AgentState
+  alias Casein.Terminals.FleetChrome
+  alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.TmuxTopology
   alias Casein.Workspaces
   alias Casein.Workspaces.SessionSummary
@@ -149,12 +152,17 @@ defmodule Casein.Operator.SituationDigest do
   defp panes(nil, _now), do: {[], true}
 
   defp panes(tmux_session, now) do
+    reports = AgentState.for_session(tmux_session)
+
     topology =
       tmux_session
       |> TmuxTopology.snapshot(tmux: tmux_adapter())
       |> AgentState.enrich_topology(tmux_session)
-
-    reports = AgentState.for_session(tmux_session)
+      |> IssueBinding.enrich_topology(tmux_session)
+      |> Labels.enrich_topology(tmux_session)
+      |> put_report_ages(reports, now)
+      |> put_window_names_on_panes()
+      |> FleetChrome.enrich_topology()
 
     {Enum.map(topology.panes, &pane_digest(&1, reports, now)), true}
   rescue
@@ -175,10 +183,63 @@ defmodule Casein.Operator.SituationDigest do
       agent_state_age_s: report_age_s(pane, reports, now),
       task_summary: Map.get(pane, :task_summary),
       current_command: Map.get(pane, :current_command),
-      current_path: Map.get(pane, :current_path)
+      current_path: Map.get(pane, :current_path),
+      label: Map.get(pane, :label),
+      issue: Map.get(pane, :issue),
+      fleet_role: Map.get(pane, :fleet_role),
+      fleet_readiness: Map.get(pane, :fleet_readiness),
+      ready_no_task_for_seconds: Map.get(pane, :ready_no_task_for_seconds)
     }
     |> compact()
   end
+
+  # FleetChrome prefers liveness quiet_for_seconds; without a worktree walk the
+  # digest still surfaces ready_no_task from the explicit report age.
+  defp put_report_ages(%{panes: panes} = topology, reports, now) when is_list(panes) do
+    %{
+      topology
+      | panes:
+          Enum.map(panes, fn pane ->
+            case report_age_s(pane, reports, now) do
+              age when is_integer(age) -> Map.put(pane, :agent_state_age_s, age)
+              _ -> pane
+            end
+          end)
+    }
+  end
+
+  defp put_report_ages(topology, _reports, _now), do: topology
+
+  defp put_window_names_on_panes(%{panes: panes, windows: windows} = topology)
+       when is_list(panes) and is_list(windows) do
+    names =
+      for window <- windows,
+          id = Map.get(window, :id) || Map.get(window, "id"),
+          is_binary(id),
+          name = Map.get(window, :name) || Map.get(window, "name"),
+          is_binary(name) and name != "",
+          into: %{},
+          do: {id, name}
+
+    if map_size(names) == 0 do
+      topology
+    else
+      %{
+        topology
+        | panes:
+            Enum.map(panes, fn pane ->
+              window_id = Map.get(pane, :window_id) || Map.get(pane, "window_id")
+
+              case Map.get(names, window_id) do
+                name when is_binary(name) -> Map.put(pane, :window_name, name)
+                _ -> pane
+              end
+            end)
+      }
+    end
+  end
+
+  defp put_window_names_on_panes(topology), do: topology
 
   # Age of the explicit report backing the pane's resolved agent_state; absent
   # when the pane has no live report (heuristic-only panes carry no age).

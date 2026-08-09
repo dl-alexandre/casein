@@ -155,12 +155,41 @@ defmodule Casein.Terminals.PaneState do
   defp normalize_state("unknown"), do: :unknown
   defp normalize_state(_state), do: nil
 
+  # Bare runtime banners (e.g. idle "OpenCode" / "Claude Code") look like a
+  # task_summary but carry no work — fleet chrome treats them as no-task.
+  @bare_runtime_titles MapSet.new([
+                         "opencode",
+                         "open code",
+                         "claude",
+                         "claude code",
+                         "codex",
+                         "grok",
+                         "gemini",
+                         "cursor"
+                       ])
+
   # tmux defaults a pane's title to the local hostname until an application
   # sets one via OSC 0/2, so a hostname-valued title carries no task signal.
   defp reject_default_title(nil), do: nil
 
   defp reject_default_title(summary) do
-    if summary == local_hostname() or machine_identifier?(summary), do: nil, else: summary
+    cond do
+      summary == local_hostname() -> nil
+      machine_identifier?(summary) -> nil
+      bare_runtime_title?(summary) -> nil
+      true -> summary
+    end
+  end
+
+  defp bare_runtime_title?(summary) do
+    normalized =
+      summary
+      |> String.trim()
+      |> String.downcase()
+      # "✳ Claude Code" / spinner leftovers after strip may still leave spaces.
+      |> String.replace(~r/\s+/u, " ")
+
+    MapSet.member?(@bare_runtime_titles, normalized)
   end
 
   defp machine_identifier?(value) do
