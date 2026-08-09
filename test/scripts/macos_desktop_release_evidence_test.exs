@@ -92,7 +92,9 @@ defmodule Scripts.MacosDesktopReleaseEvidenceTest do
   end
 
   test "evidence collector writes schema-1 JSON off Darwin as blocked host stub" do
-    tmp = Path.join(System.tmp_dir!(), "casein-macos-evidence-#{System.unique_integer([:positive])}")
+    tmp =
+      Path.join(System.tmp_dir!(), "casein-macos-evidence-#{System.unique_integer([:positive])}")
+
     File.mkdir_p!(tmp)
     out = Path.join(tmp, "evidence.json")
     on_exit(fn -> File.rm_rf(tmp) end)
