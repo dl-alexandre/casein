@@ -2538,7 +2538,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       feature_panes={@feature_panes}
       cockpit_geometry={@cockpit_geometry}
       inspector_fraction={@inspector_fraction}
-      inspector_panes={@inspector_panes}
+      inspector_slots={@inspector_slots}
       inspector_placement={@inspector_placement}
       active_inspector_id={@active_inspector_id}
       inspector_focus_id={@inspector_focus_id}

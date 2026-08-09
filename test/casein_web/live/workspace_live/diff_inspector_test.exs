@@ -101,9 +101,9 @@ defmodule CaseinWeb.WorkspaceLive.DiffInspectorTest do
     html = render_click(view, "diff:open_inspector", %{"path" => "lib/foo.ex"})
 
     assert socket_assigns(view, :tab) == "terminal"
-    panes = socket_assigns(view, :inspector_panes)
-    assert Inspectors.diff_open?(panes)
-    assert Inspectors.primary_diff_path(panes) == "lib/foo.ex"
+    slots = socket_assigns(view, :inspector_slots)
+    assert Inspectors.diff_open?(slots)
+    assert Inspectors.primary_diff_path(slots) == "lib/foo.ex"
 
     assert has_element?(view, "#inspector-region-#{@workspace_id}")
     assert has_element?(view, "#terminal-region-#{@workspace_id}[data-inspector-open=true]")
@@ -117,7 +117,7 @@ defmodule CaseinWeb.WorkspaceLive.DiffInspectorTest do
     assert style =~ "60.0%"
 
     restored = render_click(view, "inspector:close_all", %{})
-    refute Inspectors.diff_open?(socket_assigns(view, :inspector_panes))
+    refute Inspectors.diff_open?(socket_assigns(view, :inspector_slots))
     refute has_element?(view, "#inspector-region-#{@workspace_id}")
     assert has_element?(view, "#terminal-region-#{@workspace_id}[data-inspector-open=false]")
     refute restored =~ ~s(data-cockpit-split="open")
@@ -132,15 +132,15 @@ defmodule CaseinWeb.WorkspaceLive.DiffInspectorTest do
 
     assert socket_assigns(view, :tab) == "diff"
     assert %{path: "lib/foo.ex"} = socket_assigns(view, :open_file)
-    refute Inspectors.diff_open?(socket_assigns(view, :inspector_panes) || [])
+    refute Inspectors.diff_open?(socket_assigns(view, :inspector_slots) || [])
     refute has_element?(view, "#inspector-region-#{@workspace_id}")
   end
 
   test "serialize/restore re-derives the diff viewport from path only" do
-    {panes, _} =
+    {slots, _} =
       Inspectors.open([], %{kind: :diff, id: "insp-diff", title: "lib/foo.ex", path: "lib/foo.ex"})
 
-    serialized = Inspectors.serialize(panes)
+    serialized = Inspectors.serialize(slots)
     assert serialized == [%{"type" => "inspector", "kind" => "diff", "path" => "lib/foo.ex"}]
 
     {restored, _} = Inspectors.restore(serialized)

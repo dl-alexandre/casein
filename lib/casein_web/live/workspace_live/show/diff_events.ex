@@ -3,7 +3,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEvents do
   #
   # Human-facing event name is `diff:open_in_pane` (palette / chrome). The open
   # path itself is #691's `InspectorEvents` / `diff:open_inspector`, which uses
-  # `Casein.Cockpit.Inspectors.open/3` (`inspector_panes` + geometry tree).
+  # `Casein.Cockpit.Inspectors.open/3` (`inspector_slots` + geometry tree).
   #
   # Agent MCP surfaces go through `Casein.Inspectors.Diff.surface/2` →
   # `Inspectors.request_open/2` → `{:inspector_open, attrs}` (already handled

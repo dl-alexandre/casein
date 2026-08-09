@@ -9,9 +9,16 @@ defmodule Casein.Cockpit.Geometry do
 
   **Boundary** (`docs/design/casein-owns-geometry.md`): Casein owns which layout
   nodes exist, arrangement, sizing, and focus. tmux owns durable PTY sessions
-  and crash recovery, not rectangles. `pane_id` means a tmux PTY; a node in this
-  tree is a layout **slot** (vocabulary lands in issue #750 — do not rename the
-  ~2,655 tmux `pane_id` sites).
+  and crash recovery, not rectangles.
+
+  ## Naming: `pane_id` vs `slot_id`
+
+  - **`pane_id`** — a tmux pane / PTY (process + size, no layout position).
+  - **`slot_id`** — a node in Casein's layout tree (position + size + filler).
+
+  Geometry describes *where* slots sit; it does not rename tmux-facing ids
+  (~2,655 `pane_id` sites). See `Casein.Cockpit.Inspectors` and
+  `docs/design/casein-owns-geometry.md` (issue #750).
 
   PTY cols/rows are *not* derived from this tree today for terminals — the
   browser's single `computeTerminalLayout` path reports a fit, and

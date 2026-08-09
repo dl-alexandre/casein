@@ -32,7 +32,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocusTest do
   end
 
   defp with_inspector(extra \\ %{}) do
-    {panes, geometry} =
+    {slots, geometry} =
       Inspectors.open([], %{id: "insp-a", kind: :diff, title: "Diff"},
         placement: :right,
         fraction: 0.4
@@ -41,7 +41,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocusTest do
     socket(
       Map.merge(
         %{
-          inspector_panes: panes,
+          inspector_slots: slots,
           cockpit_geometry: geometry,
           inspector_focus_id: "insp-a",
           active_inspector_id: "insp-a"
@@ -75,7 +75,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocusTest do
     s = with_inspector()
 
     assert {:noreply, s2} = PaneLayoutEvents.handle_event("pane:close_focused", %{}, s)
-    assert s2.assigns.inspector_panes == []
+    assert s2.assigns.inspector_slots == []
     assert s2.assigns.inspector_focus_id == nil
     assert s2.assigns.inspector_zoomed? == false
     refute Geometry.inspector_open?(s2.assigns.cockpit_geometry)
@@ -91,12 +91,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocusTest do
   end
 
   test "arrow from terminal into inspector is socket focus only" do
-    {panes, geometry} =
+    {slots, geometry} =
       Inspectors.open([], %{id: "insp-side", kind: :diff, title: "Side"}, placement: :right)
 
     s =
       socket(%{
-        inspector_panes: panes,
+        inspector_slots: slots,
         cockpit_geometry: geometry,
         active_inspector_id: "insp-side",
         inspector_focus_id: nil,
@@ -120,18 +120,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocusTest do
   end
 
   test "tabs: select switches active inspector without tmux" do
-    {panes, geometry} =
+    {slots, geometry} =
       Inspectors.open([], %{id: "insp-a", kind: :diff, title: "A"}, placement: :right)
 
-    {panes, geometry} =
-      Inspectors.open(panes, %{id: "insp-b", kind: :run, title: "B"},
+    {slots, geometry} =
+      Inspectors.open(slots, %{id: "insp-b", kind: :run, title: "B"},
         placement: :right,
         fraction: Geometry.inspector_fraction(geometry)
       )
 
     s =
       socket(%{
-        inspector_panes: panes,
+        inspector_slots: slots,
         cockpit_geometry: geometry,
         inspector_focus_id: "insp-a",
         active_inspector_id: "insp-a"
@@ -148,7 +148,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocusTest do
     s =
       socket(%{
         inspector_focus_id: nil,
-        inspector_panes: [],
+        inspector_slots: [],
         tmux_session: "sess",
         tmux_active_pane_id: "%1",
         tmux_mutations_enabled?: true,
@@ -168,7 +168,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocusTest do
     s =
       socket(%{
         inspector_focus_id: nil,
-        inspector_panes: [],
+        inspector_slots: [],
         tmux_session: "sess",
         tmux_active_pane_id: "%1"
       })
@@ -180,7 +180,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocusTest do
     assigns = with_inspector().assigns
     assert InspectorFocus.focus_target(assigns) == {:inspector, "insp-a"}
 
-    stale = %{assigns | inspector_focus_id: "insp-missing", inspector_panes: []}
+    stale = %{assigns | inspector_focus_id: "insp-missing", inspector_slots: []}
     assert InspectorFocus.focus_target(stale) == {:tmux, "%1"}
   end
 end

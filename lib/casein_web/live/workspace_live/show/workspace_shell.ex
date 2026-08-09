@@ -83,7 +83,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :feature_panes, :any, required: true
   attr :cockpit_geometry, :any, required: true
   attr :inspector_fraction, :any, required: true
-  attr :inspector_panes, :any, required: true
+  attr :inspector_slots, :any, required: true
   attr :inspector_placement, :any, required: true
   attr :active_inspector_id, :any, required: true
   attr :inspector_focus_id, :any, required: true
@@ -211,7 +211,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
     assigns =
       assigns
       |> assign(:action_ctx, ActionAvailability.context(assigns))
-      |> assign(:inspector_entries, List.wrap(assigns[:inspector_panes]))
+      |> assign(:inspector_entries, List.wrap(assigns[:inspector_slots]))
       |> assign(
         :active_inspector_id,
         CaseinWeb.WorkspaceLive.Show.InspectorFocus.active_id(assigns)

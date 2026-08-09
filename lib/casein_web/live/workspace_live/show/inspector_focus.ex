@@ -1,10 +1,10 @@
 defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
   @moduledoc false
 
-  # Socket-state focus / zoom / tab helpers for LiveView-owned inspector panes
+  # Socket-state focus / zoom / tab helpers for LiveView-owned inspector slots
   # (#692). Real tmux pane ids never flow through these helpers into a tmux
-  # adapter. Pane list + geometry stay owned by Casein.Cockpit.Inspectors /
-  # InspectorEvents (#690).
+  # adapter. Slot list + geometry stay owned by Casein.Cockpit.Inspectors /
+  # InspectorEvents (#690 / #750).
 
   alias CaseinWeb.WorkspaceLive.Show.InspectorEvents
 
@@ -30,13 +30,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
   Resolve what leader zoom/close/navigate should act on.
 
   Prefers an explicit inspector focus id when it still exists in
-  `:inspector_panes`.
+  `:inspector_slots`.
   """
   @spec focus_target(map()) :: focus_target()
   def focus_target(assigns) when is_map(assigns) do
     case assigns[:inspector_focus_id] do
       id when is_binary(id) and id != "" ->
-        if pane?(assigns, id) do
+        if slot?(assigns, id) do
           {:inspector, id}
         else
           {:tmux, assigns[:tmux_active_pane_id]}
@@ -47,18 +47,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
     end
   end
 
-  @doc "Active inspector id, falling back to the first open pane."
+  @doc "Active inspector id, falling back to the first open slot."
   @spec active_id(map()) :: String.t() | nil
   def active_id(assigns) when is_map(assigns) do
-    panes = List.wrap(assigns[:inspector_panes])
+    slots = List.wrap(assigns[:inspector_slots])
     preferred = assigns[:active_inspector_id] || assigns[:inspector_focus_id]
 
     cond do
-      is_binary(preferred) and Enum.any?(panes, &(&1.id == preferred)) ->
+      is_binary(preferred) and Enum.any?(slots, &(&1.id == preferred)) ->
         preferred
 
-      match?([%{id: _} | _], panes) ->
-        hd(panes).id
+      match?([%{id: _} | _], slots) ->
+        hd(slots).id
 
       true ->
         nil
@@ -70,16 +70,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
   def reconcile(socket) do
     import Phoenix.Component, only: [assign: 3]
 
-    panes = List.wrap(socket.assigns[:inspector_panes])
-    ids = MapSet.new(panes, & &1.id)
+    slots = List.wrap(socket.assigns[:inspector_slots])
+    ids = MapSet.new(slots, & &1.id)
 
     active =
       case socket.assigns[:active_inspector_id] do
         id when is_binary(id) ->
-          if MapSet.member?(ids, id), do: id, else: default_active(panes)
+          if MapSet.member?(ids, id), do: id, else: default_active(slots)
 
         _ ->
-          default_active(panes)
+          default_active(slots)
       end
 
     focus =
@@ -104,7 +104,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
   def focus_inspector(socket, id) when is_binary(id) do
     import Phoenix.Component, only: [assign: 3]
 
-    if pane?(socket.assigns, id) do
+    if slot?(socket.assigns, id) do
       socket
       |> assign(:inspector_focus_id, id)
       |> assign(:active_inspector_id, id)
@@ -186,26 +186,26 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
           | {:terminal, Phoenix.LiveView.Socket.t()}
           | :tmux
   def navigate(socket, dir) when dir in ["left", "right", "up", "down", "next", "prev", "last"] do
-    panes = List.wrap(socket.assigns[:inspector_panes])
+    slots = List.wrap(socket.assigns[:inspector_slots])
 
-    if panes == [] do
+    if slots == [] do
       :tmux
     else
       placement = normalize_placement(socket.assigns[:inspector_placement])
 
       case focus_target(socket.assigns) do
         {:inspector, id} ->
-          navigate_from_inspector(socket, dir, placement, id, panes)
+          navigate_from_inspector(socket, dir, placement, id, slots)
 
         {:tmux, _} ->
-          navigate_from_terminal(socket, dir, placement, panes)
+          navigate_from_terminal(socket, dir, placement, slots)
       end
     end
   end
 
   def navigate(_socket, _dir), do: :tmux
 
-  @doc "After opening a pane, focus it and activate its tab."
+  @doc "After opening a slot, focus it and activate its tab."
   @spec after_open(Phoenix.LiveView.Socket.t(), String.t() | nil) :: Phoenix.LiveView.Socket.t()
   def after_open(socket, id) when is_binary(id) do
     socket
@@ -220,7 +220,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
     end
   end
 
-  defp navigate_from_terminal(socket, dir, placement, panes) do
+  defp navigate_from_terminal(socket, dir, placement, slots) do
     into_inspector? =
       case {placement, dir} do
         {:right, "right"} -> true
@@ -230,14 +230,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
       end
 
     if into_inspector? do
-      target = active_id(socket.assigns) || hd(panes).id
+      target = active_id(socket.assigns) || hd(slots).id
       {:inspector, focus_inspector(socket, target)}
     else
       :tmux
     end
   end
 
-  defp navigate_from_inspector(socket, dir, placement, id, panes) do
+  defp navigate_from_inspector(socket, dir, placement, id, slots) do
     leave_inspector? =
       case {placement, dir} do
         {:right, "left"} -> true
@@ -252,18 +252,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
         {:terminal, focus_terminal(socket)}
 
       dir in ["next", "right", "down"] ->
-        {:inspector, focus_inspector(socket, neighbor(panes, id, 1))}
+        {:inspector, focus_inspector(socket, neighbor(slots, id, 1))}
 
       dir in ["left", "up"] ->
-        {:inspector, focus_inspector(socket, neighbor(panes, id, -1))}
+        {:inspector, focus_inspector(socket, neighbor(slots, id, -1))}
 
       true ->
         {:inspector, socket}
     end
   end
 
-  defp neighbor(panes, id, delta) do
-    ids = Enum.map(panes, & &1.id)
+  defp neighbor(slots, id, delta) do
+    ids = Enum.map(slots, & &1.id)
     idx = Enum.find_index(ids, &(&1 == id)) || 0
     Enum.at(ids, rem(idx + delta + length(ids), length(ids)))
   end
@@ -271,8 +271,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocus do
   defp default_active([]), do: nil
   defp default_active([%{id: id} | _]), do: id
 
-  defp pane?(assigns, id) do
-    Enum.any?(List.wrap(assigns[:inspector_panes]), &(&1.id == id))
+  defp slot?(assigns, id) do
+    Enum.any?(List.wrap(assigns[:inspector_slots]), &(&1.id == id))
   end
 
   defp normalize_placement(placement) when placement in [:right, :bottom], do: placement

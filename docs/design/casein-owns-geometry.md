@@ -47,8 +47,8 @@ rectangle* and starts meaning only *a running process with a size*.
 After this change there are two different things that today share one word.
 
 - A **tmux pane** is a PTY: a process, a size, an id. It has no position.
-- A **Casein pane** is a node in a layout: a position, a size, and a reference to whatever
-  fills it — a PTY, a preview, a file editor, an inspector.
+- A **slot** is a node in Casein's layout tree: a position, a size, and a reference to
+  whatever fills it — a PTY, a preview, a file editor, an inspector.
 
 They are one-to-one only for terminals, and not at all for feature panes.
 
@@ -87,6 +87,10 @@ here.
 
 **A slot is a position in Casein's layout tree. A slot is filled by something — a PTY
 (referenced by `pane_id`), a preview, a file editor, an inspector.**
+
+**Rule (issue #750):** `pane_id` = a tmux pane / PTY; `slot_id` = a node in Casein's
+layout tree. `Casein.Cockpit.Inspectors` and `Casein.Cockpit.Geometry` use slot
+vocabulary for layout nodes; tmux-facing APIs and MCP keep `pane` / `pane_id`.
 
 ### Where the churn actually is
 
