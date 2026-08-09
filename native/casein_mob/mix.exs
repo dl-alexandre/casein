@@ -32,7 +32,7 @@ defmodule CaseinMob.MixProject do
       # Android BEAM payload archives.
       {:mob_dev,
        git: "https://github.com/dl-alexandre/mob_dev.git",
-       ref: "433a9d09fb5af2c7fbcecc138aeb87228cf2f934",
+       ref: "4a626ca8331f00bf0801ac751bc05c81735b738f",
        only: [:dev, :test],
        runtime: false,
        override: true},

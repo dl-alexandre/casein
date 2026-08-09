@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Obviously fake App Store distribution contract for generator tests. -->
+    <!-- Not a real provisioning profile, certificate, or team secret. -->
+    <key>ApplicationIdentifierPrefix</key>
+    <array>
+        <string>2MP8QWK7R6</string>
+    </array>
+    <key>TeamIdentifier</key>
+    <array>
+        <string>2MP8QWK7R6</string>
+    </array>
+    <key>Name</key>
+    <string>FAKE iOS Team Store Provisioning Profile: com.alexandrefamilyfarm.casein-mob</string>
+    <key>Entitlements</key>
+    <dict>
+        <key>application-identifier</key>
+        <string>2MP8QWK7R6.com.alexandrefamilyfarm.casein-mob</string>
+        <key>com.apple.developer.team-identifier</key>
+        <string>2MP8QWK7R6</string>
+        <key>keychain-access-groups</key>
+        <array>
+            <string>2MP8QWK7R6.*</string>
+        </array>
+        <key>aps-environment</key>
+        <string>production</string>
+        <key>beta-reports-active</key>
+        <true/>
+    </dict>
+</dict>
+</plist>

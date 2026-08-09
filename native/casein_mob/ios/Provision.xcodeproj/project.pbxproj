@@ -17,6 +17,7 @@
 		AA000002 /* MobProvision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobProvision.swift; sourceTree = "<group>"; };
 		AA000003 /* MobProvision.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MobProvision.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA00000F /* CaseinMob.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CaseinMob.entitlements; sourceTree = "<group>"; };
+		AA000010 /* CaseinMob.Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CaseinMob.Release.entitlements; sourceTree = "<group>"; };
 		BB000002 /* CaseinMobSoakUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseinMobSoakUITests.swift; sourceTree = "<group>"; };
 		BB000003 /* CaseinMobSoakUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CaseinMobSoakUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC000002 /* CaseinMobFeedLifecycleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseinMobFeedLifecycleUITests.swift; sourceTree = "<group>"; };
@@ -31,6 +32,7 @@
 			children = (
 				AA000002 /* MobProvision.swift */,
 				AA00000F /* CaseinMob.entitlements */,
+				AA000010 /* CaseinMob.Release.entitlements */,
 				CC000004 /* CaseinMobFeedLifecycleSoak.xctestplan */,
 				BB000004 /* CaseinMobSoakUITests */,
 				AA000005 /* Products */,
@@ -203,7 +205,7 @@
 				CODE_SIGN_STYLE = Manual;
 				CODE_SIGN_IDENTITY = "Apple Distribution";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";
-				CODE_SIGN_ENTITLEMENTS = CaseinMob.entitlements;
+				CODE_SIGN_ENTITLEMENTS = CaseinMob.Release.entitlements;
 				DEVELOPMENT_TEAM = 2MP8QWK7R6;
 				PROVISIONING_PROFILE_SPECIFIER = "iOS Team Store Provisioning Profile: com.alexandrefamilyfarm.casein-mob";
 				GENERATE_INFOPLIST_FILE = YES;

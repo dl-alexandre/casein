@@ -4,8 +4,10 @@ defmodule CaseinMob.IOSConfigurationTest do
   @info_plist Path.expand("../../ios/Info.plist", __DIR__)
   @app_delegate Path.expand("../../ios/AppDelegate.m", __DIR__)
   @entitlements Path.expand("../../ios/CaseinMob.entitlements", __DIR__)
+  @release_entitlements Path.expand("../../ios/CaseinMob.Release.entitlements", __DIR__)
   @xcode_project Path.expand("../../ios/Provision.xcodeproj/project.pbxproj", __DIR__)
   @development_profile Path.expand("../fixtures/ios_development_profile.plist", __DIR__)
+  @distribution_profile Path.expand("../fixtures/ios_distribution_profile.plist", __DIR__)
   @android_main_activity Path.expand(
                            "../../android/app/src/main/java/com/example/casein_mob/MainActivity.kt",
                            __DIR__
@@ -33,8 +35,33 @@ defmodule CaseinMob.IOSConfigurationTest do
              "com.alexandrefamilyfarm.casein-mob.feed-lifecycle-ui-tests" => 2
            }
 
-    assert build_setting_values(project, "CODE_SIGN_ENTITLEMENTS") == ["CaseinMob.entitlements"]
+    assert build_setting_values(project, "CODE_SIGN_ENTITLEMENTS") == [
+             "CaseinMob.entitlements",
+             "CaseinMob.Release.entitlements"
+           ]
+
     assert build_setting_occurrences(project, "CODE_SIGN_ENTITLEMENTS") == 2
+
+    assert build_setting_frequency(project, "CODE_SIGN_ENTITLEMENTS") == %{
+             "CaseinMob.entitlements" => 1,
+             "CaseinMob.Release.entitlements" => 1
+           }
+
+    debug_cfg = configuration_block!(project, "AA00000B /* Debug */")
+    release_cfg = configuration_block!(project, "AA00000C /* Release */")
+
+    assert debug_cfg =~ "CODE_SIGN_STYLE = Automatic;"
+    assert debug_cfg =~ "CODE_SIGN_ENTITLEMENTS = CaseinMob.entitlements;"
+    refute debug_cfg =~ "CaseinMob.Release.entitlements"
+    refute debug_cfg =~ "Apple Distribution"
+    refute debug_cfg =~ "PROVISIONING_PROFILE_SPECIFIER"
+
+    assert release_cfg =~ "CODE_SIGN_STYLE = Manual;"
+    assert release_cfg =~ ~s(CODE_SIGN_IDENTITY = "Apple Distribution";)
+    assert release_cfg =~ "CODE_SIGN_ENTITLEMENTS = CaseinMob.Release.entitlements;"
+    refute release_cfg =~ "CODE_SIGN_ENTITLEMENTS = CaseinMob.entitlements;"
+    assert release_cfg =~
+             ~s(PROVISIONING_PROFILE_SPECIFIER = "iOS Team Store Provisioning Profile: com.alexandrefamilyfarm.casein-mob";)
 
     [application_identifier_prefix] =
       plist_array_values!(profile, "ApplicationIdentifierPrefix")
@@ -70,6 +97,48 @@ defmodule CaseinMob.IOSConfigurationTest do
 
     assert boolean_entitlement!(entitlements, "get-task-allow")
     assert boolean_entitlement!(profile, "get-task-allow")
+  end
+
+  test "Release configuration uses a distinct distribution entitlement and profile contract" do
+    release_entitlements = File.read!(@release_entitlements)
+    project = File.read!(@xcode_project)
+    profile = File.read!(@distribution_profile)
+
+    release_cfg = configuration_block!(project, "AA00000C /* Release */")
+    assert release_cfg =~ "CODE_SIGN_ENTITLEMENTS = CaseinMob.Release.entitlements;"
+    assert release_cfg =~ "CODE_SIGN_STYLE = Manual;"
+    assert release_cfg =~ ~s(CODE_SIGN_IDENTITY = "Apple Distribution";)
+
+    [application_identifier_prefix] =
+      plist_array_values!(profile, "ApplicationIdentifierPrefix")
+
+    expected_application_identifier =
+      "#{application_identifier_prefix}.com.alexandrefamilyfarm.casein-mob"
+
+    assert entitlement_value!(release_entitlements, "application-identifier") ==
+             expected_application_identifier
+
+    assert entitlement_value!(release_entitlements, "com.apple.developer.team-identifier") ==
+             entitlement_value!(profile, "com.apple.developer.team-identifier")
+
+    assert entitlement_value!(release_entitlements, "aps-environment") == "production"
+    assert entitlement_value!(profile, "aps-environment") == "production"
+
+    assert entitlement_value!(release_entitlements, "aps-environment") ==
+             entitlement_value!(profile, "aps-environment")
+
+    assert plist_array_values!(release_entitlements, "keychain-access-groups") ==
+             plist_array_values!(profile, "keychain-access-groups")
+
+    refute release_entitlements =~ "<key>get-task-allow</key>"
+    refute profile =~ "<key>get-task-allow</key>"
+    assert boolean_entitlement!(release_entitlements, "beta-reports-active")
+    assert boolean_entitlement!(profile, "beta-reports-active")
+
+    # Development push entitlement must remain intact on the Debug plist.
+    development = File.read!(@entitlements)
+    assert entitlement_value!(development, "aps-environment") == "development"
+    assert boolean_entitlement!(development, "get-task-allow")
   end
 
   test "uses the resizable iPad window model with a launch screen" do
@@ -204,6 +273,16 @@ defmodule CaseinMob.IOSConfigurationTest do
       ["true"] -> true
       ["false"] -> false
       _ -> flunk("missing boolean entitlement #{key}")
+    end
+  end
+
+  defp configuration_block!(project, marker) do
+    pattern =
+      ~r/#{Regex.escape(marker)} = \{(.*?)\t\t\};/s
+
+    case Regex.run(pattern, project) do
+      [_, block] -> block
+      _ -> flunk("missing configuration #{marker}")
     end
   end
 end
