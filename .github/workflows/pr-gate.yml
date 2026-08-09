@@ -15,10 +15,16 @@ on:
   pull_request:
     branches: [master]
 
-# A newer push to the same PR supersedes an in-flight run.
+# One full gate at a time on the shared self-hosted devbox. Per-PR groups let
+# concurrent PRs each spawn mix test + Postgres DSM under /dev/shm; that exhausts
+# kernel.shmmni (segment COUNT, not bytes) and surfaces as ERROR 53100
+# (disk_full) "could not resize shared memory segment" despite free shm capacity.
+# cancel-in-progress must stay false: cancelling an in-flight gate when another
+# PR arrives is worse than queueing (wastes a half-run and still serialises).
+# See need-ci-shm-53100 / casein#744.
 concurrency:
-  group: pr-gate-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: pr-gate-devbox-self-hosted
+  cancel-in-progress: false
 
 permissions:
   contents: read
