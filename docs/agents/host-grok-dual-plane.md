@@ -22,10 +22,11 @@ Two healthy planes, **not** one machine:
 
 1. **Dual-plane honesty** — Mac/host shell ≠ remote Casein panes. State which plane you are on when paths matter.
 2. **Remote-path rule** — Never `cd` remote worktree paths (e.g. `/data/casein-agent-worktrees/...`) on the host and never assume a local git root is the pane’s worktree without checking topology `worktree_path` / `current_path`.
-3. **Multi-workspace ops (intentional default for host Grok)** — Keep fleet-wide visibility when this process is an ops console. For every non-trivial terminal/preview/artifact call, pass **`workspace_id` + `session`** (and `pane` when mutating). **Never** rely on “recommended session” alone.
-4. **Agent mutate** — Use `terminal_send_agent_*` only when `safe_to_mutate` is true **and** an `agent_pair` (or equivalent role marker) is present. Host-home Grok typically has neither; use explicit `session` + `pane` tools instead (`terminal_send_command`, or `terminal_paste_agent_text` with `pane` + `submit: true`). Do **not** double-Enter — paste/submit paths settle, press Enter, and retry once; trust `delivery` / `submitted` on the response.
-5. **Fleet nuance** — Bare OpenCode/Claude worker windows without `agent_pair` are expected for many fleet spawns. That is hygiene, not proof MCP is broken.
-6. **Host config apply gate** — Changes to host `~/.grok/config.toml` (MCP enable/disable, token wiring) only after human greenlight (`apply phase 1 only` / `apply mode A full`). No silent token rewrites in chat or git.
+3. **Product cwd (not `$HOME`)** — For Casein/product work on host Grok, start the shell from a **local product checkout** (e.g. host clone of Casein / `dev_ide`), not `$HOME`. A wrong cwd fails silently (side effects land outside the repo); a deleted cwd fails loudly (`getcwd`). See [Product cwd discipline](#product-cwd-discipline-716) below.
+4. **Multi-workspace ops (intentional default for host Grok)** — Keep fleet-wide visibility when this process is an ops console. For every non-trivial terminal/preview/artifact call, pass **`workspace_id` + `session`** (and `pane` when mutating). **Never** rely on “recommended session” alone.
+5. **Agent mutate** — Use `terminal_send_agent_*` only when `safe_to_mutate` is true **and** an `agent_pair` (or equivalent role marker) is present. Host-home Grok typically has neither; use explicit `session` + `pane` tools instead (`terminal_send_command`, or `terminal_paste_agent_text` with `pane` + `submit: true`). Do **not** double-Enter — paste/submit paths settle, press Enter, and retry once; trust `delivery` / `submitted` on the response.
+6. **Fleet nuance** — Bare OpenCode/Claude worker windows without `agent_pair` are expected for many fleet spawns. That is hygiene, not proof MCP is broken.
+7. **Host config apply gate** — Changes to host `~/.grok/config.toml` (MCP enable/disable, token wiring) only after human greenlight (`apply phase 1 only` / `apply mode A full`). No silent token rewrites in chat or git.
 
 ## Two modes
 
@@ -36,6 +37,7 @@ Two healthy planes, **not** one machine:
 - Multi-workspace visibility is OK for an ops console
 - Mandatory: `workspace_id` + `session` on ops calls
 - **No** assume `safe_to_mutate` for this process
+- Launch Grok from a **product checkout cwd** (see below), not `$HOME`
 
 ### Mode B — Casein-launched paired Grok (not host-home default)
 
@@ -43,6 +45,61 @@ Two healthy planes, **not** one machine:
 - Materialized env: `CASEIN_WORKSPACE_ID`, `CASEIN_CHECKOUT`, pre-scoped `CASEIN_*_MCP_URL`, caller pane
 - `safe_to_mutate` may be true for the dedicated agent pane only
 - **Out of scope** for host-home Grok until deliberately launched
+
+## Product cwd discipline (#716)
+
+Host Grok baseline often lands at `$HOME` (e.g. `/Users/developer`). That is fine for
+chat, but **wrong for Casein/product work**: project MCP/docs discovery walks from cwd,
+and tool side effects (writes, git, scripts) follow the shell cwd — not the remote pane.
+
+### Expectation
+
+| Work | Host shell cwd |
+|------|----------------|
+| Casein / product coding, PRs, local git | A **local** clone/checkout of that product (host path) |
+| Pure remote ops (topology, paste into panes) with no local edits | Product checkout still preferred so project `.mcp.json` / docs win over bare home |
+| Unrelated host tasks | Anywhere — do not pretend it is product work |
+
+**Do not** `cd` to remote paths like `/data/casein-agent-worktrees/...` on the Mac (remote-path rule). The product cwd is the **host** tree that mirrors the product, not the pane’s `worktree_path`.
+
+### Why it bites
+
+- **Wrong cwd** — silent: files and scrap land under `$HOME` where nobody reviews them.
+- **Deleted cwd** — loud: shells/tmux fail `getcwd` until restarted from a live path (recover from a known-good dir such as `$HOME`, then `cd` into the checkout again).
+
+### Launch convention (host Mac)
+
+```bash
+# Pick your real host checkout (examples — adjust to the machine)
+cd ~/src/casein          # or ~/dev/dev_ide, ~/code/casein, …
+pwd                      # confirm: not $HOME
+grok                     # then use Casein MCP with workspace_id + session
+```
+
+Optional one-liner helper (shell alias or function — **host-local**, not committed config):
+
+```bash
+# ~/.zshrc or equivalent — path is operator-chosen; show before adopting
+casein-grok() {
+  local root="${CASEIN_HOST_CHECKOUT:-$HOME/src/casein}"
+  if [[ ! -d "$root/.git" && ! -f "$root/.git" ]]; then
+    echo "casein-grok: missing checkout at $root (set CASEIN_HOST_CHECKOUT)" >&2
+    return 1
+  fi
+  cd "$root" || return 1
+  exec grok "$@"
+}
+```
+
+No change to box-global `~/.grok/config.toml` is required for cwd discipline. Prefer
+project-scoped MCP/docs when cwd is the product tree; keep durable multi-workspace Casein
+MCP URLs (Mode A) — **do not** collapse them to a single `workspace_id` query for this issue.
+
+### Do not
+
+- Start product sessions from `$HOME` and hope discovery finds the repo.
+- Treat host cwd as the remote pane worktree without checking topology.
+- Rewrite shared `~/.grok/config.toml` to “fix” cwd (it cannot; cwd is process launch state).
 
 ## Config surfaces
 
@@ -127,7 +184,7 @@ If `CASEIN_WORKSPACE_ID` is unset on a host ops console, treat MCP as multi-work
 | P0 | #719 | This runbook |
 | P1 | #718 | Host MCP hygiene (disable noise servers) — host apply |
 | P1b | #715 | Env-ref Casein Bearer — host apply |
-| P3 | #716 | Product cwd discipline |
+| P3 | #716 | Product cwd discipline — [section above](#product-cwd-discipline-716) |
 | P4 | #717 | Reap stale local `casein_test_*` sockets — `scripts/casein-test-tmux-socket-reaper.sh` (inventory + dry-run default; see script header) |
 | P5 | #714 | Short agent note (this folder / AGENTS link) |
 
@@ -138,6 +195,7 @@ If `CASEIN_WORKSPACE_ID` is unset on a host ops console, treat MCP as multi-work
 | Check | Healthy host Grok |
 |-------|-------------------|
 | Shell host | Local machine hostname/user |
+| Shell cwd for product work | Host product checkout — **not** bare `$HOME` |
 | Topology `current_path` | Often `/data/...` on remote |
 | Local `/data` | Usually missing on Mac |
 | `safe_to_mutate` | false without pair |
