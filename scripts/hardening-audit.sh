@@ -43,6 +43,7 @@ if [[ "$LIVE_ONLY" -ne 1 ]]; then
   bash -n scripts/setup-devbox-agent-pairing.sh
   bash -n scripts/verify_agent_pairing.sh
   bash -n scripts/verify_deploy_handoff.sh
+  bash -n scripts/verify_post_deploy_cockpit.sh
   bash -n scripts/workspace-doctor.sh
 
   log "running hardening-focused tests"
