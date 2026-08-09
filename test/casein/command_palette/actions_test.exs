@@ -103,12 +103,16 @@ defmodule Casein.CommandPalette.ActionsTest do
       refute "view:window_picker_tabs" in ids
       refute "view:window_picker_dropdown" in ids
       assert "action:terminal:toggle_chrome" in ids
+      assert "action:tree:toggle_hidden" in ids
       # Tab switchers are view commands too.
       assert "tab:terminal" in ids
 
       item = Enum.find(view, &(&1.id == "view:window_sidebar"))
       assert item.payload.event == "sidebar:open"
       assert item.payload.params == %{"mode" => "windows"}
+
+      hidden = Enum.find(view, &(&1.id == "action:tree:toggle_hidden"))
+      assert hidden.payload.event == "tree:toggle_hidden"
     end
 
     test "includes the diff inspector open action", %{items: items} do

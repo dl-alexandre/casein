@@ -545,7 +545,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         ]
       }
     >
-      <div class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5">
+      <div
+        data-ctx-menu="sessions_rail"
+        class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5"
+      >
         <span class="flex min-w-0 items-center gap-1.5">
           <span class="text-density-body font-semibold tracking-wide text-base-content/70">
             Sessions
@@ -1795,7 +1798,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         ]
       }
     >
-      <div class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5">
+      <div
+        data-ctx-menu="windows_rail"
+        class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5"
+      >
         <span class="text-density-body font-semibold tracking-wide text-base-content/70">
           Windows
         </span>
