@@ -253,9 +253,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
         {:ok, nil}
 
       path ->
-        with {:ok, root} <- local_workspace_root(workspace),
-             {:ok, rel} <- resolve_workspace_path(root, path) do
-          {:ok, rel}
+        with {:ok, root} <- local_workspace_root(workspace) do
+          resolve_workspace_path(root, path)
         end
     end
   end
