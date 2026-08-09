@@ -124,6 +124,9 @@ bash scripts/test-build-release-extraction.sh
 log "running hermetic shell unit tests (bare agent-worktree primary resolve)"
 bash scripts/test-agent-worktree-bare.sh
 
+log "running hermetic shell unit tests (spawn worker cross-session env isolation)"
+bash scripts/test-spawn-worker-env-resolve.sh
+
 log "shellcheck (warning+) on agent shim/launch scripts"
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck --severity=warning -x \
@@ -141,7 +144,9 @@ if command -v shellcheck >/dev/null 2>&1; then
     scripts/test-preview-router-reap.sh \
     scripts/test-build-release-extraction.sh \
     scripts/test-agent-shims.sh \
-    scripts/test-agent-worktree-bare.sh
+    scripts/test-agent-worktree-bare.sh \
+    scripts/test-spawn-worker-env-resolve.sh \
+    scripts/spawn-agent-worker.sh
 else
   log "shellcheck not installed — skipping (GitHub-hosted CI runners have it)"
 fi

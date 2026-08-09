@@ -192,8 +192,49 @@ EOF
 # the server's environment, not the orchestrating shell's current exports, so
 # relying on inherited CASEIN_* values can bind the worker to an old session (or
 # leave it unpaired entirely).
+#
+# When the target session is known, THAT session's workspace wins. Inherited
+# CASEIN_AGENT_ENV_FILE / CASEIN_AGENT_MCP_HOME are fallbacks only — never an
+# override of an explicit cross-session target (fleet bug: A-orchestrator spawn
+# into B-session silently sourced A's pairing and wrote the wrong product).
 spawn_worker_resolve_env_file() {
-  local candidate
+  local session="${1:-}"
+  local workspace_name="" session_env="" candidate
+  local caller_env="${CASEIN_AGENT_ENV_FILE:-}"
+  local caller_ws="${CASEIN_WORKSPACE_NAME:-}"
+
+  if [[ -z "$caller_ws" && -n "${CASEIN_AGENT_MCP_HOME:-}" &&
+    "${CASEIN_AGENT_MCP_HOME}" =~ /agent-mcp/([^/]+)/?$ ]]; then
+    caller_ws="${BASH_REMATCH[1]}"
+  fi
+  if [[ -z "$caller_ws" && -n "$caller_env" &&
+    "$caller_env" =~ /agent-mcp/([^/]+)/ ]]; then
+    caller_ws="${BASH_REMATCH[1]}"
+  fi
+
+  if [[ -n "$session" ]] && workspace_name="$(agent_env_parse_workspace_name "$session")"; then
+    session_env="$(agent_env_staging_env_file "$workspace_name")"
+    if [[ -r "$session_env" ]]; then
+      realpath -m "$session_env"
+      return 0
+    fi
+
+    # Named target workspace but no pairing file: refuse rather than fall back
+    # to the caller's (likely foreign) env — silent wrong-product is worse.
+    {
+      echo "error: workspace pairing env not found for target session '${session}'"
+      echo "error:   target_workspace=${workspace_name}"
+      echo "error:   expected=${session_env}"
+      if [[ -n "$caller_ws" && "$caller_ws" != "$workspace_name" ]]; then
+        echo "error:   caller_workspace=${caller_ws} (not used — target session wins)"
+      fi
+      if [[ -n "$caller_env" ]]; then
+        echo "error:   ignoring caller CASEIN_AGENT_ENV_FILE=${caller_env}"
+      fi
+      echo "error:   pair the target workspace first (materialize-agent-mcp / ensure-workspace-agent-pair)"
+    } >&2
+    return 1
+  fi
 
   for candidate in \
     "${CASEIN_AGENT_ENV_FILE:-}" \
@@ -204,6 +245,57 @@ spawn_worker_resolve_env_file() {
   done
 
   return 1
+}
+
+# When the resolved env file describes a different workspace than the
+# orchestrator already exported, load it into this process so checkout + Grok
+# write preflight match the destination. Same-workspace keeps caller overrides
+# (e.g. an explicit CASEIN_CHECKOUT pointing at a product tree).
+spawn_worker_align_process_to_env_file() {
+  local env_file="$1"
+  local session="${2:-}"
+  local target_ws="" file_ws="" caller_ws="${CASEIN_WORKSPACE_NAME:-}"
+
+  if [[ -n "$session" ]]; then
+    target_ws="$(agent_env_parse_workspace_name "$session" 2>/dev/null)" || target_ws=""
+  fi
+
+  file_ws="$(
+    # shellcheck disable=SC1090
+    set -a
+    # shellcheck source=/dev/null
+    source "$env_file" >/dev/null 2>&1
+    set +a
+    printf '%s' "${CASEIN_WORKSPACE_NAME:-}"
+  )"
+
+  if [[ -z "$target_ws" ]]; then
+    target_ws="$file_ws"
+  fi
+
+  if [[ -z "$caller_ws" && -n "${CASEIN_AGENT_ENV_FILE:-}" &&
+    "${CASEIN_AGENT_ENV_FILE}" =~ /agent-mcp/([^/]+)/ ]]; then
+    caller_ws="${BASH_REMATCH[1]}"
+  fi
+
+  # Already on the destination workspace with creds — keep process env (and any
+  # intentional CASEIN_CHECKOUT override from the caller).
+  if [[ -n "$caller_ws" && -n "$target_ws" && "$caller_ws" == "$target_ws" &&
+    -n "${CASEIN_API_TOKEN:-}" && -n "${CASEIN_WORKSPACE_ID:-}" ]]; then
+    return 0
+  fi
+  if [[ -z "$target_ws" || -z "$file_ws" ]]; then
+    return 0
+  fi
+  if [[ -n "$caller_ws" && "$caller_ws" == "$file_ws" &&
+    -n "${CASEIN_API_TOKEN:-}" && -n "${CASEIN_WORKSPACE_ID:-}" ]]; then
+    return 0
+  fi
+
+  unset CASEIN_API_TOKEN CASEIN_WORKSPACE_ID CASEIN_WORKSPACE_NAME CASEIN_CHECKOUT \
+    CASEIN_AGENT_MCP_HOME CASEIN_TERMINAL_MCP_URL CASEIN_PREVIEW_MCP_URL \
+    CASEIN_ARTIFACT_MCP_URL CASEIN_API_BASE_URL CASEIN_URL 2>/dev/null || true
+  agent_env_load_file "$env_file"
 }
 
 # Nonzero when the pane has vanished (the window closed with its command) or is
@@ -450,8 +542,8 @@ case "$RUNTIME" in
     ;;
 esac
 
-agent_env_resolve
-
+# Session first: env resolution keys off the *target* session workspace, not
+# whatever CASEIN_AGENT_* the orchestrator inherited from its own pane.
 SESSION="$(spawn_worker_resolve_session "$SESSION_ARG")" || {
   echo "error: could not resolve tmux session — pass session explicitly" >&2
   exit 1
@@ -465,6 +557,22 @@ fi
 if [[ "$SESSION" != casein_* ]]; then
   warn_degraded "session '${SESSION}' does not look like a Casein session (expected casein_* prefix)"
 fi
+
+ENV_FILE="$(spawn_worker_resolve_env_file "$SESSION")" || {
+  # spawn_worker_resolve_env_file already printed a target/caller mismatch when
+  # the session named a workspace; only the no-session fallback needs a generic
+  # hint here.
+  if [[ ! -r "${CASEIN_AGENT_ENV_FILE:-}" && ! -r "${CASEIN_AGENT_MCP_HOME:-}/env.sh" ]]; then
+    echo "error: workspace pairing env not found — run scripts/materialize-agent-mcp.sh first" >&2
+  fi
+  exit 1
+}
+
+# Prefer target pairing when the orchestrator is already fully exported for a
+# *different* workspace (agent_env_resolve short-circuits on token+id). Same-
+# workspace callers keep their exports / CASEIN_CHECKOUT overrides.
+spawn_worker_align_process_to_env_file "$ENV_FILE" "$SESSION"
+agent_env_resolve
 
 CHECKOUT="${CASEIN_CHECKOUT:-$ROOT}"
 if [[ ! -d "$CHECKOUT" ]]; then
@@ -481,11 +589,6 @@ if [[ ! -f "$LAUNCHER" ]]; then
   echo "error: Casein launcher not found at ${LAUNCHER}" >&2
   exit 1
 fi
-
-ENV_FILE="$(spawn_worker_resolve_env_file)" || {
-  echo "error: workspace pairing env not found — run scripts/materialize-agent-mcp.sh first" >&2
-  exit 1
-}
 
 if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   echo "error: tmux session not found: ${SESSION}" >&2

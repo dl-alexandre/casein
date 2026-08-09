@@ -16,14 +16,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
     primary = Path.join(tmp, "primary")
     linked = Path.join(tmp, "linked")
     fakebin = Path.join(tmp, "bin")
+    home = Path.join(tmp, "home")
     File.mkdir_p!(primary)
     File.mkdir_p!(fakebin)
-    env_file = Path.join(tmp, "env.sh")
-
-    File.write!(
-      env_file,
-      "export CASEIN_API_TOKEN='test-token'\nexport CASEIN_WORKSPACE_ID='test-ws'\n"
-    )
+    env_file = stage_session_env!(home, "test", "test-ws")
 
     on_exit(fn -> File.rm_rf!(tmp) end)
 
@@ -41,11 +37,13 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
           {"CASEIN_CHECKOUT", linked},
+          {"HOME", home},
           {"PATH", fakebin <> ":" <> System.get_env("PATH")},
           # Satisfy agent_env_resolve's first branch (already-exported creds) so
           # the script doesn't abort looking for a Casein tmux pane / env file.
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "test"},
           {"CASEIN_AGENT_ENV_FILE", env_file}
         ]
       )
@@ -121,7 +119,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     product = Path.join(tmp, "product")
     fakebin = Path.join(tmp, "bin")
-    env_file = Path.join(tmp, "env.sh")
+    home = Path.join(tmp, "home")
     File.mkdir_p!(product)
     File.mkdir_p!(fakebin)
     on_exit(fn -> File.rm_rf!(tmp) end)
@@ -133,10 +131,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: git_env()
       )
 
-    File.write!(
-      env_file,
-      "export CASEIN_API_TOKEN='test-token'\nexport CASEIN_WORKSPACE_ID='test-ws'\n"
-    )
+    env_file = stage_session_env!(home, "test", "test-ws")
 
     File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
     File.chmod!(Path.join(fakebin, "tmux"), 0o755)
@@ -146,8 +141,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
           {"CASEIN_CHECKOUT", product},
+          {"HOME", home},
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "test"},
           {"CASEIN_AGENT_ENV_FILE", env_file},
           {"PATH", fakebin <> ":" <> System.get_env("PATH")}
         ]
@@ -172,8 +169,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     product = Path.join(tmp, "product")
     fakebin = Path.join(tmp, "bin")
+    home = Path.join(tmp, "home")
     File.mkdir_p!(product)
     File.mkdir_p!(fakebin)
+    File.mkdir_p!(home)
     on_exit(fn -> File.rm_rf!(tmp) end)
 
     {_, 0} = System.cmd("git", ["init", "-q", "-b", "master", product], env: git_env())
@@ -191,8 +190,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
           {"CASEIN_CHECKOUT", product},
+          {"HOME", home},
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "caller-ws"},
           {"CASEIN_AGENT_ENV_FILE", Path.join(tmp, "missing-env.sh")},
           {"CASEIN_AGENT_MCP_HOME", Path.join(tmp, "missing-staging")},
           {"PATH", fakebin <> ":" <> System.get_env("PATH")}
@@ -202,6 +203,60 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     assert status == 1
     assert out =~ "workspace pairing env not found"
+    assert out =~ "target_workspace=test"
+  end
+
+  # Fleet bug: A-orchestrator CASEIN_AGENT_* must not pin pairing when the
+  # explicit session argument names workspace B. Target session wins.
+  test "dry run into workspace B session uses B pairing despite caller A env" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "spawn-worker-cross-ws-#{System.unique_integer([:positive])}"
+      )
+
+    product = Path.join(tmp, "product")
+    fakebin = Path.join(tmp, "bin")
+    home = Path.join(tmp, "home")
+    File.mkdir_p!(product)
+    File.mkdir_p!(fakebin)
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    {_, 0} = System.cmd("git", ["init", "-q", "-b", "master", product], env: git_env())
+
+    {_, 0} =
+      System.cmd("git", ["-C", product, "commit", "-q", "--allow-empty", "-m", "root"],
+        env: git_env()
+      )
+
+    env_a = stage_session_env!(home, "workspace-a", "ws-a")
+    env_b = stage_session_env!(home, "workspace-b", "ws-b")
+
+    File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
+    File.chmod!(Path.join(fakebin, "tmux"), 0o755)
+
+    {out, 0} =
+      System.cmd(
+        "bash",
+        [@script, "codex", "cross", "casein_workspace-b_art-deadbeef"],
+        env: [
+          {"CASEIN_SPAWN_DRY_RUN", "1"},
+          {"CASEIN_CHECKOUT", product},
+          {"HOME", home},
+          {"CASEIN_API_TOKEN", "caller-a-token"},
+          {"CASEIN_WORKSPACE_ID", "ws-a"},
+          {"CASEIN_WORKSPACE_NAME", "workspace-a"},
+          {"CASEIN_AGENT_ENV_FILE", env_a},
+          {"CASEIN_AGENT_MCP_HOME", Path.dirname(env_a)},
+          {"PATH", fakebin <> ":" <> System.get_env("PATH")}
+        ]
+      )
+
+    assert out =~ "env_file=#{env_b}"
+    assert out =~ "source #{env_b}"
+    assert out =~ "export CASEIN_TMUX_SESSION=casein_workspace-b_art-deadbeef"
+    refute out =~ "env_file=#{env_a}"
+    refute out =~ "source #{env_a}"
   end
 
   # A managed Grok worker's bwrap sandbox base is frozen when its leader starts,
@@ -410,7 +465,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     product = Path.join(tmp, "product")
     fakebin = Path.join(tmp, "bin")
-    env_file = Path.join(tmp, "env.sh")
+    home = Path.join(tmp, "home")
     File.mkdir_p!(product)
     File.mkdir_p!(fakebin)
     on_exit(fn -> File.rm_rf!(tmp) end)
@@ -422,10 +477,8 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: git_env()
       )
 
-    File.write!(
-      env_file,
-      "export CASEIN_API_TOKEN='test-token'\nexport CASEIN_WORKSPACE_ID='test-ws'\n"
-    )
+    # Session arg in helpers is casein_test_u-x → workspace name "test".
+    env_file = stage_session_env!(home, "test", "test-ws")
 
     # Stub tmux: `has-session` succeeds, `new-window` hands back a pane id,
     # `list-panes` reports whatever liveness FAKE_PANE_STATE asks for, and
@@ -483,6 +536,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
     %{
       product: product,
       fakebin: fakebin,
+      home: home,
       env_file: env_file,
       tmux_log: Path.join(tmp, "tmux-calls.log")
     }
@@ -494,8 +548,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
         [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
           {"CASEIN_CHECKOUT", ctx.product},
+          {"HOME", ctx.home},
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "test"},
           {"CASEIN_API_BASE_URL", "http://127.0.0.1:4000"},
           {"CASEIN_AGENT_ENV_FILE", ctx.env_file},
           {"PATH", ctx.fakebin <> ":" <> System.get_env("PATH")}
@@ -512,8 +568,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
       env:
         [
           {"CASEIN_CHECKOUT", ctx.product},
+          {"HOME", ctx.home},
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "test"},
           {"CASEIN_API_BASE_URL", "http://127.0.0.1:4000"},
           {"CASEIN_AGENT_ENV_FILE", ctx.env_file},
           {"CASEIN_SPAWN_PROBE_SECONDS", "1"},
@@ -530,6 +588,25 @@ defmodule Scripts.SpawnAgentWorkerTest do
       {:ok, contents} -> contents
       {:error, _} -> ""
     end
+  end
+
+  # Session-first env resolve looks up ~/.casein/agent-mcp/<workspace>/env.sh
+  # from the casein_<workspace>_* session name. Stage that path under a fake HOME.
+  defp stage_session_env!(home, workspace_name, workspace_id) do
+    dir = Path.join([home, ".casein", "agent-mcp", workspace_name])
+    File.mkdir_p!(dir)
+    env_file = Path.join(dir, "env.sh")
+
+    File.write!(
+      env_file,
+      """
+      export CASEIN_API_TOKEN='test-token'
+      export CASEIN_WORKSPACE_ID='#{workspace_id}'
+      export CASEIN_WORKSPACE_NAME='#{workspace_name}'
+      """
+    )
+
+    env_file
   end
 
   defp git_env do
