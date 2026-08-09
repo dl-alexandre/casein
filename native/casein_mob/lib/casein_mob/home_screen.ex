@@ -25,17 +25,7 @@ defmodule CaseinMob.HomeScreen do
         <Spacer size={12} />
         {nav_button("Files",               :open_files)}
         <Spacer size={12} />
-        {nav_button("Text Input",          :open_text)}
-        <Spacer size={12} />
-        {nav_button("Rock Paper Scissors", :open_list)}
-        <Spacer size={12} />
-        {nav_button("Roll Dice",           :open_dice)}
-        <Spacer size={12} />
         {nav_button("WebView",             :open_webview)}
-        <Spacer size={12} />
-        {nav_button("Audio",               :open_audio)}
-        <Spacer size={12} />
-        {nav_button("Storage",             :open_storage)}
         {plugin_section(assigns.plugin_screens)}
         <Spacer size={32} />
         <Text text="Theme" text_size={:sm} text_color={:muted} padding={4} />
@@ -80,28 +70,8 @@ defmodule CaseinMob.HomeScreen do
     {:noreply, Mob.Socket.push_screen(socket, CaseinMob.FilesScreen)}
   end
 
-  def handle_info({:tap, :open_text}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.TextScreen)}
-  end
-
-  def handle_info({:tap, :open_list}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.ListScreen)}
-  end
-
-  def handle_info({:tap, :open_dice}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.DiceScreen)}
-  end
-
   def handle_info({:tap, :open_webview}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, CaseinMob.WebViewScreen)}
-  end
-
-  def handle_info({:tap, :open_audio}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.AudioScreen)}
-  end
-
-  def handle_info({:tap, :open_storage}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.StorageScreen)}
   end
 
   # Plugin demo screens are tagged by their route string (see plugin_section/1).
