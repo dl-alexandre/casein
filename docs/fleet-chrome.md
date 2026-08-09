@@ -72,10 +72,38 @@ projects when a live `terminal_report_agent_state` report carries age.
 - Not automatic role assignment for every agent pane
 - Not a substitute for claim protocol / issue bindings on real queue work
 
+## Fleet board (operator aggregate)
+
+Per-pane fields answer "what is *this* pane doing?". Operators running a
+15-window fleet also need the inverse: **what are my workers doing, which are
+blocked, which need me?**
+
+`Casein.Terminals.FleetBoard` projects `SessionBarVM` window tabs into:
+
+| Field | Meaning |
+|-------|---------|
+| `rows` | one row per agent window (state, issue, role, readiness, chip) |
+| `counts` | bucket tallies: `needs_you`, `working`, `ready_no_task`, `idle`, `done`, `unknown` |
+| `attention_count` | rows that need the operator |
+
+Kind discipline is preserved: report-only (`blocked` / `errored`) and
+derived-only (`stalled`) stay distinct; an unscanned / unknown observation is
+**never** rendered as quiet. Attention membership reuses
+`Casein.Attention.Delivery.session_classification/1` (shared with #787 / #788).
+
+Cockpit chrome: fixed **fleet** badge (bottom-right) opens a drawer. Click a
+row → `tmux:select_window` focuses that worker. Rebuilt whenever
+`assign_tmux_window_tabs/1` runs — no second poller.
+
+This is **M5-lite** for issue #384 (operator-visible fleet surface). It is not
+orchestration MCP, durable task graphs, path contracts, or verifier adapters.
+
 ## Code
 
-- `Casein.Terminals.FleetChrome` — pure projection
+- `Casein.Terminals.FleetChrome` — pure per-pane projection
+- `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs
+- `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
 - `Casein.Labels.enrich_topology/2` — join label strings onto panes
 - `Casein.Terminals.PaneState` — strips bare runtime banners from `task_summary`
-- Wired from `Casein.Agents.TerminalTools.Impl.Session.topology/1` and
-  `Casein.Operator.SituationDigest`
+- Wired from `Casein.Agents.TerminalTools.Impl.Session.topology/1`,
+  `Casein.Operator.SituationDigest`, and cockpit `assign_tmux_window_tabs/1`

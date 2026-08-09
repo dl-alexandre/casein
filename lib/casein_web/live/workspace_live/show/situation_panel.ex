@@ -21,7 +21,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SituationPanel do
       :if={@enabled}
       id="situation-badge"
       phx-click="situation_drawer:toggle"
-      class={"fixed bottom-3 right-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-density-body shadow-sm " <>
+      class={"fixed bottom-14 right-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-density-body shadow-sm " <>
         badge_class(@risks)}
       title="operator situation risks"
     >

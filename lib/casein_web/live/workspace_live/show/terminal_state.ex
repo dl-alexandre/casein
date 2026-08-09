@@ -311,21 +311,31 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   def assign_tmux_window_tabs(socket) do
     socket = assign_pane_labels(socket)
     codex_titles = SessionTitles.titles(pane_session_ids(socket.assigns.tmux_windows))
+    tmux_session = socket.assigns[:tmux_session]
+
+    issue_bindings =
+      if is_binary(tmux_session),
+        do: Casein.Terminals.IssueBinding.for_session(tmux_session),
+        else: %{}
 
     tabs =
       SessionBarVM.window_tabs(
         socket.assigns.tmux_windows,
         socket.assigns[:ui_highlight_pane_id],
         socket.assigns[:preview_panes] || %{},
-        tmux_session: socket.assigns[:tmux_session],
+        tmux_session: tmux_session,
         session_id: socket.assigns[:terminal_sid],
         unseen_quiet_window_ids: socket.assigns[:unseen_quiet_window_ids],
         pane_labels: socket.assigns[:pane_labels] || %{},
-        codex_titles: codex_titles
+        codex_titles: codex_titles,
+        issue_bindings: issue_bindings
       )
+
+    fleet_board = Casein.Terminals.FleetBoard.from_window_tabs(tabs)
 
     socket
     |> assign(:tmux_window_tabs, tabs)
+    |> assign(:fleet_board, fleet_board)
     |> Sidebar.assign_windows_sidebar_tree()
   end
 
