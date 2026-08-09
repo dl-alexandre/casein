@@ -45,6 +45,23 @@
         window.addEventListener("storage", (e) => e.key === "phx:theme" && setTheme(e.newValue || "system"));
         
         window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.phxTheme));
+        try {
+          const root = document.documentElement;
+          const raw = localStorage.getItem("casein:cockpit-layout");
+          const override = raw === "compact" || raw === "desktop" || raw === "auto" ? raw : "auto";
+          const keyboard = localStorage.getItem("casein:cockpit-keyboard") === "1";
+          const width = window.innerWidth || 0;
+          const narrow = width > 0 && width <= 639;
+          root.setAttribute("data-cockpit-layout-override", override);
+          if (keyboard) root.setAttribute("data-cockpit-keyboard", "");
+          if (override === "compact" || override === "desktop") {
+            root.setAttribute("data-cockpit-layout", override);
+          } else if (keyboard && !narrow) {
+            root.setAttribute("data-cockpit-layout", "desktop");
+          } else {
+            root.removeAttribute("data-cockpit-layout");
+          }
+        } catch (_) {}
       })();
     </script>
   </head>

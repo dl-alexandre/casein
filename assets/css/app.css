@@ -1433,6 +1433,80 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
   transition: padding-bottom 120ms ease-out;
 }
 
+
+/* #736 — explicit layout override on top of #735 (width=layout, pointer=targets).
+   Attribute is set only for override/keyboard paths; auto leaves it unset so
+   the #735 media queries alone decide the default. */
+html[data-cockpit-layout="compact"] .workspace-main-header .header-p-touch-hide {
+  display: none !important;
+}
+html[data-cockpit-layout="compact"] .workspace-main-header .header-p-touch-show.header-p-as-block {
+  display: block;
+}
+html[data-cockpit-layout="compact"] .workspace-main-header .header-p-touch-show.header-p-as-inline {
+  display: inline-block;
+}
+html[data-cockpit-layout="compact"] .workspace-main-header .header-p-touch-show.header-p-as-flex {
+  display: flex;
+}
+html[data-cockpit-layout="compact"] .workspace-main-header .header-terminal-pickers,
+html[data-cockpit-layout="compact"] .workspace-main-header [id^="session-dropdown-"],
+html[data-cockpit-layout="compact"] .workspace-main-header [id^="window-dropdown-"] {
+  display: none !important;
+}
+html[data-cockpit-layout="compact"] .file-pane-inpane-strip {
+  display: flex;
+}
+html[data-cockpit-layout="compact"] .file-pane-overlay .file-pane-editor,
+html[data-cockpit-layout="compact"] .file-pane-overlay [data-file-pane-placeholder] {
+  top: 1.75rem;
+}
+html[data-cockpit-layout="compact"] .preview-session-badge {
+  display: block !important;
+}
+html[data-cockpit-layout="compact"] .mobile-key-bar {
+  display: flex;
+}
+html[data-cockpit-layout="compact"] .mobile-nav-sheet {
+  display: block;
+}
+html[data-cockpit-layout="compact"] .terminal-shell {
+  padding-bottom: var(
+    --casein-mobile-terminal-inset,
+    max(2.75rem, calc(2.15rem + 1px + max(0.25rem, env(safe-area-inset-bottom, 0px))))
+  );
+  transition: padding-bottom 120ms ease-out;
+}
+
+/* Desktop override: restore header pickers when width/chrome-narrow would hide them. */
+html[data-cockpit-layout="desktop"] .workspace-main-header .header-terminal-pickers {
+  display: flex !important;
+}
+html[data-cockpit-layout="desktop"] .workspace-main-header [id^="session-dropdown-"],
+html[data-cockpit-layout="desktop"] .workspace-main-header [id^="window-dropdown-"] {
+  display: revert !important;
+}
+html[data-cockpit-layout="desktop"] .workspace-main-header .header-p-touch-show {
+  display: none !important;
+}
+html[data-cockpit-layout="desktop"] .workspace-main-header .header-p-touch-hide {
+  display: revert !important;
+}
+html[data-cockpit-layout="desktop"] .file-pane-inpane-strip {
+  display: none;
+}
+html[data-cockpit-layout="desktop"] .preview-session-badge:not([data-mismatch="true"]) {
+  display: none;
+}
+:root[data-chrome-narrow][data-cockpit-layout="desktop"] .workspace-main-header .header-terminal-pickers,
+:root[data-chrome-narrow][data-cockpit-layout="desktop"] .workspace-main-header [id^="session-dropdown-"],
+:root[data-chrome-narrow][data-cockpit-layout="desktop"] .workspace-main-header [id^="window-dropdown-"] {
+  display: flex !important;
+}
+:root[data-chrome-narrow][data-cockpit-layout="desktop"] .mobile-key-bar {
+  display: none;
+}
+
 /* Interactive window-switch swipe affordance (assets/js/workspace_leader.js).
    A full-height bar hugging the edge the incoming window slides in from,
    labelled with that window (index, name, activity dot). Its width tracks drag

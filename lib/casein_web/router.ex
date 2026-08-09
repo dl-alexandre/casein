@@ -13,7 +13,7 @@ defmodule CaseinWeb.Router do
   # - `script-src` allows same-origin scripts plus the sha256 hash of the one
   #   inline script we ship: the theme bootstrap in root.html.heex. If you
   #   edit that script, recompute the hash:
-  #     python3 -c "import hashlib,base64,re,sys; s=open('lib/casein_web/components/layouts/root.html.heex').read(); print('sha256-'+base64.b64encode(hashlib.sha256(re.search(r'<script>(.*?)</script>',s,re.S).group(1).encode()).digest()).decode())"
+  #     python3 -c "import hashlib,base64,re,sys; s=open('lib/casein_web/components/layouts/root.html.heex').read(); print('sha256-IECWXmTrHtyeQgKHVx1Df88BweVfN4p3BR7BwZbItrg='+base64.b64encode(hashlib.sha256(re.search(r'<script>(.*?)</script>',s,re.S).group(1).encode()).digest()).decode())"
   #   In dev we fall back to 'unsafe-inline' because LiveDashboard injects its
   #   own inline scripts (and browsers ignore 'unsafe-inline' when a hash is
   #   present, so we cannot ship both).
@@ -23,7 +23,7 @@ defmodule CaseinWeb.Router do
   #   this through `:casein, :preview_frame_src`.
   @script_src if Application.compile_env(:casein, :dev_routes),
                 do: "script-src 'self' 'unsafe-inline'",
-                else: "script-src 'self' 'sha256-ZSLtwbmogvdRQWylw6MDGKCK+VIz+hyMBvfpcdn8AQs='"
+                else: "script-src 'self' 'sha256-IECWXmTrHtyeQgKHVx1Df88BweVfN4p3BR7BwZbItrg='"
 
   @default_frame_src "frame-src * data: blob:"
 

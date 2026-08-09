@@ -200,7 +200,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
 
           <div
             id="run-ledger"
-            class="border-t pt-3 mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]"
+            class="border-t pt-3 mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]"
           >
             <section>
               <div class="flex items-center justify-between mb-2">

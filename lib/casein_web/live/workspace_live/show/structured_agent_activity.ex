@@ -71,10 +71,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
 
       <div
         :if={@loaded?}
-        class="grid min-h-56 border-t border-base-300 lg:grid-cols-[17rem_minmax(0,1fr)]"
+        class="grid min-h-56 border-t border-base-300 md:grid-cols-[17rem_minmax(0,1fr)]"
       >
         <nav
-          class="max-h-80 overflow-y-auto border-b border-base-300 bg-base-200/20 p-2 lg:border-r lg:border-b-0"
+          class="max-h-80 overflow-y-auto border-b border-base-300 bg-base-200/20 p-2 md:border-r md:border-b-0"
           aria-label="Structured agent threads"
         >
           <p :if={@thread_tree == []} class="px-3 py-8 text-center text-xs text-base-content/45">
