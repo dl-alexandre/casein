@@ -12,6 +12,17 @@ the LiveView wiring — those live in `lib/casein_web/live/workspace_live/`
 (`Casein.Policy.can_use_raw_terminal?/1`); `Terminals.Boundary` is the only call
 site into it.
 
+### Geometry ownership (issue #748)
+
+tmux here is the **persistence** boundary (sessions, PTYs, scrollback, crash
+recovery). It is **not** the layout authority for where panes appear in the
+cockpit. Arrangement, focus, and the cols/rows told to each PTY are Casein's
+(`docs/design/casein-owns-geometry.md`). Today `SessionOwner` already stamps the
+focused viewer's fitted size onto the shared window; the browser fit is a single
+pure path (`assets/js/terminal_layout_model.mjs` `computeTerminalLayout` + the
+jsdom contract tests). Do not add a second fit path. Layout is never a crash-
+recovery input (`docs/subsystems/tmux_crash_recovery.md`).
+
 ## Responsibility
 
 - Allocate and own one tmux-backed PTY per `(workspace, sid)`

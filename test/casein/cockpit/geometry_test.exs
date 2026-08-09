@@ -48,4 +48,18 @@ defmodule Casein.Cockpit.GeometryTest do
     huge = Geometry.terminal_inspector(:right, 0.99)
     assert huge.ratio == 0.15
   end
+
+  # #748 foundation: Geometry is Casein's layout-authority seed. These shapes
+  # must keep working as feature panes leave tmux rectangles for slots (#750
+  # names the node; later phases drop holders). Do not grow a parallel tree.
+  test "geometry tree is the single cockpit layout model" do
+    only = Geometry.terminal_only()
+    split = Geometry.terminal_inspector(:right, 0.4)
+
+    assert only.kind == :region
+    assert split.kind == :split
+    assert Geometry.for_inspectors([]) == only
+    assert Geometry.inspector_open?(split)
+    refute Geometry.inspector_open?(only)
+  end
 end
