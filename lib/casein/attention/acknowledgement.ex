@@ -138,6 +138,84 @@ defmodule Casein.Attention.Acknowledgement do
   def open?(user_id, subject), do: not resolved?(user_id, subject)
 
   @doc """
+  Which quiet-window keys are already SEEN for this viewer.
+
+  Keys are `{session_id, window_id}` tuples used by session-rail chrome.
+  A key is SEEN when either the session-window subject or the bound session
+  card subject has `viewed_at` set. Missing rows stay **unseen** — never treat
+  "we could not observe" as acknowledged.
+
+  Used so phone/drawer SEEN quiets the cockpit badge without a third store.
+  """
+  @spec seen_quiet_window_keys(String.t(), String.t(), Enumerable.t(), keyword()) ::
+          MapSet.t({String.t(), String.t()})
+  def seen_quiet_window_keys(user_id, workspace_id, keys, opts \\ [])
+
+  def seen_quiet_window_keys(user_id, workspace_id, keys, opts)
+      when is_binary(user_id) and is_binary(workspace_id) do
+    if store_enabled?() do
+      origin_id = Keyword.get(opts, :origin_id, Origin.id())
+
+      key_list =
+        keys
+        |> Enum.filter(fn
+          {sid, wid} when is_binary(sid) and is_binary(wid) -> true
+          _ -> false
+        end)
+        |> Enum.uniq()
+
+      if key_list == [] do
+        MapSet.new()
+      else
+        window_ids =
+          Enum.map(key_list, fn {sid, wid} ->
+            "#{workspace_id}:session:#{sid}:window:#{wid}"
+          end)
+
+        card_ids =
+          key_list
+          |> Enum.map(fn {sid, _} -> "#{workspace_id}:session:#{sid}" end)
+          |> Enum.uniq()
+
+        subject_ids = window_ids ++ card_ids
+
+        rows =
+          from(c in AttentionCursor,
+            where:
+              c.user_id == ^user_id and c.origin_id == ^origin_id and
+                c.subject_kind in [^@card, ^@session_window] and c.card_id in ^subject_ids and
+                not is_nil(c.viewed_at),
+            select: {c.subject_kind, c.card_id}
+          )
+          |> Repo.all()
+
+        seen_windows =
+          for {@session_window, id} <- rows,
+              parsed = parse_session_window_subject_id(id, workspace_id),
+              into: MapSet.new(),
+              do: parsed
+
+        seen_sessions =
+          for {@card, id} <- rows,
+              sid = session_id_from_attention_key(id),
+              sid != "",
+              into: MapSet.new(),
+              do: sid
+
+        Enum.reduce(key_list, MapSet.new(), fn {sid, _wid} = key, acc ->
+          if MapSet.member?(seen_windows, key) or MapSet.member?(seen_sessions, sid) do
+            MapSet.put(acc, key)
+          else
+            acc
+          end
+        end)
+      end
+    else
+      MapSet.new()
+    end
+  end
+
+  @doc """
   Advance SEEN for a subject.
 
   Options:
@@ -466,6 +544,24 @@ defmodule Casein.Attention.Acknowledgement do
       _ -> ""
     end
   end
+
+  defp parse_session_window_subject_id(id, workspace_id)
+       when is_binary(id) and is_binary(workspace_id) do
+    prefix = "#{workspace_id}:session:"
+
+    if String.starts_with?(id, prefix) do
+      rest = String.replace_prefix(id, prefix, "")
+
+      case Regex.run(~r/^(.+):window:(.+)$/, rest) do
+        [_, session_id, window_id] -> {session_id, window_id}
+        _ -> nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp parse_session_window_subject_id(_, _), do: nil
 
   defp normalize_subject(subject) when is_map(subject) do
     kind =

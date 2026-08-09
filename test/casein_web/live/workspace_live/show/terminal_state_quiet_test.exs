@@ -1,8 +1,24 @@
 defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateQuietTest do
-  use Casein.TestCase, async: true
+  use Casein.DataCase, async: false
 
+  alias Casein.Attention.Acknowledgement
   alias Casein.Terminals.Session.Info, as: SessionInfo
   alias CaseinWeb.WorkspaceLive.Show.TerminalState
+
+  setup do
+    previous = Application.get_env(:casein, :mobile_attention_store_enabled)
+    Application.put_env(:casein, :mobile_attention_store_enabled, true)
+
+    on_exit(fn ->
+      if is_nil(previous) do
+        Application.delete_env(:casein, :mobile_attention_store_enabled)
+      else
+        Application.put_env(:casein, :mobile_attention_store_enabled, previous)
+      end
+    end)
+
+    :ok
+  end
 
   defp socket(assigns) do
     %Phoenix.LiveView.Socket{
@@ -14,7 +30,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateQuietTest do
             __changed__: %{},
             workspace: %{id: "ws-1", name: "workspace"},
             default_terminal_sid: "u-dev",
-            tmux_session: "other-session"
+            tmux_session: "other-session",
+            notif_user_id: "dev"
           },
           assigns
         )
@@ -225,5 +242,65 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateQuietTest do
 
     assert %{unseen_quiet_count: 0, windows: [%{quiet?: true, attention: "inline"}]} =
              Enum.find(socket.assigns.session_tabs, &(&1.id == "u-agent"))
+  end
+
+  test "durable SEEN from another surface keeps the quiet badge quiet" do
+    origin_id = Casein.Origin.id()
+
+    assert {:ok, _} =
+             Acknowledgement.mark_session_window_seen("dev", "ws-1", "u-agent", "@1",
+               origin_id: origin_id,
+               sync_notifications: false
+             )
+
+    working_window = %{
+      id: "@1",
+      index: 0,
+      name: "claude",
+      active: false,
+      quiet: false,
+      pane_state: :working
+    }
+
+    ready_window = %{working_window | quiet: true, pane_state: :ready}
+
+    socket =
+      socket(%{
+        quiet_window_ids: MapSet.new(),
+        quiet_window_entries: %{},
+        attention_surface_state: :hidden
+      })
+      |> TerminalState.assign_session_tabs([tab(working_window)])
+      |> TerminalState.assign_session_tabs([tab(ready_window)])
+
+    # OS notify may still fire once for the transition; the badge must not.
+    assert socket.assigns.unseen_quiet_window_ids == MapSet.new()
+
+    assert %{unseen_quiet_count: 0, windows: [%{quiet?: true, attention: "inline"}]} =
+             Enum.find(socket.assigns.session_tabs, &(&1.id == "u-agent"))
+  end
+
+  test "missing durable ack never collapses into seen on the rail" do
+    working_window = %{
+      id: "@1",
+      index: 0,
+      name: "claude",
+      active: false,
+      quiet: false,
+      pane_state: :working
+    }
+
+    ready_window = %{working_window | quiet: true, pane_state: :ready}
+
+    socket =
+      socket(%{
+        quiet_window_ids: MapSet.new(),
+        quiet_window_entries: %{},
+        attention_surface_state: :hidden
+      })
+      |> TerminalState.assign_session_tabs([tab(working_window)])
+      |> TerminalState.assign_session_tabs([tab(ready_window)])
+
+    assert socket.assigns.unseen_quiet_window_ids == MapSet.new([{"u-agent", "@1"}])
   end
 end
