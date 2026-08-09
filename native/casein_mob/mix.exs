@@ -58,11 +58,11 @@ defmodule CaseinMob.MixProject do
       {:mob_scanner, "~> 0.1.1"},
       {:mob_location, "~> 0.1"},
       {:mob_biometric, "~> 0.1"},
-      # Exact reviewed signed-v2 fork merge keeps the Android bridge
-      # host-agnostic while preserving the published ~> 0.1.2 API contract.
+      # 0.1.3 fork master: signed-v2 + Android push_token_error bridge/JNI
+      # (cached blank, firebase blank, task failure). Template == tracked copy.
       {:mob_notify,
        github: "dl-alexandre/mob_notify",
-       ref: "997b08c08346de7728a95bec306e96c812b92746",
+       ref: "936137f31a47f47ae29b3400f504662502047252",
        override: true},
       # Brand theming is CaseinMob.Theme (in-tree), not Hex mob_themes. The stock
       # showcase pack boots Obsidian violet and is not our product look — see
