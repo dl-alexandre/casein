@@ -45,7 +45,7 @@ SOCK_DIR="$STATE/sockets"
 PORT_BASE="${CASEIN_PREVIEW_PORT_BASE:-41000}"
 PORT_MAX="${CASEIN_PREVIEW_PORT_MAX:-41049}"
 SANDBOX="${CASEIN_PREVIEW_WORKSPACE:-preview-sandbox}"
-MISE=(mise exec elixir@1.20.0-otp-28 erlang@28.5 --)
+MISE=(mise exec elixir@1.20.2-otp-29 erlang@29.0.4 --)
 
 mkdir -p "$INST_DIR" "$WT_DIR" "$WS_DIR" "$LOG_DIR" "$SOCK_DIR"
 # Socket path is a pure function of the id — no allocation, no registry lookup.
