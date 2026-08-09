@@ -1,11 +1,22 @@
 defmodule Casein.Cockpit.Geometry do
   @moduledoc """
-  Cockpit layout geometry as a tree.
+  Cockpit layout geometry as a tree — Casein's layout authority seed.
 
   A node is either a leaf (`:region`) or a binary split (`:split` with direction,
   ratio, and two children). Today the only live shape is a single terminal |
   inspector split, but the tree is the model so a larger geometry change grows
-  this module rather than replacing it (issue #690 / epic #689).
+  this module rather than replacing it (issue #690 / epic #689 / #748).
+
+  **Boundary** (`docs/design/casein-owns-geometry.md`): Casein owns which layout
+  nodes exist, arrangement, sizing, and focus. tmux owns durable PTY sessions
+  and crash recovery, not rectangles. `pane_id` means a tmux PTY; a node in this
+  tree is a layout **slot** (vocabulary lands in issue #750 — do not rename the
+  ~2,655 tmux `pane_id` sites).
+
+  PTY cols/rows are *not* derived from this tree today for terminals — the
+  browser's single `computeTerminalLayout` path reports a fit, and
+  `SessionOwner` arbitrates multi-viewer size. Extend that path; do not add a
+  second fit.
   """
 
   @type direction :: :horizontal | :vertical

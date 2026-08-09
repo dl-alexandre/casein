@@ -9,6 +9,11 @@ defmodule Casein.PreviewPanes do
   legacy workspace preview PubSub topic (MCP tools, controllers) and the
   generic `Casein.Panes.Events` channel (the web layer's feature-pane
   pipeline).
+
+  The tmux pane binding is transitional: Casein owns layout
+  (`docs/design/casein-owns-geometry.md`, issue #748). Previews already have this
+  registry; a later phase drops the holder rectangle and binds to a Casein
+  **slot** instead. Do not add new layout authority on the tmux side.
   """
 
   use GenServer

@@ -21,10 +21,22 @@ defmodule Casein.Panes.Pane do
 
   ## Geometry
 
-  This behaviour is deliberately geometry-agnostic. tmux remains the geometry
-  *allocator* (a pane rides a real tmux pane's rectangle) and the web layer remains
-  the *renderer*. Lifting geometry allocation into casein ("Tier 2") is out of scope
-  and gated on the per-pane PTY cost becoming a measured problem.
+  This behaviour is deliberately geometry-agnostic: implementers fill a layout
+  node, they do not allocate rectangles. **Casein owns arrangement, sizing, and
+  focus** (`docs/design/casein-owns-geometry.md`, issue #748). tmux keeps durable
+  PTY sessions, process supervision, and crash recovery — it is the persistence
+  boundary, not the layout authority.
+
+  Today feature panes still *ride* a real tmux pane rectangle (holder scripts /
+  registry `pane_id` bindings). That is transitional scaffolding on the path to
+  Casein-owned slots, not a claim that tmux decides where things appear. Sizing
+  already flows Casein → PTY: the browser fits via `computeTerminalLayout`, and
+  `SessionOwner` stamps the focused viewer's cols/rows onto the shared window.
+
+  Naming: `pane_id` stays a tmux PTY id (agents address processes). The layout
+  node is a **slot** (issue #750). This behaviour's module name stays `Pane`
+  even as it becomes "things that fill slots" — renaming the behaviour is not
+  worth the churn.
   """
 
   @typedoc "Pane kind. `:terminal` is the default for back-compat with existing templates."

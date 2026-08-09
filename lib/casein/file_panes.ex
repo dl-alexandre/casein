@@ -2,15 +2,18 @@ defmodule Casein.FilePanes do
   @moduledoc """
   Registry of file-editor panes bound to tmux pane ids.
 
-  A file pane rides a real tmux pane (tmux stays the geometry allocator) whose
-  content is a native CodeMirror overlay rendered by the web layer. This module
-  owns the binding + the pane's ordered list of open tabs, mirroring the shape of
-  `Casein.PreviewPanes` but without any browser-control machinery.
+  A file pane still rides a real tmux pane rectangle today — transitional
+  scaffolding while Casein takes layout ownership (`docs/design/casein-owns-geometry.md`,
+  issue #748). Content is a native CodeMirror overlay rendered by the web layer.
+  This module owns the binding + the pane's ordered list of open tabs, mirroring
+  `Casein.PreviewPanes` but without browser-control machinery. Dropping the tmux
+  holder and binding to a Casein **slot** is a later phase; do not grow new
+  layout authority on the tmux side.
 
   Policy: **one file pane per tmux window**. Opening a file in a window that
   already has a file pane reuses it and adds/activates a tab; otherwise a pane is
   split off the anchor. Agents (and the web layer) declare *intent* through
-  `open_file_in_pane/3`; casein owns the split/reuse/placement decision.
+  `open_file_in_pane/3`; Casein owns the split/reuse/placement decision.
 
   State ownership: the registration persists the tab list + active path only.
   File **content and version tokens are never stored** — they are read fresh from

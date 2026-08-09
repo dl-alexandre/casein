@@ -143,22 +143,30 @@ deleted: they exist to animate toward a rectangle you had to wait for. When the 
 known immediately, the freeze-clip-crossfade work that avoids scaling terminal glyphs still
 applies, but the two-phase wait does not.
 
-## Sequencing — not now
+## Sequencing
 
-This is weeks of work touching crash recovery and three subsystem docs, and it should not
-start against the current backlog. The order, when it does:
+Tracked as issue #748. Each step is independently useful and shrinks the next.
 
-1. **Inspectors** — already done. #690 has Casein owning one split with the geometry modelled
-   as a tree specifically so it can grow into this.
-2. **Preview and file panes** — they already have their registries; this is dropping the tmux
-   binding and the holder script.
-3. **Terminals last** — that is where the reconciliation sites and the recovery paths live.
+1. **Inspectors** — done. #690 / PR #700: Casein owns one split; geometry is a tree
+   (`Casein.Cockpit.Geometry`) so it can grow.
+2. **Naming** — #750: call the layout node a **slot** before the tree spreads. `pane_id`
+   stays a tmux PTY. Coordinate; do not race shared-file renames with other tracks.
+3. **Foundation alignment** — code and subsystem docs must not still claim "tmux is the
+   geometry allocator." Behaviour modules (`Casein.Panes.Pane`, feature-pane registries)
+   point at this page. No runtime cutover yet.
+4. **Preview and file panes** — not filed yet. Drop the tmux binding and holder scripts;
+   registries already exist.
+5. **Terminals last** — not filed yet. ~53 reconciliation sites and crash-recovery paths.
+   Keep using the single `computeTerminalLayout` fit path; never grow a second one.
+   Vendor `<pre>` 8px padding stays excluded from fit math; grep `terminal owner size ->`
+   when diagnosing stranded 80×24 corners (`sendReady` clobber).
 
-Each step is independently useful, and each one shrinks the next.
+Phases 4–5 are weeks of work and must not start as drive-by refactors against the current
+backlog.
 
 ## Non-goals
 
 - Not removing tmux. It stays the persistence boundary.
 - Not changing agent spawning, session lifetime, or scrollback.
 - Not a redesign of what the cockpit looks like. Same layouts, different owner.
-- Not starting now.
+- Not renaming the ~2,655 `pane_id` sites, the MCP tool surface, or `Casein.Panes.Pane`.
