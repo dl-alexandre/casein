@@ -239,6 +239,11 @@ Each release artifact is built and tested on its target OS and architecture.
 Tauri may bundle or install that target's OTP release, but it never downloads or
 silently provisions WSL as part of the Windows product path.
 
+macOS release evidence (Developer ID, hardened runtime, notarize/staple,
+lifecycle, immutable hashes) is operator-run on a real Mac and recorded per
+`docs/desktop/macos_release_evidence.md` (issue #382). Ad-hoc CI package smoke
+is not a substitute.
+
 Before any public snapshot, build artifacts must be scanned independently of
 the source tree, and the reviewed core must be published from fresh history.
 Licensing, provenance, dependency/asset inventories, and the public/private
