@@ -37,7 +37,6 @@ defmodule Casein.Previews.OwnOrigin do
   """
 
   @host_prefix "pv"
-  @default_domain "devbox.milcgroup.com"
 
   # A DNS label caps at 63 characters, and the wildcard certificate covers a
   # single label only. "pv-" + port + "-" + UUID is 45, which leaves room.
@@ -57,9 +56,26 @@ defmodule Casein.Previews.OwnOrigin do
     config() |> Keyword.get(:enabled, false) |> then(&(&1 == true))
   end
 
-  @doc "Domain the preview hostnames live under."
-  @spec domain() :: String.t()
-  def domain, do: Keyword.get(config(), :domain, @default_domain)
+  @doc """
+  Domain the preview hostnames live under.
+
+  No product default: portable installs leave this unset until the operator
+  configures `CASEIN_PREVIEW_DOMAIN` (or the equivalent application env). A
+  missing domain keeps own-origin routing disabled via `host/2`.
+  """
+  @spec domain() :: String.t() | nil
+  def domain do
+    case Keyword.get(config(), :domain) do
+      domain when is_binary(domain) ->
+        case String.trim(domain) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _ ->
+        nil
+    end
+  end
 
   @doc """
   Build the preview origin for a workspace's loopback port.
@@ -79,11 +95,13 @@ defmodule Casein.Previews.OwnOrigin do
   @spec host(String.t(), pos_integer()) :: {:ok, String.t()} | :error
   def host(workspace_id, port)
       when is_binary(workspace_id) and is_integer(port) and port > 0 and port < 65_536 do
-    if enabled?() and hostname_safe_workspace_id?(workspace_id) do
+    domain = domain()
+
+    if enabled?() and is_binary(domain) and hostname_safe_workspace_id?(workspace_id) do
       label = "#{@host_prefix}-#{port}-#{workspace_id}"
 
       if String.length(label) <= @max_label_length,
-        do: {:ok, label <> "." <> domain()},
+        do: {:ok, label <> "." <> domain},
         else: :error
     else
       :error

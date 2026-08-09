@@ -1241,7 +1241,7 @@ defmodule Casein.Terminals.Shims do
       end
   end
 
-  defp home_dir, do: System.get_env("HOME") || "/home/devbox"
+  defp home_dir, do: Casein.Paths.home!()
 
   defp validate_name!(name) when is_binary(name) do
     if Regex.match?(~r/^[A-Za-z0-9._+-]+$/, name) do

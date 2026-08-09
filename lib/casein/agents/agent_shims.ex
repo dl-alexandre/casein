@@ -124,7 +124,7 @@ defmodule Casein.Agents.AgentShims do
     case install_script() do
       {:ok, script} ->
         env = [
-          {"HOME", System.get_env("HOME") || "/home/devbox"},
+          {"HOME", Casein.Paths.home!()},
           {"PATH", System.get_env("PATH") || "/usr/bin:/bin"},
           {"CASEIN_NPM_PREFIX", npm_prefix()}
         ]

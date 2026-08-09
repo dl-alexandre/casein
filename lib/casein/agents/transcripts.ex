@@ -92,7 +92,7 @@ defmodule Casein.Agents.Transcripts do
   end
 
   defp claude_roots do
-    home = System.get_env("HOME") || "/home/devbox"
+    home = Casein.Paths.home!()
 
     [
       Path.join(auth_root(), "profiles"),
@@ -105,6 +105,6 @@ defmodule Casein.Agents.Transcripts do
   defp auth_root do
     Application.get_env(:casein, :agent_auth_profile_root) ||
       System.get_env("CASEIN_AGENT_AUTH_ROOT") ||
-      Path.join([System.get_env("HOME") || "/home/devbox", ".casein", "agent-auth"])
+      Path.join([Casein.Paths.home!(), ".casein", "agent-auth"])
   end
 end

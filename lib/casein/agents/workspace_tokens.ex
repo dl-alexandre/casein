@@ -173,6 +173,5 @@ defmodule Casein.Agents.WorkspaceTokens do
     end
   end
 
-  defp home_dir,
-    do: System.get_env("HOME") || System.get_env("USERPROFILE") || "/home/devbox"
+  defp home_dir, do: Casein.Paths.home!()
 end

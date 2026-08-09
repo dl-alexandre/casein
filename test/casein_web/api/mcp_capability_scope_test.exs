@@ -227,7 +227,7 @@ defmodule CaseinWeb.API.MCPCapabilityScopeTest do
 
   defp managed_transcript_path(leader_id) do
     Path.join([
-      System.get_env("HOME") || "/home/devbox",
+      Casein.Paths.home!(),
       ".casein",
       "grok-homes",
       leader_id,
@@ -240,7 +240,7 @@ defmodule CaseinWeb.API.MCPCapabilityScopeTest do
 
   defp global_transcript_path do
     Path.join([
-      System.get_env("HOME") || "/home/devbox",
+      Casein.Paths.home!(),
       ".grok",
       "sessions",
       "workspace",
