@@ -497,6 +497,33 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("diff_open") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:terminal_mutation],
+      policy_tags: [:surfaces_diff_viewport],
+      recovery_hints: [
+        "Pass workspace_id; optional path focuses one file in the diff.",
+        "Do not pass placement, size, position, or pane_id — Casein owns geometry.",
+        "status no_viewer means nobody is watching; that is a correct no-op."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "path" => "lib/foo.ex"
+          },
+          structured_content: %{
+            "status" => "surfaced",
+            "workspace_id" => "ws-1",
+            "path" => "lib/foo.ex"
+          }
+        }
+      ]
+    }
+  end
+
   def metadata(name)
       when name in [
              "terminal_set_agent_label",

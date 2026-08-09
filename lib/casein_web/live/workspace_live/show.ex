@@ -52,6 +52,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias CaseinWeb.WorkspaceLive.Show.InspectorEvents
   alias CaseinWeb.WorkspaceLive.Show.LeaderHelpEvents
   alias CaseinWeb.WorkspaceLive.Show.LogsEvents
+  alias CaseinWeb.WorkspaceLive.Show.DiffEvents
   alias CaseinWeb.WorkspaceLive.Show.NavEvents
   alias CaseinWeb.WorkspaceLive.Show.PaletteEvents
   alias CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents
@@ -604,6 +605,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_event("switch_tab" = event, params, socket),
     do: NavEvents.handle_event(event, params, socket)
 
+  def handle_event("diff:open_in_pane" = event, params, socket),
+    do: DiffEvents.handle_event(event, params, socket)
+
   def handle_event("refresh" = event, params, socket),
     do: NavEvents.handle_event(event, params, socket)
 
@@ -947,6 +951,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
     socket =
       if tab == "artifacts", do: ArtifactEvents.refresh_artifact_projects(socket), else: socket
+
+    socket =
+      if tab == "diff", do: refresh_git_status(socket), else: socket
 
     if tab == "history" do
       socket
@@ -2790,6 +2797,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         _ = Open.subscribe(workspace_id)
+        # Presence for one-shot inspector surface intents (diff_open MCP).
+        # Inspectors.request_open/2 itself is subscribed via InspectorEvents.
+        _ = Casein.Inspectors.Diff.register_viewer(workspace_id)
       end
     end
 

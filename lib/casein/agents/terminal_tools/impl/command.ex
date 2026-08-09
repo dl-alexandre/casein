@@ -5,6 +5,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
   alias Casein.FilePanes
   alias Casein.FilePanes.LinkResolver
   alias Casein.Files.BrowserViewable
+  alias Casein.Inspectors.Diff
   alias Casein.Previews
   alias Casein.Runs.AgentLifecycle
   alias Casein.Terminals.SharedWorktreeGuard
@@ -222,6 +223,39 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
         {:error, reason} ->
           {:error, reason}
       end
+    end
+  end
+
+  @doc """
+  One-shot intent: surface a git diff to a connected cockpit viewer.
+
+  Takes **what** (optional path), never **where**. No pane handle is returned.
+  When no viewer is watching the workspace the call is a no-op (`status:
+  "no_viewer"`) — do not queue or persist.
+  """
+  @spec open_diff(map()) :: {:ok, map()} | {:error, term()}
+  def open_diff(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, workspace} <- fetch_workspace(workspace_id),
+         {:ok, path} <- optional_diff_path(workspace, params) do
+      Diff.surface(workspace.id, %{
+        path: path,
+        actor_id: string_param(params, "actor_id")
+      })
+    end
+  end
+
+  # Optional path: when present, confine it the same way file opens do. When
+  # absent, surface the workspace-wide diff overview.
+  defp optional_diff_path(workspace, params) do
+    case string_param(params, "path") do
+      nil ->
+        {:ok, nil}
+
+      path ->
+        with {:ok, root} <- local_workspace_root(workspace) do
+          resolve_workspace_path(root, path)
+        end
     end
   end
 
