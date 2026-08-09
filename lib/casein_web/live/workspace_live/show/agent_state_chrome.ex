@@ -22,19 +22,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentStateChrome do
           label: String.t() | nil
         }
 
-  # daisyUI semantic colours (light+dark). #729 will migrate remaining raw hues;
-  # these are the meanings that track already needs and must not invent a palette for.
-  @dot_working "bg-success shadow-[0_0_0_3px] shadow-success/25 animate-pulse"
-  @dot_blocked "bg-error shadow-[0_0_0_3px] shadow-error/30"
-  @dot_done "bg-info"
+  # Cockpit status tokens (#729). Meaning-named; theme-aware via app.css.
+  @dot_working "bg-status-ok shadow-[0_0_0_3px] shadow-status-ok/25 animate-pulse"
+  @dot_blocked "bg-status-danger shadow-[0_0_0_3px] shadow-status-danger/30"
+  @dot_done "bg-status-live"
   @dot_idle "bg-base-content/20"
-  @dot_errored "bg-error shadow-[0_0_0_3px] shadow-error/30"
-  @dot_stalled "bg-warning shadow-[0_0_0_3px] shadow-warning/30 animate-pulse"
+  @dot_errored "bg-status-danger shadow-[0_0_0_3px] shadow-status-danger/30"
+  @dot_stalled "bg-status-warning shadow-[0_0_0_3px] shadow-status-warning/30 animate-pulse"
 
-  @chip_blocked "bg-error/15 text-error"
-  @chip_done "bg-info/15 text-info"
-  @chip_errored "bg-error/15 text-error"
-  @chip_stalled "bg-warning/15 text-warning"
+  @chip_blocked "bg-status-danger/15 text-status-danger-fg"
+  @chip_done "bg-status-live/15 text-status-live-fg"
+  @chip_errored "bg-status-danger/15 text-status-danger-fg"
+  @chip_stalled "bg-status-warning/15 text-status-warning-fg"
 
   @doc "Normalize a topology/report state token to an atom, or `:unknown`."
   @spec normalize(state()) :: atom()

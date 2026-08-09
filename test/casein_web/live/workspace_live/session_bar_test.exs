@@ -53,7 +53,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
       assert tab.agent_state == :blocked
       assert tab.agent_state_message == "needs permission"
       assert tab.activity_label == "Agent blocked: needs permission"
-      assert tab.activity_class =~ "error"
+      assert tab.activity_class =~ "status-danger"
       assert tab.agent_state_chip == "needs input"
     end
 
@@ -63,7 +63,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
       assert tab.agent_state == :done
       assert tab.activity_label == "Agent done"
       assert tab.agent_state_chip == "done"
-      assert tab.activity_class =~ "info"
+      assert tab.activity_class =~ "status-live"
     end
 
     test "a stalled state is warning chrome, not working" do
@@ -82,7 +82,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
 
       assert tab.agent_state == :stalled
       assert tab.agent_state_chip == "stalled"
-      assert tab.activity_class =~ "warning"
+      assert tab.activity_class =~ "status-warning"
       assert tab.activity_label =~ "wedged"
     end
 

@@ -12,15 +12,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentWriteBanner do
     <div
       :if={@agent_write_unlock.status != :active}
       id={"agent-write-locked-banner-" <> @workspace.id}
-      class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-400/30 bg-amber-400/[0.09] px-3 py-1.5 text-density-body text-amber-900 dark:text-amber-100"
+      class="flex shrink-0 flex-wrap items-center gap-2 border-b border-status-warning/30 bg-status-warning/[0.09] px-3 py-1.5 text-density-body text-status-warning-fg"
       role="status"
     >
       <span class="relative flex size-2 shrink-0">
-        <span class="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-40"></span>
-        <span class="relative inline-flex size-2 rounded-full bg-amber-500"></span>
+        <span class="absolute inline-flex size-full animate-ping rounded-full bg-status-warning opacity-40"></span>
+        <span class="relative inline-flex size-2 rounded-full bg-status-warning"></span>
       </span>
       <span class="font-semibold">Read-only agents</span>
-      <span class="text-amber-800/80 dark:text-amber-100/70">
+      <span class="text-status-warning-fg/80">
         Terminal/preview mutations are unavailable until agent write is unlocked.
       </span>
       <form phx-submit="workspace:grant_agent_write_unlock" class="ml-auto flex items-center gap-1.5">
@@ -28,7 +28,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentWriteBanner do
         <button
           type="submit"
           id={"agent-write-locked-banner-unlock-" <> @workspace.id}
-          class="rounded border border-amber-700/40 bg-amber-50 px-2 py-density-label text-density-label font-semibold text-amber-900 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-900/50"
+          class="rounded border border-status-warning/40 bg-status-warning-soft px-2 py-density-label text-density-label font-semibold text-status-warning-fg hover:bg-status-warning-soft/40 text-status-warning-fg hover:bg-status-warning-soft/50"
         >
           Unlock 30 min
         </button>

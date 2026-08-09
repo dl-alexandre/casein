@@ -269,7 +269,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             </div>
             <div
               :if={@connect_info}
-              class="mb-2 rounded border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 text-density-body text-emerald-600 dark:text-emerald-300"
+              class="mb-2 rounded border border-status-ok/40 bg-status-ok/10 px-2 py-1 text-density-body text-status-ok-fg"
             >
               {@connect_info}
             </div>
@@ -297,9 +297,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
 
             <div
               :if={@connect_new_token}
-              class="mt-2 space-y-2 rounded border border-emerald-400/40 bg-emerald-400/10 p-2"
+              class="mt-2 space-y-2 rounded border border-status-ok/40 bg-status-ok/10 p-2"
             >
-              <p class="text-density-body font-medium text-emerald-700 dark:text-emerald-300">
+              <p class="text-density-body font-medium text-status-ok-fg">
                 Copy this now — the raw token is shown only once.
               </p>
               <div class="flex flex-wrap gap-2">
@@ -308,7 +308,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
                   id="help-connect-copy-token"
                   phx-hook="CopyText"
                   data-copy-text={@connect_new_token}
-                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-density-body font-medium hover:bg-base-200 data-[copied]:border-emerald-400 data-[copied]:text-emerald-600"
+                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-density-body font-medium hover:bg-base-200 data-[copied]:border-status-ok data-[copied]:text-status-ok-fg"
                 >
                   <.icon name="hero-clipboard" class="size-3.5" /> Copy token
                 </button>
@@ -317,7 +317,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
                   id="help-connect-copy-config"
                   phx-hook="CopyText"
                   data-copy-text={@connect_mcp_json}
-                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-density-body font-medium hover:bg-base-200 data-[copied]:border-emerald-400 data-[copied]:text-emerald-600"
+                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-density-body font-medium hover:bg-base-200 data-[copied]:border-status-ok data-[copied]:text-status-ok-fg"
                 >
                   <.icon name="hero-clipboard-document" class="size-3.5" /> Copy .mcp.json
                 </button>

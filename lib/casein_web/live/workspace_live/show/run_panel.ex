@@ -39,7 +39,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
               </button>
             <% end %>
             <%= if @active_run && @active_run.status == :running do %>
-              <button phx-click="run:cancel" class="ml-2 rounded border px-3 py-1 text-red-700">
+              <button
+                phx-click="run:cancel"
+                class="ml-2 rounded border px-3 py-1 text-status-danger-fg"
+              >
                 cancel
               </button>
             <% end %>
@@ -163,14 +166,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
           <div id="agent-write-unlock" class="border-t pt-3 mt-3">
             <h3 class="mb-2 text-xs font-medium text-zinc-700">Agent write unlock</h3>
             <%= if @agent_write_unlock.status == :active do %>
-              <div class="flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs">
+              <div class="flex flex-wrap items-center gap-2 rounded border border-status-warning-border bg-status-warning-soft px-2 py-1.5 text-xs">
                 <span>
                   Unlocked until {Calendar.strftime(@agent_write_unlock.until, "%H:%M")} by {@agent_write_unlock.by}
                 </span>
                 <button
                   id="agent-write-unlock-revoke"
                   phx-click="workspace:revoke_agent_write_unlock"
-                  class="ml-auto rounded border border-red-700 px-2 py-0.5 text-red-700 hover:bg-red-50"
+                  class="ml-auto rounded border border-status-danger px-2 py-0.5 text-status-danger-fg hover:bg-status-danger-soft"
                 >
                   Revoke now
                 </button>
@@ -287,10 +290,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                   <%= if Status.failed?(@selected_run_summary.status) do %>
                     <div
                       id="run-failure-surface"
-                      class="rounded border bg-red-50 px-2 py-1.5 text-xs space-y-1 mb-2"
+                      class="rounded border bg-status-danger-soft px-2 py-1.5 text-xs space-y-1 mb-2"
                     >
                       <div class="flex items-center gap-2">
-                        <span class="text-red-700 font-medium">Failed</span>
+                        <span class="text-status-danger-fg font-medium">Failed</span>
                         <%= if @selected_run_failure_reason do %>
                           <span class="font-mono text-zinc-600">{@selected_run_failure_reason}</span>
                         <% end %>
@@ -346,7 +349,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
             </section>
           </div>
         <% _ -> %>
-          <p class="text-sm text-red-700">Cannot run commands: workspace path unavailable.</p>
+          <p class="text-sm text-status-danger-fg">
+            Cannot run commands: workspace path unavailable.
+          </p>
       <% end %>
     </section>
     """
@@ -367,7 +372,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
               <span>exit={Map.get(@artifact, :exit_code)}</span>
             <% end %>
             <%= if Map.get(@artifact, :output_truncated) do %>
-              <span class="text-amber-700">truncated</span>
+              <span class="text-status-warning-fg">truncated</span>
             <% end %>
           </header>
           <pre class="max-h-72 overflow-auto whitespace-pre-wrap bg-zinc-950 p-2 text-density-body text-zinc-100">{Map.get(@artifact, :output, "")}</pre>
@@ -382,16 +387,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
 
   defp run_status_class(status) do
     case Status.status_class(status) do
-      :running -> "text-amber-700"
-      :succeeded -> "text-green-700"
-      :failed -> "text-red-700"
+      :running -> "text-status-warning-fg"
+      :succeeded -> "text-status-ok-fg"
+      :failed -> "text-status-danger-fg"
       :timed_out -> "text-purple-700"
       _ -> "text-zinc-500"
     end
   end
 
   defp codex_run_status_class(:running), do: "bg-primary/10 text-primary"
-  defp codex_run_status_class(:succeeded), do: "bg-emerald-100 text-emerald-800"
+  defp codex_run_status_class(:succeeded), do: "bg-status-ok-soft text-status-ok-fg"
 
   defp codex_run_status_class(status) when status in [:failed, :cancelled],
     do: "bg-error/10 text-error"
@@ -411,14 +416,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
 
   defp ledger_event_noun(_), do: "event"
 
-  defp audit_dot_class(%{decision: :deny}), do: "bg-red-600"
-  defp audit_dot_class(%{decision: :allow}), do: "bg-green-600"
-  defp audit_dot_class(%{action: "workspace.mode_set"}), do: "bg-amber-500"
+  defp audit_dot_class(%{decision: :deny}), do: "bg-status-danger"
+  defp audit_dot_class(%{decision: :allow}), do: "bg-status-ok"
+  defp audit_dot_class(%{action: "workspace.mode_set"}), do: "bg-status-warning"
   defp audit_dot_class(_), do: "bg-zinc-400"
 
-  defp audit_verb_class(%{decision: :deny}), do: "text-red-700"
-  defp audit_verb_class(%{decision: :allow}), do: "text-green-700"
-  defp audit_verb_class(%{action: "workspace.mode_set"}), do: "text-amber-700"
+  defp audit_verb_class(%{decision: :deny}), do: "text-status-danger-fg"
+  defp audit_verb_class(%{decision: :allow}), do: "text-status-ok-fg"
+  defp audit_verb_class(%{action: "workspace.mode_set"}), do: "text-status-warning-fg"
   defp audit_verb_class(_), do: "text-zinc-600"
 
   defp audit_detail(%{action: action, target_ref: ref, reason: reason}) do

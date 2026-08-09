@@ -59,15 +59,15 @@ defmodule CaseinWeb.NotificationsDrawer do
         class={[
           "size-4",
           @bell_alert? && @deploy_signal? && @unread_count == 0 && @deploy_severity == :failure &&
-            "text-red-600",
+            "text-status-danger-fg",
           @bell_alert? && @deploy_signal? && @unread_count == 0 && @deploy_severity == :warning &&
-            "text-amber-500"
+            "text-status-warning-fg"
         ]}
       />
       <span
         :if={@unread_count > 0}
         id={@id <> "-badge"}
-        class="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-density-label font-semibold leading-4 text-white"
+        class="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-status-danger px-1 text-density-label font-semibold leading-4 text-white"
       >
         {@unread_count}
       </span>
@@ -168,14 +168,14 @@ defmodule CaseinWeb.NotificationsDrawer do
         <div
           :if={@error}
           id="notifications-error"
-          class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700"
+          class="border-b border-status-danger-border bg-status-danger-soft px-4 py-2 text-xs text-status-danger-fg"
         >
           {@error}
         </div>
         <div
           :if={@info}
           id="notifications-info"
-          class="border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-700"
+          class="border-b border-status-ok-border bg-status-ok-soft px-4 py-2 text-xs text-status-ok-fg"
         >
           {@info}
         </div>
@@ -191,13 +191,13 @@ defmodule CaseinWeb.NotificationsDrawer do
             <article
               :if={@deploy_failure}
               id="deploy-system-failure"
-              class="rounded border border-red-200 bg-red-50 p-3 text-red-950 shadow-sm"
+              class="rounded border border-status-danger-border bg-status-danger-soft p-3 text-status-danger-fg shadow-sm"
             >
               <div class="text-sm font-semibold">Deploy failed</div>
-              <p class="mt-1 text-xs text-red-900/85">
+              <p class="mt-1 text-xs text-status-danger-fg/85">
                 {deploy_field(@deploy_failure, :message, "The on-box deploy poller aborted.")}
               </p>
-              <p class="mt-2 font-mono text-density-label text-red-900/70">
+              <p class="mt-2 font-mono text-density-label text-status-danger-fg/70">
                 target: {deploy_field(@deploy_failure, :target_short) ||
                   deploy_field(@deploy_failure, :target_sha, "unknown")}
               </p>
@@ -206,9 +206,9 @@ defmodule CaseinWeb.NotificationsDrawer do
             <article
               :if={@deploy_in_progress && !@deploy_failure}
               id="deploy-system-in-progress"
-              class="flex items-center gap-2 rounded border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 shadow-sm"
+              class="flex items-center gap-2 rounded border border-status-live-border bg-status-live-soft p-3 text-sm text-status-live-fg shadow-sm"
             >
-              <span class="size-2 shrink-0 animate-pulse rounded-full bg-sky-500"></span>
+              <span class="size-2 shrink-0 animate-pulse rounded-full bg-status-live"></span>
               <span>
                 {deploy_field(@deploy_in_progress, :message, "Deploy in progress…")}
               </span>
@@ -240,20 +240,20 @@ defmodule CaseinWeb.NotificationsDrawer do
             <article
               :if={@drift_visible?}
               id="deploy-system-drift"
-              class="rounded border border-amber-200 bg-amber-50 p-3 text-amber-950 shadow-sm"
+              class="rounded border border-status-warning-border bg-status-warning-soft p-3 text-status-warning-fg shadow-sm"
             >
               <div class="text-sm font-semibold">Running revision is not durable</div>
-              <p class="mt-1 text-xs text-amber-900/85">
+              <p class="mt-1 text-xs text-status-warning-fg/85">
                 {deploy_field(@deploy_drift, :message, "Running revision differs from origin/master.")}
               </p>
-              <p class="mt-2 font-mono text-density-label text-amber-900/70">
+              <p class="mt-2 font-mono text-density-label text-status-warning-fg/70">
                 current: {deploy_field(@deploy_drift, :current, "unknown")}
               </p>
               <button
                 id="deploy-sync-now"
                 type="button"
                 phx-hook="DeploySyncNow"
-                class="mt-2 rounded bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-500"
+                class="mt-2 rounded bg-status-warning px-2.5 py-1 text-xs font-medium text-white hover:bg-status-warning"
               >
                 Sync now
               </button>
@@ -512,8 +512,8 @@ defmodule CaseinWeb.NotificationsDrawer do
     end
   end
 
-  defp deploy_dot_class(:failure), do: "bg-red-600"
-  defp deploy_dot_class(:warning), do: "bg-amber-500"
+  defp deploy_dot_class(:failure), do: "bg-status-danger"
+  defp deploy_dot_class(:warning), do: "bg-status-warning"
   defp deploy_dot_class(_), do: "bg-zinc-400"
 
   defp deploy_field(info, key, default \\ nil)
@@ -575,9 +575,15 @@ defmodule CaseinWeb.NotificationsDrawer do
   defp quiet_enabled?(preference),
     do: Map.get(preference.quiet_hours || %{}, "enabled") in [true, "true"]
 
-  defp severity_class("critical"), do: "border-red-300 bg-red-50 text-red-950"
-  defp severity_class("error"), do: "border-red-200 bg-red-50 text-red-900"
-  defp severity_class("warning"), do: "border-amber-200 bg-amber-50 text-amber-950"
+  defp severity_class("critical"),
+    do: "border-status-danger-border bg-status-danger-soft text-status-danger-fg"
+
+  defp severity_class("error"),
+    do: "border-status-danger-border bg-status-danger-soft text-status-danger-fg"
+
+  defp severity_class("warning"),
+    do: "border-status-warning-border bg-status-warning-soft text-status-warning-fg"
+
   defp severity_class(_), do: "border-zinc-200 bg-white text-zinc-950"
 
   defp status_label(notification) do

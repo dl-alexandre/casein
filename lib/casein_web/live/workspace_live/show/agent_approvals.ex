@@ -19,10 +19,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
       aria-live="polite"
     >
       <div class="flex items-center justify-between gap-3">
-        <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+        <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-status-warning-fg">
           <.icon name="hero-shield-exclamation" class="size-4" /> Agent approvals
         </h3>
-        <span class="rounded-full bg-amber-100 px-2 py-density-label text-density-label font-semibold text-amber-900">
+        <span class="rounded-full bg-status-warning-soft px-2 py-density-label text-density-label font-semibold text-status-warning-fg">
           {@pending_count} pending
         </span>
       </div>
@@ -42,21 +42,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
     ~H"""
     <article
       id={request_dom_id(@request)}
-      class="rounded-xl border border-amber-300 bg-amber-50/70 p-3 text-amber-950 shadow-sm"
+      class="rounded-xl border border-status-warning-border bg-status-warning-soft/70 p-3 text-status-warning-fg shadow-sm"
     >
       <div class="flex min-w-0 flex-wrap items-center gap-2">
         <h4 class="text-sm font-medium leading-5">{@request.title}</h4>
-        <span class="rounded bg-amber-200/60 px-1.5 py-density-badge text-density-badge font-semibold uppercase tracking-wide">
+        <span class="rounded bg-status-warning/60 px-1.5 py-density-badge text-density-badge font-semibold uppercase tracking-wide">
           {provider_label(@request.provider_id)}
         </span>
       </div>
       <p
         :if={@request.detail}
-        class="mt-2 whitespace-pre-wrap text-density-body leading-4 text-amber-950/75"
+        class="mt-2 whitespace-pre-wrap text-density-body leading-4 text-status-warning-fg/75"
       >
         {@request.detail}
       </p>
-      <p :if={@option_list?} class="mt-1 text-density-label text-amber-900/60">
+      <p :if={@option_list?} class="mt-1 text-density-label text-status-warning-fg/60">
         Agent paused · first response wins.
       </p>
 
@@ -97,7 +97,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
             phx-value-provider-id={@request.provider_id}
             phx-value-request-id={@request.request_id}
             phx-value-decision-kind="decline"
-            class="rounded-lg border border-red-300 bg-white px-2.5 py-1.5 text-density-label font-semibold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40"
+            class="rounded-lg border border-status-danger-border bg-white px-2.5 py-1.5 text-density-label font-semibold text-status-danger-fg transition hover:bg-status-danger-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-danger/40"
           >
             Reject
           </button>
@@ -107,14 +107,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
             phx-value-provider-id={@request.provider_id}
             phx-value-request-id={@request.request_id}
             phx-value-decision-kind="accept"
-            class="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-density-label font-semibold text-white transition hover:-translate-y-px hover:bg-emerald-500 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
+            class="rounded-lg bg-status-ok px-2.5 py-1.5 text-density-label font-semibold text-white transition hover:-translate-y-px hover:bg-status-ok hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-ok/40"
           >
             Approve once
           </button>
         </div>
 
-        <details class="rounded-lg border border-amber-300/70 bg-white/60 px-2.5 py-2">
-          <summary class="cursor-pointer text-density-label font-semibold text-amber-900">
+        <details class="rounded-lg border border-status-warning-border/70 bg-white/60 px-2.5 py-2">
+          <summary class="cursor-pointer text-density-label font-semibold text-status-warning-fg">
             Approve with a policy amendment
           </summary>
           <div class="mt-2 grid gap-3">
@@ -133,7 +133,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
               />
               <button
                 type="submit"
-                class="rounded-lg border border-amber-500/30 px-2.5 py-1.5 text-density-label font-semibold text-amber-900 hover:bg-amber-100"
+                class="rounded-lg border border-status-warning/30 px-2.5 py-1.5 text-density-label font-semibold text-status-warning-fg hover:bg-status-warning-soft"
               >
                 Approve and amend exec policy
               </button>
@@ -154,7 +154,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
               />
               <button
                 type="submit"
-                class="rounded-lg border border-amber-500/30 px-2.5 py-1.5 text-density-label font-semibold text-amber-900 hover:bg-amber-100"
+                class="rounded-lg border border-status-warning/30 px-2.5 py-1.5 text-density-label font-semibold text-status-warning-fg hover:bg-status-warning-soft"
               >
                 Apply network policy amendment
               </button>
@@ -183,10 +183,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
         "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-error/30 bg-base-100 px-3 text-xs font-semibold text-error transition hover:bg-error/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/35"
 
       persistent_kind?(kind) ->
-        "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/35"
+        "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 text-xs font-semibold text-status-warning-fg transition hover:bg-status-warning/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-warning/35"
 
       true ->
-        "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:-translate-y-px hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/35"
+        "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-status-ok px-3 text-xs font-semibold text-white transition hover:-translate-y-px hover:bg-status-ok focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-ok/35"
     end
   end
 

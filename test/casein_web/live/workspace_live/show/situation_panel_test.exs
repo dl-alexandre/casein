@@ -28,13 +28,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SituationPanelTest do
 
       assert html =~ "situation-badge"
       assert html =~ "2 risks"
-      assert html =~ "bg-red-50"
+      assert html =~ "bg-status-danger-soft"
     end
 
     test "an empty active set renders a neutral zero badge" do
       html = render_component(&SituationPanel.situation_badge/1, enabled: true, risks: [])
       assert html =~ "0 risks"
-      refute html =~ "bg-red-50"
+      refute html =~ "bg-status-danger-soft"
     end
   end
 

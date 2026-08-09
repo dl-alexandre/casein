@@ -62,16 +62,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawerTest do
   # ---------------------------------------------------------------------------
 
   describe "audit_dot_class/1" do
-    test ":deny -> bg-red-600" do
-      assert AuditDrawer.audit_dot_class(%{decision: :deny}) == "bg-red-600"
+    test ":deny -> bg-status-danger" do
+      assert AuditDrawer.audit_dot_class(%{decision: :deny}) == "bg-status-danger"
     end
 
-    test ":allow -> bg-green-600" do
-      assert AuditDrawer.audit_dot_class(%{decision: :allow}) == "bg-green-600"
+    test ":allow -> bg-status-ok" do
+      assert AuditDrawer.audit_dot_class(%{decision: :allow}) == "bg-status-ok"
     end
 
-    test "workspace.mode_set action -> bg-amber-500" do
-      assert AuditDrawer.audit_dot_class(%{action: "workspace.mode_set"}) == "bg-amber-500"
+    test "workspace.mode_set action -> bg-status-warning" do
+      assert AuditDrawer.audit_dot_class(%{action: "workspace.mode_set"}) == "bg-status-warning"
     end
 
     test "catch-all -> bg-zinc-400" do
@@ -84,16 +84,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawerTest do
   # ---------------------------------------------------------------------------
 
   describe "audit_verb_class/1" do
-    test ":deny -> text-red-700" do
-      assert AuditDrawer.audit_verb_class(%{decision: :deny}) == "text-red-700"
+    test ":deny -> text-status-danger-fg" do
+      assert AuditDrawer.audit_verb_class(%{decision: :deny}) == "text-status-danger-fg"
     end
 
-    test ":allow -> text-green-700" do
-      assert AuditDrawer.audit_verb_class(%{decision: :allow}) == "text-green-700"
+    test ":allow -> text-status-ok-fg" do
+      assert AuditDrawer.audit_verb_class(%{decision: :allow}) == "text-status-ok-fg"
     end
 
-    test "workspace.mode_set action -> text-amber-700" do
-      assert AuditDrawer.audit_verb_class(%{action: "workspace.mode_set"}) == "text-amber-700"
+    test "workspace.mode_set action -> text-status-warning-fg" do
+      assert AuditDrawer.audit_verb_class(%{action: "workspace.mode_set"}) ==
+               "text-status-warning-fg"
     end
 
     test "catch-all -> text-zinc-600" do
@@ -312,15 +313,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawerTest do
         """)
 
       # dot classes from audit_dot_class/1
-      assert html =~ "bg-red-600"
-      assert html =~ "bg-green-600"
-      assert html =~ "bg-amber-500"
+      assert html =~ "bg-status-danger"
+      assert html =~ "bg-status-ok"
+      assert html =~ "bg-status-warning"
       assert html =~ "bg-zinc-400"
 
       # verb classes from audit_verb_class/1
-      assert html =~ "text-red-700"
-      assert html =~ "text-green-700"
-      assert html =~ "text-amber-700"
+      assert html =~ "text-status-danger-fg"
+      assert html =~ "text-status-ok-fg"
+      assert html =~ "text-status-warning-fg"
       assert html =~ "text-zinc-600"
 
       # verbs from audit_verb/1

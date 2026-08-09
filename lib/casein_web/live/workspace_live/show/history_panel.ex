@@ -297,15 +297,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
 
   defp status_badge_class("Attention"),
     do:
-      "rounded border border-amber-200 bg-amber-50 px-2 py-density-body text-density-body font-medium text-amber-800"
+      "rounded border border-status-warning-border bg-status-warning-soft px-2 py-density-body text-density-body font-medium text-status-warning-fg"
 
   defp status_badge_class("Error"),
     do:
-      "rounded border border-red-200 bg-red-50 px-2 py-density-body text-density-body font-medium text-red-700"
+      "rounded border border-status-danger-border bg-status-danger-soft px-2 py-density-body text-density-body font-medium text-status-danger-fg"
 
   defp status_badge_class("Done"),
     do:
-      "rounded border border-emerald-200 bg-emerald-50 px-2 py-density-body text-density-body font-medium text-emerald-700"
+      "rounded border border-status-ok-border bg-status-ok-soft px-2 py-density-body text-density-body font-medium text-status-ok-fg"
 
   defp status_badge_class(_status),
     do:

@@ -19,7 +19,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LogsPanel do
         <input name="service" value={@log_service} class="border rounded px-2 py-1 text-sm font-mono" />
       </.form>
       <%= if is_nil(@log_ref) do %>
-        <p class="text-xs text-amber-700">
+        <p class="text-xs text-status-warning-fg">
           <%= if Casein.WorkspaceSource.impl() == Casein.WorkspaceSource.Local do %>
             Log streaming is not available for local filesystem workspaces.
           <% else %>
