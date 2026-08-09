@@ -250,6 +250,46 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
           </button>
         <% end %>
 
+        <%!-- Tablet/desktop chrome layout (#736). Client-persisted like sidebar
+             sort: auto follows width+pointer+keyboard evidence; compact/desktop
+             force the treatment. Dispatched as casein:cockpit-layout. --%>
+        <div class="my-0.5 border-t border-base-300/70"></div>
+
+        <div class="px-3 py-1 text-density-label uppercase tracking-wide text-base-content/40">
+          Layout
+        </div>
+
+        <div
+          id={"cockpit-layout-override-" <> @workspace.id}
+          class="flex flex-col"
+          phx-hook="CockpitLayoutOverride"
+        >
+          <button
+            type="button"
+            data-cockpit-layout-mode="auto"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="Auto: compact on bare tablet/phone; desktop when a keyboard is present"
+          >
+            Auto (width + keyboard)
+          </button>
+          <button
+            type="button"
+            data-cockpit-layout-mode="compact"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="Always use compact mobile chrome"
+          >
+            Compact
+          </button>
+          <button
+            type="button"
+            data-cockpit-layout-mode="desktop"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="Always use desktop cockpit chrome (touch targets still grow on coarse pointers)"
+          >
+            Desktop cockpit
+          </button>
+        </div>
+
         <%!-- Global surfaces live at the foot of the menu: notifications, then
               the palette, then help pinned last. Notification state is only
               surfaced once the menu is open (no ambient badge on the ⋯). --%>

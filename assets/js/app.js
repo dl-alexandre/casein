@@ -35,6 +35,7 @@ import {
 } from "./terminal_font_size.mjs"
 import {MobileKeyBar} from "./mobile_key_bar"
 import {ChromeWidth} from "./chrome_width"
+import {installCockpitLayout} from "./cockpit_layout.mjs"
 import {WorkspaceLeader} from "./workspace_leader"
 import {GestureCoach} from "./gesture_coach"
 import {WebPush} from "./web_push"
@@ -248,6 +249,41 @@ function jitteredBackoff(steps, capMs) {
   }
 }
 
+// Overflow-menu Layout override (#736). Dispatches casein:cockpit-layout for
+// installCockpitLayout; marks the active mode from data-cockpit-layout-override.
+const CockpitLayoutOverride = {
+  mounted() {
+    this._onClick = (e) => {
+      const btn = e.target?.closest?.("[data-cockpit-layout-mode]")
+      if (!btn || !this.el.contains(btn)) return
+      const mode = btn.getAttribute("data-cockpit-layout-mode")
+      window.dispatchEvent(new CustomEvent("casein:cockpit-layout", {detail: {mode}}))
+      this._markActive()
+    }
+    this._onLayout = () => this._markActive()
+    this.el.addEventListener("click", this._onClick)
+    window.addEventListener("casein:cockpit-layout", this._onLayout)
+    this._markActive()
+  },
+  destroyed() {
+    this.el.removeEventListener("click", this._onClick)
+    window.removeEventListener("casein:cockpit-layout", this._onLayout)
+  },
+  _markActive() {
+    const current =
+      document.documentElement.getAttribute("data-cockpit-layout-override") || "auto"
+    this.el.querySelectorAll("[data-cockpit-layout-mode]").forEach((btn) => {
+      const on = btn.getAttribute("data-cockpit-layout-mode") === current
+      btn.classList.toggle("bg-base-200", on)
+      btn.setAttribute("aria-current", on ? "true" : "false")
+    })
+  },
+}
+
+// Tablet/desktop chrome layout (#736). Early stamp is in root.html.heex; this
+// keeps keyboard evidence, override clicks, and chrome-narrow in sync.
+installCockpitLayout(window)
+
 const liveSocket = new LiveSocket("/live", Socket, {
   // Casein runs behind OAuth/Caddy on a shared host. A short fallback window
   // causes loaded websocket handshakes to spawn long-poll joins, which looks
@@ -256,7 +292,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   reconnectAfterMs: jitteredBackoff([50, 150, 350, 750, 1500, 3000], 5000),
   rejoinAfterMs: jitteredBackoff([400, 900, 1800], 5000),
   params: {_csrf_token: csrfToken, tab_id: caseinTabId()},
-  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ShareText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow, FlashBridge},
+  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, CockpitLayoutOverride, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ShareText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow, FlashBridge},
 })
 
 installPickerLinkCopy()

@@ -44,10 +44,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
   def files_panel(assigns) do
     ~H"""
-    <section class="flex h-full min-h-0 flex-col gap-3 lg:flex-row lg:gap-4">
+    <section class="flex h-full min-h-0 flex-col gap-3 md:flex-row md:gap-4">
       <div
         data-ctx-menu="tree_root"
-        class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2 max-h-56 lg:max-h-none lg:w-72 lg:flex-none 2xl:w-80"
+        class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2 max-h-56 md:max-h-none md:w-72 md:flex-none 2xl:w-80"
       >
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
@@ -551,8 +551,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
   def diff_panel(assigns) do
     ~H"""
-    <section class="flex flex-col gap-3 min-h-0 lg:flex-row lg:h-[calc(100dvh-14rem)] lg:min-h-[20rem]">
-      <aside class="flex flex-col min-h-0 lg:w-72 lg:flex-none 2xl:w-80">
+    <section class="flex flex-col gap-3 min-h-0 md:flex-row md:h-[calc(100dvh-14rem)] md:min-h-[20rem]">
+      <aside class="flex flex-col min-h-0 md:w-72 md:flex-none 2xl:w-80">
         <h3 class="text-xs font-medium text-zinc-700 mb-2 flex-none">
           Changes
           <span class="ml-1 text-density-label font-mono text-zinc-400">{length(@git_status)}</span>
@@ -565,7 +565,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
           <% @git_status == [] -> %>
             <p class="text-sm text-zinc-500">No changes.</p>
           <% true -> %>
-            <ul class="text-xs space-y-0.5 overflow-auto pr-1 max-h-48 lg:max-h-none lg:flex-1 lg:min-h-0">
+            <ul class="text-xs space-y-0.5 overflow-auto pr-1 max-h-48 md:max-h-none md:flex-1 md:min-h-0">
               <%= for e <- @git_status do %>
                 <li>
                   <button
@@ -601,7 +601,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                 {diff_stat_label(@file_diff)}
               </span>
             </div>
-            <pre class="bg-zinc-950 text-zinc-100 text-xs rounded overflow-auto leading-relaxed flex-1 min-h-[12rem] max-h-[60dvh] lg:max-h-none"><%= for {line, idx} <- diff_lines(@file_diff) do %><code class={diff_line_class(line)} id={"diff-line-#{idx}"}><%= line %><br/></code><% end %></pre>
+            <pre class="bg-zinc-950 text-zinc-100 text-xs rounded overflow-auto leading-relaxed flex-1 min-h-[12rem] max-h-[60dvh] md:max-h-none"><%= for {line, idx} <- diff_lines(@file_diff) do %><code class={diff_line_class(line)} id={"diff-line-#{idx}"}><%= line %><br/></code><% end %></pre>
         <% end %>
       </div>
     </section>
