@@ -5,27 +5,27 @@ defmodule Casein.Cockpit.InspectorsTest do
   alias Casein.Cockpit.Inspectors
 
   test "open/close lifecycle recomputes geometry" do
-    {panes, geo} = Inspectors.open([], %{kind: :diff, title: "Diff", id: "insp-diff"})
-    assert length(panes) == 1
-    assert hd(panes).id == "insp-diff"
-    assert hd(panes).kind == :diff
+    {slots, geo} = Inspectors.open([], %{kind: :diff, title: "Diff", id: "insp-diff"})
+    assert length(slots) == 1
+    assert hd(slots).id == "insp-diff"
+    assert hd(slots).kind == :diff
     assert Geometry.inspector_open?(geo)
     assert Geometry.placement(geo) == :right
 
-    {panes, geo} = Inspectors.close(panes, "insp-diff")
-    assert panes == []
+    {slots, geo} = Inspectors.close(slots, "insp-diff")
+    assert slots == []
     assert geo == Geometry.terminal_only()
   end
 
   test "open replaces same id rather than duplicating" do
-    {panes, _} = Inspectors.open([], %{id: "x", kind: :diff, title: "A"})
-    {panes, _} = Inspectors.open(panes, %{id: "x", kind: :diff, title: "B"})
-    assert length(panes) == 1
-    assert hd(panes).title == "B"
+    {slots, _} = Inspectors.open([], %{id: "x", kind: :diff, title: "A"})
+    {slots, _} = Inspectors.open(slots, %{id: "x", kind: :diff, title: "B"})
+    assert length(slots) == 1
+    assert hd(slots).title == "B"
   end
 
   test "placement preference flows into geometry" do
-    {_panes, geo} =
+    {_slots, geo} =
       Inspectors.open([], %{kind: :run, id: "r"}, placement: :bottom, fraction: 0.5)
 
     assert Geometry.placement(geo) == :bottom
@@ -44,33 +44,33 @@ defmodule Casein.Cockpit.InspectorsTest do
 
   test "initial_assigns is terminal-only" do
     assigns = Inspectors.initial_assigns()
-    assert assigns.inspector_panes == []
+    assert assigns.inspector_slots == []
     assert assigns.cockpit_geometry == Geometry.terminal_only()
     assert assigns.inspector_placement == :right
   end
 
   test "serialize/restore re-derives path only (no content snapshot)" do
-    {panes, _} =
+    {slots, _} =
       Inspectors.open([], %{kind: :diff, id: "insp-diff", title: "lib/foo.ex", path: "lib/foo.ex"})
 
-    assert Inspectors.serialize(panes) == [
+    assert Inspectors.serialize(slots) == [
              %{"type" => "inspector", "kind" => "diff", "path" => "lib/foo.ex"}
            ]
 
-    assert Inspectors.primary_diff_path(panes) == "lib/foo.ex"
-    assert Inspectors.diff_open?(panes)
+    assert Inspectors.primary_diff_path(slots) == "lib/foo.ex"
+    assert Inspectors.diff_open?(slots)
 
-    {restored, geo} = Inspectors.restore(Inspectors.serialize(panes))
+    {restored, geo} = Inspectors.restore(Inspectors.serialize(slots))
     assert Geometry.inspector_open?(geo)
     assert Inspectors.primary_diff_path(restored) == "lib/foo.ex"
     # Fresh id — identity is not durable.
-    refute hd(restored).id == hd(panes).id
+    refute hd(restored).id == hd(slots).id
   end
 
   test "serialize omits path when unscoped; restore rejects non-lists" do
-    {panes, _} = Inspectors.open([], %{kind: :diff, id: "d", title: "Diff"})
-    assert Inspectors.serialize(panes) == [%{"type" => "inspector", "kind" => "diff"}]
-    assert Inspectors.primary_diff_path(panes) == nil
+    {slots, _} = Inspectors.open([], %{kind: :diff, id: "d", title: "Diff"})
+    assert Inspectors.serialize(slots) == [%{"type" => "inspector", "kind" => "diff"}]
+    assert Inspectors.primary_diff_path(slots) == nil
 
     {empty, geo} = Inspectors.restore(nil)
     assert empty == []

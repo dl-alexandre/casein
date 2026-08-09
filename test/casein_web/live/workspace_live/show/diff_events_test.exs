@@ -50,7 +50,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEventsTest do
       DiffEvents.handle_event("diff:open_in_pane", %{}, socket(root))
 
     assert socket.assigns.tab == "diff"
-    refute Inspectors.diff_open?(socket.assigns.inspector_panes)
+    refute Inspectors.diff_open?(socket.assigns.inspector_slots)
   end
 
   test "diff:open_in_pane with path focuses the file on the diff tab", %{root: root} do
@@ -74,8 +74,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEventsTest do
       )
 
     assert socket.assigns.tab == "terminal"
-    assert Inspectors.diff_open?(socket.assigns.inspector_panes)
-    assert Inspectors.primary_diff_path(socket.assigns.inspector_panes) == "lib/foo.ex"
+    assert Inspectors.diff_open?(socket.assigns.inspector_slots)
+    assert Inspectors.primary_diff_path(socket.assigns.inspector_slots) == "lib/foo.ex"
   end
 
   test "inspector_open PubSub intent opens the diff tab with no tmux", %{root: root} do
@@ -90,8 +90,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEventsTest do
     # human open falls back via diff:open_inspector. Agent broadcast always
     # goes through open_diff_inspector when kind is :diff.
     assert socket.assigns.tab == "terminal"
-    assert Inspectors.diff_open?(socket.assigns.inspector_panes)
-    assert Inspectors.primary_diff_path(socket.assigns.inspector_panes) == "lib/foo.ex"
+    assert Inspectors.diff_open?(socket.assigns.inspector_slots)
+    assert Inspectors.primary_diff_path(socket.assigns.inspector_slots) == "lib/foo.ex"
   end
 
   defp socket(root, opts \\ []) do
@@ -119,7 +119,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.DiffEventsTest do
       |> assign(:git_status, [])
       |> assign(:tree, %{})
       |> assign(:selected_dir, "")
-      |> assign(:inspector_panes, initial.inspector_panes)
+      |> assign(:inspector_slots, initial.inspector_slots)
       |> assign(:inspector_placement, initial.inspector_placement)
       |> assign(:inspector_fraction, initial.inspector_fraction)
       |> assign(:cockpit_geometry, initial.cockpit_geometry)

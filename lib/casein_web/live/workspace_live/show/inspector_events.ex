@@ -1,10 +1,10 @@
 defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
   @moduledoc false
 
-  # LiveView-owned inspector panes (issue #690) + focus/tabs (#692) + diff open
+  # LiveView-owned inspector slots (issue #690) + focus/tabs (#692) + diff open
   # path (#691). Socket state only — no registry, no tmux holder, no
   # Panes.feature_types. Ordinary LiveView events + a workspace PubSub surface
-  # request from Casein.Cockpit.Inspectors.
+  # request from Casein.Cockpit.Inspectors. Layout nodes are slots (#750).
 
   import Phoenix.Component
   import Phoenix.LiveView
@@ -92,23 +92,23 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
 
   def open_inspector(socket, attrs) do
     opts = geometry_opts(socket)
-    {panes, geometry} = Inspectors.open(socket.assigns.inspector_panes, attrs, opts)
-    opened_id = List.last(panes) && List.last(panes).id
+    {slots, geometry} = Inspectors.open(socket.assigns.inspector_slots, attrs, opts)
+    opened_id = List.last(slots) && List.last(slots).id
 
     socket
-    |> assign(:inspector_panes, panes)
+    |> assign(:inspector_slots, slots)
     |> assign(:cockpit_geometry, geometry)
     |> InspectorFocus.after_open(opened_id)
   end
 
   def close_inspector(socket, id) do
     opts = geometry_opts(socket)
-    {panes, geometry} = Inspectors.close(socket.assigns.inspector_panes, id, opts)
+    {slots, geometry} = Inspectors.close(socket.assigns.inspector_slots, id, opts)
 
     socket
-    |> assign(:inspector_panes, panes)
+    |> assign(:inspector_slots, slots)
     |> assign(:cockpit_geometry, geometry)
-    |> maybe_clear_diff_assigns(panes)
+    |> maybe_clear_diff_assigns(slots)
     |> InspectorFocus.reconcile()
     |> then(fn socket ->
       case InspectorFocus.active_id(socket.assigns) do
@@ -130,10 +130,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
 
   def close_all(socket) do
     opts = geometry_opts(socket)
-    {panes, geometry} = Inspectors.close_all(opts)
+    {slots, geometry} = Inspectors.close_all(opts)
 
     socket
-    |> assign(:inspector_panes, panes)
+    |> assign(:inspector_slots, slots)
     |> assign(:cockpit_geometry, geometry)
     |> assign(:active_inspector_id, nil)
     |> assign(:inspector_focus_id, nil)
@@ -144,22 +144,22 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
 
   @doc "Apply a serialized inspector list (session-template restore). Re-derives diff data."
   def restore_inspectors(socket, serialized) do
-    {panes, geometry} = Inspectors.restore(serialized, geometry_opts(socket))
+    {slots, geometry} = Inspectors.restore(serialized, geometry_opts(socket))
 
     socket =
       socket
-      |> assign(:inspector_panes, panes)
+      |> assign(:inspector_slots, slots)
       |> assign(:cockpit_geometry, geometry)
       |> InspectorFocus.reconcile()
 
-    case Inspectors.primary_diff_path(panes) do
+    case Inspectors.primary_diff_path(slots) do
       path when is_binary(path) ->
         socket
         |> assign(:tab, "terminal")
         |> load_diff_for_path(path)
 
       _ ->
-        if Inspectors.diff_open?(panes) do
+        if Inspectors.diff_open?(slots) do
           socket
           |> assign(:tab, "terminal")
           |> Show.refresh_git_status()
@@ -265,8 +265,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
     end
   end
 
-  defp maybe_clear_diff_assigns(socket, panes) do
-    if Inspectors.diff_open?(panes) do
+  defp maybe_clear_diff_assigns(socket, slots) do
+    if Inspectors.diff_open?(slots) do
       socket
     else
       assign(socket, :file_diff, nil)
@@ -275,7 +275,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
 
   defp recompute_geometry(socket) do
     geometry =
-      Inspectors.geometry(socket.assigns.inspector_panes, geometry_opts(socket))
+      Inspectors.geometry(socket.assigns.inspector_slots, geometry_opts(socket))
 
     assign(socket, :cockpit_geometry, geometry)
   end

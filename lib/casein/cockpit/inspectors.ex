@@ -6,9 +6,18 @@ defmodule Casein.Cockpit.Inspectors do
   reopening re-derives them. An agent (or any process) can ask a mounted cockpit
   to surface one via `request_open/2`; if nobody is watching, nothing happens.
 
+  ## Naming: `pane_id` vs `slot_id`
+
+  - **`pane_id`** — a tmux pane / PTY (process + size, no layout position).
+  - **`slot_id`** — a node in Casein's layout tree (position + size + filler).
+
+  This module stores **slots**. A slot may be filled by an inspector viewport;
+  it is never a tmux pane id. Do not rename tmux-facing `pane_id` identifiers
+  to "slot" (issue #750).
+
   Socket state shape (viewer-local):
 
-      inspector_panes: [%{id: String.t(), kind: atom(), title: String.t() | nil, attrs: map()}]
+      inspector_slots: [%{id: slot_id(), kind: atom(), title: String.t() | nil, attrs: map()}]
       cockpit_geometry: Casein.Cockpit.Geometry.t()
       inspector_placement: :right | :bottom
       inspector_fraction: float()
@@ -19,8 +28,10 @@ defmodule Casein.Cockpit.Inspectors do
   @pubsub Casein.PubSub
   @topic_prefix "cockpit_inspectors:"
 
-  @type pane :: %{
-          id: String.t(),
+  @type slot_id :: String.t()
+
+  @type slot :: %{
+          id: slot_id(),
           kind: atom(),
           title: String.t() | nil,
           attrs: map()
@@ -58,38 +69,38 @@ defmodule Casein.Cockpit.Inspectors do
     fraction = normalize_fraction(Keyword.get(opts, :fraction, 0.4))
 
     %{
-      inspector_panes: [],
+      inspector_slots: [],
       inspector_placement: placement,
       inspector_fraction: fraction,
       cockpit_geometry: Geometry.terminal_only()
     }
   end
 
-  @doc "Open (or replace same-id) an inspector pane in the viewer-local list."
-  @spec open([pane()], map() | keyword(), keyword()) :: {[pane()], Geometry.t()}
-  def open(panes, attrs, opts \\ []) when is_list(panes) do
-    pane = build_pane(attrs)
-    panes = upsert(panes, pane)
-    {panes, geometry(panes, opts)}
+  @doc "Open (or replace same-id) an inspector slot in the viewer-local list."
+  @spec open([slot()], map() | keyword(), keyword()) :: {[slot()], Geometry.t()}
+  def open(slots, attrs, opts \\ []) when is_list(slots) do
+    slot = build_slot(attrs)
+    slots = upsert(slots, slot)
+    {slots, geometry(slots, opts)}
   end
 
-  @doc "Close one inspector by id. Empty list restores terminal-only geometry."
-  @spec close([pane()], String.t(), keyword()) :: {[pane()], Geometry.t()}
-  def close(panes, id, opts \\ []) when is_list(panes) and is_binary(id) do
-    panes = Enum.reject(panes, &(&1.id == id))
-    {panes, geometry(panes, opts)}
+  @doc "Close one inspector by `slot_id`. Empty list restores terminal-only geometry."
+  @spec close([slot()], slot_id(), keyword()) :: {[slot()], Geometry.t()}
+  def close(slots, id, opts \\ []) when is_list(slots) and is_binary(id) do
+    slots = Enum.reject(slots, &(&1.id == id))
+    {slots, geometry(slots, opts)}
   end
 
   @doc "Close every inspector."
-  @spec close_all(keyword()) :: {[pane()], Geometry.t()}
+  @spec close_all(keyword()) :: {[slot()], Geometry.t()}
   def close_all(opts \\ []) do
     {[], Geometry.for_inspectors([], opts)}
   end
 
-  @doc "Recompute geometry from current panes + placement/fraction prefs."
-  @spec geometry([pane()], keyword()) :: Geometry.t()
-  def geometry(panes, opts \\ []) when is_list(panes) do
-    Geometry.for_inspectors(panes,
+  @doc "Recompute geometry from current slots + placement/fraction prefs."
+  @spec geometry([slot()], keyword()) :: Geometry.t()
+  def geometry(slots, opts \\ []) when is_list(slots) do
+    Geometry.for_inspectors(slots,
       placement: Keyword.get(opts, :placement, :right),
       fraction: Keyword.get(opts, :fraction, 0.4)
     )
@@ -101,15 +112,15 @@ defmodule Casein.Cockpit.Inspectors do
   Records kind + optional path only — restore reopens the viewport and the
   LiveView re-derives content from current git state. There is no snapshot.
   """
-  @spec serialize([pane()]) :: [map()]
-  def serialize(panes) when is_list(panes) do
-    Enum.map(panes, fn pane ->
+  @spec serialize([slot()]) :: [map()]
+  def serialize(slots) when is_list(slots) do
+    Enum.map(slots, fn slot ->
       base = %{
         "type" => "inspector",
-        "kind" => kind_string(pane.kind)
+        "kind" => kind_string(slot.kind)
       }
 
-      path = pane_path(pane)
+      path = slot_path(slot)
 
       if is_binary(path) and path != "" do
         Map.put(base, "path", path)
@@ -124,47 +135,47 @@ defmodule Casein.Cockpit.Inspectors do
   @doc """
   Restore inspector viewports from a serialized template fragment.
 
-  Returns `{panes, geometry}` with fresh ids — identity is not durable.
+  Returns `{slots, geometry}` with fresh ids — identity is not durable.
   """
-  @spec restore(term(), keyword()) :: {[pane()], Geometry.t()}
+  @spec restore(term(), keyword()) :: {[slot()], Geometry.t()}
   def restore(list, opts \\ [])
 
   def restore(list, opts) when is_list(list) do
-    panes =
+    slots =
       list
       |> Enum.map(&cast_serialized/1)
       |> Enum.reject(&is_nil/1)
 
-    {panes, geometry(panes, opts)}
+    {slots, geometry(slots, opts)}
   end
 
   def restore(_, opts), do: {[], Geometry.for_inspectors([], opts)}
 
   @doc "Primary (first) diff path among open inspectors, if any."
-  @spec primary_diff_path([pane()]) :: String.t() | nil
-  def primary_diff_path(panes) when is_list(panes) do
-    panes
+  @spec primary_diff_path([slot()]) :: String.t() | nil
+  def primary_diff_path(slots) when is_list(slots) do
+    slots
     |> Enum.filter(&(&1.kind == :diff))
-    |> Enum.find_value(&pane_path/1)
+    |> Enum.find_value(&slot_path/1)
   end
 
   def primary_diff_path(_), do: nil
 
   @doc "True when any open inspector is a diff viewport."
-  @spec diff_open?([pane()]) :: boolean()
-  def diff_open?(panes) when is_list(panes), do: Enum.any?(panes, &(&1.kind == :diff))
+  @spec diff_open?([slot()]) :: boolean()
+  def diff_open?(slots) when is_list(slots), do: Enum.any?(slots, &(&1.kind == :diff))
   def diff_open?(_), do: false
 
-  defp upsert(panes, pane) do
-    case Enum.find_index(panes, &(&1.id == pane.id)) do
-      nil -> panes ++ [pane]
-      idx -> List.replace_at(panes, idx, pane)
+  defp upsert(slots, slot) do
+    case Enum.find_index(slots, &(&1.id == slot.id)) do
+      nil -> slots ++ [slot]
+      idx -> List.replace_at(slots, idx, slot)
     end
   end
 
-  defp build_pane(attrs) when is_list(attrs), do: build_pane(Map.new(attrs))
+  defp build_slot(attrs) when is_list(attrs), do: build_slot(Map.new(attrs))
 
-  defp build_pane(attrs) when is_map(attrs) do
+  defp build_slot(attrs) when is_map(attrs) do
     kind = normalize_kind(Map.get(attrs, :kind) || Map.get(attrs, "kind") || :inspector)
     id = Map.get(attrs, :id) || Map.get(attrs, "id") || default_id(kind)
     title = Map.get(attrs, :title) || Map.get(attrs, "title")
@@ -217,7 +228,7 @@ defmodule Casein.Cockpit.Inspectors do
   defp kind_string(kind) when is_binary(kind), do: kind
   defp kind_string(_), do: "inspector"
 
-  defp pane_path(%{attrs: attrs}) when is_map(attrs) do
+  defp slot_path(%{attrs: attrs}) when is_map(attrs) do
     case attrs["path"] || attrs[:path] do
       path when is_binary(path) ->
         case String.trim(path) do
@@ -230,7 +241,7 @@ defmodule Casein.Cockpit.Inspectors do
     end
   end
 
-  defp pane_path(_), do: nil
+  defp slot_path(_), do: nil
 
   defp cast_serialized(%{"type" => "inspector"} = raw), do: cast_serialized_kind(raw)
   defp cast_serialized(%{type: "inspector"} = raw), do: cast_serialized_kind(raw)
@@ -252,6 +263,6 @@ defmodule Casein.Cockpit.Inspectors do
           %{kind: normalize_kind(kind), title: title}
       end
 
-    build_pane(attrs)
+    build_slot(attrs)
   end
 end
