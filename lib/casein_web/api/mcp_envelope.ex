@@ -173,8 +173,9 @@ defmodule CaseinWeb.API.MCPEnvelope do
   The protocol revision a request asks for.
 
   A request that names no version is legacy — that fallback is load-bearing.
-  `scripts/lib/agent-doctor.sh` probes `initialize` with empty params and must
-  keep getting the old behaviour. A request naming a version we do not know is a
+  `scripts/lib/agent-doctor.sh` dual-probes legacy `initialize` (empty params)
+  and `server/discover` with `_meta` 2026-07-28; the empty-params path must keep
+  getting the old behaviour. A request naming a version we do not know is a
   hard error (`UnsupportedProtocolVersionError`), which only reaches clients that
   opted into per-request `_meta` in the first place.
   """

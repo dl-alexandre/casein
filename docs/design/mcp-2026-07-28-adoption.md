@@ -135,8 +135,9 @@ The revision's additions are only additive if they are **emitted** and
    byte-identical is nearly free and makes the whole slice provably inert for
    existing agents.
 3. **Keep `@default_protocol_version` at an old revision.** A request that names
-   no version must not be treated as 2026 — `scripts/lib/agent-doctor.sh:245`
-   calls `initialize` with `params: {}` and relies on exactly this fallback.
+   no version must not be treated as 2026 — `scripts/lib/agent-doctor.sh`
+   dual-probes legacy `initialize` with `params: {}` and `server/discover` with
+   `_meta` 2026-07-28; the empty-params path relies on exactly this fallback.
 
 Purely additive, no gating needed: `server/discover` (a new method; old clients
 never call it, and unknown methods already return `-32601`), `tasks/*`, and
@@ -262,10 +263,11 @@ and every off-box `devide-remote` client keeps working unchanged, because
 negotiation is client-driven: they ask for a 2025-era revision, we echo it, and
 under the compatibility rules above they receive byte-identical responses. Their
 materialized MCP configs don't change either — same three endpoint URLs, same
-bearer auth. The in-repo wire clients (`scripts/verify_agent_pairing.sh:148-231`,
-`scripts/lib/agent-doctor.sh:245-286`) assert with substring `grep -q`, so they
-are insensitive to added fields; the only strict whole-map equalities in the test
-suite are on auth-error envelopes, not MCP results.
+   bearer auth. The in-repo wire clients (`scripts/verify_agent_pairing.sh:148-231`,
+   `scripts/lib/agent-doctor.sh` dual-stack MCP probe) assert with substring
+   checks / focused field reads, so they are insensitive to added fields; the only
+   strict whole-map equalities in the test suite are on auth-error envelopes, not
+   MCP results.
 
 Tasks (Slices 1-2) are additive by the extension's own rule: a server MUST NOT
 return a task to a client that did not declare the capability in that request's
