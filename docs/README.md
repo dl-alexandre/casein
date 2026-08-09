@@ -85,6 +85,7 @@ Running and shipping the box.
 | [`audit_remote.md`](audit_remote.md) | Ecto-backed (prod default) audit adapter and the `audit_events` table. |
 | [`hardening.md`](hardening.md) | Production hardening checklist (CSP, forward-auth, secrets). |
 | [`integrations/manager.md`](integrations/manager.md) | devbox-manager / Caddy integration and the on-box systemd deploy path. |
+| [`ops-pr-gate-postgres-shm.md`](ops-pr-gate-postgres-shm.md) | Self-hosted PR gate Postgres DSM / `ERROR 53100` under `/dev/shm`: single-flight status, `kernel.shmmni` raise procedure, optional dedicated gate Postgres (`shm_size: 1g`) design. |
 
 ## Working in this repo
 
