@@ -235,15 +235,115 @@ check_provider_home() {
   fi
 }
 
+# Dual-stack probe for Casein MCP endpoints (docs/design/mcp-2026-07-28-adoption.md):
+#   1) legacy initialize with empty params — keeps the 2025 path measurable
+#   2) server/discover declaring 2026-07-28 — proves the modern path is live
+# Neither path is force-defaulted; both must stay green while clients migrate.
+mcp_probe_tmp() {
+  mktemp "${TMPDIR:-/tmp}/casein-agent-doctor-mcp.XXXXXX"
+}
+
+mcp_http_post() {
+  local url="$1"
+  local body="$2"
+  local out_file="$3"
+  shift 3
+
+  curl -sS -o "$out_file" -w '%{http_code}' \
+    -H "content-type: application/json" \
+    "$@" \
+    -d "$body" \
+    "$url" 2>/dev/null || printf '000'
+}
+
+# Returns 0 when body is a JSON-RPC result with the expected dual-stack markers.
+mcp_discover_body_ok() {
+  local body_file="$1"
+
+  python3 - "$body_file" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        payload = json.load(handle)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+if not isinstance(payload, dict) or "error" in payload:
+    raise SystemExit(1)
+
+result = payload.get("result")
+if not isinstance(result, dict):
+    raise SystemExit(1)
+
+versions = result.get("supportedVersions")
+if not isinstance(versions, list) or "2026-07-28" not in versions:
+    raise SystemExit(1)
+
+if result.get("resultType") != "complete":
+    raise SystemExit(1)
+
+raise SystemExit(0)
+PY
+}
+
+probe_casein_mcp_dual_stack() {
+  local label="$1"
+  local url="$2"
+  local token="$3"
+  local severity="${4:-fail}"
+  local body_file status
+
+  body_file="$(mcp_probe_tmp)"
+  status="$(mcp_http_post "$url" \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    "$body_file" \
+    -H "authorization: Bearer ${token}")"
+
+  if [[ "$status" == "200" ]]; then
+    pass "${label} MCP initialize → 200"
+  else
+    if [[ "$severity" == "warn" ]]; then
+      warn "${label} MCP initialize → ${status}"
+    else
+      fail "${label} MCP initialize → ${status}"
+    fi
+  fi
+
+  : >"$body_file"
+  status="$(mcp_http_post "$url" \
+    '{"jsonrpc":"2.0","id":2,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"agent-doctor","version":"1.0"}}}}' \
+    "$body_file" \
+    -H "authorization: Bearer ${token}")"
+
+  if [[ "$status" == "200" ]] && mcp_discover_body_ok "$body_file"; then
+    pass "${label} MCP server/discover 2026-07-28 → complete (supportedVersions includes 2026-07-28)"
+  else
+    local detail="http ${status}"
+    if [[ "$status" == "200" ]]; then
+      detail="body missing resultType=complete or supportedVersions 2026-07-28"
+    fi
+    if [[ "$severity" == "warn" ]]; then
+      warn "${label} MCP server/discover 2026-07-28 → ${detail}"
+    else
+      fail "${label} MCP server/discover 2026-07-28 → ${detail}"
+    fi
+  fi
+
+  rm -f "$body_file"
+}
+
 check_tidewave_mcp() {
   local tidewave_url="${CASEIN_TIDEWAVE_MCP_URL:-}"
   [[ -n "$tidewave_url" ]] || return 0
 
-  local status
-  status="$(curl -fsS -o /dev/null -w '%{http_code}' \
-    -H "content-type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-    "$tidewave_url" 2>/dev/null || echo 000)"
+  local status body_file
+  body_file="$(mcp_probe_tmp)"
+  status="$(mcp_http_post "$tidewave_url" \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    "$body_file")"
+  rm -f "$body_file"
 
   if [[ "$status" == "200" ]]; then
     pass "tidewave MCP initialize → 200"
@@ -263,52 +363,24 @@ check_mcp_endpoints() {
     return
   fi
 
-  local status
-  status="$(curl -fsS -o /dev/null -w '%{http_code}' \
-    -H "authorization: Bearer ${token}" \
-    -H "content-type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-    "$terminal_url" 2>/dev/null || echo 000)"
-
-  if [[ "$status" == "200" ]]; then
-    pass "terminal MCP initialize → 200"
-  else
-    fail "terminal MCP initialize → ${status}"
-  fi
-
-  status="$(curl -fsS -o /dev/null -w '%{http_code}' \
-    -H "authorization: Bearer ${token}" \
-    -H "content-type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-    "$preview_url" 2>/dev/null || echo 000)"
-
-  if [[ "$status" == "200" ]]; then
-    pass "preview MCP initialize → 200"
-  else
-    fail "preview MCP initialize → ${status}"
-  fi
-
-  status="$(curl -fsS -o /dev/null -w '%{http_code}' \
-    -H "authorization: Bearer ${token}" \
-    -H "content-type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-    "$artifact_url" 2>/dev/null || echo 000)"
-
-  if [[ "$status" == "200" ]]; then
-    pass "artifact MCP initialize → 200"
-  else
-    fail "artifact MCP initialize → ${status}"
-  fi
+  # Casein servers dual-stack (PR #476). Probe both legs so a 2026-only or
+  # 2025-only regression is visible before clients migrate.
+  probe_casein_mcp_dual_stack "terminal" "$terminal_url" "$token"
+  probe_casein_mcp_dual_stack "preview" "$preview_url" "$token"
+  probe_casein_mcp_dual_stack "artifact" "$artifact_url" "$token"
 
   local tidewave_url="${CASEIN_TIDEWAVE_MCP_URL:-}"
   if [[ -z "$tidewave_url" ]]; then
     return
   fi
 
-  status="$(curl -fsS -o /dev/null -w '%{http_code}' \
-    -H "content-type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"agent-doctor","version":"1.0"}}}' \
-    "$tidewave_url" 2>/dev/null || echo 000)"
+  # Tidewave is a third-party MCP surface — initialize only, not Casein dual-stack.
+  local status body_file
+  body_file="$(mcp_probe_tmp)"
+  status="$(mcp_http_post "$tidewave_url" \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"agent-doctor","version":"1.0"}}}' \
+    "$body_file")"
+  rm -f "$body_file"
 
   if [[ "$status" == "200" ]]; then
     pass "tidewave MCP initialize → 200 (${tidewave_url})"

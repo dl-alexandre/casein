@@ -202,6 +202,96 @@ defmodule Scripts.AgentDoctorTest do
     refute managed_output =~ "fail=0"
   end
 
+  test "MCP dual-stack probe accepts legacy initialize and 2026 server/discover", %{
+    home: home,
+    cwd: cwd
+  } do
+    curl_bin = install_fake_mcp_curl!(home, :dual_stack_ok)
+
+    {output, 0} =
+      run_function(
+        home,
+        cwd,
+        """
+        check_mcp_endpoints
+        printf 'COUNTS pass=%s warn=%s fail=%s\\n' "$PASS" "$WARN" "$FAIL"
+        """,
+        [
+          {"PATH", "#{curl_bin}:/usr/bin:/bin"},
+          {"CASEIN_API_TOKEN", "test-token"},
+          {"CASEIN_TERMINAL_MCP_URL", "http://mcp.test/terminal"},
+          {"CASEIN_PREVIEW_MCP_URL", "http://mcp.test/preview"},
+          {"CASEIN_ARTIFACT_MCP_URL", "http://mcp.test/artifact"}
+        ]
+      )
+
+    for label <- ["terminal", "preview", "artifact"] do
+      assert output =~ "#{label} MCP initialize → 200"
+
+      assert output =~
+               "#{label} MCP server/discover 2026-07-28 → complete (supportedVersions includes 2026-07-28)"
+    end
+
+    assert output =~ "fail=0"
+    refute output =~ "FAIL "
+  end
+
+  test "MCP dual-stack probe fails when server/discover omits 2026-07-28", %{
+    home: home,
+    cwd: cwd
+  } do
+    curl_bin = install_fake_mcp_curl!(home, :discover_legacy_only)
+
+    {output, 0} =
+      run_function(
+        home,
+        cwd,
+        """
+        check_mcp_endpoints
+        printf 'COUNTS pass=%s warn=%s fail=%s\\n' "$PASS" "$WARN" "$FAIL"
+        """,
+        [
+          {"PATH", "#{curl_bin}:/usr/bin:/bin"},
+          {"CASEIN_API_TOKEN", "test-token"},
+          {"CASEIN_TERMINAL_MCP_URL", "http://mcp.test/terminal"},
+          {"CASEIN_PREVIEW_MCP_URL", "http://mcp.test/preview"},
+          {"CASEIN_ARTIFACT_MCP_URL", "http://mcp.test/artifact"}
+        ]
+      )
+
+    assert output =~ "terminal MCP initialize → 200"
+    assert output =~ "FAIL terminal MCP server/discover 2026-07-28 →"
+    refute output =~ "fail=0"
+  end
+
+  test "MCP dual-stack probe fails when legacy initialize is down", %{
+    home: home,
+    cwd: cwd
+  } do
+    curl_bin = install_fake_mcp_curl!(home, :initialize_down)
+
+    {output, 0} =
+      run_function(
+        home,
+        cwd,
+        """
+        check_mcp_endpoints
+        printf 'COUNTS pass=%s warn=%s fail=%s\\n' "$PASS" "$WARN" "$FAIL"
+        """,
+        [
+          {"PATH", "#{curl_bin}:/usr/bin:/bin"},
+          {"CASEIN_API_TOKEN", "test-token"},
+          {"CASEIN_TERMINAL_MCP_URL", "http://mcp.test/terminal"},
+          {"CASEIN_PREVIEW_MCP_URL", "http://mcp.test/preview"},
+          {"CASEIN_ARTIFACT_MCP_URL", "http://mcp.test/artifact"}
+        ]
+      )
+
+    assert output =~ "FAIL terminal MCP initialize → 503"
+    assert output =~ "terminal MCP server/discover 2026-07-28 → complete"
+    refute output =~ "fail=0"
+  end
+
   test "Grok diagnostics reject a mutable bundle and redact probe output", %{
     home: home,
     cwd: cwd
@@ -329,6 +419,95 @@ defmodule Scripts.AgentDoctorTest do
         stderr_to_stdout: true
       )
     )
+  end
+
+  defp install_fake_mcp_curl!(home, mode) do
+    bin_dir = Path.join(home, "fake-curl-bin")
+    File.mkdir_p!(bin_dir)
+    path = Path.join(bin_dir, "curl")
+
+    script =
+      case mode do
+        :dual_stack_ok ->
+          """
+          #!/usr/bin/env bash
+          set -euo pipefail
+          out=""
+          body=""
+          prev=""
+          for arg in "$@"; do
+            if [[ "$prev" == "-o" ]]; then out="$arg"; fi
+            if [[ "$prev" == "-d" ]]; then body="$arg"; fi
+            prev="$arg"
+          done
+          if [[ "$body" == *'"method":"initialize"'* ]]; then
+            printf '%s' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}' >"$out"
+            printf '200'
+            exit 0
+          fi
+          if [[ "$body" == *'"method":"server/discover"'* ]]; then
+            printf '%s' '{"jsonrpc":"2.0","id":2,"result":{"supportedVersions":["2026-07-28","2025-03-26"],"resultType":"complete","cacheScope":"private","ttlMs":3600000}}' >"$out"
+            printf '200'
+            exit 0
+          fi
+          printf '%s' '{"error":"unexpected"}' >"$out"
+          printf '500'
+          """
+
+        :discover_legacy_only ->
+          """
+          #!/usr/bin/env bash
+          set -euo pipefail
+          out=""
+          body=""
+          prev=""
+          for arg in "$@"; do
+            if [[ "$prev" == "-o" ]]; then out="$arg"; fi
+            if [[ "$prev" == "-d" ]]; then body="$arg"; fi
+            prev="$arg"
+          done
+          if [[ "$body" == *'"method":"initialize"'* ]]; then
+            printf '%s' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}' >"$out"
+            printf '200'
+            exit 0
+          fi
+          if [[ "$body" == *'"method":"server/discover"'* ]]; then
+            printf '%s' '{"jsonrpc":"2.0","id":2,"result":{"supportedVersions":["2025-03-26"],"resultType":"complete"}}' >"$out"
+            printf '200'
+            exit 0
+          fi
+          printf '500'
+          """
+
+        :initialize_down ->
+          """
+          #!/usr/bin/env bash
+          set -euo pipefail
+          out=""
+          body=""
+          prev=""
+          for arg in "$@"; do
+            if [[ "$prev" == "-o" ]]; then out="$arg"; fi
+            if [[ "$prev" == "-d" ]]; then body="$arg"; fi
+            prev="$arg"
+          done
+          if [[ "$body" == *'"method":"initialize"'* ]]; then
+            printf '%s' 'down' >"$out"
+            printf '503'
+            exit 0
+          fi
+          if [[ "$body" == *'"method":"server/discover"'* ]]; then
+            printf '%s' '{"jsonrpc":"2.0","id":2,"result":{"supportedVersions":["2026-07-28"],"resultType":"complete"}}' >"$out"
+            printf '200'
+            exit 0
+          fi
+          printf '500'
+          """
+      end
+
+    File.write!(path, script)
+    File.chmod!(path, 0o755)
+    bin_dir
   end
 
   defp install_mock_shims(home) do
