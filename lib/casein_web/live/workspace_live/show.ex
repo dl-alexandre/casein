@@ -64,6 +64,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias CaseinWeb.WorkspaceLive.Show.RunEvents
   alias CaseinWeb.WorkspaceLive.Show.PaletteItems
   alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
+  alias CaseinWeb.WorkspaceLive.Show.FleetEvents
   alias CaseinWeb.WorkspaceLive.Show.SituationEvents
   alias CaseinWeb.WorkspaceLive.Show.Sidebar
   alias CaseinWeb.WorkspaceLive.Show.TerminalEvents
@@ -159,6 +160,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     audit_drawer:close
     clipboard:toggle clipboard:close clipboard:refresh clipboard:clear
     situation_drawer:toggle situation_drawer:close
+    fleet_drawer:toggle fleet_drawer:close
     connect:toggle connect:close connect:load connect:mint connect:revoke
     leader_help:toggle leader_help:close
     search:run artifact:refresh artifact:serve artifact:inspect artifact:open
@@ -273,6 +275,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:tmux_session, tmux_session)
         |> assign(:tmux_windows, [])
         |> assign(:tmux_window_tabs, [])
+        |> assign(:fleet_board, Casein.Terminals.FleetBoard.empty())
         |> assign(:tmux_panes, [])
         |> assign(:tmux_active_window_id, nil)
         |> assign(:tmux_active_pane_id, nil)
@@ -456,6 +459,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> subscribe_open_links()
         |> subscribe_pane_labels()
         |> SituationEvents.mount()
+        |> FleetEvents.mount()
         |> CodexEvents.subscribe_once()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
@@ -862,6 +866,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_event("situation_drawer:" <> _ = event, params, socket),
     do: SituationEvents.handle_event(event, params, socket)
 
+  def handle_event("fleet_drawer:" <> _ = event, params, socket),
+    do: FleetEvents.handle_event(event, params, socket)
+
   def handle_event("connect:" <> _ = event, params, socket),
     do: ConnectEvents.handle_event(event, params, socket)
 
@@ -1151,6 +1158,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         socket
         |> assign(:tmux_windows, [])
         |> assign(:tmux_window_tabs, [])
+        |> assign(:fleet_board, Casein.Terminals.FleetBoard.empty())
         |> assign(:tmux_panes, [])
         |> TerminalState.assign_header_session_labels(%{panes: [], active_window_id: nil})
         |> assign(:tmux_active_window_id, nil)
@@ -2655,6 +2663,8 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       situation_drawer_open={@situation_drawer_open}
       situation_enabled={@situation_enabled}
       situation_risks={@situation_risks}
+      fleet_board={@fleet_board}
+      fleet_drawer_open={@fleet_drawer_open}
       streams={@streams}
       tab={@tab}
       template_duplicate_form={@template_duplicate_form}

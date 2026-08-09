@@ -1611,6 +1611,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     name = window.name
     manual_name? = Map.get(window, :manual_name) == true
     conversation_label = window_conversation_label(window, opts)
+    agent_pane = PaneState.agent_or_active_pane(window)
+    fleet = window_fleet_fields(window, agent_pane, agent_state, opts)
 
     chrome = AgentStateChrome.present(agent_state, agent_message)
 
@@ -1655,9 +1657,134 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       full_title:
         full_window_title(window, highlight_pane_id, task_summary, agent_state, agent_message),
       panes: panes,
-      pane_count: length(panes)
+      pane_count: length(panes),
+      agent_pane_id: fleet.agent_pane_id,
+      label: fleet.label,
+      issue: fleet.issue,
+      issue_title: fleet.issue_title,
+      fleet_role: fleet.fleet_role,
+      fleet_readiness: fleet.fleet_readiness,
+      ready_no_task_for_seconds: fleet.ready_no_task_for_seconds
     }
   end
+
+  # Join label / issue / FleetChrome onto a window tab without a second topology
+  # walk. Prefer fields already on the window (MCP enrich path); fall back to
+  # pane_labels + issue bindings already loaded for the LiveView session.
+  defp window_fleet_fields(window, agent_pane, agent_state, opts) do
+    pane_id =
+      case agent_pane do
+        nil -> nil
+        pane -> PaneState.map_get(pane, :id)
+      end
+
+    label =
+      blank_to_nil(Map.get(window, :label) || Map.get(window, "label")) ||
+        blank_to_nil(Map.get(window, :agent_label) || Map.get(window, "agent_label")) ||
+        window_conversation_label(window, opts)
+
+    issue =
+      Map.get(window, :issue) || Map.get(window, "issue") ||
+        issue_from_bindings(opts, pane_id)
+
+    issue_title =
+      blank_to_nil(Map.get(window, :issue_title) || Map.get(window, "issue_title")) ||
+        issue_title_from_bindings(opts, pane_id)
+
+    role =
+      Map.get(window, :fleet_role) || Map.get(window, "fleet_role") ||
+        Casein.Terminals.FleetChrome.role_from_text(label) ||
+        Casein.Terminals.FleetChrome.role_from_text(Map.get(window, :name))
+
+    readiness = Map.get(window, :fleet_readiness) || Map.get(window, "fleet_readiness")
+
+    ready_for =
+      Map.get(window, :ready_no_task_for_seconds) || Map.get(window, "ready_no_task_for_seconds")
+
+    # When topology was not FleetChrome-enriched (cockpit path), project
+    # readiness from the same pure rules over available quiet clocks.
+    {readiness, ready_for} =
+      if readiness do
+        {readiness, ready_for}
+      else
+        probe =
+          %{
+            role: "agent",
+            agent_state: agent_state,
+            pane_state: PaneState.window_state(window),
+            issue: issue,
+            task_summary: PaneState.window_task_summary(window),
+            label: label,
+            window_name: Map.get(window, :name),
+            liveness: pane_liveness_map(agent_pane),
+            agent_state_age_s: agent_state_age_s(opts, pane_id)
+          }
+          |> Casein.Terminals.FleetChrome.enrich_pane()
+
+        {Map.get(probe, :fleet_readiness), Map.get(probe, :ready_no_task_for_seconds)}
+      end
+
+    %{
+      agent_pane_id: pane_id,
+      label: label,
+      issue: issue,
+      issue_title: issue_title,
+      fleet_role: role,
+      fleet_readiness: readiness,
+      ready_no_task_for_seconds: ready_for
+    }
+  end
+
+  defp issue_from_bindings(opts, pane_id) when is_binary(pane_id) do
+    case Keyword.get(opts, :issue_bindings) do
+      %{} = bindings ->
+        case Map.get(bindings, pane_id) do
+          %{issue: n} when is_integer(n) -> n
+          n when is_integer(n) -> n
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp issue_from_bindings(_opts, _pane_id), do: nil
+
+  defp issue_title_from_bindings(opts, pane_id) when is_binary(pane_id) do
+    case Keyword.get(opts, :issue_bindings) do
+      %{} = bindings ->
+        case Map.get(bindings, pane_id) do
+          %{title: title} when is_binary(title) -> blank_to_nil(title)
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp issue_title_from_bindings(_opts, _pane_id), do: nil
+
+  defp pane_liveness_map(nil), do: nil
+
+  defp pane_liveness_map(pane) when is_map(pane) do
+    Map.get(pane, :liveness) || Map.get(pane, "liveness")
+  end
+
+  defp agent_state_age_s(opts, pane_id) when is_binary(pane_id) do
+    reports = Keyword.get(opts, :agent_reports) || topology_agent_reports(opts)
+
+    case Map.get(reports, pane_id) do
+      %{reported_at: %DateTime{} = at} ->
+        max(DateTime.diff(DateTime.utc_now(), at, :second), 0)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp agent_state_age_s(_opts, _pane_id), do: nil
 
   defp unseen_quiet_window?(opts, session_id, window_id)
        when is_binary(session_id) and is_binary(window_id) do

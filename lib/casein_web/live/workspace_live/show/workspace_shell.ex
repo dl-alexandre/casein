@@ -34,6 +34,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   import CaseinWeb.WorkspaceLive.Show.SituationPanel,
     only: [situation_badge: 1, situation_drawer: 1]
 
+  import CaseinWeb.WorkspaceLive.Show.FleetPanel,
+    only: [fleet_badge: 1, fleet_drawer: 1]
+
   import CaseinWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import CaseinWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
   import CaseinWeb.WorkspaceLive.Show.AgentWriteBanner, only: [agent_write_locked_banner: 1]
@@ -173,6 +176,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :situation_drawer_open, :any, required: true
   attr :situation_enabled, :any, required: true
   attr :situation_risks, :any, required: true
+  attr :fleet_board, :any, required: true
+  attr :fleet_drawer_open, :any, required: true
   attr :streams, :any, required: true
   attr :tab, :any, required: true
   attr :template_duplicate_form, :any, required: true
@@ -928,6 +933,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       open={@situation_drawer_open}
       risks={@situation_risks}
       workspace={@workspace}
+    />
+    <.fleet_badge board={@fleet_board} open={@fleet_drawer_open} />
+    <.fleet_drawer
+      board={@fleet_board}
+      open={@fleet_drawer_open}
+      workspace={@workspace}
+      active_window_id={@tmux_active_window_id}
     />
     <NotificationsDrawer.notifications_drawer
       open={@notif_drawer_open}
