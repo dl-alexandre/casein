@@ -42,6 +42,11 @@ defmodule CaseinMob.HomeScreenTest do
 
     CaseinMob.SessionConfig.pin_workspace("ws-1")
 
+    assert :ok =
+             CaseinMob.SessionConfig.cache_cards("origin-devbox", [], nil, %{
+               "mobile_terminal" => %{"enabled" => true}
+             })
+
     view = HomeScreen |> mount_screen() |> render_info({:tap, :open_terminal})
 
     assert navigated_to(view) == CaseinMob.TerminalScreen
@@ -51,14 +56,49 @@ defmodule CaseinMob.HomeScreenTest do
               %{origin_id: "origin-devbox", workspace_id: "ws-1"}}
   end
 
+  test "terminal entry is hidden when the server capability is disabled" do
+    CaseinMob.SessionConfig.clear_all()
+
+    CaseinMob.SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    assert :ok =
+             CaseinMob.SessionConfig.cache_cards("origin-devbox", [], nil, %{
+               "mobile_terminal" => %{"enabled" => false, "reason" => "feature_disabled"}
+             })
+
+    view = mount_screen(HomeScreen)
+
+    refute find(view, :button, text: "Terminal")
+
+    view = render_info(view, {:tap, :open_terminal})
+    refute navigated_to(view) == CaseinMob.TerminalScreen
+  end
+
   test "terminal navigation carries a bounded error instead of selecting implicitly" do
     CaseinMob.SessionConfig.clear_all()
+
+    CaseinMob.SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://casein.test",
+      token: "token"
+    })
+
+    assert :ok =
+             CaseinMob.SessionConfig.cache_cards("origin-devbox", [], nil, %{
+               "mobile_terminal" => %{"enabled" => true}
+             })
 
     view = HomeScreen |> mount_screen() |> render_info({:tap, :open_terminal})
 
     assert navigated_to(view) == CaseinMob.TerminalScreen
 
     assert view.socket.__mob__.nav_action ==
-             {:push, CaseinMob.TerminalScreen, %{target_error: :not_authenticated}}
+             {:push, CaseinMob.TerminalScreen, %{target_error: :workspace_not_selected}}
   end
 end

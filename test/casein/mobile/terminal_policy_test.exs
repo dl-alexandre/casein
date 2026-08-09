@@ -57,10 +57,33 @@ defmodule Casein.Mobile.TerminalPolicyTest do
 
     assert :ok = TerminalPolicy.authorize(@context)
     assert TerminalPolicy.enabled_for?(@context)
+    assert TerminalPolicy.capability(@context) == %{enabled: true}
+    assert TerminalPolicy.wire_capability(@context) == %{"enabled" => true}
 
     refute TerminalPolicy.enabled_for?(%{@context | workspace_id: "workspace-2"})
     refute TerminalPolicy.enabled_for?(%{@context | device_link_id: "device-2"})
     refute TerminalPolicy.enabled_for?(%{@context | user_id: "user-2"})
+  end
+
+  test "capability is presentation-only and fail-closed" do
+    Application.delete_env(:casein, :mobile_terminal)
+
+    assert TerminalPolicy.capability(@context) == %{
+             enabled: false,
+             reason: :kill_switch_active
+           }
+
+    assert TerminalPolicy.wire_capability(@context) == %{
+             "enabled" => false,
+             "reason" => "kill_switch_active"
+           }
+
+    configure(enabled: true, kill_switch: false, user_ids: [])
+
+    assert TerminalPolicy.wire_capability(@context) == %{
+             "enabled" => false,
+             "reason" => "user_not_allowlisted"
+           }
   end
 
   test "missing or malformed identity fails closed" do

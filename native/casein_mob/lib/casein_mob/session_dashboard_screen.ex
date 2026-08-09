@@ -194,14 +194,18 @@ defmodule CaseinMob.SessionDashboardScreen do
   end
 
   def handle_info({:tap, :root_menu}, socket) do
+    buttons =
+      []
+      |> maybe_terminal_menu_button()
+      |> Kernel.++([
+        [label: "Apps", action: :open_apps],
+        [label: "Cancel", style: :cancel]
+      ])
+
     socket =
       Mob.Alert.action_sheet(socket,
         title: "Sessions",
-        buttons: [
-          [label: "Terminal", action: :open_terminal],
-          [label: "Apps", action: :open_apps],
-          [label: "Cancel", style: :cancel]
-        ]
+        buttons: buttons
       )
 
     {:noreply, socket}
@@ -362,60 +366,76 @@ defmodule CaseinMob.SessionDashboardScreen do
     %{
       type: :row,
       props: %{fill_width: true, background: :primary, padding: :space_sm, gap: 8},
-      children: [
-        %{
-          type: :text,
-          props: %{
-            text: "Attention Inbox",
-            text_size: :xl,
-            text_color: :on_primary,
-            weight: 1,
-            font_weight: "bold"
+      children:
+        [
+          %{
+            type: :text,
+            props: %{
+              text: "Attention Inbox",
+              text_size: :xl,
+              text_color: :on_primary,
+              weight: 1,
+              font_weight: "bold"
+            },
+            children: []
           },
-          children: []
-        },
-        %{
-          type: :button,
-          props: %{
-            text: "+ Pair",
-            background: :surface_raised,
-            text_color: :on_surface,
-            fill_width: false,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :pair_device}
+          %{
+            type: :button,
+            props: %{
+              text: "+ Pair",
+              background: :surface_raised,
+              text_color: :on_surface,
+              fill_width: false,
+              padding: :space_sm,
+              height: 44.0,
+              on_tap: {self(), :pair_device}
+            },
+            children: []
           },
-          children: []
-        },
-        %{
-          type: :button,
-          props: %{
-            id: "open_terminal",
-            text: "Terminal",
-            background: :surface_raised,
-            text_color: :on_surface,
-            fill_width: false,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :open_terminal}
-          },
-          children: []
-        },
-        %{
-          type: :button,
-          props: %{
-            text: "...",
-            background: :surface_raised,
-            text_color: :on_surface,
-            fill_width: false,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :root_menu}
-          },
-          children: []
-        }
-      ]
+          terminal_header_button(),
+          %{
+            type: :button,
+            props: %{
+              text: "...",
+              background: :surface_raised,
+              text_color: :on_surface,
+              fill_width: false,
+              padding: :space_sm,
+              height: 44.0,
+              on_tap: {self(), :root_menu}
+            },
+            children: []
+          }
+        ]
+        |> Enum.reject(&is_nil/1)
     }
+  end
+
+  defp terminal_header_button do
+    if SessionConfig.mobile_terminal_entry_enabled?() do
+      %{
+        type: :button,
+        props: %{
+          id: "open_terminal",
+          text: "Terminal",
+          background: :surface_raised,
+          text_color: :on_surface,
+          fill_width: false,
+          padding: :space_sm,
+          height: 44.0,
+          on_tap: {self(), :open_terminal}
+        },
+        children: []
+      }
+    end
+  end
+
+  defp maybe_terminal_menu_button(buttons) do
+    if SessionConfig.mobile_terminal_entry_enabled?() do
+      buttons ++ [[label: "Terminal", action: :open_terminal]]
+    else
+      buttons
+    end
   end
 
   defp dashboard_body(%{pinned: [], paired?: false}) do
@@ -2301,21 +2321,27 @@ defmodule CaseinMob.SessionDashboardScreen do
   defp open_workspace(socket, _workspace_id), do: socket
 
   defp open_terminal(socket) do
-    case SessionConfig.default_terminal_target() do
-      {:ok, target} ->
-        Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen, %{
-          workspace_id: target.workspace_id,
-          origin_id: target.origin_id
-        })
+    cond do
+      not SessionConfig.mobile_terminal_entry_enabled?() ->
+        socket
 
-      {:error, :workspace_not_selected} ->
-        Mob.Socket.assign(socket, :notice, "Open a workspace before Terminal")
+      true ->
+        case SessionConfig.default_terminal_target() do
+          {:ok, target} ->
+            Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen, %{
+              workspace_id: target.workspace_id,
+              origin_id: target.origin_id
+            })
 
-      {:error, :inactive_origin} ->
-        Mob.Socket.assign(socket, :notice, "Selected workspace belongs to an inactive origin")
+          {:error, :workspace_not_selected} ->
+            Mob.Socket.assign(socket, :notice, "Open a workspace before Terminal")
 
-      {:error, _reason} ->
-        Mob.Socket.assign(socket, :notice, "Terminal is unavailable for this origin")
+          {:error, :inactive_origin} ->
+            Mob.Socket.assign(socket, :notice, "Selected workspace belongs to an inactive origin")
+
+          {:error, _reason} ->
+            Mob.Socket.assign(socket, :notice, "Terminal is unavailable for this origin")
+        end
     end
   end
 
@@ -2383,7 +2409,13 @@ defmodule CaseinMob.SessionDashboardScreen do
           |> Map.new(fn card -> {get(card, "id"), card} end)
           |> Map.reject(fn {id, _card} -> is_nil(id) end)
 
-        _ = SessionConfig.cache_cards(origin_id, cards, snapshot_observed_at(cards))
+        _ =
+          SessionConfig.cache_cards(
+            origin_id,
+            cards,
+            snapshot_observed_at(cards),
+            get(payload, "capabilities")
+          )
 
         socket
         |> Mob.Socket.assign(:mobile_cards_snapshot, payload)

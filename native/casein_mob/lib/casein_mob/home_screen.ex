@@ -20,8 +20,7 @@ defmodule CaseinMob.HomeScreen do
         <Text text="BEAM running on device" text_size={:sm} text_color={:primary} padding={4} />
         <Spacer size={40} />
         {nav_button("Sessions",            :open_sessions)}
-        <Spacer size={12} />
-        {nav_button("Terminal",            :open_terminal)}
+        {terminal_nav()}
         <Spacer size={12} />
         {nav_button("Files",               :open_files)}
         <Spacer size={12} />
@@ -53,13 +52,17 @@ defmodule CaseinMob.HomeScreen do
   end
 
   def handle_info({:tap, :open_terminal}, socket) do
-    params =
-      case CaseinMob.SessionConfig.default_terminal_target() do
-        {:ok, target} -> Map.take(target, [:origin_id, :workspace_id])
-        {:error, reason} -> %{target_error: reason}
-      end
+    if CaseinMob.SessionConfig.mobile_terminal_entry_enabled?() do
+      params =
+        case CaseinMob.SessionConfig.default_terminal_target() do
+          {:ok, target} -> Map.take(target, [:origin_id, :workspace_id])
+          {:error, reason} -> %{target_error: reason}
+        end
 
-    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen, params)}
+      {:noreply, Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen, params)}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({:tap, :open_sessions}, socket) do
@@ -95,6 +98,21 @@ defmodule CaseinMob.HomeScreen do
   fill_width={true}
   on_tap={tap}
 />)
+  end
+
+  defp terminal_nav do
+    if CaseinMob.SessionConfig.mobile_terminal_entry_enabled?() do
+      %{
+        type: :column,
+        props: %{fill_width: true},
+        children: [
+          %{type: :spacer, props: %{size: 12}, children: []},
+          nav_button("Terminal", :open_terminal)
+        ]
+      }
+    else
+      %{type: :column, props: %{}, children: []}
+    end
   end
 
   # A nav button per activated plugin that declares a screen, built from the

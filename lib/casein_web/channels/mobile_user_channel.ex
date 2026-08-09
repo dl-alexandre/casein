@@ -595,10 +595,41 @@ defmodule CaseinWeb.MobileUserChannel do
             else: "authoritative"
           )
       },
+      capabilities: %{
+        mobile_terminal: mobile_terminal_capability(socket)
+      },
       cards: Enum.map(cards, &render_card(&1, Map.fetch!(attention_by_card, &1.id), socket))
     }
     |> Map.merge(FeedTiming.wire_context(feed_timing(socket)))
   end
+
+  # Presentation guidance only. Authorization stays on create/join/grant paths.
+  defp mobile_terminal_capability(socket) do
+    case mobile_terminal_policy_context(socket) do
+      {:ok, context} -> TerminalPolicy.wire_capability(context)
+      :error -> TerminalPolicy.wire_capability(%{})
+    end
+  end
+
+  defp mobile_terminal_policy_context(socket) do
+    user_id = current_user_id(socket)
+    device_link_id = socket.assigns[:device_link_id]
+    workspace_id = socket.assigns[:pairing_workspace_id]
+
+    if present_string?(user_id) and present_string?(device_link_id) and
+         present_string?(workspace_id) do
+      {:ok,
+       %{
+         user_id: user_id,
+         device_link_id: device_link_id,
+         workspace_id: workspace_id
+       }}
+    else
+      :error
+    end
+  end
+
+  defp present_string?(value), do: is_binary(value) and value != ""
 
   defp render_snapshot_timed(snapshot, socket) do
     payload = render_snapshot(snapshot, socket)

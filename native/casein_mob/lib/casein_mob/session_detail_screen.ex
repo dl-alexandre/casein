@@ -241,59 +241,73 @@ defmodule CaseinMob.SessionDetailScreen do
     %{
       type: :row,
       props: %{fill_width: true, background: :primary, padding: :space_sm, gap: 8},
-      children: [
-        %{
-          type: :button,
-          props: %{
-            text: "Back",
-            background: :surface_raised,
-            text_color: :on_surface,
-            fill_width: false,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :back}
+      children:
+        [
+          %{
+            type: :button,
+            props: %{
+              text: "Back",
+              background: :surface_raised,
+              text_color: :on_surface,
+              fill_width: false,
+              padding: :space_sm,
+              height: 44.0,
+              on_tap: {self(), :back}
+            },
+            children: []
           },
-          children: []
-        },
-        %{
-          type: :text,
-          props: %{
-            text: display_workspace(workspace_id),
-            text_size: :lg,
-            text_color: :on_primary,
-            font_weight: "bold",
-            weight: 1
+          %{
+            type: :text,
+            props: %{
+              text: display_workspace(workspace_id),
+              text_size: :lg,
+              text_color: :on_primary,
+              font_weight: "bold",
+              weight: 1
+            },
+            children: []
           },
-          children: []
-        },
-        %{
-          type: :button,
-          props: %{
-            text: "Terminal",
-            background: :surface_raised,
-            text_color: :on_surface,
-            fill_width: false,
-            padding: :space_sm,
-            height: 44.0,
-            on_tap: {self(), :open_terminal}
-          },
-          children: []
-        },
-        chip(status_label(status), status_color(status))
-      ]
+          terminal_header_button(),
+          chip(status_label(status), status_color(status))
+        ]
+        |> Enum.reject(&is_nil/1)
     }
   end
 
-  defp open_terminal(socket) do
-    case SessionConfig.selected_terminal_target(socket.assigns.workspace_id) do
-      {:ok, target} ->
-        Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen, %{
-          workspace_id: target.workspace_id,
-          origin_id: target.origin_id
-        })
+  defp terminal_header_button do
+    if SessionConfig.mobile_terminal_entry_enabled?() do
+      %{
+        type: :button,
+        props: %{
+          text: "Terminal",
+          background: :surface_raised,
+          text_color: :on_surface,
+          fill_width: false,
+          padding: :space_sm,
+          height: 44.0,
+          on_tap: {self(), :open_terminal}
+        },
+        children: []
+      }
+    end
+  end
 
-      {:error, _reason} ->
-        temporary_notice(socket, "Terminal is unavailable for this workspace")
+  defp open_terminal(socket) do
+    cond do
+      not SessionConfig.mobile_terminal_entry_enabled?() ->
+        socket
+
+      true ->
+        case SessionConfig.selected_terminal_target(socket.assigns.workspace_id) do
+          {:ok, target} ->
+            Mob.Socket.push_screen(socket, CaseinMob.TerminalScreen, %{
+              workspace_id: target.workspace_id,
+              origin_id: target.origin_id
+            })
+
+          {:error, _reason} ->
+            temporary_notice(socket, "Terminal is unavailable for this workspace")
+        end
     end
   end
 

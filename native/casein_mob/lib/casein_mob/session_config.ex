@@ -165,8 +165,21 @@ defmodule CaseinMob.SessionConfig do
   def reconcile_active_origin(_descriptor, _expected_origin_id), do: {:error, :invalid_origin}
 
   @doc "Cache a bounded, non-authoritative card summary for a known origin."
+  @spec cache_cards(String.t(), [map()]) :: :ok | {:error, atom()}
+  def cache_cards(origin_id, cards) when is_binary(origin_id) and is_list(cards) do
+    cache_cards(origin_id, cards, nil, nil)
+  end
+
   @spec cache_cards(String.t(), [map()], String.t() | nil) :: :ok | {:error, atom()}
-  def cache_cards(origin_id, cards, observed_at \\ nil)
+  def cache_cards(origin_id, cards, observed_at)
+      when is_binary(origin_id) and is_list(cards) do
+    cache_cards(origin_id, cards, observed_at, nil)
+  end
+
+  @doc "Cache cards and the latest server-declared mobile-terminal capability."
+  @spec cache_cards(String.t(), [map()], String.t() | nil, map() | nil) ::
+          :ok | {:error, atom()}
+  def cache_cards(origin_id, cards, observed_at, capabilities)
       when is_binary(origin_id) and is_list(cards) do
     case Map.get(profiles(), origin_id) do
       nil ->
@@ -181,8 +194,28 @@ defmodule CaseinMob.SessionConfig do
           |> Enum.take(@max_cached_cards)
           |> Enum.map(&cache_card(&1, origin_id, profile.display_name, cached_at))
 
-        persist_profile(%{profile | cached_cards: cache, cards_cached_at: cached_at})
+        persist_profile(%{
+          profile
+          | cached_cards: cache,
+            cards_cached_at: cached_at,
+            capabilities: normalize_capabilities(capabilities, profile.capabilities)
+        })
+
         :ok
+    end
+  end
+
+  @doc """
+  Whether the native Terminal entry point may be shown for the active profile.
+
+  Fail-closed: missing, offline-unknown, or disabled capability hides the entry.
+  Cached enabled stays visible offline until a live snapshot refreshes it.
+  """
+  @spec mobile_terminal_entry_enabled?() :: boolean()
+  def mobile_terminal_entry_enabled? do
+    case active_profile() do
+      %{capabilities: capabilities} -> mobile_terminal_enabled?(capabilities)
+      _ -> false
     end
   end
 
@@ -531,7 +564,8 @@ defmodule CaseinMob.SessionConfig do
       pinned_workspaces: map_value(profile, :pinned_workspaces, []),
       resume_context: map_value(profile, :resume_context),
       cached_cards: map_value(profile, :cached_cards, []),
-      cards_cached_at: map_value(profile, :cards_cached_at)
+      cards_cached_at: map_value(profile, :cards_cached_at),
+      capabilities: normalize_capabilities(map_value(profile, :capabilities), %{})
     }
   end
 
@@ -541,9 +575,40 @@ defmodule CaseinMob.SessionConfig do
       pinned_workspaces: [],
       resume_context: nil,
       cached_cards: [],
-      cards_cached_at: nil
+      cards_cached_at: nil,
+      capabilities: %{}
     }
   end
+
+  defp normalize_capabilities(nil, fallback) when is_map(fallback), do: fallback
+  defp normalize_capabilities(nil, _fallback), do: %{}
+
+  defp normalize_capabilities(capabilities, _fallback) when is_map(capabilities) do
+    case map_value(capabilities, :mobile_terminal) do
+      terminal when is_map(terminal) ->
+        enabled? = map_value(terminal, :enabled) == true
+
+        terminal =
+          if enabled? do
+            %{"enabled" => true}
+          else
+            reason = present(map_value(terminal, :reason)) || "feature_disabled"
+            %{"enabled" => false, "reason" => reason}
+          end
+
+        %{"mobile_terminal" => terminal}
+
+      _missing ->
+        %{}
+    end
+  end
+
+  defp normalize_capabilities(_capabilities, fallback) when is_map(fallback), do: fallback
+  defp normalize_capabilities(_capabilities, _fallback), do: %{}
+
+  defp mobile_terminal_enabled?(%{"mobile_terminal" => %{"enabled" => true}}), do: true
+  defp mobile_terminal_enabled?(%{mobile_terminal: %{enabled: true}}), do: true
+  defp mobile_terminal_enabled?(_capabilities), do: false
 
   defp cache_card(card, origin_id, display_name, cached_at) do
     card_id = present(map_value(card, :id))
