@@ -181,7 +181,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
           <%= if not @history_loaded? do %>
             <div
               id="history-loading"
-              class="rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500"
+              class="async-wait rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500"
+              role="status"
+              aria-live="polite"
             >
               Loading previous sessions…
             </div>

@@ -258,7 +258,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
         />
       <% else %>
         <div class="flex h-full items-center justify-center text-xs text-zinc-500">
-          {desktop_status_label(@status)}
+          <%= if @status == :connecting do %>
+            <CaseinWeb.WorkspaceLive.Show.UI.async_wait
+              id="desktop-terminal-starting"
+              class="text-xs text-zinc-500"
+            >
+              Starting native PowerShell…
+            </CaseinWeb.WorkspaceLive.Show.UI.async_wait>
+          <% else %>
+            {desktop_status_label(@status)}
+          <% end %>
         </div>
       <% end %>
     </div>

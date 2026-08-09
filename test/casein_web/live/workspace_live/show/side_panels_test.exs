@@ -56,7 +56,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
     end
 
     test "renders toolbar with root selected_dir and empty tree (loading state)" do
-      assigns = base_files_assigns([])
+      assigns = base_files_assigns(side_panels_ready?: false)
 
       html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
@@ -64,10 +64,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
       assert html =~ "+Dir"
       # selected_dir == "" renders "/"
       assert html =~ "/"
-      # empty tree -> render_tree_node hits the loading branch (collapsed default)
-      assert html =~ "(loading…)"
+      # empty tree while side panels hydrate -> delayed specific label (#732)
+      assert html =~ "Reading the file tree…"
+      assert html =~ "async-wait"
       # no open_file -> select-a-file hint
       assert html =~ "Select a file to view."
+    end
+
+    test "settled empty root does not flash a loading label" do
+      assigns = base_files_assigns(side_panels_ready?: true, tree: %{"" => {:expanded, []}})
+
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
+
+      refute html =~ "Reading the file tree…"
+      refute html =~ "(loading…)"
     end
 
     test "open file header includes dirty and stale indicators" do
@@ -410,6 +420,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
       assert html =~ "No matches."
     end
 
+    test "renders delayed searching label while run is in flight" do
+      assigns = base_search_assigns(search_state: :running, search_query: "needle")
+
+      html = rendered_to_string(~H"<SidePanels.search_panel {assigns} />")
+
+      assert html =~ "Searching the workspace…"
+      assert html =~ "async-wait"
+    end
+
     test "echoes the current search query into the input" do
       assigns = base_search_assigns(search_query: "needle123", search_state: :idle)
 
@@ -478,6 +497,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
   defp base_diff_assigns(overrides) do
     %{
       git_status: [],
+      git_status_ready?: true,
       open_file: nil,
       file_diff: nil
     }
@@ -492,6 +512,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assert html =~ "No changes."
       assert html =~ "Select a file to view its diff."
+    end
+
+    test "renders delayed git label while status is not ready" do
+      assigns = base_diff_assigns(git_status_ready?: false)
+
+      html = rendered_to_string(~H"<SidePanels.diff_panel {assigns} />")
+
+      assert html =~ "Querying git…"
+      assert html =~ "async-wait"
+      refute html =~ "No changes."
     end
 
     test "renders the changes list with status badges for each kind" do

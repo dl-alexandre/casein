@@ -81,8 +81,12 @@ lifecycle since the preview runtime cutover), browser control, pane labels)
 all heavy reads out of mount for fast first paint.
 
 **Staged hydration.** `:after_mount` → `:after_mount_side_panels` →
-`:after_mount_runs` chain; side panels and agents load via `assign_async`. PTY
+`:after_mount_runs` chain; side panels and agents load via `start_async`. PTY
 panes start in `:after_mount` via `maybe_start_raw_ghostty_and_request_restore`.
+Client narration is **latency-classified** — see
+[`../async-hydration-classification.md`](../async-hydration-classification.md)
+(#732): fast paths stay silent; slow waits get a delayed (~200ms) specific label
+via the `async-wait` CSS class / `UI.async_wait/1`.
 
 **Terminal input/output (the FP-1 path).** Browser keystrokes reach a PTY by two
 transports: (a) the LiveView `GhosttyTerminalComponent` (`key`/`text`/`mouse`

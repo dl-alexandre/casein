@@ -83,12 +83,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.FileOperations do
   def refresh_git_status(socket) do
     case Context.context_host_loc(socket) do
       {:ok, loc} ->
-        Phoenix.LiveView.start_async(socket, :refresh_git_status, fn ->
+        socket
+        |> assign(:git_status_ready?, false)
+        |> Phoenix.LiveView.start_async(:refresh_git_status, fn ->
           git_status({:ok, loc})
         end)
 
       _ ->
-        assign(socket, :git_status, [])
+        socket
+        |> assign(:git_status, [])
+        |> assign(:git_status_ready?, true)
     end
   end
 

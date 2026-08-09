@@ -95,6 +95,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :flash, :any, required: true
   attr :focused_pane_id, :any, required: true
   attr :git_status, :any, required: true
+  attr :git_status_ready?, :any, required: true
+  attr :side_panels_ready?, :any, required: true
   attr :grok_permission_requests, :any, required: true
   attr :history_error, :any, required: true
   attr :history_form, :any, required: true
@@ -807,6 +809,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
                 focused?={@inspector_region_focused?}
                 zoomed?={inspector_zoomed?}
                 git_status={@git_status}
+                git_status_ready?={@git_status_ready?}
                 open_file={@open_file}
                 file_diff={@file_diff}
               />
@@ -832,6 +835,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           node_delete={@node_delete}
           show_hidden_files={@show_hidden_files}
           tree_filter={@tree_filter}
+          side_panels_ready?={@side_panels_ready?}
         />
         <.search_panel
           :if={@tab == "search"}
@@ -842,6 +846,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
         <.diff_panel
           :if={@tab == "diff"}
           git_status={@git_status}
+          git_status_ready?={@git_status_ready?}
           open_file={@open_file}
           file_diff={@file_diff}
         />
@@ -1050,6 +1055,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :focused?, :boolean, required: true
   attr :zoomed?, :boolean, required: true
   attr :git_status, :any, required: true
+  attr :git_status_ready?, :any, required: true
   attr :open_file, :any, required: true
   attr :file_diff, :any, required: true
 
@@ -1150,6 +1156,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             <%= if entry.kind == :diff do %>
               <.diff_panel
                 git_status={@git_status}
+                git_status_ready?={@git_status_ready?}
                 open_file={@open_file}
                 file_diff={@file_diff}
               />

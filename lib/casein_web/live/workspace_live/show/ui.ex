@@ -23,6 +23,26 @@ defmodule CaseinWeb.WorkspaceLive.Show.UI do
   def dom_fragment(value), do: value |> to_string() |> dom_fragment()
 
   @doc """
+  Delayed label for a **slow** async wait (#732).
+
+  Renders immediately in the DOM (tests and a11y see the copy) but stays
+  visually silent for ~200ms via the `async-wait` CSS class so a fast path
+  never flashes. Prefer a specific verb ("Querying git…") over a generic
+  spinner. Fast sites must not call this.
+  """
+  attr :id, :string, default: nil
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def async_wait(assigns) do
+    ~H"""
+    <p id={@id} class={["async-wait", @class]} role="status" aria-live="polite">
+      {render_slot(@inner_block)}
+    </p>
+    """
+  end
+
+  @doc """
   The distinguishing tail of a workspace name for cramped chrome.
 
   Workspace names are often owner/repo style (e.g. `dalexandre/casein`) where

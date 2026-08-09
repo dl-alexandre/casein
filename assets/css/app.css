@@ -1708,3 +1708,25 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
   }
 
 }
+
+
+/* #732 — delayed narration for slow async waits only.
+   Keep content in the DOM immediately (so screen readers / tests see the
+   label), but stay visually silent until ~200ms so fast paths never flash. */
+.async-wait {
+  opacity: 0;
+  animation: casein-async-wait-reveal 0ms linear 200ms forwards;
+}
+
+@keyframes casein-async-wait-reveal {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .async-wait {
+    animation: none;
+    opacity: 1;
+  }
+}

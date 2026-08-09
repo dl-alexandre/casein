@@ -117,6 +117,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
         {:noreply,
          socket
          |> assign(:search_query, query)
+         |> assign(:search_state, :running)
          |> start_async(:run_search, fn -> FileAccess.search(loc, trimmed, []) end)}
 
       _ ->
