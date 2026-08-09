@@ -1015,7 +1015,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
             <% end %>
             <p
               :if={@node.sessions == []}
-              class="flex items-center gap-1.5 px-2 py-1 font-mono text-density-label italic text-base-content/40"
+              class={[
+                "flex items-center gap-1.5 px-2 py-1 font-mono text-[10px] italic text-base-content/40",
+                @node.loading? && "async-wait"
+              ]}
+              role={if @node.loading?, do: "status", else: nil}
+              aria-live={if @node.loading?, do: "polite", else: nil}
             >
               <.icon
                 :if={@node.loading?}

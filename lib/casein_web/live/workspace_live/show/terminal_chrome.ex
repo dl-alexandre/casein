@@ -11,6 +11,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   use CaseinWeb, :html
 
   import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
+  alias CaseinWeb.WorkspaceLive.Show.UI
 
   alias Casein.Previews.OwnOrigin
   alias Casein.Terminals
@@ -675,7 +676,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
         </div>
       <% true -> %>
         <div class="flex h-full w-full items-center justify-center text-xs text-zinc-500">
-          starting terminal…
+          <UI.async_wait id="terminal-starting" class="text-xs text-zinc-500">
+            Starting terminal…
+          </UI.async_wait>
         </div>
     <% end %>
     """
@@ -1045,7 +1048,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
               />
             <% else %>
               <div class="flex h-full items-center justify-center font-mono text-xs text-zinc-500">
-                Loading scrollback…
+                <UI.async_wait id="pane-history-loading" class="font-mono text-xs text-zinc-500">
+                  Loading scrollback…
+                </UI.async_wait>
               </div>
             <% end %>
           </div>

@@ -345,6 +345,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:file_error, nil)
         |> assign(:save_error, nil)
         |> assign(:git_status, [])
+        # false until :load_side_panels / :refresh_git_status settles (#732).
+        |> assign(:git_status_ready?, false)
+        |> assign(:side_panels_ready?, false)
         |> assign(:file_diff, nil)
         |> assign(:active_run, nil)
         |> assign(:review_commands, [])
@@ -1690,10 +1693,19 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     # expanded directories or created files meanwhile. Merge with the live
     # tree winning per key so those interactions aren't clobbered.
     tree = Map.merge(data.tree, socket.assigns.tree)
-    {:noreply, assign(socket, git_status: data.git_status, tree: tree)}
+
+    {:noreply,
+     assign(socket,
+       git_status: data.git_status,
+       tree: tree,
+       side_panels_ready?: true,
+       git_status_ready?: true
+     )}
   end
 
-  def handle_async(:load_side_panels, _result, socket), do: {:noreply, socket}
+  def handle_async(:load_side_panels, _result, socket) do
+    {:noreply, assign(socket, side_panels_ready?: true, git_status_ready?: true)}
+  end
 
   @impl true
   def handle_async(:agents_mount, {:ok, data}, socket) do
@@ -1724,10 +1736,12 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_async(:agents_mount, _result, socket), do: {:noreply, socket}
 
   def handle_async(:refresh_git_status, {:ok, entries}, socket) do
-    {:noreply, assign(socket, :git_status, entries)}
+    {:noreply, assign(socket, git_status: entries, git_status_ready?: true)}
   end
 
-  def handle_async(:refresh_git_status, _result, socket), do: {:noreply, socket}
+  def handle_async(:refresh_git_status, _result, socket) do
+    {:noreply, assign(socket, :git_status_ready?, true)}
+  end
 
   def handle_async(:workspace_summaries, {:ok, summaries}, socket) do
     # Fresh summaries can surface workspaces the open-time warm never saw (the
@@ -1788,7 +1802,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
      |> assign(:search_state, {:error, reason})}
   end
 
-  def handle_async(:run_search, {:exit, _reason}, socket), do: {:noreply, socket}
+  def handle_async(:run_search, {:exit, _reason}, socket) do
+    {:noreply, assign(socket, :search_state, :idle)}
+  end
 
   def handle_async(:saved_session_templates, {:ok, {tags, templates}}, socket) do
     socket =
@@ -2569,6 +2585,8 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       flash={@flash}
       focused_pane_id={@focused_pane_id}
       git_status={@git_status}
+      git_status_ready?={@git_status_ready?}
+      side_panels_ready?={@side_panels_ready?}
       grok_permission_requests={@grok_permission_requests}
       history_error={@history_error}
       history_form={@history_form}

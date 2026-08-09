@@ -12,6 +12,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
   alias Casein.Links.Markdown
   alias Casein.Search
+  alias CaseinWeb.WorkspaceLive.Show.UI
 
   attr :host_loc, :any, required: true, doc: "{:ok, loc} | error tuple from HostLoc"
   attr :selected_dir, :string, required: true
@@ -36,6 +37,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
   attr :tree_filter, :string,
     default: "",
     doc: "substring/fuzzy filter over visible tree node names"
+
+  attr :side_panels_ready?, :boolean,
+    default: true,
+    doc: "false while :load_side_panels async has not settled (root tree + initial git)"
 
   def files_panel(assigns) do
     ~H"""
@@ -143,7 +148,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
             <%= if @tree_error do %>
               <p class="text-xs text-red-700">{@tree_error}</p>
             <% end %>
-            <.tree_node tree={@tree} selected_dir={@selected_dir} tree_filter={@tree_filter} path="" />
+            <.tree_node
+              tree={@tree}
+              selected_dir={@selected_dir}
+              tree_filter={@tree_filter}
+              path=""
+              side_panels_ready?={@side_panels_ready?}
+            />
             <.project_card project_meta={@project_meta} tooling={@tooling} />
             <.symbols_panel open_file={@open_file} file_symbols={@file_symbols} />
           <% _ -> %>
@@ -267,6 +278,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
   attr :tree_filter, :string, default: ""
   attr :path, :string, required: true, doc: "tree node path; root is \"\""
 
+  attr :side_panels_ready?, :boolean,
+    default: true,
+    doc: "false while initial root hydration is still in flight"
+
   # Recursive file-tree node. Attr-contracted so a selected_dir-only change
   # does not force the symbols panel (or project card) to re-render.
   defp tree_node(assigns) do
@@ -281,7 +296,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
           other
       end
 
-    assigns = assign(assigns, :node, %{path: assigns.path, state: state})
+    # Root stays collapsed until :load_side_panels expands it. Nested paths
+    # that are still collapsed are user-closed dirs, not hydration waits —
+    # never flash a spinner on those.
+    waiting_root? =
+      assigns.path == "" and not match?({:expanded, _}, state) and
+        assigns.side_panels_ready? != true
+
+    assigns =
+      assigns
+      |> assign(:node, %{path: assigns.path, state: state})
+      |> assign(:waiting_root?, waiting_root?)
 
     ~H"""
     <%= case @node.state do %>
@@ -322,6 +347,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                       selected_dir={@selected_dir}
                       tree_filter={@tree_filter}
                       path={e.rel_path}
+                      side_panels_ready?={@side_panels_ready?}
                     />
                   <% end %>
                 <% _ -> %>
@@ -340,7 +366,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
           <% end %>
         </ul>
       <% _ -> %>
-        <p class="text-xs text-zinc-400">(loading…)</p>
+        <%= if @waiting_root? do %>
+          <UI.async_wait id="files-tree-loading" class="text-xs text-zinc-400">
+            Reading the file tree…
+          </UI.async_wait>
+        <% end %>
     <% end %>
     """
   end
@@ -402,7 +432,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
   attr :search_query, :string, required: true
   attr :search_results, :list, required: true
-  attr :search_state, :any, required: true, doc: ":idle | :empty | :ok | {:error, reason}"
+
+  attr :search_state, :any,
+    required: true,
+    doc: ":idle | :running | :empty | :ok | {:error, reason}"
 
   def search_panel(assigns) do
     grouped =
@@ -441,6 +474,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
         <p class="text-xs text-zinc-500">
           Type {Search.min_query()}+ chars and press Enter. Searches the workspace via <code>rg</code>; results are PathSafety-checked.
         </p>
+        """
+
+      :running ->
+        ~H"""
+        <UI.async_wait id="search-running" class="text-xs text-zinc-500">
+          Searching the workspace…
+        </UI.async_wait>
         """
 
       :empty ->
@@ -505,6 +545,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
   attr :open_file, :any, required: true
   attr :file_diff, :any, required: true, doc: "unified diff string | nil"
 
+  attr :git_status_ready?, :boolean,
+    default: true,
+    doc: "false while git status async has not settled"
+
   def diff_panel(assigns) do
     ~H"""
     <section class="flex flex-col gap-3 min-h-0 lg:flex-row lg:h-[calc(100dvh-14rem)] lg:min-h-[20rem]">
@@ -513,27 +557,32 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
           Changes
           <span class="ml-1 text-density-label font-mono text-zinc-400">{length(@git_status)}</span>
         </h3>
-        <%= if @git_status == [] do %>
-          <p class="text-sm text-zinc-500">No changes.</p>
-        <% else %>
-          <ul class="text-xs space-y-0.5 overflow-auto pr-1 max-h-48 lg:max-h-none lg:flex-1 lg:min-h-0">
-            <%= for e <- @git_status do %>
-              <li>
-                <button
-                  type="button"
-                  phx-click="annotation:open"
-                  phx-value-path={e.path}
-                  class={[
-                    "w-full rounded px-2 py-1 text-left font-mono transition hover:bg-zinc-100 flex items-center gap-2",
-                    @open_file && @open_file.path == e.path && "bg-zinc-100 border border-zinc-300"
-                  ]}
-                >
-                  <span class={git_status_badge_class(e.x, e.y)}>{e.x}{e.y}</span>
-                  <span class="truncate">{e.path}</span>
-                </button>
-              </li>
-            <% end %>
-          </ul>
+        <%= cond do %>
+          <% not @git_status_ready? and @git_status == [] -> %>
+            <UI.async_wait id="diff-git-loading" class="text-sm text-zinc-500">
+              Querying git…
+            </UI.async_wait>
+          <% @git_status == [] -> %>
+            <p class="text-sm text-zinc-500">No changes.</p>
+          <% true -> %>
+            <ul class="text-xs space-y-0.5 overflow-auto pr-1 max-h-48 lg:max-h-none lg:flex-1 lg:min-h-0">
+              <%= for e <- @git_status do %>
+                <li>
+                  <button
+                    type="button"
+                    phx-click="annotation:open"
+                    phx-value-path={e.path}
+                    class={[
+                      "w-full rounded px-2 py-1 text-left font-mono transition hover:bg-zinc-100 flex items-center gap-2",
+                      @open_file && @open_file.path == e.path && "bg-zinc-100 border border-zinc-300"
+                    ]}
+                  >
+                    <span class={git_status_badge_class(e.x, e.y)}>{e.x}{e.y}</span>
+                    <span class="truncate">{e.path}</span>
+                  </button>
+                </li>
+              <% end %>
+            </ul>
         <% end %>
       </aside>
 
