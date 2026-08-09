@@ -10,10 +10,10 @@ defmodule Casein.Agents.TerminalToolsActionTest do
   alias Casein.Agents.TerminalTools
 
   describe "definitions/0" do
-    test "exposes 20 terminal tools plus annotation tools" do
+    test "exposes 25 terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 22
+      assert length(names) == 27
 
       for expected <- [
             "terminal_list_sessions",
@@ -26,9 +26,14 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_send_agent_keys",
             "terminal_send_agent_command",
             "terminal_paste_agent_text",
+            "terminal_set_next_prompt",
+            "terminal_clear_next_prompt",
+            "terminal_get_next_prompt",
             "terminal_send_keys",
             "terminal_send_command",
+            "terminal_bind_issue",
             "file_open_in_pane",
+            "diff_open",
             "terminal_set_agent_label",
             "terminal_report_worktree",
             "terminal_report_agent_state",
@@ -72,6 +77,19 @@ defmodule Casein.Agents.TerminalToolsActionTest do
       assert tool.metadata.mutation? == true
       assert tool.metadata.danger_level == :medium
       assert :opens_file_surface in tool.metadata.policy_tags
+    end
+
+    test "diff_open is one-shot intent: workspace_id only, no placement props" do
+      tool = definition("diff_open")
+
+      assert tool.parameters.required == ["workspace_id"]
+      assert tool.parameters.properties.path.type == "string"
+      refute Map.has_key?(tool.parameters.properties, :placement)
+      refute Map.has_key?(tool.parameters.properties, :pane_id)
+      refute Map.has_key?(tool.parameters.properties, :size)
+      assert tool.metadata.mutation? == true
+      assert tool.metadata.danger_level == :low
+      assert :surfaces_diff_viewport in tool.metadata.policy_tags
     end
 
     test "terminal_topology definition pins session as required on the wire" do

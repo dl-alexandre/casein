@@ -12,7 +12,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   so switching sessions re-styles tabs without rebuilding the list.
   """
 
-  alias Casein.Attention.Policy, as: AttentionPolicy
+  alias Casein.Attention.Delivery
   alias Casein.Labels
   alias Casein.Terminals
   alias Casein.Terminals.AgentState
@@ -632,7 +632,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   Stable-partitions session rows for attention-first rendering.
 
   Within the `:needs_you` section, rows are ordered by urgency (blocked/error
-  before completed before quiet) so the most actionable sessions rise to the
+  before completed before idle) so the most actionable sessions rise to the
   top; the `:working` and `:recent` sections keep their incoming order.
   """
   @spec session_attention_groups([map()]) :: [{Attention.section(), [map()]}]
@@ -653,19 +653,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   defp order_within_section(_section, rows), do: rows
 
   @doc """
-  Urgency rank for a needs-you row: lower sorts first. Blocked and lifecycle
-  errors are the most actionable, then completed agents awaiting review, then
-  quiet windows.
+  Urgency rank for a needs-you row: lower sorts first.
+
+  Threshold order lives in `Casein.Attention.Delivery.session_reason_urgency/1`.
   """
   @spec tab_reason_rank(map()) :: non_neg_integer()
   def tab_reason_rank(session) when is_map(session) do
-    case Map.get(session, :attention_reason) do
-      :blocked -> 0
-      :error -> 0
-      :completed -> 1
-      :quiet -> 2
-      _ -> 3
-    end
+    Delivery.session_reason_urgency(Map.get(session, :attention_reason))
   end
 
   @doc """
@@ -1415,11 +1409,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   defp normalized_agent_state("stalled"), do: :stalled
   defp normalized_agent_state(_state), do: nil
 
-  # `Attention.classify/1` consumes directory-shaped windows (`:quiet`), while
-  # tab windows carry `:quiet?` — map them back so quiet sessions reach
-  # :needs_you the same way SessionDirectory-side callers do.
+  # Map tab windows (`:quiet?`) back to directory shape (`:quiet`) and classify
+  # via the shared Delivery projection — no local importance definition.
   defp tab_attention_classification(info, windows) do
-    Attention.classify(%{
+    Delivery.classify_session(%{
       status: Map.get(info, :status),
       windows: Enum.map(windows, &%{agent_state: &1.agent_state, quiet: &1.quiet?})
     })
@@ -1529,21 +1522,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   defp window_quiet_label(:ready), do: "Agent pane ready or awaiting input"
   defp window_quiet_label(_state), do: "Agent pane quiet; likely finished or awaiting input"
 
-  defp quiet_attention(_quiet?, true), do: "unseen"
+  defp quiet_attention(quiet?, unseen_quiet?),
+    do: Delivery.window_chrome_attention(quiet? == true, unseen_quiet? == true)
 
-  defp quiet_attention(quiet?, false) do
-    %{quiet?: quiet?}
-    |> AttentionPolicy.quiet_agent_window()
-    |> AttentionPolicy.reaction_label()
-  end
-
-  defp session_quiet_attention(_quiet_count, unseen_quiet_count) when unseen_quiet_count > 0,
-    do: "unseen"
-
-  defp session_quiet_attention(quiet_count, _unseen_quiet_count) when quiet_count > 0,
-    do: "inline"
-
-  defp session_quiet_attention(_quiet_count, _unseen_quiet_count), do: "nothing"
+  defp session_quiet_attention(quiet_count, unseen_quiet_count),
+    do: Delivery.chrome_attention_label(unseen_quiet_count || 0, quiet_count || 0)
 
   @type pane_tab :: %{
           id: String.t(),

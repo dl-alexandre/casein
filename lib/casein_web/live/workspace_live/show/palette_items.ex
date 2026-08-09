@@ -7,34 +7,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
   alias Casein.CommandPalette.Usage
   alias Casein.Previews
   alias Casein.Terminals
+  alias CaseinWeb.WorkspaceLive.Show.ActionAvailability
+  alias CaseinWeb.WorkspaceLive.Show.LeaderBindings
   alias CaseinWeb.WorkspaceLive.Show.TerminalState
   alias CaseinWeb.WorkspaceLive.Show.WindowTerminalMode
 
   @max_results 50
-
-  @single_pane_hidden_ids ~w(
-    tmux:next_pane
-    tmux:previous_pane
-    tmux:swap_previous
-    tmux:swap_next
-    tmux:close_other_panes
-    tmux:cycle_layout
-    tmux:equalize
-  )
-
-  # Static items whose handlers deny via the tmux-mutation gate — hidden when
-  # mutations are disallowed so the palette never offers a permanently-failing
-  # action (and habit-recording can't boost one; see PaletteEvents).
-  @mutation_gated_ids ~w(
-    tmux:new_window
-    tmux:consolidate_sessions
-    tmux:swap_previous
-    tmux:swap_next
-    agents:apply_pair
-  )
-
-  @doc "Static item ids whose dispatch is denied when tmux mutations are off."
-  def mutation_gated_ids, do: @mutation_gated_ids
 
   @spec query(map(), String.t() | nil) :: [PaletteItem.t()]
   def query(socket, q) do
@@ -53,6 +31,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
       |> CommandPalette.query(query, category: category, usage: usage, now: now)
       |> relabel_terminal_mode_items(socket)
       |> filter_static_tmux(socket, query)
+      |> LeaderBindings.decorate()
 
     dynamic_items =
       (workflow_items(socket, query, category) ++
@@ -223,21 +202,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
     end
   end
 
+  # Availability is decided by ActionAvailability, the same module the chrome
+  # buttons and the C-b leader map consult — so the palette cannot offer an
+  # action whose handler would deny it, and cannot hide one the chrome still
+  # shows. `relevant?` (the single-pane rule) applies to the default listing
+  # only: typing a query is evidence the user wants the action anyway.
   defp filter_static_tmux(items, socket, query) do
+    ctx = ActionAvailability.context(socket)
+
     items
+    |> Enum.filter(&ActionAvailability.item_available?(&1, ctx))
     |> then(fn items ->
-      if single_pane?(socket) and query == "" do
-        Enum.reject(items, &(&1.id in @single_pane_hidden_ids))
-      else
-        items
-      end
-    end)
-    |> then(fn items ->
-      if TerminalState.tmux_mutations_allowed?(socket) do
-        items
-      else
-        Enum.reject(items, &(&1.id in @mutation_gated_ids))
-      end
+      if query == "",
+        do: Enum.filter(items, &ActionAvailability.item_relevant?(&1, ctx)),
+        else: items
     end)
   end
 
@@ -318,7 +296,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
               category: :tmux,
               label: "Return to workspace shell",
               detail: "Switch back to the default terminal session",
-              hint: "C-b d",
+              hint: LeaderBindings.hint_for_action("detach"),
               score: score + 1_800,
               payload: %{event: "terminal:switch_to_shell", params: %{}}
             }
@@ -545,6 +523,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
 
   defp template_items(_socket, _query, _category), do: []
 
+  # Still used by pane_items/3 to skip per-pane rows on a single-pane window.
+  # The palette's single-pane *filtering* rule now lives in
+  # ActionAvailability.relevant?/2.
+  defp single_pane?(socket) do
+    length(socket.assigns[:tmux_panes] || []) <= 1
+  end
+
   defp pane_items(socket, query, category) when category in [:all, :tmux] do
     if single_pane?(socket) do
       []
@@ -584,7 +569,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
           category: :tmux,
           label: "Rename window: " <> window.name,
           detail: "Open inline rename for the active tmux window",
-          hint: "C-b ,",
+          hint: LeaderBindings.hint_for_action("rename-window"),
           score: score,
           payload: %{event: "tmux:rename_start", params: %{"window-id" => window.id}}
         }
@@ -608,7 +593,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
           category: :tmux,
           label: "Rename session: " <> label,
           detail: "Open inline rename for the current session",
-          hint: "C-b $",
+          hint: LeaderBindings.hint_for_action("rename-session"),
           score: score,
           payload: %{event: "terminal:rename_session_start", params: %{"session-id" => sid}}
         }
@@ -770,10 +755,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
 
   defp window_known?(socket, window_id) do
     Enum.any?(socket.assigns[:tmux_window_tabs] || [], &(&1.id == window_id))
-  end
-
-  defp single_pane?(socket) do
-    length(socket.assigns[:tmux_panes] || []) <= 1
   end
 
   defp get_session_template(socket, template_id) do

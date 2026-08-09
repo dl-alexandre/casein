@@ -104,6 +104,15 @@ config :casein,
        :deployment_instance_dir,
        Path.join(System.tmp_dir!(), "casein-test-instances-#{System.pid()}")
 
+# Submit confirmation polls a live pane and deliberately sleeps between Enter
+# presses. Production waits ~1.2s per attempt; a suite that paid that per send
+# would add minutes. The timings are the only thing shortened — the confirmation
+# logic itself is exercised as-is, with tests injecting a :capture function.
+config :casein, :pane_submit,
+  settle_ms: 0,
+  poll_ms: 1,
+  attempt_timeout_ms: 5
+
 # Never probe the Caddy admin API (http://localhost:2019) from tests.
 # Casein.Deployment.Health.status/1 is reached by /api/workspaces/:id/status,
 # pane mutations, and template export (all call Export.status first). On the

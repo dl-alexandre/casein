@@ -78,16 +78,11 @@ defmodule Casein.CommandPalette.ActionsTest do
       assert %{payload: %{event: "snapshot_all"}} = by_id["action:snapshot_all"]
     end
 
-    test "annotates leader-bound items with shortcut hints", %{items: items} do
-      by_id = Map.new(items, &{&1.id, &1})
-
-      assert by_id["tmux:zoom"].hint == "C-b z"
-      assert by_id["tmux:swap_previous"].hint == "C-b {"
-      assert by_id["tmux:swap_next"].hint == "C-b }"
-      assert by_id["tmux:split_right"].hint == "C-b %"
-      assert by_id["tmux:new_window"].hint == "C-b c"
-      # No leader binding — no hint.
-      assert by_id["tmux:consolidate_sessions"].hint == nil
+    test "carries no leader hints — bindings are a web-tier concern", %{items: items} do
+      # Hints moved to CaseinWeb.WorkspaceLive.Show.LeaderBindings, which
+      # decorates items on their way to the palette; the domain may not depend
+      # on the web tier. See LeaderBindingsTest for the hint assertions.
+      assert Enum.all?(items, &is_nil(&1.hint))
     end
 
     test "labels commands from their argv and hides the dogfood fixture", %{items: items} do
@@ -114,6 +109,13 @@ defmodule Casein.CommandPalette.ActionsTest do
       item = Enum.find(view, &(&1.id == "view:window_sidebar"))
       assert item.payload.event == "sidebar:open"
       assert item.payload.params == %{"mode" => "windows"}
+    end
+
+    test "includes the diff inspector open action", %{items: items} do
+      item = Enum.find(items, &(&1.id == "diff:open_in_pane"))
+      assert item
+      assert item.payload.event == "diff:open_in_pane"
+      assert item.category == :view
     end
   end
 

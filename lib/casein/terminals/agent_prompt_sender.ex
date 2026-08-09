@@ -60,6 +60,11 @@ defmodule Casein.Terminals.AgentPromptSender do
     * `:name_window` - `:agent_role` (default), `:always`, or `false`. Renames
       the containing window only when the target pane is role-marked `agent`
       unless `:always` is supplied.
+    * `:name_pane` - `:if_unfrozen` (default) or `false`. Derives the pane label
+      from the prompt title. Pass `false` for follow-up sends into a pane that
+      is already working on something named: a mid-task nudge ("also run the
+      tests") is not a new title, and letting it win renames the pane away from
+      the task it is actually doing.
   """
   @spec send_prompt(String.t(), String.t(), String.t(), keyword()) ::
           {:ok, result()} | {:error, map()}
@@ -353,7 +358,15 @@ defmodule Casein.Terminals.AgentPromptSender do
   defp maybe_set_pane_label(_session, _pane, _title, %{chunks: []}, _opts), do: :skipped
   defp maybe_set_pane_label(_session, _pane, nil, _plan, _opts), do: :skipped
 
-  defp maybe_set_pane_label(session, pane, title, _plan, opts) do
+  defp maybe_set_pane_label(session, pane, title, plan, opts) do
+    if Keyword.get(opts, :name_pane, :if_unfrozen) == false do
+      :skipped
+    else
+      set_pane_label(session, pane, title, plan, opts)
+    end
+  end
+
+  defp set_pane_label(session, pane, title, _plan, opts) do
     case Keyword.get(opts, :workspace_id) do
       workspace_id when is_binary(workspace_id) and workspace_id != "" ->
         case Labels.get(session, pane) do

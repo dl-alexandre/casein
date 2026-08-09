@@ -1,14 +1,18 @@
 defmodule Casein.Mobile.AttentionInbox do
   @moduledoc """
-  Deterministic attention ranking, bounded lifecycle projection, and durable
-  meaningful-transition read markers for the mobile companion.
+  Bounded lifecycle projection and durable meaningful-transition read markers
+  for the mobile companion.
 
-  This is a projection over existing cards and audited runtime facts. It is not
-  a task database and never authorizes domain mutations.
+  **Ranking / salience** live in `Casein.Attention.Salience` (one shared
+  definition for every surface). This module is a mobile envelope over that
+  model plus lifecycle history and cursors — not a second ranker and not a task
+  database. It never authorizes domain mutations.
   """
 
   import Ecto.Query
 
+  alias Casein.Attention.{Salience, Signal}
+  alias Casein.Attention.Acknowledgement
   alias Casein.Mobile.{AttentionCursor, AttentionTransition, ResumeCard}
   alias Casein.Origin
   alias Casein.Repo
@@ -19,14 +23,7 @@ defmodule Casein.Mobile.AttentionInbox do
   @card_limit 100
   @retained_per_card 50
   @retained_per_origin 2_000
-  @meaningful_actions ~w(
-    run.started run.approval_requested run.approval_granted run.approval_denied
-    run.succeeded run.failed run.timed_out
-    agent.blocked agent.state_changed
-    gate.passed gate.failed
-    proposal.applied proposal.apply_failed
-    deploy.started deploy.succeeded deploy.failed
-  )
+  @meaningful_actions Signal.meaningful_actions()
   @event_labels %{
     "run.started" => "Work started",
     "run.approval_requested" => "Decision requested",
@@ -128,7 +125,8 @@ defmodule Casein.Mobile.AttentionInbox do
       AttentionCursor
       |> where(
         [c],
-        c.user_id == ^user_id and c.origin_id == ^origin_id and c.card_id in ^card_ids
+        c.user_id == ^user_id and c.origin_id == ^origin_id and c.subject_kind == "card" and
+          c.card_id in ^card_ids
       )
       |> Repo.all()
       |> Map.new(&{&1.card_id, &1})
@@ -182,7 +180,7 @@ defmodule Casein.Mobile.AttentionInbox do
     lifecycle = lifecycle(Enum.reverse(lifecycle_transitions))
     latest = latest_transition(card, lifecycle)
     ranking = ranking(card, resume, latest)
-    unresolved? = unresolved_needs_me?(card, ranking)
+    unresolved? = Casein.Attention.Delivery.needs_me_pin?(card)
     unread_count = Keyword.get(opts, :unread_count, length(unread))
 
     %{
@@ -197,8 +195,10 @@ defmodule Casein.Mobile.AttentionInbox do
       # This is deliberately independent of the read cursor. Viewing only
       # acknowledges delivery; an authoritative handled/resolved card state (or
       # removal from the observer) is what releases a Needs Me request.
+      # Pin threshold: Casein.Attention.Delivery.needs_me_pin?/1
       unresolved?: unresolved?,
       pin: if(unresolved?, do: "needs_me", else: nil),
+      # notify bit from Salience; eligibility floor is Delivery.notify_eligible?/1
       notify: ranking.notify,
       changed_at: transition_value(latest, :occurred_at) || card.updated_at,
       notification_group: "#{origin_id}:#{key(card)}:#{ranking.reason_code}",
@@ -215,77 +215,22 @@ defmodule Casein.Mobile.AttentionInbox do
   end
 
   @doc """
-  Atomically advance the shared per-user/origin/card cursor to an exact
+  Atomically advance the shared per-user/origin/card SEEN watermark to an exact
   server-issued marker. A lower concurrent marker can never reset it.
+
+  Delegates to `Casein.Attention.Acknowledgement` so phone SEEN settles the
+  drawer (and other surfaces) for the same subject.
   """
   def mark_viewed(user_id, origin_id, card_id, marker, opts \\ [])
 
   def mark_viewed(user_id, origin_id, card_id, marker, opts)
       when is_binary(user_id) and is_binary(origin_id) and is_binary(card_id) and
              is_integer(marker) and marker > 0 do
-    if store_enabled?() do
-      do_mark_viewed(user_id, origin_id, card_id, marker, opts)
-    else
-      {:error, :attention_store_unavailable}
-    end
+    Acknowledgement.mark_card_seen_through(user_id, origin_id, card_id, marker, opts)
   end
 
   def mark_viewed(_user_id, _origin_id, _card_id, _marker, _opts),
     do: {:error, :invalid_attention_marker}
-
-  defp do_mark_viewed(user_id, origin_id, card_id, marker, opts) do
-    now = Keyword.get(opts, :now, DateTime.utc_now())
-
-    Repo.transaction(fn ->
-      transition =
-        Repo.one(
-          from t in AttentionTransition,
-            where:
-              t.id == ^marker and t.user_id == ^user_id and t.origin_id == ^origin_id and
-                t.card_id == ^card_id
-        )
-
-      if is_nil(transition), do: Repo.rollback(:invalid_attention_marker)
-
-      attrs = %{
-        user_id: user_id,
-        origin_id: origin_id,
-        card_id: card_id,
-        through_transition_id: marker,
-        viewed_at: now
-      }
-
-      %AttentionCursor{}
-      |> AttentionCursor.changeset(attrs)
-      |> Repo.insert(
-        on_conflict: :nothing,
-        conflict_target: [:user_id, :origin_id, :card_id]
-      )
-
-      cursor_query =
-        from c in AttentionCursor,
-          where: c.user_id == ^user_id and c.origin_id == ^origin_id and c.card_id == ^card_id
-
-      cursor =
-        if Atom.to_string(Repo.__adapter__()) == "Elixir.Ecto.Adapters.SQLite3" do
-          Repo.one!(cursor_query)
-        else
-          cursor_query |> lock("FOR UPDATE") |> Repo.one!()
-        end
-
-      if marker > cursor.through_transition_id do
-        cursor
-        |> AttentionCursor.changeset(%{through_transition_id: marker, viewed_at: now})
-        |> Repo.update!()
-      else
-        cursor
-      end
-    end)
-    |> case do
-      {:ok, cursor} -> {:ok, cursor}
-      {:error, reason} -> {:error, reason}
-    end
-  end
 
   @doc """
   Stable lifecycle/read key. Typed task identity wins; a session is a scoped
@@ -364,101 +309,17 @@ defmodule Casein.Mobile.AttentionInbox do
   end
 
   defp ranking(card, resume, latest) do
-    source = normalized(nested(card, [:meta, :source]))
-    reason = normalized(nested(card, [:meta, :reason]))
-    status = normalized(Map.get(card, :status))
-    transition_action = transition_value(latest, :action)
-    transition_state = transition_value(latest, :state)
-    transition_phase = transition_value(latest, :phase)
-
-    cond do
-      normalized(Map.get(card, :type)) == "clarification" or
-        (resume.state == "needs_attention" and resume.phase == "waiting") or
-        transition_action == "agent.blocked" or transition_state == "needs_attention" or
-        source == "agent.blocked" or String.contains?(reason, "blocked") ->
-        rank("critical", 700, "human_blocked", "Agent is blocked on you", "Respond", true)
-
-      transition_action == "run.approval_requested" or
-          (resume.state == "needs_attention" and resume.phase == "review") ->
-        rank("critical", 680, "review_requested", "A review decision is waiting", "Review", true)
-
-      transition_action == "deploy.failed" or
-          (resume.phase == "deploying" and status in ~w(failed error)) ->
-        rank(
-          "high",
-          580,
-          "deployment_failed",
-          "Deployment reported a failure",
-          "Inspect deployment",
-          true
-        )
-
-      transition_action in ~w(run.failed run.timed_out gate.failed proposal.apply_failed) or
-        transition_state == "failed" or resume.state == "failed" or
-          status in ~w(failed timed_out timeout error) ->
-        rank(
-          "high",
-          560,
-          if(transition_action == "gate.failed", do: "checks_failed", else: "failure"),
-          if(transition_action == "gate.failed",
-            do: "Required checks reported a failure",
-            else: "Work ended with a reported failure"
-          ),
-          if(transition_action == "gate.failed", do: "Inspect checks", else: "Inspect failure"),
-          true
-        )
-
-      transition_action == "deploy.succeeded" or
-          (resume.phase == "deploying" and resume.state == "completed") ->
-        rank(
-          "normal",
-          430,
-          "deployment_completed",
-          "Deployment reported completion",
-          "Review outcome",
-          true
-        )
-
-      transition_state in ~w(ready_to_review completed) or
-          resume.state in ~w(ready_to_review completed) ->
-        rank(
-          "normal",
-          400,
-          "completed_ready",
-          "Work is ready for your review",
-          "Review outcome",
-          true
-        )
-
-      resume.availability != "live" ->
-        rank("low", 180, "offline_resumable", "Last-known context is offline", nil, false)
-
-      transition_state == "working" or transition_phase in ~w(executing testing deploying) or
-          resume.state == "working" ->
-        rank("low", 120, "working", "Work is still in progress", nil, false)
-
-      true ->
-        rank("low", 80, "informational", "No immediate decision is required", nil, false)
-    end
-  end
-
-  defp rank(priority, value, reason_code, explanation, required_decision, notify) do
-    %{
-      priority: priority,
-      rank: value,
-      reason_code: reason_code,
-      explanation: explanation,
-      required_decision: required_decision,
-      notify: notify
-    }
-  end
-
-  defp unresolved_needs_me?(card, _ranking) do
-    type = normalized(Map.get(card, :type))
-    status = normalized(Map.get(card, :status))
-
-    type in ~w(clarification needs_review) and
-      status not in ~w(resolved done handled dismissed)
+    card
+    |> Salience.facts_from_card(resume, latest)
+    |> Salience.compute()
+    |> Map.take([
+      :priority,
+      :rank,
+      :reason_code,
+      :explanation,
+      :required_decision,
+      :notify
+    ])
   end
 
   defp reason_code(_card, event_action, resume) do
@@ -663,10 +524,6 @@ defmodule Casein.Mobile.AttentionInbox do
   end
 
   defp normalize_action(_action), do: "mobile.card_changed"
-
-  defp normalized(nil), do: ""
-  defp normalized(value) when is_atom(value), do: value |> Atom.to_string() |> normalized()
-  defp normalized(value), do: value |> to_string() |> String.trim() |> String.downcase()
 
   defp bounded(nil), do: nil
   defp bounded(value) when is_binary(value), do: value |> String.trim() |> String.slice(0, 240)

@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.SendCommand do
   use Jido.Action,
     name: "terminal_send_command",
     description:
-      "Type a shell command into a pane and press Enter. Target the agent pane from terminal_topology — do not use the operator's focused pane. Read the result afterward with terminal_capture.",
+      "Type a shell command into a pane and press Enter. Target the agent pane from terminal_topology — do not use the operator's focused pane. Read the result afterward with terminal_capture. A git command that would write a worktree another pane is also working in is refused (shared_worktree_mutation); pass allow_shared_worktree when the sharing is deliberate.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",
@@ -12,7 +12,8 @@ defmodule Casein.Agents.TerminalTools.SendCommand do
       workspace_id: [type: :string],
       session: [type: :string, required: true],
       command: [type: :string, required: true],
-      pane: [type: :string]
+      pane: [type: :string],
+      allow_shared_worktree: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction
@@ -27,7 +28,8 @@ defmodule Casein.Agents.TerminalTools.SendCommand do
         Map.merge(Helpers.workspace_props(), %{
           session: Helpers.session_param(),
           command: Helpers.command_param(),
-          pane: Helpers.pane_param()
+          pane: Helpers.pane_param(),
+          allow_shared_worktree: Helpers.allow_shared_worktree_param()
         }),
         ["session", "command"]
       )

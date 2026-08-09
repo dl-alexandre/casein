@@ -6,6 +6,7 @@ defmodule Casein.Terminals.AgentState.Server do
   alias Casein.Agents.{Activity, AgentEvents}
   alias Casein.Audit
   alias Casein.Export.Sanitizer
+  alias Casein.Runs.AgentLifecycle
   alias Phoenix.PubSub
 
   @topic_prefix "agent_state:"
@@ -163,6 +164,8 @@ defmodule Casein.Terminals.AgentState.Server do
           maybe_emit_state_changed(prior_state, entry, tmux_session, pane_id)
           record_transition(prior_state, entry, tmux_session, pane_id)
           maybe_emit_blocked(prior_state, entry, tmux_session, pane_id)
+          # Lifecycle altitude: Ledger write lives in AgentLifecycle, not here.
+          maybe_observe_lifecycle(prior_state, entry, tmux_session, pane_id)
         end)
 
         {:noreply, state}
@@ -240,6 +243,29 @@ defmodule Casein.Terminals.AgentState.Server do
   end
 
   defp maybe_emit_blocked(_prior_state, _entry, _tmux_session, _pane_id), do: :ok
+
+  # Only real transitions feed the Run bracket. Identical re-reports are
+  # absorbed above, so this stays at lifecycle altitude rather than tool-call.
+  defp maybe_observe_lifecycle(prior_state, entry, tmux_session, pane_id)
+       when is_binary(entry.workspace_id) do
+    if prior_state == nil or prior_state != entry.state do
+      AgentLifecycle.observe_state(%{
+        workspace_id: entry.workspace_id,
+        tmux_session: tmux_session,
+        pane_id: pane_id,
+        state: entry.state,
+        message: entry.message,
+        tool: entry.tool,
+        agent_session_id: entry.agent_session_id,
+        source: entry.source,
+        actor_id: "agent"
+      })
+    end
+
+    :ok
+  end
+
+  defp maybe_observe_lifecycle(_prior_state, _entry, _tmux_session, _pane_id), do: :ok
 
   defp prior_state(%{state: state}, _tombstone), do: state
   defp prior_state(nil, %{state: state}), do: state

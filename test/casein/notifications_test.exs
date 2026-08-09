@@ -248,7 +248,8 @@ defmodule Casein.NotificationsTest do
 
     assert {:ok, resolved} = Notifications.resolve(resolved.id, "dev", now: @now)
     refute is_nil(resolved.resolved_at)
-    assert is_nil(resolved.read_at)
+    # Resolve implies SEEN on the shared acknowledgement fact (#698).
+    refute is_nil(resolved.read_at)
 
     assert {:ok, _other_user, :created} =
              Notifications.deliver(
@@ -274,7 +275,8 @@ defmodule Casein.NotificationsTest do
     assert reloaded_a.read_at == @later
     assert reloaded_b.read_at == @later
     assert reloaded_read.read_at == @now
-    assert is_nil(reloaded_resolved.read_at)
+    # Resolve already set read_at; mark_all_read does not touch resolved rows.
+    assert reloaded_resolved.read_at == @now
     assert reloaded_resolved.resolved_at == @now
     assert Notifications.unread_count("dev") == 0
     assert 0 = Notifications.mark_all_read("dev", now: @later)

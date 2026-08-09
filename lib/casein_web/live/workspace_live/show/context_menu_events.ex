@@ -10,6 +10,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuEvents do
   import Phoenix.Component
 
   alias CaseinWeb.WorkspaceLive.Show.ContextMenu
+  alias CaseinWeb.WorkspaceLive.Show.Overlay
 
   def handle_event("ctx:open", %{"menu" => menu, "x" => x, "y" => y} = params, socket)
       when is_binary(menu) do
@@ -23,7 +24,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuEvents do
 
       items ->
         {:reply, %{},
-         assign(socket, :context_menu, %{
+         socket
+         |> Overlay.close_others(:context_menu)
+         |> assign(:context_menu, %{
            menu: menu,
            ctx: ctx,
            x: clamp_coord(x),

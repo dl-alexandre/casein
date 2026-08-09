@@ -65,6 +65,76 @@ defmodule Casein.Agents.TerminalTools.Helpers do
   def submit_param, do: Params.submit()
 
   @doc false
+  def confirm_param do
+    %{
+      type: "boolean",
+      description:
+        "Verify the agent actually consumed the submit (re-pressing Enter once if it did " <>
+          "not) and fail with submit_not_confirmed when it never did. Defaults to true. " <>
+          "Pass false when the keystroke itself is the point — answering a TUI menu or a " <>
+          "y/n prompt, where no new turn starts."
+    }
+  end
+
+  @doc false
+  def next_prompt_text_param do
+    %{
+      type: "string",
+      maxLength: Casein.Terminals.NextPrompt.text_limit(),
+      description:
+        "The message to deliver. Write it as a message to the agent, not as a shell command: " <>
+          "it is pasted into the agent's prompt and submitted."
+    }
+  end
+
+  @doc false
+  def deliver_when_param do
+    %{
+      type: "string",
+      enum: ["next_idle", "next_blocked", "next_done"],
+      description:
+        "Which state edge releases the message. next_idle (default) means the first " <>
+          "transition into idle OR done — read it as \"when the agent stops working\", " <>
+          "which is what every wired runtime actually reports at end of turn. " <>
+          "next_done waits for a completed turn only; next_blocked waits for a permission " <>
+          "prompt or a wedged turn. Nothing here interrupts a working agent."
+    }
+  end
+
+  @doc false
+  def coalesce_key_param do
+    %{
+      type: "string",
+      description:
+        "Your identifier for this message. Only one message can be pending per pane " <>
+          "regardless of key — the key lets you see whether the pending one is still yours " <>
+          "and clear only that."
+    }
+  end
+
+  @doc false
+  def expires_in_seconds_param do
+    %{
+      type: "integer",
+      minimum: 1,
+      description:
+        "Discard the message if it has not been delivered within this many seconds " <>
+          "(default 86400, capped at 604800)."
+    }
+  end
+
+  @doc false
+  def actor_id_param do
+    %{
+      type: "string",
+      description: "Who is sending, for audit attribution (for example an orchestrator name)."
+    }
+  end
+
+  @doc false
+  def allow_shared_worktree_param, do: Params.allow_shared_worktree()
+
+  @doc false
   def since_param do
     %{
       type: "string",
@@ -324,7 +394,50 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       policy_tags: [:agent_pane_only],
       recovery_hints: [
         "Apply the agent_pair template before using agent-pane mutation tools.",
-        "Use terminal_capture_agent after sending input to inspect output."
+        "Use terminal_capture_agent after sending input to inspect output.",
+        "On submit_not_confirmed the text reached the pane but was never submitted — " <>
+          "capture the pane before resending, or use terminal_set_next_prompt if the " <>
+          "agent is mid-turn."
+      ]
+    }
+  end
+
+  # A staged prompt is a deferred pane mutation, so it carries the same
+  # capability as the send tools it defers: a workspace whose agent write is
+  # locked must not be able to arm an injection that fires later.
+  def metadata("terminal_set_next_prompt") do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:terminal_mutation],
+      policy_tags: [:agent_pane_only, :deferred_delivery],
+      recovery_hints: [
+        "Only one message can be pending per pane; setting another replaces it.",
+        "Use terminal_get_next_prompt to see what is already staged.",
+        "Prefer deliver_when: next_done for Claude — its hook reports idle only at " <>
+          "session start/end."
+      ]
+    }
+  end
+
+  def metadata("terminal_clear_next_prompt") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:terminal_metadata],
+      recovery_hints: [
+        "Pass coalesce_key to avoid clearing a message you did not stage."
+      ]
+    }
+  end
+
+  def metadata("terminal_get_next_prompt") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: [
+        "terminal_topology flags panes with pending_next_prompt without a per-pane call."
       ]
     }
   end
@@ -384,9 +497,37 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("diff_open") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:terminal_mutation],
+      policy_tags: [:surfaces_diff_viewport],
+      recovery_hints: [
+        "Pass workspace_id; optional path focuses one file in the diff.",
+        "Do not pass placement, size, position, or pane_id — Casein owns geometry.",
+        "status no_viewer means nobody is watching; that is a correct no-op."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "path" => "lib/foo.ex"
+          },
+          structured_content: %{
+            "status" => "surfaced",
+            "workspace_id" => "ws-1",
+            "path" => "lib/foo.ex"
+          }
+        }
+      ]
+    }
+  end
+
   def metadata(name)
       when name in [
              "terminal_set_agent_label",
+             "terminal_bind_issue",
              "terminal_report_worktree",
              "terminal_report_agent_state",
              "terminal_request_clarification",

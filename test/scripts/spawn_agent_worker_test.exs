@@ -16,14 +16,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
     primary = Path.join(tmp, "primary")
     linked = Path.join(tmp, "linked")
     fakebin = Path.join(tmp, "bin")
+    home = Path.join(tmp, "home")
     File.mkdir_p!(primary)
     File.mkdir_p!(fakebin)
-    env_file = Path.join(tmp, "env.sh")
-
-    File.write!(
-      env_file,
-      "export CASEIN_API_TOKEN='test-token'\nexport CASEIN_WORKSPACE_ID='test-ws'\n"
-    )
+    env_file = stage_session_env!(home, "test", "test-ws")
 
     on_exit(fn -> File.rm_rf!(tmp) end)
 
@@ -41,11 +37,13 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
           {"CASEIN_CHECKOUT", linked},
+          {"HOME", home},
           {"PATH", fakebin <> ":" <> System.get_env("PATH")},
           # Satisfy agent_env_resolve's first branch (already-exported creds) so
           # the script doesn't abort looking for a Casein tmux pane / env file.
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "test"},
           {"CASEIN_AGENT_ENV_FILE", env_file}
         ]
       )
@@ -57,6 +55,61 @@ defmodule Scripts.SpawnAgentWorkerTest do
     refute out =~ ~r{^checkout=\S*/linked$}m
   end
 
+  # The dry-run test above passes even against the broken resolver, because its
+  # fixture has two worktrees: `git worktree list` finishes writing before the
+  # consumer stops reading, so nothing ever gets SIGPIPE'd. On a real checkout
+  # (41 worktrees) git is still emitting when the consumer quits, the pipeline
+  # reports failure under `set -o pipefail`, and the resolver silently returned
+  # the ORCHESTRATOR's worktree — the exact outcome it exists to prevent.
+  #
+  # Reproduce that deterministically with a slow `git` instead of dozens of real
+  # worktrees: emit the primary, flush, then keep writing. Any implementation
+  # that stops reading early fails here.
+  test "primary resolution survives a git that is still writing when parsing stops" do
+    tmp =
+      Path.join(System.tmp_dir!(), "spawn-worker-sigpipe-#{System.unique_integer([:positive])}")
+
+    primary = Path.join(tmp, "primary")
+    linked = Path.join(tmp, "linked")
+    fakebin = Path.join(tmp, "bin")
+    Enum.each([primary, linked, fakebin], &File.mkdir_p!/1)
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(Path.join(fakebin, "git"), """
+    #!/usr/bin/env bash
+    printf 'worktree %s\\nHEAD 0000\\nbranch refs/heads/master\\n\\n' "#{primary}"
+    sleep 0.4
+    for i in $(seq 1 200); do
+      printf 'worktree %s/w$i\\nHEAD 0000\\ndetached\\n\\n' "#{tmp}"
+    done
+    """)
+
+    File.chmod!(Path.join(fakebin, "git"), 0o755)
+
+    resolver =
+      @script
+      |> File.read!()
+      |> then(fn text ->
+        [_, body] = String.split(text, "\nspawn_worker_resolve_primary_checkout() {\n", parts: 2)
+        [body, _] = String.split(body, "\n}\n", parts: 2)
+        "spawn_worker_resolve_primary_checkout() {\n#{body}\n}"
+      end)
+
+    script = """
+    set -euo pipefail
+    #{resolver}
+    spawn_worker_resolve_primary_checkout '#{linked}'
+    """
+
+    {out, 0} =
+      System.cmd("bash", ["-c", script],
+        env: [{"PATH", fakebin <> ":" <> System.get_env("PATH")}]
+      )
+
+    assert String.trim(out) == primary
+    refute String.trim(out) == linked
+  end
+
   test "cross-repo dry run sources pairing env and uses Casein's launcher" do
     tmp =
       Path.join(
@@ -66,7 +119,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     product = Path.join(tmp, "product")
     fakebin = Path.join(tmp, "bin")
-    env_file = Path.join(tmp, "env.sh")
+    home = Path.join(tmp, "home")
     File.mkdir_p!(product)
     File.mkdir_p!(fakebin)
     on_exit(fn -> File.rm_rf!(tmp) end)
@@ -78,10 +131,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: git_env()
       )
 
-    File.write!(
-      env_file,
-      "export CASEIN_API_TOKEN='test-token'\nexport CASEIN_WORKSPACE_ID='test-ws'\n"
-    )
+    env_file = stage_session_env!(home, "test", "test-ws")
 
     File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
     File.chmod!(Path.join(fakebin, "tmux"), 0o755)
@@ -91,8 +141,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
           {"CASEIN_CHECKOUT", product},
+          {"HOME", home},
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "test"},
           {"CASEIN_AGENT_ENV_FILE", env_file},
           {"PATH", fakebin <> ":" <> System.get_env("PATH")}
         ]
@@ -117,8 +169,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     product = Path.join(tmp, "product")
     fakebin = Path.join(tmp, "bin")
+    home = Path.join(tmp, "home")
     File.mkdir_p!(product)
     File.mkdir_p!(fakebin)
+    File.mkdir_p!(home)
     on_exit(fn -> File.rm_rf!(tmp) end)
 
     {_, 0} = System.cmd("git", ["init", "-q", "-b", "master", product], env: git_env())
@@ -136,8 +190,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
           {"CASEIN_CHECKOUT", product},
+          {"HOME", home},
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "caller-ws"},
           {"CASEIN_AGENT_ENV_FILE", Path.join(tmp, "missing-env.sh")},
           {"CASEIN_AGENT_MCP_HOME", Path.join(tmp, "missing-staging")},
           {"PATH", fakebin <> ":" <> System.get_env("PATH")}
@@ -147,6 +203,60 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     assert status == 1
     assert out =~ "workspace pairing env not found"
+    assert out =~ "target_workspace=test"
+  end
+
+  # Fleet bug: A-orchestrator CASEIN_AGENT_* must not pin pairing when the
+  # explicit session argument names workspace B. Target session wins.
+  test "dry run into workspace B session uses B pairing despite caller A env" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "spawn-worker-cross-ws-#{System.unique_integer([:positive])}"
+      )
+
+    product = Path.join(tmp, "product")
+    fakebin = Path.join(tmp, "bin")
+    home = Path.join(tmp, "home")
+    File.mkdir_p!(product)
+    File.mkdir_p!(fakebin)
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    {_, 0} = System.cmd("git", ["init", "-q", "-b", "master", product], env: git_env())
+
+    {_, 0} =
+      System.cmd("git", ["-C", product, "commit", "-q", "--allow-empty", "-m", "root"],
+        env: git_env()
+      )
+
+    env_a = stage_session_env!(home, "workspace-a", "ws-a")
+    env_b = stage_session_env!(home, "workspace-b", "ws-b")
+
+    File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
+    File.chmod!(Path.join(fakebin, "tmux"), 0o755)
+
+    {out, 0} =
+      System.cmd(
+        "bash",
+        [@script, "codex", "cross", "casein_workspace-b_art-deadbeef"],
+        env: [
+          {"CASEIN_SPAWN_DRY_RUN", "1"},
+          {"CASEIN_CHECKOUT", product},
+          {"HOME", home},
+          {"CASEIN_API_TOKEN", "caller-a-token"},
+          {"CASEIN_WORKSPACE_ID", "ws-a"},
+          {"CASEIN_WORKSPACE_NAME", "workspace-a"},
+          {"CASEIN_AGENT_ENV_FILE", env_a},
+          {"CASEIN_AGENT_MCP_HOME", Path.dirname(env_a)},
+          {"PATH", fakebin <> ":" <> System.get_env("PATH")}
+        ]
+      )
+
+    assert out =~ "env_file=#{env_b}"
+    assert out =~ "source #{env_b}"
+    assert out =~ "export CASEIN_TMUX_SESSION=casein_workspace-b_art-deadbeef"
+    refute out =~ "env_file=#{env_a}"
+    refute out =~ "source #{env_a}"
   end
 
   # A managed Grok worker's bwrap sandbox base is frozen when its leader starts,
@@ -260,22 +370,88 @@ defmodule Scripts.SpawnAgentWorkerTest do
     refute out =~ ~r/^%99$/m
   end
 
-  test "prints the pane id when the worker survives its first moment" do
+  test "prints the pane id when the agent process is running in the pane" do
     ctx = preflight_fixture!("live-pane", ~s({"agent_write":{"write_enabled":true}}))
 
     {out, 0} = spawn_worker(ctx, "codex", [{"FAKE_PANE_STATE", "alive"}])
 
     assert out =~ ~r/^%99$/m
     refute out =~ "died immediately"
+    # A success leaves the window exactly as spawned.
+    refute tmux_calls(ctx) =~ "kill-window"
   end
 
-  test "the probe can be waived by callers running their own readiness check" do
+  # The failure this whole readiness gate exists for: the pane outlives its first
+  # moment, so the liveness probe passes, but the launcher never reached its exec
+  # and the window holds nothing but a shell. Spawn used to print a pane id for
+  # that, and the caller briefed a window that could never answer.
+  #
+  # The stubbed tree still contains the launcher's own
+  # `... launch-casein-agent.sh codex` argv, so a pattern loose enough to match
+  # the launcher instead of the agent fails here.
+  test "reports failure when the window comes up holding only a shell" do
+    ctx = preflight_fixture!("shell-only", ~s({"agent_write":{"write_enabled":true}}))
+
+    {out, code} =
+      spawn_worker(ctx, "codex", [{"FAKE_PANE_STATE", "alive"}, {"FAKE_AGENT_STATE", "shell"}])
+
+    assert code == 1
+    assert out =~ "no codex process appeared in worker pane %99"
+    assert out =~ "holds only a shell"
+    refute out =~ ~r/^%99$/m
+  end
+
+  test "closes the window of a worker that never started an agent" do
+    ctx = preflight_fixture!("shell-cleanup", ~s({"agent_write":{"write_enabled":true}}))
+
+    {out, 1} =
+      spawn_worker(ctx, "codex", [{"FAKE_PANE_STATE", "alive"}, {"FAKE_AGENT_STATE", "shell"}])
+
+    assert out =~ "closed the failed worker window"
+    assert tmux_calls(ctx) =~ "kill-window %99"
+  end
+
+  # Sometimes you want the wreckage. Keeping it renames the window so it does not
+  # read as a worker waiting for a briefing.
+  test "CASEIN_SPAWN_KEEP_FAILED_WINDOW marks the window failed instead of closing it" do
+    ctx = preflight_fixture!("shell-keep", ~s({"agent_write":{"write_enabled":true}}))
+
+    {out, 1} =
+      spawn_worker(ctx, "codex", [
+        {"FAKE_PANE_STATE", "alive"},
+        {"FAKE_AGENT_STATE", "shell"},
+        {"CASEIN_SPAWN_KEEP_FAILED_WINDOW", "1"}
+      ])
+
+    assert out =~ "failed-worker-iso"
+    assert tmux_calls(ctx) =~ "rename-window failed-worker-iso"
+    refute tmux_calls(ctx) =~ "kill-window"
+  end
+
+  test "reports failure when the pane dies while the agent is starting" do
+    ctx = preflight_fixture!("dies-starting", ~s({"agent_write":{"write_enabled":true}}))
+
+    {out, code} =
+      spawn_worker(ctx, "codex", [
+        {"FAKE_PANE_STATE", "dead"},
+        {"FAKE_AGENT_STATE", "shell"},
+        {"CASEIN_SPAWN_PROBE_SECONDS", "0"}
+      ])
+
+    assert code == 1
+    assert out =~ "died while codex was starting"
+    refute out =~ ~r/^%99$/m
+  end
+
+  test "the readiness checks can be waived by callers running their own" do
     ctx = preflight_fixture!("waived", ~s({"agent_write":{"write_enabled":true}}))
 
     {out, 0} =
       spawn_worker(ctx, "codex", [
         {"FAKE_PANE_STATE", "dead"},
-        {"CASEIN_SPAWN_PROBE_SECONDS", "0"}
+        {"FAKE_AGENT_STATE", "shell"},
+        {"CASEIN_SPAWN_PROBE_SECONDS", "0"},
+        {"CASEIN_SPAWN_READY_SECONDS", "0"}
       ])
 
     assert out =~ ~r/^%99$/m
@@ -289,7 +465,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     product = Path.join(tmp, "product")
     fakebin = Path.join(tmp, "bin")
-    env_file = Path.join(tmp, "env.sh")
+    home = Path.join(tmp, "home")
     File.mkdir_p!(product)
     File.mkdir_p!(fakebin)
     on_exit(fn -> File.rm_rf!(tmp) end)
@@ -301,14 +477,13 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: git_env()
       )
 
-    File.write!(
-      env_file,
-      "export CASEIN_API_TOKEN='test-token'\nexport CASEIN_WORKSPACE_ID='test-ws'\n"
-    )
+    # Session arg in helpers is casein_test_u-x → workspace name "test".
+    env_file = stage_session_env!(home, "test", "test-ws")
 
-    # Stub tmux: `has-session` succeeds, `new-window` hands back a pane id, and
-    # `list-panes` reports whatever liveness FAKE_PANE_STATE asks for so the
-    # post-launch probe can be exercised without a real server.
+    # Stub tmux: `has-session` succeeds, `new-window` hands back a pane id,
+    # `list-panes` reports whatever liveness FAKE_PANE_STATE asks for, and
+    # `display-message` hands back the pane's root pid so the readiness walk has
+    # somewhere to start. Window disposal is journalled for assertions.
     File.write!(Path.join(fakebin, "tmux"), """
     #!/usr/bin/env bash
     case "${1:-}" in
@@ -320,6 +495,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
         esac
         ;;
       new-window) printf '%%99\\n' ;;
+      display-message) printf '424242\\n' ;;
+      kill-window | rename-window)
+        [[ -n "${FAKE_TMUX_LOG:-}" ]] && printf '%s %s\\n' "$1" "${*: -1}" >>"$FAKE_TMUX_LOG"
+        ;;
       capture-pane)
         printf 'bash: launch-casein-agent.sh: No such file or directory\\n'
         ;;
@@ -328,6 +507,22 @@ defmodule Scripts.SpawnAgentWorkerTest do
     """)
 
     File.chmod!(Path.join(fakebin, "tmux"), 0o755)
+
+    # Stub ps: the pane's process tree. `agent` puts the runtime binary under the
+    # pane's root pid; `shell` leaves only the launcher and a bare shell — the
+    # window that looks spawned but can never answer.
+    File.write!(Path.join(fakebin, "ps"), """
+    #!/usr/bin/env bash
+    launcher='sh -c source /tmp/env.sh && cd /repo && bash /casein/scripts/launch-casein-agent.sh codex'
+    printf '424242 1 %s\\n' "$launcher"
+    case "${FAKE_AGENT_STATE:-agent}" in
+      agent) printf '424243 424242 /opt/fake/lib/node_modules/@openai/codex/bin/codex.js --mcp\\n' ;;
+      shell) printf '424244 424242 bash -i\\n' ;;
+    esac
+    exit 0
+    """)
+
+    File.chmod!(Path.join(fakebin, "ps"), 0o755)
 
     curl =
       case body do
@@ -338,7 +533,13 @@ defmodule Scripts.SpawnAgentWorkerTest do
     File.write!(Path.join(fakebin, "curl"), curl)
     File.chmod!(Path.join(fakebin, "curl"), 0o755)
 
-    %{product: product, fakebin: fakebin, env_file: env_file}
+    %{
+      product: product,
+      fakebin: fakebin,
+      home: home,
+      env_file: env_file,
+      tmux_log: Path.join(tmp, "tmux-calls.log")
+    }
   end
 
   defp spawn_dry_run(ctx, runtime, extra_env) do
@@ -347,8 +548,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
         [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
           {"CASEIN_CHECKOUT", ctx.product},
+          {"HOME", ctx.home},
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "test"},
           {"CASEIN_API_BASE_URL", "http://127.0.0.1:4000"},
           {"CASEIN_AGENT_ENV_FILE", ctx.env_file},
           {"PATH", ctx.fakebin <> ":" <> System.get_env("PATH")}
@@ -357,23 +560,53 @@ defmodule Scripts.SpawnAgentWorkerTest do
     )
   end
 
-  # Non-dry-run: exercises the real new-window + probe path against stub tmux.
-  # The probe budget is trimmed so the surviving-pane case does not idle for the
-  # full production window.
+  # Non-dry-run: exercises the real new-window + probe + readiness path against
+  # stub tmux. Both budgets are trimmed so the passing cases do not idle for the
+  # full production windows.
   defp spawn_worker(ctx, runtime, extra_env) do
     System.cmd("bash", [@script, runtime, "iso", "casein_test_u-x"],
       env:
         [
           {"CASEIN_CHECKOUT", ctx.product},
+          {"HOME", ctx.home},
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
+          {"CASEIN_WORKSPACE_NAME", "test"},
           {"CASEIN_API_BASE_URL", "http://127.0.0.1:4000"},
           {"CASEIN_AGENT_ENV_FILE", ctx.env_file},
           {"CASEIN_SPAWN_PROBE_SECONDS", "1"},
+          {"CASEIN_SPAWN_READY_SECONDS", "2"},
+          {"FAKE_TMUX_LOG", ctx.tmux_log},
           {"PATH", ctx.fakebin <> ":" <> System.get_env("PATH")}
         ] ++ extra_env,
       stderr_to_stdout: true
     )
+  end
+
+  defp tmux_calls(ctx) do
+    case File.read(ctx.tmux_log) do
+      {:ok, contents} -> contents
+      {:error, _} -> ""
+    end
+  end
+
+  # Session-first env resolve looks up ~/.casein/agent-mcp/<workspace>/env.sh
+  # from the casein_<workspace>_* session name. Stage that path under a fake HOME.
+  defp stage_session_env!(home, workspace_name, workspace_id) do
+    dir = Path.join([home, ".casein", "agent-mcp", workspace_name])
+    File.mkdir_p!(dir)
+    env_file = Path.join(dir, "env.sh")
+
+    File.write!(
+      env_file,
+      """
+      export CASEIN_API_TOKEN='test-token'
+      export CASEIN_WORKSPACE_ID='#{workspace_id}'
+      export CASEIN_WORKSPACE_NAME='#{workspace_name}'
+      """
+    )
+
+    env_file
   end
 
   defp git_env do

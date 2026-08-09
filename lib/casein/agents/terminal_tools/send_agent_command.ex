@@ -12,7 +12,8 @@ defmodule Casein.Agents.TerminalTools.SendAgentCommand do
       workspace_id: [type: :string],
       session: [type: :string],
       caller_pane: [type: :string],
-      command: [type: :string, required: true]
+      command: [type: :string, required: true],
+      confirm: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction
@@ -27,7 +28,8 @@ defmodule Casein.Agents.TerminalTools.SendAgentCommand do
         Map.merge(Helpers.workspace_props(), %{
           session: Helpers.session_param(),
           caller_pane: Helpers.caller_pane_param(),
-          command: Helpers.command_param()
+          command: Helpers.command_param(),
+          confirm: Helpers.confirm_param()
         }),
         ["command"]
       )

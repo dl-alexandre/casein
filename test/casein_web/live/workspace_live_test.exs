@@ -456,12 +456,16 @@ defmodule CaseinWeb.WorkspaceLiveTest do
              "button[data-leader-action='pane-swap-next'][phx-click='pane:swap_next']"
            )
 
+    refute has_element?(view, "#leader-cheatsheet")
+    render_click(view, "leader_help:toggle", %{})
     assert has_element?(view, "#leader-cheatsheet")
     help_html = render(view)
     assert help_html =~ "casein agent auth signin codex"
     assert help_html =~ "casein agent auth signin claude"
     assert help_html =~ "Casein detects the owner"
     assert help_html =~ "casein agent auth status"
+    render_click(view, "leader_help:close", %{})
+    refute has_element?(view, "#leader-cheatsheet")
     # Inline next/prev window chips lived on the removed dropdown; cycling uses
     # hidden leader targets and the always-visible tab bar.
     refute has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then N']")
@@ -513,10 +517,12 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     # whole picker (sidebar:close), while clicks between the two rails are contained.
     assert has_element?(view, "#terminal-picker-overlay-ws-1[phx-click-away='sidebar:close']")
 
+    render_click(view, "leader_help:toggle", %{})
     cheatsheet_html = render(view)
     assert cheatsheet_html =~ "Ctrl+P"
     assert cheatsheet_html =~ "show pane numbers"
     assert cheatsheet_html =~ "Inside the command palette"
+    render_click(view, "leader_help:close", %{})
 
     # C-b l continues to use tmux history after an ordinary tab switch.
     render_click(view, "tmux:select_window", %{"window-id" => "@0"})

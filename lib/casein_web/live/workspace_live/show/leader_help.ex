@@ -3,6 +3,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
 
   use CaseinWeb, :html
 
+  alias CaseinWeb.WorkspaceLive.Show.LeaderBindings
+
+  attr :open, :boolean, required: true
   attr :connect_new_token, :string, default: nil
   attr :connect_mcp_json, :string, default: nil
   attr :connect_tokens, :list, default: []
@@ -18,8 +21,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
       ])
 
     ~H"""
-    <div id="leader-cheatsheet" class="fixed inset-0 z-50 hidden">
-      <div class="absolute inset-0 bg-black/30" phx-click={JS.hide(to: "#leader-cheatsheet")}></div>
+    <div :if={@open} id="leader-cheatsheet" class="fixed inset-0 z-50">
+      <div class="absolute inset-0 bg-black/30" phx-click="leader_help:close"></div>
       <div class="absolute top-1/2 left-1/2 max-h-[80vh] w-[30rem] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded border border-base-300 bg-base-100 p-4 text-xs shadow-xl">
         <h2 class="mb-2 text-sm font-semibold">Help</h2>
         <div role="tablist" class="mb-3 flex gap-1 border-b border-base-300">
@@ -60,34 +63,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             tab.
           </p>
           <div class="grid grid-cols-2 gap-x-6 gap-y-1">
-            <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
-            <.cheat_row keys="s" desc="pick a session" />
-            <.cheat_row keys="w" desc="pick a window" />
-            <.cheat_row keys="( / )" desc="previous or next session" />
-            <.cheat_row keys="c" desc="open a new window" />
-            <.cheat_row keys="C" desc="new window in a new browser tab" />
-            <.cheat_row keys="n / p" desc="next or previous window" />
-            <.cheat_row keys="l" desc="jump back to your last window" />
-            <.cheat_row keys="0–9" desc="jump to window 0–9" />
-            <.cheat_row keys="," desc="rename this window" />
-            <.cheat_row keys="$" desc="rename this session" />
-            <.cheat_row keys="&" desc="close this window (undoable — see the toast)" />
-            <.cheat_row keys="r" desc="restore the window you just closed" />
-            <.cheat_row keys="y" desc="copy a link to this session and window" />
-            <.cheat_row keys="d" desc="return to the workspace shell" />
-            <div class="font-semibold text-base-content/60 col-span-2 mt-2">Panes</div>
-            <.cheat_row keys="% or |" desc="split side by side" />
-            <.cheat_row keys={"\" or -"} desc="split top and bottom" />
-            <.cheat_row keys="← ↓ ↑ →" desc="move focus between panes" />
-            <.cheat_row keys="o" desc="focus the next pane" />
-            <.cheat_row keys=";" desc="focus your last pane" />
-            <.cheat_row keys="z" desc="zoom this pane full screen" />
-            <.cheat_row keys="x" desc="close this pane" />
-            <.cheat_row keys="q" desc="show pane numbers — then press 0–9 to jump" />
-            <div class="font-semibold text-base-content/60 col-span-2 mt-2">More leader keys</div>
-            <.cheat_row keys=":" desc="open the command palette" />
-            <.cheat_row keys="?" desc="show this help" />
-            <.cheat_row keys="Esc / Ctrl + B" desc="cancel (when waiting for a second key)" />
+            <%!-- C-b rows are generated from the one keymap that also drives dispatch
+                 and the palette hints (Show.LeaderBindings) — rebinding a key updates
+                 this list on its own. The sections below are separate keymaps (picker,
+                 global chords, palette) owned by their own hooks, so they stay prose. --%>
+            <div :for={{group, i} <- Enum.with_index(LeaderBindings.groups())} class="contents">
+              <div class={[
+                "font-semibold text-base-content/60 col-span-2",
+                if(i == 0, do: "mt-1", else: "mt-2")
+              ]}>
+                {group.label}
+              </div>
+              <.cheat_row :for={row <- group.rows} keys={row.display} desc={row.desc} />
+            </div>
             <div class="font-semibold text-base-content/60 col-span-2 mt-2">
               Inside a session or window picker
             </div>

@@ -16,8 +16,19 @@
 # Commands:
 #   preview-router.sh reload    # regenerate from registry + start-or-reload
 #   preview-router.sh stop
+#   preview-router.sh reap      # kill any previous router and free the port
 #   preview-router.sh status
 #   preview-router.sh config    # print the generated Caddyfile
+#
+# The systemd unit (host overlay, not this repo) must reap before ExecStart, or
+# its `caddy run` binds alongside an orphan under SO_REUSEPORT instead of
+# failing. Add it as a second ExecStartPre:
+#
+#     ExecStartPre=/bin/bash -lc '.../scripts/preview-router.sh config >/dev/null'
+#     ExecStartPre=/bin/bash -lc '.../scripts/preview-router.sh reap'
+#
+# `reap` exits non-zero if the port is still held, which makes systemd fail the
+# start rather than add a second listener serving stale config.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -140,6 +151,12 @@ generate() {
 
 admin_alive() { curl -s --max-time 2 "http://$ADMIN/config/" >/dev/null 2>&1; }
 
+# --- reaping the previous router ---------------------------------------------
+# Decision logic lives in a sourceable lib so it can be tested hermetically; see
+# scripts/lib/preview-router-reap.sh for why a restart needs an explicit reap.
+# shellcheck source=lib/preview-router-reap.sh
+source "$ROOT/scripts/lib/preview-router-reap.sh"
+
 cmd_reload() {
   generate
   caddy validate --adapter caddyfile --config "$CADDYFILE" >/dev/null 2>&1 \
@@ -147,15 +164,31 @@ cmd_reload() {
   if admin_alive; then
     caddy reload --adapter caddyfile --config "$CADDYFILE" --address "$ADMIN" >/dev/null 2>&1
     echo "router reloaded ($(cat "$ROUTE_COUNT_FILE" 2>/dev/null || echo 0) active env(s)) on $LISTEN"
-  else
-    caddy start --adapter caddyfile --config "$CADDYFILE" --pidfile "$PIDFILE" >/dev/null 2>&1
-    echo "router started on $LISTEN (admin $ADMIN)"
+    return 0
   fi
+
+  # No reachable admin, but that does NOT mean no router. An orphan from the
+  # other spawn path holds the port with an unreachable admin, and starting on
+  # top of it succeeds under SO_REUSEPORT — producing two routers serving
+  # different configs to the same port. Reap before binding.
+  preview_router_reap || exit 1
+
+  # Refuse to rebind while anything still answers on the port. Better to fail
+  # loudly than to add a second listener that serves stale config to a random
+  # share of requests. An unattributable listener (another user's process) also
+  # lands here rather than being treated as a free port.
+  if preview_router_port_busy; then
+    echo "error: $(preview_router_listen_port) still has a listener after reaping; refusing to bind alongside it" >&2
+    ss -H -ltnp "sport = :$(preview_router_listen_port)" 2>/dev/null >&2 || true
+    exit 1
+  fi
+
+  caddy start --adapter caddyfile --config "$CADDYFILE" --pidfile "$PIDFILE" >/dev/null 2>&1
+  echo "router started on $LISTEN (admin $ADMIN)"
 }
 
 cmd_stop() {
-  admin_alive && caddy stop --address "$ADMIN" >/dev/null 2>&1 || true
-  [ -f "$PIDFILE" ] && rm -f "$PIDFILE"
+  preview_router_reap || exit 1
   echo "router stopped"
 }
 
@@ -178,7 +211,8 @@ cmd_status() {
 case "${1:-}" in
   reload) cmd_reload;;
   stop)   cmd_stop;;
+  reap)   preview_router_reap;;
   status) cmd_status;;
   config) generate; cat "$CADDYFILE";;
-  *) echo "usage: $0 {reload|stop|status|config}" >&2; exit 2;;
+  *) echo "usage: $0 {reload|stop|reap|status|config}" >&2; exit 2;;
 esac

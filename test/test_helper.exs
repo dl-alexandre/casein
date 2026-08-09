@@ -150,6 +150,75 @@ end
 # When run with `--no-start` (e.g. for pure unit tests under memory pressure),
 # the Repo isn't running — skip sandbox setup rather than crash on boot.
 if Process.whereis(Casein.Repo) do
+  # Shared-box heal for mobile_attention_cursors_scope_index (#749 / #698).
+  #
+  # Master ON CONFLICT targets (user_id, origin_id, card_id). WIP #698 rewrites
+  # that unique index to include subject_kind; when the live index does not match
+  # the code's conflict_target, mark_viewed/upsert_seen raises 42P10 and every
+  # PR sharing casein_test goes red.
+  #
+  # Migration-aware (option A on #726):
+  # - schema_migrations has 20260808160000 → this tree owns the 4-column scope
+  #   (user_id, origin_id, subject_kind, card_id). Leave it, or restore it if a
+  #   concurrent master suite already stripped it.
+  # - migration not applied → restore the 3-column master scope when the index
+  #   still carries subject_kind pollution from a WIP run.
+  #
+  # MUST run before Sandbox.mode(:manual). After :manual, Repo.query/1 without
+  # a checkout returns OwnershipError, the case falls through to _other, and
+  # the heal is a silent no-op — which is exactly how master stayed red.
+  if function_exported?(Casein.Repo, :query, 1) do
+    ack_migration_applied? =
+      case Casein.Repo.query(
+             "SELECT 1 FROM schema_migrations WHERE version = 20260808160000 LIMIT 1"
+           ) do
+        {:ok, %{num_rows: n}} when is_integer(n) and n > 0 -> true
+        _ -> false
+      end
+
+    case Casein.Repo.query("""
+         SELECT indexdef FROM pg_indexes
+         WHERE tablename = 'mobile_attention_cursors'
+           AND indexname = 'mobile_attention_cursors_scope_index'
+         """) do
+      {:ok, %{rows: [[def]]}} when is_binary(def) ->
+        has_subject_kind? = String.contains?(def, "subject_kind")
+
+        cond do
+          ack_migration_applied? and not has_subject_kind? ->
+            _ = Casein.Repo.query("DROP INDEX IF EXISTS mobile_attention_cursors_scope_index")
+
+            _ =
+              Casein.Repo.query("""
+              CREATE UNIQUE INDEX mobile_attention_cursors_scope_index
+              ON mobile_attention_cursors (user_id, origin_id, subject_kind, card_id)
+              """)
+
+            _ =
+              Casein.Repo.query("""
+              CREATE INDEX IF NOT EXISTS mobile_attention_cursors_user_kind_index
+              ON mobile_attention_cursors (user_id, subject_kind)
+              """)
+
+          not ack_migration_applied? and has_subject_kind? ->
+            _ = Casein.Repo.query("DROP INDEX IF EXISTS mobile_attention_cursors_user_kind_index")
+            _ = Casein.Repo.query("DROP INDEX IF EXISTS mobile_attention_cursors_scope_index")
+
+            _ =
+              Casein.Repo.query("""
+              CREATE UNIQUE INDEX mobile_attention_cursors_scope_index
+              ON mobile_attention_cursors (user_id, origin_id, card_id)
+              """)
+
+          true ->
+            :ok
+        end
+
+      _other ->
+        :ok
+    end
+  end
+
   Ecto.Adapters.SQL.Sandbox.mode(Casein.Repo, :manual)
 end
 

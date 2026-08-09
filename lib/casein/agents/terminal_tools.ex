@@ -29,11 +29,15 @@ defmodule Casein.Agents.TerminalTools do
   alias Casein.Agents.TerminalTools.{
     AgentPane,
     AgentTranscript,
+    BindIssue,
     Capture,
     CaptureAgent,
+    ClearNextPrompt,
     Context,
     GateReport,
+    GetNextPrompt,
     ListSessions,
+    OpenDiff,
     OpenFileInPane,
     PasteAgentText,
     RequestClarification,
@@ -45,6 +49,7 @@ defmodule Casein.Agents.TerminalTools do
     SendCommand,
     SendKeys,
     SetAgentLabel,
+    SetNextPrompt,
     Topology,
     WaitAgentState,
     WorkspaceDigest
@@ -66,12 +71,17 @@ defmodule Casein.Agents.TerminalTools do
     SendAgentKeys,
     SendAgentCommand,
     PasteAgentText,
+    SetNextPrompt,
+    ClearNextPrompt,
+    GetNextPrompt,
     RequestClarification,
     RequestHumanInput,
     SendKeys,
     SendCommand,
+    OpenDiff,
     OpenFileInPane,
     SetAgentLabel,
+    BindIssue,
     ReportWorktree,
     ReportAgentState,
     WaitAgentState,
@@ -135,6 +145,12 @@ defmodule Casein.Agents.TerminalTools do
   @doc false
   defdelegate paste_agent_text(params), to: Agent
   @doc false
+  defdelegate set_next_prompt(params), to: Agent
+  @doc false
+  defdelegate clear_next_prompt(params), to: Agent
+  @doc false
+  defdelegate get_next_prompt(params), to: Agent
+  @doc false
   defdelegate request_clarification(params), to: Agent
   @doc false
   defdelegate request_human_input(params), to: Agent
@@ -145,7 +161,10 @@ defmodule Casein.Agents.TerminalTools do
   @doc false
   defdelegate open_file_in_pane(params), to: Command
   @doc false
+  defdelegate open_diff(params), to: Command
+  @doc false
   defdelegate set_agent_label(params), to: Agent
+  defdelegate bind_issue(params), to: Agent
   @doc false
   defdelegate report_agent_state(params), to: Agent
   @doc false

@@ -11,6 +11,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TmuxTemplateEvents do
 
   alias Casein.Terminals
   alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.Overlay
   alias CaseinWeb.WorkspaceLive.Show.TemplatePanels
   alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
@@ -23,8 +24,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TmuxTemplateEvents do
       {:ok, preview} ->
         {:noreply,
          socket
-         |> assign(:palette_open, false)
-         |> assign(:template_library_open, false)
+         |> Overlay.close_others(:template_preview)
          |> assign(:template_preview, preview)}
 
       {:error, :template_not_found} ->
@@ -44,6 +44,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TmuxTemplateEvents do
   def handle_event("tmux:open_template_library", _params, socket) do
     {:noreply,
      socket
+     |> Overlay.close_others(:template_library)
      |> Show.refresh_saved_session_templates()
      |> assign(:template_library_open, true)
      |> assign(:template_save_form, Show.template_save_form())

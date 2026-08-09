@@ -16,6 +16,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   import CaseinWeb.WorkspaceLive.Show.UI, only: [leader_key_button: 1, dom_fragment: 1]
 
+  alias CaseinWeb.WorkspaceLive.Show.LeaderBindings
   alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
   alias CaseinWeb.WorkspaceRoutes
 
@@ -401,28 +402,27 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
                 <%= if window.active? and @terminal_mode in [:raw, :raw_ghostty] do %>
                   <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
                   <.leader_key_button
-                    key="%"
+                    key={LeaderBindings.key_for_action("split-right")}
                     phx_click="split_right"
-                    title="Split right · Ctrl + B %"
+                    title={"Split right · Ctrl + B " <> LeaderBindings.key_for_action("split-right")}
                     aria_label="Split pane right"
                   >
                     <.split_icon direction={:right} class="size-3.5" />
                   </.leader_key_button>
                   <.leader_key_button
-                    key={"\""}
+                    key={LeaderBindings.key_for_action("split-down")}
                     phx_click="split_down"
-                    title={"Split down · Ctrl + B \""}
+                    title={"Split down · Ctrl + B " <> LeaderBindings.key_for_action("split-down")}
                     aria_label="Split pane down"
                   >
                     <.split_icon direction={:down} class="size-3.5" />
                   </.leader_key_button>
                   <.leader_key_button
-                    key="z"
+                    key={LeaderBindings.key_for_action("zoom")}
                     phx_click="pane:zoom_focused"
                     title={
-                      if @window_zoomed?,
-                        do: "Unzoom pane · Ctrl + B z",
-                        else: "Zoom pane · Ctrl + B z"
+                      (if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane") <>
+                        " · Ctrl + B " <> LeaderBindings.key_for_action("zoom")
                     }
                     aria_label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
                   >
@@ -446,8 +446,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           type="button"
           phx-click="tmux:new_window"
           class="leader-key-control relative shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          data-leader-second-key="c"
-          title="New window · Ctrl + B c"
+          data-leader-second-key={LeaderBindings.key_for_action("new-window")}
+          title={"New window · Ctrl + B " <> LeaderBindings.key_for_action("new-window")}
           aria-label="New tmux window"
         >
           <.icon name="hero-plus" class="size-4" />
@@ -864,11 +864,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   defp needs_you_row_badge(%{reason: :completed}),
     do: %{dot: "bg-sky-400", class: "bg-sky-400/15 text-sky-600 dark:text-sky-300", text: "done"}
 
+  defp needs_you_row_badge(%{reason: :idle}),
+    do: %{
+      dot: "bg-violet-400",
+      class: "bg-violet-400/15 text-violet-500 dark:text-violet-300",
+      text: "idle"
+    }
+
   defp needs_you_row_badge(_row),
     do: %{
       dot: "bg-violet-400",
       class: "bg-violet-400/15 text-violet-500 dark:text-violet-300",
-      text: "quiet"
+      text: "idle"
     }
 
   defp needs_you_row_title(row) do
@@ -877,7 +884,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         :blocked -> "Agent is blocked on input"
         :error -> "Session hit an error"
         :completed -> "Agent finished — review its result"
-        _ -> "Agent window is quiet — likely finished or awaiting input"
+        :idle -> "Agent window is idle — likely finished or awaiting input"
+        _ -> "Agent window is idle — likely finished or awaiting input"
       end
 
     scope = if(row.current?, do: base, else: base <> " · " <> row.workspace_label)
@@ -2245,7 +2253,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   defp unseen_quiet_window_count(_tabs), do: 0
 
   defp quiet_badge_attention(tabs) do
-    if unseen_quiet_window_count(tabs) > 0, do: "unseen", else: "inline"
+    Casein.Attention.Delivery.chrome_attention_label(
+      unseen_quiet_window_count(tabs),
+      quiet_window_count(tabs)
+    )
   end
 
   defp quiet_badge_class("unseen") do

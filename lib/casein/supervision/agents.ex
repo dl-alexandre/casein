@@ -14,6 +14,9 @@ defmodule Casein.Supervision.Agents do
       {DynamicSupervisor, name: Casein.Agents.Supervisor, strategy: :one_for_one},
       Casein.AgentSessions.GrokACP.Attachments,
       {Registry, keys: :unique, name: Casein.Codex.Registry},
+      # Duplicate: many cockpit LiveViews may watch the same workspace for
+      # one-shot inspector surface intents (diff/run). Process-linked presence.
+      {Registry, keys: :duplicate, name: Casein.Inspectors.Diff.ViewerRegistry},
       Casein.Codex.EventHub,
       Casein.Codex.SessionTitles,
       Casein.Codex.RuntimeSupervisor,

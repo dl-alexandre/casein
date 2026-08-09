@@ -52,7 +52,7 @@ def write_artifact(id, bytes), do: ...
 
 Treat the ledger as legacy — don't add to it. Never suppress before confirming the finding is actually safe; for a real risk, fix the code (e.g. the traversal guard in `Casein.Previews.Storage.LocalDisk.put/4`).
 
-**PR gate (self-hosted runner).** GitHub PR merges bypass the local `.githooks/pre-push` gate, so debt can land on `master` even though the deploy poller's re-run of the gate (below) still blocks it from *deploying*. To stop the branch tip going red via the merge button, `.github/workflows/pr-gate.yml` runs `scripts/pre-push-check.sh` on every PR into `master`, on a self-hosted runner (GitHub-hosted Actions are billing-blocked). One-time setup per box:
+**PR gate (self-hosted runner).** GitHub PR merges bypass the local `.githooks/pre-push` gate, so debt can land on `master` even though the deploy poller's re-run of the gate (below) still blocks it from *deploying*. To stop the branch tip going red via the merge button, `.github/workflows/pr-gate.yml` runs `scripts/pre-push-check.sh` on every PR into `master`, on a self-hosted runner (GitHub-hosted Actions are billing-blocked). The gate is single-flight on this box (`pr-gate-devbox-self-hosted`, #753). Residual Postgres DSM / `ERROR 53100` under `/dev/shm` (segment count / `kernel.shmmni`, not byte capacity) is documented in [`docs/ops-pr-gate-postgres-shm.md`](docs/ops-pr-gate-postgres-shm.md) — attended host sysctl only; do not thrash product PRs. One-time setup per box:
 
 ```bash
 bash scripts/ensure-ci-runner.sh        # download + register + start the runner service
@@ -96,6 +96,55 @@ and `/run/casein/last-deploy.json`.
 
 The running release also performs a deploy-drift check at boot. If `/etc/casein/casein.env` has a manual revision label or a SHA that differs from `origin/master`, Casein logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
 
+### Checking whether a deploy actually landed
+
+**There is no `casein.service`.** Each release runs as a *transient* per-instance
+unit named for its instance hash — `casein-<hash>.service` — and activation is a
+symlink flip of `/run/casein/current.sock`. Both obvious health checks lie:
+
+| Wrong check | What it reports | Why it lies |
+|-------------|-----------------|-------------|
+| `systemctl is-active casein` | `inactive` | systemd answers `inactive` for a unit that *does not exist*, which is indistinguishable from a stopped app |
+| `curl -fsS .../health` | prints nothing | a healthy release answers **401** (auth-enforcing); `-f` makes curl exit non-zero and suppress the body, so "up and secured" renders as "no response" |
+
+Resolve the live instance from the socket, then check that unit:
+
+```bash
+live=$(basename "$(readlink /run/casein/current.sock)" .sock)
+systemctl is-active "casein-${live}.service"          # → active
+systemctl show "casein-${live}.service" -p Description # → Casein canary <sha>
+curl -s -o /dev/null -w '%{http_code}\n' \
+  --unix-socket /run/casein/current.sock http://localhost/health   # → 401
+```
+
+A **401 is the healthy answer** — it proves the app is up and enforcing auth. A
+down release refuses the connection instead. Note `-s -o /dev/null -w` rather
+than `-f`, so the status code survives.
+
+Cross-check the deployed SHA three ways; they must agree:
+`/run/casein/last-deploy.json` (`outcome: success`, `target_sha`), the live
+unit's `Description`, and `CASEIN_GIT_REVISION` in `/etc/casein/casein.env`.
+
+**Failed canary units accumulate.** Superseded instances stay as `failed`
+transient units. They hold no process (`MainPID=0`) and own no socket, but they
+clutter `systemctl` and make a real failure hard to spot. Prune only units that
+are failed **and** are not the live instance:
+
+```bash
+live=$(basename "$(readlink /run/casein/current.sock)" .sock)
+systemctl list-units --type=service --all --no-legend \
+  | sed 's/^[[:space:]]*●\?[[:space:]]*//' | awk '$3=="failed"{print $1}' \
+  | grep -E '^casein-[0-9a-f]{16}\.service' \
+  | grep -v "casein-${live}.service" \
+  | xargs -r -n1 sudo systemctl reset-failed
+```
+
+`reset-failed` is the right verb: these are transient units under
+`/run/systemd/transient/`, so there is no file in `/etc/systemd/system` to
+delete. Always confirm `MainPID=0` first — a unit that still owns a beam is a
+lingering canary running *old code against the prod database*, and must be
+drained rather than forgotten.
+
 ### Source control before deploy (required)
 
 **Everything that must stay deployed must land in git first.** A push to `master` is picked up by the on-box poller (`casein-deploy.timer` → `scripts/deploy-poller.sh`), which builds `origin/master` from a clean worktree and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/casein/release` entirely. (The GitHub Actions path in `.github/workflows/deploy-devbox.yml` does the same thing but is dormant while Actions billing is blocked.)
@@ -120,6 +169,141 @@ uncommitted or undeployed work.
 4. Optionally smoke-check on the box: `source .devbox-agent.env && bash scripts/verify_agent_pairing.sh`.
 
 A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/casein` is for editing; `/opt/casein/release` is the ephemeral runtime artifact.
+
+### Issue queue: claiming async work (required for runners)
+
+GitHub Issues are the **cold queue**. Work that should happen without anyone
+watching a terminal goes here; a runner finds it by label, claims it, does it in
+its own worktree, and closes it with a PR link.
+
+**Issues schedule work. Casein runs work. next-prompt steers work.** Do not open
+an issue to redirect an agent that is already running — that is the hot path
+(sticky next-prompt over MCP). Issues are for work nobody is watching yet.
+
+#### The label machine
+
+| Label | Meaning |
+|-------|---------|
+| `queue/ready` | Unclaimed and self-contained. **This is the only label a runner may claim from.** |
+| `queue/claimed` | A runner owns it. The claim comment says who and when. |
+| `queue/blocked` | Needs a human. The issue body or a comment says exactly what under **Needs**. |
+| `queue/done` | Landed. Applied as the issue is closed. |
+| `workspace/<name>` | Which checkout it belongs to, e.g. `workspace/casein`. Create on demand. |
+| `kind/<type>` | `implement`, `docs`, `ops`. |
+| `priority/<n>` | `p0` ship first, `p1` next, `p2` follow-up. |
+
+Exactly one `queue/*` label at a time — it is a state machine, not a tag set.
+
+#### Claim protocol
+
+Steps 1 and 2 below are what `scripts/claim-next-issue.sh` does, so prefer it —
+it claims atomically and hands back a brief you can paste straight into a worker:
+
+```bash
+bash scripts/claim-next-issue.sh                 # claim the next one, print a brief
+bash scripts/claim-next-issue.sh --list          # what is claimable, ranked
+bash scripts/claim-next-issue.sh --dry-run       # the brief, claiming nothing
+bash scripts/claim-next-issue.sh --issue 691     # claim a specific issue
+bash scripts/claim-next-issue.sh --format json   # same, for an orchestrator
+```
+
+It picks by priority then oldest-first, swaps `queue/ready` → `queue/claimed`,
+comments the claim, and prints Goal / Acceptance / Constraints / Forbidden plus a
+`spawn-agent-worker.sh` line with a ready-made task slug. It does not bind the
+issue to your pane — do that yourself with `terminal_bind_issue` (step 3 below)
+so `terminal_topology` can answer "is anyone on #N?".
+
+Two properties matter when several runners share one queue:
+
+- **Claiming is a compare-and-swap**, not a label edit. GitHub's "remove a label
+  from an issue" returns 404 when the label is not applied, so exactly one racing
+  runner wins `queue/ready`; the losers see the 404 and move to the next
+  candidate. `gh issue edit --remove-label` cannot do this — it succeeds either
+  way, so two runners would both "claim" the same issue.
+- **The call is idempotent.** A runner that already holds an open claim in the
+  workspace gets *that* issue back rather than consuming a second one. Asking
+  twice continues your work; it does not start more of it.
+
+Exit codes are meant to be branched on: `4` = queue empty (not an error — go
+idle), `3` = lost every race, `5` = that issue belongs to another runner, `2` =
+GitHub call failed. The claimant identity defaults to `<host>:<pane>` and can be
+pinned with `CASEIN_CLAIM_OWNER`.
+
+The workspace label is resolved by asking the repo which `workspace/*` labels
+exist, trying `CASEIN_QUEUE_WORKSPACE`, then `CASEIN_WORKSPACE_NAME`, then its
+last segment, then the repo name. The repo-name fallback matters after a rename:
+this checkout is still `dalexandre-devide` while the label is `workspace/casein`.
+Override with `--workspace <name>`. It fails loudly on an unknown workspace
+rather than reporting an empty queue — for an unattended runner those two look
+identical and only one of them means "go to sleep".
+
+The raw protocol, for the steps the script does not cover (and for other repos):
+
+```bash
+# 1. Find work for YOUR workspace. Never claim another workspace's issue.
+gh issue list --label queue/ready --label workspace/casein \
+  --state open --json number,title,labels
+
+# 2. Claim it BEFORE starting: comment, then flip the label. Comment first —
+#    if the label write fails you still leave a trace of the attempt.
+gh issue comment <N> --body "CLAIMED by $(hostname):${TMUX_PANE:-no-pane} at $(date -u +%FT%TZ)"
+gh issue edit <N> --add-label queue/claimed --remove-label queue/ready
+
+# 3. Bind the issue to your pane (MCP: terminal_bind_issue) so the claim is
+#    visible in Casein chrome and terminal_topology as issue:#N. This is what
+#    makes "is anyone actually on #N?" answerable without reading comments —
+#    the check that separates an abandoned claim from a slow one below.
+#    Accepts 678, "#678" or a full issue URL. Cleared automatically on pane
+#    close, so a binding can never outlive the agent that claimed the issue.
+terminal_bind_issue {"workspace_id": "<ws>", "issue": "#<N>"}
+
+# 4. Work in your OWN worktree, branched from current master.
+git -C <primary> worktree add /data/casein-agent-worktrees/agent-<runtime>-issue<N> \
+  -b agent/<runtime>/issue-<N> origin/master
+
+# 5a. Landed → PR, comment the URL on the issue, close it, release the binding.
+gh issue comment <N> --body "PR: <url>"
+gh issue edit <N> --add-label queue/done --remove-label queue/claimed
+gh issue close <N>
+terminal_bind_issue {"workspace_id": "<ws>"}   # no issue = release
+
+# 5b. Blocked → hand it back with what you need, and DROP the claim so someone
+#     else can pick it up. A blocked issue still labelled claimed is invisible.
+gh issue comment <N> --body $'BLOCKED\n\n**Needs:** <the specific decision or access>'
+gh issue edit <N> --add-label queue/blocked --remove-label queue/claimed
+```
+
+Claim **before** you start, not when you finish: the label is how a second
+runner knows to skip it. Two runners on one issue is the failure this prevents.
+
+#### Stale claims
+
+A claim is a lease, not a lock. If an issue has been `queue/claimed` for more
+than **~2 hours** with no PR and no comment, treat it as abandoned — the runner
+that claimed it probably died with its pane. Reclaim it by commenting what you
+observed and re-claiming:
+
+```bash
+gh issue comment <N> --body "RECLAIMED — prior claim stale since <ts>, no PR"
+```
+
+Do not silently take over: the comment is what stops a returning runner from
+duplicating the work. And check the claimant is actually gone before reclaiming
+— a long-running job is not an abandoned one. Two cheap checks, in order:
+`terminal_topology` shows `issue:#N` on whichever pane bound it (step 3), and
+`include_liveness: true` on the same call says whether that pane is doing
+anything (see "Telling a wedged agent from an idle one"). A bound pane with a
+live worktree is working, not abandoned.
+
+#### Filing work for the queue
+
+Use the **Agent work item** template (`.github/ISSUE_TEMPLATE/agent-work.yml`).
+It requires Goal, Workspace and Acceptance, and prompts for Constraints and
+Forbidden. Fill in Forbidden — it is what keeps a runner from a drive-by
+refactor, and it is cheaper to write than to review.
+
+A runner cannot ask you a follow-up question. If an issue is not self-contained
+it will either guess or stop; leave `queue/ready` off until it is.
 
 ### Coordinating concurrent agents on master (required)
 
@@ -292,6 +476,8 @@ Same-host agents may use `http://127.0.0.1:4000/api/...` instead. Read `docs/ter
 
 For wiring an **off-box** agent end-to-end (both transports, ready-to-paste `.mcp.json` + agent prompts, pinned vs durable/workspace-agnostic config), see **`docs/external-agent-connect.md`** and the host-side `casein-remote` skill.
 
+For a **host laptop Grok** (or similar) that uses Casein Terminal/Preview/Artifact MCP while its shell stays on the Mac — dual-plane ground truth, multi-workspace ops, and when *not* to assume `agent_pair` / `safe_to_mutate` — see **`docs/agents/host-grok-dual-plane.md`**.
+
 **Always pass `workspace_id`** on terminal MCP calls. For `dalexandre-casein` the manager UUID is in `.devbox-agent.env` as `CASEIN_WORKSPACE_ID`. Scoping resolves both UUID and workspace **name** to tmux prefixes — sessions are named `casein_<workspace_name>_<sid>`, not `casein_<uuid>_`.
 
 Agent workflow:
@@ -416,6 +602,17 @@ minutes. `stalled` deliberately does not claim a cause (an agent may think for
 minutes without writing); `errored` is a claim about cause and stays
 report-only. Both surface as `attention` in the session picker.
 
+**Fleet chrome (manager vs worker vs ready-no-task).** Same topology call, no
+new store. Label convention via `terminal_set_agent_label` (`freeze: true`):
+`manager` / `manager: <note>` for orchestrators, `worker` / `worker: <note>`
+for spawned implementers. Spawn windows named `worker-<slug>` also classify as
+worker. Topology then carries `fleet_role` and, when an agent pane is
+idle/ready with no issue binding, no real `task_summary`, and
+`quiet_for_seconds` (or report age) ≥ ~2 minutes, `fleet_readiness:
+"ready_no_task"` plus `ready_no_task_for_seconds` — no full capture. Bare
+runtime titles like `OpenCode` / `Claude Code` are not task summaries. Full
+write-up: `docs/fleet-chrome.md`.
+
 **Poisoned sessions.** Some wedges are unrecoverable from inside — e.g. once an
 OpenCode session stores a `reasoning` item the provider later rejects
 (`[400] validation failed: input[3]: unknown item type "reasoning"`), every
@@ -430,11 +627,43 @@ resuming work in a tree wants it — but it means opening several windows from o
 worktree's cwd silently puts N agents on one git index, where concurrent
 operations corrupt state rather than failing cleanly.
 
-`terminal_topology` now flags this: panes carry `worktree_shared_with` (the
-other pane ids in that tree) and the payload carries a top-level
-`shared_worktrees` warning. To force isolation at spawn, use
-`scripts/spawn-agent-worker.sh`, which sets `CASEIN_AGENT_FORCE_FRESH_WORKTREE=1`
-and always branches off the primary checkout.
+`terminal_topology` flags this: panes carry `worktree_shared_with` (the other
+pane ids in that tree) and the payload carries a top-level `shared_worktrees`
+warning. To force isolation at spawn, use `scripts/spawn-agent-worker.sh`, which
+sets `CASEIN_AGENT_FORCE_FRESH_WORKTREE=1` and always branches off the primary
+checkout (including **bare** product roots — Mira-class `CASEIN_CHECKOUT` —
+without `CASEIN_AGENT_SKIP_WORKTREE=1`).
+
+That warning reaches whoever asked for the topology, which is not the caller
+about to run `git reset --hard` in the shared tree — so the same signal also
+answers at the write. **`terminal_send_command` and `terminal_send_keys` refuse a
+git command that would write a worktree another pane is working in**, with
+`shared_worktree_mutation`:
+
+```json
+{"error": "shared_worktree_mutation", "worktree_path": "/data/…/wt-x",
+ "shared_with": ["%7", "%9"], "git_subcommand": "reset",
+ "escape_hatch": "allow_shared_worktree"}
+```
+
+The refusal names the tree, the other occupants, and the remedy, so acting on it
+costs no second round trip.
+
+**Escape hatch — `allow_shared_worktree: true`** on the call sends anyway. The
+block is *soft* on purpose: adoption is a real mode (a human resuming work in a
+tree wants it), so the guard's job is to make the sharing known, not impossible.
+Use the flag when the share is deliberate; otherwise take the remedy and branch
+your own worktree.
+
+What is and is not refused, so it stays predictable:
+
+| | |
+|---|---|
+| **Refused** | Subcommands that write the index or working copy: `add am apply checkout cherry-pick clean commit merge mv pull rebase reset restore revert rm stash switch`, plus `branch` with a delete/move/force flag |
+| **Allowed** | Reads (`status`, `log`, `diff`, …), `push` and `fetch` (they move refs, not the tree), plain `git branch`, `worktree`, `config` |
+| **Allowed** | `git -C <other-tree> commit` from a shared pane — the tree checked is the one being *written*, and Casein's own scripts use `git -C` constantly |
+| **Not seen** | A git command inside another program (`bash -c '…'`, a make target). This guards the accident, not a determined caller — which has the flag and does not need to smuggle |
+| **Allowed** | Panes sharing a worktree *inside one window* — Casein runs one agent per window, so those are that agent's own surfaces (shell, file pane, preview split). The topology warning still lists them; only another **window** in the tree is a conflict |
 
 Note that `launch-casein-agent.sh` binds `CASEIN_CHECKOUT` to the cwd you launch
 from, so `cd <worktree> && opencode` places the agent in that worktree for every
@@ -527,9 +756,13 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 | `codex update` EACCES on `/usr/lib/node_modules`, or update replacing the Casein `codex` shim | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets a user-writable prefix under `~/.local/share/npm-global`, separate from the `~/.casein/agent-shims` launchers |
 | Codex sandbox hangs / `bwrap: loopback: Failed RTM_NEWADDR` | Ubuntu 24.04+ blocks unprivileged user namespaces via AppArmor. Codex's Linux sandbox uses `bubblewrap`, which needs userns. Run `bash scripts/ensure-devbox-codex-sandbox.sh` (also in `setup-devbox-agent-pairing.sh`) to install `apparmor-profiles` and load the `bwrap-userns-restrict` profile. Canary: `bwrap --dev-bind / / --unshare-net echo ok` |
 | Agent window looks idle but is wedged | Pane text, process count, and a bare `find -newermt` all lie here — see "Telling a wedged agent from an idle one" below. Use `terminal_topology` with `include_liveness: true` |
+| `systemctl is-active casein` says `inactive` | There is no `casein.service`; systemd says `inactive` for units that do not exist. Resolve the live instance from `current.sock` — see "Checking whether a deploy actually landed" |
+| `curl` to `/health` returns nothing | `-f` suppresses the body on 4xx and a healthy release answers **401**. Use `curl -s -o /dev/null -w '%{http_code}\n'`; 401 means up and enforcing auth |
+| `systemctl` littered with failed `casein-<hash>` units | Superseded canaries. Prune with `reset-failed` (they are transient units), never touching the instance that owns `current.sock` — recipe in the deploy section |
 | Agent `git push` times out / looks hung | This repo's pre-push gate runs a full lint+test suite (2–8 min). Anything wrapping `git push` for an agent must allow **~10 min**; a 2-minute default kills the push mid-gate and is indistinguishable from a hang |
 | Scripted `tmux kill-window` closes the wrong windows | tmux renumbers remaining windows after each close, so a loop over captured indices drifts. Iterate over **window ids** (`@1`, `@2` — stable for the window's life) from `terminal_topology`, not indices |
-| Spawned worker never answered its brief | `spawn-agent-worker.sh` now probes the pane before printing its id and exits non-zero with the pane's output if the launch died. If you are on an older copy, a printed pane id did **not** mean the worker was running |
+| Spawned worker never answered its brief | `spawn-agent-worker.sh` now waits for the agent *process* in the pane's tree before printing its id, and exits non-zero (closing the window) if the launch died or never got past a shell. A printed pane id means a live agent; on an older copy it meant only that a window existed. Verify a box with `bash scripts/smoke-spawn-agent-worker.sh <runtime>` |
+| Spawn dies instantly on a bare product checkout (Mira-class `CASEIN_CHECKOUT`) | Fixed in `scripts/lib/agent-worktree.sh`: primary resolve no longer requires `git rev-parse --show-toplevel`. Spawn branches a fresh worktree from the bare root via `git worktree add`. Do **not** hand-roll `CASEIN_AGENT_SKIP_WORKTREE=1` for this — that was the old workaround. Docs: `docs/development-workflow.md`; test: `scripts/test-agent-worktree-bare.sh` |
 
 ### Key files
 
@@ -544,6 +777,10 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 - `scripts/ensure-devbox-codex-sandbox.sh` — AppArmor + bubblewrap setup so Codex Linux sandbox can create user namespaces
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-casein-agent.sh` — start an agent runtime with MCP injected
+- `scripts/spawn-agent-worker.sh` — open a worker in a fresh tmux window; prints its pane id only once the agent process is live
+- `scripts/smoke-spawn-agent-worker.sh` — end-to-end check that a spawn leaves a live agent (spawns, verifies the pane's process tree independently, cleans up)
+- `scripts/claim-next-issue.sh` — take the next `queue/ready` issue for a workspace and print it as a runner brief (atomic claim, idempotent)
+- `scripts/lib/issue-brief.py` — renders a `gh issue view --json` payload as that brief (or as JSON)
 - `scripts/casein-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
 - `scripts/ensure-casein-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
 - `scripts/casein-grok-janitor-sweep.sh` — daily reap of orphaned Grok leader processes (cwd deleted) + stale leader dirs/bundles across the casein and legacy casein roots; dry-run by default, `--apply` to act (systemd units alongside, installed pointing at `/opt/casein/deploy-build`)

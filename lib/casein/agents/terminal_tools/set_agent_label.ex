@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.SetAgentLabel do
   use Jido.Action,
     name: "terminal_set_agent_label",
     description:
-      "Set a short conversation label for a pane in Casein chrome (does not rename tmux windows). Defaults to the dedicated agent pane when pane is omitted. Pass freeze: true to keep the label until the pane closes.",
+      "Set a short conversation label for a pane in Casein chrome (does not rename tmux windows). Defaults to the dedicated agent pane when pane is omitted. Pass freeze: true to keep the label until the pane closes. Fleet role convention: label manager or manager: <note> for an orchestrator, worker or worker: <note> for a spawned implementer — terminal_topology then surfaces fleet_role without full capture.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

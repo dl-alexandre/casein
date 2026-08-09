@@ -17,6 +17,8 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias Casein.Agents.PaneEnv
   alias Casein.Agents.PreviewTools.BrowserControl
   alias Casein.Audit
+  alias Casein.Cockpit.Tabs
+  alias Casein.CommandPalette.Actions
   alias Casein.Labels
   alias Casein.Links.Open
   alias Casein.Policy
@@ -47,7 +49,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias CaseinWeb.WorkspaceLive.Show.FilePaneEvents
   alias CaseinWeb.WorkspaceLive.Show.HistoryEvents
   alias CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents
+  alias CaseinWeb.WorkspaceLive.Show.InspectorEvents
+  alias CaseinWeb.WorkspaceLive.Show.LeaderHelpEvents
   alias CaseinWeb.WorkspaceLive.Show.LogsEvents
+  alias CaseinWeb.WorkspaceLive.Show.DiffEvents
   alias CaseinWeb.WorkspaceLive.Show.NavEvents
   alias CaseinWeb.WorkspaceLive.Show.PaletteEvents
   alias CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents
@@ -108,63 +113,78 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # in `authz_gate/3` so mutating events fail closed if ownership is missing.
   # Fine-grained mode gates still funnel through `Casein.Policy` inside handlers
   # (file edits -> can_edit_file?, run/command -> can_run_command?, etc.).
-  @known_events ~w(
-    switch_tab refresh
+  # The table is assembled from two halves. Events the command palette can
+  # dispatch are *derived* from `Casein.CommandPalette.Actions.allowed_events/0`
+  # rather than restated here: the palette only ever routes to events that
+  # already exist, so adding a catalog action must not also require an edit in
+  # this module. (It used to: a missed edit left the action silently denied +
+  # audited, which reads as "the feature doesn't work" rather than "the
+  # allowlist is stale" — see the ctx:open regression note in the gate test.)
+  # Everything the palette does not expose — direct-manipulation UI, form
+  # plumbing, lifecycle events — stays explicit in `@direct_events`.
+  @palette_events MapSet.to_list(Actions.allowed_events())
+
+  @direct_events ~w(
+    refresh
     codex:refresh codex:select_thread codex:start_exec codex:cancel_exec
     workspace:start workspace:stop workspace:set_mode
     workspace:grant_agent_write_unlock workspace:revoke_agent_write_unlock
-    tmux:apply_template tmux:apply_previewed_template
+    tmux:apply_previewed_template
     tmux:save_template tmux:update_saved_template
     tmux:duplicate_saved_template tmux:delete_saved_template
-    tmux:preview_template tmux:open_template_library tmux:close_template_library
+    tmux:close_template_library
     tmux:filter_saved_templates tmux:edit_saved_template tmux:cancel_saved_template_edit
     tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
     tmux:cancel_template_preview
-    terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
-    sidebar:open sidebar:close sidebar:reveal_sessions sidebar:toggle_sessions
+    terminal:paste_file terminal:paste_image terminal:auto_hide_chrome
+    sidebar:reveal_sessions sidebar:toggle_sessions
     sidebar:toggle_workspace sidebar:toggle_window
     sidebar:cycle_sessions_sort sidebar:cycle_windows_sort sidebar:restore_sort
     sidebar:toggle_browse sidebar:open_folder
     mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
-    attach_terminal_session pane:navigate pane:history_open pane:history_close
-    split_right split_down
-    pane:close_focused pane:close_others pane:focus_next pane:focus_previous
-    pane:zoom_focused pane:commit_zoom pane:ensure_focus_zoom retry_pane nav:dir equalize_layout pane:cycle_layout
-    pane:swap_previous pane:swap_next pane:commit_swap pane:commit_split
-    ghostty:snapshot snapshot_all
-    isolation:refresh notification:open_conversation
+    pane:navigate pane:history_open pane:history_close
+    pane:commit_zoom pane:ensure_focus_zoom retry_pane nav:dir
+    pane:commit_swap pane:commit_split
+    notification:open_conversation
     notifications:toggle notifications:close notifications:refresh
     notifications:mark_read notifications:resolve notifications:mute
     notifications:mark_all_read notifications:save_preferences
-    run:start workflow:hint workflow:run run_ledger:select run_ledger:open
+    workflow:hint workflow:run run_ledger:select run_ledger:open
     agent:start_review_run
     agent_approval:respond
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:execute
-    audit_drawer:toggle audit_drawer:close
+    audit_drawer:close
     clipboard:toggle clipboard:close clipboard:refresh clipboard:clear
     situation_drawer:toggle situation_drawer:close
     connect:toggle connect:close connect:load connect:mint connect:revoke
-    search:run annotation:open artifact:refresh artifact:serve artifact:inspect artifact:open
+    leader_help:toggle leader_help:close
+    search:run artifact:refresh artifact:serve artifact:inspect artifact:open
     history:search history:clear history:refresh
-    preview:open preview-pane:enter preview-pane:exit
+    preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
     pane:input file-pane:dirty
+    inspector:open inspector:close inspector:close_all inspector:select inspector:set_placement
+    diff:open_inspector
     run:cancel set_log_service
     ctx:open ctx:close
-    tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
+    tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:open
     tree:toggle_hidden tree:filter
-    tree:open_in_pane tree:new_form_at tree:duplicate
+    tree:new_form_at tree:duplicate
     tree:rename_form_node tree:rename_node tree:rename_node_cancel
     tree:delete_node_request tree:delete_node_confirm tree:delete_node_cancel
     file:rename_form file:rename_cancel file:rename_submit
     file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save file:render_mode
   )
 
+  @known_events @direct_events ++ @palette_events
+
   # Cockpit tabs addressable via "switch_tab" and the `?tab=` deep-link query
-  # param (docs/deep_links.md). Unknown values are ignored.
-  @tabs ~w(terminal files search diff artifacts run proposals logs history)
+  # param (docs/deep_links.md). Unknown values are ignored. Defined once in
+  # Casein.Cockpit.Tabs so this gate, the palette's "Open tab: …" catalog, and
+  # the mobile resume-card locator cannot disagree about which surfaces exist.
+  @tabs Tabs.all()
 
   @impl true
   def mount(params, session, socket) do
@@ -291,6 +311,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         # derivation of it (plus later, preview-only observation updates).
         # Empty on both static and connected first paint — same as :tree.
         |> assign(:feature_panes, %{})
+        # LiveView-owned inspector viewports + geometry tree (issue #690).
+        # Not registry-backed — reopening re-derives them.
+        |> InspectorEvents.mount_assigns()
         # Viewer-local set of {pane_id, path} with unsaved edits. Never persisted
         # or broadcast — it's this browser's dirty buffers, so the file-pane tab
         # strip shows a dot only for the viewer who has the unsaved edit. Kept in
@@ -357,6 +380,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:workspace_summaries, [])
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
+        |> assign(:leader_help_open, false)
         |> assign(:connect_drawer_open, false)
         |> assign(:connect_new_token, nil)
         |> assign(:connect_mcp_json, nil)
@@ -414,6 +438,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> subscribe_agent_write_unlock()
         |> subscribe_previews()
         |> subscribe_pane_events()
+        |> InspectorEvents.subscribe()
         |> subscribe_browser_control()
         |> subscribe_open_links()
         |> subscribe_pane_labels()
@@ -579,6 +604,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # from this module — pure code motion).
   def handle_event("switch_tab" = event, params, socket),
     do: NavEvents.handle_event(event, params, socket)
+
+  def handle_event("diff:open_in_pane" = event, params, socket),
+    do: DiffEvents.handle_event(event, params, socket)
 
   def handle_event("refresh" = event, params, socket),
     do: NavEvents.handle_event(event, params, socket)
@@ -864,6 +892,14 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_event("tree:open_in_pane" = event, params, socket),
     do: FilePaneEvents.handle_event(event, params, socket)
 
+  # LiveView-owned inspector region (issue #690) + diff open path (#691) —
+  # ordinary socket events, not the registry-backed pane:input path.
+  def handle_event("inspector:" <> _ = event, params, socket),
+    do: InspectorEvents.handle_event(event, params, socket)
+
+  def handle_event("diff:open_inspector" = event, params, socket),
+    do: InspectorEvents.handle_event(event, params, socket)
+
   # File-tree / editor events are handled by FileEvents (extracted from this
   # module — pure code motion). All "tree:*" and "file:*" events delegate there.
   def handle_event("tree:" <> _ = event, params, socket),
@@ -888,6 +924,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_event("clipboard:" <> _ = event, params, socket),
     do: ClipboardDrawerEvents.handle_event(event, params, socket)
 
+  # Leader cheatsheet open/close (tabs stay client-side).
+  def handle_event("leader_help:" <> _ = event, params, socket),
+    do: LeaderHelpEvents.handle_event(event, params, socket)
+
   # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
   # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
   @doc false
@@ -911,6 +951,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
     socket =
       if tab == "artifacts", do: ArtifactEvents.refresh_artifact_projects(socket), else: socket
+
+    socket =
+      if tab == "diff", do: refresh_git_status(socket), else: socket
 
     if tab == "history" do
       socket
@@ -1499,6 +1542,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # without tmux focus churn.
   def handle_info({:pane_event, _} = msg, socket),
     do: FilePaneEvents.handle_info(msg, socket)
+
+  # Agent/workspace surface request for a LiveView-owned inspector viewport.
+  def handle_info({:inspector_open, _} = msg, socket),
+    do: InspectorEvents.handle_info(msg, socket)
 
   # Legacy "preview:" lifecycle messages are no-ops in the LiveView since the
   # runtime cutover (the topic itself stays for MCP/controller consumers and
@@ -2487,6 +2534,13 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       desktop_terminal_term={@desktop_terminal_term}
       entered_preview_pane_id={@entered_preview_pane_id}
       feature_panes={@feature_panes}
+      cockpit_geometry={@cockpit_geometry}
+      inspector_fraction={@inspector_fraction}
+      inspector_panes={@inspector_panes}
+      inspector_placement={@inspector_placement}
+      active_inspector_id={@active_inspector_id}
+      inspector_focus_id={@inspector_focus_id}
+      inspector_zoomed?={@inspector_zoomed?}
       file_diff={@file_diff}
       file_error={@file_error}
       file_pane_dirty={@file_pane_dirty}
@@ -2502,6 +2556,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       history_results={@history_results}
       host_loc={@host_loc}
       host_path={@host_path}
+      leader_help_open={@leader_help_open}
       log_ref={@log_ref}
       log_service={@log_service}
       mobile_nav_focus={@mobile_nav_focus}
@@ -2683,6 +2738,12 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   @doc false
   def palette_categories, do: PalettePanel.palette_categories()
 
+  @doc false
+  # The fail-closed event allowlist (`@known_events`), exposed so tests can
+  # assert the derivation invariant: everything the palette may dispatch is
+  # admitted by the gate. Not part of the runtime surface.
+  def known_events, do: @known_events
+
   # render_path/2 and tab_class/2 now live in CaseinWeb.WorkspaceLive.Show.UI
   # (imported above).
 
@@ -2736,6 +2797,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         _ = Open.subscribe(workspace_id)
+        # Presence for one-shot inspector surface intents (diff_open MCP).
+        # Inspectors.request_open/2 itself is subscribed via InspectorEvents.
+        _ = Casein.Inspectors.Diff.register_viewer(workspace_id)
       end
     end
 

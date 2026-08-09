@@ -85,6 +85,7 @@ Running and shipping the box.
 | [`audit_remote.md`](audit_remote.md) | Ecto-backed (prod default) audit adapter and the `audit_events` table. |
 | [`hardening.md`](hardening.md) | Production hardening checklist (CSP, forward-auth, secrets). |
 | [`integrations/manager.md`](integrations/manager.md) | devbox-manager / Caddy integration and the on-box systemd deploy path. |
+| [`ops-pr-gate-postgres-shm.md`](ops-pr-gate-postgres-shm.md) | Self-hosted PR gate Postgres DSM / `ERROR 53100` under `/dev/shm`: single-flight status, `kernel.shmmni` raise procedure, optional dedicated gate Postgres (`shm_size: 1g`) design. |
 
 ## Working in this repo
 
@@ -95,6 +96,7 @@ Conventions and tracked follow-ups for contributors (human or agent).
 | [`development-workflow.md`](development-workflow.md) | Canonical workflow: primary checkout is deploy-only, agents launch in reported worktrees, branching/integration/deploy tiers, subsystem freeze. **Start here.** |
 | [`in-progress.md`](in-progress.md) | Direction-of-record for active subsystems — frozen paths while work is in flight. |
 | [`agent_concurrency.md`](agent_concurrency.md) | How to work safely when multiple agents share this checkout: isolated worktrees, verify against `HEAD`, commit only your pathspecs. |
+| [`agents/host-grok-dual-plane.md`](agents/host-grok-dual-plane.md) | Host Grok (laptop) vs Casein fleet MCP: dual-plane ground truth, multi-workspace `workspace_id`+`session` contract, mutate rules. |
 | [`coverage_map.md`](coverage_map.md) | Doc↔code ownership table, reported divergences, and the citation-verification record. |
 | [`code_cleanup_backlog.md`](code_cleanup_backlog.md) | Actionable code findings (dead code, duplication, spec mismatches, stale comments) surfaced during documentation. |
 

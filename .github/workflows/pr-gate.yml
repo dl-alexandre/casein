@@ -15,7 +15,11 @@ on:
   pull_request:
     branches: [master]
 
-# A newer push to the same PR supersedes an in-flight run.
+# Per-PR group: a newer push to the SAME PR cancels its superseded run (correct).
+# Do NOT use one global group with cancel-in-progress: false — GitHub keeps only
+# one pending run per group, so a third PR silently cancels the queued second and
+# the required `gate` check never appears (#753 regression / need-ci-shm-53100).
+# Host-level single-flight for the heavy suite is enforced with flock below.
 concurrency:
   group: pr-gate-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -90,7 +94,7 @@ jobs:
             echo "skills_touched=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run pre-push gate
+      - name: Run pre-push gate + release smoke
         if: steps.detect.outputs.docs_only != 'true'
         shell: bash
         run: |
@@ -98,17 +102,22 @@ jobs:
           # .tool-versions) on PATH so `mise exec -- mix ...` resolves.
           export PATH="$HOME/.local/bin:$PATH"
           command -v mise >/dev/null || { echo "mise not found on runner PATH"; exit 1; }
+          command -v flock >/dev/null || { echo "flock (util-linux) required on runner"; exit 1; }
+          # Host single-flight: one full suite + release-smoke at a time on this
+          # box, without GitHub discarding other PRs' queued runs. Hold one lock
+          # across both so they cannot interleave with another job's suite.
+          # Wait up to 45m (job timeout is 60m).
+          lock=/tmp/casein-pr-gate.lock
+          echo "Acquiring host gate lock ${lock} (single-flight suite on this box)…"
+          exec 9>"$lock"
+          if ! flock -w 2700 9; then
+            echo "::error::Timed out after 45m waiting for ${lock}. Another full gate still holds the box."
+            exit 1
+          fi
           bash scripts/pre-push-check.sh
-
-      - name: Build and inspect release
-        if: steps.detect.outputs.docs_only != 'true'
-        shell: bash
-        run: |
           # Reuse the production build cache warmed by earlier runs. The smoke
           # keeps its archive/extraction below _build and cleans disposable
           # output; it never publishes or activates the assembled release.
-          export PATH="$HOME/.local/bin:$PATH"
-          command -v mise >/dev/null || { echo "mise not found on runner PATH"; exit 1; }
           MIX="mise exec -- mix" bash scripts/release-smoke.sh
 
       - name: Test changed skills (skill-only PR)

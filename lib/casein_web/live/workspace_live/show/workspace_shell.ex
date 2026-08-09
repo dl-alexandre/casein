@@ -27,10 +27,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
 
   import CaseinWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import CaseinWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
+  import CaseinWeb.WorkspaceLive.Show.AgentWriteBanner, only: [agent_write_locked_banner: 1]
 
+  alias Casein.Cockpit.Geometry
   alias CaseinWeb.NotificationsDrawer
+  alias CaseinWeb.WorkspaceLive.Show.ActionAvailability
   alias CaseinWeb.WorkspaceLive.Show.ClipboardDrawer
   alias CaseinWeb.WorkspaceLive.Show.ContextMenu
+  alias CaseinWeb.WorkspaceLive.Show.LeaderBindings
   alias CaseinWeb.WorkspaceLive.Show.SessionBar
 
   attr :active_run, :any, required: true
@@ -76,6 +80,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :desktop_terminal_term, :any, required: true
   attr :entered_preview_pane_id, :any, required: true
   attr :feature_panes, :any, required: true
+  attr :cockpit_geometry, :any, required: true
+  attr :inspector_fraction, :any, required: true
+  attr :inspector_panes, :any, required: true
+  attr :inspector_placement, :any, required: true
+  attr :active_inspector_id, :any, required: true
+  attr :inspector_focus_id, :any, required: true
+  attr :inspector_zoomed?, :any, required: true
   attr :file_diff, :any, required: true
   attr :file_error, :any, required: true
   attr :file_pane_dirty, :any, required: true
@@ -91,6 +102,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :history_results, :any, required: true
   attr :host_loc, :any, required: true
   attr :host_path, :any, required: true
+  attr :leader_help_open, :any, required: true
   attr :log_ref, :any, required: true
   attr :log_service, :any, required: true
   attr :mobile_nav_focus, :any, required: true
@@ -192,6 +204,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   slot :header_back_nav, required: true, doc: "Frozen navigation back-link (stays owned by Show)."
 
   def workspace_shell(assigns) do
+    # One availability context per render, shared by the hidden leader-key
+    # dispatch buttons below — the same module the command palette filters with,
+    # so a key is never bound to an action the palette hides (ActionAvailability).
+    assigns =
+      assigns
+      |> assign(:action_ctx, ActionAvailability.context(assigns))
+      |> assign(:inspector_entries, List.wrap(assigns[:inspector_panes]))
+      |> assign(
+        :active_inspector_id,
+        CaseinWeb.WorkspaceLive.Show.InspectorFocus.active_id(assigns)
+      )
+      |> assign(:inspector_region_focused?, is_binary(assigns[:inspector_focus_id]))
+
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
 
@@ -231,6 +256,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
+      data-leader-bindings={Jason.encode!(LeaderBindings.key_map())}
       data-tmux-windows={swipe_window_json(@tmux_window_tabs)}
       class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 pointer-coarse:pt-0 pointer-coarse:pb-0 lg:px-6"
     >
@@ -451,6 +477,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
         </div>
       <% end %>
 
+      <.agent_write_locked_banner
+        workspace={@workspace}
+        agent_write_unlock={@agent_write_unlock}
+      />
+
       <%!-- Central leader-key dispatch targets. WorkspaceLeader routes every
             C-b second key to a click on [data-leader-action=...], so each
             action lives on exactly one element here (docs/leader_keys.md) —
@@ -487,7 +518,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             type="button"
             tabindex="-1"
             data-leader-action="help"
-            phx-click={JS.toggle(to: "#leader-cheatsheet")}
+            phx-click="leader_help:toggle"
           ></button>
           <button
             type="button"
@@ -562,7 +593,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             phx-click="terminal:rename_session_start"
             phx-value-session-id={@terminal_sid}
           ></button>
-          <%= if @tmux_mutations_enabled? do %>
+          <%= if ActionAvailability.available?("tmux:new_window", @action_ctx) do %>
             <button
               type="button"
               tabindex="-1"
@@ -577,7 +608,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             ></button>
           <% end %>
           <%!-- Pane focus arrows work across all tmux pane tiles. --%>
-          <%= if is_binary(@tmux_session) do %>
+          <%= if ActionAvailability.available?("pane:navigate", @action_ctx) do %>
             <button
               type="button"
               tabindex="-1"
@@ -615,7 +646,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             ></button>
           <% end %>
 
-          <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+          <%= if ActionAvailability.available?("split_right", @action_ctx) do %>
             <button
               type="button"
               tabindex="-1"
@@ -652,63 +683,132 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       <% end %>
 
       <div class="min-h-0 flex-1">
-        <.terminal_tab
-          :if={@tab == "terminal"}
-          active_window_pane_count={@active_window_pane_count}
-          chrome_visible={@chrome_visible}
-          default_terminal_sid={@default_terminal_sid}
-          desktop_terminal?={@desktop_terminal?}
-          desktop_terminal_pty={@desktop_terminal_pty}
-          desktop_terminal_refresh={@desktop_terminal_refresh}
-          desktop_terminal_status={@desktop_terminal_status}
-          desktop_terminal_term={@desktop_terminal_term}
-          entered_preview_pane_id={@entered_preview_pane_id}
-          feature_panes={@feature_panes}
-          file_pane_dirty={@file_pane_dirty}
-          focused_pane_id={@focused_pane_id}
-          host_loc={@host_loc}
-          mobile_nav_focus={@mobile_nav_focus}
-          mobile_nav_open={@mobile_nav_open}
-          mobile_nav_view={@mobile_nav_view}
-          pane_data={@pane_data}
-          pane_history={@pane_history}
-          preview_panes={@preview_panes}
-          session_tabs={@session_tabs}
-          sessions_sidebar_needs_you={@sessions_sidebar_needs_you}
-          sessions_sidebar_open?={@sessions_sidebar_open?}
-          sessions_sidebar_sort={@sessions_sidebar_sort}
-          sessions_sidebar_tree={@sessions_sidebar_tree}
-          shell_button_detail={@shell_button_detail}
-          shell_button_label={@shell_button_label}
-          terminal_mode={@terminal_mode}
-          terminal_sid={@terminal_sid}
-          terminal_surface_pane_id={@terminal_surface_pane_id}
-          terminal_themes={@terminal_themes}
-          tmux_active_pane_id={@tmux_active_pane_id}
-          tmux_mutations_enabled?={@tmux_mutations_enabled?}
-          tmux_rename_session_id={@tmux_rename_session_id}
-          tmux_rename_window_id={@tmux_rename_window_id}
-          tmux_session={@tmux_session}
-          tmux_topology_layout_version={@tmux_topology_layout_version}
-          tmux_topology_structure_version={@tmux_topology_structure_version}
-          tmux_window_tabs={@tmux_window_tabs}
-          tmux_windows={@tmux_windows}
-          ui_highlight_pane_id={@ui_highlight_pane_id}
-          window_sidebar_open?={@window_sidebar_open?}
-          window_zoomed?={@window_zoomed?}
-          windows_sidebar_sort={@windows_sidebar_sort}
-          windows_sidebar_tree={@windows_sidebar_tree}
-          workspace={@workspace}
-          workspace_route={@workspace_route}
-          workspace_start_error={@workspace_start_error}
-          agent_approval_count={
-            agent_approval_count(
-              @agent_pending_approval_count,
-              @codex_pending_approval_count,
-              @grok_permission_requests
-            )
-          }
-        />
+        <%= if @tab == "terminal" do %>
+          <% geometry = @cockpit_geometry || Geometry.terminal_only() %>
+          <% inspectors_open? = Geometry.inspector_open?(geometry) %>
+          <% inspector_zoomed? = inspectors_open? and @inspector_zoomed? == true %>
+          <% placement = Geometry.placement(geometry) %>
+          <% fraction = Geometry.inspector_fraction(geometry) %>
+          <div
+            id={"cockpit-split-" <> @workspace.id}
+            data-cockpit-split={if(inspectors_open?, do: "open", else: "closed")}
+            data-inspector-placement={if(inspectors_open?, do: Atom.to_string(placement), else: nil)}
+            data-inspector-fraction={if(inspectors_open?, do: to_string(fraction), else: nil)}
+            data-inspector-zoomed={to_string(inspector_zoomed?)}
+            data-inspector-focused={to_string(@inspector_region_focused?)}
+            data-geometry-kind={geometry.kind}
+            class={[
+              "flex h-full min-h-0 min-w-0",
+              inspectors_open? && not inspector_zoomed? && placement == :bottom && "flex-col",
+              inspectors_open? && not inspector_zoomed? && placement == :right && "flex-row",
+              inspector_zoomed? && "flex-col"
+            ]}
+          >
+            <div
+              id={"terminal-region-" <> @workspace.id}
+              data-terminal-region="true"
+              data-inspector-open={to_string(inspectors_open?)}
+              data-inspector-zoomed={to_string(inspector_zoomed?)}
+              class={[
+                "min-h-0 min-w-0 overflow-hidden",
+                not inspectors_open? && "h-full w-full flex-1",
+                inspector_zoomed? && "hidden"
+              ]}
+              style={if(inspector_zoomed?, do: nil, else: terminal_region_style(geometry))}
+            >
+              <.terminal_tab
+                active_window_pane_count={@active_window_pane_count}
+                chrome_visible={@chrome_visible}
+                default_terminal_sid={@default_terminal_sid}
+                desktop_terminal?={@desktop_terminal?}
+                desktop_terminal_pty={@desktop_terminal_pty}
+                desktop_terminal_refresh={@desktop_terminal_refresh}
+                desktop_terminal_status={@desktop_terminal_status}
+                desktop_terminal_term={@desktop_terminal_term}
+                entered_preview_pane_id={@entered_preview_pane_id}
+                feature_panes={@feature_panes}
+                file_pane_dirty={@file_pane_dirty}
+                focused_pane_id={@focused_pane_id}
+                host_loc={@host_loc}
+                mobile_nav_focus={@mobile_nav_focus}
+                mobile_nav_open={@mobile_nav_open}
+                mobile_nav_view={@mobile_nav_view}
+                pane_data={@pane_data}
+                pane_history={@pane_history}
+                preview_panes={@preview_panes}
+                session_tabs={@session_tabs}
+                sessions_sidebar_needs_you={@sessions_sidebar_needs_you}
+                sessions_sidebar_open?={@sessions_sidebar_open?}
+                sessions_sidebar_sort={@sessions_sidebar_sort}
+                sessions_sidebar_tree={@sessions_sidebar_tree}
+                shell_button_detail={@shell_button_detail}
+                shell_button_label={@shell_button_label}
+                terminal_mode={@terminal_mode}
+                terminal_sid={@terminal_sid}
+                terminal_surface_pane_id={@terminal_surface_pane_id}
+                terminal_themes={@terminal_themes}
+                tmux_active_pane_id={@tmux_active_pane_id}
+                tmux_mutations_enabled?={@tmux_mutations_enabled?}
+                tmux_rename_session_id={@tmux_rename_session_id}
+                tmux_rename_window_id={@tmux_rename_window_id}
+                tmux_session={@tmux_session}
+                tmux_topology_layout_version={@tmux_topology_layout_version}
+                tmux_topology_structure_version={@tmux_topology_structure_version}
+                tmux_window_tabs={@tmux_window_tabs}
+                tmux_windows={@tmux_windows}
+                ui_highlight_pane_id={@ui_highlight_pane_id}
+                window_sidebar_open?={@window_sidebar_open?}
+                window_zoomed?={@window_zoomed?}
+                windows_sidebar_sort={@windows_sidebar_sort}
+                windows_sidebar_tree={@windows_sidebar_tree}
+                workspace={@workspace}
+                workspace_route={@workspace_route}
+                workspace_start_error={@workspace_start_error}
+                agent_approval_count={
+                  agent_approval_count(
+                    @agent_pending_approval_count,
+                    @codex_pending_approval_count,
+                    @grok_permission_requests
+                  )
+                }
+              />
+            </div>
+            <aside
+              :if={inspectors_open?}
+              id={"inspector-region-" <> @workspace.id}
+              data-inspector-region="true"
+              data-inspector-placement={Atom.to_string(placement)}
+              data-inspector-focused={to_string(@inspector_region_focused?)}
+              data-inspector-zoomed={to_string(inspector_zoomed?)}
+              data-active-inspector-id={@active_inspector_id}
+              class={[
+                "min-h-0 min-w-0 overflow-hidden border-base-300/70 bg-base-200/40",
+                not inspector_zoomed? && placement == :right && "border-l",
+                not inspector_zoomed? && placement == :bottom && "border-t",
+                inspector_zoomed? && "h-full w-full flex-1 border-0",
+                @inspector_region_focused? && "ring-1 ring-inset ring-primary/70"
+              ]}
+              style={
+                if(inspector_zoomed?,
+                  do: "flex: 1 1 auto; max-width: 100%; max-height: 100%",
+                  else: inspector_region_style(geometry)
+                )
+              }
+            >
+              <.inspector_region
+                workspace_id={@workspace.id}
+                entries={@inspector_entries}
+                placement={placement}
+                active_id={@active_inspector_id}
+                focused?={@inspector_region_focused?}
+                zoomed?={inspector_zoomed?}
+                git_status={@git_status}
+                open_file={@open_file}
+                file_diff={@file_diff}
+              />
+            </aside>
+          </div>
+        <% end %>
         <.files_panel
           :if={@tab == "files"}
           host_loc={@host_loc}
@@ -838,6 +938,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       count={@clipboard_count}
     />
     <.leader_help_overlay
+      open={@leader_help_open}
       connect_new_token={@connect_new_token}
       connect_mcp_json={@connect_mcp_json}
       connect_tokens={@connect_tokens}
@@ -909,4 +1010,172 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       end
     end
   end
+
+  # --- inspector region (LiveView-owned viewports, issue #690) ------------------
+
+  defp terminal_region_style(geometry) do
+    case Geometry.terminal_basis_percent(geometry) do
+      nil ->
+        nil
+
+      pct ->
+        case Geometry.placement(geometry) do
+          :bottom -> "flex: 0 0 #{pct}%; max-height: #{pct}%"
+          _ -> "flex: 0 0 #{pct}%; max-width: #{pct}%"
+        end
+    end
+  end
+
+  defp inspector_region_style(geometry) do
+    case Geometry.inspector_basis_percent(geometry) do
+      nil ->
+        nil
+
+      pct ->
+        case Geometry.placement(geometry) do
+          :bottom -> "flex: 0 0 #{pct}%; max-height: #{pct}%"
+          _ -> "flex: 0 0 #{pct}%; max-width: #{pct}%"
+        end
+    end
+  end
+
+  attr :workspace_id, :string, required: true
+  attr :entries, :list, required: true
+  attr :placement, :atom, required: true
+  attr :active_id, :any, required: true
+  attr :focused?, :boolean, required: true
+  attr :zoomed?, :boolean, required: true
+  attr :git_status, :any, required: true
+  attr :open_file, :any, required: true
+  attr :file_diff, :any, required: true
+
+  defp inspector_region(assigns) do
+    ~H"""
+    <div class="flex h-full min-h-0 flex-col" data-inspector-chrome="true">
+      <div class="flex shrink-0 items-center gap-1 border-b border-base-300/60 bg-base-200/80 px-1.5 py-1">
+        <div
+          id={"inspector-tabs-" <> @workspace_id}
+          class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+          role="tablist"
+          aria-label="Inspector panes"
+        >
+          <button
+            :for={{entry, index} <- Enum.with_index(@entries)}
+            id={"inspector-tab-" <> entry.id}
+            type="button"
+            role="tab"
+            aria-selected={to_string(entry.id == @active_id)}
+            data-inspector-tab={entry.id}
+            data-pane-kind="inspector"
+            data-pane-index={index}
+            data-active={to_string(entry.id == @active_id)}
+            data-focused={to_string(@focused? and entry.id == @active_id)}
+            phx-click="inspector:select"
+            phx-value-id={entry.id}
+            class={[
+              "group flex max-w-[14rem] items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition",
+              entry.id == @active_id &&
+                "bg-base-100 text-base-content shadow-sm ring-1 ring-base-300/80",
+              entry.id != @active_id &&
+                "text-base-content/60 hover:bg-base-100/70 hover:text-base-content/80",
+              (@focused? and entry.id == @active_id) && "ring-primary/60"
+            ]}
+          >
+            <span class="font-mono text-[10px] text-base-content/40">{index}</span>
+            <span class="truncate font-medium">{inspector_title(entry)}</span>
+            <span class="rounded bg-base-300/50 px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide text-base-content/45">
+              {inspector_kind_label(entry)}
+            </span>
+            <span
+              role="button"
+              tabindex="-1"
+              data-inspector-tab-close={entry.id}
+              phx-click="inspector:close"
+              phx-value-id={entry.id}
+              class="ml-0.5 rounded p-0.5 text-base-content/35 opacity-70 hover:bg-base-300/60 hover:text-base-content/80 group-hover:opacity-100"
+              aria-label={"Close " <> inspector_title(entry)}
+            >
+              <.icon name="hero-x-mark" class="h-3 w-3" />
+            </span>
+          </button>
+        </div>
+        <div class="flex shrink-0 items-center gap-1 pl-1 text-[10px] text-base-content/45">
+          <span :if={@zoomed?} class="rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
+            zoomed
+          </span>
+          <span class="font-mono uppercase tracking-wide">z/x</span>
+        </div>
+      </div>
+
+      <div class="min-h-0 flex-1 overflow-auto">
+        <div
+          :for={entry <- @entries}
+          id={"inspector-pane-" <> entry.id}
+          data-inspector-pane-id={entry.id}
+          data-inspector-kind={inspector_kind_attr(entry.kind)}
+          data-pane-kind="inspector"
+          data-focused={to_string(@focused? and entry.id == @active_id)}
+          hidden={entry.id != @active_id}
+          class={[
+            "flex h-full min-h-0 flex-col",
+            entry.id != @active_id && "hidden",
+            (@focused? and entry.id == @active_id) && "bg-base-100/40"
+          ]}
+        >
+          <div class="flex shrink-0 items-center justify-between gap-2 border-b border-base-300/40 px-3 py-1.5">
+            <div class="min-w-0">
+              <div class="truncate text-sm font-medium text-base-content/90">
+                {inspector_title(entry)}
+              </div>
+              <div class="truncate font-mono text-[11px] text-base-content/45">
+                {entry.id}
+              </div>
+            </div>
+            <button
+              type="button"
+              id={"inspector-close-" <> entry.id}
+              phx-click="inspector:close"
+              phx-value-id={entry.id}
+              class="btn btn-ghost btn-xs"
+              data-leader-second-key="x"
+            >
+              Close
+            </button>
+          </div>
+          <div class="min-h-0 flex-1 overflow-auto p-3 text-sm text-base-content/80">
+            <%= if entry.kind == :diff do %>
+              <.diff_panel
+                git_status={@git_status}
+                open_file={@open_file}
+                file_diff={@file_diff}
+              />
+            <% else %>
+              <div class="rounded-md border border-base-300/50 bg-base-100/70 px-3 py-2">
+                <div class="text-[11px] uppercase tracking-wide text-base-content/45">
+                  {inspector_kind_label(entry)}
+                </div>
+                <div class="mt-1 font-medium">{inspector_title(entry)}</div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp inspector_title(%{title: title}) when is_binary(title) and title != "", do: title
+
+  defp inspector_title(%{kind: kind}) when is_atom(kind),
+    do: kind |> Atom.to_string() |> String.capitalize()
+
+  defp inspector_title(_), do: "Inspector"
+
+  defp inspector_kind_label(%{kind: kind}) when is_atom(kind), do: Atom.to_string(kind)
+  defp inspector_kind_label(%{kind: kind}) when is_binary(kind), do: kind
+  defp inspector_kind_label(_), do: "insp"
+
+  defp inspector_kind_attr(kind) when is_atom(kind), do: Atom.to_string(kind)
+  defp inspector_kind_attr(kind) when is_binary(kind), do: kind
+  defp inspector_kind_attr(_), do: "inspector"
 end

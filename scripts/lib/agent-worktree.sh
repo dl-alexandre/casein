@@ -6,12 +6,54 @@ agent_worktree_root() {
   printf '%s\n' "${CASEIN_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
 }
 
+agent_worktree_is_bare() {
+  local dir="${1:-}"
+  [[ -n "$dir" ]] || return 1
+  [[ "$(git -C "$dir" rev-parse --is-bare-repository 2>/dev/null || true)" == "true" ]]
+}
+
+# Resolve the primary repo path for CASEIN_CHECKOUT.
+# Works for normal work trees and bare product roots (Mira-class): on bare,
+# `rev-parse --show-toplevel` fails with "must be run in a work tree", but
+# `git worktree add` still works from the bare path. Prefer porcelain's first
+# worktree entry (the bare root itself), then absolute-git-dir.
 agent_worktree_primary_repo() {
   local checkout="${CASEIN_CHECKOUT:-}"
+  local toplevel listing line bare_path=""
+
   if [[ -z "$checkout" ]]; then
     return 1
   fi
-  git -C "$checkout" rev-parse --show-toplevel 2>/dev/null
+
+  if toplevel="$(git -C "$checkout" rev-parse --show-toplevel 2>/dev/null)"; then
+    printf '%s\n' "$toplevel"
+    return 0
+  fi
+
+  if ! agent_worktree_is_bare "$checkout"; then
+    return 1
+  fi
+
+  if listing="$(git -C "$checkout" worktree list --porcelain 2>/dev/null)"; then
+    while IFS= read -r line; do
+      if [[ "$line" == "worktree "* ]]; then
+        bare_path="${line#worktree }"
+        break
+      fi
+    done <<<"$listing"
+  fi
+
+  if [[ -n "$bare_path" && -e "$bare_path" ]]; then
+    printf '%s\n' "$bare_path"
+    return 0
+  fi
+
+  if bare_path="$(git -C "$checkout" rev-parse --absolute-git-dir 2>/dev/null)"; then
+    printf '%s\n' "$bare_path"
+    return 0
+  fi
+
+  return 1
 }
 
 agent_worktree_is_linked() {
@@ -21,8 +63,19 @@ agent_worktree_is_linked() {
 
 agent_worktree_inside_primary() {
   local dir="${1:-${PWD}}"
-  local primary repo_root
+  local primary repo_root abs_dir abs_primary
+
   primary="$(agent_worktree_primary_repo)" || return 1
+
+  # Bare primary has no work tree: standing on the bare path itself counts as
+  # "inside primary" so launch still branches a fresh linked worktree.
+  if agent_worktree_is_bare "$primary"; then
+    abs_dir="$(cd "$dir" 2>/dev/null && pwd -P)" || return 1
+    abs_primary="$(cd "$primary" 2>/dev/null && pwd -P)" || abs_primary="$primary"
+    [[ "$abs_dir" == "$abs_primary" ]]
+    return
+  fi
+
   repo_root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || return 1
   [[ "$repo_root" == "$primary" ]] && ! agent_worktree_is_linked "$dir"
 }
@@ -67,7 +120,16 @@ agent_worktree_create() {
   local primary wt_root branch path
 
   primary="$(agent_worktree_primary_repo)" || {
-    echo "error: CASEIN_CHECKOUT is not a git repository" >&2
+    if [[ -n "${CASEIN_CHECKOUT:-}" ]] && agent_worktree_is_bare "${CASEIN_CHECKOUT}"; then
+      cat >&2 <<'EOF'
+error: CASEIN_CHECKOUT is a bare git checkout but its primary path could not be resolved.
+error:   Bare product roots are supported — `git worktree add` runs from the bare path.
+error:   See docs/development-workflow.md (agent worktrees) and scripts/spawn-agent-worker.sh --help.
+EOF
+    else
+      echo "error: CASEIN_CHECKOUT is not a git repository (${CASEIN_CHECKOUT:-unset})" >&2
+      echo "error:   For bare product checkouts see docs/development-workflow.md (agent worktrees)." >&2
+    fi
     return 1
   }
 
@@ -195,7 +257,9 @@ agent_worktree_ensure() {
     fi
 
     if agent_worktree_is_linked "${PWD}"; then
-      export CASEIN_CHECKOUT="$(git -C "${PWD}" rev-parse --show-toplevel)"
+      local linked_root
+      linked_root="$(git -C "${PWD}" rev-parse --show-toplevel)"
+      export CASEIN_CHECKOUT="$linked_root"
       export CASEIN_WORKTREE=1
       agent_worktree_report_mcp "${CASEIN_CHECKOUT}" "$runtime"
       return 0

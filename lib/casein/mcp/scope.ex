@@ -64,6 +64,9 @@ defmodule Casein.MCP.Scope do
     terminal_set_agent_label
     terminal_report_agent_state
     terminal_wait_agent_state
+    terminal_set_next_prompt
+    terminal_clear_next_prompt
+    terminal_get_next_prompt
   )
 
   @doc """

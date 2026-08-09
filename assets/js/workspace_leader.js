@@ -57,12 +57,13 @@ function phxValuePayload(el) {
 
 function leaderHelpVisible() {
   const help = document.getElementById("leader-cheatsheet")
-  return help && getComputedStyle(help).display !== "none"
+  return !!help && getComputedStyle(help).display !== "none"
 }
 
-function closeLeaderHelp() {
-  const help = document.getElementById("leader-cheatsheet")
-  if (help) help.style.display = "none"
+function closeLeaderHelp(hook) {
+  // Open/closed is server state under the overlay arbiter; Esc and other
+  // client close paths must push rather than toggle display locally.
+  if (hook?.pushEvent) hook.pushEvent("leader_help:close", {})
 }
 
 // Cycle the help overlay's active tab (Shortcuts → Preview → …). Pass dir = -1
@@ -81,8 +82,24 @@ function cycleLeaderHelpTab(dir = 1) {
   return true
 }
 
+// The C-b keymap is served by the server (LeaderBindings) on the hook element,
+// so this file holds no bindings of its own — the same table drives the
+// cheatsheet, the palette hints, and the visible chrome glyphs.
+function parseLeaderActions(el) {
+  try {
+    const parsed = JSON.parse(el.dataset.leaderBindings || "{}")
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch (_err) {
+    // A malformed map disables leader keys rather than the whole hook; every
+    // one of these actions stays reachable from the mouse-driven chrome.
+    console.error("[WorkspaceLeader] could not parse data-leader-bindings")
+    return {}
+  }
+}
+
 export const WorkspaceLeader = {
   mounted() {
+    this._leaderActions = parseLeaderActions(this.el)
     this._leaderActive = false
     this._leaderCommandActive = false
     this._leaderCommandToken = 0
@@ -253,6 +270,7 @@ export const WorkspaceLeader = {
   // LiveView patches re-render the header prefix button with its static
   // aria-pressed="false"; re-apply the client-held leader state after each one.
   updated() {
+    this._leaderActions = parseLeaderActions(this.el)
     this._renderLeaderButtons()
   },
 
@@ -280,7 +298,7 @@ export const WorkspaceLeader = {
     if (e.key === "Escape" && leaderHelpVisible()) {
       e.preventDefault()
       e.stopImmediatePropagation()
-      closeLeaderHelp()
+      closeLeaderHelp(this)
       return
     }
 
@@ -384,6 +402,7 @@ export const WorkspaceLeader = {
       canCycleHelpTab,
       mobileLayout: pickerElementVisible(mobileKeyBar),
       ...visiblePickerSurfaces(document),
+      actions: this._leaderActions,
       windowSidebarVisible: !!(windowSidebarEl && windowSidebarEl.offsetParent !== null),
       sessionsSidebarVisible: !!(sessionsSidebarEl && sessionsSidebarEl.offsetParent !== null),
     })

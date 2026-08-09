@@ -353,6 +353,61 @@ behavior — `deploy-devbox.yml` replaces `/opt/casein/release` from git. See
 All session-scoped tools require a `casein_`-prefixed session that currently
 exists; a `pane` must belong to that session.
 
+## Talking to a busy agent: the sticky next prompt
+
+Pasting into a pane whose agent is mid-turn is how messages get lost. The text
+lands in a composer that never submits, or the injection interrupts a turn that
+was about to succeed. Use `terminal_set_next_prompt` instead: Casein holds the
+message and injects it on the pane's next state edge.
+
+```json
+{"name": "terminal_set_next_prompt",
+ "arguments": {"workspace_id": "ws-1", "pane": "%3",
+               "text": "master moved — rebase before you push",
+               "deliver_when": "next_done",
+               "coalesce_key": "orchestrator-1"}}
+```
+
+Semantics worth knowing before you rely on it:
+
+- **One slot per pane.** A second `terminal_set_next_prompt` *replaces* the
+  first. This is not a queue; `coalesce_key` only tells you whether the pending
+  message is still yours (and lets `terminal_clear_next_prompt` refuse to clear
+  someone else's).
+- **`deliver_when` defaults to `next_idle`, which covers `done` too** — read it
+  as "when the agent stops working". Claude's hook emits a literal `idle` only
+  at session start/end, so `next_idle` alone would rarely fire. Use `next_done`
+  when you mean a completed turn and `next_blocked` for permission prompts.
+- **Already-free panes get it immediately.** `status` in the response is
+  `"delivered"` rather than `"pending"` when the requested edge had already
+  passed, so a message is never silently held forever.
+- **It is dropped, not delivered, if the agent restarts** (bound
+  `agent_session_id` changes), the pane dies, or `expires_in_seconds` elapses
+  (24h default).
+- **Nothing interrupts a working agent.** There is no interrupt flag by design.
+
+`terminal_topology` and `terminal_agent_pane` flag panes carrying a staged
+message with `pending_next_prompt: true`, so you can see what is queued without
+a per-pane call.
+
+## Knowing whether a submit actually landed
+
+`terminal_send_agent_command` and `terminal_paste_agent_text` (with
+`submit: true`) now verify that the agent consumed the Enter instead of
+reporting success as soon as tmux accepted the keystroke. Responses carry:
+
+| `delivery` | Meaning |
+|------------|---------|
+| `delivered` | The runtime reported a new turn, or the pane visibly redrew. |
+| `not_confirmed` | Two Enter presses and the pane never moved. The text may be sitting unsent — capture the pane before resending. |
+| `uncertain` | The pane could not be captured, so neither signal was readable. |
+| `skipped` | `confirm: false`, or there was nothing to submit. |
+
+An unconfirmed submit is reported, not raised: the signals are heuristics over a
+screen Casein does not own. Pass `confirm: false` when the keystroke itself is
+the point (answering a TUI menu or a y/n prompt), where no new turn starts and
+the confirmation would always read as unconfirmed.
+
 ## Smoke Test
 
 Set the base URL, token, and workspace:
@@ -464,6 +519,11 @@ curl -sS -X POST "$CASEIN_URL/api/terminals/mcp" \
 shell. Access control is the API token plus the `casein_` session guardrail and
 workspace scoping; command execution can additionally be constrained with the
 configurable [command policy](#command-policy).
+Both also refuse a git command that would write a worktree another pane is
+working in — `shared_worktree_mutation`, naming the tree and the other panes,
+overridable per call with `allow_shared_worktree: true`. Concurrent git in one
+worktree corrupts index state rather than failing cleanly, so this is the one
+class of command where a `sent` receipt was worse than an error.
 `terminal_capture` returns the full scrollback by default; pass `lines` to
 bound what the agent reads.
 When `workspace_id` is omitted, `terminal_list_sessions` omits the field from

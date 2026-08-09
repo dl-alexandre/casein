@@ -29,6 +29,10 @@ defmodule Casein.Supervision.Terminals do
       # with it by design: a crash must un-hide trashed windows, never strand
       # them hidden with no timer left to kill or restore them.
       Casein.Terminals.WindowTrash,
+      # Soft-closes finished agent windows *through* WindowTrash above, so the
+      # close stays undoable. Starts inert: with no `:done_agent_window_sweep_ms`
+      # configured it arms no timer and sweeps nothing.
+      Casein.Terminals.DoneAgentWindows,
       Casein.Mobile.TerminalReaper
     ]
 

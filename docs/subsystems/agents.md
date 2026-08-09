@@ -374,6 +374,22 @@ available. The list is surfaced through agent UI and `GET
 - **`review_command` argv is fixed at compile time.** Users pick an id from the
   allowlist; they never supply argv. `requires` is matched against detected
   `Capability.kind`s before a `Run` starts.
+- **A pane id from `spawn-agent-worker.sh` means a live agent, not a window.**
+  `tmux new-window -P` returns a pane id the moment the window exists, and the
+  window survives its launch command failing late — which produced spawns that
+  reported success for a window holding nothing but a shell, and callers that
+  briefed a pane which could never answer. The helper now waits for the runtime's
+  own process (the same executable `real_agent_bin` resolves for
+  `launch-casein-agent.sh`) to appear in the pane's **process tree**, not just for
+  a live pane: tmux runs the launch command under a shell that does not exec the
+  tail of an `&&` chain, so the agent is a child of the pane process. Matching on
+  `pane_current_command` alone is not enough either — a healthy Codex pane reports
+  `node`. On failure it prints the pane tail, closes the window (or renames it
+  `failed-worker-<slug>` under `CASEIN_SPAWN_KEEP_FAILED_WINDOW=1`), and exits
+  non-zero. Budget is `CASEIN_SPAWN_READY_SECONDS` (default 120; `0` waives for
+  callers running their own readiness check). Verify a box end to end with
+  `scripts/smoke-spawn-agent-worker.sh <runtime>`, which re-checks the tree
+  itself rather than trusting the exit code.
 
 ## See also
 

@@ -115,6 +115,46 @@ defmodule Casein.Labels do
     GenServer.call(__MODULE__, :clear)
   end
 
+  @doc """
+  Attach `:label` (display string) to topology panes from the session store.
+
+  Pure join — does not invent labels. Used by fleet chrome so
+  `terminal_topology` can distinguish `manager` vs `worker` without a
+  separate Labels lookup.
+  """
+  @spec enrich_topology(map(), String.t()) :: map()
+  def enrich_topology(%{panes: panes} = topology, tmux_session)
+      when is_list(panes) and is_binary(tmux_session) do
+    case for_session(tmux_session) do
+      labels when map_size(labels) == 0 ->
+        topology
+
+      labels ->
+        %{
+          topology
+          | panes:
+              Enum.map(panes, fn pane ->
+                pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+
+                entry =
+                  if is_binary(pane_id) do
+                    Map.get(labels, key(tmux_session, pane_id))
+                  end
+
+                case entry do
+                  %{label: label} when is_binary(label) and label != "" ->
+                    Map.put(pane, :label, label)
+
+                  _ ->
+                    pane
+                end
+              end)
+        }
+    end
+  end
+
+  def enrich_topology(topology, _tmux_session), do: topology
+
   defp propose(workspace_id, tmux_session, pane_id, label, source, tool, opts) do
     GenServer.cast(__MODULE__, {
       :propose,

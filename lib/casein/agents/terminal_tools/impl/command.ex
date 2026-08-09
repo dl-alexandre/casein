@@ -5,7 +5,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
   alias Casein.FilePanes
   alias Casein.FilePanes.LinkResolver
   alias Casein.Files.BrowserViewable
+  alias Casein.Inspectors.Diff
   alias Casein.Previews
+  alias Casein.Runs.AgentLifecycle
+  alias Casein.Terminals.SharedWorktreeGuard
   alias Casein.Workspaces
 
   import Casein.Agents.TerminalTools.Impl.Shared
@@ -18,9 +21,11 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
          {:ok, raw_target} <- target_arg(session, params) do
       {target, implicit?} = resolve_implicit_target(session, raw_target)
 
-      case tmux().send_keys(target, keys) do
-        {_out, 0} -> {:ok, raw_sent_payload(session, target, implicit?, params)}
-        {out, _code} -> {:error, String.trim(out)}
+      with :ok <- guard_shared_worktree(session, target, keys, params) do
+        case tmux().send_keys(target, keys) do
+          {_out, 0} -> {:ok, raw_sent_payload(session, target, implicit?, params)}
+          {out, _code} -> {:error, String.trim(out)}
+        end
       end
     end
   end
@@ -33,12 +38,55 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
          {:ok, raw_target} <- target_arg(session, params) do
       {target, implicit?} = resolve_implicit_target(session, raw_target)
 
-      case tmux().send_command(target, command) do
-        :ok -> {:ok, raw_sent_payload(session, target, implicit?, params)}
-        {:error, reason} -> {:error, reason}
-        {out, _code} -> {:error, String.trim(out)}
+      with :ok <- guard_shared_worktree(session, target, command, params) do
+        case tmux().send_command(target, command) do
+          :ok ->
+            # Fallback open for silent runtimes (Grok/OpenCode). Primary open is
+            # still `:working` via AgentLifecycle.observe_state/1.
+            note_lifecycle_send_command(params, session, target, command)
+            {:ok, raw_sent_payload(session, target, implicit?, params)}
+
+          {:error, reason} ->
+            {:error, reason}
+
+          {out, _code} ->
+            {:error, String.trim(out)}
+        end
       end
     end
+  end
+
+  defp note_lifecycle_send_command(params, session, target, command) do
+    case workspace_id(params) do
+      id when is_binary(id) and id != "" ->
+        AgentLifecycle.note_send_command(%{
+          workspace_id: id,
+          tmux_session: session,
+          pane_id: target,
+          actor_id: string_param(params, "actor_id") || "agent",
+          tool: "terminal_send_command",
+          message: command,
+          source: :send_command
+        })
+
+      _ ->
+        :ok
+    end
+  end
+
+  # `terminal_topology` has reported shared worktrees for a while, but the
+  # warning reaches whoever asked for the topology — not the caller about to run
+  # `git reset --hard` in the shared tree. Answer at the write instead. Soft:
+  # `allow_shared_worktree: true` goes through, because adoption of an existing
+  # worktree is a deliberate mode, not a mistake.
+  defp guard_shared_worktree(session, target, command, params) do
+    SharedWorktreeGuard.check(session, target, command,
+      allow_shared_worktree:
+        truthy?(
+          Map.get(params, "allow_shared_worktree") || Map.get(params, :allow_shared_worktree)
+        ),
+      tmux: tmux()
+    )
   end
 
   @doc """
@@ -175,6 +223,39 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
         {:error, reason} ->
           {:error, reason}
       end
+    end
+  end
+
+  @doc """
+  One-shot intent: surface a git diff to a connected cockpit viewer.
+
+  Takes **what** (optional path), never **where**. No pane handle is returned.
+  When no viewer is watching the workspace the call is a no-op (`status:
+  "no_viewer"`) — do not queue or persist.
+  """
+  @spec open_diff(map()) :: {:ok, map()} | {:error, term()}
+  def open_diff(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, workspace} <- fetch_workspace(workspace_id),
+         {:ok, path} <- optional_diff_path(workspace, params) do
+      Diff.surface(workspace.id, %{
+        path: path,
+        actor_id: string_param(params, "actor_id")
+      })
+    end
+  end
+
+  # Optional path: when present, confine it the same way file opens do. When
+  # absent, surface the workspace-wide diff overview.
+  defp optional_diff_path(workspace, params) do
+    case string_param(params, "path") do
+      nil ->
+        {:ok, nil}
+
+      path ->
+        with {:ok, root} <- local_workspace_root(workspace) do
+          resolve_workspace_path(root, path)
+        end
     end
   end
 

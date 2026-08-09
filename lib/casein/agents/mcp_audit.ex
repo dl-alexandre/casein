@@ -149,12 +149,15 @@ defmodule Casein.Agents.MCPAudit do
         "terminal_send_agent_keys",
         "terminal_send_agent_command",
         "terminal_paste_agent_text",
+        "terminal_set_next_prompt",
+        "terminal_clear_next_prompt",
         "terminal_request_clarification",
         "terminal_request_human_input",
         "annotation_propose",
         "terminal_set_agent_label",
         "gate_report",
-        "file_open_in_pane"
+        "file_open_in_pane",
+        "diff_open"
       ]
 
   defp mutating_preview_tool?(tool),
@@ -284,6 +287,13 @@ defmodule Casein.Agents.MCPAudit do
     if is_binary(label), do: "set label · " <> truncate(label), else: "terminal_set_agent_label"
   end
 
+  defp terminal_summary("terminal_set_next_prompt", args) do
+    when_ = Map.get(args, "deliver_when") || Map.get(args, :deliver_when) || "next_idle"
+    text = Map.get(args, "text") || Map.get(args, :text)
+    base = "next prompt · " <> to_string(when_)
+    if is_binary(text), do: base <> " · " <> truncate(text), else: base
+  end
+
   defp terminal_summary("terminal_report_agent_state", args) do
     state = Map.get(args, "state") || Map.get(args, :state)
     message = Map.get(args, "message") || Map.get(args, :message)
@@ -309,6 +319,18 @@ defmodule Casein.Agents.MCPAudit do
       |> Enum.reject(&is_nil/1)
 
     if parts == [], do: "file_open_in_pane", else: "file_open_in_pane · " <> Enum.join(parts, " ")
+  end
+
+  defp terminal_summary("diff_open", args) do
+    path = Map.get(args, "path") || Map.get(args, :path)
+
+    parts =
+      [
+        if(is_binary(path) and path != "", do: "path=#{truncate(path)}")
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: "diff_open", else: "diff_open · " <> Enum.join(parts, " ")
   end
 
   defp terminal_summary(tool, args) do

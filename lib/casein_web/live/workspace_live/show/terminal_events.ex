@@ -12,7 +12,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
 
   alias Casein.Terminals
   alias Casein.Terminals.WindowTrash
-  alias Casein.Attention.Policy, as: AttentionPolicy
+  alias Casein.Attention.Delivery
   alias Casein.Workspaces.Scratch
   alias CaseinWeb.WorkspaceLive.PaneHistoryWorker
   alias CaseinWeb.WorkspaceLive.Show
@@ -31,7 +31,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   def handle_event("terminal:attention_surface", %{"state" => state}, socket) do
-    {:noreply, assign(socket, :attention_surface_state, AttentionPolicy.surface_state(state))}
+    # Normalizes focus input for Delivery.delivery_decision/1 — not classification.
+    {:noreply, assign(socket, :attention_surface_state, Delivery.surface_state(state))}
   end
 
   def handle_event("tmux:refresh_windows", _params, socket) do
@@ -544,40 +545,51 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
 
   def handle_event("pane:navigate", %{"dir" => dir}, socket)
       when dir in ["left", "right", "up", "down", "next", "prev", "last"] do
-    tmux_dir =
-      %{
-        "left" => "L",
-        "right" => "R",
-        "up" => "U",
-        "down" => "D",
-        "next" => "n",
-        "prev" => "p",
-        "last" => "l"
-      }[dir]
+    # Cross-region focus for inspectors is socket state only. The tmux adapter
+    # path below is unchanged for real pane navigation.
+    case CaseinWeb.WorkspaceLive.Show.InspectorFocus.navigate(socket, dir) do
+      {:inspector, socket} ->
+        {:noreply, socket}
 
-    was_zoomed? = socket.assigns[:window_zoomed?]
+      {:terminal, socket} ->
+        {:noreply, TerminalState.focus_active_terminal(socket, %{"reason" => "pane:navigate"})}
 
-    case TerminalState.tmux_adapter().navigate_pane(socket.assigns.tmux_session, tmux_dir) do
-      :ok ->
-        socket = socket |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+      :tmux ->
+        tmux_dir =
+          %{
+            "left" => "L",
+            "right" => "R",
+            "up" => "U",
+            "down" => "D",
+            "next" => "n",
+            "prev" => "p",
+            "last" => "l"
+          }[dir]
 
-        socket =
-          if was_zoomed? do
-            new_pane = socket.assigns[:tmux_active_pane_id]
-            session = socket.assigns[:tmux_session]
-            TerminalState.tmux_adapter().zoom_pane(session, new_pane)
-            socket |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
-          else
-            socket
-          end
+        was_zoomed? = socket.assigns[:window_zoomed?]
 
-        {:noreply,
-         socket
-         |> TerminalState.patch_current_session()
-         |> TerminalState.focus_active_terminal(%{"reason" => "pane:navigate"})}
+        case TerminalState.tmux_adapter().navigate_pane(socket.assigns.tmux_session, tmux_dir) do
+          :ok ->
+            socket = socket |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not navigate pane: #{inspect(reason)}")}
+            socket =
+              if was_zoomed? do
+                new_pane = socket.assigns[:tmux_active_pane_id]
+                session = socket.assigns[:tmux_session]
+                TerminalState.tmux_adapter().zoom_pane(session, new_pane)
+                socket |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+              else
+                socket
+              end
+
+            {:noreply,
+             socket
+             |> TerminalState.patch_current_session()
+             |> TerminalState.focus_active_terminal(%{"reason" => "pane:navigate"})}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Could not navigate pane: #{inspect(reason)}")}
+        end
     end
   end
 
