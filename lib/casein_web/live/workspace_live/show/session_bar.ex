@@ -206,14 +206,38 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       <.icon name="hero-globe-alt" class="size-3" />
     </span>
     <span
+      :if={window_agent_chip_text(@window)}
+      data-agent-state={@window.agent_state}
+      class={[
+        "shrink-0 rounded-full px-1.5 text-[9px] font-semibold",
+        window_agent_chip_class(@window)
+      ]}
+      title={@window.activity_label}
+      aria-label={@window.activity_label}
+    >
+      {window_agent_chip_text(@window)}
+    </span>
+    <span
       id={@activity_id}
       data-activity-state={@activity_id && @window.activity_state}
+      data-agent-state={@window.agent_state}
       class={["size-1.5 shrink-0 rounded-full", @window.activity_class]}
       title={@window.activity_label}
       aria-label={@window.activity_label}
     ></span>
     """
   end
+
+  defp window_agent_chip_text(%{agent_state_chip: text}) when is_binary(text) and text != "",
+    do: text
+
+  defp window_agent_chip_text(_), do: nil
+
+  defp window_agent_chip_class(%{agent_state_chip_class: class})
+       when is_binary(class) and class != "",
+       do: class
+
+  defp window_agent_chip_class(_), do: "bg-base-content/10 text-base-content/70"
 
   attr :window, :map, required: true
   attr :id_suffix, :string, default: ""
@@ -1654,8 +1678,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           <.icon name="hero-globe-alt" class="size-2.5" />
         </span>
         <span
+          :if={not @pane.preview? and window_agent_chip_text(@pane)}
+          data-agent-state={Map.get(@pane, :agent_state)}
+          class={[
+            "shrink-0 rounded-full px-1 text-[9px] font-semibold",
+            window_agent_chip_class(@pane)
+          ]}
+          title={@pane.activity_label}
+          aria-label={@pane.activity_label}
+        >
+          {window_agent_chip_text(@pane)}
+        </span>
+        <span
           :if={not @pane.preview?}
           data-activity-state={@pane.activity_state}
+          data-agent-state={Map.get(@pane, :agent_state)}
           class={["size-1.5 shrink-0 rounded-full", @pane.activity_class]}
           title={@pane.activity_label}
           aria-label={@pane.activity_label}
@@ -2277,6 +2314,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   # Textual triage badge for a session row's semantic agent state. Quiet-only
   # attention keeps its existing dot badge; nil means nothing extra to render.
+  # Colours come from daisyUI semantic tokens (shared with AgentStateChrome /
+  # #729) — do not invent a second palette here.
   defp session_agent_badge(session) do
     if Map.get(session, :attention_section) == :needs_you do
       agent_badge_for_reason(Map.get(session, :attention_reason), session)
@@ -2285,25 +2324,50 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   defp agent_badge_for_reason(:blocked, session) do
     count = Map.get(session, :agent_blocked_count, 0)
+    stalled? = session_has_agent_state?(session, :stalled)
+    errored? = session_has_agent_state?(session, :errored)
 
-    base =
-      if(count > 1,
-        do: "#{count} agent windows are blocked on input",
-        else: "Agent is blocked on input"
-      )
+    cond do
+      stalled? and not session_has_agent_state?(session, :blocked) and not errored? ->
+        %{
+          reason: :blocked,
+          class: "bg-warning/15 text-warning",
+          text: if(count > 1, do: "stalled ×#{count}", else: "stalled"),
+          title:
+            with_attention_message(
+              "Agent looks busy but its worktree has been idle — may be wedged",
+              session
+            )
+        }
 
-    %{
-      reason: :blocked,
-      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
-      text: if(count > 1, do: "needs input ×#{count}", else: "needs input"),
-      title: with_attention_message(base, session)
-    }
+      errored? and not session_has_agent_state?(session, :blocked) ->
+        %{
+          reason: :blocked,
+          class: "bg-error/15 text-error",
+          text: if(count > 1, do: "error ×#{count}", else: "error"),
+          title: with_attention_message("Agent errored", session)
+        }
+
+      true ->
+        base =
+          if(count > 1,
+            do: "#{count} agent windows are blocked on input",
+            else: "Agent is blocked on input"
+          )
+
+        %{
+          reason: :blocked,
+          class: "bg-error/15 text-error",
+          text: if(count > 1, do: "needs input ×#{count}", else: "needs input"),
+          title: with_attention_message(base, session)
+        }
+    end
   end
 
   defp agent_badge_for_reason(:completed, session) do
     %{
       reason: :completed,
-      class: "bg-sky-400/15 text-sky-600 dark:text-sky-300",
+      class: "bg-info/15 text-info",
       text: "done",
       title: with_attention_message("Agent finished — review its result", session)
     }
@@ -2312,13 +2376,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   defp agent_badge_for_reason(:error, _session) do
     %{
       reason: :error,
-      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      class: "bg-error/15 text-error",
       text: "error",
       title: "Session hit an error"
     }
   end
 
   defp agent_badge_for_reason(_reason, _session), do: nil
+
+  defp session_has_agent_state?(session, state) do
+    session
+    |> Map.get(:windows, [])
+    |> Enum.any?(fn window -> Map.get(window, :agent_state) == state end)
+  end
 
   # Append the agent's own status message to a badge tooltip when one is present
   # on the tab, so hovering tells you *why* it needs you, not just that it does.

@@ -16,6 +16,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   alias Casein.Terminals
   alias Casein.Terminals.PaneInteraction
   alias Casein.Terminals.PaneState
+  alias CaseinWeb.WorkspaceLive.Show.AgentStateChrome
 
   @window_activity_fresh_seconds 30
   @window_activity_recent_seconds 300
@@ -387,11 +388,36 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
     path = pane.current_path |> blank_to_nil() || "unknown path"
     base = "#{path} · #{pane_command_label(pane)}"
 
-    case pane_title_label(pane) do
+    summary =
+      case pane_title_label(pane) do
+        nil -> nil
+        summary -> summary
+      end
+
+    agent_state = Map.get(pane, :agent_state) || Map.get(pane, "agent_state")
+    agent_message = Map.get(pane, :agent_state_message) || Map.get(pane, "agent_state_message")
+    task_line = AgentStateChrome.task_title(summary, agent_state, agent_message)
+
+    case blank_to_nil(task_line) do
       nil -> base
-      summary -> "#{summary} · #{base}"
+      line -> "#{line} · #{base}"
     end
   end
+
+  @doc """
+  Agent-state chrome for a topology pane, or nil when the state is unknown.
+
+  Unknown (including title-heuristic `:ready` with no live report) returns nil
+  so pane chrome keeps ordinary tmux status and does not invent certainty.
+  """
+  def pane_agent_chrome(pane) when is_map(pane) do
+    state = Map.get(pane, :agent_state) || Map.get(pane, "agent_state")
+    message = Map.get(pane, :agent_state_message) || Map.get(pane, "agent_state_message")
+    chrome = AgentStateChrome.present(state, message)
+    if chrome.known?, do: chrome, else: nil
+  end
+
+  def pane_agent_chrome(_), do: nil
 
   @doc """
   Application-set pane title (OSC 0/2, e.g. Claude Code's live task summary)
@@ -863,6 +889,27 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
               data-role="pane-unpaired-badge"
             >
               unpaired
+            </div>
+          <% end %>
+          <% agent_chrome = pane_agent_chrome(pane) %>
+          <%= if agent_chrome do %>
+            <div
+              class="pointer-events-none absolute left-1 top-1 z-30 flex items-center gap-1"
+              data-role="pane-agent-state"
+              data-agent-state={agent_chrome.state}
+              title={agent_chrome.label}
+              aria-label={agent_chrome.label}
+            >
+              <span class={["size-1.5 shrink-0 rounded-full", agent_chrome.dot_class]}></span>
+              <span
+                :if={agent_chrome.chip_text}
+                class={[
+                  "rounded-sm px-1 font-mono text-[10px] leading-4",
+                  agent_chrome.chip_class
+                ]}
+              >
+                {agent_chrome.chip_text}
+              </span>
             </div>
           <% end %>
           <%= if pane.feature_pane? do %>
