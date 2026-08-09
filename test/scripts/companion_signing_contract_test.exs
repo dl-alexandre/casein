@@ -15,7 +15,12 @@ defmodule Scripts.CompanionSigningContractTest do
   end
 
   test "in-repo companion signing contract passes without secrets or devices" do
-    tmp = Path.join(System.tmp_dir!(), "casein-companion-signing-#{System.unique_integer([:positive])}.json")
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "casein-companion-signing-#{System.unique_integer([:positive])}.json"
+      )
+
     on_exit(fn -> File.rm(tmp) end)
 
     {output, status} =
