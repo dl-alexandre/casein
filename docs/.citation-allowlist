@@ -23,9 +23,15 @@ CaseinMob.GhosttyVt
 CaseinMob.HostBridge
 CaseinMob.Nifs.GhosttyVt
 CaseinMob.Terminal
+# native/casein_mob is outside the lib/ scan (companion OTP app).
+CaseinMob.Theme
+# Historical pre-rename module name cited in theme-kit inventory (#740).
+DevideMob.Theme
 Mob.Dev
 Mob.Dev.Connection
 Mob.Dist
+# Hex :mob theme API (deps/mob), not an app module.
+Mob.Theme
 MobDev.StaticNifs
 
 # External hex dependencies cited in docs (not defined in this app's lib tree):
