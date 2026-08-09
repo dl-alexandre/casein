@@ -221,7 +221,7 @@ What the server already exposes vs what `native/casein_mob` uses:
 | `attention.since_viewed` | Partial (count + latest label line); full lifecycle/completion not a dedicated inbox screen |
 | `attention_viewed` | Fired on card open via `SessionClient.attention_viewed/1` |
 | `card_action` + review/intervention | `ReviewDecisionScreen` + dashboard action button |
-| Dedicated inbox screen named/routed as inbox | **Missing** — tracked as #739 (out of this vertical) |
+  | Dedicated inbox screen named/routed as inbox | `CaseinMob.InboxScreen` (#739) — ranked snapshot + `attention_viewed` |
 | Full-width action layout fix | #738 (out of this vertical) |
 | Theme kit / scaffolding cleanup | #740 settled in `CaseinMob.Theme` + `mob_dev_workflow.md` (Hex `mob_themes` rejected); #741 scaffolding removal remains out of this vertical |
 

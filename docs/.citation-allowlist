@@ -24,6 +24,7 @@ CaseinMob.HostBridge
 CaseinMob.Nifs.GhosttyVt
 CaseinMob.Terminal
 # native/casein_mob is outside the lib/ scan (companion OTP app).
+CaseinMob.InboxScreen
 CaseinMob.Theme
 # Historical pre-rename module name cited in theme-kit inventory (#740).
 DevideMob.Theme

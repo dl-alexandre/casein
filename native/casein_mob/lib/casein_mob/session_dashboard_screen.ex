@@ -195,7 +195,7 @@ defmodule CaseinMob.SessionDashboardScreen do
 
   def handle_info({:tap, :root_menu}, socket) do
     buttons =
-      []
+      [[label: "Inbox", action: :open_inbox]]
       |> maybe_terminal_menu_button()
       |> Kernel.++([
         [label: "Apps", action: :open_apps],
@@ -213,6 +213,14 @@ defmodule CaseinMob.SessionDashboardScreen do
 
   def handle_info({:tap, :open_terminal}, socket) do
     {:noreply, open_terminal(socket)}
+  end
+
+  def handle_info({:tap, :open_inbox}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.InboxScreen)}
+  end
+
+  def handle_info({:alert, :open_inbox}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, CaseinMob.InboxScreen)}
   end
 
   def handle_info({:alert, :open_terminal}, socket) do
@@ -389,6 +397,20 @@ defmodule CaseinMob.SessionDashboardScreen do
               padding: :space_sm,
               height: 44.0,
               on_tap: {self(), :pair_device}
+            },
+            children: []
+          },
+          %{
+            type: :button,
+            props: %{
+              id: "open_inbox",
+              text: "Inbox",
+              background: :surface_raised,
+              text_color: :on_surface,
+              fill_width: false,
+              padding: :space_sm,
+              height: 44.0,
+              on_tap: {self(), :open_inbox}
             },
             children: []
           },

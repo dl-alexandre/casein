@@ -65,7 +65,7 @@ defmodule Casein.Agents.AgentEvents.EctoAdapter do
   def list_open_clarifications(workspace_id, request_type, resolved_type, opts) do
     # Filter resolved BEFORE newest-per-pane distinct. Doing distinct first
     # permanently hides older OPEN requests when a newer request on the same
-    # pane was resolved (H28 / mobile inbox trap).
+    # pane was resolved (H28 / mobile inbox trap) — unanswerable with no error.
     resolved =
       from(resolution in AgentEvent,
         where:

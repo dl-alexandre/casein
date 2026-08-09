@@ -42,6 +42,12 @@ defmodule CaseinMob.HomeScreenTest do
     assert navigated_to(view) == CaseinMob.SessionDashboardScreen
   end
 
+  test "inbox is a first-class navigation target" do
+    view = HomeScreen |> mount_screen() |> render_info({:tap, :open_inbox})
+    assert navigated_to(view) == CaseinMob.InboxScreen
+    assert find(mount_screen(HomeScreen), :button, text: "Inbox")
+  end
+
   test "terminal navigation carries an explicit origin-qualified pinned target" do
     CaseinMob.SessionConfig.clear_all()
 
