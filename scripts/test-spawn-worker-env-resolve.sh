@@ -64,7 +64,8 @@ spawn_worker_resolve_env_file $(printf '%q' "$session")
 
 # ── 1. A-orchestrator env + explicit B session → B's env.sh ─────────────────
 export CASEIN_AGENT_ENV_FILE="$ENV_A"
-export CASEIN_AGENT_MCP_HOME="$(dirname "$ENV_A")"
+CASEIN_AGENT_MCP_HOME="$(dirname "$ENV_A")"
+export CASEIN_AGENT_MCP_HOME
 export CASEIN_WORKSPACE_NAME="$WS_A"
 
 got="$(run_resolve "$SESSION_B")"
@@ -74,7 +75,8 @@ ok "A-orchestrator + B-session → B env"
 
 # ── 2. Same with only MCP_HOME set (no CASEIN_AGENT_ENV_FILE) ────────────────
 unset CASEIN_AGENT_ENV_FILE
-export CASEIN_AGENT_MCP_HOME="$(dirname "$ENV_A")"
+CASEIN_AGENT_MCP_HOME="$(dirname "$ENV_A")"
+export CASEIN_AGENT_MCP_HOME
 export CASEIN_WORKSPACE_NAME="$WS_A"
 
 got="$(run_resolve "$SESSION_B")"
