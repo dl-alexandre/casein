@@ -704,6 +704,31 @@ grok_refresh_persistent_auth() {
   return 1
 }
 
+# mise refuses to read a `mise.toml` it has not been told to trust, and trust is
+# keyed by absolute path — so every fresh agent/<runtime>/<slug>-<stamp> worktree
+# starts untrusted even though its mise.toml is the primary checkout's own file,
+# committed and unmodified.
+#
+# That surfaces twice and confusingly: `mix` will not run, and `git commit` fails
+# with a bare EXIT=1 because this repo's pre-commit hook shells out to mise. The
+# worker looks broken in two unrelated places for one reason.
+#
+# Trust is granted through the environment rather than by writing mise's state
+# directory: the sandbox denies that path deliberately, and a persisted trust
+# entry would outlive this worktree and accumulate one stale absolute path per
+# worker ever launched.
+grok_trust_worktree_mise_config() {
+  local toplevel
+  toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  [[ -n "$toplevel" && -f "${toplevel}/mise.toml" ]] || return 0
+
+  if [[ -n "${MISE_TRUSTED_CONFIG_PATHS:-}" ]]; then
+    export MISE_TRUSTED_CONFIG_PATHS="${MISE_TRUSTED_CONFIG_PATHS}:${toplevel}"
+  else
+    export MISE_TRUSTED_CONFIG_PATHS="$toplevel"
+  fi
+}
+
 grok_prepare_managed_home() {
   local socket="$1" grok_bin="$2" reuse="${3:-false}"
   local leader_id managed_root managed_home provider_auth home_action
@@ -737,6 +762,7 @@ grok_prepare_managed_home() {
 
   export GROK_HOME="$managed_home"
   export GROK_SUBAGENTS=0
+  grok_trust_worktree_mise_config
   unset CASEIN_GROK_XAI_API_KEY
 }
 
@@ -749,29 +775,33 @@ grok_reset_managed_home() {
   [[ "$(realpath -m "$reset_home")" == "$(realpath -m "$GROK_HOME")" ]]
 }
 
-# A managed Grok worker whose capability lacks terminal_send_agent_command gets
-# the read-only bwrap profile. That profile is severe and — before this — silent:
-# the pane reaches a normal-looking prompt, but the worktree and its git metadata
-# are write-denied, child network is blocked, and BEAM cannot start
-# ("Failed to write to erl_child_setup: 1"), so mix will not run either.
+# The workspace agent-write unlock gates the *MCP* grant: whether this worker may
+# drive the operator's live tmux panes (terminal_send_command / send_keys). It
+# used to also pick the bwrap base, which conflated two unrelated risks. A worker
+# always runs in its own fresh agent/<runtime>/<slug>-<stamp> worktree branched
+# off the primary checkout — that isolation is the safety story — so denying it
+# filesystem write, child network, and BEAM made it useless without making the
+# operator's checkout any safer. The bwrap base is now always "strict"; the deny
+# set below still kernel-denies every credential path either way.
 #
-# Two separate sessions lost significant time diagnosing this from the symptoms.
-# The cause is never local: it is that the workspace's agent-write unlock has
-# expired or was never granted, so say so at launch instead of letting the worker
-# discover it by failing.
-grok_announce_read_only_sandbox() {
+# Locked still means locked for anything that reaches outside the worktree, and
+# staying silent about that cost two sessions real time, so say it at launch:
+# state what the worker CAN do so nobody re-diagnoses a working sandbox, and what
+# it cannot so nobody waits on a pane command that will never be granted.
+grok_announce_locked_mcp_grant() {
   local capability_id="${1:-unknown}"
 
   cat >&2 <<EOF
-warning: Grok is starting with a READ-ONLY sandbox (capability ${capability_id}).
-warning:   This worker CANNOT write its worktree, reach the network, or run mix.
-warning:   Cause: this workspace's agent-write unlock is expired or absent, so the
-warning:   issued capability omits terminal_send_agent_command.
-warning:   Fix: have an operator re-grant agent write for the workspace, then
-warning:   relaunch. Do NOT set CASEIN_GROK_SANDBOX_BASE to override it — that
-warning:   circumvents a deliberate, time-boxed control.
-warning:   For write work right now, delegate to codex instead:
-warning:     bash scripts/launch-casein-agent.sh codex
+warning: Grok's MCP grant is LOCKED (capability ${capability_id}).
+warning:   This worker CAN write its own worktree, run mix, and commit — the
+warning:   sandbox is "strict", not read-only.
+warning:   It CANNOT drive your live tmux panes: the issued capability omits
+warning:   terminal_send_command / terminal_send_keys. Reporting tools
+warning:   (terminal_report_agent_state, terminal_report_worktree,
+warning:   terminal_request_clarification) still work, so delegation is fine.
+warning:   Cause: this workspace's agent-write unlock is expired or absent.
+warning:   Fix, only if you need pane control: have an operator grant agent write
+warning:   for the workspace, then relaunch.
 EOF
 }
 
@@ -788,6 +818,37 @@ grok_install_sandbox_profile() {
   # the same denied inode inside the sandbox.
   local host_env_file
   host_env_file="$(realpath -m "${CASEIN_ENV_FILE:-/etc/casein/casein.env}")"
+
+  # A worker runs in a *linked* git worktree, whose metadata and object store
+  # live in the primary checkout's .git — outside the worktree the strict base
+  # makes writable. Without this the worker can edit files but every git command
+  # dies with "fatal: not a git repository: .../.git/worktrees/<name>", so it
+  # cannot commit its own work and an orchestrator has to hand-commit for it.
+  #
+  # Git's model gives no narrower grant: a linked worktree shares objects, refs,
+  # and logs with the primary, so committing means writing the primary's .git.
+  # The tradeoff is deliberate — a worker can reach other refs in its own repo,
+  # and is contained by the per-worker branch plus review before merge, not by
+  # withholding commit.
+  local -a repo_paths=()
+  local git_common_dir
+  if git_common_dir="$(git rev-parse --git-common-dir 2>/dev/null)"; then
+    git_common_dir="$(realpath -m "$git_common_dir")"
+    [[ -d "$git_common_dir" ]] && repo_paths+=("--read-write=${git_common_dir}")
+  fi
+  # Read-only: git refuses to run without a readable config, and the toolchain
+  # is execute-only from the worker's side. Denying these is what surfaces as
+  # "mise: Permission denied" and makes mix look broken rather than blocked.
+  # Deliberately NOT ${HOME}/.config/git: that directory holds `credentials`,
+  # which the deny set below names explicitly. Granting the parent read-only
+  # would make the credential file's exclusion depend on deny-beats-allow
+  # precedence inside Grok's profile resolver. ~/.gitconfig alone is enough.
+  local ro_path
+  for ro_path in "${HOME}/.gitconfig" \
+                 "${HOME}/.local/bin/mise" "${HOME}/.local/share/mise" \
+                 "${HOME}/.config/mise"; do
+    [[ -e "$ro_path" ]] && repo_paths+=("--read-only=${ro_path}")
+  done
 
   # Grok expands deny globs by walking from their static prefix. Broad globs
   # rooted at /data/workspaces can exceed its 200k-entry safety limit before
@@ -809,6 +870,7 @@ grok_install_sandbox_profile() {
     "--read-only=${CASEIN_GROK_BUNDLE_DIR}" \
     "--read-only=$(dirname "$CASEIN_GROK_BOOTSTRAP_HOOK")" \
     "--read-write=${CASEIN_GROK_LEADER_ROOT}" \
+    "${repo_paths[@]}" \
     "$capability_file" \
     "${CASEIN_GROK_LEADER_ROOT}/.casein-launcher" \
     "${CASEIN_GROK_LEADER_ROOT}/.casein-runtime" \
@@ -958,11 +1020,11 @@ grok_configure_capability() {
     mv -f "$tmp" "$capability_file"
   fi
 
-  if [[ "$write_enabled" == "true" ]]; then
-    sandbox_base="strict"
-  else
-    sandbox_base="read-only"
-    grok_announce_read_only_sandbox "$capability_id"
+  # Always "strict": the worker's isolation comes from its own fresh worktree,
+  # not from denying it write. The unlock governs the MCP grant only.
+  sandbox_base="strict"
+  if [[ "$write_enabled" != "true" ]]; then
+    grok_announce_locked_mcp_grant "$capability_id"
   fi
   profile="casein-${leader_id}-${capability_id//-/}-${sandbox_base}"
   profile="${profile:0:95}"
