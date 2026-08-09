@@ -11,7 +11,7 @@ defmodule Scripts.PrePushCheckTest do
   @repo_root Path.expand("../..", __DIR__)
   @native_command_order [
     "deps.get",
-    "test test/casein_mob/plugin_supply_chain_test.exs",
+    "test test/casein_mob/plugin_supply_chain_test.exs test/casein_mob/mob_dev_native_deploy_contract_test.exs",
     "mob.regen_plugin_manifest --check"
   ]
 
