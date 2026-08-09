@@ -618,7 +618,8 @@ operations corrupt state rather than failing cleanly.
 pane ids in that tree) and the payload carries a top-level `shared_worktrees`
 warning. To force isolation at spawn, use `scripts/spawn-agent-worker.sh`, which
 sets `CASEIN_AGENT_FORCE_FRESH_WORKTREE=1` and always branches off the primary
-checkout.
+checkout (including **bare** product roots — Mira-class `CASEIN_CHECKOUT` —
+without `CASEIN_AGENT_SKIP_WORKTREE=1`).
 
 That warning reaches whoever asked for the topology, which is not the caller
 about to run `git reset --hard` in the shared tree — so the same signal also
@@ -748,6 +749,7 @@ Process hygiene mistakes here reaps *other people's* work, not just yours.
 | Agent `git push` times out / looks hung | This repo's pre-push gate runs a full lint+test suite (2–8 min). Anything wrapping `git push` for an agent must allow **~10 min**; a 2-minute default kills the push mid-gate and is indistinguishable from a hang |
 | Scripted `tmux kill-window` closes the wrong windows | tmux renumbers remaining windows after each close, so a loop over captured indices drifts. Iterate over **window ids** (`@1`, `@2` — stable for the window's life) from `terminal_topology`, not indices |
 | Spawned worker never answered its brief | `spawn-agent-worker.sh` now waits for the agent *process* in the pane's tree before printing its id, and exits non-zero (closing the window) if the launch died or never got past a shell. A printed pane id means a live agent; on an older copy it meant only that a window existed. Verify a box with `bash scripts/smoke-spawn-agent-worker.sh <runtime>` |
+| Spawn dies instantly on a bare product checkout (Mira-class `CASEIN_CHECKOUT`) | Fixed in `scripts/lib/agent-worktree.sh`: primary resolve no longer requires `git rev-parse --show-toplevel`. Spawn branches a fresh worktree from the bare root via `git worktree add`. Do **not** hand-roll `CASEIN_AGENT_SKIP_WORKTREE=1` for this — that was the old workaround. Docs: `docs/development-workflow.md`; test: `scripts/test-agent-worktree-bare.sh` |
 
 ### Key files
 

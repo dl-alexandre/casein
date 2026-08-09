@@ -32,6 +32,13 @@ actually running in that window — use it for explicit-pane MCP calls. A window
 that never gets an agent is closed and the script exits non-zero, so a printed
 pane id always means a live agent.
 
+Worktrees:
+  Branches a fresh agent/<runtime>/<slug>-<stamp> worktree off CASEIN_CHECKOUT
+  (CASEIN_AGENT_FORCE_FRESH_WORKTREE=1). Bare product roots are supported
+  (Mira-class: core.bare=true) — primary resolve no longer requires a work
+  tree, so you do not need CASEIN_AGENT_SKIP_WORKTREE=1 or a hand-made
+  worktree. See docs/development-workflow.md.
+
 Environment: same as launch-casein-agent.sh (resolve via .devbox-agent.env or tmux), plus:
   CASEIN_SPAWN_READY_SECONDS        seconds to wait for the agent process (default 120; 0 waives)
   CASEIN_SPAWN_KEEP_FAILED_WINDOW   1 keeps a failed window (renamed failed-*) instead of closing it
