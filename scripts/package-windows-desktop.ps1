@@ -304,6 +304,7 @@ Copy-Item -Force -LiteralPath @(
     (Join-Path $root 'windows\Casein.Backup.ps1'),
     (Join-Path $root 'windows\Update-Casein.ps1'),
     (Join-Path $root 'windows\Test-CaseinCleanMachine.ps1'),
+    (Join-Path $root 'windows\Test-CaseinRebootPersistence.ps1'),
     (Join-Path $root 'windows\Start-Casein.cmd')
 ) -Destination (Join-Path $outputPath 'windows')
 Copy-Item -Force -LiteralPath @(

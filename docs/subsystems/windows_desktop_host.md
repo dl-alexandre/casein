@@ -35,3 +35,20 @@ archive, and invalid state is represented by a fixed non-sensitive marker.
 
 This smoke requires Windows PowerShell 5.1. It does not replace production
 Authenticode, protected-runner, or clean Windows 11 crash/recovery evidence.
+
+## Clean-machine and reboot-persistence acceptance
+
+Packaged offline archives include two destructive acceptance harnesses under
+`windows/`. Both require Windows 11, Windows PowerShell 5.1, a valid production
+Authenticode release manifest, and
+`-AcceptDestructiveCleanMachineTest` on a disposable account:
+
+| Harness | Purpose |
+|---|---|
+| `Test-CaseinCleanMachine.ps1` | One-shot install → launch-at-sign-in → repair → uninstall. Evidence `schema` 3 records phase timestamps/outcomes and path prerequisites only. |
+| `Test-CaseinRebootPersistence.ps1` | Two-stage prepare → reboot → continue. Writes a bounded continuation marker under `%LOCALAPPDATA%\Casein\acceptance\` (boot stamp, release revision, origin id prefix). Continue fails closed when the boot stamp is unchanged. |
+
+Neither evidence file may contain package roots, UNC server/share paths, tokens,
+URLs, database contents, or private-key material. Attach real-host JSON to
+issue #376; repository smokes and unsigned CI are not substitutes. Procedures
+live in [`docs/desktop/windows_mobile_acceptance.md`](../desktop/windows_mobile_acceptance.md).

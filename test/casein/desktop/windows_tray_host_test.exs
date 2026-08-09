@@ -120,7 +120,37 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "package_root_kind"
     assert script =~ "package_root_length"
     assert script =~ "package_root_has_space"
+    assert script =~ "path_prerequisites"
+    assert script =~ "schema = 3"
+    assert script =~ "New-CaseinPhaseRecord"
+    assert script =~ "started_at_utc"
+    assert script =~ "completed_at_utc"
+    assert script =~ "outcome = $Outcome"
+    assert script =~ "Test-CaseinRebootPersistence.ps1"
     refute script =~ "package_root = $packageRoot"
+  end
+
+  test "reboot-persistence acceptance is two-stage with a bounded continuation marker" do
+    script =
+      File.read!(Path.expand("../../../windows/Test-CaseinRebootPersistence.ps1", __DIR__))
+
+    package = File.read!(@package_script)
+    smoke = File.read!(@package_smoke)
+
+    assert script =~ "ValidateSet('prepare', 'continue', 'auto')"
+    assert script =~ "awaiting_reboot"
+    assert script =~ "prepare_boot_last_boot_up_time_utc"
+    assert script =~ "continue_boot_last_boot_up_time_utc"
+    assert script =~ "Host boot stamp is unchanged"
+    assert script =~ "casein_reboot_continuation"
+    assert script =~ "origin_id_prefix"
+    assert script =~ "path_prerequisites"
+    assert script =~ "New-CaseinPhaseRecord"
+    refute script =~ "package_root = $packageRoot"
+    refute script =~ "api-token"
+    refute script =~ "desktop-launch-token"
+    assert package =~ "Test-CaseinRebootPersistence.ps1"
+    assert smoke =~ "Test-CaseinRebootPersistence.ps1"
   end
 
   test "Trusted LAN selects a private physical interface and scopes its firewall rule" do

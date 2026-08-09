@@ -111,11 +111,40 @@ damages one manifest-covered installed file, proves offline repair restores it,
 verifies launch-at-sign-in targets the stable installed launcher and is removed
 by uninstall, uninstalls, and removes Casein user data. It refuses unsigned packages,
 pre-Windows 11 hosts, non-Windows-PowerShell 5.1 execution, installed WSL
-distributions, or language/developer tools on `PATH`. The JSON evidence contains
-OS/package/certificate identity, safe path kind/length/space facts, and phase
-results, but never the actual package root, UNC server/share, tokens, URLs,
-database contents, or private-key material. A repository or unsigned CI run is
-not a substitute for attaching the resulting real-host evidence to #376.
+distributions, or language/developer tools on `PATH`. The JSON evidence
+(`schema` 3) records OS/package/certificate identity, safe path
+kind/length/space prerequisites, and per-phase timestamps plus outcomes, but
+never the actual package root, UNC server/share, tokens, URLs, database
+contents, or private-key material. A repository or unsigned CI run is not a
+substitute for attaching the resulting real-host evidence to #376.
+
+Restart and reboot persistence is a separate two-stage harness that survives a
+real host reboot with an explicit continuation marker (no tokens, package
+roots, or private paths):
+
+```powershell
+# Stage 1 — install, enable launch-at-sign-in, write continuation marker, stop.
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File .\windows\Test-CaseinRebootPersistence.ps1 `
+  -PackageRoot . `
+  -AcceptDestructiveCleanMachineTest `
+  -Stage prepare `
+  -EvidencePath "$env:USERPROFILE\Desktop\casein-windows-reboot-acceptance.json"
+
+# Reboot the disposable host, then stage 2 — prove boot stamp changed, install
+# identity and stable autostart survived, then uninstall/cleanup.
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File .\windows\Test-CaseinRebootPersistence.ps1 `
+  -PackageRoot . `
+  -AcceptDestructiveCleanMachineTest `
+  -Stage continue `
+  -EvidencePath "$env:USERPROFILE\Desktop\casein-windows-reboot-acceptance.json"
+```
+
+`-Stage auto` resumes when a valid `awaiting_reboot` marker is present and
+otherwise prepares. The continue stage fails closed if the Windows boot stamp
+is unchanged. Attach the redacted JSON to #376; CI cannot substitute a real
+reboot.
 
 The Windows package smoke also writes malformed desktop settings and runtime
 marker files into its disposable LocalAppData root. It verifies that the tray
