@@ -1768,7 +1768,8 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_async(:agents_mount, _result, socket), do: {:noreply, socket}
 
   def handle_async(:refresh_git_status, {:ok, entries}, socket) do
-    {:noreply, assign(socket, git_status: entries, git_status_ready?: true, git_status_error: nil)}
+    {:noreply,
+     assign(socket, git_status: entries, git_status_ready?: true, git_status_error: nil)}
   end
 
   def handle_async(:refresh_git_status, {:exit, reason}, socket) do
