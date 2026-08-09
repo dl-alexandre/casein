@@ -172,7 +172,7 @@ defmodule CaseinWeb.WorkspaceHeaderChromeTest do
     refute html =~ ~s(id="window-sidebar-#{workspace_id}")
 
     assert html =~
-             "header-terminal-pickers flex min-w-0 flex-1 items-center pointer-coarse:hidden"
+             "header-terminal-pickers flex min-w-0 flex-1 items-center max-sm:hidden"
 
     render_hook(view, "sidebar:open", %{"mode" => "windows"})
     assert :sys.get_state(view.pid).socket.assigns.window_sidebar_open?

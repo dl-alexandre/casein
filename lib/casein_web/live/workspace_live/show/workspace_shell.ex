@@ -1,5 +1,14 @@
 defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
-  @moduledoc false
+  @moduledoc """
+  Workspace chrome shell markup.
+
+  ## Responsive rule (issue #735)
+
+  `pointer-coarse` decides hit targets, spacing, and gesture affordances;
+  width decides layout and information density. See
+  `docs/subsystems/web_cockpit.md`. Do not hide pickers or swap nav models
+  with `pointer-coarse:` alone — use `max-sm:` / width media / `data-chrome-narrow`.
+  """
 
   use CaseinWeb, :html
 
@@ -261,20 +270,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
       data-terminal-themes={Jason.encode!(@terminal_themes)}
       data-leader-bindings={Jason.encode!(LeaderBindings.key_map())}
       data-tmux-windows={swipe_window_json(@tmux_window_tabs)}
-      class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 pointer-coarse:pt-0 pointer-coarse:pb-0 lg:px-6"
+      class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 max-sm:px-2 max-sm:pt-0 max-sm:pb-0 lg:px-6"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
         <header
           id={"workspace-header-" <> @workspace.id}
           phx-hook="ChromeWidth"
-          class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:mb-0.5 pointer-coarse:pb-0 pointer-coarse:gap-0.5"
+          class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs max-sm:mb-0.5 max-sm:pb-0 max-sm:gap-0.5"
         >
           <div class="header-identity-cluster flex min-w-24 shrink items-center gap-1 overflow-x-clip">
             {render_slot(@header_back_nav)}
             <div
               :if={@tab == "terminal" and match?({:ok, _}, @host_loc)}
-              class="flex min-w-0 shrink items-center gap-0.5 pointer-coarse:hidden"
+              class="flex min-w-0 shrink items-center gap-0.5 max-sm:hidden"
             >
               <SessionBar.session_header_indicator
                 workspace_id={@workspace.id}
@@ -348,7 +357,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
             <div
               id={"header-terminal-pickers-" <> @workspace.id}
-              class="header-terminal-pickers flex min-w-0 flex-1 items-center pointer-coarse:hidden"
+              class="header-terminal-pickers flex min-w-0 flex-1 items-center max-sm:hidden"
             >
               <SessionBar.window_tabs
                 workspace_id={@workspace.id}
@@ -365,7 +374,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             </div>
           <% end %>
 
-          <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
+          <div class="ml-auto flex shrink-0 items-center gap-0.5">
             <.header_overflow_menu
               active_window_pane_count={@active_window_pane_count}
               desktop_downloads={@desktop_downloads}
@@ -395,7 +404,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
              the header (the pane itself is bare) — a file pane's open buffers,
              or a preview's session label. Reserved whenever any file pane
              exists so focus bouncing editor↔terminal doesn't jump the header
-             height; hidden on touch/narrow, where chrome renders in-pane
+             height; hidden when narrow (width), where chrome renders in-pane
              instead (.header-terminal-pickers is display:none there). --%>
         <% focused_id = ui_focused_pane_id(@ui_highlight_pane_id, @tmux_active_pane_id) %>
         <% file_strip = focused_file_strip(@feature_panes, focused_id, @file_pane_dirty) %>
@@ -405,7 +414,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             @tab == "terminal" and match?({:ok, _}, @host_loc) and
               (file_strip != nil or preview_chrome != nil or any_file_pane?(@feature_panes))
           }
-          class="header-terminal-pickers file-pane-strip-row -mt-0.5 mb-1 flex h-7 shrink-0 items-center border-b border-base-300/70 pointer-coarse:hidden"
+          class="header-terminal-pickers file-pane-strip-row -mt-0.5 mb-1 flex h-7 shrink-0 items-center border-b border-base-300/70 max-sm:hidden"
         >
           <.file_pane_tab_strip
             :if={file_strip}

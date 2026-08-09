@@ -1733,7 +1733,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       data-shortcut="Ctrl + B, then S"
       data-leader-second-key="S"
       class={[
-        "leader-key-control relative flex shrink-0 items-center gap-1.5 rounded border px-1.5 py-0.5 text-xs transition pointer-coarse:hidden",
+        "leader-key-control relative flex shrink-0 items-center gap-1.5 rounded border px-1.5 py-0.5 text-xs transition max-sm:hidden",
         @open? && "border-primary/50 bg-primary/10 text-primary",
         !@open? &&
           "border-transparent text-base-content/80 hover:border-base-300 hover:bg-base-200 hover:text-base-content"

@@ -1235,14 +1235,17 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
   display: none;
 }
 
-/* Mobile terminal chrome is hidden by default and revealed on the same
-   touch/narrow marker as the compact header below, so session switching is
-   reachable on narrow viewports too — not just coarse-pointer (touch) devices. */
+/* Responsive rule (#735): width → layout/density; pointer-coarse → hit targets,
+   spacing, gestures. See docs/subsystems/web_cockpit.md. */
+
+/* Mobile terminal chrome is hidden by default. Touch affordances (key bar, nav
+   sheet) reveal on coarse pointer *or* narrow width so phones keep them in
+   landscape; they must not force compact *layout* on a wide tablet. */
 .mobile-key-bar {
   display: none;
 }
 
-/* Compact header on touch and narrow viewports — vital info only. */
+/* Touch chrome affordances — not a layout switch. */
 @media (pointer: coarse), (max-width: 639px) {
   .mobile-key-bar {
     display: flex;
@@ -1266,7 +1269,11 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
     );
     transition: padding-bottom 120ms ease-out;
   }
+}
 
+/* Compact layout / information density — width only (sm = 640px). A large
+   coarse-pointer device (iPad landscape) keeps desktop pickers + density. */
+@media (max-width: 639px) {
   .workspace-main-header .header-p-touch-hide {
     display: none !important;
   }
@@ -1283,7 +1290,7 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
     display: flex;
   }
 
-  /* Session/window pickers and terminal chrome live in the mobile key bar sheet. */
+  /* Session/window pickers move to the mobile key bar / nav sheet when narrow. */
   .workspace-main-header .header-terminal-pickers,
   .workspace-main-header [id^="session-dropdown-"],
   .workspace-main-header [id^="window-dropdown-"] {
@@ -1359,9 +1366,9 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
     display: none !important;
   }
 
-  /* Chromeless panes are desktop-only: with no persistent header on mobile, the
-     tab strip renders in-pane and the editor/placeholder inset below it, and
-     the preview session badge is shown regardless of mismatch. */
+  /* Chromeless panes are desktop-only: with no room for the header strip when
+     narrow, the tab strip renders in-pane and the editor/placeholder inset
+     below it, and the preview session badge is shown regardless of mismatch. */
   .file-pane-inpane-strip {
     display: flex;
   }

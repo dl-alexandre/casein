@@ -78,6 +78,50 @@ defmodule CaseinWeb.PwaStaticTest do
     assert css =~ "@media (pointer: coarse)"
   end
 
+  test "compact cockpit layout is width-gated, not pointer-coarse alone" do
+    css = File.read!("assets/css/app.css")
+    shell = File.read!("lib/casein_web/live/workspace_live/show/workspace_shell.ex")
+    docs = File.read!("docs/subsystems/web_cockpit.md")
+
+    # Stated rule survives in docs + shell.
+    assert docs =~ "pointer-coarse` decides hit targets"
+    assert docs =~ ~r/width\s+decides layout/
+    assert shell =~ "pointer-coarse` decides hit targets"
+    assert shell =~ "width decides layout"
+
+    # Layout switch for header pickers is width-only (sm = 640px).
+    # Extract each media block so a loose [\s\S]* cannot span both queries.
+    assert css =~ "@media (max-width: 639px)"
+    assert css =~ "@media (pointer: coarse), (max-width: 639px)"
+
+    width_only =
+      case Regex.run(
+             ~r/@media \(max-width: 639px\) \{([\s\S]*?)\n\}(?:\n\n|\n\/\*|\n:root)/,
+             css
+           ) do
+        [_, body] -> body
+        _ -> ""
+      end
+
+    touch_or_narrow =
+      case Regex.run(
+             ~r/@media \(pointer: coarse\), \(max-width: 639px\) \{([\s\S]*?)\n\}(?:\n\n|\n\/\*|\n@media)/,
+             css
+           ) do
+        [_, body] -> body
+        _ -> ""
+      end
+
+    assert width_only =~ ".header-terminal-pickers"
+    assert width_only =~ ".header-p-touch-show"
+    refute touch_or_narrow =~ ".header-terminal-pickers"
+    assert touch_or_narrow =~ ".mobile-key-bar"
+
+    # HEEx must not hide terminal pickers via pointer-coarse alone.
+    refute shell =~ ~r/header-terminal-pickers[^\n]*pointer-coarse:hidden/
+    assert shell =~ ~r/header-terminal-pickers[^\n]*max-sm:hidden/
+  end
+
   test "offline fallback is served as static HTML", %{conn: conn} do
     conn = get(conn, "/offline.html")
     body = response(conn, 200)
