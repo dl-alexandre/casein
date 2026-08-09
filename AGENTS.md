@@ -50,7 +50,7 @@ def write_artifact(id, bytes), do: ...
 
 Treat the ledger as legacy — don't add to it. Never suppress before confirming the finding is actually safe; for a real risk, fix the code (e.g. the traversal guard in `Casein.Previews.Storage.LocalDisk.put/4`).
 
-**PR gate (self-hosted runner).** GitHub PR merges bypass the local `.githooks/pre-push` gate, so debt can land on `master` even though the deploy poller's re-run of the gate (below) still blocks it from *deploying*. To stop the branch tip going red via the merge button, `.github/workflows/pr-gate.yml` runs `scripts/pre-push-check.sh` on every PR into `master`, on a self-hosted runner (GitHub-hosted Actions are billing-blocked). One-time setup per box:
+**PR gate (self-hosted runner).** GitHub PR merges bypass the local `.githooks/pre-push` gate, so debt can land on `master` even though the deploy poller's re-run of the gate (below) still blocks it from *deploying*. To stop the branch tip going red via the merge button, `.github/workflows/pr-gate.yml` runs `scripts/pre-push-check.sh` on every PR into `master`, on a self-hosted runner (GitHub-hosted Actions are billing-blocked). The gate is single-flight on this box (`pr-gate-devbox-self-hosted`, #753). Residual Postgres DSM / `ERROR 53100` under `/dev/shm` (segment count / `kernel.shmmni`, not byte capacity) is documented in [`docs/ops-pr-gate-postgres-shm.md`](docs/ops-pr-gate-postgres-shm.md) — attended host sysctl only; do not thrash product PRs. One-time setup per box:
 
 ```bash
 bash scripts/ensure-ci-runner.sh        # download + register + start the runner service

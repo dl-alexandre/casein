@@ -203,6 +203,46 @@ if the job is cancelled mid-queue. Prefer `shmmni` first.
 5. If still red after a clean single run: apply follow-up 1 (host ACK) before
    investing in follow-up 2.
 
+---
+
+## Optional automation notes (not wired)
+
+A future gate preflight could refuse or warn before `mix test` when DSM segment
+headroom is thin. **Do not implement from this doc alone** — single-flight (#753)
+plus attended `shmmni` is the preferred path; automation is only useful if a
+single suite still hits 53100 after those.
+
+### What it would measure
+
+| Input | Source |
+|-------|--------|
+| Limit | `kernel.shmmni` via `sysctl -n kernel.shmmni` |
+| In use | `ipcs -u` → "segments allocated", or `ls /dev/shm/PostgreSQL.* \| wc -l` as a weaker Postgres-only proxy |
+| Concurrent suites | `pgrep -c -f 'mix test|pre-push-check'` (local overlap is still a failure mode under single-flight Actions) |
+
+### Sketch output (print-only)
+
+```text
+ci-shm preflight: shmmni=4096 segments_allocated=312 postgres_dsm_files=3
+  mix_test_procs=0 headroom=3784 (92% free) — ok
+```
+
+or, when headroom is low (example thresholds only — not policy):
+
+```text
+ci-shm preflight: shmmni=4096 segments_allocated=3900 postgres_dsm_files=180
+  mix_test_procs=1 headroom=196 (4% free) — WARN: DSM segment headroom thin;
+  prefer queue/wait over starting another full suite (see docs/ops-pr-gate-postgres-shm.md)
+```
+
+### Placement if ever added
+
+- Early in `scripts/pre-push-check.sh` (warn) or a dedicated
+  `scripts/ci-shm-preflight.sh` called from the PR gate step.
+- Exit non-zero only with an explicit opt-in env (e.g. `CASEIN_CI_SHM_STRICT=1`);
+  default should be advisory so a noisy `ipcs` parse never bricks deploys.
+- Never delete `/dev/shm/PostgreSQL.*` from automation.
+
 ## Related
 
 - `.github/workflows/pr-gate.yml` — required `gate` job, single-flight group
