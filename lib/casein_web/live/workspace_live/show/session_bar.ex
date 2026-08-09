@@ -48,7 +48,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           <span class="max-w-44 truncate font-medium">{@shell_label}</span>
           <span
             :if={@shell_detail != ""}
-            class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+            class="mt-density-label max-w-44 truncate font-mono text-density-label text-primary/80"
           >
             {@shell_detail}
           </span>
@@ -79,7 +79,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
               <span class="max-w-44 truncate font-medium">{tab_anchor_label(tab)}</span>
               <span
                 :if={tab_anchor_detail(tab) != ""}
-                class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+                class="mt-density-label max-w-44 truncate font-mono text-density-label text-primary/80"
               >
                 {tab_anchor_detail(tab)}
               </span>
@@ -97,7 +97,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
               <span class="max-w-44 truncate font-medium">{tab_anchor_label(tab)}</span>
               <span
                 :if={tab_anchor_detail(tab) != ""}
-                class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+                class="mt-density-label max-w-44 truncate font-mono text-density-label text-primary/80"
               >
                 {tab_anchor_detail(tab)}
               </span>
@@ -114,7 +114,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
               <span class="max-w-44 truncate font-medium">{tab_anchor_label(tab)}</span>
               <span
                 :if={tab_anchor_detail(tab) != ""}
-                class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+                class="mt-density-label max-w-44 truncate font-mono text-density-label text-primary/80"
               >
                 {tab_anchor_detail(tab)}
               </span>
@@ -146,7 +146,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   defp window_row_name(assigns) do
     ~H"""
-    <span :if={@show_index?} class="shrink-0 font-mono text-[10px] text-base-content/45">
+    <span :if={@show_index?} class="shrink-0 font-mono text-density-label text-base-content/45">
       {@window.index}
     </span>
     <%= if @picker_label? do %>
@@ -173,13 +173,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       data-copy-link-kind="window"
       role="button"
       tabindex="-1"
-      class="shrink-0 cursor-copy rounded px-0.5 font-mono text-[10px] text-base-content/45 underline decoration-dotted decoration-base-content/25 underline-offset-2 transition-colors hover:bg-base-300/60 hover:text-base-content hover:decoration-base-content/60"
+      class="shrink-0 cursor-copy rounded px-density-label font-mono text-density-label text-base-content/45 underline decoration-dotted decoration-base-content/25 underline-offset-2 transition-colors hover:bg-base-300/60 hover:text-base-content hover:decoration-base-content/60"
       title="Copy link to this session + window"
       aria-label="Copy link to this session and window"
     >{@window.index}</span>
     <span
       :if={!(is_binary(@copy_url) and @copy_url != "")}
-      class="shrink-0 font-mono text-[10px] text-base-content/45"
+      class="shrink-0 font-mono text-density-label text-base-content/45"
     >{@window.index}</span>
     """
   end
@@ -523,13 +523,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     >
       <div class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5">
         <span class="flex min-w-0 items-center gap-1.5">
-          <span class="text-[11px] font-semibold tracking-wide text-base-content/70">
+          <span class="text-density-body font-semibold tracking-wide text-base-content/70">
             Sessions
           </span>
           <% liveness = SessionBarVM.tree_liveness_summary(@tree) %>
           <span
             :if={liveness.total > 0}
-            class="shrink-0 rounded-full bg-base-200 px-1.5 py-0.5 font-mono text-[10px] leading-none tabular-nums text-base-content/70"
+            class="shrink-0 rounded-full bg-base-200 px-1.5 py-density-label font-mono text-density-label leading-none tabular-nums text-base-content/70"
             title={"#{liveness.live} of #{liveness.total} workspaces have a live session"}
             aria-label={"#{liveness.live} of #{liveness.total} workspaces live"}
           >
@@ -561,7 +561,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           <button
             type="button"
             phx-click="sidebar:cycle_sessions_sort"
-            class="flex items-center gap-1 rounded border border-base-300/70 px-1.5 py-0.5 text-[10px] text-base-content/70 hover:bg-base-200 hover:text-base-content"
+            class="flex items-center gap-1 rounded border border-base-300/70 px-1.5 py-density-label text-density-label text-base-content/70 hover:bg-base-200 hover:text-base-content"
             title={"Sorted by " <> SessionBarVM.sort_mode_label(@sort_mode) <> " — click to cycle"}
             aria-label={
               "Sorted by " <> SessionBarVM.sort_mode_label(@sort_mode) <> ", click to cycle"
@@ -600,7 +600,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           data-picker-filter
           data-picker-filter-placeholder="Type to filter"
           data-picker-filter-empty
-          class="min-w-0 truncate font-mono text-[11px] text-base-content/75"
+          class="min-w-0 truncate font-mono text-density-body text-base-content/75"
         >
           Type to filter
         </span>
@@ -669,12 +669,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           >
           </div>
         </div>
-        <p :if={@tree == []} class="px-2 pt-2 text-[11px] text-base-content/60">
+        <p :if={@tree == []} class="px-2 pt-2 text-density-body text-base-content/60">
           Finding your sessions…
         </p>
       </div>
       <div class="flex shrink-0 items-center justify-between gap-1 border-t border-base-300/70 px-2 py-1.5">
-        <span class="min-w-0 truncate font-mono text-[10px] text-base-content/60">
+        <span class="min-w-0 truncate font-mono text-density-label text-base-content/60">
           ↑↓ move · o open · l link
         </span>
         <button
@@ -821,13 +821,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       <span class="truncate font-medium">{@row.label}</span>
       <span
         :if={@show_workspace?}
-        class="shrink-0 truncate font-mono text-[9px] text-base-content/45"
+        class="shrink-0 truncate font-mono text-density-badge text-base-content/45"
       >
         {@row.workspace_label}
       </span>
     </span>
     <span class={[
-      "shrink-0 rounded-full px-1.5 text-[9px] font-semibold",
+      "shrink-0 rounded-full px-1.5 text-density-badge font-semibold",
       @badge.class
     ]}>
       {@badge.text}
@@ -903,7 +903,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   defp sessions_sidebar_section_header(assigns) do
     ~H"""
     <p class={[
-      "flex items-center justify-between px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide",
+      "flex items-center justify-between px-2 pb-density-label pt-1 text-density-label font-semibold uppercase tracking-wide",
       @attention? && "text-rose-500 dark:text-rose-300",
       !@attention? && "text-base-content/60"
     ]}>
@@ -988,7 +988,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
             <% end %>
             <p
               :if={@node.sessions == []}
-              class="flex items-center gap-1.5 px-2 py-1 font-mono text-[10px] italic text-base-content/40"
+              class="flex items-center gap-1.5 px-2 py-1 font-mono text-density-label italic text-base-content/40"
             >
               <.icon
                 :if={@node.loading?}
@@ -1024,14 +1024,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
             </span>
             <span
               :if={@node.detail != ""}
-              class="max-w-full truncate font-mono text-[10px] text-base-content/50"
+              class="max-w-full truncate font-mono text-density-label text-base-content/50"
             >
               {@node.detail}
             </span>
           </span>
           <span
             :if={@node.session_count > 0}
-            class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45"
+            class="flex shrink-0 items-center gap-density-label font-mono text-density-label text-base-content/45"
           >
             {@node.session_count}
             <.icon name="hero-arrow-right" class="size-3" />
@@ -1124,7 +1124,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           data-picker-ws-toggle
           phx-click="sidebar:toggle_workspace"
           phx-value-workspace-id={@node.workspace_id}
-          class="flex shrink-0 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+          class="flex shrink-0 items-center gap-density-label rounded px-1.5 font-mono text-density-label text-base-content/45 hover:bg-base-200 hover:text-base-content"
           aria-label={
             if(@node.expanded?, do: "Collapse " <> @node.label, else: "Expand " <> @node.label)
           }
@@ -1169,7 +1169,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           data-picker-ws-toggle
           phx-click="sidebar:toggle_workspace"
           phx-value-workspace-id={@node.workspace_id}
-          class="flex shrink-0 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+          class="flex shrink-0 items-center gap-density-label rounded px-1.5 font-mono text-density-label text-base-content/45 hover:bg-base-200 hover:text-base-content"
           aria-label={
             if(@node.expanded?, do: "Collapse " <> @node.label, else: "Expand " <> @node.label)
           }
@@ -1204,7 +1204,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         <.sessions_sidebar_workspace_labels node={@node} />
         <span
           :if={@node.session_count > 0}
-          class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45"
+          class="flex shrink-0 items-center gap-density-label font-mono text-density-label text-base-content/45"
         >
           {@node.session_count}
           <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
@@ -1229,7 +1229,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           :if={@needs_you_count > 0}
           id={"sidebar-ws-needs-you-" <> @node.dom_id}
           data-needs-you-count={@needs_you_count}
-          class="shrink-0 rounded-full bg-rose-500/15 px-1.5 font-mono text-[9px] font-semibold text-rose-500 dark:text-rose-300"
+          class="shrink-0 rounded-full bg-rose-500/15 px-1.5 font-mono text-density-badge font-semibold text-rose-500 dark:text-rose-300"
           title={needs_you_chip_title(@needs_you_count)}
           aria-label={needs_you_chip_title(@needs_you_count)}
         >
@@ -1243,7 +1243,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       </span>
       <span
         :if={@node.detail != ""}
-        class="max-w-full truncate font-mono text-[10px] text-base-content/50"
+        class="max-w-full truncate font-mono text-density-label text-base-content/50"
       >
         {@node.detail}
       </span>
@@ -1302,7 +1302,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           id={"sidebar-open-folder-" <> @node.dom_id}
           phx-click="sidebar:open_folder"
           phx-value-path={@node.path}
-          class="shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] text-base-content/55 hover:bg-base-200 hover:text-base-content"
+          class="shrink-0 rounded px-1.5 py-density-label font-mono text-density-label text-base-content/55 hover:bg-base-200 hover:text-base-content"
           title={"Open terminal in " <> @node.path}
           aria-label={"Open terminal in " <> @node.label}
         >
@@ -1316,7 +1316,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         class={["space-y-0.5", !@node.expanded? && "hidden"]}
       >
         <%= if @node.children == [] do %>
-          <p class="px-3 py-1 font-mono text-[10px] italic text-base-content/40">
+          <p class="px-3 py-1 font-mono text-density-label italic text-base-content/40">
             No directories
           </p>
         <% else %>
@@ -1496,7 +1496,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         :if={@agent_badge}
         id={"session-agent-badge-" <> @session.dom_id}
         data-agent-attention={@agent_badge.reason}
-        class={["shrink-0 rounded-full px-1.5 text-[9px] font-semibold", @agent_badge.class]}
+        class={["shrink-0 rounded-full px-1.5 text-density-badge font-semibold", @agent_badge.class]}
         title={@agent_badge.title}
         aria-label={@agent_badge.title}
       >
@@ -1523,7 +1523,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     the name only. --%>
     <span
       :if={session_detail(@session) != ""}
-      class="max-w-full truncate font-mono text-[10px] text-base-content/60"
+      class="max-w-full truncate font-mono text-density-label text-base-content/60"
     >
       {session_detail(@session)}
     </span>
@@ -1643,7 +1643,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       title={@pane.title}
     >
       <span class="flex min-w-0 max-w-full items-center gap-1.5">
-        <span class="shrink-0 font-mono text-[10px] text-base-content/45">{@pane.index}</span>
+        <span class="shrink-0 font-mono text-density-label text-base-content/45">{@pane.index}</span>
         <span data-picker-label class="min-w-0 truncate font-medium">{@pane.label}</span>
         <span
           :if={@pane.preview?}
@@ -1759,13 +1759,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       }
     >
       <div class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5">
-        <span class="text-[11px] font-semibold tracking-wide text-base-content/70">
+        <span class="text-density-body font-semibold tracking-wide text-base-content/70">
           Windows
         </span>
         <button
           type="button"
           phx-click="sidebar:cycle_windows_sort"
-          class="flex items-center gap-1 rounded border border-base-300/70 px-1.5 py-0.5 text-[10px] text-base-content/70 hover:bg-base-200 hover:text-base-content"
+          class="flex items-center gap-1 rounded border border-base-300/70 px-1.5 py-density-label text-density-label text-base-content/70 hover:bg-base-200 hover:text-base-content"
           title={"Sorted by " <> SessionBarVM.sort_mode_label(@sort_mode) <> " — click to cycle"}
           aria-label={"Sorted by " <> SessionBarVM.sort_mode_label(@sort_mode) <> ", click to cycle"}
         >
@@ -1779,7 +1779,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           data-picker-filter
           data-picker-filter-placeholder="Type to filter"
           data-picker-filter-empty
-          class="min-w-0 truncate font-mono text-[11px] text-base-content/75"
+          class="min-w-0 truncate font-mono text-density-body text-base-content/75"
         >
           Type to filter
         </span>
@@ -1820,7 +1820,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
                     tabindex="-1"
                     phx-click="sidebar:toggle_window"
                     phx-value-window-id={node.id}
-                    class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-base-content/45 hover:bg-base-200"
+                    class="flex shrink-0 items-center gap-density-label rounded px-1.5 py-1 font-mono text-density-label text-base-content/45 hover:bg-base-200"
                     aria-label={
                       if(node.expanded?,
                         do: "Collapse panes of " <> node.display_name,
@@ -1865,7 +1865,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         <% end %>
       </div>
       <div class="flex shrink-0 items-center justify-between gap-1 border-t border-base-300/70 px-2 py-1.5">
-        <span class="min-w-0 truncate font-mono text-[10px] text-base-content/60">
+        <span class="min-w-0 truncate font-mono text-density-label text-base-content/60">
           o open · l link · r rename · &amp; kill
         </span>
         <button
@@ -1923,7 +1923,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     ~H"""
     <span
       :if={session_anchor_interesting?(@tab)}
-      class="inline-flex min-w-0 shrink items-center gap-0.5 rounded bg-base-200 px-1 font-mono text-[10px] text-base-content/55"
+      class="inline-flex min-w-0 shrink items-center gap-density-label rounded bg-base-200 px-1 font-mono text-density-label text-base-content/55"
       title={session_anchor_title(@tab)}
     >
       <.icon name="hero-arrows-right-left" class="size-2.5 shrink-0" />

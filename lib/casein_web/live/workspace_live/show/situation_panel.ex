@@ -21,7 +21,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SituationPanel do
       :if={@enabled}
       id="situation-badge"
       phx-click="situation_drawer:toggle"
-      class={"fixed bottom-3 right-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] shadow-sm " <>
+      class={"fixed bottom-3 right-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-density-body shadow-sm " <>
         badge_class(@risks)}
       title="operator situation risks"
     >
@@ -56,19 +56,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.SituationPanel do
         <header class="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <h2 class="text-sm font-semibold tracking-tight">Situation risks</h2>
-            <p class="text-[11px] text-zinc-500 font-mono">
+            <p class="text-density-body text-zinc-500 font-mono">
               {length(@risks)} active · workspace {@workspace.name}
             </p>
           </div>
           <button
             phx-click="situation_drawer:close"
-            class="text-[11px] border rounded px-2 py-0.5 hover:bg-zinc-50"
+            class="text-density-body border rounded px-2 py-density-body hover:bg-zinc-50"
             title="close"
           >
             ×
           </button>
         </header>
-        <div class="flex-1 overflow-auto px-3 py-2 text-[11px] leading-relaxed">
+        <div class="flex-1 overflow-auto px-3 py-2 text-density-body leading-relaxed">
           <p :if={@risks == []} class="text-zinc-400 italic font-mono">no active risks</p>
           <ol class="space-y-2">
             <li :for={risk <- sort_risks(@risks)} class="rounded border px-2 py-1.5">
@@ -92,7 +92,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SituationPanel do
             </li>
           </ol>
         </div>
-        <footer class="px-3 py-2 border-t text-[10px] text-zinc-500 font-mono">
+        <footer class="px-3 py-2 border-t text-density-label text-zinc-500 font-mono">
           live · raised/cleared on transitions · audit: operator.risk_*
         </footer>
       </aside>

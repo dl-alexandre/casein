@@ -96,6 +96,52 @@
 @custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
 @custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
 
+/* -------------------------------------------------------------------------
+   Cockpit density scale (issue #728)
+
+   The cockpit chrome lives at 8–11px — below Tailwind's text-xs (12px).
+   Named steps replace arbitrary text-[Npx] so sibling tracks can adopt the
+   same type + line-height + spacing pair without inventing new one-offs.
+
+   Utilities (text-* also sets line-height via --text-*--line-height):
+     text-density-micro   8px  / lh 1.00  — unread dots, tight overlays
+     text-density-badge   9px  / lh 1.15  — uppercase chips, mono meta
+     text-density-label  10px  / lh 1.25  — labels, kbd, secondary chrome
+     text-density-body   11px  / lh 1.35  — body chrome / drawer copy
+     text-density-title  12px  / lh 1.40  — section titles (same size as text-xs)
+
+   Paired spacing steps (p- / px- / py- / gap- / m- / size-):
+     *-density-micro | *-density-badge | *-density-label → 0.125rem (2px)
+       — matches the py-0.5 / gap-0.5 chrome already on badges & labels
+     *-density-body  → 0.25rem  (4px)
+     *-density-title → 0.375rem (6px)
+
+   pointer-coarse: variants compose normally (e.g. pointer-coarse:py-density-body).
+   Do not use these for PTY / terminal theme content.
+   ------------------------------------------------------------------------- */
+@theme {
+  --text-density-micro: 0.5rem;
+  --text-density-micro--line-height: 1;
+  --text-density-badge: 0.5625rem;
+  --text-density-badge--line-height: 1.15;
+  --text-density-label: 0.625rem;
+  --text-density-label--line-height: 1.25;
+  --text-density-body: 0.6875rem;
+  --text-density-body--line-height: 1.35;
+  --text-density-title: 0.75rem;
+  --text-density-title--line-height: 1.4;
+
+  --spacing-density-micro: 0.125rem;
+  --spacing-density-badge: 0.125rem;
+  --spacing-density-label: 0.125rem;
+  --spacing-density-body: 0.25rem;
+  --spacing-density-title: 0.375rem;
+}
+
+/* Keep every density step in the built CSS so sibling tracks can adopt
+   without waiting for a first call site (title is unused in this PR). */
+@source inline("{text,p,px,py,pt,pb,pl,pr,m,mx,my,mt,mb,ml,mr,gap,size}-density-{micro,badge,label,body,title}");
+
 /* Use the data attribute for dark mode  */
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 

@@ -72,18 +72,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
               <div>
                 <div class="flex items-center gap-2">
                   <h3 class="text-xs font-semibold text-base-content">Read-only agent task</h3>
-                  <span class="rounded bg-base-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-base-content/50">
+                  <span class="rounded bg-base-200 px-1.5 py-density-badge text-density-badge font-semibold uppercase tracking-wide text-base-content/50">
                     Codex
                   </span>
                 </div>
-                <p class="mt-0.5 text-[11px] text-base-content/55">
+                <p class="mt-density-body text-density-body text-base-content/55">
                   Start a sandboxed background review without leaving the Run workflow.
                 </p>
               </div>
               <span
                 :if={@codex_exec_run}
                 class={[
-                  "rounded-full px-2 py-1 text-[10px] font-semibold",
+                  "rounded-full px-2 py-1 text-density-label font-semibold",
                   codex_run_status_class(@codex_exec_run.status)
                 ]}
               >
@@ -94,7 +94,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
             <div
               :if={@codex_exec_run}
               id="read-only-agent-task-status"
-              class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-base-300 bg-base-200/30 px-2.5 py-2 font-mono text-[10px] text-base-content/55"
+              class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-base-300 bg-base-200/30 px-2.5 py-2 font-mono text-density-label text-base-content/55"
             >
               <span title={Map.get(@codex_exec_run, :run_id)}>
                 run {short_id(Map.get(@codex_exec_run, :run_id))}
@@ -115,11 +115,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                 class="min-h-20 w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-xs leading-5 text-base-content outline-none transition placeholder:text-base-content/35 focus:border-primary/50 focus:ring-2 focus:ring-primary/10 disabled:opacity-60"
               />
               <div class="flex items-center justify-between gap-2">
-                <span class="text-[10px] text-base-content/45">sandbox: read-only · approvals: never</span>
+                <span class="text-density-label text-base-content/45">sandbox: read-only · approvals: never</span>
                 <button
                   :if={is_nil(@codex_exec_run) or @codex_exec_run.status != :running}
                   type="submit"
-                  class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-content transition hover:-translate-y-px hover:shadow-sm"
+                  class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-density-body font-semibold text-primary-content transition hover:-translate-y-px hover:shadow-sm"
                 >
                   <.icon name="hero-play" class="size-3.5" /> Run task
                 </button>
@@ -127,7 +127,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                   :if={@codex_exec_run && @codex_exec_run.status == :running}
                   type="button"
                   phx-click="codex:cancel_exec"
-                  class="inline-flex items-center gap-1.5 rounded-lg border border-error/35 px-3 py-1.5 text-[11px] font-semibold text-error transition hover:bg-error/10"
+                  class="inline-flex items-center gap-1.5 rounded-lg border border-error/35 px-3 py-1.5 text-density-body font-semibold text-error transition hover:bg-error/10"
                 >
                   <.icon name="hero-stop" class="size-3.5" /> Cancel
                 </button>
@@ -136,7 +136,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
 
             <pre
               :if={@codex_exec_run && Map.get(@codex_exec_run, :stderr, "") != ""}
-              class="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-2.5 font-mono text-[10px] text-zinc-200"
+              class="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-2.5 font-mono text-density-label text-zinc-200"
             >{Map.get(@codex_exec_run, :stderr, "")}</pre>
           </section>
 
@@ -205,7 +205,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
             <section>
               <div class="flex items-center justify-between mb-2">
                 <h3 class="text-xs font-medium text-zinc-700">Run ledger</h3>
-                <span class="text-[10px] font-mono text-zinc-400">
+                <span class="text-density-label font-mono text-zinc-400">
                   {length(@run_ledger)} runs
                 </span>
               </div>
@@ -237,7 +237,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                             {Map.get(r, :status, "unknown")}
                           </span>
                         </div>
-                        <div class="mt-1 flex flex-wrap gap-2 font-mono text-[10px] text-zinc-500">
+                        <div class="mt-1 flex flex-wrap gap-2 font-mono text-density-label text-zinc-500">
                           <span>{Map.get(r, :protocol, "ledger")}</span>
                           <%= if Map.get(r, :assignment_id) do %>
                             <span>assignment={Map.get(r, :assignment_id)}</span>
@@ -257,7 +257,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
               <div class="flex items-center justify-between mb-2">
                 <h3 class="text-xs font-medium text-zinc-700">Timeline</h3>
                 <%= if @selected_run_id do %>
-                  <span class="text-[10px] font-mono text-zinc-400">
+                  <span class="text-density-label font-mono text-zinc-400">
                     {@selected_run_id}
                   </span>
                 <% end %>
@@ -270,7 +270,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                 <%= if @selected_run_summary do %>
                   <dl
                     id="run-ledger-summary"
-                    class="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded border bg-zinc-50 px-2 py-1.5 text-[10px]"
+                    class="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded border bg-zinc-50 px-2 py-1.5 text-density-label"
                   >
                     <dt class="text-zinc-500">status</dt>
                     <dd class="font-mono">{Map.get(@selected_run_summary, :status, "unknown")}</dd>
@@ -322,11 +322,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
                         <span class={"font-medium " <> audit_verb_class(e)}>
                           {e.action}
                         </span>
-                        <span class="font-mono text-[10px] text-zinc-500">
+                        <span class="font-mono text-density-label text-zinc-500">
                           {ledger_event_noun(e)}
                         </span>
                       </div>
-                      <p class="mt-1 font-mono text-[10px] text-zinc-600 break-all">
+                      <p class="mt-1 font-mono text-density-label text-zinc-600 break-all">
                         {audit_detail(e)}
                       </p>
                     </li>
@@ -359,7 +359,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
     <%= case Map.get(@artifact, :type) do %>
       <% "command_output" -> %>
         <section id="run-artifact-command-output" class="rounded border text-xs">
-          <header class="flex flex-wrap items-center gap-2 border-b px-2 py-1 font-mono text-[10px] text-zinc-500">
+          <header class="flex flex-wrap items-center gap-2 border-b px-2 py-1 font-mono text-density-label text-zinc-500">
             <span>command output</span>
             <span>{Map.get(@artifact, :command_id)}</span>
             <span>{Map.get(@artifact, :status)}</span>
@@ -370,7 +370,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
               <span class="text-amber-700">truncated</span>
             <% end %>
           </header>
-          <pre class="max-h-72 overflow-auto whitespace-pre-wrap bg-zinc-950 p-2 text-[11px] text-zinc-100">{Map.get(@artifact, :output, "")}</pre>
+          <pre class="max-h-72 overflow-auto whitespace-pre-wrap bg-zinc-950 p-2 text-density-body text-zinc-100">{Map.get(@artifact, :output, "")}</pre>
         </section>
       <% _ -> %>
         <section class="rounded border px-2 py-1.5 text-xs text-zinc-500">

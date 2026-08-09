@@ -40,7 +40,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             {tab.label}
           </button>
         </div>
-        <p class="mb-3 text-[10px] text-base-content/50">
+        <p class="mb-3 text-density-label text-base-content/50">
           <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono">Esc</kbd>
           closes · <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono">Tab</kbd>
           / <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono">Shift+Tab</kbd>
@@ -53,11 +53,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
           role="tabpanel"
           aria-labelledby="cheat-tab-shortcuts"
         >
-          <p class="mb-1 text-[11px] text-base-content/60">
+          <p class="mb-1 text-density-body text-base-content/60">
             Press <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono">Ctrl + B</kbd>, then the key
             shown below. Works from anywhere, even inside the terminal. Use <strong>Ctrl</strong>, not Cmd — Cmd+B and Cmd+P stay with the browser/OS.
           </p>
-          <p class="mb-3 text-[11px] text-base-content/60">
+          <p class="mb-3 text-density-body text-base-content/60">
             No need to memorize these — a paired agent can handle most window and pane chores in
             plain English ("split this side by side", "rename this window"). See the <em>Agents</em>
             tab.
@@ -108,7 +108,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             <.cheat_row keys="two-finger tap" desc="show or hide the soft keyboard" />
             <.cheat_row keys="on-screen C-b" desc="arm leader mode, then type the second key" />
           </div>
-          <p class="mt-3 text-[10px] text-base-content/50">
+          <p class="mt-3 text-density-label text-base-content/50">
             More detail in <code>docs/leader_keys.md</code>
           </p>
         </div>
@@ -119,7 +119,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
           aria-labelledby="cheat-tab-preview"
           class="hidden"
         >
-          <p class="mb-3 text-[11px] text-base-content/60">
+          <p class="mb-3 text-density-body text-base-content/60">
             A browser pane for your workspace apps — run a dev server, then preview it
             right inside Casein: click, type, navigate, screenshot.
           </p>
@@ -164,7 +164,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
               Re-open the preview — sessions live on the current instance.
             </.tip_row>
           </div>
-          <p class="mt-3 text-[10px] text-base-content/50">
+          <p class="mt-3 text-density-label text-base-content/50">
             More detail in <code>docs/subsystems/previews.md</code>
           </p>
         </div>
@@ -175,7 +175,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
           aria-labelledby="cheat-tab-agents"
           class="hidden"
         >
-          <p class="mb-3 text-[11px] text-base-content/60">
+          <p class="mb-3 text-density-body text-base-content/60">
             Casein wires external coding agents into your workspace over MCP, giving them
             narrow, audited access to your tmux panes and previews. Pair one with <em>Agents tab → Apply Agent Pair layout</em>, then drive the
             <strong>agent</strong>
@@ -250,10 +250,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
           </div>
 
           <div class="mt-4 border-t border-base-300 pt-3">
-            <h3 class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-base-content/60">
+            <h3 class="mb-1 text-density-body font-semibold uppercase tracking-wide text-base-content/60">
               Connect an external agent
             </h3>
-            <p class="mb-2 text-[11px] text-base-content/60">
+            <p class="mb-2 text-density-body text-base-content/60">
               Mint a <strong>revocable</strong>, auto-expiring MCP bearer for an off-box agent and
               copy a ready-to-paste <code class="rounded bg-base-200 px-1">.mcp.json</code>. It is
               stored hashed and is <strong>not</strong>
@@ -263,20 +263,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
 
             <div
               :if={@connect_error}
-              class="mb-2 rounded border border-error/40 bg-error/10 px-2 py-1 text-[11px] text-error"
+              class="mb-2 rounded border border-error/40 bg-error/10 px-2 py-1 text-density-body text-error"
             >
               {@connect_error}
             </div>
             <div
               :if={@connect_info}
-              class="mb-2 rounded border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-600 dark:text-emerald-300"
+              class="mb-2 rounded border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 text-density-body text-emerald-600 dark:text-emerald-300"
             >
               {@connect_info}
             </div>
 
             <form phx-submit="connect:mint" class="flex items-end gap-2">
               <label class="flex-1">
-                <span class="block text-[10px] font-medium uppercase tracking-wide text-base-content/50">
+                <span class="block text-density-label font-medium uppercase tracking-wide text-base-content/50">
                   Label (optional)
                 </span>
                 <input
@@ -299,7 +299,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
               :if={@connect_new_token}
               class="mt-2 space-y-2 rounded border border-emerald-400/40 bg-emerald-400/10 p-2"
             >
-              <p class="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+              <p class="text-density-body font-medium text-emerald-700 dark:text-emerald-300">
                 Copy this now — the raw token is shown only once.
               </p>
               <div class="flex flex-wrap gap-2">
@@ -308,7 +308,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
                   id="help-connect-copy-token"
                   phx-hook="CopyText"
                   data-copy-text={@connect_new_token}
-                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-[11px] font-medium hover:bg-base-200 data-[copied]:border-emerald-400 data-[copied]:text-emerald-600"
+                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-density-body font-medium hover:bg-base-200 data-[copied]:border-emerald-400 data-[copied]:text-emerald-600"
                 >
                   <.icon name="hero-clipboard" class="size-3.5" /> Copy token
                 </button>
@@ -317,21 +317,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
                   id="help-connect-copy-config"
                   phx-hook="CopyText"
                   data-copy-text={@connect_mcp_json}
-                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-[11px] font-medium hover:bg-base-200 data-[copied]:border-emerald-400 data-[copied]:text-emerald-600"
+                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-density-body font-medium hover:bg-base-200 data-[copied]:border-emerald-400 data-[copied]:text-emerald-600"
                 >
                   <.icon name="hero-clipboard-document" class="size-3.5" /> Copy .mcp.json
                 </button>
               </div>
-              <pre class="max-h-44 overflow-auto rounded border border-base-300 bg-base-300/40 p-2 font-mono text-[10px] leading-relaxed"><code>{@connect_mcp_json}</code></pre>
+              <pre class="max-h-44 overflow-auto rounded border border-base-300 bg-base-300/40 p-2 font-mono text-density-label leading-relaxed"><code>{@connect_mcp_json}</code></pre>
             </div>
 
             <div class="mt-3">
-              <h4 class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+              <h4 class="mb-1 text-density-label font-semibold uppercase tracking-wide text-base-content/50">
                 Your tokens
               </h4>
               <div
                 :if={@connect_tokens == []}
-                class="rounded border border-base-300 bg-base-100 p-2 text-[11px] text-base-content/50"
+                class="rounded border border-base-300 bg-base-100 p-2 text-density-body text-base-content/50"
               >
                 No active tokens.
               </div>
@@ -342,10 +342,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
                   class="flex items-center justify-between gap-2 rounded border border-base-300 bg-base-100 p-2"
                 >
                   <div class="min-w-0">
-                    <p class="truncate text-[11px] font-medium text-base-content/80">
+                    <p class="truncate text-density-body font-medium text-base-content/80">
                       {token.label || "unlabeled"}
                     </p>
-                    <p class="font-mono text-[10px] text-base-content/50">
+                    <p class="font-mono text-density-label text-base-content/50">
                       seen {time_label(token.last_seen_at)} · expires {time_label(token.expires_at)}
                     </p>
                   </div>
@@ -354,7 +354,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
                     phx-click="connect:revoke"
                     phx-value-id={token.id}
                     data-confirm="Revoke this token? Any agent using it loses access immediately."
-                    class="shrink-0 rounded border border-error/40 px-2 py-1 text-[11px] font-medium text-error hover:bg-error/10"
+                    class="shrink-0 rounded border border-error/40 px-2 py-1 text-density-body font-medium text-error hover:bg-error/10"
                   >
                     Revoke
                   </button>
@@ -363,7 +363,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             </div>
           </div>
 
-          <p class="mt-3 text-[10px] text-base-content/50">
+          <p class="mt-3 text-density-label text-base-content/50">
             More detail in <code>docs/subsystems/agents.md</code>
           </p>
         </div>
@@ -399,7 +399,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
 
   defp cheat_row(assigns) do
     ~H"""
-    <kbd class="justify-self-start rounded bg-base-200 px-1.5 py-0.5 font-mono text-[10px]">
+    <kbd class="justify-self-start rounded bg-base-200 px-1.5 py-density-label font-mono text-density-label">
       {@keys}
     </kbd>
     <span class="text-base-content/80">{@desc}</span>

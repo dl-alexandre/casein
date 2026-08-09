@@ -28,11 +28,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
         </span>
         <span class="min-w-0 flex-1">
           <span class="block text-sm font-semibold text-base-content">Structured agent activity</span>
-          <span class="block truncate text-[11px] text-base-content/55">
+          <span class="block truncate text-density-body text-base-content/55">
             Codex lifecycle, subagent, and usage events
           </span>
         </span>
-        <span class="hidden items-center gap-1.5 text-[10px] text-base-content/55 sm:flex">
+        <span class="hidden items-center gap-1.5 text-density-label text-base-content/55 sm:flex">
           <.metric label="threads" value={length(@threads)} />
           <.metric label="tokens" value={compact_number(@usage_totals.total_tokens)} />
         </span>
@@ -52,7 +52,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
 
       <div
         :if={@loaded?}
-        class="flex flex-wrap items-center gap-3 border-t border-base-300 bg-base-200/20 px-3 py-2 text-[10px] text-base-content/55"
+        class="flex flex-wrap items-center gap-3 border-t border-base-300 bg-base-200/20 px-3 py-2 text-density-label text-base-content/55"
       >
         <span>{compact_number(@usage_totals.input_tokens)} input</span>
         <span>{compact_number(@usage_totals.output_tokens)} output</span>
@@ -96,16 +96,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
                   {thread_label(@selected_thread)}
                 </span>
                 <span
-                  class="block truncate font-mono text-[9px] text-base-content/40"
+                  class="block truncate font-mono text-density-badge text-base-content/40"
                   title={@selected_thread.thread_id}
                 >
                   {@selected_thread.thread_id}
                 </span>
               </span>
-              <span class="rounded bg-base-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-base-content/50">
+              <span class="rounded bg-base-200 px-1.5 py-density-badge text-density-badge font-semibold uppercase tracking-wide text-base-content/50">
                 {humanize(@selected_thread.transport)}
               </span>
-              <span class="hidden items-center gap-2 text-[10px] text-base-content/50 sm:flex">
+              <span class="hidden items-center gap-2 text-density-label text-base-content/50 sm:flex">
                 <span>{compact_number(usage_value(@selected_thread.usage, :input_tokens))} in</span>
                 <span>{compact_number(usage_value(@selected_thread.usage, :output_tokens))} out</span>
                 <span>{compact_number(usage_value(@selected_thread.usage, :total_tokens))} total</span>
@@ -127,7 +127,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
               <li :if={@live_delta != ""} class="relative pb-4">
                 <span class="absolute -left-[1.47rem] top-1 size-2.5 rounded-full bg-primary ring-4 ring-base-100"></span>
                 <div class="rounded-lg border border-primary/20 bg-primary/[0.04] p-3">
-                  <div class="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                  <div class="mb-1.5 flex items-center gap-2 text-density-label font-semibold uppercase tracking-wide text-primary">
                     <span class="size-1.5 animate-pulse rounded-full bg-primary"></span> Streaming
                   </div>
                   <pre class="whitespace-pre-wrap break-words font-sans text-xs leading-5 text-base-content/80">{@live_delta}</pre>
@@ -173,14 +173,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
     >
       <span class={["size-2 shrink-0 rounded-full", status_dot(@entry.thread)]}></span>
       <span class="min-w-0 flex-1">
-        <span class="block truncate text-[11px] font-medium">{thread_label(@entry.thread)}</span>
-        <span class="block truncate text-[9px] text-base-content/40">
+        <span class="block truncate text-density-body font-medium">{thread_label(@entry.thread)}</span>
+        <span class="block truncate text-density-badge text-base-content/40">
           {humanize(@entry.thread.status)} · {humanize(@entry.thread.transport)}
         </span>
       </span>
       <span
         :if={waiting?(@entry.thread)}
-        class="rounded-full bg-amber-400 px-1.5 py-0.5 text-[8px] font-bold text-amber-950"
+        class="rounded-full bg-amber-400 px-1.5 py-density-micro text-density-micro font-bold text-amber-950"
       >
         !
       </span>
@@ -202,18 +202,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
       </span>
       <article class="rounded-lg border border-base-300 bg-base-100 p-2.5 transition hover:border-base-content/20">
         <div class="flex items-center justify-between gap-3">
-          <p class="text-[11px] font-semibold text-base-content">{event_title(@event)}</p>
-          <time class="shrink-0 font-mono text-[9px] text-base-content/35">
+          <p class="text-density-body font-semibold text-base-content">{event_title(@event)}</p>
+          <time class="shrink-0 font-mono text-density-badge text-base-content/35">
             {format_time(@event.occurred_at)}
           </time>
         </div>
         <p
           :if={event_summary(@event)}
-          class="mt-1 whitespace-pre-wrap break-words text-[11px] leading-5 text-base-content/65"
+          class="mt-1 whitespace-pre-wrap break-words text-density-body leading-5 text-base-content/65"
         >
           {event_summary(@event)}
         </p>
-        <div class="mt-2 flex flex-wrap gap-1 text-[8px] uppercase tracking-wide text-base-content/40">
+        <div class="mt-2 flex flex-wrap gap-1 text-density-micro uppercase tracking-wide text-base-content/40">
           <span class="rounded bg-base-200 px-1.5 py-0.5">{humanize(@event.transport)}</span>
           <span :if={@event.turn_id} class="rounded bg-base-200 px-1.5 py-0.5">
             turn {short_id(@event.turn_id)}

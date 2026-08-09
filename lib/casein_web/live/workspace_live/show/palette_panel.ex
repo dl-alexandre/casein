@@ -110,7 +110,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
                 {palette_category_label(cat)}
               </button>
             <% end %>
-            <span class="ml-auto hidden shrink-0 font-mono text-[10px] text-base-content/45 max-sm:inline">
+            <span class="ml-auto hidden shrink-0 font-mono text-density-label text-base-content/45 max-sm:inline">
               ⇥ cycle
             </span>
           </div>
@@ -136,7 +136,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
                   phx-click="palette:execute"
                   phx-value-id={item.id}
                 >
-                  <span class="w-14 shrink-0 text-[10px] uppercase text-base-content/50 max-sm:hidden">
+                  <span class="w-14 shrink-0 text-density-label uppercase text-base-content/50 max-sm:hidden">
                     {item.kind}
                   </span>
                   <span class="min-w-0 flex-1 truncate font-mono">{item.label}</span>
@@ -144,7 +144,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
                     <span class="truncate text-xs text-base-content/60 max-sm:hidden">{item.detail}</span>
                   <% end %>
                   <%= if item.hint do %>
-                    <kbd class="ml-auto shrink-0 rounded border border-base-300 bg-base-200 px-1 font-mono text-[10px] text-base-content/70">
+                    <kbd class="ml-auto shrink-0 rounded border border-base-300 bg-base-200 px-1 font-mono text-density-label text-base-content/70">
                       {item.hint}
                     </kbd>
                   <% end %>
@@ -152,7 +152,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
               <% end %>
             <% end %>
           </ul>
-          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-base-300 px-3 py-1.5 text-[10px] text-base-content/60">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-base-300 px-3 py-1.5 text-density-label text-base-content/60">
             <div class="hidden items-center gap-2 sm:flex">
               <span class="inline-flex items-center gap-1">
                 <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">↑</kbd>

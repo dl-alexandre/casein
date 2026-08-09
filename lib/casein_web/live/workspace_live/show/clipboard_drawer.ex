@@ -19,7 +19,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawer do
         <header class="flex items-center justify-between border-b px-4 py-3">
           <div>
             <h2 class="text-sm font-semibold tracking-tight text-zinc-950">Clipboard</h2>
-            <p id="clipboard-drawer-count" class="font-mono text-[11px] text-zinc-500">
+            <p id="clipboard-drawer-count" class="font-mono text-density-body text-zinc-500">
               {@count} recent {if @count == 1, do: "copy", else: "copies"} from agents
             </p>
           </div>
@@ -28,7 +28,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawer do
               :if={@count > 0}
               id="clipboard-clear"
               phx-click="clipboard:clear"
-              class="rounded border px-2 py-0.5 text-[11px] text-zinc-700 hover:bg-zinc-50"
+              class="rounded border px-2 py-density-body text-density-body text-zinc-700 hover:bg-zinc-50"
               title="Forget every copy in this list"
             >
               clear
@@ -36,7 +36,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawer do
             <button
               id="clipboard-drawer-close"
               phx-click="clipboard:close"
-              class="rounded border px-2 py-0.5 text-[11px] hover:bg-zinc-50"
+              class="rounded border px-2 py-density-body text-density-body hover:bg-zinc-50"
               title="Close"
             >
               ×
@@ -60,7 +60,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawer do
             class="rounded border border-zinc-200 p-2 shadow-sm"
           >
             <div class="flex items-center justify-between gap-2">
-              <span class="truncate font-mono text-[11px] text-zinc-500">
+              <span class="truncate font-mono text-density-body text-zinc-500">
                 {source_label(entry)} · {relative_time(entry.inserted_at)}
               </span>
               <div class="flex flex-none items-center gap-1">
@@ -86,9 +86,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.ClipboardDrawer do
               </div>
             </div>
 
-            <pre class="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-zinc-50 p-1.5 font-mono text-[11px] text-zinc-800">{preview(entry.text)}</pre>
+            <pre class="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-zinc-50 p-1.5 font-mono text-density-body text-zinc-800">{preview(entry.text)}</pre>
 
-            <p :if={entry.truncated?} class="mt-1 text-[10px] text-amber-700">
+            <p :if={entry.truncated?} class="mt-1 text-density-label text-amber-700">
               Truncated — this copy was larger than the retained limit.
             </p>
           </article>

@@ -67,7 +67,7 @@ defmodule CaseinWeb.NotificationsDrawer do
       <span
         :if={@unread_count > 0}
         id={@id <> "-badge"}
-        class="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-4 text-white"
+        class="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-density-label font-semibold leading-4 text-white"
       >
         {@unread_count}
       </span>
@@ -128,7 +128,7 @@ defmodule CaseinWeb.NotificationsDrawer do
         <header class="flex items-center justify-between border-b px-4 py-3">
           <div>
             <h2 class="text-sm font-semibold tracking-tight text-zinc-950">Notifications</h2>
-            <p id="notifications-drawer-count" class="font-mono text-[11px] text-zinc-500">
+            <p id="notifications-drawer-count" class="font-mono text-density-body text-zinc-500">
               {@unread_count} unread for {@user_id}
               <span :if={@pending_agent_approval_count > 0}>
                 · {@pending_agent_approval_count} agent approval{if @pending_agent_approval_count ==
@@ -142,14 +142,14 @@ defmodule CaseinWeb.NotificationsDrawer do
             <button
               id="notifications-mark-all-read"
               phx-click="notifications:mark_all_read"
-              class="rounded border px-2 py-0.5 text-[11px] text-zinc-700 hover:bg-zinc-50"
+              class="rounded border px-2 py-density-body text-density-body text-zinc-700 hover:bg-zinc-50"
               title="Mark all read"
             >
               all read
             </button>
             <button
               phx-click="notifications:refresh"
-              class="rounded border px-2 py-0.5 text-[11px] hover:bg-zinc-50"
+              class="rounded border px-2 py-density-body text-density-body hover:bg-zinc-50"
               title="Refresh notifications"
             >
               ↻
@@ -157,7 +157,7 @@ defmodule CaseinWeb.NotificationsDrawer do
             <button
               id="notifications-drawer-close"
               phx-click="notifications:close"
-              class="rounded border px-2 py-0.5 text-[11px] hover:bg-zinc-50"
+              class="rounded border px-2 py-density-body text-density-body hover:bg-zinc-50"
               title="Close"
             >
               ×
@@ -197,7 +197,7 @@ defmodule CaseinWeb.NotificationsDrawer do
               <p class="mt-1 text-xs text-red-900/85">
                 {deploy_field(@deploy_failure, :message, "The on-box deploy poller aborted.")}
               </p>
-              <p class="mt-2 font-mono text-[10px] text-red-900/70">
+              <p class="mt-2 font-mono text-density-label text-red-900/70">
                 target: {deploy_field(@deploy_failure, :target_short) ||
                   deploy_field(@deploy_failure, :target_sha, "unknown")}
               </p>
@@ -223,7 +223,7 @@ defmodule CaseinWeb.NotificationsDrawer do
               <span class="font-medium">New version available</span>
               <span
                 :if={@update_commits_behind > 0}
-                class="rounded-full bg-indigo-200 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-indigo-900"
+                class="rounded-full bg-indigo-200 px-1.5 py-density-label text-density-label font-semibold tabular-nums text-indigo-900"
               >
                 {@update_commits_behind}
               </span>
@@ -246,7 +246,7 @@ defmodule CaseinWeb.NotificationsDrawer do
               <p class="mt-1 text-xs text-amber-900/85">
                 {deploy_field(@deploy_drift, :message, "Running revision differs from origin/master.")}
               </p>
-              <p class="mt-2 font-mono text-[10px] text-amber-900/70">
+              <p class="mt-2 font-mono text-density-label text-amber-900/70">
                 current: {deploy_field(@deploy_drift, :current, "unknown")}
               </p>
               <button
@@ -289,12 +289,12 @@ defmodule CaseinWeb.NotificationsDrawer do
                 <div class="min-w-0 space-y-1">
                   <div class="flex flex-wrap items-center gap-2">
                     <h3 class="text-sm font-semibold">{notification.title}</h3>
-                    <span class="rounded bg-black/5 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide">
+                    <span class="rounded bg-black/5 px-2 py-density-body text-density-body font-medium uppercase tracking-wide">
                       {notification.type}
                     </span>
                     <span
                       :if={notification.occurrence_count > 1}
-                      class="rounded bg-black/5 px-2 py-0.5 text-[11px] font-medium"
+                      class="rounded bg-black/5 px-2 py-density-body text-density-body font-medium"
                     >
                       {notification.occurrence_count} grouped
                     </span>

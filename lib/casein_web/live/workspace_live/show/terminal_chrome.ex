@@ -595,7 +595,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
         >
           <.icon name="hero-power" class="size-5 mb-2 text-amber-400" />
           <div class="font-semibold">Workspace is {@workspace.status}</div>
-          <div class="mt-1 max-w-xs text-[11px] leading-5 text-amber-100/70">
+          <div class="mt-1 max-w-xs text-density-body leading-5 text-amber-100/70">
             {workspace_blocked_message(@workspace_start_error)}
           </div>
           <button
@@ -603,7 +603,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
             id="terminal-workspace-start-button"
             type="button"
             phx-click="workspace:start"
-            class="mt-3 rounded border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold text-amber-200 hover:bg-amber-400/20 active:bg-amber-400/30 transition-colors"
+            class="mt-3 rounded border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-density-body font-semibold text-amber-200 hover:bg-amber-400/20 active:bg-amber-400/30 transition-colors"
           >
             Start workspace
           </button>
@@ -611,7 +611,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
             :if={workspace_start_blocked?(@workspace_start_error)}
             id="terminal-workspace-start-unavailable"
             navigate={~p"/"}
-            class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold text-amber-100/80 transition-colors hover:bg-amber-400/20 active:bg-amber-400/30"
+            class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-density-body font-semibold text-amber-100/80 transition-colors hover:bg-amber-400/20 active:bg-amber-400/30"
           >
             Open home terminal
           </.link>
@@ -635,14 +635,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
         >
           <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-red-500" />
           <div class="font-semibold">{raw_pane_error_title(@raw_pane[:error])}</div>
-          <div class="mt-1 max-w-xs text-[11px] leading-5 text-red-200/70">
+          <div class="mt-1 max-w-xs text-density-body leading-5 text-red-200/70">
             {raw_pane_error_message(@raw_pane[:error])}
           </div>
           <button
             type="button"
             phx-click="retry_pane"
             phx-value-pane-id={@raw_pane_id}
-            class="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300 hover:bg-red-500/20 active:bg-red-500/30 transition-colors"
+            class="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-density-label text-density-label text-red-300 hover:bg-red-500/20 active:bg-red-500/30 transition-colors"
           >
             Retry
           </button>
@@ -858,7 +858,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
           <% end %>
           <%= if Map.get(pane, :paired) == false do %>
             <div
-              class="pointer-events-none absolute right-1 top-1 z-30 rounded-sm border border-amber-500/40 bg-amber-500/15 px-1 font-mono text-[10px] leading-4 text-amber-300"
+              class="pointer-events-none absolute right-1 top-1 z-30 rounded-sm border border-amber-500/40 bg-amber-500/15 px-1 font-mono text-density-label leading-4 text-amber-300"
               title={pane_unpaired_title(pane)}
               data-role="pane-unpaired-badge"
             >
@@ -872,7 +872,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
               <div class="flex h-full items-center justify-center px-3 text-center text-xs text-zinc-500">
                 <div class="min-w-0">
                   <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
-                  <div class="mt-1 truncate font-mono text-[10px]">
+                  <div class="mt-1 truncate font-mono text-density-label">
                     {short_path(pane.current_path)}
                   </div>
                 </div>
@@ -944,7 +944,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
         >
           <div class="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-3 py-2">
             <div class="min-w-0 flex-1">
-              <div class="truncate text-[10px] font-semibold uppercase text-zinc-500">
+              <div class="truncate text-density-label font-semibold uppercase text-zinc-500">
                 Pane Scrollback
               </div>
               <div class="mt-0.5 truncate font-mono text-xs text-zinc-200">
@@ -1002,7 +1002,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
               </div>
             <% end %>
           </div>
-          <div class="flex items-center justify-between gap-3 border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-[10px] text-zinc-500">
+          <div class="flex items-center justify-between gap-3 border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-density-label text-zinc-500">
             <div class="min-w-0 truncate font-mono">
               {@pane_history.session} · {@pane_history.window_id} · {@pane_history.pane_id}
             </div>
@@ -1128,7 +1128,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
           data-mismatch={to_string(preview_session_mismatch?(@preview, @active_tmux_session))}
           title={preview_session_title(@preview, @active_tmux_session)}
           class={[
-            "preview-session-badge max-w-full truncate rounded border px-2 py-1 text-[10px] font-medium leading-none shadow-sm backdrop-blur",
+            "preview-session-badge max-w-full truncate rounded border px-2 py-1 text-density-label font-medium leading-none shadow-sm backdrop-blur",
             if(preview_session_mismatch?(@preview, @active_tmux_session),
               do: "border-amber-300/50 bg-amber-950/85 text-amber-100",
               else: "border-zinc-700/70 bg-zinc-950/80 text-zinc-200"
@@ -1227,7 +1227,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       data-file-pane-strip={@strip.pane_id}
       role="tablist"
       aria-label="Open files"
-      class={["flex items-stretch overflow-x-auto text-[11px] text-zinc-300", @class]}
+      class={["flex items-stretch overflow-x-auto text-density-body text-zinc-300", @class]}
     >
       <div
         :for={tab <- @strip.tabs}
@@ -1260,7 +1260,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
           <span
             data-dirty-dot
             class={[
-              "shrink-0 text-[9px] leading-none text-amber-400",
+              "shrink-0 text-density-badge leading-none text-amber-400",
               unless(tab.dirty, do: "hidden")
             ]}
             aria-label="Unsaved changes"

@@ -40,11 +40,11 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadges do
   def workspace_agent_layout_icon("missing_agent_pane"), do: "hero-exclamation-triangle"
 
   def workspace_agent_layout_class("ready") do
-    "inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"
+    "inline-flex items-center gap-density-label rounded border border-emerald-200 bg-emerald-50 px-1.5 py-density-label text-density-label font-medium text-emerald-700"
   end
 
   def workspace_agent_layout_class("missing_agent_pane") do
-    "inline-flex items-center gap-0.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+    "inline-flex items-center gap-density-label rounded border border-amber-200 bg-amber-50 px-1.5 py-density-label text-density-label font-medium text-amber-800"
   end
 
   def workspace_agent_layout_title(ws) do
@@ -73,19 +73,20 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadges do
   end
 
   def agent_session_status_class("attention"),
-    do: "rounded border border-red-200 bg-red-50 px-1 py-0.5 text-[10px] font-medium text-red-700"
+    do:
+      "rounded border border-red-200 bg-red-50 px-1 py-density-label text-density-label font-medium text-red-700"
 
   def agent_session_status_class("done"),
     do:
-      "rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700"
+      "rounded border border-emerald-200 bg-emerald-50 px-1 py-density-label text-density-label font-medium text-emerald-700"
 
   def agent_session_status_class("running"),
     do:
-      "rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[10px] font-medium text-blue-700"
+      "rounded border border-blue-200 bg-blue-50 px-1 py-density-label text-density-label font-medium text-blue-700"
 
   def agent_session_status_class(_status),
     do:
-      "rounded border border-zinc-200 bg-zinc-50 px-1 py-0.5 text-[10px] font-medium text-zinc-600"
+      "rounded border border-zinc-200 bg-zinc-50 px-1 py-density-label text-density-label font-medium text-zinc-600"
 
   def session_share_url(href) when is_binary(href) and href != "" do
     CaseinWeb.Endpoint.url() <> href
