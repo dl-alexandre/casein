@@ -19,12 +19,21 @@ memory (DSM)** under `/dev/shm`, not root disk exhaustion and not the product
 
 | Change | Where | Effect |
 |--------|-------|--------|
-| Single-flight PR gate | `.github/workflows/pr-gate.yml` concurrency group `pr-gate-devbox-self-hosted`, `cancel-in-progress: false` (#753) | At most one full `gate` job on the shared runner host. Other PRs **queue**; they do not cancel an in-flight run. |
+| Per-PR concurrency + host flock | `.github/workflows/pr-gate.yml` — `group: pr-gate-${{ number }}`, `cancel-in-progress: true`, and `flock /tmp/casein-pr-gate.lock` around pre-push + release-smoke | Same-PR supersession cancels correctly; **different** PRs are not discarded by GitHub (the #753 global-group trap). Full suites still single-flight on the box via util-linux `flock`. |
 | ExUnit case cap | `test/test_helper.exs` `max_cases: 4` | Keeps one suite from opening schedulers-worth of sandbox connections / child pressure. |
 | Repo pool cap | `config/test.exs` `pool_size: min(schedulers*2, 10)` | Avoids `53300 too many clients` against the shared host Postgres. |
 | Per-run tmux label | `test/test_helper.exs` `casein_test_<pid>` | Concurrent suites (when they still happen outside the PR gate) do not `kill-server` each other. |
 
-Single-flight removes the dominant multi-gate multiplier. Residual 53100 risk
+### #753 regression (do not reintroduce)
+
+A single global concurrency group (`pr-gate-devbox-self-hosted`) with
+`cancel-in-progress: false` does **not** queue unbounded. GitHub keeps one
+running + one pending per group; a third run **cancels the previously pending**
+run. Required `gate` then never reports on those PRs and auto-merge sticks
+forever. Host `flock` is the right serialisation point; GitHub concurrency is
+only for same-PR supersession.
+
+Host flock removes the dominant multi-gate multiplier. Residual 53100 risk
 remains when **one** full suite still exhausts the kernel **segment count**
 while `/dev/shm` byte capacity stays nearly empty.
 
