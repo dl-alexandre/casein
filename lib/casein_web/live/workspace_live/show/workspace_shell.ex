@@ -337,7 +337,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             <span
               :if={workspace_start_blocked?(@workspace_start_error)}
               id="workspace-start-unavailable"
-              class="header-p-touch-hide shrink-0 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300"
+              class="header-p-touch-hide shrink-0 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-density-label text-density-label font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300"
             >
               Start unavailable
             </span>
@@ -414,7 +414,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             :if={file_strip == nil and preview_chrome != nil}
             title={preview_chrome.title}
             class={[
-              "min-w-0 truncate rounded border px-2 py-0.5 text-[11px] font-medium leading-none",
+              "min-w-0 truncate rounded border px-2 py-density-body text-density-body font-medium leading-none",
               if(preview_chrome.mismatch?,
                 do: "border-amber-300/50 bg-amber-400/10 text-amber-600 dark:text-amber-200",
                 else: "border-base-300 bg-base-200/60 text-base-content/70"
@@ -425,7 +425,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           </div>
           <div
             :if={file_strip == nil and preview_chrome == nil}
-            class="flex items-center px-2 text-[11px] text-base-content/40"
+            class="flex items-center px-2 text-density-body text-base-content/40"
           >
             No file pane focused
           </div>
@@ -449,7 +449,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           <span class="sr-only">Show chrome</span>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
             <% win = active_tmux_window_name(@tmux_active_window_id, @tmux_windows) %>
-            <span class="hidden pointer-coarse:flex min-w-0 items-center gap-1.5 text-[11px] leading-none text-base-content/70">
+            <span class="hidden pointer-coarse:flex min-w-0 items-center gap-1.5 text-density-body leading-none text-base-content/70">
               <span
                 class={["size-2 shrink-0 rounded-full", workspace_status_dot_class(@workspace.status)]}
                 aria-hidden="true"
@@ -1075,7 +1075,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             phx-click="inspector:select"
             phx-value-id={entry.id}
             class={[
-              "group flex max-w-[14rem] items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition",
+              "group flex max-w-[14rem] items-center gap-1.5 rounded-md px-2 py-1 text-left text-density-body transition",
               entry.id == @active_id &&
                 "bg-base-100 text-base-content shadow-sm ring-1 ring-base-300/80",
               entry.id != @active_id &&
@@ -1083,9 +1083,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
               (@focused? and entry.id == @active_id) && "ring-primary/60"
             ]}
           >
-            <span class="font-mono text-[10px] text-base-content/40">{index}</span>
+            <span class="font-mono text-density-label text-base-content/40">{index}</span>
             <span class="truncate font-medium">{inspector_title(entry)}</span>
-            <span class="rounded bg-base-300/50 px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide text-base-content/45">
+            <span class="rounded bg-base-300/50 px-1 py-density-badge font-mono text-density-badge uppercase tracking-wide text-base-content/45">
               {inspector_kind_label(entry)}
             </span>
             <span
@@ -1101,7 +1101,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             </span>
           </button>
         </div>
-        <div class="flex shrink-0 items-center gap-1 pl-1 text-[10px] text-base-content/45">
+        <div class="flex shrink-0 items-center gap-1 pl-1 text-density-label text-base-content/45">
           <span :if={@zoomed?} class="rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
             zoomed
           </span>
@@ -1129,7 +1129,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
               <div class="truncate text-sm font-medium text-base-content/90">
                 {inspector_title(entry)}
               </div>
-              <div class="truncate font-mono text-[11px] text-base-content/45">
+              <div class="truncate font-mono text-density-body text-base-content/45">
                 {entry.id}
               </div>
             </div>
@@ -1153,7 +1153,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
               />
             <% else %>
               <div class="rounded-md border border-base-300/50 bg-base-100/70 px-3 py-2">
-                <div class="text-[11px] uppercase tracking-wide text-base-content/45">
+                <div class="text-density-body uppercase tracking-wide text-base-content/45">
                   {inspector_kind_label(entry)}
                 </div>
                 <div class="mt-1 font-medium">{inspector_title(entry)}</div>

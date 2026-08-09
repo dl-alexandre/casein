@@ -71,7 +71,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           id={"agent-terminal-approval-banner-" <> @workspace.id}
           type="button"
           phx-click="notifications:toggle"
-          class="group flex shrink-0 items-center gap-2 border-b border-amber-400/25 bg-amber-400/[0.08] px-3 py-2 text-left text-[11px] text-amber-800 transition hover:bg-amber-400/[0.14] dark:text-amber-200"
+          class="group flex shrink-0 items-center gap-2 border-b border-amber-400/25 bg-amber-400/[0.08] px-3 py-2 text-left text-density-body text-amber-800 transition hover:bg-amber-400/[0.14] dark:text-amber-200"
         >
           <span class="relative flex size-2 shrink-0">
             <span class="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-50"></span>
@@ -303,7 +303,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                keystroke is going (and what C-b arrows will move). --%>
           <span
             data-mobile-window-number
-            class="inline-flex shrink-0 justify-center font-mono text-[11px] font-semibold leading-none text-sky-300/90"
+            class="inline-flex shrink-0 justify-center font-mono text-density-body font-semibold leading-none text-sky-300/90"
             aria-hidden="true"
           >
             {mobile_active_pane_address(assigns)}
@@ -448,7 +448,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
               title="Next pane"
             >
               <.icon name="hero-arrow-path" class="size-4" />
-              <span class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold leading-none text-primary-content">
+              <span class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-density-micro font-bold leading-none text-primary-content">
                 {pane_count}
               </span>
             </button>
@@ -631,7 +631,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
               <.icon name="hero-chevron-left" class="size-4" />
             </button>
             <div class="min-w-0">
-              <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              <div class="text-density-label font-semibold uppercase tracking-wide text-zinc-500">
                 {if @mnav_view == "windows", do: "Windows", else: "Navigate"}
               </div>
               <div class="truncate text-sm font-medium">{mobile_nav_sheet_title(assigns)}</div>
@@ -663,7 +663,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                   "min-w-0 flex-1 flex-row items-center gap-1.5"
                 ]}
               >
-                <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
+                <span class="font-mono text-density-label text-zinc-500">{window.index}</span>
                 <span data-picker-label class="min-w-0 truncate font-medium">{window.name}</span>
               </button>
               <SessionBar.copy_link_button
@@ -690,7 +690,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
         --%>
         <div
           :if={@mnav_view == "sessions"}
-          class="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+          class="mb-1 flex items-center gap-1.5 text-density-label font-semibold uppercase tracking-wide text-zinc-500"
         >
           <.icon name="hero-folder" class="size-3 shrink-0" />
           <span class="min-w-0 truncate normal-case text-zinc-300">
@@ -719,7 +719,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
               </span>
               <span
                 :if={@shell_button_detail != ""}
-                class="truncate font-mono text-[10px] text-zinc-500"
+                class="truncate font-mono text-density-label text-zinc-500"
               >
                 {@shell_button_detail}
               </span>
@@ -767,7 +767,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                 <.mnav_session_anchor tab={tab} />
                 <span
                   :if={tab.detail_secondary != ""}
-                  class="ml-auto max-w-[38%] shrink-0 truncate font-mono text-[10px] text-zinc-500"
+                  class="ml-auto max-w-[38%] shrink-0 truncate font-mono text-density-label text-zinc-500"
                 >
                   {tab.detail_secondary}
                 </span>
@@ -781,7 +781,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                   JS.toggle(to: "#mnav-windows-" <> tab.dom_id, display: "block")
                   |> JS.toggle_class("rotate-90", to: "#mnav-windows-chevron-" <> tab.dom_id)
                 }
-                class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                class="flex shrink-0 items-center gap-density-label rounded px-1.5 py-1 font-mono text-density-label text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 aria-label={"Toggle windows of " <> tab.label}
               >
                 {tab.window_count}
@@ -837,7 +837,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                       "min-w-0 flex-1 flex-row items-center gap-1.5"
                     ]}
                   >
-                    <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
+                    <span class="font-mono text-density-label text-zinc-500">{window.index}</span>
                     <span data-picker-label class="min-w-0 truncate font-medium">{window.name}</span>
                   </button>
                   <SessionBar.copy_link_button
@@ -864,7 +864,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
         --%>
         <div
           :if={@mnav_view == "sessions" and @mnav_other_nodes != []}
-          class="mb-1 mt-3 flex items-center gap-1.5 border-t border-zinc-800 pt-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+          class="mb-1 mt-3 flex items-center gap-1.5 border-t border-zinc-800 pt-2 text-density-label font-semibold uppercase tracking-wide text-zinc-500"
         >
           <.icon name="hero-squares-2x2" class="size-3 shrink-0" /> Other workspaces
         </div>
@@ -918,7 +918,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
             }
           >
             <span class="min-w-0 flex-1 truncate text-left font-medium">{@node.label}</span>
-            <span class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-zinc-500">
+            <span class="flex shrink-0 items-center gap-density-label font-mono text-density-label text-zinc-500">
               {@node.session_count}
               <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
                 <.icon name="hero-chevron-right" class="size-3" />
@@ -963,7 +963,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
             type="button"
             phx-click="sidebar:toggle_workspace"
             phx-value-workspace-id={@node.workspace_id}
-            class="flex shrink-0 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] text-zinc-500"
+            class="flex shrink-0 items-center gap-density-label rounded px-1.5 font-mono text-density-label text-zinc-500"
             aria-label={"Expand " <> @node.label}
           >
             {@node.session_count}
@@ -990,7 +990,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           <span class="min-w-0 flex-1 truncate text-left font-medium">{@node.label}</span>
           <span
             :if={@node.session_count > 0}
-            class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-zinc-500"
+            class="flex shrink-0 items-center gap-density-label font-mono text-density-label text-zinc-500"
           >
             {@node.session_count}
             <span class="flex"><.icon name="hero-chevron-right" class="size-3" /></span>
@@ -1021,7 +1021,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
     ~H"""
     <span
       :if={SessionBar.session_anchor_interesting?(@tab)}
-      class="inline-flex min-w-0 shrink items-center gap-0.5 rounded bg-zinc-800 px-1 font-mono text-[9px] text-zinc-400"
+      class="inline-flex min-w-0 shrink items-center gap-density-badge rounded bg-zinc-800 px-1 font-mono text-density-badge text-zinc-400"
       title={mnav_anchor_title(@tab)}
     >
       <.icon name="hero-arrows-right-left" class="size-2.5 shrink-0" /><span

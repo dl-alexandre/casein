@@ -201,7 +201,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
                     class="rounded border border-zinc-200 bg-white p-4 shadow-sm"
                   >
                     <div class="flex flex-wrap items-center gap-2">
-                      <span class="rounded bg-zinc-100 px-2 py-0.5 font-mono text-[11px] text-zinc-700">
+                      <span class="rounded bg-zinc-100 px-2 py-density-body font-mono text-density-body text-zinc-700">
                         {source_label(result.source)}
                       </span>
                       <%= if status = result_status(result) do %>
@@ -210,14 +210,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
                         </span>
                       <% end %>
                       <%= if result.occurred_at do %>
-                        <time class="font-mono text-[11px] text-zinc-500">
+                        <time class="font-mono text-density-body text-zinc-500">
                           {format_time(result.occurred_at)}
                         </time>
                       <% end %>
                       <%= if href = result_href(result) do %>
                         <.link
                           navigate={href}
-                          class="ml-auto inline-flex items-center gap-1 rounded border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50"
+                          class="ml-auto inline-flex items-center gap-1 rounded border border-zinc-200 px-2 py-density-body text-density-body font-medium text-zinc-700 transition hover:bg-zinc-50"
                         >
                           <.icon name="hero-arrow-top-right-on-square" class="size-3" /> Open
                         </.link>
@@ -295,18 +295,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
 
   defp status_badge_class("Attention"),
     do:
-      "rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+      "rounded border border-amber-200 bg-amber-50 px-2 py-density-body text-density-body font-medium text-amber-800"
 
   defp status_badge_class("Error"),
-    do: "rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700"
+    do:
+      "rounded border border-red-200 bg-red-50 px-2 py-density-body text-density-body font-medium text-red-700"
 
   defp status_badge_class("Done"),
     do:
-      "rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
+      "rounded border border-emerald-200 bg-emerald-50 px-2 py-density-body text-density-body font-medium text-emerald-700"
 
   defp status_badge_class(_status),
     do:
-      "rounded border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-700"
+      "rounded border border-zinc-200 bg-zinc-50 px-2 py-density-body text-density-body font-medium text-zinc-700"
 
   defp humanize(value) do
     value

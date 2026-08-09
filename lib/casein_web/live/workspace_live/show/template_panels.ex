@@ -38,7 +38,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
         >
           <header class="flex items-start justify-between gap-4 border-b border-base-300 px-4 py-3">
             <div class="min-w-0">
-              <div class="text-[10px] font-semibold uppercase tracking-wide text-primary">
+              <div class="text-density-label font-semibold uppercase tracking-wide text-primary">
                 Session template preview
               </div>
               <h2 id="template-preview-title" class="truncate text-sm font-semibold">
@@ -49,7 +49,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
               </p>
               <%= if template_preview_reconcile?(@template_preview) do %>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <span class="rounded border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                  <span class="rounded border border-primary/25 bg-primary/10 px-2 py-density-label text-density-label font-medium uppercase tracking-wide text-primary">
                     Smart reconcile
                   </span>
                   <span
@@ -85,11 +85,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
                     <h3 class="text-xs font-semibold text-base-content">
                       Reconciliation preview
                     </h3>
-                    <p class="mt-1 text-[11px] text-base-content/60">
+                    <p class="mt-1 text-density-body text-base-content/60">
                       {template_reconcile_summary_sentence(@template_preview.diff.summary)}
                     </p>
                   </div>
-                  <span class="rounded bg-base-100 px-2 py-1 font-mono text-[10px] text-base-content/55">
+                  <span class="rounded bg-base-100 px-2 py-1 font-mono text-density-label text-base-content/55">
                     {@template_preview.diff.strategy}
                   </span>
                 </div>
@@ -100,7 +100,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
                       id={"template-reconcile-summary-" <> item.key}
                       class="rounded border border-base-300 bg-base-100 px-2 py-1.5"
                     >
-                      <div class="text-[10px] uppercase tracking-wide text-base-content/45">
+                      <div class="text-density-label uppercase tracking-wide text-base-content/45">
                         {item.label}
                       </div>
                       <div class="font-mono text-sm font-semibold text-base-content">
@@ -119,18 +119,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
                     class={template_change_class(change.action)}
                   >
                     <div class="flex items-start gap-3">
-                      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-[10px] text-base-content/60">
+                      <span class="mt-density-label flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-density-label text-base-content/60">
                         {change.index}
                       </span>
                       <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span class="font-medium">{template_change_title(change)}</span>
-                          <span class="rounded bg-base-100 px-1.5 py-0.5 font-mono text-[10px] text-base-content/60">
+                          <span class="rounded bg-base-100 px-1.5 py-density-label font-mono text-density-label text-base-content/60">
                             {change.action}
                           </span>
                         </div>
                         <%= if template_change_detail(change) != "" do %>
-                          <p class="mt-1 truncate font-mono text-[10px] text-base-content/60">
+                          <p class="mt-1 truncate font-mono text-density-label text-base-content/60">
                             {template_change_detail(change)}
                           </p>
                         <% end %>
@@ -142,7 +142,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
 
               <div
                 id="template-exact-plan-note"
-                class="mt-3 rounded border border-dashed border-base-300 px-3 py-2 text-[11px] text-base-content/55"
+                class="mt-3 rounded border border-dashed border-base-300 px-3 py-2 text-density-body text-base-content/55"
               >
                 Exact replay would run {@template_preview.step_count} planned tmux operation(s)
                 without trying to reuse the current layout.
@@ -156,18 +156,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
                     class="rounded border border-base-300 bg-base-200/35 px-3 py-2 text-xs"
                   >
                     <div class="flex items-start gap-3">
-                      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-[10px] text-base-content/60">
+                      <span class="mt-density-label flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-density-label text-base-content/60">
                         {step.index}
                       </span>
                       <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span class="font-medium">{template_step_title(step)}</span>
-                          <span class="rounded bg-base-300 px-1.5 py-0.5 font-mono text-[10px] text-base-content/60">
+                          <span class="rounded bg-base-300 px-1.5 py-density-label font-mono text-density-label text-base-content/60">
                             {step.action}
                           </span>
                         </div>
                         <%= if template_step_detail(step) != "" do %>
-                          <p class="mt-1 truncate font-mono text-[10px] text-base-content/60">
+                          <p class="mt-1 truncate font-mono text-density-label text-base-content/60">
                             {template_step_detail(step)}
                           </p>
                         <% end %>
@@ -283,19 +283,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
 
   defp template_disruption_class("low"),
     do:
-      "rounded bg-success/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success"
+      "rounded bg-success/10 px-2 py-density-label text-density-label font-medium uppercase tracking-wide text-success"
 
   defp template_disruption_class("medium"),
     do:
-      "rounded bg-warning/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning"
+      "rounded bg-warning/10 px-2 py-density-label text-density-label font-medium uppercase tracking-wide text-warning"
 
   defp template_disruption_class("high"),
     do:
-      "rounded bg-error/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-error"
+      "rounded bg-error/10 px-2 py-density-label text-density-label font-medium uppercase tracking-wide text-error"
 
   defp template_disruption_class(_),
     do:
-      "rounded bg-base-200 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-base-content/55"
+      "rounded bg-base-200 px-2 py-density-label text-density-label font-medium uppercase tracking-wide text-base-content/55"
 
   defp template_change_title(%{action: "reuse_window"} = change) do
     "Reuse window " <> template_value(template_ref_name(change), template_ref_value(change))
@@ -388,7 +388,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
         >
           <header class="flex items-start justify-between gap-4 border-b border-base-300 px-4 py-3">
             <div class="min-w-0">
-              <div class="text-[10px] font-semibold uppercase tracking-wide text-primary">
+              <div class="text-density-label font-semibold uppercase tracking-wide text-primary">
                 Session templates
               </div>
               <h2 id="template-library-title" class="truncate text-sm font-semibold">
@@ -610,11 +610,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
                         <div class="min-w-0">
                           <div class="flex flex-wrap items-center gap-2">
                             <h3 class="truncate text-sm font-medium">{saved.name}</h3>
-                            <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/55">
+                            <span class="rounded bg-base-200 px-1.5 py-density-label text-density-label uppercase tracking-wide text-base-content/55">
                               v{saved.schema_version}
                             </span>
                             <%= unless Terminals.saved_template_apply_supported?(saved) do %>
-                              <span class="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-warning">
+                              <span class="rounded bg-warning/10 px-1.5 py-density-label text-density-label uppercase tracking-wide text-warning">
                                 unsupported
                               </span>
                             <% end %>
@@ -630,12 +630,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
                             <span
                               :for={tag <- saved_template_tags(saved)}
                               id={"saved-template-tag-" <> saved.id <> "-" <> tag}
-                              class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                              class="rounded bg-primary/10 px-1.5 py-density-label text-density-label font-medium text-primary"
                             >
                               {tag}
                             </span>
                           </div>
-                          <p class="mt-2 text-[10px] text-base-content/45">
+                          <p class="mt-2 text-density-label text-base-content/45">
                             {saved_template_window_count(saved)} window(s) · {saved_template_pane_count(
                               saved
                             )} pane(s) · {saved_template_timestamp(saved)}

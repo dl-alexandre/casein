@@ -121,12 +121,12 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadgesTest do
   describe "workspace_agent_layout_class/1" do
     test "maps ready to emerald badge classes" do
       assert PickerBadges.workspace_agent_layout_class("ready") ==
-               "inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"
+               "inline-flex items-center gap-density-label rounded border border-emerald-200 bg-emerald-50 px-1.5 py-density-label text-density-label font-medium text-emerald-700"
     end
 
     test "maps missing_agent_pane to amber badge classes" do
       assert PickerBadges.workspace_agent_layout_class("missing_agent_pane") ==
-               "inline-flex items-center gap-0.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+               "inline-flex items-center gap-density-label rounded border border-amber-200 bg-amber-50 px-1.5 py-density-label text-density-label font-medium text-amber-800"
     end
   end
 
@@ -202,28 +202,28 @@ defmodule CaseinWeb.WorkspaceLive.PickerBadgesTest do
   describe "agent_session_status_class/1" do
     test "maps attention (highest urgency) to red badge classes" do
       assert PickerBadges.agent_session_status_class("attention") ==
-               "rounded border border-red-200 bg-red-50 px-1 py-0.5 text-[10px] font-medium text-red-700"
+               "rounded border border-red-200 bg-red-50 px-1 py-density-label text-density-label font-medium text-red-700"
     end
 
     test "maps done to emerald badge classes" do
       assert PickerBadges.agent_session_status_class("done") ==
-               "rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700"
+               "rounded border border-emerald-200 bg-emerald-50 px-1 py-density-label text-density-label font-medium text-emerald-700"
     end
 
     test "maps running to blue badge classes" do
       assert PickerBadges.agent_session_status_class("running") ==
-               "rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[10px] font-medium text-blue-700"
+               "rounded border border-blue-200 bg-blue-50 px-1 py-density-label text-density-label font-medium text-blue-700"
     end
 
     test "falls through unknown and empty status to zinc badge classes" do
       assert PickerBadges.agent_session_status_class("unknown") ==
-               "rounded border border-zinc-200 bg-zinc-50 px-1 py-0.5 text-[10px] font-medium text-zinc-600"
+               "rounded border border-zinc-200 bg-zinc-50 px-1 py-density-label text-density-label font-medium text-zinc-600"
 
       assert PickerBadges.agent_session_status_class(nil) ==
-               "rounded border border-zinc-200 bg-zinc-50 px-1 py-0.5 text-[10px] font-medium text-zinc-600"
+               "rounded border border-zinc-200 bg-zinc-50 px-1 py-density-label text-density-label font-medium text-zinc-600"
 
       assert PickerBadges.agent_session_status_class("") ==
-               "rounded border border-zinc-200 bg-zinc-50 px-1 py-0.5 text-[10px] font-medium text-zinc-600"
+               "rounded border border-zinc-200 bg-zinc-50 px-1 py-density-label text-density-label font-medium text-zinc-600"
     end
   end
 

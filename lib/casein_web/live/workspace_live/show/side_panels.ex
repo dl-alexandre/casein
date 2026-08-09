@@ -166,7 +166,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
             <% end %>
             <span class="flex items-center gap-2 text-zinc-500">
               <%= if Markdown.markdown_path?(@open_file.path) do %>
-                <span class="inline-flex overflow-hidden rounded border border-zinc-300 bg-white text-[11px]">
+                <span class="inline-flex overflow-hidden rounded border border-zinc-300 bg-white text-density-body">
                   <button
                     type="button"
                     phx-click={
@@ -311,7 +311,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                       phx-click="tree:select_dir"
                       phx-value-path={e.rel_path}
                       title="select for new file/dir"
-                      class={"text-[10px] px-1 opacity-0 group-hover:opacity-100 " <> if @selected_dir == e.rel_path, do: "opacity-100 text-blue-700", else: ""}
+                      class={"text-density-label px-1 opacity-0 group-hover:opacity-100 " <> if @selected_dir == e.rel_path, do: "opacity-100 text-blue-700", else: ""}
                     >
                       sel
                     </button>
@@ -510,7 +510,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
     <section class="flex flex-col gap-3 min-h-0 lg:flex-row lg:h-[calc(100dvh-14rem)] lg:min-h-[20rem]">
       <aside class="flex flex-col min-h-0 lg:w-72 lg:flex-none 2xl:w-80">
         <h3 class="text-xs font-medium text-zinc-700 mb-2 flex-none">
-          Changes <span class="ml-1 text-[10px] font-mono text-zinc-400">{length(@git_status)}</span>
+          Changes
+          <span class="ml-1 text-density-label font-mono text-zinc-400">{length(@git_status)}</span>
         </h3>
         <%= if @git_status == [] do %>
           <p class="text-sm text-zinc-500">No changes.</p>
@@ -547,7 +548,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
           <% true -> %>
             <div class="flex items-center justify-between mb-2 flex-none">
               <span class="font-mono text-xs text-zinc-700 truncate">{@open_file.path}</span>
-              <span class="text-[10px] font-mono text-zinc-400 flex-none ml-2">
+              <span class="text-density-label font-mono text-zinc-400 flex-none ml-2">
                 {diff_stat_label(@file_diff)}
               </span>
             </div>
@@ -691,7 +692,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                     >
                       {artifact_name(project)}
                     </h3>
-                    <div class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <div class="mt-1 flex flex-wrap items-center gap-1.5 text-density-body">
                       <span class={[
                         "inline-flex items-center rounded border px-1.5 py-0.5 font-medium",
                         artifact_status_class(artifact_status(project))
@@ -747,7 +748,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
                 <dl class="mt-3 grid gap-2 text-xs">
                   <div class="min-w-0">
-                    <dt class="text-[10px] font-semibold uppercase text-base-content/40">
+                    <dt class="text-density-label font-semibold uppercase text-base-content/40">
                       Preview
                     </dt>
                     <dd
@@ -758,7 +759,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                     </dd>
                   </div>
                   <div class="min-w-0">
-                    <dt class="text-[10px] font-semibold uppercase text-base-content/40">
+                    <dt class="text-density-label font-semibold uppercase text-base-content/40">
                       Worktree
                     </dt>
                     <dd
@@ -769,7 +770,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                     </dd>
                   </div>
                   <div :if={artifact_prompt_preview(project)} class="min-w-0">
-                    <dt class="text-[10px] font-semibold uppercase text-base-content/40">
+                    <dt class="text-density-label font-semibold uppercase text-base-content/40">
                       Latest Prompt
                     </dt>
                     <dd class="mt-0.5 line-clamp-2 text-base-content/70">
@@ -778,7 +779,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                   </div>
                 </dl>
 
-                <div class="mt-auto pt-3 text-[11px] text-base-content/45">
+                <div class="mt-auto pt-3 text-density-body text-base-content/45">
                   Updated {artifact_updated_label(project)}
                 </div>
               </article>
@@ -870,15 +871,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
         <dl class="mt-3 grid gap-2 text-xs md:grid-cols-2">
           <div class="min-w-0">
-            <dt class="text-[10px] font-semibold uppercase text-base-content/40">Status</dt>
+            <dt class="text-density-label font-semibold uppercase text-base-content/40">Status</dt>
             <dd class="mt-0.5 text-base-content/70">{artifact_status(@project)}</dd>
           </div>
           <div class="min-w-0">
-            <dt class="text-[10px] font-semibold uppercase text-base-content/40">Kind</dt>
+            <dt class="text-density-label font-semibold uppercase text-base-content/40">Kind</dt>
             <dd class="mt-0.5 text-base-content/70">{artifact_kind(@project)}</dd>
           </div>
           <div class="min-w-0 md:col-span-2">
-            <dt class="text-[10px] font-semibold uppercase text-base-content/40">Worktree</dt>
+            <dt class="text-density-label font-semibold uppercase text-base-content/40">Worktree</dt>
             <dd
               class="mt-0.5 truncate font-mono text-base-content/70"
               title={artifact_worktree_path(@project)}
@@ -887,7 +888,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
             </dd>
           </div>
           <div :if={artifact_prompt_preview(@project)} class="min-w-0 md:col-span-2">
-            <dt class="text-[10px] font-semibold uppercase text-base-content/40">Latest Prompt</dt>
+            <dt class="text-density-label font-semibold uppercase text-base-content/40">
+              Latest Prompt
+            </dt>
             <dd class="mt-0.5 text-base-content/70">{artifact_prompt_preview(@project)}</dd>
           </div>
         </dl>
@@ -973,7 +976,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
 
   defp project_card(assigns) do
     ~H"""
-    <details :if={@project_meta} class="border-t pt-1 mt-2 text-[11px]">
+    <details :if={@project_meta} class="border-t pt-1 mt-2 text-density-body">
       <summary class="cursor-pointer text-zinc-700">Project</summary>
       <ul class="mt-1 space-y-0.5">
         <li>Mix: {yes_no(@project_meta.mix?)}</li>
@@ -1001,7 +1004,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
   # Reads memoized :file_symbols from the LiveView — never re-parses content.
   defp symbols_panel(assigns) do
     ~H"""
-    <details :if={@open_file} class="border-t pt-1 mt-2 text-[11px]" open>
+    <details :if={@open_file} class="border-t pt-1 mt-2 text-density-body" open>
       <summary class="cursor-pointer text-zinc-700">
         Symbols ({length(@file_symbols)})
       </summary>

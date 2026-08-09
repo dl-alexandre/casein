@@ -24,7 +24,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ProposalPanel do
           <button
             phx-click="proposal:refresh"
             phx-target={@target}
-            class="text-[10px] text-zinc-500 hover:underline"
+            class="text-density-label text-zinc-500 hover:underline"
           >
             refresh
           </button>
@@ -47,7 +47,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ProposalPanel do
                   ]}
                 >
                   <div class="font-mono">{p.name}</div>
-                  <div class="mt-0.5 flex gap-2 font-mono text-[10px] text-zinc-500">
+                  <div class="mt-density-label flex gap-2 font-mono text-density-label text-zinc-500">
                     <span>{p.size} bytes</span>
                     <span>{Atom.to_string(p.status)}</span>
                   </div>
@@ -64,7 +64,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ProposalPanel do
             <span class="font-mono text-xs">{@proposal_selected.rel_path}</span>
             {risk_badge(assigns)}
           </div>
-          <pre class="flex-1 overflow-auto whitespace-pre-wrap rounded bg-zinc-950 p-3 text-[11px] text-zinc-100">{@proposal_selected.diff}</pre>
+          <pre class="flex-1 overflow-auto whitespace-pre-wrap rounded bg-zinc-950 p-3 text-density-body text-zinc-100">{@proposal_selected.diff}</pre>
           <div class="mt-2">
             {apply_action(assigns)}
           </div>
@@ -84,7 +84,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ProposalPanel do
   defp risk_badge(assigns) do
     ~H"""
     <span class={[
-      "rounded px-1.5 py-0.5 text-[10px] font-medium",
+      "rounded px-1.5 py-density-label text-density-label font-medium",
       risk_class(@proposal_analysis.risk)
     ]}>
       {Atom.to_string(@proposal_analysis.risk)}

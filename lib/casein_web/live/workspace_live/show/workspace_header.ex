@@ -49,14 +49,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
         <span
           :if={@agent_approval_count > 0}
           id={"header-agent-approval-count-" <> @workspace.id}
-          class="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[9px] font-bold leading-4 text-amber-950 ring-2 ring-base-100"
+          class="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-density-badge font-bold leading-4 text-amber-950 ring-2 ring-base-100"
         >
           {min(@agent_approval_count, 99)}
         </span>
       </summary>
 
       <div class="header-overflow-menu">
-        <div class="px-3 py-1 text-[11px] text-base-content/70">
+        <div class="px-3 py-1 text-density-body text-base-content/70">
           <span class="rounded bg-base-200 px-1 py-0.5 uppercase">{@workspace.status}</span>
           <span :if={@workspace.branch} class="ml-1 font-mono text-base-content/60">
             {@workspace.branch}
@@ -75,7 +75,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
 
         <div
           :if={workspace_start_blocked?(@workspace_start_error)}
-          class="px-3 py-1 text-[11px] text-amber-600 dark:text-amber-300"
+          class="px-3 py-1 text-density-body text-amber-600 dark:text-amber-300"
         >
           Start unavailable
         </div>
@@ -92,7 +92,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
         <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
           <div class="my-0.5 border-t border-base-300/70"></div>
 
-          <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
+          <div class="px-3 py-1 text-density-label uppercase tracking-wide text-base-content/40">
             {if @desktop_terminal?, do: "Terminal", else: "Windows"}
           </div>
 
@@ -153,7 +153,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
                 @terminal_mode in [:raw, :raw_ghostty] do %>
           <div class="my-0.5 border-t border-base-300/70"></div>
 
-          <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
+          <div class="px-3 py-1 text-density-label uppercase tracking-wide text-base-content/40">
             Panes
             <span class="ml-1 font-mono normal-case text-base-content/50">
               tmux {terminal_session_label(@tmux_session, @terminal_sid)}
@@ -195,7 +195,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
         <%= if @tab == "terminal" do %>
           <div class="my-0.5 border-t border-base-300/70"></div>
 
-          <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
+          <div class="px-3 py-1 text-density-label uppercase tracking-wide text-base-content/40">
             Sizing
           </div>
 
@@ -268,7 +268,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
             :if={notification_attention_count(assigns) > 0}
             id={"notifications-open-" <> @workspace.id <> "-count"}
             class={[
-              "inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-4",
+              "inline-flex min-w-4 items-center justify-center rounded-full px-1 text-density-label font-semibold leading-4",
               if((@notif_unread_count || 0) > 0,
                 do: "bg-red-600 text-white",
                 else: "bg-amber-400 text-amber-950"
@@ -305,7 +305,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
           </a>
           <div
             :for={platform <- @desktop_downloads}
-            class="px-6 pb-1.5 text-[9px] text-base-content/50"
+            class="px-6 pb-1.5 text-density-badge text-base-content/50"
           >
             SHA-256
             <a href={platform.sha256_url} class="ml-1 break-all font-mono hover:text-primary">
@@ -336,7 +336,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
 
   defp menu_kbd(assigns) do
     ~H"""
-    <kbd class="shrink-0 rounded bg-base-200 px-1 py-0.5 font-mono text-[10px] text-base-content/60">
+    <kbd class="shrink-0 rounded bg-base-200 px-1 py-density-label font-mono text-density-label text-base-content/60">
       {@keys}
     </kbd>
     """

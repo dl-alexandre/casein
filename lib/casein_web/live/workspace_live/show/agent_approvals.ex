@@ -22,7 +22,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
         <h3 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
           <.icon name="hero-shield-exclamation" class="size-4" /> Agent approvals
         </h3>
-        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+        <span class="rounded-full bg-amber-100 px-2 py-density-label text-density-label font-semibold text-amber-900">
           {@pending_count} pending
         </span>
       </div>
@@ -46,17 +46,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
     >
       <div class="flex min-w-0 flex-wrap items-center gap-2">
         <h4 class="text-sm font-medium leading-5">{@request.title}</h4>
-        <span class="rounded bg-amber-200/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide">
+        <span class="rounded bg-amber-200/60 px-1.5 py-density-badge text-density-badge font-semibold uppercase tracking-wide">
           {provider_label(@request.provider_id)}
         </span>
       </div>
       <p
         :if={@request.detail}
-        class="mt-2 whitespace-pre-wrap text-[11px] leading-4 text-amber-950/75"
+        class="mt-2 whitespace-pre-wrap text-density-body leading-4 text-amber-950/75"
       >
         {@request.detail}
       </p>
-      <p :if={@option_list?} class="mt-1 text-[10px] text-amber-900/60">
+      <p :if={@option_list?} class="mt-1 text-density-label text-amber-900/60">
         Agent paused · first response wins.
       </p>
 
@@ -97,7 +97,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
             phx-value-provider-id={@request.provider_id}
             phx-value-request-id={@request.request_id}
             phx-value-decision-kind="decline"
-            class="rounded-lg border border-red-300 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40"
+            class="rounded-lg border border-red-300 bg-white px-2.5 py-1.5 text-density-label font-semibold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/40"
           >
             Reject
           </button>
@@ -107,14 +107,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
             phx-value-provider-id={@request.provider_id}
             phx-value-request-id={@request.request_id}
             phx-value-decision-kind="accept"
-            class="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[10px] font-semibold text-white transition hover:-translate-y-px hover:bg-emerald-500 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
+            class="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-density-label font-semibold text-white transition hover:-translate-y-px hover:bg-emerald-500 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
           >
             Approve once
           </button>
         </div>
 
         <details class="rounded-lg border border-amber-300/70 bg-white/60 px-2.5 py-2">
-          <summary class="cursor-pointer text-[10px] font-semibold text-amber-900">
+          <summary class="cursor-pointer text-density-label font-semibold text-amber-900">
             Approve with a policy amendment
           </summary>
           <div class="mt-2 grid gap-3">
@@ -133,7 +133,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
               />
               <button
                 type="submit"
-                class="rounded-lg border border-amber-500/30 px-2.5 py-1.5 text-[10px] font-semibold text-amber-900 hover:bg-amber-100"
+                class="rounded-lg border border-amber-500/30 px-2.5 py-1.5 text-density-label font-semibold text-amber-900 hover:bg-amber-100"
               >
                 Approve and amend exec policy
               </button>
@@ -154,7 +154,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
               />
               <button
                 type="submit"
-                class="rounded-lg border border-amber-500/30 px-2.5 py-1.5 text-[10px] font-semibold text-amber-900 hover:bg-amber-100"
+                class="rounded-lg border border-amber-500/30 px-2.5 py-1.5 text-density-label font-semibold text-amber-900 hover:bg-amber-100"
               >
                 Apply network policy amendment
               </button>

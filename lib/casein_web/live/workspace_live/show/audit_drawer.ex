@@ -38,7 +38,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
         <header class="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <h2 class="text-sm font-semibold tracking-tight">Evidence</h2>
-            <p class="text-[11px] text-zinc-500 font-mono">
+            <p class="text-density-body text-zinc-500 font-mono">
               {@audit_events_count} events · {@audit_ledger_count} ledger · workspace {@workspace.name}
             </p>
           </div>
@@ -46,14 +46,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
             <button
               phx-click="audit_drawer:refresh"
               phx-target={@target}
-              class="text-[11px] border rounded px-2 py-0.5 hover:bg-zinc-50"
+              class="text-density-body border rounded px-2 py-density-body hover:bg-zinc-50"
               title="refresh audit"
             >
               ↻
             </button>
             <button
               phx-click="audit_drawer:close"
-              class="text-[11px] border rounded px-2 py-0.5 hover:bg-zinc-50"
+              class="text-density-body border rounded px-2 py-density-body hover:bg-zinc-50"
               title="close (esc)"
             >
               ×
@@ -71,11 +71,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
             phx-target={@target}
             phx-debounce="300"
             placeholder="Filter by window name or id…"
-            class="w-full rounded border border-zinc-200 px-2 py-1 font-mono text-[11px] text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+            class="w-full rounded border border-zinc-200 px-2 py-1 font-mono text-density-body text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
             autocomplete="off"
           />
         </div>
-        <div class="flex-1 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
+        <div class="flex-1 overflow-auto px-3 py-2 font-mono text-density-body leading-relaxed">
           <ol id="audit-events" phx-update="stream" class="space-y-1.5">
             <li id="audit-events-empty" class="hidden only:block text-zinc-400 italic">
               no events recorded yet
@@ -99,7 +99,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
                       phx-click="audit_drawer:trace"
                       phx-value-correlation={cid}
                       phx-target={@target}
-                      class="rounded border px-1 py-0.5 text-[10px] text-indigo-600 hover:bg-indigo-50"
+                      class="rounded border px-1 py-density-label text-density-label text-indigo-600 hover:bg-indigo-50"
                       title="show causal chain"
                     >
                       trace
@@ -110,7 +110,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
                       id={"audit-open-run-#{dom_fragment(run_id)}-#{dom_fragment(e.id)}"}
                       phx-click="run_ledger:open"
                       phx-value-id={run_id}
-                      class="rounded border px-1 py-0.5 text-[10px] text-zinc-600 hover:bg-zinc-50"
+                      class="rounded border px-1 py-density-label text-density-label text-zinc-600 hover:bg-zinc-50"
                       title="open run timeline"
                     >
                       run
@@ -124,7 +124,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
         <%= if @audit_trace do %>
           <section
             id="audit-causal-chain"
-            class="border-t bg-indigo-50/60 px-3 py-2 text-[11px] max-h-48 overflow-y-auto"
+            class="border-t bg-indigo-50/60 px-3 py-2 text-density-body max-h-48 overflow-y-auto"
           >
             <div class="flex items-center justify-between mb-1">
               <span class="font-medium text-indigo-700">
@@ -133,7 +133,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
               <button
                 phx-click="audit_drawer:trace_close"
                 phx-target={@target}
-                class="rounded border px-1 py-0.5 text-[10px] text-zinc-600 hover:bg-white"
+                class="rounded border px-1 py-density-label text-density-label text-zinc-600 hover:bg-white"
                 title="close causal chain"
               >
                 close
@@ -156,12 +156,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
                 <% end %>
               </ol>
             <% end %>
-            <div class="mt-1 text-[10px] text-zinc-500 font-mono">
+            <div class="mt-1 text-density-label text-zinc-500 font-mono">
               correlation {String.slice(@audit_trace.correlation_id, 0, 12)}… · causal order
             </div>
           </section>
         <% end %>
-        <footer class="px-3 py-2 border-t text-[10px] text-zinc-500 font-mono">
+        <footer class="px-3 py-2 border-t text-density-label text-zinc-500 font-mono">
           newest first · capped at 50 · time-ordered stream (product.md §9.4)
         </footer>
       </aside>
