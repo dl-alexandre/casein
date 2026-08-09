@@ -58,6 +58,14 @@ defmodule Casein.Terminals.PaneStateTest do
     assert PaneState.task_summary("019f9c65-25cc-7353-b7a0-ffe0d65e7952") == nil
   end
 
+  test "task summary rejects bare runtime banners with no real task" do
+    assert PaneState.task_summary("OpenCode") == nil
+    assert PaneState.task_summary("Claude Code") == nil
+    assert PaneState.task_summary(@ready <> " Claude Code") == nil
+    assert PaneState.task_summary("Codex") == nil
+    assert PaneState.task_summary("Ship fleet chrome") == "Ship fleet chrome"
+  end
+
   test "enriches topology panes and windows with derived state" do
     topology = %{
       session: "tmux",

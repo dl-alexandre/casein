@@ -600,6 +600,17 @@ minutes. `stalled` deliberately does not claim a cause (an agent may think for
 minutes without writing); `errored` is a claim about cause and stays
 report-only. Both surface as `attention` in the session picker.
 
+**Fleet chrome (manager vs worker vs ready-no-task).** Same topology call, no
+new store. Label convention via `terminal_set_agent_label` (`freeze: true`):
+`manager` / `manager: <note>` for orchestrators, `worker` / `worker: <note>`
+for spawned implementers. Spawn windows named `worker-<slug>` also classify as
+worker. Topology then carries `fleet_role` and, when an agent pane is
+idle/ready with no issue binding, no real `task_summary`, and
+`quiet_for_seconds` (or report age) ≥ ~2 minutes, `fleet_readiness:
+"ready_no_task"` plus `ready_no_task_for_seconds` — no full capture. Bare
+runtime titles like `OpenCode` / `Claude Code` are not task summaries. Full
+write-up: `docs/fleet-chrome.md`.
+
 **Poisoned sessions.** Some wedges are unrecoverable from inside — e.g. once an
 OpenCode session stores a `reasoning` item the provider later rejects
 (`[400] validation failed: input[3]: unknown item type "reasoning"`), every
