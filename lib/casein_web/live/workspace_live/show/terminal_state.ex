@@ -8,6 +8,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   import Phoenix.Component
   import Phoenix.LiveView
 
+  alias Casein.Attention.Acknowledgement
   alias Casein.Attention.Delivery
   alias Casein.Codex.SessionTitles
   alias Casein.Terminals
@@ -1115,6 +1116,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   def acknowledge_quiet_window(socket, session_id, window_id)
       when is_binary(session_id) and is_binary(window_id) do
     socket
+    |> persist_session_window_seen(session_id, window_id)
     |> clear_unseen_quiet_window({session_id, window_id})
     |> refresh_session_tab_attention()
     |> maybe_assign_tmux_window_tabs()
@@ -1124,16 +1126,37 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
 
   defp maybe_acknowledge_focused_active_quiet_window(socket) do
     if current_workspace_focused?(socket) do
+      session_id = socket.assigns[:terminal_sid]
+      window_id = socket.assigns[:tmux_active_window_id]
+
       socket
-      |> clear_unseen_quiet_window({
-        socket.assigns[:terminal_sid],
-        socket.assigns[:tmux_active_window_id]
-      })
+      |> persist_session_window_seen(session_id, window_id)
+      |> clear_unseen_quiet_window({session_id, window_id})
       |> refresh_session_tab_attention()
     else
       socket
     end
   end
+
+  # Durable SEEN for the quiet/session-window subject so phone + drawer settle
+  # with the web focus path (#698). Best-effort: missing user/workspace skips.
+  defp persist_session_window_seen(socket, session_id, window_id)
+       when is_binary(session_id) and is_binary(window_id) do
+    user_id =
+      socket.assigns[:notif_user_id] ||
+        (socket.assigns[:current_user] || %{}) |> Map.get(:id)
+
+    workspace_id = socket.assigns[:workspace] && socket.assigns.workspace.id
+
+    if is_binary(user_id) and is_binary(workspace_id) do
+      _ =
+        Acknowledgement.mark_session_window_seen(user_id, workspace_id, session_id, window_id)
+    end
+
+    socket
+  end
+
+  defp persist_session_window_seen(socket, _session_id, _window_id), do: socket
 
   defp maybe_assign_tmux_window_tabs(socket) do
     if is_list(socket.assigns[:tmux_windows]) do
