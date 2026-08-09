@@ -56,6 +56,33 @@ defmodule Casein.Scripts.GrokLockedMcpNoticeTest do
            "a locked MCP grant is selected without announcing it — that is the silent failure"
   end
 
+  test "orchestrator preset refuses a locked grant instead of launching", %{source: source} do
+    assert source =~ "grok_refuse_locked_orchestrator() {",
+           "CASEIN_AGENT_REQUIRE_WRITE must have a hard refuse path"
+
+    assert source =~ ~s(CASEIN_AGENT_REQUIRE_WRITE:-0),
+           "the refuse gate must be opt-in so workers still advise-and-proceed"
+
+    assert source =~ "exit 3",
+           "orchestrator refuse must exit non-zero so callers do not treat it as a healthy launch"
+
+    [_, branch] = String.split(source, ~s(if [[ "$write_enabled" != "true" ]]; then), parts: 2)
+    [branch, _] = String.split(branch, "profile=", parts: 2)
+
+    assert branch =~ "grok_refuse_locked_orchestrator",
+           "REQUIRE_WRITE must run before announce so orchestrators never reach a locked prompt"
+  end
+
+  test "the notice forbids sandbox-base bypass of the unlock", %{source: source} do
+    notice = notice_body(source)
+
+    assert notice =~ "CASEIN_GROK_SANDBOX_BASE",
+           "the wrong fix (override the sandbox) must be named so operators do not reach for it"
+
+    assert notice =~ "CASEIN_AGENT_REQUIRE_WRITE",
+           "point orchestrators at the fail-fast launch flag"
+  end
+
   test "the notice states what the worker CAN do, so a working sandbox is not re-diagnosed", %{
     source: source
   } do

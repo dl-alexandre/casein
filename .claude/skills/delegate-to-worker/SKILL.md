@@ -44,6 +44,12 @@ advisory. The grant is read at launch and **frozen for the pane's life**, so
 re-granting later does not free a running pane — relaunch it. Ask an operator to
 grant write only when the task genuinely needs pane control.
 
+**Orchestrator fail-fast (#593):** if *you* need `terminal_send_*` and
+`terminal_context.agent_write.orchestrator_ready` is false, emit one blocked
+report, label `blocked: need agent-write unlock`, and stop — do not poll.
+Launch managers with `CASEIN_AGENT_REQUIRE_WRITE=1` so a locked grant exits 3
+before a fake-healthy session. Never set `CASEIN_GROK_SANDBOX_BASE` to bypass.
+
 Two distinct locked states (only relevant when you need pane control):
 
 | `unlock_status` | Meaning | Response |

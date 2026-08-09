@@ -1,17 +1,12 @@
 defmodule Casein.Agents.AgentWriteLockVisibilityTest do
   @moduledoc """
-  A managed Grok pane's bwrap sandbox base is chosen once, when its leader
-  starts, from the workspace's agent-write unlock — and is then frozen for the
-  pane's life, while the MCP grant keeps re-intersecting on every request.
+  The workspace agent-write unlock gates the managed Grok *MCP grant*
+  (`terminal_send_*`), frozen at leader start. The bwrap base is always strict
+  (#605). Surfaces that report the lock must stay accurate so orchestrators
+  fail fast (#593) instead of polling for an unlock.
 
-  That asymmetry has repeatedly burned sessions: a pane launched while locked
-  reaches a normal-looking prompt but cannot write its worktree, resolve DNS, or
-  start the BEAM, and re-granting the unlock afterwards does not free it. The
-  launcher already warns at spawn, but that is one stderr line that scrolls away.
-
-  These tests pin the two surfaces that make the condition discoverable *after*
-  launch: the orienting `terminal_context` call every agent makes, and the
-  workspace status API that `spawn-agent-worker.sh` preflights against.
+  These tests pin `terminal_context` and the workspace status API that
+  spawn/launch preflight against.
   """
   use Casein.TestCase, async: false
 
@@ -59,22 +54,26 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
     {:ok, session: session}
   end
 
-  test "terminal_context reports the lock and says a running pane needs a relaunch" do
+  test "terminal_context reports the lock and tells orchestrators to fail fast" do
     assert {:ok, %{agent_write: agent_write}} =
              TerminalTools.invoke("terminal_context", %{"workspace_id" => @workspace_id})
 
     refute agent_write.write_enabled
+    refute agent_write.orchestrator_ready
     assert agent_write.unlock_status == "inactive"
     refute Map.has_key?(agent_write, :unlock_until)
 
-    # The things a blocked agent otherwise spends minutes rediscovering: what
-    # breaks, that a re-grant alone will not free a running pane, and what to
-    # use instead.
-    assert agent_write.note =~ "READ-ONLY"
-    assert agent_write.note =~ "BEAM cannot start"
-    assert agent_write.note =~ "re-granting does not free it"
-    assert agent_write.note =~ "re-grant agent write in the workspace UI"
+    # Post-#605: sandbox is strict; MCP grant is what is locked. Orchestrators
+    # must stop once, not poll for unlock (#593).
+    assert agent_write.fail_fast =~ "blocked: need agent-write unlock"
+    assert agent_write.note =~ "strict sandbox"
+    assert agent_write.note =~ "terminal_send_command"
+    assert agent_write.note =~ "re-granting does not free"
+    assert agent_write.note =~ "ORCHESTRATOR FAIL-FAST"
+    assert agent_write.note =~ "Do not schedule 15–30m unlock poll loops"
     assert agent_write.note =~ "codex"
+    refute agent_write.note =~ "READ-ONLY sandbox"
+    refute agent_write.note =~ "BEAM cannot start"
   end
 
   # write_enabled can be false while the unlock is live — the workspace may not
@@ -103,9 +102,11 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
              TerminalTools.invoke("terminal_context", %{"workspace_id" => @workspace_id})
 
     assert agent_write.write_enabled
+    assert agent_write.orchestrator_ready
     assert agent_write.unlock_status == "active"
     assert agent_write.unlock_until == DateTime.to_iso8601(until)
     refute Map.has_key?(agent_write, :note)
+    refute Map.has_key?(agent_write, :fail_fast)
   end
 
   test "terminal_context distinguishes a lapsed unlock from one never granted" do
@@ -126,9 +127,8 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
     refute Map.has_key?(payload, :agent_write)
   end
 
-  # This is what scripts/spawn-agent-worker.sh preflights, so a locked workspace
-  # refuses to open a worker window instead of spawning a dead pane.
-  test "workspace status API publishes the same write state the sandbox is chosen from" do
+  # spawn/launch preflight the status API for the MCP grant (not the sandbox base).
+  test "workspace status API publishes the same write state the MCP grant is chosen from" do
     assert {:ok, %{agent_write: locked}} = Export.status(@workspace_id)
     refute locked.write_enabled
     assert locked.unlock_status == "inactive"

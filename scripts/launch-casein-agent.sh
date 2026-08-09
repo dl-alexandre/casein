@@ -38,6 +38,14 @@ Runtimes:
             skills (delegate-to-worker, preview-ui-walk, workspace-agent-pair)
             into ~/.config/opencode/skills + project .opencode/skills
   agent     MCP env + real agent binary
+
+Environment (selected):
+  CASEIN_AGENT_REQUIRE_WRITE=1
+            Orchestrator preset for grok: refuse launch (exit 3) when the
+            workspace agent-write unlock does not grant MCP mutations. Use for
+            multi-agent managers that need terminal_send_*. Workers must omit
+            this — spawn-agent-worker.sh leaves it unset so locked implementers
+            still write under the strict sandbox.
 EOF
 }
 
@@ -788,6 +796,11 @@ grok_reset_managed_home() {
 # staying silent about that cost two sessions real time, so say it at launch:
 # state what the worker CAN do so nobody re-diagnoses a working sandbox, and what
 # it cannot so nobody waits on a pane command that will never be granted.
+#
+# Orchestrator preset (CASEIN_AGENT_REQUIRE_WRITE=1): refuse to start when the
+# grant is locked. Multi-agent orchestration needs terminal_send_*; a healthy-
+# looking locked pane that cannot drive workers is worse than a clear exit.
+# Workers (spawn-agent-worker.sh) must NOT set that flag — they advise-and-proceed.
 grok_announce_locked_mcp_grant() {
   local capability_id="${1:-unknown}"
 
@@ -802,7 +815,29 @@ warning:   terminal_request_clarification) still work, so delegation is fine.
 warning:   Cause: this workspace's agent-write unlock is expired or absent.
 warning:   Fix, only if you need pane control: have an operator grant agent write
 warning:   for the workspace, then relaunch.
+warning:   Do NOT set CASEIN_GROK_SANDBOX_BASE=workspace to bypass — that
+warning:   defeats the lock. Orchestrators that need pane control should launch
+warning:   with CASEIN_AGENT_REQUIRE_WRITE=1 so a locked grant refuses up front.
 EOF
+}
+
+# Fail-fast for orchestrator intent (#593). Only when the caller opted in via
+# CASEIN_AGENT_REQUIRE_WRITE=1 (manager / multi-agent fan-out). Workers leave
+# this unset so locked spawns still write/commit under the strict base.
+grok_refuse_locked_orchestrator() {
+  local capability_id="${1:-unknown}"
+
+  cat >&2 <<EOF
+error: refusing managed Grok launch — CASEIN_AGENT_REQUIRE_WRITE=1 and MCP grant is LOCKED (capability ${capability_id}).
+error:   Orchestrator intent needs terminal_send_command / terminal_send_keys.
+error:   The workspace agent-write unlock is expired, inactive, or overridden by
+error:   workspace policy (not manual / shared_stage / unsafe).
+error:   Fix: grant agent write in the Casein UI (Unlock 30 min), then relaunch.
+error:   Do NOT set CASEIN_GROK_SANDBOX_BASE to override the lock.
+error:   For implementer work that does not need pane control, omit
+error:   CASEIN_AGENT_REQUIRE_WRITE (workers still write their worktree under strict).
+EOF
+  exit 3
 }
 
 grok_install_sandbox_profile() {
@@ -1024,6 +1059,9 @@ grok_configure_capability() {
   # not from denying it write. The unlock governs the MCP grant only.
   sandbox_base="strict"
   if [[ "$write_enabled" != "true" ]]; then
+    if [[ "${CASEIN_AGENT_REQUIRE_WRITE:-0}" == "1" ]]; then
+      grok_refuse_locked_orchestrator "$capability_id"
+    fi
     grok_announce_locked_mcp_grant "$capability_id"
   fi
   profile="casein-${leader_id}-${capability_id//-/}-${sandbox_base}"

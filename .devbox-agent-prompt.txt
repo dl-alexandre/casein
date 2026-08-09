@@ -26,6 +26,15 @@ Continue side-by-side Casein development:
 3. Dogfood a full loop: code change → mix test in agent pane → preview verify
 4. Update docs/terminal_mcp.md with devbox pairing workflow
 
+## Agent-write unlock preflight (#593)
+Before multi-agent orchestration (spawn workers, terminal_send_*, paste briefs):
+1. Call terminal_context; check agent_write.write_enabled / orchestrator_ready.
+2. If locked: ONE blocked report, label `blocked: need agent-write unlock`, STOP.
+3. Do NOT schedule 15–30m unlock poll loops. Fallback: GitHub/docs-only audit.
+4. Orchestrator Grok launch: CASEIN_AGENT_REQUIRE_WRITE=1 bash scripts/launch-casein-agent.sh grok
+   (exit 3 when locked). Workers omit that flag. Never CASEIN_GROK_SANDBOX_BASE bypass.
+See docs/agent-write-preflight.md.
+
 ## Rules
 - Run mix test and mix precommit in the agent pane after changes.
 - Workspace mode is manual (raw terminal allowed).

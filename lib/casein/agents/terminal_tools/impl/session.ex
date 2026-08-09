@@ -23,11 +23,16 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
                       "change when the operator switches windows. Anchor pane references to " <>
                       "caller.adjacent_panes (or an explicit pane id), not to the active pane."
 
-  @agent_write_blocked_note "Agent write is unavailable for this workspace, so a managed Grok " <>
-                              "pane launched now gets a READ-ONLY sandbox: no worktree writes, " <>
-                              "no child network, and the BEAM cannot start (mix will not run). " <>
-                              "A pane already running keeps the sandbox it launched with — " <>
-                              "re-granting does not free it, so relaunch the pane after the grant."
+  # Post-#605 the bwrap base is always "strict"; the unlock gates the MCP grant
+  # only. Orchestrators that need terminal_send_* must fail fast — not poll.
+  @agent_write_blocked_note "Agent write is unavailable for this workspace. A managed Grok pane " <>
+                              "launched now still gets a strict sandbox (can write its worktree, " <>
+                              "run mix, commit) but its MCP grant omits terminal_send_command / " <>
+                              "terminal_send_keys. That grant is frozen at launch — re-granting " <>
+                              "does not free a running pane; relaunch after the grant. " <>
+                              "ORCHESTRATOR FAIL-FAST: if you need pane control, emit ONE blocked " <>
+                              "report, set label 'blocked: need agent-write unlock', and STOP. " <>
+                              "Do not schedule 15–30m unlock poll loops."
 
   @doc "List live Casein-managed tmux sessions."
   @spec list_sessions(map()) :: {:ok, map()}
@@ -417,13 +422,11 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
 
   defp error_label(%{error: error}), do: to_string(error)
 
-  # A managed Grok pane's bwrap sandbox base is chosen once, when its leader
-  # starts, from this same predicate — and is then frozen for the pane's life
-  # while the MCP grant keeps re-intersecting per request. That asymmetry has
-  # repeatedly cost sessions: a pane launched while locked reaches a normal
-  # prompt but cannot write its worktree, resolve DNS, or start the BEAM, and
-  # re-granting the unlock does not free it. Orienting agents learn it here, on
-  # their first call, instead of by failing four minutes later.
+  # The unlock gates the MCP grant (terminal_send_*), not the bwrap base (always
+  # strict after #605). The grant is read at leader start and frozen for the
+  # pane's life while per-request intersection still tracks live policy for new
+  # tools/list. Orienting agents learn the lock here on their first call so an
+  # orchestrator can fail fast instead of scheduling unlock polls.
   defp put_agent_write(payload, params) do
     case workspace_id(params) do
       nil -> payload
@@ -436,6 +439,14 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
 
     summary
     |> Map.put(:note, agent_write_note(summary.write_enabled, summary.unlock_status))
+    |> Map.put(:orchestrator_ready, summary.write_enabled)
+    |> Map.put(
+      :fail_fast,
+      if(summary.write_enabled,
+        do: nil,
+        else: "blocked: need agent-write unlock — stop; do not poll"
+      )
+    )
     |> compact()
   end
 
@@ -451,11 +462,11 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   defp agent_write_remedy("active") do
     "The unlock itself is active, so the block is elsewhere — the workspace is not in manual " <>
       "mode, or its DB isolation is shared_stage/unsafe. Re-granting will not help; resolve " <>
-      "that first. For write work right now, use codex, which is not gated."
+      "that first. Fallback without unlock: GitHub/docs-only audit, or use codex (not gated)."
   end
 
   defp agent_write_remedy(_status) do
-    "An operator must re-grant agent write in the workspace UI. For write work right now, use " <>
-      "codex, which is not gated."
+    "An operator must grant agent write in the workspace UI (chrome banner Unlock 30 min), " <>
+      "then relaunch. Fallback without unlock: GitHub/docs-only audit, or use codex (not gated)."
   end
 end
