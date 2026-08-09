@@ -29,11 +29,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
 
   use CaseinWeb, :html
 
+  alias Casein.Links.Markdown
   alias Casein.Policy
   alias Casein.Policy.Decision
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
   alias Phoenix.LiveView.JS
 
   @max_ctx_value_bytes 4096
+  @sidebar_sort_modes [:recency, :name, :liveness]
 
   @doc """
   Build the item list for `menu` given the client-supplied `ctx` and the
@@ -50,27 +53,51 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
 
   def items("tree_root", _ctx, assigns) do
     dir = assigns.selected_dir || ""
+    show_hidden? = Map.get(assigns, :show_hidden_files, true) != false
 
-    if can_edit?(assigns) do
-      [
-        %{
-          id: "new-file",
-          label: "New file…",
-          event: "tree:new_form_at",
-          params: %{"dir" => dir, "kind" => "file"}
-        },
-        %{
-          id: "new-dir",
-          label: "New folder…",
-          event: "tree:new_form_at",
-          params: %{"dir" => dir, "kind" => "dir"}
-        },
-        %{divider: true},
-        %{id: "refresh", label: "Refresh", event: "tree:refresh", params: %{}}
-      ]
-    else
-      [%{id: "refresh", label: "Refresh", event: "tree:refresh", params: %{}}]
-    end
+    prefs = [
+      %{
+        id: "toggle-hidden",
+        label: if(show_hidden?, do: "Hide dotfiles", else: "Show dotfiles"),
+        event: "tree:toggle_hidden",
+        params: %{}
+      }
+    ]
+
+    mutations =
+      if can_edit?(assigns) do
+        [
+          %{
+            id: "new-file",
+            label: "New file…",
+            event: "tree:new_form_at",
+            params: %{"dir" => dir, "kind" => "file"}
+          },
+          %{
+            id: "new-dir",
+            label: "New folder…",
+            event: "tree:new_form_at",
+            params: %{"dir" => dir, "kind" => "dir"}
+          },
+          %{divider: true}
+        ]
+      else
+        []
+      end
+
+    mutations ++ prefs ++ [%{id: "refresh", label: "Refresh", event: "tree:refresh", params: %{}}]
+  end
+
+  # Sessions rail header — sort is a panel preference, not a session-object verb.
+  def items("sessions_rail", _ctx, assigns) do
+    current = assigns[:sessions_sidebar_sort] || :recency
+    sort_mode_items("sessions", current)
+  end
+
+  # Windows rail header — same sort modes as the sessions rail.
+  def items("windows_rail", _ctx, assigns) do
+    current = assigns[:windows_sidebar_sort] || :recency
+    sort_mode_items("windows", current)
   end
 
   def items("session_tab", %{"sessionId" => sid} = ctx, assigns) when is_binary(sid) do
@@ -247,6 +274,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
       target = "[id='" <> target_id <> "']"
       has_selection = ctx["hasSelection"] == "true"
       can_edit? = can_edit?(assigns)
+      path = open_file_path(assigns)
+      markdown? = is_binary(path) and Markdown.markdown_path?(path)
+      mode = assigns[:file_render_mode]
 
       clipboard = [
         %{
@@ -260,6 +290,29 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
         %{id: "paste", label: "Paste", action: "paste", target: target, disabled: not can_edit?},
         %{id: "select-all", label: "Select all", action: "select_all", target: target}
       ]
+
+      render_mode =
+        if markdown? do
+          [
+            %{divider: true},
+            %{
+              id: "render-source",
+              label: "View as source",
+              action: "render_source",
+              target: target,
+              disabled: mode == "source"
+            },
+            %{
+              id: "render-rendered",
+              label: "View as rendered",
+              action: "render_rendered",
+              target: target,
+              disabled: mode == "rendered"
+            }
+          ]
+        else
+          []
+        end
 
       file_ops =
         if can_edit? do
@@ -302,7 +355,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
           []
         end
 
-      clipboard ++ file_ops ++ agent
+      clipboard ++ render_mode ++ file_ops ++ agent
     else
       _ -> []
     end
@@ -576,6 +629,24 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
   end
 
   defp copy_path_item(path), do: %{id: "copy-path", label: "Copy path", copy: path}
+
+  defp sort_mode_items(col, current) when col in ["sessions", "windows"] do
+    current = if current in @sidebar_sort_modes, do: current, else: :recency
+    event = "sidebar:set_" <> col <> "_sort"
+
+    Enum.map(@sidebar_sort_modes, fn mode ->
+      %{
+        id: "sort-" <> Atom.to_string(mode),
+        label: "Sort by " <> SessionBarVM.sort_mode_label(mode),
+        event: event,
+        params: %{"mode" => Atom.to_string(mode)},
+        disabled: mode == current
+      }
+    end)
+  end
+
+  defp open_file_path(%{open_file: %{path: path}}) when is_binary(path), do: path
+  defp open_file_path(_), do: nil
 
   # Only relative same-origin paths — the href rides in from a client dataset,
   # so absolute/scheme URLs (javascript:, https://elsewhere) are refused.

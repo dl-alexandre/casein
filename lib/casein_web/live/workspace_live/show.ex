@@ -140,6 +140,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     sidebar:reveal_sessions sidebar:toggle_sessions
     sidebar:toggle_workspace sidebar:toggle_window
     sidebar:cycle_sessions_sort sidebar:cycle_windows_sort sidebar:restore_sort
+    sidebar:set_sessions_sort sidebar:set_windows_sort
     sidebar:toggle_browse sidebar:open_folder
     mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
     pane:navigate pane:history_open pane:history_close
@@ -706,6 +707,17 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
   def handle_event("sidebar:cycle_windows_sort", params, socket) do
     {:noreply, Sidebar.cycle_windows_sort(socket, sort_direction(params))}
+  end
+
+  # Explicit sort modes from the rail context menu (panel preference discovery).
+  def handle_event("sidebar:set_sessions_sort", %{"mode" => mode}, socket)
+      when is_binary(mode) do
+    {:noreply, Sidebar.set_sessions_sort(socket, parse_sidebar_sort_mode(mode))}
+  end
+
+  def handle_event("sidebar:set_windows_sort", %{"mode" => mode}, socket)
+      when is_binary(mode) do
+    {:noreply, Sidebar.set_windows_sort(socket, parse_sidebar_sort_mode(mode))}
   end
 
   # Client restores the persisted sort mode when a rail hook mounts (localStorage).
@@ -3935,6 +3947,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # reverses it. The header sort button click carries no dir → forward.
   defp sort_direction(%{"dir" => "backward"}), do: :backward
   defp sort_direction(_), do: :forward
+
+  defp parse_sidebar_sort_mode("name"), do: :name
+  defp parse_sidebar_sort_mode("liveness"), do: :liveness
+  defp parse_sidebar_sort_mode(_), do: :recency
 
   defp recoverable_pane_exit?(reason)
        when reason in [

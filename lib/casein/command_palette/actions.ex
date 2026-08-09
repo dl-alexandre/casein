@@ -261,6 +261,15 @@ defmodule Casein.CommandPalette.Actions do
         detail: "Maximize terminal space — hides header and utility bar",
         keywords: ~w(zen fullscreen focus),
         payload: %{event: "terminal:toggle_chrome", params: %{}}
+      },
+      %Item{
+        id: "action:tree:toggle_hidden",
+        kind: :action,
+        category: :view,
+        label: "Toggle hidden files in tree",
+        detail: "Show or hide dotfiles in the files panel tree",
+        keywords: ~w(dotfiles hidden show hide),
+        payload: %{event: "tree:toggle_hidden", params: %{}}
       }
     ]
   end
@@ -358,6 +367,7 @@ defmodule Casein.CommandPalette.Actions do
       "terminal:switch_to_shell",
       "terminal:toggle_chrome",
       "terminal:set_preset",
+      "tree:toggle_hidden",
       "sidebar:open",
       "sidebar:close",
       "tmux:new_window",

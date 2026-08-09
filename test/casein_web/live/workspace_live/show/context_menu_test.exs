@@ -65,11 +65,51 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuTest do
 
     test "tree root menu follows the selected dir and the edit gate" do
       owner = ContextMenu.items("tree_root", %{}, owner_assigns(%{selected_dir: "lib"}))
-      assert item_ids(owner) == ["new-file", "new-dir", "refresh"]
+      assert item_ids(owner) == ["new-file", "new-dir", "toggle-hidden", "refresh"]
       assert Enum.find(owner, &(&1[:id] == "new-file")).params["dir"] == "lib"
+      assert Enum.find(owner, &(&1[:id] == "toggle-hidden")).event == "tree:toggle_hidden"
+      assert Enum.find(owner, &(&1[:id] == "toggle-hidden")).label == "Hide dotfiles"
 
-      viewer = ContextMenu.items("tree_root", %{}, viewer_assigns())
-      assert item_ids(viewer) == ["refresh"]
+      viewer =
+        ContextMenu.items(
+          "tree_root",
+          %{},
+          viewer_assigns(%{show_hidden_files: false})
+        )
+
+      assert item_ids(viewer) == ["toggle-hidden", "refresh"]
+      assert Enum.find(viewer, &(&1[:id] == "toggle-hidden")).label == "Show dotfiles"
+    end
+
+    test "sessions rail menu lists explicit sort modes and dims the current one" do
+      items =
+        ContextMenu.items(
+          "sessions_rail",
+          %{},
+          owner_assigns(%{sessions_sidebar_sort: :name})
+        )
+
+      assert item_ids(items) == ["sort-recency", "sort-name", "sort-liveness"]
+      name = Enum.find(items, &(&1[:id] == "sort-name"))
+      assert name.event == "sidebar:set_sessions_sort"
+      assert name.params == %{"mode" => "name"}
+      assert name.disabled
+      refute Enum.find(items, &(&1[:id] == "sort-recency")).disabled
+    end
+
+    test "windows rail menu lists explicit sort modes" do
+      items =
+        ContextMenu.items(
+          "windows_rail",
+          %{},
+          owner_assigns(%{windows_sidebar_sort: :liveness})
+        )
+
+      assert item_ids(items) == ["sort-recency", "sort-name", "sort-liveness"]
+      live = Enum.find(items, &(&1[:id] == "sort-liveness"))
+      assert live.event == "sidebar:set_windows_sort"
+      assert live.params == %{"mode" => "liveness"}
+      assert live.disabled
     end
 
     test "unknown menus and malformed ctx build no items" do
@@ -232,6 +272,36 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuTest do
       assert Enum.find(viewer, &(&1[:id] == "cut")).disabled
       assert Enum.find(viewer, &(&1[:id] == "paste")).disabled
       refute Enum.find(viewer, &(&1[:id] == "copy")).disabled
+    end
+
+    test "editor menu offers markdown render-mode prefs when a markdown file is open" do
+      base = %{"targetId" => "file-viewer", "hasFile" => "true", "hasSelection" => "false"}
+
+      items =
+        ContextMenu.items(
+          "editor",
+          base,
+          owner_assigns(%{
+            open_file: %{path: "README.md"},
+            file_render_mode: "source"
+          })
+        )
+
+      assert "render-source" in item_ids(items)
+      assert "render-rendered" in item_ids(items)
+      assert Enum.find(items, &(&1[:id] == "render-source")).disabled
+      refute Enum.find(items, &(&1[:id] == "render-rendered")).disabled
+      assert Enum.find(items, &(&1[:id] == "render-source")).action == "render_source"
+      assert Enum.find(items, &(&1[:id] == "render-rendered")).action == "render_rendered"
+
+      non_md =
+        ContextMenu.items(
+          "editor",
+          base,
+          owner_assigns(%{open_file: %{path: "lib/a.ex"}, file_render_mode: "source"})
+        )
+
+      refute "render-source" in item_ids(non_md)
     end
 
     test "file pane editor menu scopes clipboard/save to the pane and copies the path" do

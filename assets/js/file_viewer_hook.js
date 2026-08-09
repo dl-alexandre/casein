@@ -196,6 +196,12 @@ export const FileViewerHook = {
         case "explain":
           this.sendSelectionToAgent("explain")
           break
+        case "render_source":
+          this._onFileMode({detail: {mode: "source"}})
+          break
+        case "render_rendered":
+          this._onFileMode({detail: {mode: "rendered"}})
+          break
       }
     }
 
