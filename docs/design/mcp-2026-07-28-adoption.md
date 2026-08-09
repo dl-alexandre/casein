@@ -256,6 +256,24 @@ of what the `devide-remote` skill does by hand today (SSH tunnel to loopback:400
 a slice — but it likely deletes half that skill, so re-evaluate it after Slice 5
 rather than hardening the current doors.
 
+## Client declare status (issue #751)
+
+Servers are dual-stack; **clients still drive negotiation**. Until a client
+declares `2026-07-28` in request `_meta`, it stays on the legacy path. That is
+intentional — do **not** force-default the server to 2026-only while on-box
+agents still declare 2025.
+
+| Client surface | Who owns the declare | Status (2026-08) |
+| --- | --- | --- |
+| `scripts/lib/agent-doctor.sh` | Casein | Dual-probes legacy `initialize` **and** `server/discover` + `_meta` 2026-07-28 (PR #762). |
+| Claude / OpenCode / Codex / on-box Grok materializer | Runtime wire client; materializer only writes URL + headers (+ launch `-c` for Codex) | **No runtime MCP config schema yet accepts a per-server `_meta.protocolVersion` / protocol pin.** `Casein.Agents.MCPMaterializer` and `scripts/materialize-agent-mcp.sh` keep a single `client_protocol_declare/0` hook that returns empty until a schema allows it — then fold the declare in there only. Forcing unknown JSON/TOML keys would break plain startups. |
+| Host Grok (`~/.grok/config.toml` on the laptop) | Operator on the host | Still legacy `initialize` → 2025-03-26. **Unreachable from the devbox**; never rewrite box-global `~/.grok/config.toml` as a side effect. Documented in [`docs/agents/host-grok-dual-plane.md`](../agents/host-grok-dual-plane.md). |
+| Stateless POST | All of the above | **Default path even on 2025** — no `Mcp-Session-Id` required. Sessions remain optional/additive. |
+
+When a runtime gains a supported config field for protocol declare, flip
+`client_protocol_declare/0` (Elixir) and the matching merge/materialize helpers
+only for that runtime; leave `@default_protocol_version` at `2025-03-26`.
+
 ## Impact on other agents on this box
 
 Every on-box runtime (Claude, Codex, Grok — see `Casein.Agents.MCPMaterializer`)

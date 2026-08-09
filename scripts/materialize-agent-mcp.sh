@@ -226,6 +226,10 @@ cat >"${STAGING}/codex/config.toml" <<EOF
 EOF
 
 # --- OpenCode (OPENCODE_CONFIG) ---
+# Protocol declare (#751): runtimes still negotiate 2025 via legacy initialize.
+# merge-agent-mcp.client_protocol_declare() is the single opt-in for _meta /
+# protocolVersion once a runtime schema accepts it — do not invent OpenCode
+# keys here. Codex MCP is launch-injected (no staging servers); same rule.
 cat >"${STAGING}/opencode.json" <<EOF
 {
   "\$schema": "https://opencode.ai/config.json",
@@ -263,6 +267,7 @@ cat >"${STAGING}/opencode.json" <<EOF
 EOF
 
 # --- Universal .mcp.json (Claude project, Grok, Cursor compat) ---
+# write-claude-mcp / write-grok-mcp merge client_protocol_declare() when non-empty.
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" write-claude-mcp \
   "${STAGING}/.mcp.json" "${CASEIN_TERMINAL_MCP_URL}" "${CASEIN_PREVIEW_MCP_URL}" "${CASEIN_ARTIFACT_MCP_URL}"
 cp "${STAGING}/.mcp.json" "${STAGING}/cursor/mcp.json"

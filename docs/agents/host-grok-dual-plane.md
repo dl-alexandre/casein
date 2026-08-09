@@ -18,6 +18,28 @@ Two healthy planes, **not** one machine:
 
 **Failure mode to avoid:** the dangerous lie is not “MCP is down” — it is **unscoped remote ops with a host-level agent**, so path/cwd/session identity can silently disagree.
 
+## MCP dual-stack (2025 path is still correct)
+
+Casein terminal/preview/artifact servers are **dual-stack** (PR #476; design
+[`mcp-2026-07-28-adoption.md`](../design/mcp-2026-07-28-adoption.md)): they speak
+legacy `initialize` **and** `server/discover` with
+`_meta["io.modelcontextprotocol/protocolVersion"]` `2026-07-28`.
+
+**We are stateless POST even on 2025.** Streamable HTTP sessions
+(`Mcp-Session-Id`, GET SSE) are optional and additive. A plain
+`POST /api/{terminals,preview,artifacts}/mcp` with no session header is the
+default path for host Grok, on-box agents, and `agent-doctor` — both for
+2025-era `initialize` and for 2026 `server/discover`. Do not treat a missing
+session id as a failure.
+
+| Client | Wire today | How to change |
+|--------|------------|---------------|
+| Host Grok (`~/.grok/config.toml`) | Declares **2025-03-26** via legacy `initialize` | Host-local only; remains 2025 until Grok Build exposes a config/runtime declare for 2026. **No silent rewrite** from this box — operator apply on the laptop after greenlight (see Host config apply gate). |
+| On-box Claude / OpenCode / Codex / Grok | Runtime-owned negotiate (still 2025-era `initialize` as of 2026-08) | Materializer injects URLs + bearer only; it passes `_meta` protocolVersion **when the runtime’s MCP config schema allows** (see design doc client matrix). Never flip the **server** default to 2026-only while agents still declare 2025. |
+
+Probe both legs from a paired shell: `bash scripts/lib/agent-doctor.sh` (legacy
+`initialize` + `server/discover` × three Casein endpoints).
+
 ## Operator policy
 
 1. **Dual-plane honesty** — Mac/host shell ≠ remote Casein panes. State which plane you are on when paths matter.
@@ -296,8 +318,10 @@ If `CASEIN_WORKSPACE_ID` is unset on a host ops console, treat MCP as multi-work
 
 ## See also
 
+- [`mcp-2026-07-28-adoption.md`](../design/mcp-2026-07-28-adoption.md) — server dual-stack + client declare matrix
 - [`external-agent-connect.md`](../external-agent-connect.md) — off-box MCP wiring
 - [`terminal_mcp.md`](../terminal_mcp.md) — terminal MCP tool contract
 - [`tmux_control_plane.md`](../tmux_control_plane.md) — topology / mutation behaviour
 - [`agent_concurrency.md`](../agent_concurrency.md) — multi-agent checkout safety
 - AGENTS.md — project agent workflow; always pass `workspace_id` on terminal MCP calls
+- Issue [#751](https://github.com/dl-alexandre/casein/issues/751) — client path still on 2025; host Grok declare is laptop-side

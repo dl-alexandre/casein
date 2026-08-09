@@ -26,6 +26,33 @@ def server_keys(workspace_name: str) -> tuple[str, str, str, str]:
     )
 
 
+# Spec key for 2026-07-28 per-request declare. Shared with
+# Casein.Agents.MCPMaterializer.client_protocol_declare/0 — keep empty until a
+# runtime MCP config schema accepts a per-server protocol pin / _meta field.
+MCP_PROTOCOL_VERSION_META = "io.modelcontextprotocol/protocolVersion"
+MCP_PROTOCOL_2026 = "2026-07-28"
+
+
+def client_protocol_declare() -> dict:
+    """Extra per-server MCP config fields that declare a protocol revision.
+
+    Empty until Claude/OpenCode/Codex/Grok document a supported config key for
+    `_meta` protocolVersion (or native equivalent). Do not invent keys — unknown
+    fields break plain startups. Server dual-stack stays; default remains 2025.
+    """
+    _ = (MCP_PROTOCOL_VERSION_META, MCP_PROTOCOL_2026)
+    return {}
+
+
+def _with_protocol_declare(server: dict) -> dict:
+    declare = client_protocol_declare()
+    if not declare:
+        return server
+    merged = dict(server)
+    merged.update(declare)
+    return merged
+
+
 def claude_mcp_payload(
     terminal_url: str,
     preview_url: str,
@@ -36,27 +63,33 @@ def claude_mcp_payload(
     terminal_key, preview_key, artifact_key, tidewave_key = server_keys(workspace_name)
     auth = "Bearer ${CASEIN_API_TOKEN}"
     servers: dict = {
-        terminal_key: {
-            "type": "http",
-            "url": terminal_url,
-            "headers": {
-                "Authorization": auth,
-                # Anchors terminal MCP pane resolution to the calling agent's
-                # own pane; expanded per process from launch-casein-agent.sh's
-                # export. The server ignores empty/unexpanded values.
-                "X-Casein-Caller-Pane": "${CASEIN_CALLER_PANE}",
-            },
-        },
-        preview_key: {
-            "type": "http",
-            "url": preview_url,
-            "headers": {"Authorization": auth},
-        },
-        artifact_key: {
-            "type": "http",
-            "url": artifact_url,
-            "headers": {"Authorization": auth},
-        },
+        terminal_key: _with_protocol_declare(
+            {
+                "type": "http",
+                "url": terminal_url,
+                "headers": {
+                    "Authorization": auth,
+                    # Anchors terminal MCP pane resolution to the calling agent's
+                    # own pane; expanded per process from launch-casein-agent.sh's
+                    # export. The server ignores empty/unexpanded values.
+                    "X-Casein-Caller-Pane": "${CASEIN_CALLER_PANE}",
+                },
+            }
+        ),
+        preview_key: _with_protocol_declare(
+            {
+                "type": "http",
+                "url": preview_url,
+                "headers": {"Authorization": auth},
+            }
+        ),
+        artifact_key: _with_protocol_declare(
+            {
+                "type": "http",
+                "url": artifact_url,
+                "headers": {"Authorization": auth},
+            }
+        ),
     }
     if tidewave_url:
         servers[tidewave_key] = {"type": "http", "url": tidewave_url}
@@ -216,6 +249,11 @@ def _self_test() -> int:
     )
     assert 'theme = "groknight"' in cleaned
     assert "casein-foo" not in cleaned
+
+    # Protocol declare stays empty until a runtime schema allows it (#751).
+    assert client_protocol_declare() == {}
+    base = {"type": "http", "url": "http://example.test/mcp"}
+    assert _with_protocol_declare(base) == base
 
     return 0
 

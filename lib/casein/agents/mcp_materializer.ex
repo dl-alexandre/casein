@@ -5,6 +5,16 @@ defmodule Casein.Agents.MCPMaterializer do
   Casein MCP endpoints with the right bearer token. Generic runtime configs may
   include Tidewave; the managed Grok bundle deliberately contains only Casein's
   authenticated terminal, preview, and artifact surfaces.
+
+  ## Protocol version declare (#751)
+
+  Casein servers dual-stack 2025-era `initialize` and 2026-07-28
+  `server/discover` (`docs/design/mcp-2026-07-28-adoption.md`). Clients still
+  negotiate the revision on the wire. This materializer only writes URL +
+  headers (and Codex is launch-injected); it does **not** invent a
+  `_meta.protocolVersion` pin unless `client_protocol_declare/0` returns fields
+  a given runtime schema actually accepts. Forcing unknown keys breaks plain
+  startups. Server `@default_protocol_version` stays `2025-03-26`.
   """
 
   alias Casein.Agents.{
@@ -17,6 +27,32 @@ defmodule Casein.Agents.MCPMaterializer do
   }
 
   alias Casein.Workspaces
+
+  # Spec key for 2026-07-28 per-request declare. Kept here so the opt-in hook
+  # and tests share one string when a runtime schema finally accepts it.
+  @mcp_protocol_version_meta "io.modelcontextprotocol/protocolVersion"
+  @mcp_protocol_2026 "2026-07-28"
+
+  @doc """
+  Extra MCP client-config fields that declare a protocol revision.
+
+  Returns an empty map until a runtime's MCP config schema documents a
+  supported key for `_meta` / `protocolVersion` (Claude `.mcp.json`, OpenCode
+  remote `mcp`, Codex `mcp_servers.*`, Grok TOML). Callers merge this into
+  per-server entries only when non-empty. Never used to flip the **server**
+  default off dual-stack.
+  """
+  @spec client_protocol_declare() :: map()
+  def client_protocol_declare do
+    # Probed 2026-08-09: none of the on-box runtimes expose a stable config
+    # field for per-server protocol pin / _meta.protocolVersion. Wire clients
+    # still send legacy initialize (2025-03-26). Keep empty so materialize
+    # stays byte-stable; when a runtime allows it, return e.g.
+    # %{ "_meta" => %{ @mcp_protocol_version_meta => @mcp_protocol_2026 } }
+    # (or the runtime's native key) and merge only into that runtime's writer.
+    _ = {@mcp_protocol_version_meta, @mcp_protocol_2026}
+    %{}
+  end
 
   @doc """
   Write per-workspace MCP client configs for external agents.
@@ -174,33 +210,46 @@ defmodule Casein.Agents.MCPMaterializer do
 
   defp write_opencode_config(staging, urls, workspace) do
     {terminal_key, preview_key, artifact_key} = server_keys(workspace)
+    declare = client_protocol_declare()
 
     mcp =
       %{
-        terminal_key => %{
-          "type" => "remote",
-          "url" => urls.terminal,
-          "enabled" => true,
-          "oauth" => false,
-          "headers" => %{
-            "Authorization" => "Bearer {env:CASEIN_API_TOKEN}",
-            "X-Casein-Caller-Pane" => "{env:CASEIN_CALLER_PANE}"
-          }
-        },
-        preview_key => %{
-          "type" => "remote",
-          "url" => urls.preview,
-          "enabled" => true,
-          "oauth" => false,
-          "headers" => %{"Authorization" => "Bearer {env:CASEIN_API_TOKEN}"}
-        },
-        artifact_key => %{
-          "type" => "remote",
-          "url" => urls.artifact,
-          "enabled" => true,
-          "oauth" => false,
-          "headers" => %{"Authorization" => "Bearer {env:CASEIN_API_TOKEN}"}
-        }
+        terminal_key =>
+          merge_protocol_declare(
+            %{
+              "type" => "remote",
+              "url" => urls.terminal,
+              "enabled" => true,
+              "oauth" => false,
+              "headers" => %{
+                "Authorization" => "Bearer {env:CASEIN_API_TOKEN}",
+                "X-Casein-Caller-Pane" => "{env:CASEIN_CALLER_PANE}"
+              }
+            },
+            declare
+          ),
+        preview_key =>
+          merge_protocol_declare(
+            %{
+              "type" => "remote",
+              "url" => urls.preview,
+              "enabled" => true,
+              "oauth" => false,
+              "headers" => %{"Authorization" => "Bearer {env:CASEIN_API_TOKEN}"}
+            },
+            declare
+          ),
+        artifact_key =>
+          merge_protocol_declare(
+            %{
+              "type" => "remote",
+              "url" => urls.artifact,
+              "enabled" => true,
+              "oauth" => false,
+              "headers" => %{"Authorization" => "Bearer {env:CASEIN_API_TOKEN}"}
+            },
+            declare
+          )
       }
       |> Map.merge(tidewave_opencode_entries(urls))
 
@@ -215,30 +264,43 @@ defmodule Casein.Agents.MCPMaterializer do
   defp write_mcp_json(staging, urls, _token, workspace) do
     {terminal_key, preview_key, artifact_key} = server_keys(workspace)
     bearer = "Bearer ${CASEIN_API_TOKEN}"
+    declare = client_protocol_declare()
 
     servers =
       %{
-        terminal_key => %{
-          "type" => "http",
-          "url" => urls.terminal,
-          "headers" => %{
-            "Authorization" => bearer,
-            # Anchors terminal MCP pane resolution to the calling agent's own
-            # pane; expanded per process from launch-casein-agent.sh's export.
-            # The server ignores empty/unexpanded values.
-            "X-Casein-Caller-Pane" => "${CASEIN_CALLER_PANE}"
-          }
-        },
-        preview_key => %{
-          "type" => "http",
-          "url" => urls.preview,
-          "headers" => %{"Authorization" => bearer}
-        },
-        artifact_key => %{
-          "type" => "http",
-          "url" => urls.artifact,
-          "headers" => %{"Authorization" => bearer}
-        }
+        terminal_key =>
+          merge_protocol_declare(
+            %{
+              "type" => "http",
+              "url" => urls.terminal,
+              "headers" => %{
+                "Authorization" => bearer,
+                # Anchors terminal MCP pane resolution to the calling agent's own
+                # pane; expanded per process from launch-casein-agent.sh's export.
+                # The server ignores empty/unexpanded values.
+                "X-Casein-Caller-Pane" => "${CASEIN_CALLER_PANE}"
+              }
+            },
+            declare
+          ),
+        preview_key =>
+          merge_protocol_declare(
+            %{
+              "type" => "http",
+              "url" => urls.preview,
+              "headers" => %{"Authorization" => bearer}
+            },
+            declare
+          ),
+        artifact_key =>
+          merge_protocol_declare(
+            %{
+              "type" => "http",
+              "url" => urls.artifact,
+              "headers" => %{"Authorization" => bearer}
+            },
+            declare
+          )
       }
       |> Map.merge(tidewave_mcp_json_entries(urls))
 
@@ -255,29 +317,44 @@ defmodule Casein.Agents.MCPMaterializer do
   defp write_grok_mcp_json(staging, urls, workspace) do
     {terminal_key, preview_key, artifact_key} = server_keys(workspace)
     bearer = "Bearer ${CASEIN_API_TOKEN}"
+    declare = client_protocol_declare()
 
     payload = %{
       "mcpServers" => %{
-        terminal_key => %{
-          "type" => "http",
-          "url" => urls.terminal,
-          "headers" => %{"Authorization" => bearer}
-        },
-        preview_key => %{
-          "type" => "http",
-          "url" => urls.preview,
-          "headers" => %{"Authorization" => bearer}
-        },
-        artifact_key => %{
-          "type" => "http",
-          "url" => urls.artifact,
-          "headers" => %{"Authorization" => bearer}
-        }
+        terminal_key =>
+          merge_protocol_declare(
+            %{
+              "type" => "http",
+              "url" => urls.terminal,
+              "headers" => %{"Authorization" => bearer}
+            },
+            declare
+          ),
+        preview_key =>
+          merge_protocol_declare(
+            %{
+              "type" => "http",
+              "url" => urls.preview,
+              "headers" => %{"Authorization" => bearer}
+            },
+            declare
+          ),
+        artifact_key =>
+          merge_protocol_declare(
+            %{
+              "type" => "http",
+              "url" => urls.artifact,
+              "headers" => %{"Authorization" => bearer}
+            },
+            declare
+          )
       }
     }
 
     write_file(Path.join(staging, "grok/.mcp.json"), Jason.encode!(payload, pretty: true) <> "\n")
   end
+
+  defp merge_protocol_declare(server, declare), do: Map.merge(server, declare)
 
   # Copy the checkout-independent agent hook scripts into the workspace staging
   # home so Casein's hooks resolve regardless of which project is the checkout.

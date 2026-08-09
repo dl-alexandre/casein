@@ -52,6 +52,11 @@ defmodule Casein.Agents.MCPMaterializerTest do
     %{staging: tmp, auth_root: auth_root}
   end
 
+  test "client_protocol_declare is empty until a runtime schema allows it" do
+    # #751: do not invent _meta.protocolVersion in MCP client configs.
+    assert MCPMaterializer.client_protocol_declare() == %{}
+  end
+
   test "materialize writes runtime-specific MCP configs and owner auth homes", %{
     staging: staging,
     auth_root: auth_root
@@ -71,12 +76,20 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
     refute mcp_json =~ "secret-token"
     refute mcp_json =~ "Bearer '"
+    # No forced 2026 declare in client config while runtimes still use initialize.
+    refute mcp_json =~ "io.modelcontextprotocol/protocolVersion"
+    refute mcp_json =~ "2026-07-28"
     assert File.regular?(Path.join(staging, "cursor/mcp.json"))
+
+    opencode = File.read!(Path.join(staging, "opencode.json"))
+    refute opencode =~ "io.modelcontextprotocol/protocolVersion"
+    refute opencode =~ "2026-07-28"
 
     grok_mcp_json = File.read!(Path.join(staging, "grok/.mcp.json"))
     assert grok_mcp_json =~ "casein-terminal-test-ws"
     assert grok_mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
     refute grok_mcp_json =~ "secret-token"
+    refute grok_mcp_json =~ "io.modelcontextprotocol/protocolVersion"
 
     codex = File.read!(Path.join(staging, "codex/config.toml"))
     refute codex =~ "casein-terminal"
