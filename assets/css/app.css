@@ -142,6 +142,69 @@
    without waiting for a first call site (title is unused in this PR). */
 @source inline("{text,p,px,py,pt,pb,pl,pr,m,mx,my,mt,mb,ml,mr,gap,size}-density-{micro,badge,label,body,title}");
 
+/* -------------------------------------------------------------------------
+   Cockpit motion scale (issue #733)
+
+   Chrome transitions pick a named step instead of Tailwind's unstated
+   default (150ms ease). Three durations + a paired ease per step — same
+   "define once in @theme, adopt by name" pattern as the density scale.
+
+   Utilities:
+     duration-motion-state     120ms  — hover/focus/active colour & opacity,
+                                       chevron rotate, theme thumb slide
+     duration-motion-surface   200ms  — enter/exit of overlays, drawers, flash
+     duration-motion-geometry  300ms  — layout-scale enter (show) only
+
+   Easing (pair with the matching duration):
+     ease-motion-state     cubic-bezier(0.2, 0, 0, 1)   — snappy out
+     ease-motion-surface   cubic-bezier(0, 0, 0.2, 1)   — ease-out
+     ease-motion-geometry  cubic-bezier(0.22, 1, 0.36, 1) — terminal-frame ease
+
+   Call-site recipe: transition-{colors|opacity|transform|all}
+                     duration-motion-<step> ease-motion-<step>
+
+   Reduced-motion (#734/#735): every step is a CSS custom property. A later
+   prefers-reduced-motion rule can set all three --duration-motion-* to 0ms
+   (or animation: none) without renaming call sites. Do not add motion-reduce:
+   variants in this PR — that is a separate track.
+
+   Do not touch tmux_*_transition.mjs — those are the geometry reference,
+   not consumers of this scale.
+   ------------------------------------------------------------------------- */
+/* Durations as custom properties on :root so #734 can zero them under
+   prefers-reduced-motion without renaming call sites. Ease stays in
+   @theme (Tailwind's --ease-* namespace). Duration utilities are
+   @utility-defined because TW 4.1 does not emit --duration-* theme
+   keys the way it does --ease-* / --text-* / --spacing-*. */
+:root {
+  --duration-motion-state: 120ms;
+  --duration-motion-surface: 200ms;
+  --duration-motion-geometry: 300ms;
+}
+
+@theme {
+  --ease-motion-state: cubic-bezier(0.2, 0, 0, 1);
+  --ease-motion-surface: cubic-bezier(0, 0, 0.2, 1);
+  --ease-motion-geometry: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@utility duration-motion-state {
+  transition-duration: var(--duration-motion-state);
+}
+
+@utility duration-motion-surface {
+  transition-duration: var(--duration-motion-surface);
+}
+
+@utility duration-motion-geometry {
+  transition-duration: var(--duration-motion-geometry);
+}
+
+/* Keep every ease step in the built CSS so sibling tracks can adopt
+   without waiting for a first call site. Duration utilities above are
+   always emitted via @utility. */
+@source inline("ease-motion-{state,surface,geometry}");
+
 /* Use the data attribute for dark mode  */
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 

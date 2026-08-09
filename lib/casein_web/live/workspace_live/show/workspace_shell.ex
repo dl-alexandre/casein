@@ -441,7 +441,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
              thumb-reachable target is a px the operator asked us not to
              spend. --%>
         <div
-          class="mb-1 pointer-coarse:mb-0.5 h-1.5 pointer-coarse:h-5 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors flex items-center justify-center pointer-coarse:justify-between pointer-coarse:gap-2 pointer-coarse:px-2"
+          class="mb-1 pointer-coarse:mb-0.5 h-1.5 pointer-coarse:h-5 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors duration-motion-state ease-motion-state flex items-center justify-center pointer-coarse:justify-between pointer-coarse:gap-2 pointer-coarse:px-2"
           phx-click="terminal:toggle_chrome"
           title="Show header. Shortcut: Ctrl/Cmd + Shift + F"
           aria-label="Show header and utility bar"

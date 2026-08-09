@@ -173,7 +173,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       data-copy-link-kind="window"
       role="button"
       tabindex="-1"
-      class="shrink-0 cursor-copy rounded px-density-label font-mono text-density-label text-base-content/45 underline decoration-dotted decoration-base-content/25 underline-offset-2 transition-colors hover:bg-base-300/60 hover:text-base-content hover:decoration-base-content/60"
+      class="shrink-0 cursor-copy rounded px-density-label font-mono text-density-label text-base-content/45 underline decoration-dotted decoration-base-content/25 underline-offset-2 transition-colors duration-motion-state ease-motion-state hover:bg-base-300/60 hover:text-base-content hover:decoration-base-content/60"
       title="Copy link to this session + window"
       aria-label="Copy link to this session and window"
     >{@window.index}</span>
@@ -356,7 +356,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
             data-agent-reference-window-index={window.index}
             data-agent-reference-label={window.display_name}
             class={[
-              "group relative flex min-w-24 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
+              "group relative flex min-w-24 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors duration-motion-state ease-motion-state",
               if(window.active?,
                 do: "max-w-80 border-primary bg-base-100 text-base-content shadow-sm",
                 else:
@@ -1156,7 +1156,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           title={if(@node.expanded?, do: "Collapse sessions", else: "Expand sessions")}
         >
           {@node.session_count}
-          <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+          <span class={[
+            "flex transition-transform duration-motion-state ease-motion-state",
+            @node.expanded? && "rotate-90"
+          ]}>
             <.icon name="hero-chevron-right" class="size-3" />
           </span>
         </button>
@@ -1201,7 +1204,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           title={if(@node.expanded?, do: "Collapse sessions", else: "Expand sessions")}
         >
           {@node.session_count}
-          <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+          <span class={[
+            "flex transition-transform duration-motion-state ease-motion-state",
+            @node.expanded? && "rotate-90"
+          ]}>
             <.icon name="hero-chevron-right" class="size-3" />
           </span>
         </button>
@@ -1231,7 +1237,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           class="flex shrink-0 items-center gap-density-label font-mono text-density-label text-base-content/45"
         >
           {@node.session_count}
-          <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+          <span class={[
+            "flex transition-transform duration-motion-state ease-motion-state",
+            @node.expanded? && "rotate-90"
+          ]}>
             <.icon name="hero-chevron-right" class="size-3" />
           </span>
         </span>
@@ -1313,7 +1322,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           class={[sidebar_row_class(false), "flex-row items-center gap-2"]}
           title={@node.title}
         >
-          <span class={["flex shrink-0 transition-transform", @node.expanded? && "rotate-90"]}>
+          <span class={[
+            "flex shrink-0 transition-transform duration-motion-state ease-motion-state",
+            @node.expanded? && "rotate-90"
+          ]}>
             <.icon name="hero-chevron-right" class="size-3 text-base-content/45" />
           </span>
           <span class="flex min-w-0 flex-1 flex-col items-start gap-0 overflow-hidden text-left">
@@ -1866,7 +1878,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
                     }
                   >
                     {node.pane_count}
-                    <span class={["flex transition-transform", node.expanded? && "rotate-90"]}>
+                    <span class={[
+                      "flex transition-transform duration-motion-state ease-motion-state",
+                      node.expanded? && "rotate-90"
+                    ]}>
                       <.icon name="hero-chevron-right" class="size-3" />
                     </span>
                   </button>
@@ -2162,7 +2177,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       data-copy-session-link-agent={@agent_url}
       data-copy-link-kind={@kind}
       class={[
-        "shrink-0 rounded p-1 transition-opacity hover:bg-base-300/60",
+        "shrink-0 rounded p-1 transition-opacity duration-motion-state ease-motion-state hover:bg-base-300/60",
         @visible? && "opacity-100",
         !@visible? && "opacity-0 group-hover:opacity-100"
       ]}
