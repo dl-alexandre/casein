@@ -331,3 +331,4 @@ threat model before any product claim.
 | [`docs/state_machines.md`](state_machines.md) | Session, review-run, mode, and audit lifecycles |
 | [`docs/sequence_diagrams.md`](sequence_diagrams.md) | Key interaction flows |
 | [`docs/subsystems/audit_activity.md`](subsystems/audit_activity.md) | Audit / ledger / activity subsystem |
+| [`docs/subsystems/mobile_action_center.md`](subsystems/mobile_action_center.md) | Mobile companion Action Center (cards, attention, dispatch) |
