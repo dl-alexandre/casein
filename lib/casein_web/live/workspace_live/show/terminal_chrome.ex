@@ -629,7 +629,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
             id="terminal-workspace-start-button"
             type="button"
             phx-click="workspace:start"
-            class="mt-3 rounded border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-density-body font-semibold text-amber-200 hover:bg-amber-400/20 active:bg-amber-400/30 transition-colors"
+            class="mt-3 rounded border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-density-body font-semibold text-amber-200 hover:bg-amber-400/20 active:bg-amber-400/30 transition-colors duration-motion-state ease-motion-state"
           >
             Start workspace
           </button>
@@ -637,7 +637,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
             :if={workspace_start_blocked?(@workspace_start_error)}
             id="terminal-workspace-start-unavailable"
             navigate={~p"/"}
-            class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-density-body font-semibold text-amber-100/80 transition-colors hover:bg-amber-400/20 active:bg-amber-400/30"
+            class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-density-body font-semibold text-amber-100/80 transition-colors duration-motion-state ease-motion-state hover:bg-amber-400/20 active:bg-amber-400/30"
           >
             Open home terminal
           </.link>
@@ -668,7 +668,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
             type="button"
             phx-click="retry_pane"
             phx-value-pane-id={@raw_pane_id}
-            class="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-density-label text-density-label text-red-300 hover:bg-red-500/20 active:bg-red-500/30 transition-colors"
+            class="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-density-label text-density-label text-red-300 hover:bg-red-500/20 active:bg-red-500/30 transition-colors duration-motion-state ease-motion-state"
           >
             Retry
           </button>
@@ -858,7 +858,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
           title={pane_full_title(pane)}
           class={
             [
-              "absolute overflow-hidden transition-colors",
+              "absolute overflow-hidden transition-colors duration-motion-state ease-motion-state",
               # A pane's rect covers exactly its own cells in the terminal grid,
               # and box-sizing is border-box, so a border here paints over the
               # outermost glyph column/row rather than into the gutter beside it.

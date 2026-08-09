@@ -85,7 +85,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           <span class="text-amber-700/70 dark:text-amber-200/60">Review in Notifications</span>
           <.icon
             name="hero-arrow-right"
-            class="ml-auto size-3.5 transition-transform group-hover:translate-x-0.5"
+            class="ml-auto size-3.5 transition-transform duration-motion-state ease-motion-state group-hover:translate-x-0.5"
           />
         </button>
         <%= case @host_loc do %>
@@ -788,7 +788,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                 <span
                   id={"mnav-windows-chevron-" <> tab.dom_id}
                   class={[
-                    "flex transition-transform",
+                    "flex transition-transform duration-motion-state ease-motion-state",
                     session_active? && "rotate-90"
                   ]}
                 >
@@ -920,7 +920,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
             <span class="min-w-0 flex-1 truncate text-left font-medium">{@node.label}</span>
             <span class="flex shrink-0 items-center gap-density-label font-mono text-density-label text-zinc-500">
               {@node.session_count}
-              <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+              <span class={[
+                "flex transition-transform duration-motion-state ease-motion-state",
+                @node.expanded? && "rotate-90"
+              ]}>
                 <.icon name="hero-chevron-right" class="size-3" />
               </span>
             </span>
@@ -1050,7 +1053,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
 
   defp mobile_key_class do
     "inline-flex flex-none items-center justify-center rounded border border-zinc-700 bg-zinc-800 " <>
-      "px-2.5 font-mono text-xs leading-none active:bg-zinc-700 hover:bg-zinc-700 transition-colors " <>
+      "px-2.5 font-mono text-xs leading-none active:bg-zinc-700 hover:bg-zinc-700 transition-colors duration-motion-state ease-motion-state " <>
       "min-w-[2.25rem] min-h-[1.9rem]"
   end
 
@@ -1059,7 +1062,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
   # JS only has to flip one attribute, no class juggling.
   defp mobile_mod_class do
     "inline-flex flex-none items-center justify-center rounded border px-2.5 font-mono text-xs leading-none " <>
-      "transition-colors min-w-[2.5rem] min-h-[1.9rem] " <>
+      "transition-colors duration-motion-state ease-motion-state min-w-[2.5rem] min-h-[1.9rem] " <>
       "border-zinc-700 bg-zinc-800 " <>
       "data-[mod-state=armed]:border-emerald-400 data-[mod-state=armed]:bg-emerald-500/20 data-[mod-state=armed]:text-emerald-300 " <>
       "data-[mod-state=locked]:border-amber-400 data-[mod-state=locked]:bg-amber-500/30 data-[mod-state=locked]:text-amber-200"
