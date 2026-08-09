@@ -112,7 +112,20 @@ defmodule Casein.Desktop.NativeAgentLaunch do
 
   def start(_plan, _opts), do: {:error, :invalid_launch_plan}
 
-  defp launch_pane(%{panes: [%{id: pane_id}]}) when is_binary(pane_id), do: {:ok, pane_id}
+  defp launch_pane(%{panes: panes}) when is_list(panes) and panes != [] do
+    case panes do
+      [%{id: pane_id}] when is_binary(pane_id) ->
+        {:ok, pane_id}
+
+      _many ->
+        case Enum.find(panes, &Map.get(&1, :active?)) ||
+               Enum.find(panes, &(Map.get(&1, :role) == "agent")) do
+          %{id: pane_id} when is_binary(pane_id) -> {:ok, pane_id}
+          _other -> {:error, :invalid_native_topology}
+        end
+    end
+  end
+
   defp launch_pane(_topology), do: {:error, :invalid_native_topology}
 
   @doc "Report launch completion and remove only a clean, landed worktree."

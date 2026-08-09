@@ -2,21 +2,19 @@ defmodule Casein.Desktop.PowerShellSession do
   @moduledoc """
   Application-owned PowerShell session used by the native Windows desktop UI.
 
-  The terminal and process transport deliberately outlive any one LiveView so
-  browser reconnects retain the same shell process, variables, and working
-  directory.
+  The session supervises independently owned native panes so browser reconnects
+  retain product topology while each pane keeps its own ConPTY process tree.
   """
 
   use GenServer
 
-  alias Casein.Desktop.{AgentEnvironment, NativeAgentLaunch}
+  alias Casein.Desktop.{NativeAgentLaunch, PowerShellPane}
 
   @name __MODULE__
   @registry Module.concat(__MODULE__, Registry)
   @supervisor Module.concat(__MODULE__, Supervisor)
   @default_cols 100
   @default_rows 30
-  @capture_bytes 64 * 1024
   @pane_roles ~w(operator agent verify preview)
 
   def start_link(opts \\ []) do
@@ -56,7 +54,7 @@ defmodule Casein.Desktop.PowerShellSession do
     end
   end
 
-  @doc "Subscribes the caller and returns the emulator and process handles."
+  @doc "Subscribes the caller and returns the active pane emulator and process handles."
   def subscribe(workspace \\ nil) do
     GenServer.call(server(workspace), {:subscribe, self()})
   end
@@ -65,6 +63,27 @@ defmodule Casein.Desktop.PowerShellSession do
 
   @doc "Returns the product-level topology for one native Windows session."
   def topology(workspace \\ nil), do: GenServer.call(server(workspace), :topology)
+
+  @doc "Creates one native window with a single owned pane."
+  def create_window(workspace \\ nil, opts \\ []) do
+    GenServer.call(server(workspace), {:create_window, opts})
+  end
+
+  @doc "Creates one native pane under a validated window."
+  def create_pane(workspace, window_id, opts \\ [])
+      when is_binary(window_id) and is_list(opts) do
+    GenServer.call(server(workspace), {:create_pane, window_id, opts})
+  end
+
+  @doc "Focuses a validated native pane and its parent window."
+  def focus_pane(workspace, pane_id) when is_binary(pane_id) do
+    GenServer.call(server(workspace), {:focus_pane, pane_id})
+  end
+
+  @doc "Closes a validated native pane and its complete ConPTY process tree."
+  def close_pane(workspace, pane_id) when is_binary(pane_id) do
+    GenServer.call(server(workspace), {:close_pane, pane_id})
+  end
 
   @doc "Returns retained raw terminal output for a validated native pane target."
   def capture(workspace, pane_id), do: GenServer.call(server(workspace), {:capture, pane_id})
@@ -77,7 +96,7 @@ defmodule Casein.Desktop.PowerShellSession do
   def set_pane_role(workspace, pane_id, role),
     do: GenServer.call(server(workspace), {:set_pane_role, pane_id, role})
 
-  @doc "Writes terminal input to one workspace-scoped native session."
+  @doc "Writes terminal input to the focused native pane."
   def send_input(workspace, data) when is_binary(data) do
     GenServer.call(server(workspace), {:input, data})
   end
@@ -120,7 +139,8 @@ defmodule Casein.Desktop.PowerShellSession do
   end
 
   def launch_agent(_workspace, _runtime, _task, _opts), do: {:error, :invalid_arguments}
-  @doc "Restarts the native shell in the given workspace directory."
+
+  @doc "Restarts the native shell topology in the given workspace directory."
   def restart(cwd \\ nil, workspace \\ nil),
     do: GenServer.call(server(workspace), {:restart, normalize_cwd(cwd), workspace})
 
@@ -130,82 +150,130 @@ defmodule Casein.Desktop.PowerShellSession do
 
     cwd = Keyword.fetch!(opts, :cwd)
     workspace = Keyword.get(opts, :workspace)
+    ids = topology_ids(workspace)
 
-    case start_transport(cwd, workspace, @default_cols, @default_rows) do
-      {:ok, term, pty} ->
-        {:ok,
-         %{
-           term: term,
-           pty: pty,
-           cwd: cwd,
-           workspace: workspace,
-           subscribers: %{},
-           status: :running,
-           ids: topology_ids(workspace),
-           cols: @default_cols,
-           rows: @default_rows,
-           pane_role: "operator",
-           capture: <<>>
-         }}
+    state = %{
+      cwd: cwd,
+      workspace: workspace,
+      subscribers: %{},
+      status: :running,
+      ids: ids,
+      windows: [],
+      panes: %{},
+      pane_monitors: %{},
+      active_window_id: nil,
+      active_pane_id: nil,
+      window_seq: 0,
+      pane_seq: 0,
+      pane_opts: pane_start_opts(opts)
+    }
 
-      {:error, reason} ->
-        {:stop, reason}
+    case open_window(state, name: "PowerShell", role: "operator", active?: true) do
+      {:ok, _window, _pane, state} -> {:ok, state}
+      {:error, reason} -> {:stop, reason}
     end
   end
 
   @impl true
   def handle_call({:subscribe, pid}, _from, state) do
     state = monitor_subscriber(state, pid)
-    {:reply, {:ok, state.term, state.pty, state.status}, state}
+
+    case active_handles(state) do
+      {:ok, term, pty, status} -> {:reply, {:ok, term, pty, status}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call(:status, _from, state), do: {:reply, state.status, state}
 
   def handle_call(:topology, _from, state), do: {:reply, topology_snapshot(state), state}
 
+  def handle_call({:create_window, opts}, _from, state) do
+    case open_window(state, opts) do
+      {:ok, window, pane, state} ->
+        {:reply, {:ok, %{window: window, pane: pane, topology: topology_snapshot(state)}}, state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:create_pane, window_id, opts}, _from, state) do
+    case open_pane(state, window_id, opts) do
+      {:ok, pane, state} ->
+        {:reply, {:ok, %{pane: pane, topology: topology_snapshot(state)}}, state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:focus_pane, pane_id}, _from, state) do
+    case focus(state, pane_id) do
+      {:ok, state} -> {:reply, {:ok, topology_snapshot(state)}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:close_pane, pane_id}, _from, state) do
+    case close_owned_pane(state, pane_id) do
+      {:ok, state} -> {:reply, {:ok, topology_snapshot(state)}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
   def handle_call({:capture, pane_id}, _from, state) do
-    with :ok <- validate_pane(state, pane_id) do
-      {:reply, {:ok, state.capture}, state}
-    else
+    case fetch_pane(state, pane_id) do
+      {:ok, pane} -> {:reply, PowerShellPane.capture(pane.pid), state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
   def handle_call({:resize, pane_id, cols, rows}, _from, state) do
-    with :ok <- validate_pane(state, pane_id),
+    with {:ok, pane} <- fetch_pane(state, pane_id),
          :ok <- validate_size(cols, rows),
-         :ok <- Ghostty.Terminal.resize(state.term, cols, rows),
-         :ok <- Ghostty.PTY.resize(state.pty, cols, rows) do
-      {:reply, :ok, %{state | cols: cols, rows: rows}}
+         :ok <- PowerShellPane.resize(pane.pid, cols, rows) do
+      {:reply, :ok, put_in(state, [:panes, pane_id], %{pane | cols: cols, rows: rows})}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
   def handle_call({:set_pane_role, pane_id, role}, _from, state) do
-    with :ok <- validate_pane(state, pane_id),
-         :ok <- validate_role(role) do
-      {:reply, :ok, %{state | pane_role: role}}
+    with {:ok, pane} <- fetch_pane(state, pane_id),
+         :ok <- validate_role(role),
+         :ok <- PowerShellPane.set_role(pane.pid, role) do
+      {:reply, :ok, put_in(state, [:panes, pane_id], %{pane | role: role})}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
   def handle_call({:input, data}, _from, state) do
-    {:reply, Ghostty.PTY.write(state.pty, data), state}
-  end
-
-  def handle_call({:input, pane_id, data}, _from, state) do
-    with :ok <- validate_pane(state, pane_id) do
-      {:reply, Ghostty.PTY.write(state.pty, data), state}
+    with {:ok, pane_id} <- active_pane_id(state),
+         {:ok, pane} <- fetch_pane(state, pane_id) do
+      {:reply, PowerShellPane.send_input(pane.pid, data), state}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
+  def handle_call({:input, pane_id, data}, _from, state) do
+    case fetch_pane(state, pane_id) do
+      {:ok, pane} -> {:reply, PowerShellPane.send_input(pane.pid, data), state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
   def handle_call(:record_agent_launch, _from, state) do
-    updated = %{state | pane_role: "agent"}
-    {:reply, {:ok, topology_snapshot(updated)}, updated}
+    with {:ok, pane_id} <- active_pane_id(state),
+         {:ok, pane} <- fetch_pane(state, pane_id),
+         :ok <- PowerShellPane.set_role(pane.pid, "agent") do
+      updated = put_in(state, [:panes, pane_id], %{pane | role: "agent"})
+      {:reply, {:ok, topology_snapshot(updated)}, updated}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call({:ensure_workspace, cwd, workspace}, _from, state)
@@ -213,39 +281,391 @@ defmodule Casein.Desktop.PowerShellSession do
       do: {:reply, :ok, state}
 
   def handle_call({:ensure_workspace, cwd, workspace}, _from, state) do
-    restart_transport(state, cwd, workspace)
+    restart_topology(state, cwd, workspace)
   end
 
   def handle_call({:restart, cwd, workspace}, _from, state) do
-    restart_transport(state, cwd, workspace)
+    restart_topology(state, cwd, workspace)
   end
 
   @impl true
-  def handle_info({:data, data}, state) do
-    :ok = Ghostty.Terminal.write(state.term, data)
-    notify(state, {:desktop_terminal_output, data})
-    {:noreply, %{state | capture: retain_capture(state.capture, data)}}
-  end
-
-  def handle_info({:pty_write, data}, state) when is_binary(data) do
-    :ok = Ghostty.PTY.write(state.pty, data)
+  def handle_info({:native_pane_output, pane_id, data}, state) do
+    if state.active_pane_id == pane_id, do: notify(state, {:desktop_terminal_output, data})
     {:noreply, state}
   end
 
-  def handle_info({:exit, reason}, state) do
-    recover_transport(state, reason)
+  def handle_info({:native_pane_restarted, pane_id, term, pty}, state) do
+    if state.active_pane_id == pane_id do
+      notify(state, {:desktop_terminal_restarted, term, pty})
+    end
+
+    {:noreply, state}
   end
 
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
-    {:noreply, %{state | subscribers: Map.delete(state.subscribers, ref)}}
+  def handle_info({:native_pane_exit, pane_id, reason}, state) do
+    if state.active_pane_id == pane_id do
+      notify(state, {:desktop_terminal_exit, reason})
+    end
+
+    {:noreply, mark_pane_status(state, pane_id, {:exited, reason})}
   end
 
-  def handle_info({:EXIT, pid, reason}, %{pty: pid} = state) do
-    recover_transport(state, reason)
+  def handle_info({:DOWN, ref, :process, pid, _reason}, state) do
+    cond do
+      Map.has_key?(state.subscribers, ref) ->
+        {:noreply, %{state | subscribers: Map.delete(state.subscribers, ref)}}
+
+      Map.has_key?(state.pane_monitors, ref) ->
+        {:noreply, forget_pane(state, pid, ref)}
+
+      true ->
+        {:noreply, state}
+    end
   end
 
-  def handle_info({:EXIT, pid, reason}, %{term: pid} = state), do: {:stop, reason, state}
   def handle_info(_message, state), do: {:noreply, state}
+
+  @impl true
+  def terminate(_reason, state) do
+    Enum.each(state.panes, fn {_id, pane} ->
+      if Process.alive?(pane.pid), do: PowerShellPane.close(pane.pid)
+    end)
+
+    :ok
+  end
+
+  defp open_window(state, opts) do
+    name = Keyword.get(opts, :name, "PowerShell")
+    role = Keyword.get(opts, :role, "operator")
+    active? = Keyword.get(opts, :active?, false)
+
+    with :ok <- validate_role(role),
+         :ok <- validate_window_name(name) do
+      window_index = state.window_seq
+      window_id = state.ids.session <> ":window:" <> Integer.to_string(window_index)
+      window = %{id: window_id, session_id: state.ids.session, index: window_index, name: name}
+
+      tentative = %{
+        state
+        | windows: state.windows ++ [window],
+          window_seq: window_index + 1,
+          active_window_id:
+            if(active? or state.active_window_id == nil,
+              do: window_id,
+              else: state.active_window_id
+            )
+      }
+
+      case open_pane(tentative, window_id,
+             role: role,
+             active?: active? or state.active_pane_id == nil
+           ) do
+        {:ok, pane, state} ->
+          {:ok, window_entry(state, window_id), pane, state}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  defp open_pane(state, window_id, opts) do
+    role = Keyword.get(opts, :role, "operator")
+    active? = Keyword.get(opts, :active?, false)
+    cwd = Keyword.get(opts, :cwd, state.cwd)
+    cols = Keyword.get(opts, :cols, @default_cols)
+    rows = Keyword.get(opts, :rows, @default_rows)
+
+    with :ok <- validate_window(state, window_id),
+         :ok <- validate_role(role),
+         :ok <- validate_size(cols, rows),
+         {:ok, cwd} <- validate_cwd(cwd) do
+      pane_index = state.pane_seq
+      pane_id = state.ids.session <> ":pane:" <> Integer.to_string(pane_index)
+
+      become_active? = active? or state.active_pane_id == nil
+
+      start_opts =
+        [
+          owner: self(),
+          cwd: cwd,
+          workspace: state.workspace,
+          ids: %{session: state.ids.session, window: window_id, pane: pane_id},
+          role: role,
+          active?: become_active?,
+          cols: cols,
+          rows: rows
+        ] ++ state.pane_opts
+
+      attrs = %{role: role, cwd: cwd, cols: cols, rows: rows, active?: become_active?}
+
+      case PowerShellPane.start_link(start_opts) do
+        {:ok, pid} -> accept_started_pane(state, pid, pane_id, window_id, pane_index, attrs)
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp accept_started_pane(state, pid, pane_id, window_id, pane_seq, attrs) do
+    state = register_pane(state, pid, pane_id, window_id, pane_seq, attrs)
+    state = maybe_focus_new_pane(state, pane_id, attrs.active?)
+    {:ok, pane_entry(state, pane_id), state}
+  end
+
+  defp maybe_focus_new_pane(state, pane_id, true), do: focus_state(state, pane_id)
+  defp maybe_focus_new_pane(state, _pane_id, false), do: state
+
+  defp register_pane(state, pid, pane_id, window_id, pane_seq, attrs) do
+    ref = Process.monitor(pid)
+
+    pane = %{
+      id: pane_id,
+      window_id: window_id,
+      index: pane_index_in_window(state, window_id),
+      role: attrs.role,
+      cwd: attrs.cwd,
+      cols: attrs.cols,
+      rows: attrs.rows,
+      pid: pid,
+      status: :running,
+      active?: attrs.active?
+    }
+
+    %{
+      state
+      | panes: Map.put(state.panes, pane_id, pane),
+        pane_monitors: Map.put(state.pane_monitors, ref, pane_id),
+        pane_seq: pane_seq + 1
+    }
+  end
+
+  defp focus(state, pane_id) do
+    with {:ok, pane} <- fetch_pane(state, pane_id) do
+      state =
+        state
+        |> clear_active_flags()
+        |> then(fn state ->
+          :ok = PowerShellPane.set_active(pane.pid, true)
+          put_in(state, [:panes, pane_id], %{pane | active?: true})
+        end)
+        |> Map.put(:active_pane_id, pane_id)
+        |> Map.put(:active_window_id, pane.window_id)
+
+      {:ok, state}
+    end
+  end
+
+  defp focus_state(state, pane_id) do
+    case focus(state, pane_id) do
+      {:ok, state} -> state
+      {:error, _reason} -> state
+    end
+  end
+
+  defp close_owned_pane(state, pane_id) do
+    with {:ok, pane} <- fetch_pane(state, pane_id),
+         :ok <- reject_last_pane(state) do
+      state =
+        state
+        |> stop_pane_owner(pane_id, pane.pid)
+        |> Map.update!(:panes, &Map.delete(&1, pane_id))
+        |> maybe_drop_empty_window(pane.window_id)
+        |> rebalance_focus(pane_id, pane.window_id)
+
+      {:ok, state}
+    end
+  end
+
+  defp stop_pane_owner(state, pane_id, pid) do
+    ref = monitor_for_pane(state, pane_id)
+    if ref, do: Process.demonitor(ref, [:flush])
+    _ = PowerShellPane.close(pid)
+
+    monitors =
+      state.pane_monitors
+      |> Enum.reject(fn {_ref, id} -> id == pane_id end)
+      |> Map.new()
+
+    %{state | pane_monitors: monitors}
+  end
+
+  defp forget_pane(state, pid, ref) do
+    pane_id = Map.get(state.pane_monitors, ref)
+
+    state = %{
+      state
+      | pane_monitors: Map.delete(state.pane_monitors, ref),
+        panes:
+          case pane_id do
+            nil ->
+              state.panes
+
+            id ->
+              case Map.get(state.panes, id) do
+                %{pid: ^pid} = pane -> Map.put(state.panes, id, %{pane | status: :exited})
+                _other -> state.panes
+              end
+          end
+    }
+
+    if pane_id && state.active_pane_id == pane_id do
+      notify(state, {:desktop_terminal_exit, :pane_owner_exit})
+    end
+
+    state
+  end
+
+  defp restart_topology(state, cwd, workspace) do
+    Enum.each(state.panes, fn {_id, pane} ->
+      ref = monitor_for_pane(state, pane.id)
+      if ref, do: Process.demonitor(ref, [:flush])
+      if Process.alive?(pane.pid), do: PowerShellPane.close(pane.pid)
+    end)
+
+    ids = topology_ids(workspace)
+
+    base = %{
+      state
+      | cwd: cwd,
+        workspace: workspace,
+        status: :running,
+        ids: ids,
+        windows: [],
+        panes: %{},
+        pane_monitors: %{},
+        active_window_id: nil,
+        active_pane_id: nil,
+        window_seq: 0,
+        pane_seq: 0
+    }
+
+    case open_window(base, name: "PowerShell", role: "operator", active?: true) do
+      {:ok, _window, _pane, updated} ->
+        case active_handles(updated) do
+          {:ok, term, pty, _status} ->
+            notify(updated, {:desktop_terminal_restarted, term, pty})
+            {:reply, :ok, updated}
+
+          {:error, reason} ->
+            updated = %{updated | status: {:error, reason}}
+            notify(updated, {:desktop_terminal_exit, reason})
+            {:reply, {:error, reason}, updated}
+        end
+
+      {:error, reason} ->
+        updated = %{base | status: {:error, reason}}
+        notify(updated, {:desktop_terminal_exit, reason})
+        {:reply, {:error, reason}, updated}
+    end
+  end
+
+  defp active_handles(state) do
+    with {:ok, pane_id} <- active_pane_id(state),
+         {:ok, pane} <- fetch_pane(state, pane_id) do
+      PowerShellPane.handles(pane.pid)
+    end
+  end
+
+  defp active_pane_id(%{active_pane_id: pane_id}) when is_binary(pane_id), do: {:ok, pane_id}
+  defp active_pane_id(_state), do: {:error, :invalid_pane_target}
+
+  defp fetch_pane(state, pane_id) do
+    case Map.fetch(state.panes, pane_id) do
+      {:ok, pane} -> {:ok, pane}
+      :error -> {:error, :invalid_pane_target}
+    end
+  end
+
+  defp validate_window(state, window_id) do
+    if Enum.any?(state.windows, &(&1.id == window_id)),
+      do: :ok,
+      else: {:error, :invalid_window_target}
+  end
+
+  defp reject_last_pane(state) do
+    if map_size(state.panes) <= 1, do: {:error, :last_native_pane}, else: :ok
+  end
+
+  defp maybe_drop_empty_window(state, window_id) do
+    if Enum.any?(state.panes, fn {_id, pane} -> pane.window_id == window_id end) do
+      state
+    else
+      %{state | windows: Enum.reject(state.windows, &(&1.id == window_id))}
+    end
+  end
+
+  defp rebalance_focus(state, closed_pane_id, closed_window_id) do
+    state =
+      if state.active_pane_id == closed_pane_id do
+        case first_pane_id(state) do
+          nil -> %{state | active_pane_id: nil}
+          pane_id -> focus_state(state, pane_id)
+        end
+      else
+        state
+      end
+
+    if state.active_window_id == closed_window_id do
+      case state.active_pane_id && Map.get(state.panes, state.active_pane_id) do
+        %{window_id: window_id} -> %{state | active_window_id: window_id}
+        _ -> %{state | active_window_id: first_window_id(state)}
+      end
+    else
+      state
+    end
+  end
+
+  defp first_pane_id(state) do
+    state.panes
+    |> Map.keys()
+    |> Enum.min_by(&pane_sort_key(state, &1), fn -> nil end)
+  end
+
+  defp first_window_id(state) do
+    case Enum.min_by(state.windows, & &1.index, fn -> nil end) do
+      nil -> nil
+      window -> window.id
+    end
+  end
+
+  defp pane_sort_key(state, pane_id) do
+    pane = Map.fetch!(state.panes, pane_id)
+    window = Enum.find(state.windows, &(&1.id == pane.window_id))
+    {window && window.index, pane.index}
+  end
+
+  defp pane_index_in_window(state, window_id) do
+    state.panes
+    |> Enum.count(fn {_id, pane} -> pane.window_id == window_id end)
+  end
+
+  defp clear_active_flags(state) do
+    panes =
+      Enum.reduce(state.panes, %{}, fn {id, pane}, acc ->
+        if pane.active? do
+          _ = PowerShellPane.set_active(pane.pid, false)
+          Map.put(acc, id, %{pane | active?: false})
+        else
+          Map.put(acc, id, pane)
+        end
+      end)
+
+    %{state | panes: panes}
+  end
+
+  defp mark_pane_status(state, pane_id, status) do
+    case Map.get(state.panes, pane_id) do
+      nil -> state
+      pane -> put_in(state, [:panes, pane_id], %{pane | status: status})
+    end
+  end
+
+  defp monitor_for_pane(state, pane_id) do
+    Enum.find_value(state.pane_monitors, fn
+      {ref, ^pane_id} -> ref
+      _ -> nil
+    end)
+  end
 
   defp monitor_subscriber(state, pid) do
     if Enum.any?(state.subscribers, fn {_ref, subscriber} -> subscriber == pid end) do
@@ -260,75 +680,17 @@ defmodule Casein.Desktop.PowerShellSession do
     Enum.each(state.subscribers, fn {_ref, pid} -> send(pid, message) end)
   end
 
-  defp restart_transport(state, cwd, workspace) do
-    _ = close_transport(state)
-
-    case start_transport(cwd, workspace, @default_cols, @default_rows) do
-      {:ok, term, pty} ->
-        updated = %{
-          state
-          | term: term,
-            pty: pty,
-            cwd: cwd,
-            workspace: workspace,
-            status: :running,
-            ids: topology_ids(workspace),
-            cols: @default_cols,
-            rows: @default_rows,
-            capture: <<>>
-        }
-
-        notify(updated, {:desktop_terminal_restarted, term, pty})
-        {:reply, :ok, updated}
-
-      {:error, reason} ->
-        updated = %{state | status: {:error, reason}}
-        notify(updated, {:desktop_terminal_exit, reason})
-        {:reply, {:error, reason}, updated}
-    end
-  end
-
-  defp recover_transport(state, reason) do
-    case start_transport(state.cwd, state.workspace, state.cols, state.rows) do
-      {:ok, term, pty} ->
-        updated = %{state | term: term, pty: pty, status: :running}
-        notify(updated, {:desktop_terminal_restarted, term, pty})
-        {:noreply, updated}
-
-      {:error, restart_reason} ->
-        updated = %{state | status: {:exited, {reason, restart_reason}}}
-        notify(updated, {:desktop_terminal_exit, {reason, restart_reason}})
-        {:noreply, updated}
-    end
-  end
-
-  defp start_transport(cwd, workspace, cols, rows) do
-    with {:ok, env} <- agent_environment(workspace, cwd),
-         {:ok, term} <- Ghostty.Terminal.start_link(cols: cols, rows: rows),
-         {:ok, pty} <-
-           Ghostty.PTY.start_link(cwd: cwd, env: env, cols: cols, rows: rows) do
-      {:ok, term, pty}
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp agent_environment(nil, _cwd), do: {:ok, %{}}
-  defp agent_environment(workspace, cwd), do: AgentEnvironment.build(workspace, cwd)
-
-  defp close_transport(state) do
-    if is_pid(state.pty) and Process.alive?(state.pty), do: Ghostty.PTY.close(state.pty)
-    if is_pid(state.term) and Process.alive?(state.term), do: GenServer.stop(state.term)
-    :ok
-  catch
-    :exit, _ -> :ok
-  end
-
   defp normalize_cwd(cwd) when is_binary(cwd) and cwd != "" do
     if File.dir?(cwd), do: cwd, else: File.cwd!()
   end
 
   defp normalize_cwd(_cwd), do: File.cwd!()
+
+  defp validate_cwd(cwd) when is_binary(cwd) and cwd != "" do
+    if File.dir?(cwd), do: {:ok, cwd}, else: {:error, :invalid_native_cwd}
+  end
+
+  defp validate_cwd(_cwd), do: {:error, :invalid_native_cwd}
 
   defp server(workspace) do
     if Process.whereis(@registry) do
@@ -381,42 +743,89 @@ defmodule Casein.Desktop.PowerShellSession do
       |> binary_part(0, 16)
 
     session = "native-session-" <> digest
-    %{session: session, window: session <> ":window:0", pane: session <> ":pane:0"}
+    %{session: session}
   end
 
   defp topology_snapshot(state) do
+    windows =
+      state.windows
+      |> Enum.sort_by(& &1.index)
+      |> Enum.map(fn window ->
+        %{
+          id: window.id,
+          session_id: window.session_id,
+          index: window.index,
+          name: window.name,
+          active?: state.active_window_id == window.id
+        }
+      end)
+
+    panes =
+      state.panes
+      |> Map.values()
+      |> Enum.sort_by(fn pane ->
+        window = Enum.find(state.windows, &(&1.id == pane.window_id))
+        {window && window.index, pane.index}
+      end)
+      |> Enum.map(fn pane ->
+        %{
+          id: pane.id,
+          window_id: pane.window_id,
+          index: pane.index,
+          role: pane.role,
+          active?: state.active_pane_id == pane.id,
+          cwd: pane.cwd,
+          cols: pane.cols,
+          rows: pane.rows
+        }
+      end)
+
     %{
       session: %{
         id: state.ids.session,
         workspace_id: workspace_key(state.workspace),
         alive?: state.status == :running
       },
-      windows: [
-        %{
-          id: state.ids.window,
-          session_id: state.ids.session,
-          index: 0,
-          name: "PowerShell",
-          active?: true
-        }
-      ],
-      panes: [
-        %{
-          id: state.ids.pane,
-          window_id: state.ids.window,
-          index: 0,
-          role: state.pane_role,
-          active?: true,
-          cwd: state.cwd,
-          cols: state.cols,
-          rows: state.rows
-        }
-      ]
+      windows: windows,
+      panes: panes
     }
   end
 
-  defp validate_pane(%{ids: %{pane: pane_id}}, pane_id), do: :ok
-  defp validate_pane(_state, _pane_id), do: {:error, :invalid_pane_target}
+  defp window_entry(state, window_id) do
+    window = Enum.find(state.windows, &(&1.id == window_id))
+
+    %{
+      id: window.id,
+      session_id: window.session_id,
+      index: window.index,
+      name: window.name,
+      active?: state.active_window_id == window.id
+    }
+  end
+
+  defp pane_entry(state, pane_id) do
+    pane = Map.fetch!(state.panes, pane_id)
+
+    %{
+      id: pane.id,
+      window_id: pane.window_id,
+      index: pane.index,
+      role: pane.role,
+      active?: state.active_pane_id == pane.id,
+      cwd: pane.cwd,
+      cols: pane.cols,
+      rows: pane.rows
+    }
+  end
+
+  defp pane_start_opts(opts) do
+    []
+    |> maybe_put(:transport, Keyword.get(opts, :transport))
+    |> maybe_put(:transport_opts, Keyword.get(opts, :transport_opts))
+  end
+
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp validate_size(cols, rows)
        when is_integer(cols) and cols >= 1 and cols <= 500 and is_integer(rows) and rows >= 1 and
@@ -428,14 +837,6 @@ defmodule Casein.Desktop.PowerShellSession do
   defp validate_role(role) when role in @pane_roles, do: :ok
   defp validate_role(_role), do: {:error, :invalid_pane_role}
 
-  defp retain_capture(previous, data) do
-    capture = previous <> IO.iodata_to_binary(data)
-    size = byte_size(capture)
-
-    if size > @capture_bytes do
-      binary_part(capture, size - @capture_bytes, @capture_bytes)
-    else
-      capture
-    end
-  end
+  defp validate_window_name(name) when is_binary(name) and name != "", do: :ok
+  defp validate_window_name(_name), do: {:error, :invalid_window_name}
 end

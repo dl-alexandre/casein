@@ -65,6 +65,8 @@ defmodule Casein.Desktop.PowerShellPaneTest do
              status: :running
            } = PowerShellPane.snapshot(pane)
 
+    assert {:ok, ^term, ^pty, :running} = PowerShellPane.handles(pane)
+
     assert :ok = PowerShellPane.send_input(pane, "Write-Output safe\r")
     assert_receive {:transport_write, ^pty, "Write-Output safe\r"}
 

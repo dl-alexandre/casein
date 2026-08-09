@@ -39,6 +39,8 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   exact application-owned pane target before writing to ConPTY.
 - **Landed:** PR #547 connects that transaction to the application-owned native
   session entry point, including agent-role topology reporting and failure handoff.
-- **Current slice:** introduce independently supervised native pane owners with
-  stable identity and deterministic ConPTY process-tree cleanup before replacing
-  the singleton session projection.
+- **Landed:** PR #554 introduces independently supervised native pane owners with
+  stable identity and deterministic ConPTY process-tree cleanup.
+- **Current slice:** refactor `PowerShellSession` onto multiple `PowerShellPane`
+  owners with stable create/close/focus topology. Template reconciliation remains
+  a follow-up.
