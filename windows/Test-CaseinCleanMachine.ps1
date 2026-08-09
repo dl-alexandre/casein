@@ -144,6 +144,16 @@ $evidence = [ordered]@{
     unexpected_tools = $unexpectedTools
     phases = @()
     result = 'running'
+    # Explicit claims: this one-shot harness never observes a reboot. Real reboot
+    # persistence is Test-CaseinRebootPersistence.ps1 on a disposable host only.
+    claims = [ordered]@{
+        production_signed_lifecycle = $true
+        real_reboot = $false
+        # True only when the operator required and the host satisfied no-tooling.
+        clean_machine_no_tooling = [bool]$RequireNoDeveloperTooling
+        host_kind = 'operator_disposable_windows'
+    }
+    note = 'One-shot clean-machine lifecycle only. Does not prove reboot persistence, and a Linux/devbox or toolchain-bearing host is not clean-machine evidence even when phases pass under relaxed flags.'
 }
 
 try {

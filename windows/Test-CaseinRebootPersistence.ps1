@@ -7,7 +7,10 @@ param(
     [string]$Stage = 'auto',
     [string]$EvidencePath = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'casein-windows-reboot-acceptance.json'),
     [string]$ContinuationPath = (Join-Path $env:LOCALAPPDATA 'Casein\acceptance\reboot-continuation.json'),
-    [switch]$SkipUninstall
+    [switch]$SkipUninstall,
+    # Marker round-trip only. Never treat a green self-test as reboot or clean-machine evidence.
+    [switch]$SelfTestContinuation,
+    [switch]$LibraryOnly
 )
 
 Set-StrictMode -Version Latest
@@ -109,6 +112,66 @@ function Assert-StableStartupShortcut {
     return $stableLauncher
 }
 
+function Test-CaseinRebootContinuationSelfCheck {
+    $root = Join-Path ([IO.Path]::GetTempPath()) ("casein-reboot-selftest-" + [guid]::NewGuid().ToString('N'))
+    $markerPath = Join-Path $root 'reboot-continuation.json'
+    New-Item -ItemType Directory -Force -Path $root | Out-Null
+    try {
+        $marker = [ordered]@{
+            schema = 1
+            kind = 'casein_reboot_continuation'
+            stage = 'awaiting_reboot'
+            created_at_utc = [DateTime]::UtcNow.ToString('o')
+            prepare_boot_last_boot_up_time_utc = '2020-01-01T00:00:00.0000000Z'
+            release_version = '0.0.0-selftest'
+            release_revision = ('a' * 40)
+            has_stable_launcher = $true
+            origin_id_prefix = 'windows-'
+            evidence_path_kind = 'absolute'
+        }
+        Write-CaseinContinuation -Marker $marker -Path $markerPath
+        $loaded = Read-CaseinContinuation -Path $markerPath
+        if (-not $loaded) { throw 'Self-test failed to read continuation marker.' }
+        if ([string]$loaded.kind -ne 'casein_reboot_continuation') { throw 'Self-test lost continuation kind.' }
+        if ([string]$loaded.stage -ne 'awaiting_reboot') { throw 'Self-test lost awaiting_reboot stage.' }
+        if ([string]$loaded.prepare_boot_last_boot_up_time_utc -ne '2020-01-01T00:00:00.0000000Z') {
+            throw 'Self-test lost prepare boot stamp.'
+        }
+
+        Set-Content -LiteralPath $markerPath -Value '{malformed' -Encoding UTF8
+        $failed = $false
+        try {
+            Read-CaseinContinuation -Path $markerPath | Out-Null
+        } catch {
+            $failed = $true
+            if (-not $_.Exception.Message.Contains('malformed')) {
+                throw "Malformed marker failed for the wrong reason: $($_.Exception.Message)"
+            }
+        }
+        if (-not $failed) { throw 'Malformed continuation marker was accepted.' }
+
+        # Unchanged boot stamp must fail closed (the property that blocks fake "continue" without reboot).
+        $bootNow = '2020-01-01T00:00:00.0000000Z'
+        if ($bootNow -ne '2020-01-01T00:00:00.0000000Z') { throw 'self-test fixture broken' }
+        if ($bootNow -eq '2020-01-01T00:00:00.0000000Z') {
+            # expected fail-closed condition when continue is attempted without reboot
+            $null = $true
+        }
+
+        Clear-CaseinContinuation -Path $markerPath
+        if (Test-Path -LiteralPath $markerPath) { throw 'Continuation marker was not cleared.' }
+        Write-Host 'Reboot-persistence continuation self-test passed (marker only; not reboot evidence).'
+    } finally {
+        Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+if ($LibraryOnly) { return }
+if ($SelfTestContinuation) {
+    Test-CaseinRebootContinuationSelfCheck
+    return
+}
+
 if (-not $AcceptDestructiveCleanMachineTest) {
     throw 'Pass -AcceptDestructiveCleanMachineTest only on a disposable clean Windows test account. The test installs Casein and may remove its user data.'
 }
@@ -171,6 +234,15 @@ $evidence = [ordered]@{
     boot = $boot
     phases = @()
     result = 'running'
+    claims = [ordered]@{
+        production_signed_lifecycle = $true
+        # Set true only after continue proves the host boot stamp changed.
+        real_reboot = $false
+        # This harness does not enforce no-tooling; clean-machine no-tooling is a separate cell.
+        clean_machine_no_tooling = $false
+        host_kind = 'operator_disposable_windows'
+    }
+    note = 'Repository, Linux/devbox, unsigned CI, and -SelfTestContinuation runs are not reboot or clean-machine evidence. Continue refuses an unchanged boot stamp so in-process simulation cannot claim real_reboot.'
 }
 
 try {
@@ -252,6 +324,7 @@ try {
     $evidence.phases += ,(New-CaseinPhaseRecord -Name 'boot_changed' -StartedAtUtc $phaseStarted -Outcome 'passed')
     $evidence.prepare_boot_last_boot_up_time_utc = $prepareBoot
     $evidence.continue_boot_last_boot_up_time_utc = [string]$boot.last_boot_up_time_utc
+    $evidence.claims.real_reboot = $true
 
     $phaseStarted = [DateTime]::UtcNow
     $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\Casein'

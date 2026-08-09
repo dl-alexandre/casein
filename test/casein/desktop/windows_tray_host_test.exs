@@ -127,6 +127,9 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "completed_at_utc"
     assert script =~ "outcome = $Outcome"
     assert script =~ "Test-CaseinRebootPersistence.ps1"
+    assert script =~ "real_reboot = $false"
+    assert script =~ "clean_machine_no_tooling"
+    assert script =~ "not prove reboot persistence"
     refute script =~ "package_root = $packageRoot"
   end
 
@@ -146,11 +149,16 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "origin_id_prefix"
     assert script =~ "path_prerequisites"
     assert script =~ "New-CaseinPhaseRecord"
+    assert script =~ "SelfTestContinuation"
+    assert script =~ "$evidence.claims.real_reboot = $true"
+    assert script =~ "not reboot or clean-machine evidence"
     refute script =~ "package_root = $packageRoot"
     refute script =~ "api-token"
     refute script =~ "desktop-launch-token"
     assert package =~ "Test-CaseinRebootPersistence.ps1"
     assert smoke =~ "Test-CaseinRebootPersistence.ps1"
+    assert smoke =~ "SelfTestContinuation"
+    assert smoke =~ "not reboot or clean-machine evidence"
   end
 
   test "Trusted LAN selects a private physical interface and scopes its firewall rule" do
