@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="AppTheme" parent="android:style/Theme.NoTitleBar">
-        <item name="android:windowBackground">@android:color/black</item>
+        <!-- Branded surface from first frame — not pure black (#410). -->
+        <item name="android:windowBackground">@color/casein_cold_start_background</item>
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:windowNoTitle">true</item>
     </style>

@@ -3,6 +3,21 @@ defmodule CaseinMob.AndroidConfigurationTest do
 
   @manifest Path.expand("../../android/app/src/main/AndroidManifest.xml", __DIR__)
   @gradle Path.expand("../../android/app/build.gradle", __DIR__)
+  @styles Path.expand("../../android/app/src/main/res/values/styles.xml", __DIR__)
+  @colors Path.expand("../../android/app/src/main/res/values/colors.xml", __DIR__)
+  @strings Path.expand("../../android/app/src/main/res/values/strings.xml", __DIR__)
+  @main_activity Path.expand(
+                    "../../android/app/src/main/java/com/example/casein_mob/MainActivity.kt",
+                    __DIR__
+                  )
+  @cold_start_progress Path.expand(
+                         "../../android/app/src/main/java/com/example/casein_mob/ColdStartProgress.kt",
+                         __DIR__
+                       )
+  @cold_start_surface Path.expand(
+                        "../../android/app/src/main/java/com/example/casein_mob/ColdStartSurface.kt",
+                        __DIR__
+                      )
   @mob_notify_bridge Path.expand(
                        "../../android/app/src/main/java/io/mob/notify/MobNotifyBridge.kt",
                        __DIR__
@@ -14,11 +29,59 @@ defmodule CaseinMob.AndroidConfigurationTest do
 
   test "uses the canonical public app label without changing stable routing identifiers" do
     manifest = File.read!(@manifest)
+    strings = File.read!(@strings)
 
-    assert manifest =~ ~s(android:label="Casein")
+    assert manifest =~ ~s(android:label="@string/app_name")
     refute manifest =~ ~s(android:label="CaseinMob")
+    assert strings =~ ~s(name="app_name">Casein</string>)
     assert manifest =~ ~s(package="com.example.casein_mob")
     assert manifest =~ ~s(android:scheme="casein")
+  end
+
+  test "shows a static branded cold-start surface before the BEAM root is ready" do
+    styles = File.read!(@styles)
+    colors = File.read!(@colors)
+    strings = File.read!(@strings)
+    main = File.read!(@main_activity)
+    progress = File.read!(@cold_start_progress)
+    surface = File.read!(@cold_start_surface)
+
+    # Immediate window chrome — not pure black (#410).
+    assert styles =~ "@color/casein_cold_start_background"
+    refute styles =~ "@android:color/black"
+    assert colors =~ "casein_cold_start_background"
+    assert colors =~ "#13171C"
+
+    # Distinct starting / ready / failed phases (#731 discipline).
+    assert progress =~ "enum class ColdStartPhase"
+    assert progress =~ "Starting"
+    assert progress =~ "Ready"
+    assert progress =~ "Failed"
+    assert progress =~ "NARRATION_REVEAL_MS"
+    assert progress =~ "FAIL_CLOSED_MS"
+
+    # Delayed narration only — no spin/pulse (motion scale #776/#778).
+    assert progress =~ "200L"
+    refute surface =~ "CircularProgress"
+    refute surface =~ "InfiniteTransition"
+    refute surface =~ "rememberInfiniteTransition"
+    refute surface =~ "animateFloat"
+    refute main =~ "CircularProgressIndicator"
+
+    # Bounded static copy — no credentials, boot logs, or origin polling UI.
+    assert strings =~ "cold_start_starting"
+    assert strings =~ "cold_start_failed_title"
+    refute strings =~ "MOB_"
+    refute strings =~ "beam"
+    refute strings =~ "otp"
+    refute strings =~ "token"
+    refute strings =~ "http"
+
+    assert main =~ "ColdStartSurface"
+    assert main =~ "ColdStartProgress"
+    assert main =~ "coldStartSettledReady"
+    # First root paint must not animate over the cold-start chrome.
+    assert main =~ "First root paint"
   end
 
   test "tracks the reviewed host-agnostic mob_notify Android bridge exactly" do
