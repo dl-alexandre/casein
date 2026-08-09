@@ -19,6 +19,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   alias Casein.Terminals.PaneState
   alias Casein.Workspaces.Scratch
   alias Casein.Terminals.SessionDirectory.Attention
+  alias CaseinWeb.WorkspaceLive.Show.AgentStateChrome
   alias CaseinWeb.WorkspaceLive.Show.Browse
   alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
   alias CaseinWeb.WorkspaceRoutes
@@ -305,8 +306,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       quiet? = (Map.get(window, :quiet) || Map.get(window, "quiet")) == true
       unseen_quiet? = quiet? and unseen_quiet_window?(opts, session_attach_id(info), id)
 
+      chrome = AgentStateChrome.present(agent_state, agent_message)
+
       {activity_class, activity_label} =
-        apply_agent_state(
+        AgentStateChrome.apply_to_activity(
           effective_window_activity_class(activity_state, pane_state),
           effective_window_activity_label(activity_state, pane_state),
           agent_state,
@@ -333,6 +336,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
         pane_state: pane_state,
         agent_state: agent_state,
         agent_state_message: agent_message,
+        agent_state_chip: chrome.chip_text,
+        agent_state_chip_class: chrome.chip_class,
         task_summary: task_summary,
         pane_ids: window_pane_ids(window_panes, id),
         preview_count: 0,
@@ -1436,66 +1441,45 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     |> Enum.find_value(& &1.agent_state_message)
   end
 
-  # When an explicit semantic state is present it drives the window's activity
-  # dot and tooltip: `blocked` is loud, `done`/`idle` calm, `working` matches the
-  # existing working treatment.
-  defp apply_agent_state(class, label, state, _message) when state in [nil, :unknown],
-    do: {class, label}
-
-  defp apply_agent_state(_class, _label, state, message),
-    do: {agent_state_class(state), agent_state_label(state, message)}
-
   defp present_agent_state(state)
        when state in [:working, :blocked, :done, :idle, :errored, :stalled],
        do: state
 
   defp present_agent_state(_state), do: nil
 
-  defp agent_state_class(:blocked), do: "bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.25)]"
-  defp agent_state_class(:working), do: window_activity_class(:fresh)
-  defp agent_state_class(:done), do: "bg-sky-400"
-  defp agent_state_class(:idle), do: window_activity_class(:idle)
-  # A failed agent reads as urgent as a blocked one — it will not recover alone.
-  defp agent_state_class(:errored), do: "bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.25)]"
-  # Amber, not red: the pane looks busy and nothing is happening on disk, which
-  # is a strong hint rather than a proven failure.
-  defp agent_state_class(:stalled), do: "bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.25)]"
-
-  defp agent_state_label(:blocked, message),
-    do: "Agent blocked: " <> (blank_to_nil(message) || "needs input")
-
-  defp agent_state_label(:working, message) do
-    case blank_to_nil(message) do
-      nil -> "Agent pane working"
-      detail -> "Agent working — " <> detail
-    end
-  end
-
-  defp agent_state_label(:done, _message), do: "Agent done"
-  defp agent_state_label(:idle, _message), do: "Agent idle"
-
-  defp agent_state_label(:errored, message),
-    do: "Agent errored: " <> (blank_to_nil(message) || "check the pane")
-
-  # Says what was observed, not what it means — the operator decides whether a
-  # long quiet spell is a wedge or just a long think.
-  defp agent_state_label(:stalled, message) do
-    case blank_to_nil(message) do
-      nil -> "Agent looks busy but its worktree has been idle — may be wedged"
-      detail -> "Agent may be wedged — " <> detail
-    end
-  end
-
   defp resolve_topology_agent_state(window, pane_state, opts) do
     reports = Keyword.get_lazy(opts, :agent_reports, fn -> topology_agent_reports(opts) end)
 
+    pane = PaneState.agent_or_active_pane(window)
+
     entry =
-      case PaneState.agent_or_active_pane(window) do
+      case pane do
         nil -> nil
         pane -> Map.get(reports, PaneState.map_get(pane, :id))
       end
 
-    AgentState.resolve_for_display(entry, pane_state)
+    # Prefer a topology-enriched agent_state when present (includes stall
+    # derivation from PaneLiveness). Re-resolve only when the window has not
+    # been through AgentState.enrich_topology/2 yet.
+    case present_agent_state(
+           AgentStateChrome.normalize(
+             Map.get(window, :agent_state) || Map.get(window, "agent_state")
+           )
+         ) do
+      nil ->
+        AgentState.resolve_for_display(
+          entry,
+          pane_state,
+          DateTime.utc_now(),
+          pane_liveness_for_resolve(pane)
+        )
+
+      state ->
+        message =
+          Map.get(window, :agent_state_message) || Map.get(window, "agent_state_message")
+
+        {state, blank_to_nil(message)}
+    end
   end
 
   defp topology_agent_reports(opts) do
@@ -1628,8 +1612,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     manual_name? = Map.get(window, :manual_name) == true
     conversation_label = window_conversation_label(window, opts)
 
+    chrome = AgentStateChrome.present(agent_state, agent_message)
+
     {activity_class, activity_label} =
-      apply_agent_state(
+      AgentStateChrome.apply_to_activity(
         effective_window_activity_class(activity_state, pane_state),
         effective_window_activity_label(activity_state, pane_state),
         agent_state,
@@ -1657,6 +1643,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       pane_state: pane_state,
       agent_state: agent_state,
       agent_state_message: agent_message,
+      agent_state_chip: chrome.chip_text,
+      agent_state_chip_class: chrome.chip_class,
       task_summary: task_summary,
       activity_state: activity_state,
       activity_class: activity_class,
@@ -1664,7 +1652,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       preview_count: preview_count,
       preview?: preview_count > 0,
       command: window.current_command,
-      full_title: full_window_title(window, highlight_pane_id, task_summary),
+      full_title:
+        full_window_title(window, highlight_pane_id, task_summary, agent_state, agent_message),
       panes: panes,
       pane_count: length(panes)
     }
@@ -1738,10 +1727,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp command_label(_command), do: nil
 
-  defp full_window_title(window, highlight_pane_id, task_summary) do
+  defp full_window_title(window, highlight_pane_id, task_summary, agent_state, agent_message) do
     title = window_full_title(window, highlight_pane_id)
+    task_line = AgentStateChrome.task_title(task_summary, agent_state, agent_message)
 
-    case blank_to_nil(task_summary) do
+    case blank_to_nil(task_line) do
       nil -> title
       ^title -> title
       summary -> summary <> " · " <> title
@@ -1765,6 +1755,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     tmux_session = Keyword.get(opts, :tmux_session)
     pane_labels = Keyword.get(opts, :pane_labels, %{})
     overlay = pane_label_entry(pane_labels, tmux_session, pane_id)
+    {agent_state, agent_message} = resolve_pane_agent_state(pane, opts)
+    chrome = AgentStateChrome.present(agent_state, agent_message)
+
+    {activity_class, activity_label} =
+      AgentStateChrome.apply_to_activity(
+        pane_status_class(status),
+        pane_status_label(status),
+        agent_state,
+        agent_message
+      )
+
+    task_summary = Map.get(pane, :task_summary)
 
     %{
       id: pane_id,
@@ -1773,21 +1775,64 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       preview?: preview?,
       label: pane_picker_label(pane, preview, overlay_text(overlay)),
       detail: pane_picker_detail(pane, preview),
-      title: pane_picker_title(pane, preview),
+      title:
+        AgentStateChrome.task_title(pane_picker_title(pane, preview), agent_state, agent_message) ||
+          pane_picker_title(pane, preview),
       agent_label?: is_binary(overlay_text(overlay)),
       agent_label_source: overlay && overlay.source,
       agent_label_title: agent_label_title(overlay),
       beside_agent_preview?: beside_agent_preview?(preview),
       beside_agent_preview_title: beside_agent_preview_title(preview),
       pane_state: Map.get(pane, :pane_state),
-      task_summary: Map.get(pane, :task_summary),
+      agent_state: agent_state,
+      agent_state_message: agent_message,
+      agent_state_chip: chrome.chip_text,
+      agent_state_chip_class: chrome.chip_class,
+      task_summary: task_summary,
       favicon_url: if(preview?, do: preview_favicon_url(preview), else: nil),
       active?: pane_ui_active?(pane, highlight_pane_id),
       activity_state: activity_state,
-      activity_class: pane_status_class(status),
-      activity_label: pane_status_label(status)
+      activity_class: activity_class,
+      activity_label: activity_label
     }
   end
+
+  defp resolve_pane_agent_state(pane, opts) do
+    reports = Keyword.get_lazy(opts, :agent_reports, fn -> topology_agent_reports(opts) end)
+    pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+    entry = if is_binary(pane_id), do: Map.get(reports, pane_id)
+    heuristic = Map.get(pane, :pane_state) || :unknown
+    liveness = pane_liveness_for_resolve(pane)
+
+    {state, message} =
+      AgentState.resolve_for_display(entry, heuristic, DateTime.utc_now(), liveness)
+
+    {present_agent_state(state), message}
+  end
+
+  # Mirror AgentState.pane_liveness/1: only a measured quiet_for_seconds is
+  # evidence. Missing/unknown observation must stay nil so chrome never invents
+  # stalled/idle from "we could not observe".
+  defp pane_liveness_for_resolve(pane) when is_map(pane) do
+    case Map.get(pane, :liveness) || Map.get(pane, "liveness") do
+      %{quiet_for_seconds: quiet_for} when is_integer(quiet_for) and quiet_for > 600 ->
+        :quiet
+
+      %{"quiet_for_seconds" => quiet_for} when is_integer(quiet_for) and quiet_for > 600 ->
+        :quiet
+
+      %{quiet_for_seconds: quiet_for} when is_integer(quiet_for) ->
+        :active
+
+      %{"quiet_for_seconds" => quiet_for} when is_integer(quiet_for) ->
+        :active
+
+      _ ->
+        nil
+    end
+  end
+
+  defp pane_liveness_for_resolve(_), do: nil
 
   defp window_preview_count(window, preview_panes) when is_map(preview_panes) do
     preview_ids =

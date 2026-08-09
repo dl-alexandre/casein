@@ -53,7 +53,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
       assert tab.agent_state == :blocked
       assert tab.agent_state_message == "needs permission"
       assert tab.activity_label == "Agent blocked: needs permission"
-      assert tab.activity_class =~ "rose"
+      assert tab.activity_class =~ "error"
+      assert tab.agent_state_chip == "needs input"
     end
 
     test "a done report reads calm" do
@@ -61,11 +62,56 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
 
       assert tab.agent_state == :done
       assert tab.activity_label == "Agent done"
+      assert tab.agent_state_chip == "done"
+      assert tab.activity_class =~ "info"
+    end
+
+    test "a stalled state is warning chrome, not working" do
+      [tab] =
+        SessionBarVM.window_tabs(
+          [
+            window(%{
+              agent_state: :stalled,
+              pane_list: [pane(%{id: "%1", role: "agent", active: true, pane_title: "⠋ working"})]
+            })
+          ],
+          nil,
+          %{},
+          tmux_session: "tmux-stalled"
+        )
+
+      assert tab.agent_state == :stalled
+      assert tab.agent_state_chip == "stalled"
+      assert tab.activity_class =~ "warning"
+      assert tab.activity_label =~ "wedged"
     end
 
     test "no report leaves agent_state nil and the heuristic in charge" do
       [tab] = SessionBarVM.window_tabs([window(%{})], nil, %{}, tmux_session: "tmux-none")
       assert tab.agent_state == nil
+      assert tab.agent_state_chip == nil
+    end
+
+    test "title-only ready does not invent idle agent chrome" do
+      [tab] =
+        SessionBarVM.window_tabs(
+          [
+            window(%{
+              pane_list: [
+                pane(%{id: "%1", role: "agent", active: true, pane_title: "✳ ready task"})
+              ]
+            })
+          ],
+          nil,
+          %{},
+          tmux_session: "tmux-ready"
+        )
+
+      assert tab.pane_state == :ready
+      assert tab.agent_state == nil
+      assert tab.agent_state_chip == nil
+      refute tab.activity_label =~ "Agent idle"
+      refute tab.activity_label =~ "Agent done"
     end
   end
 
