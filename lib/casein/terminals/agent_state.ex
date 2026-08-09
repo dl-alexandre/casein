@@ -63,6 +63,7 @@ defmodule Casein.Terminals.AgentState do
   # How long a pane may look busy with no observed worktree activity before its
   # spinner stops being believed. Generous on purpose: long tool calls and model
   # thinking time are normal, and a false `:stalled` costs operator trust.
+  # Attention Delivery thresholds must not silently retune this (see #699).
   @stall_seconds 600
 
   @report_states [:working, :blocked, :done, :idle, :errored]
@@ -91,6 +92,14 @@ defmodule Casein.Terminals.AgentState do
   @doc "The reportable semantic states, as atoms."
   @spec report_states() :: [state()]
   def report_states, do: @report_states
+
+  @doc """
+  Seconds of worktree quiet while a pane still looks busy before resolve yields
+  `:stalled`. Inspectable constant — attention thresholds must not change this
+  without an explicit product decision (#699).
+  """
+  @spec stall_seconds() :: pos_integer()
+  def stall_seconds, do: @stall_seconds
 
   @doc """
   Record an explicit semantic-state report for a pane.

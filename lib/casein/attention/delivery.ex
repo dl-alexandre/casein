@@ -8,22 +8,28 @@ defmodule Casein.Attention.Delivery do
 
   ## Inspectable thresholds (one place)
 
+  "Push fires above X, a badge appears above Y" — read this table, not call sites.
+
   | Surface | Clears when | Constant / helper |
-  |---------| | ----------- | ----------------- |
-  | OS push (mobile card path) | `push_eligible?/1` — stricter than cockpit | `@push_signals` + rank floor |
-  | Notifications drawer create (mobile) | `drawer_eligible?/1` (same as push) | `drawer_eligible?/1` |
-  | Mobile inbox `notify` bit | Salience `notify` ∧ rank floor | `notify_eligible?/1` |
-  | Session rail `:needs_you` | signal maps via `session_classification/1` | cockpit-visible bands |
-  | Session rail urgency sort | blocked < errored < stalled < completed < idle | `session_reason_urgency/1` |
-  | Quiet chrome badge | unseen count > 0 → `"unseen"`, else quiet → `"inline"` | `chrome_attention_label/2` |
+  |---------|-------------|-------------------|
+  | OS push (mobile card path) | `notify_eligible?` **and** signal ∈ `@push_signals` | `push_eligible?/1` |
+  | Notifications drawer create (mobile) | Salience `notify` ∧ rank ≥ **400** | `drawer_eligible?/1` (= `notify_eligible?/1`) |
+  | Mobile inbox `notify` bit / floor | Salience `notify` ∧ rank ≥ **400** | `notify_eligible?/1`, `notify_rank_floor/0` |
+  | Session rail `:needs_you` | signal → section via classification | `session_classification/1`, `session_needs_you?/1` |
+  | Session rail urgency sort | blocked/errored < stalled < completed < idle | `session_reason_urgency/1` |
+  | Quiet chrome badge | unseen > 0 → `"unseen"`, else quiet → `"inline"` | `chrome_attention_label/2` |
   | Needs Me pin | unresolved decision card types | `needs_me_pin?/1` |
   | Drawer severity chrome | priority critical/high → `"warning"` | `drawer_severity/1` |
   | Browser quiet-agent OS notify | focus table + observed_working? | `delivery_decision/1` |
+
+  Rank floor **400** is shared by notify/drawer. Push is a **stricter** cut on
+  the same salience (signal allowlist), not the same predicate as the drawer.
 
   ## Push is not cockpit visibility (H28)
 
   `push_eligible?/1` answers "should this interrupt a human on their phone."
   `session_needs_you?/1` answers "should this be visible in the cockpit rail."
+  `drawer_eligible?/1` answers "should a notifications-drawer row be created."
   They share **one salience definition** and apply **different thresholds**.
   Do not collapse them into one boolean.
 
@@ -31,8 +37,15 @@ defmodule Casein.Attention.Delivery do
   already pages today. It deliberately excludes:
 
   - `:agent_stalled` — derived observation; high cockpit value, low interrupt value
-  - `:idle` — quiet-window chrome on the rail; not a phone page by itself
+  - `:idle` — quiet-window chrome on the rail; drawer/notify floor may still clear
   - `:working` / `:informational` / `:offline_resumable` — below the floor
+
+  ## Unknown is not quiet
+
+  Delivery never invents a quiet/idle fact. Callers pass `quiet?` only from a
+  real quiet observation. An unscannable worktree (`AgentLiveness` `{:error, _}`)
+  must not become `quiet?: true` — collapsing unknown into "below threshold"
+  reports calm exactly when observation failed.
 
   ## Focus-aware quiet-agent routing
 
@@ -230,7 +243,12 @@ defmodule Casein.Attention.Delivery do
 
   def push_eligible?(_), do: false
 
-  @doc "Notifications drawer row create from a mobile card — same floor as notify."
+  @doc """
+  Notifications drawer row create from a mobile card.
+
+  Same rank floor as `notify_eligible?/1` — **not** the OS-push gate. Idle
+  quiet-window salience can clear the drawer while `push_eligible?/1` is false.
+  """
   @spec drawer_eligible?(Salience.t() | map()) :: boolean()
   def drawer_eligible?(salience), do: notify_eligible?(salience)
 
