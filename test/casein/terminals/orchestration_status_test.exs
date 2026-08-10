@@ -88,7 +88,11 @@ defmodule Casein.Terminals.OrchestrationStatusTest do
       assert payload.orphaned_claims.observe_state == "ok"
       assert payload.orphaned_claims.orphan_count == 0
       assert is_binary(payload.note)
-      assert payload.note =~ "M0"
+      assert payload.note =~ "M1"
+      assert length(payload.blocked) == 1
+      assert hd(payload.blocked).issue == 384
+      assert hd(payload.blocked).blocked_on.kind == "report"
+      assert hd(payload.blocked).blocked_on.reason == "blocked"
 
       [blocked, working] = payload.rows
       assert blocked.agent_state == "blocked"
@@ -96,17 +100,20 @@ defmodule Casein.Terminals.OrchestrationStatusTest do
       assert blocked.issue == 384
       assert blocked.fleet_role == "worker"
       assert blocked.pane_id == "%w1"
+      assert blocked.blocked_on.kind == "report"
       assert working.agent_state == "working"
       assert working.needs_you? == false
+      assert is_nil(Map.get(working, :blocked_on))
     end
 
-    test "gate held projects depth and holder; unknown stays unknown not free" do
+    test "gate held projects depth, positions, and my_position; unknown stays unknown not free" do
       held =
         board([tab("w1", agent_state: :working)], gate_queue: @gate_held)
         |> OrchestrationStatus.project(
           workspace_id: "ws-1",
           session: "casein_ws-1_main",
-          now: @now
+          now: @now,
+          gate_identity: %{pr: 811}
         )
 
       assert held.gate_queue.observe_state == "ok"
@@ -114,20 +121,84 @@ defmodule Casein.Terminals.OrchestrationStatusTest do
       assert held.gate_queue.depth == 2
       assert held.gate_queue.waiter_count == 1
       assert held.gate_queue.holder.pr == 810
+      assert held.gate_queue.holder.position == 1
+      assert hd(held.gate_queue.waiters).position == 2
       assert held.gate_queue.summary =~ "gate held"
+      assert held.gate_queue.my_position.status == "waiting"
+      assert held.gate_queue.my_position.position == 2
+      assert held.gate_queue.my_position.ahead == 1
+
+      holding =
+        board([tab("w1", agent_state: :working)], gate_queue: @gate_held)
+        |> OrchestrationStatus.project(
+          workspace_id: "ws-1",
+          session: "casein_ws-1_main",
+          now: @now,
+          gate_identity: %{pr: 810}
+        )
+
+      assert holding.gate_queue.my_position.status == "holding"
+      assert holding.gate_queue.my_position.position == 1
 
       unknown =
         board([tab("w1", agent_state: :working)], gate_queue: GateQueue.unknown())
         |> OrchestrationStatus.project(
           workspace_id: "ws-1",
           session: "casein_ws-1_main",
-          now: @now
+          now: @now,
+          gate_identity: %{pr: 810}
         )
 
       assert unknown.gate_queue.observe_state == "unknown"
       assert unknown.gate_queue.lock_state == "unknown"
       refute unknown.gate_queue.lock_state == "free"
       assert unknown.gate_queue.summary =~ "unknown"
+      # unknown observation must never look like "not in queue" / free
+      assert unknown.gate_queue.my_position.status == "unknown"
+      refute unknown.gate_queue.my_position[:status] == "not_in_queue"
+      refute unknown.gate_queue.my_position[:status] == "free"
+    end
+
+    test "liveness unknown never becomes quiet; blocked_on distinguishes stalled" do
+      board =
+        board([
+          tab("w1",
+            agent_state: :stalled,
+            agent_state_message: nil,
+            liveness: %{state: :quiet, quiet_for_seconds: 900}
+          ),
+          tab("w2",
+            agent_state: :working,
+            liveness: %{state: :unknown, reason: :eacces}
+          ),
+          tab("w3", agent_state: :working)
+        ])
+
+      payload =
+        OrchestrationStatus.project(board,
+          workspace_id: "ws-1",
+          session: "casein_ws-1_main",
+          now: @now
+        )
+
+      by_pane = Map.new(payload.rows, &{&1.pane_id, &1})
+
+      stalled = by_pane["%w1"]
+      assert stalled.blocked_on.kind == "derived"
+      assert stalled.blocked_on.reason == "stalled"
+      assert stalled.liveness.state == "quiet"
+      assert stalled.liveness.quiet_for_seconds == 900
+
+      unknown = by_pane["%w2"]
+      assert unknown.liveness.state == "unknown"
+      assert unknown.liveness.reason == "eacces"
+      refute unknown.liveness.state == "quiet"
+      refute unknown.bucket == "idle"
+
+      no_live = by_pane["%w3"]
+      assert is_nil(Map.get(no_live, :liveness))
+
+      assert Enum.any?(payload.blocked, &(&1.pane_id == "%w1"))
     end
 
     test "orphaned claims project list; unknown observation never looks clear" do
@@ -178,7 +249,8 @@ defmodule Casein.Terminals.OrchestrationStatusTest do
             issue: 384,
             fleet_role: :worker,
             label: "worker: #384",
-            agent_state_message: "need unlock"
+            agent_state_message: "need unlock",
+            liveness: %{state: :quiet, quiet_for_seconds: 42}
           },
           %{id: "%4", window_id: "@2", role: "operator", current_command: "bash"}
         ]
@@ -186,6 +258,7 @@ defmodule Casein.Terminals.OrchestrationStatusTest do
 
       tabs = OrchestrationStatus.tabs_from_topology(topology)
       assert length(tabs) == 2
+      assert hd(tabs).liveness.state == :quiet
 
       board = board(tabs)
       assert board.total == 1
@@ -195,6 +268,10 @@ defmodule Casein.Terminals.OrchestrationStatusTest do
       assert row.agent_state == :blocked
       assert row.needs_you?
       assert row.fleet_role == :worker
+      assert row.blocked_on.kind == :report
+      assert row.blocked_on.detail == "need unlock"
+      assert row.liveness.state == :quiet
+      assert row.liveness.quiet_for_seconds == 42
     end
 
     test "empty or malformed topology yields no tabs" do

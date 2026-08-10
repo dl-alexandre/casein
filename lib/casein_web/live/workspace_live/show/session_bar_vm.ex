@@ -1677,7 +1677,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       issue_title: fleet.issue_title,
       fleet_role: fleet.fleet_role,
       fleet_readiness: fleet.fleet_readiness,
-      ready_no_task_for_seconds: fleet.ready_no_task_for_seconds
+      ready_no_task_for_seconds: fleet.ready_no_task_for_seconds,
+      liveness: fleet.liveness
     }
   end
 
@@ -1714,6 +1715,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     ready_for =
       Map.get(window, :ready_no_task_for_seconds) || Map.get(window, "ready_no_task_for_seconds")
 
+    liveness =
+      Map.get(window, :liveness) || Map.get(window, "liveness") || pane_liveness_map(agent_pane)
+
     # When topology was not FleetChrome-enriched (cockpit path), project
     # readiness from the same pure rules over available quiet clocks.
     {readiness, ready_for} =
@@ -1729,7 +1733,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
             task_summary: PaneState.window_task_summary(window),
             label: label,
             window_name: Map.get(window, :name),
-            liveness: pane_liveness_map(agent_pane),
+            liveness: liveness,
             agent_state_age_s: agent_state_age_s(opts, pane_id)
           }
           |> Casein.Terminals.FleetChrome.enrich_pane()
@@ -1744,7 +1748,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       issue_title: issue_title,
       fleet_role: role,
       fleet_readiness: readiness,
-      ready_no_task_for_seconds: ready_for
+      ready_no_task_for_seconds: ready_for,
+      liveness: liveness
     }
   end
 

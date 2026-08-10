@@ -1,14 +1,16 @@
 defmodule Casein.Terminals.OrchestrationStatus do
   @moduledoc """
-  Read-only MCP projection of the operator fleet board (#384 M0).
+  Read-only MCP projection of the operator fleet board (#384 M1).
 
   Reuses `FleetBoard` / `GateQueue` / `OrphanedClaims` — does not re-classify
-  agent state. Wire shape is intentionally small: bucket counts, gate depth,
-  orphaned claims, and one row per fleet window (pane, issue, state, role).
-  No scrollback, no shell, no mutations.
+  agent state. Wire shape answers the operator questions that cost real time:
 
-  `worker_launch`, durable task graphs, path contracts, and verifier adapters
-  remain out of scope.
+    * which workers are blocked, and on what (`blocked_on` + message)
+    * where am I in the gate queue (`gate_queue` depth + positions + `position/2`)
+    * is this pane working or wedged (`liveness` external observation; unknown ≠ quiet)
+
+  No scrollback, no shell, no mutations. `worker_launch`, durable task graphs,
+  path contracts, and verifier adapters remain out of scope.
   """
 
   alias Casein.Ops.GateQueue
@@ -25,6 +27,7 @@ defmodule Casein.Terminals.OrchestrationStatus do
           gate_queue: map(),
           orphaned_claims: map(),
           rows: [map()],
+          blocked: [map()],
           note: String.t()
         }
 
@@ -35,12 +38,14 @@ defmodule Casein.Terminals.OrchestrationStatus do
 
     * `:workspace_id` / `:session` — required identity on the payload
     * `:now` — `DateTime` for `generated_at` (default utc_now)
+    * `:gate_identity` — optional PR/run/branch/pid for `gate_queue.my_position`
   """
   @spec project(FleetBoard.board(), keyword()) :: payload()
   def project(board, opts \\ []) when is_map(board) do
     workspace_id = Keyword.fetch!(opts, :workspace_id)
     session = Keyword.fetch!(opts, :session)
     now = Keyword.get(opts, :now) || DateTime.utc_now()
+    rows = Enum.map(Map.get(board, :rows) || [], &row_json/1)
 
     %{
       workspace_id: workspace_id,
@@ -49,11 +54,13 @@ defmodule Casein.Terminals.OrchestrationStatus do
       total: Map.get(board, :total, 0),
       attention_count: Map.get(board, :attention_count, 0),
       counts: counts_json(Map.get(board, :counts) || %{}),
-      gate_queue: gate_json(Map.get(board, :gate_queue) || GateQueue.unknown()),
+      gate_queue: gate_json(Map.get(board, :gate_queue) || GateQueue.unknown(), opts),
       orphaned_claims: orphans_json(Map.get(board, :orphaned_claims) || OrphanedClaims.unknown()),
-      rows: Enum.map(Map.get(board, :rows) || [], &row_json/1),
+      rows: rows,
+      blocked: Enum.filter(rows, &blocked_row?/1),
       note:
-        "M0 read-only fleet status. Reuses FleetBoard/GateQueue/OrphanedClaims. " <>
+        "M1 operator fleet status. Reuses FleetBoard/GateQueue/OrphanedClaims. " <>
+          "liveness unknown ≠ quiet; gate position via gate_queue.my_position when identity given. " <>
           "worker_launch, durable graphs, path contracts, and verifiers are out of scope."
     }
   end
@@ -97,6 +104,7 @@ defmodule Casein.Terminals.OrchestrationStatus do
         ready_no_task_for_seconds:
           pane_field(agent, :ready_no_task_for_seconds) ||
             Map.get(window, :ready_no_task_for_seconds),
+        liveness: pane_field(agent, :liveness),
         quiet?: false,
         unseen_quiet?: false
       }
@@ -131,19 +139,27 @@ defmodule Casein.Terminals.OrchestrationStatus do
     end)
   end
 
-  defp gate_json(%{lock_state: state} = gate) do
+  defp gate_json(gate, opts)
+
+  defp gate_json(%{lock_state: state} = gate, opts) when is_list(opts) do
+    positioned = GateQueue.with_positions(gate)
+    identity = Keyword.get(opts, :gate_identity)
+    my_position = GateQueue.position(positioned, identity)
+
     %{
       observe_state: gate_observe_state(state),
       lock_state: atom_or_nil(state),
-      depth: Map.get(gate, :depth),
-      waiter_count: Map.get(gate, :waiter_count),
-      summary: GateQueue.summary(gate),
-      holder: holder_json(Map.get(gate, :holder)),
-      waiters: Enum.map(Map.get(gate, :waiters) || [], &holder_json/1)
+      depth: Map.get(positioned, :depth),
+      waiter_count: Map.get(positioned, :waiter_count),
+      summary: GateQueue.summary(positioned),
+      holder: holder_json(Map.get(positioned, :holder)),
+      waiters: Enum.map(Map.get(positioned, :waiters) || [], &holder_json/1),
+      my_position: position_json(my_position)
     }
   end
 
-  defp gate_json(_), do: gate_json(GateQueue.unknown())
+  defp gate_json(_, opts) when is_list(opts), do: gate_json(GateQueue.unknown(), opts)
+  defp gate_json(gate, _), do: gate_json(gate, [])
 
   defp gate_observe_state(:unknown), do: "unknown"
   defp gate_observe_state(:free), do: "ok"
@@ -161,7 +177,24 @@ defmodule Casein.Terminals.OrchestrationStatus do
       sha: Map.get(holder, :sha),
       workflow: Map.get(holder, :workflow),
       held_for_seconds: Map.get(holder, :held_for_seconds),
-      cmd: Map.get(holder, :cmd)
+      cmd: Map.get(holder, :cmd),
+      position: Map.get(holder, :position)
+    }
+    |> reject_nils()
+  end
+
+  defp position_json(pos) when is_map(pos) do
+    status = Map.get(pos, :status)
+
+    %{
+      status: atom_or_nil(status) || "unknown",
+      position: Map.get(pos, :position),
+      depth: Map.get(pos, :depth),
+      ahead: Map.get(pos, :ahead),
+      waiter_count: Map.get(pos, :waiter_count),
+      holder: holder_json(Map.get(pos, :holder)),
+      self: holder_json(Map.get(pos, :self)),
+      waiters: Enum.map(Map.get(pos, :waiters) || [], &holder_json/1)
     }
     |> reject_nils()
   end
@@ -206,10 +239,53 @@ defmodule Casein.Terminals.OrchestrationStatus do
       needs_you?: Map.get(row, :needs_you?) == true,
       attention_reason: atom_or_nil(Map.get(row, :attention_reason)),
       bucket: atom_or_nil(Map.get(row, :bucket)),
-      active?: Map.get(row, :active?) == true
+      active?: Map.get(row, :active?) == true,
+      liveness: liveness_json(Map.get(row, :liveness)),
+      blocked_on: blocked_on_json(Map.get(row, :blocked_on))
     }
     |> reject_nils()
   end
+
+  defp blocked_row?(%{blocked_on: %{} = blocked}) when map_size(blocked) > 0, do: true
+
+  defp blocked_row?(%{agent_state: state}) when state in ["blocked", "errored", "stalled"],
+    do: true
+
+  defp blocked_row?(%{needs_you?: true, attention_reason: reason})
+       when reason in ["blocked", "errored", "stalled"],
+       do: true
+
+  defp blocked_row?(_), do: false
+
+  defp liveness_json(nil), do: nil
+
+  defp liveness_json(live) when is_map(live) do
+    state = atom_or_nil(Map.get(live, :state) || Map.get(live, "state"))
+
+    %{
+      state: state || "unknown",
+      reason: atom_or_nil(Map.get(live, :reason) || Map.get(live, "reason")),
+      quiet_for_seconds: Map.get(live, :quiet_for_seconds) || Map.get(live, "quiet_for_seconds"),
+      last_write_at: Map.get(live, :last_write_at) || Map.get(live, "last_write_at"),
+      commit_count: Map.get(live, :commit_count) || Map.get(live, "commit_count")
+    }
+    |> reject_nils()
+  end
+
+  defp liveness_json(_), do: %{state: "unknown", reason: "malformed"}
+
+  defp blocked_on_json(nil), do: nil
+
+  defp blocked_on_json(blocked) when is_map(blocked) do
+    %{
+      kind: atom_or_nil(Map.get(blocked, :kind) || Map.get(blocked, "kind")),
+      reason: atom_or_nil(Map.get(blocked, :reason) || Map.get(blocked, "reason")),
+      detail: Map.get(blocked, :detail) || Map.get(blocked, "detail")
+    }
+    |> reject_nils()
+  end
+
+  defp blocked_on_json(_), do: nil
 
   defp atom_or_nil(nil), do: nil
   defp atom_or_nil(value) when is_atom(value), do: Atom.to_string(value)

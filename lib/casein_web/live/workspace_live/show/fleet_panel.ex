@@ -124,6 +124,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
           >
             {gate_holder_detail(@gate)}
           </div>
+          <ol
+            :if={gate_queue_entries(@gate) != []}
+            id="fleet-gate-queue-positions"
+            class="mt-1.5 space-y-0.5 pl-3.5 text-base-content/70"
+          >
+            <li
+              :for={entry <- gate_queue_entries(@gate)}
+              id={"fleet-gate-pos-" <> Integer.to_string(entry.position)}
+              class="flex min-w-0 items-center gap-2"
+            >
+              <span class="shrink-0 font-medium">#{entry.position}</span>
+              <span class="min-w-0 flex-1 truncate">{entry.label}</span>
+              <span class="shrink-0 text-base-content/50">{entry.role}</span>
+            </li>
+          </ol>
         </div>
 
         <div
@@ -226,8 +241,23 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
                   <span :if={row.fleet_readiness == :ready_no_task} class="text-status-warning-fg">
                     ready, no task{ready_for_suffix(row.ready_no_task_for_seconds)}
                   </span>
-                  <span :if={row.agent_state_message} class="truncate text-base-content/50">
+                  <span
+                    :if={blocked_on_label(row)}
+                    class="truncate text-status-warning-fg"
+                  >
+                    blocked on: {blocked_on_label(row)}
+                  </span>
+                  <span
+                    :if={is_nil(blocked_on_label(row)) and row.agent_state_message}
+                    class="truncate text-base-content/50"
+                  >
                     {row.agent_state_message}
+                  </span>
+                  <span
+                    :if={liveness_label(row)}
+                    class={"shrink-0 " <> liveness_class(row)}
+                  >
+                    {liveness_label(row)}
                   </span>
                 </div>
               </button>
@@ -317,6 +347,47 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
 
   defp gate_holder_detail(_), do: nil
 
+  # Ordered queue: holder position 1, waiters 2..n. Unknown/free → no list
+  # (never invent a calm empty queue when observation failed).
+  defp gate_queue_entries(%{lock_state: :held} = gate) do
+    holder = Map.get(gate, :holder)
+    waiters = Map.get(gate, :waiters) || []
+
+    holder_entry =
+      if is_map(holder) do
+        [
+          %{
+            position: Map.get(holder, :position) || 1,
+            label: gate_entry_label(holder),
+            role: "holding"
+          }
+        ]
+      else
+        []
+      end
+
+    waiter_entries =
+      waiters
+      |> Enum.with_index(2)
+      |> Enum.map(fn {w, idx} ->
+        %{
+          position: (is_map(w) && Map.get(w, :position)) || idx,
+          label: gate_entry_label(w),
+          role: "waiting"
+        }
+      end)
+
+    holder_entry ++ waiter_entries
+  end
+
+  defp gate_queue_entries(_), do: []
+
+  defp gate_entry_label(%{pr: pr}) when is_integer(pr), do: "PR ##{pr}"
+  defp gate_entry_label(%{branch: b}) when is_binary(b) and b != "", do: b
+  defp gate_entry_label(%{run_id: id}) when is_binary(id) and id != "", do: "run #{id}"
+  defp gate_entry_label(%{pid: pid}) when is_integer(pid), do: "pid #{pid}"
+  defp gate_entry_label(_), do: "unknown"
+
   defp count_chip_class(:needs_you),
     do: "border-status-danger-border bg-status-danger-soft text-status-danger-fg"
 
@@ -361,4 +432,51 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
   defp ready_for_suffix(n) when is_integer(n) and n >= 60, do: " · #{div(n, 60)}m"
   defp ready_for_suffix(n) when is_integer(n) and n > 0, do: " · #{n}s"
   defp ready_for_suffix(_), do: ""
+
+  defp blocked_on_label(%{blocked_on: %{detail: d}}) when is_binary(d) and d != "", do: d
+
+  defp blocked_on_label(%{blocked_on: %{reason: r}}) when not is_nil(r),
+    do: to_string(r)
+
+  defp blocked_on_label(%{agent_state: state, agent_state_message: msg})
+       when state in [:blocked, :errored, :stalled] and is_binary(msg) and msg != "",
+       do: msg
+
+  defp blocked_on_label(%{agent_state: state}) when state in [:blocked, :errored, :stalled],
+    do: to_string(state)
+
+  defp blocked_on_label(_), do: nil
+
+  # unknown ≠ quiet: missing observation is omitted; :unknown is labelled as such.
+  defp liveness_label(%{liveness: %{state: :active} = live}) do
+    case Map.get(live, :quiet_for_seconds) do
+      n when is_integer(n) and n > 0 -> "live · wrote #{ago_suffix(n)}"
+      _ -> "live"
+    end
+  end
+
+  defp liveness_label(%{liveness: %{state: :quiet} = live}) do
+    case Map.get(live, :quiet_for_seconds) do
+      n when is_integer(n) and n > 0 -> "quiet #{ago_suffix(n)}"
+      _ -> "quiet"
+    end
+  end
+
+  defp liveness_label(%{liveness: %{state: :unknown} = live}) do
+    case Map.get(live, :reason) do
+      r when is_atom(r) and r != nil -> "liveness ? (#{r})"
+      r when is_binary(r) and r != "" -> "liveness ? (#{r})"
+      _ -> "liveness ?"
+    end
+  end
+
+  defp liveness_label(_), do: nil
+
+  defp liveness_class(%{liveness: %{state: :active}}), do: "text-status-ok"
+  defp liveness_class(%{liveness: %{state: :quiet}}), do: "text-base-content/50"
+  defp liveness_class(%{liveness: %{state: :unknown}}), do: "text-base-content/40"
+
+  defp ago_suffix(n) when is_integer(n) and n >= 60, do: "#{div(n, 60)}m ago"
+  defp ago_suffix(n) when is_integer(n) and n > 0, do: "#{n}s ago"
+  defp ago_suffix(_), do: ""
 end

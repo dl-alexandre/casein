@@ -118,7 +118,174 @@ defmodule Casein.Ops.GateQueue do
   def summary(%{lock_state: :unknown}), do: "gate unknown"
   def summary(_), do: "gate unknown"
 
+  @doc """
+  Queue position for a caller identity inside an observed snapshot.
+
+  Position is 1-based depth order: holder is position 1, first waiter is 2, …
+  Depth is `1 + waiter_count` when held (same as `snapshot.depth`).
+
+  Identity keys (first match wins): `:pr`, `:run_id`, `:branch`, `:pid`,
+  or a map/holder-shaped value. Unknown lock observation returns
+  `%{status: :unknown}` — never `:not_in_queue` (that would claim free).
+
+  Returns:
+
+    * `%{status: :unknown}` — lock/proc not observed
+    * `%{status: :free, depth: 0}` — scan ran; nobody holds the lock
+    * `%{status: :holding, position: 1, depth: n, holder: map}` — caller is holder
+    * `%{status: :waiting, position: p, depth: n, ahead: p-1, holder: map, self: map}`
+    * `%{status: :not_in_queue, depth: n, holder: map}` — held, caller not in queue
+  """
+  @spec position(snapshot() | map(), keyword() | map() | pos_integer() | String.t() | nil) ::
+          map()
+  def position(snap, identity \\ nil)
+
+  def position(%{lock_state: :unknown}, _identity), do: %{status: :unknown}
+
+  def position(%{lock_state: :free} = snap, _identity) do
+    %{status: :free, depth: Map.get(snap, :depth) || 0}
+  end
+
+  def position(%{lock_state: :held} = snap, identity) do
+    holder = Map.get(snap, :holder)
+    waiters = Map.get(snap, :waiters) || []
+    depth = Map.get(snap, :depth) || 1 + length(waiters)
+    id = normalize_identity(identity)
+
+    case id do
+      nil ->
+        %{
+          status: :held,
+          depth: depth,
+          waiter_count: Map.get(snap, :waiter_count) || length(waiters),
+          holder: holder,
+          waiters: waiters_with_positions(holder, waiters)
+        }
+
+      id when is_map(id) ->
+        if identity_match?(holder, id) do
+          %{status: :holding, position: 1, depth: depth, holder: holder}
+        else
+          case find_waiter_index(waiters, id) do
+            nil ->
+              %{status: :not_in_queue, depth: depth, holder: holder}
+
+            idx when is_integer(idx) ->
+              # holder is position 1; first waiter is 2
+              pos = idx + 2
+              self = Enum.at(waiters, idx)
+
+              %{
+                status: :waiting,
+                position: pos,
+                depth: depth,
+                ahead: pos - 1,
+                holder: holder,
+                self: self
+              }
+          end
+        end
+    end
+  end
+
+  def position(_snap, _identity), do: %{status: :unknown}
+
+  @doc "Annotate holder + waiters with 1-based queue positions for chrome."
+  @spec with_positions(snapshot() | map()) :: map()
+  def with_positions(%{lock_state: :held, holder: holder} = snap) when is_map(holder) do
+    waiters = Map.get(snap, :waiters) || []
+    holder = Map.put(holder, :position, 1)
+
+    waiters =
+      waiters
+      |> Enum.with_index(2)
+      |> Enum.map(fn {w, pos} -> Map.put(w || %{}, :position, pos) end)
+
+    %{snap | holder: holder, waiters: waiters}
+  end
+
+  def with_positions(snap) when is_map(snap), do: snap
+  def with_positions(_), do: unknown()
+
   ## Internals
+
+  defp normalize_identity(nil), do: nil
+  defp normalize_identity(pid) when is_integer(pid) and pid > 0, do: %{pid: pid}
+
+  defp normalize_identity(pr) when is_binary(pr) do
+    case Integer.parse(String.trim_leading(String.trim(pr), "#")) do
+      {n, ""} when n > 0 -> %{pr: n}
+      _ -> %{branch: pr}
+    end
+  end
+
+  defp normalize_identity(opts) when is_list(opts) do
+    opts
+    |> Keyword.take([:pr, :run_id, :branch, :pid, :sha, :workflow])
+    |> Map.new()
+    |> reject_blank_identity()
+  end
+
+  defp normalize_identity(map) when is_map(map) do
+    %{
+      pr: Map.get(map, :pr) || Map.get(map, "pr"),
+      run_id: Map.get(map, :run_id) || Map.get(map, "run_id"),
+      branch: Map.get(map, :branch) || Map.get(map, "branch"),
+      pid: Map.get(map, :pid) || Map.get(map, "pid"),
+      sha: Map.get(map, :sha) || Map.get(map, "sha")
+    }
+    |> reject_blank_identity()
+  end
+
+  defp normalize_identity(_), do: nil
+
+  defp reject_blank_identity(map) do
+    map
+    |> Enum.reject(fn {_k, v} -> is_nil(v) or v == "" end)
+    |> Map.new()
+    |> case do
+      empty when map_size(empty) == 0 -> nil
+      kept -> kept
+    end
+  end
+
+  defp identity_match?(nil, _id), do: false
+
+  defp identity_match?(holder, id) when is_map(holder) and is_map(id) do
+    cond do
+      match_int?(holder, id, :pr) -> true
+      match_bin?(holder, id, :run_id) -> true
+      match_int?(holder, id, :pid) -> true
+      match_bin?(holder, id, :branch) -> true
+      true -> false
+    end
+  end
+
+  defp match_int?(holder, id, key) do
+    hv = Map.get(holder, key)
+    iv = Map.get(id, key)
+    is_integer(hv) and is_integer(iv) and hv == iv
+  end
+
+  defp match_bin?(holder, id, key) do
+    hv = Map.get(holder, key)
+    iv = Map.get(id, key)
+    is_binary(hv) and hv != "" and is_binary(iv) and iv != "" and hv == iv
+  end
+
+  defp find_waiter_index(waiters, id) do
+    Enum.find_index(waiters, &identity_match?(&1, id))
+  end
+
+  defp waiters_with_positions(holder, waiters) do
+    _ = holder
+
+    waiters
+    |> Enum.with_index(2)
+    |> Enum.map(fn {w, pos} ->
+      if is_map(w), do: Map.put(w, :position, pos), else: %{position: pos}
+    end)
+  end
 
   defp observe_uncached(lock_path, now, opts) do
     proc_root = Keyword.get(opts, :proc_root, "/proc")
