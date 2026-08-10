@@ -6,9 +6,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Labels
   alias Casein.Operator.SituationServer
   alias Casein.Terminals.AgentState
+  alias Casein.Terminals.FleetBoard
   alias Casein.Terminals.FleetChrome
   alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
+  alias Casein.Terminals.OrchestrationStatus
+  alias Casein.Terminals.OrphanedClaims
   alias Casein.Terminals.PaneLiveness
   alias Casein.Terminals.TmuxTopology
 
@@ -331,6 +334,34 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   def workspace_digest(params) do
     with {:ok, workspace_id} <- workspace_id_arg(params) do
       SituationServer.get_digest(workspace_id)
+    end
+  end
+
+  @doc """
+  Read-only fleet orchestration status (M0): FleetBoard + GateQueue + orphans.
+
+  Requires workspace_id and session. Builds the same enriched topology path as
+  `topology/1`, projects window tabs into `FleetBoard`, then shapes the wire
+  payload via `OrchestrationStatus.project/2`. No mutations, no scrollback.
+  """
+  @spec orchestration_status(map()) :: {:ok, map()} | {:error, term()}
+  def orchestration_status(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_arg(params),
+         {:ok, topology} <- topology(params) do
+      tabs = OrchestrationStatus.tabs_from_topology(topology)
+
+      board =
+        FleetBoard.from_window_tabs(tabs,
+          list_claimed: &OrphanedClaims.list_claimed/0,
+          tmux_session: session
+        )
+
+      {:ok,
+       OrchestrationStatus.project(board,
+         workspace_id: workspace_id,
+         session: session
+       )}
     end
   end
 

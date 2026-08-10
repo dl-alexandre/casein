@@ -589,6 +589,33 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("orchestration_status") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_metadata, :terminal_read],
+      recovery_hints: [
+        "Requires workspace_id and session — fail closed when either is missing.",
+        "gate_queue.observe_state unknown never means free; orphaned_claims same discipline.",
+        "M0 discovery only — use terminal_topology for per-pane detail; no worker_launch here."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_default"
+          },
+          structured_content: %{
+            "total" => 3,
+            "attention_count" => 1,
+            "counts" => %{"needs_you" => 1, "working" => 2},
+            "gate_queue" => %{"observe_state" => "ok", "lock_state" => "free", "depth" => 0}
+          }
+        }
+      ]
+    }
+  end
+
   def metadata("terminal_wait_agent_state") do
     %{
       mutation?: false,
