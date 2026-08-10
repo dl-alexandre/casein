@@ -243,18 +243,60 @@ The script checks, against the **live** instance behind
 
 1. `casein-deploy.timer` / latest `casein-deploy.service` result and
    `/run/casein/last-deploy.json`
-2. `CASEIN_GIT_REVISION` equals `origin/master` and the live unit description
-3. `/health` → 401 (alive + auth) and `/healthz` → ok
-4. Authenticated read-only MCP: `terminal_list_sessions`, `terminal_topology`,
+2. **Release identity** — socket peer pid, unit `MainPID`, and instance
+   heartbeat pid/version must agree (proves *which* release answered)
+3. `CASEIN_GIT_REVISION` equals `origin/master`, the live unit description, and
+   the heartbeat `version`
+4. `/health` → 401 (alive + auth) and `/healthz` → ok
+5. Caddy app dial is `unix//run/casein/current.sock` or loopback (not legacy
+   `unix//run/devide/current.sock`)
+6. Authenticated read-only MCP: `terminal_list_sessions`, `terminal_topology`,
    `preview_surfaces` (no open/mutate)
-5. Redacted JSON evidence for attachment to #378
+7. Redacted JSON evidence (`schema_version: 2`) with `human_remaining[]` and a
+   `need_template` for attachment to #378
 
 Attended override when a deliberate non-tip deploy is under inspection:
 `--allow-drift` or `CASEIN_ALLOW_DEPLOY_DRIFT=1`.
 
-Still operator-manual (not closed by the script alone): OAuth browser cockpit
-load, Agents-tab screenshot, visible manual-drift banner when deliberately
-diverged, and a documented rollback drill. Do not hand-edit
-`/opt/casein/release`. Attach the evidence JSON plus any redacted screenshots
-to #378.
+### CI / hermetic dry-run (no live OAuth)
+
+Gate and unit tests exercise the same contracts without the live release:
+
+```bash
+bash scripts/verify_post_deploy_cockpit.sh \
+  --fixture test/scripts/fixtures/post_deploy_cockpit/green_tip_matched \
+  --evidence /tmp/378-fixture.json
+
+# Optional: exit 5 when software is green but operator evidence is still open
+bash scripts/verify_post_deploy_cockpit.sh \
+  --fixture test/scripts/fixtures/post_deploy_cockpit/green_tip_matched \
+  --require-operator-evidence --evidence /tmp/378-fixture.json
+```
+
+Fixtures under `test/scripts/fixtures/post_deploy_cockpit/` cover tip-matched
+pass, allow-drift pass, fail-closed drift, and identity mismatch. Dry-run never
+false-greens deploy drift.
+
+### After poller success (operator sequence)
+
+1. Confirm poller: `systemctl status casein-deploy.timer` and
+   `cat /run/casein/last-deploy.json` (`outcome=success`, `target_sha` ==
+   `git rev-parse origin/master`).
+2. If `phase=migration_refused`, stop — run an attended
+   `CASEIN_ALLOW_MIGRATION_DEPLOY=1 bash scripts/deploy-poller.sh` (or deliberate
+   local service update), then re-run the gate **without** `--allow-drift`.
+3. Run the live gate (command above). Soft-prune only *inactive* non-live
+   canaries (`systemctl reset-failed casein-<hash>.service`) — never the unit
+   that owns `current.sock`.
+4. OAuth-load the cockpit, Agents tab screenshot, confirm no manual-drift banner
+   when tip-matched (or screenshot banner when deliberately diverged).
+5. Note a rollback/health drill without hand-editing `/opt/casein/release`.
+6. Attach redacted evidence JSON + screenshots on #378 and close when tip is
+   green without `--allow-drift`.
+
+Still operator-manual (listed in evidence `human_remaining[]`; use
+`--require-operator-evidence` to exit 5 when tracking that half): OAuth browser
+cockpit load, Agents-tab screenshot, visible manual-drift banner when
+deliberately diverged, and a documented rollback drill. Do not hand-edit
+`/opt/casein/release`.
 
