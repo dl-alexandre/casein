@@ -100,15 +100,36 @@ scripts/collect-macos-desktop-evidence.sh \
   --archive native/casein_menubar/build/artifacts/Casein-*-macos-*.zip
 ```
 
+Linux / pre-operator dry-run (never claims success):
+
+```bash
+scripts/collect-macos-desktop-evidence.sh --dry-run \
+  --out /tmp/casein-macos-dry-run.evidence.json
+# → result=incomplete
+# → missing: ["developer_id","notary_profile","signed_lifecycle"]
+# → prints NEED (human): … checklist lines
+
+scripts/validate-macos-desktop-evidence.sh --print-needs \
+  /tmp/casein-macos-dry-run.evidence.json
+```
+
+`validate-macos-desktop-evidence.sh` rejects:
+
+- incomplete documents with empty/absent `missing[]` (silent pass)
+- `passed_release` without Developer ID + hardened runtime + `spctl=accepted` + `stapler=valid` + archive sha256
+- any evidence embedding certificate/private-key material
+
 `result` values:
 
 | `result` | Meaning |
 |---|---|
-| `passed_release` | Developer ID + Gatekeeper accept + staple valid |
+| `passed_release` | Developer ID + Gatekeeper accept + staple valid **and** operator lifecycle attested (`CASEIN_LIFECYCLE_ATTESTED=1`) |
 | `signed_unnotarized` | Developer ID present; notarization still required for #382 |
 | `adhoc_smoke_only` | CI/local smoke — not release evidence |
 | `blocked` | Collected off Darwin (host stub only) |
-| `failed` / `incomplete` | Fix before publishing |
+| `failed` / `incomplete` | Fix before publishing; `missing[]` lists NEED codes |
+
+Canonical `missing[]` codes (dry-run / pre-operator): `developer_id`, `notary_profile`, `signed_lifecycle`.
 
 ## Lifecycle checklist (operator, clean Mac)
 
@@ -140,6 +161,7 @@ files here.
 | `scripts/test-macos-desktop-package.sh` | Structure, launch, auth; optional `--require-developer-id` / `--require-notarized` |
 | `scripts/verify-macos-desktop-release.sh` | Deep codesign / hardened runtime / spctl / stapler |
 | `scripts/notarize-macos-desktop.sh` | `notarytool submit` + staple (`CASEIN_NOTARY_DRY_RUN=1` offline) |
-| `scripts/collect-macos-desktop-evidence.sh` | Immutable JSON for the issue/release |
+| `scripts/collect-macos-desktop-evidence.sh` | Immutable JSON for the issue/release (`--dry-run` = incomplete + explicit `missing[]`) |
+| `scripts/validate-macos-desktop-evidence.sh` | Schema + honesty gate; prints NEED codes; rejects silent pass / overclaim |
 | `native/casein_menubar/Resources/Casein.entitlements` | Hardened-runtime entitlements for Developer ID |
 | `native/casein_menubar/scripts/bundle.sh` | Nested Mach-O sign; runtime+timestamp when identity ≠ `-` |

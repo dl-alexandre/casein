@@ -10,7 +10,12 @@
 #   scripts/collect-macos-desktop-evidence.sh \
 #     [--app path/to/Casein\ MenuBar.app] \
 #     [--archive path/to/Casein-*-macos-*.zip] \
-#     [--out path/to/evidence.json]
+#     [--out path/to/evidence.json] \
+#     [--dry-run]
+#
+# --dry-run writes an incomplete evidence document with explicit
+# missing: ["developer_id","notary_profile","signed_lifecycle"] and never
+# claims signed/notarized success. Safe on Linux; no silent pass.
 #
 # Never embeds certificates, passwords, API keys, or provisioning profiles.
 set -euo pipefail
@@ -22,14 +27,16 @@ archive=""
 out=""
 result="running"
 error=""
+dry_run=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --app) app="$2"; shift 2 ;;
     --archive) archive="$2"; shift 2 ;;
     --out) out="$2"; shift 2 ;;
+    --dry-run) dry_run=1; shift ;;
     -h|--help)
-      sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -103,19 +110,40 @@ spctl_status="skipped"
 stapler_status="skipped"
 verify_status="skipped"
 phases=()
+# Canonical incomplete codes for pre-operator / dry-run evidence. Never silent-pass.
+missing_codes=("developer_id" "notary_profile" "signed_lifecycle")
+claim_developer_id=false
+claim_notarized=false
+claim_stapled=false
+claim_signed_lifecycle=false
+claim_passed_release=false
 
 record_phase() {
   phases+=("$1")
 }
 
-if [[ "$host_os" != "Darwin" ]]; then
+set_missing() {
+  missing_codes=("$@")
+}
+
+if [[ "$dry_run" -eq 1 ]]; then
+  result="incomplete"
+  error="dry-run: no Developer ID, notary profile, or signed lifecycle material claimed"
+  record_phase "dry_run"
+  if [[ "$host_os" != "Darwin" ]]; then
+    record_phase "host_stub"
+  fi
+  set_missing "developer_id" "notary_profile" "signed_lifecycle"
+elif [[ "$host_os" != "Darwin" ]]; then
   result="blocked"
   error="collect-macos-desktop-evidence requires Darwin for signature/notarization probes; wrote host-only stub"
   record_phase "host_stub"
+  set_missing "developer_id" "notary_profile" "signed_lifecycle" "darwin_host"
 elif [[ "$app_exists" -ne 1 ]]; then
   result="failed"
   error="app bundle not found: $app"
   record_phase "app_missing"
+  set_missing "developer_id" "notary_profile" "signed_lifecycle" "app_bundle"
 else
   app="$(cd "$(dirname "$app")" && pwd)/$(basename "$app")"
   record_phase "app_present"
@@ -169,19 +197,45 @@ else
 
   if [[ "$result" == "running" ]]; then
     if [[ "$signature_kind" == "developer_id" && "$stapler_status" == "valid" && "$spctl_status" == "accepted" ]]; then
-      result="passed_release"
+      # Material present for sign+notary+staple. Lifecycle stays operator-attested;
+      # never auto-claim signed_lifecycle without CASEIN_LIFECYCLE_ATTESTED=1.
+      claim_developer_id=true
+      claim_notarized=true
+      claim_stapled=true
+      if [[ "${CASEIN_LIFECYCLE_ATTESTED:-0}" == "1" ]]; then
+        result="passed_release"
+        claim_signed_lifecycle=true
+        claim_passed_release=true
+        set_missing
+      else
+        result="incomplete"
+        error="Developer ID + staple green; signed_lifecycle still requires operator attestation (CASEIN_LIFECYCLE_ATTESTED=1 after clean-Mac checklist)"
+        set_missing "signed_lifecycle"
+      fi
     elif [[ "$signature_kind" == "developer_id" ]]; then
       result="signed_unnotarized"
+      claim_developer_id=true
+      set_missing "notary_profile" "signed_lifecycle"
     elif [[ "$signature_kind" == "adhoc" ]]; then
       result="adhoc_smoke_only"
+      set_missing "developer_id" "notary_profile" "signed_lifecycle"
     else
       result="incomplete"
+      set_missing "developer_id" "notary_profile" "signed_lifecycle"
     fi
+  elif [[ "$result" == "failed" ]]; then
+    set_missing "developer_id" "notary_profile" "signed_lifecycle"
   fi
+fi
+
+# Non-release results must always carry explicit missing[] (no silent pass).
+if [[ "$result" != "passed_release" && ${#missing_codes[@]} -eq 0 ]]; then
+  set_missing "developer_id" "notary_profile" "signed_lifecycle"
 fi
 
 completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 phases_json="$(printf '%s\n' "${phases[@]+"${phases[@]}"}" | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
+missing_json="$(printf '%s\n' "${missing_codes[@]+"${missing_codes[@]}"}" | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
 
 cat >"$out" <<EOF
 {
@@ -192,6 +246,14 @@ cat >"$out" <<EOF
   "completed_at_utc": $(json_escape "$completed_at"),
   "result": $(json_escape "$result"),
   "error": $(json_escape "$error"),
+  "missing": $missing_json,
+  "claims": {
+    "developer_id": $claim_developer_id,
+    "notarized": $claim_notarized,
+    "stapled": $claim_stapled,
+    "signed_lifecycle": $claim_signed_lifecycle,
+    "passed_release": $claim_passed_release
+  },
   "git": {
     "revision": $(json_escape "$git_revision"),
     "describe": $(json_escape "$git_describe"),
@@ -229,14 +291,46 @@ cat >"$out" <<EOF
   "notes": [
     "Ad-hoc CI smoke is not release evidence (issue #382).",
     "GitHub Actions artifact upload may fail on account storage quota even when build/sign/verify passed; this JSON is the durable evidence document.",
-    "Never store Apple credentials, certificates, or notarization tokens in this file."
+    "Never store Apple credentials, certificates, or notarization tokens in this file.",
+    "Dry-run and incomplete results must list missing[] explicitly; validate-macos-desktop-evidence.sh rejects silent passes."
   ]
 }
 EOF
 
 echo "Wrote macOS desktop evidence: $out"
 echo "result=$result"
+echo "missing=$missing_json"
+
+if [[ "$dry_run" -eq 1 || "$result" != "passed_release" ]]; then
+  echo "---- operator checklist ----"
+  for code in "${missing_codes[@]+"${missing_codes[@]}"}"; do
+    case "$code" in
+      developer_id)
+        echo "NEED (human): developer_id"
+        echo "Operator steps: Install Developer ID Application (and Installer if shipping a pkg) on the release Mac keychain."
+        echo "Unblocks when: security find-identity -v -p codesigning shows Developer ID Application: …"
+        ;;
+      notary_profile)
+        echo "NEED (human): notary_profile"
+        echo "Operator steps: Store notarytool credentials (xcrun notarytool store-credentials casein-notary …)."
+        echo "Unblocks when: CASEIN_NOTARY_KEYCHAIN_PROFILE is set and notarize-macos-desktop.sh staples green"
+        ;;
+      signed_lifecycle)
+        echo "NEED (human): signed_lifecycle"
+        echo "Operator steps: On a clean supported macOS run first launch, login-item, update/rollback if applicable, uninstall; attach notes."
+        echo "Unblocks when: lifecycle checklist completed and CASEIN_LIFECYCLE_ATTESTED=1 on collect after material sign+staple"
+        ;;
+      *)
+        echo "NEED (human): $code"
+        echo "Operator steps: Resolve missing evidence code \`$code\` on the release Mac."
+        echo "Unblocks when: \`$code\` no longer appears in missing[]"
+        ;;
+    esac
+    echo ""
+  done
+fi
 
 # Always exit 0 after writing evidence so callers can attach a blocked/failed
-# document. Release gates that require a green result must inspect `result`.
+# document. Release gates that require a green result must inspect `result`
+# (and run validate-macos-desktop-evidence.sh).
 exit 0
