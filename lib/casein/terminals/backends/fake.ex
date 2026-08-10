@@ -116,12 +116,44 @@ defmodule Casein.Terminals.Backends.Fake do
     match?([{^session, _}], :ets.lookup(@table, session))
   end
 
+  @doc """
+  Adapter-compatible existence check with optional `cwd:` (container/local recovery).
+
+  Not a Backend callback — mirrors `Backends.Tmux.session_exists?/2` so product
+  recovery paths that pass `cwd:` can exercise Fake without a real adapter.
+  """
+  def session_exists?(session, opts) when is_binary(session) and is_list(opts) do
+    # cwd is accepted for API parity; Fake does not gate existence on path.
+    _ = Keyword.get(opts, :cwd)
+    session_exists?(session)
+  end
+
   @impl true
   def session_alive?(session) when is_binary(session) do
     case get(session) do
       %{alive?: true} -> true
       _ -> false
     end
+  end
+
+  @doc "Mark a session present but not alive (recovery / attach failure paths)."
+  @spec mark_dead!(String.t()) :: :ok | {:error, :session_not_found}
+  def mark_dead!(session) when is_binary(session) do
+    case get(session) do
+      nil ->
+        {:error, :session_not_found}
+
+      state ->
+        put_session(session, %{state | alive?: false})
+        :ok
+    end
+  end
+
+  @doc "List fake session ids currently registered."
+  @spec list_sessions() :: [String.t()]
+  def list_sessions do
+    ensure_table!()
+    :ets.select(@table, [{{:"$1", :_}, [], [:"$1"]}])
   end
 
   @impl true
@@ -143,6 +175,27 @@ defmodule Casein.Terminals.Backends.Fake do
       put_session(session, updated)
       :ok
     end
+  end
+
+  @doc """
+  Template/MCP-shaped command send: appends `command` plus a trailing newline
+  to the target pane scrollback. Not a Backend callback — product template
+  executors still call adapter `send_command/3`; this lets Fake stand in when
+  tests drive the same shape through Backend-selected modules.
+  """
+  @spec send_command(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def send_command(session, command, opts \\ [])
+
+  def send_command(session, command, opts)
+      when is_binary(session) and is_binary(command) and is_list(opts) do
+    payload =
+      if String.ends_with?(command, "\n") do
+        command
+      else
+        command <> "\n"
+      end
+
+    send_keys(session, payload, opts)
   end
 
   @impl true
@@ -237,7 +290,7 @@ defmodule Casein.Terminals.Backends.Fake do
         automatic_rename: false
       }
 
-      pane = new_pane(pane_id, window_id, 0, role, state)
+      pane = new_pane(pane_id, window_id, 0, role, state, state.cwd, nil)
 
       windows =
         state.windows
@@ -314,12 +367,14 @@ defmodule Casein.Terminals.Backends.Fake do
   def split_pane(session, pane_id, direction, opts)
       when is_binary(session) and is_binary(pane_id) and is_binary(direction) and is_list(opts) do
     with {:ok, state} <- fetch_alive(session),
-         {:ok, source} <- fetch_pane(state, pane_id) do
+         {:ok, source} <- fetch_pane(state, pane_id),
+         {:ok, split_dir} <- normalize_split_direction(direction) do
       pane_seq = state.pane_seq + 1
       new_id = "%#{pane_seq}"
       role = normalize_role(Keyword.get(opts, :role) || source.role)
       index = next_pane_index(state, source.window_id)
-      pane = new_pane(new_id, source.window_id, index, role, state)
+      cwd = Keyword.get(opts, :cwd) || source.current_path || state.cwd
+      pane = new_pane(new_id, source.window_id, index, role, state, cwd, split_dir)
 
       panes =
         state.panes
@@ -399,16 +454,16 @@ defmodule Casein.Terminals.Backends.Fake do
   def resize_pane(session, pane_id, direction, amount)
       when is_binary(session) and is_binary(pane_id) and is_binary(direction) do
     with {:ok, state} <- fetch_alive(session),
-         {:ok, pane} <- fetch_pane(state, pane_id) do
+         {:ok, pane} <- fetch_pane(state, pane_id),
+         {:ok, axis} <- normalize_resize_direction(direction) do
       delta = if is_integer(amount) and amount > 0, do: amount, else: 1
 
       {width, height} =
-        case direction do
-          d when d in ["L", "left", "-L"] -> {max(pane.width - delta, 1), pane.height}
-          d when d in ["R", "right", "-R"] -> {pane.width + delta, pane.height}
-          d when d in ["U", "up", "-U"] -> {pane.width, max(pane.height - delta, 1)}
-          d when d in ["D", "down", "-D"] -> {pane.width, pane.height + delta}
-          _ -> {pane.width, pane.height}
+        case axis do
+          :left -> {max(pane.width - delta, 1), pane.height}
+          :right -> {pane.width + delta, pane.height}
+          :up -> {pane.width, max(pane.height - delta, 1)}
+          :down -> {pane.width, pane.height + delta}
         end
 
       panes =
@@ -434,6 +489,34 @@ defmodule Casein.Terminals.Backends.Fake do
 
       put_session(session, %{state | panes: panes})
       :ok
+    end
+  end
+
+  @doc """
+  Apply a SessionTemplate dry-run plan (list of step maps) against a Fake session.
+
+  Supports the subset product template executors need on Backend:
+  `new_window`, `split_pane`, `send_command`, `select_pane`, and role metadata.
+  Returns `{:ok, ref_map}` mapping plan refs to window/pane ids.
+  """
+  @spec apply_plan(String.t(), [map()]) :: {:ok, map()} | {:error, term()}
+  def apply_plan(session, steps) when is_binary(session) and is_list(steps) do
+    with {:ok, _state} <- fetch_alive(session) do
+      Enum.reduce_while(steps, {:ok, %{}}, fn step, {:ok, refs} ->
+        case apply_plan_step(session, step, refs) do
+          {:ok, refs} -> {:cont, {:ok, refs}}
+          {:error, _} = err -> {:halt, err}
+        end
+      end)
+    end
+  end
+
+  @doc "Fetch one pane map by id, or nil."
+  @spec get_pane(String.t(), String.t()) :: map() | nil
+  def get_pane(session, pane_id) when is_binary(session) and is_binary(pane_id) do
+    case get(session) do
+      nil -> nil
+      state -> Enum.find(state.panes, &(&1.id == pane_id))
     end
   end
 
@@ -491,7 +574,9 @@ defmodule Casein.Terminals.Backends.Fake do
     }
   end
 
-  defp new_pane(id, window_id, index, role, state) do
+  defp new_pane(id, window_id, index, role, state, cwd, split_dir) do
+    path = if is_binary(cwd) and cwd != "", do: cwd, else: state.cwd
+
     %{
       id: id,
       window_id: window_id,
@@ -500,10 +585,156 @@ defmodule Casein.Terminals.Backends.Fake do
       width: state.cols,
       height: state.rows,
       current_command: "shell",
-      current_path: state.cwd,
+      current_path: path,
       role: role,
-      title: role || "shell"
+      title: role || "shell",
+      split_direction: split_dir
     }
+  end
+
+  defp apply_plan_step(session, step, refs) when is_map(step) do
+    action = Map.get(step, :action) || Map.get(step, "action")
+    ref = Map.get(step, :ref) || Map.get(step, "ref")
+    target_ref = Map.get(step, :target_ref) || Map.get(step, "target_ref")
+    params = Map.get(step, :params) || Map.get(step, "params") || %{}
+    metadata = Map.get(step, :metadata) || Map.get(step, "metadata") || %{}
+
+    role =
+      Map.get(step, :role) ||
+        Map.get(step, "role") ||
+        Map.get(params, :role) ||
+        Map.get(params, "role") ||
+        Map.get(metadata, :role) ||
+        Map.get(metadata, "role")
+
+    case action do
+      "new_window" ->
+        opts =
+          [
+            name: param(params, :name),
+            role: role
+          ]
+          |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+
+        with {:ok, window_id} <- new_window(session, opts),
+             {:ok, root_pane} <- root_pane_for_window(session, window_id) do
+          # Planner refs: window ref → window id; pane:<window>:root → root pane.
+          refs =
+            refs
+            |> maybe_put_ref(ref, window_id)
+            |> maybe_put_ref(planner_root_pane_ref(ref), root_pane.id)
+            |> maybe_put_ref(root_pane_ref(ref), root_pane.id)
+
+          if is_binary(role) and role != "" do
+            _ = set_pane_role(session, root_pane.id, role)
+          end
+
+          {:ok, refs}
+        end
+
+      "split_pane" ->
+        target = resolve_ref(refs, target_ref)
+        direction = param(params, :direction) || "h"
+
+        opts =
+          [role: role, cwd: param(params, :cwd)]
+          |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+
+        with true <- is_binary(target) || {:error, :invalid_pane},
+             {:ok, pane_id} <- split_pane(session, target, direction, opts) do
+          if is_binary(role) and role != "" do
+            _ = set_pane_role(session, pane_id, role)
+          end
+
+          {:ok, maybe_put_ref(refs, ref, pane_id)}
+        end
+
+      "send_command" ->
+        target = resolve_ref(refs, target_ref)
+        command = param(params, :command) || ""
+
+        with true <- is_binary(target) || {:error, :invalid_pane},
+             :ok <- send_command(session, command, target: target) do
+          {:ok, refs}
+        end
+
+      "select_pane" ->
+        target = resolve_ref(refs, target_ref) || resolve_ref(refs, ref)
+
+        with true <- is_binary(target) || {:error, :invalid_pane},
+             :ok <- select_pane(session, target) do
+          {:ok, refs}
+        end
+
+      # Feature panes (preview/file) are not Fake's job — acknowledge and continue
+      # so agent_pair-style terminal plans still apply when mixed templates appear.
+      "attach_pane" ->
+        {:ok, refs}
+
+      other when is_binary(other) ->
+        {:error, {:unsupported_plan_action, other}}
+
+      _ ->
+        {:error, :invalid_plan_step}
+    end
+  end
+
+  defp apply_plan_step(_session, _step, _refs), do: {:error, :invalid_plan_step}
+
+  defp root_pane_for_window(session, window_id) do
+    case get(session) do
+      nil ->
+        {:error, :session_not_found}
+
+      state ->
+        pane =
+          state.panes
+          |> Enum.filter(&(&1.window_id == window_id))
+          |> Enum.min_by(& &1.index, fn -> nil end)
+
+        if pane, do: {:ok, pane}, else: {:error, :invalid_pane}
+    end
+  end
+
+  defp root_pane_ref(nil), do: nil
+  defp root_pane_ref(window_ref) when is_binary(window_ref), do: window_ref <> ":root"
+
+  # SessionTemplate.Planner uses "pane:<window_id>:root" for the window root pane.
+  defp planner_root_pane_ref(nil), do: nil
+
+  defp planner_root_pane_ref("window:" <> rest) when is_binary(rest),
+    do: "pane:" <> rest <> ":root"
+
+  defp planner_root_pane_ref(_), do: nil
+
+  defp resolve_ref(_refs, nil), do: nil
+  defp resolve_ref(refs, ref) when is_binary(ref), do: Map.get(refs, ref) || ref
+
+  defp maybe_put_ref(refs, nil, _value), do: refs
+  defp maybe_put_ref(refs, ref, value) when is_binary(ref), do: Map.put(refs, ref, value)
+
+  defp param(params, key) when is_map(params) do
+    Map.get(params, key) || Map.get(params, Atom.to_string(key))
+  end
+
+  defp param(_params, _key), do: nil
+
+  defp normalize_split_direction(direction) do
+    case direction do
+      d when d in ["h", "horizontal", "right", "-h"] -> {:ok, "h"}
+      d when d in ["v", "vertical", "down", "-v"] -> {:ok, "v"}
+      _ -> {:error, :invalid_direction}
+    end
+  end
+
+  defp normalize_resize_direction(direction) do
+    case direction do
+      d when d in ["L", "left", "-L"] -> {:ok, :left}
+      d when d in ["R", "right", "-R"] -> {:ok, :right}
+      d when d in ["U", "up", "-U"] -> {:ok, :up}
+      d when d in ["D", "down", "-D"] -> {:ok, :down}
+      _ -> {:error, :invalid_direction}
+    end
   end
 
   defp fetch_alive(session) do
