@@ -163,6 +163,21 @@ release-specific staging directory left by a dead installer PID while preserving
 one owned by a live process. Capturing these recoveries on a production-signed
 disposable host remains external evidence.
 
+Release-gate evidence for #376 (production Authenticode + clean-machine + real
+reboot) is assembled and validated with the dry-run contract in
+[`windows_release_gate_evidence.md`](windows_release_gate_evidence.md):
+
+```bash
+bash scripts/verify_windows_release_gate_evidence.sh --dry-run --evidence /tmp/376-self.json
+bash scripts/verify_windows_release_gate_evidence.sh --print-operator-steps
+bash scripts/verify_windows_release_gate_evidence.sh \
+  --validate-evidence evidence.json --fixture-dir ./fixtures
+```
+
+A Linux/devbox dry-run always keeps `production_signed` / `real_reboot` /
+`clean_machine_no_tooling` false. True strong claims require explicit operator
+fixture files at validate time — never close #376 on the dry-run alone.
+
 The current repository-gap subtraction and sequencing record is
 [`windows_acceptance_gap_audit.md`](windows_acceptance_gap_audit.md). Keep that
 audit subordinate to #371/#376 and update it when a listed slice lands.

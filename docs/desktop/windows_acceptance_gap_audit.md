@@ -1,8 +1,8 @@
 # Native Windows acceptance gap audit
 
 **Snapshot:** 2026-08-10 after Windows SQLite open-clarification H28 portability
-slice (mobile inbox on desktop host path) on top of #794/#795 acceptance harnesses
-+ #377 physical-lab definition
+slice (mobile inbox on desktop host path) + #794/#795 harness honesty + #376
+release-gate evidence dry-run + #377 physical-lab definition
 **Authority:** issue #371 remains the parent checklist; #376 holds production
 signing and clean-machine evidence; #377 holds physical iPad/Android matrix
 evidence. This audit subtracts repository work that is already merged or actively
@@ -27,6 +27,7 @@ owned. It does not replace those issues.
 | #614 | Signed Windows development bootstrap channel (production Authenticode remains separate) |
 | #794 | Two-stage reboot-resumable acceptance runner (`Test-CaseinRebootPersistence.ps1`) with boot-stamp fail-closed continue; clean-machine schema-3 phase timestamps/outcomes and path prerequisites |
 | #795 | Explicit `claims.real_reboot` / `claims.clean_machine_no_tooling` on both harnesses; reboot marker `-SelfTestContinuation` in package smoke; docs prove/cannot-prove matrix (no parallel two-stage in CleanMachine) |
+| #376 evidence dry-run | `scripts/verify_windows_release_gate_evidence.sh` + schema: dry-run always `gate_unreachable_on_this_host`; true `production_signed`/`real_reboot`/`clean_machine_no_tooling` require operator fixture files at validate; docs/operator steps for `-RequireSigned` + clean Win11 |
 | #377 lab def | Operator runbook [`windows_physical_device_lab.md`](windows_physical_device_lab.md), fixed evidence schema, and `scripts/verify_windows_physical_device_lab.sh` (`--self-check` never sets `physical_*=true`; `--validate-evidence` rejects secrets and dishonest `matrix_passed`) |
 | SQLite H28 | Desktop `CASEIN_REPO_ADAPTER=sqlite` open-clarification hydration shares `OpenClarifications.project/4` (filter resolved **before** newest-per-pane distinct) with MemoryAdapter; Postgres Ecto keeps SQL `NOT EXISTS` + `DISTINCT ON`. Prevents silent unanswerable mobile inbox on Windows host path |
 
@@ -45,6 +46,7 @@ owned. It does not replace those issues.
 | Claim | Proven by repo / package CI / this devbox? | Requires external host? |
 |---|---|---|
 | Continuation marker write/read/reject-malformed | Yes (`-SelfTestContinuation` in package smoke) | No |
+| Release-gate evidence schema + claim honesty validator | Yes (`verify_windows_release_gate_evidence.sh` dry-run) | Strong claims still need Windows fixtures |
 | Continue refuses unchanged boot stamp (code path) | Yes (source contract + fail-closed string) | Real reboot still external |
 | Per-phase timestamps + explicit claims fields | Yes | No |
 | Production Authenticode on PE/scripts/catalog | Code path exists (`-RequireSigned`) | Yes — production cert on protected Windows runner |
@@ -54,6 +56,8 @@ owned. It does not replace those issues.
 | GitHub Actions desktop artifact upload | Workflow build/smoke may pass | **Blocked account-wide** by Actions artifact storage quota (upload-only red). Pruning this repo cannot clear the quota. |
 
 ## External acceptance blockers
+
+Validate assembled operator JSON with `bash scripts/verify_windows_release_gate_evidence.sh --validate-evidence … --fixture-dir …`.
 
 The following cannot be converted into repository evidence: production
 Authenticode/private-key execution, a disposable clean Windows 11 host with no

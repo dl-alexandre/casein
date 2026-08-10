@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://casein.dev/schemas/windows-release-gate-evidence-v1.json",
+  "title": "Casein Windows channel release-gate evidence (#376)",
+  "description": "Operator evidence for production Authenticode + clean-machine + real reboot. Linux/devbox dry-runs must keep production_signed, real_reboot, and clean_machine_no_tooling false. Strong claims require explicit operator fixture files at validate time.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "issue",
+    "recorded_at_utc",
+    "product_revision",
+    "claims",
+    "verdict"
+  ],
+  "properties": {
+    "schema": {
+      "const": "casein_windows_release_gate"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "issue": {
+      "const": 376
+    },
+    "recorded_at_utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "product_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "operator": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "production_signed",
+        "real_reboot",
+        "clean_machine_no_tooling",
+        "linux_devbox_run",
+        "secrets_redacted"
+      ],
+      "properties": {
+        "production_signed": { "type": "boolean" },
+        "real_reboot": { "type": "boolean" },
+        "clean_machine_no_tooling": { "type": "boolean" },
+        "linux_devbox_run": { "type": "boolean" },
+        "secrets_redacted": { "type": "boolean" }
+      }
+    },
+    "host_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uname": { "type": "string", "maxLength": 64 },
+        "is_windows": { "type": "boolean" },
+        "signtool_present": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 1024 }
+      }
+    },
+    "fixture_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "production_sign": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        },
+        "clean_machine": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        },
+        "real_reboot": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        }
+      }
+    },
+    "operator_commands": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "string",
+        "maxLength": 512
+      }
+    },
+    "attachments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "log_refs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9._:/-]{1,256}$"
+          }
+        },
+        "issue_comment_urls": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^https://github\\.com/[A-Za-z0-9._/-]+$"
+          }
+        }
+      }
+    },
+    "verdict": {
+      "enum": [
+        "release_gate_passed",
+        "release_gate_failed",
+        "gate_incomplete",
+        "gate_unreachable_on_this_host",
+        "rejected_secrets_or_schema"
+      ]
+    }
+  }
+}
