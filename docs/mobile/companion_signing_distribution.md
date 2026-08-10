@@ -23,13 +23,27 @@ Run from the Casein checkout:
 ```bash
 bash scripts/verify-companion-signing-contract.sh
 bash scripts/verify-companion-signing-contract.sh --json /tmp/companion-signing.evidence.json
+
+# External prereq checklist (structured NEED codes; no secrets):
+bash scripts/verify-companion-external-prereqs.sh --dry-run
+bash scripts/verify-companion-external-prereqs.sh --dry-run --json /tmp/companion-external.evidence.json
+# Enforce mode (operator Mac): exits non-zero until CASEIN_COMPANION_* markers are set
+# after real material exists. Markers are presence-only — never commit their values.
+bash scripts/verify-companion-external-prereqs.sh
 ```
 
-Or the ExUnit wrapper (Linux-safe):
+Or the ExUnit wrappers (Linux-safe):
 
 ```bash
-mix test test/scripts/companion_signing_contract_test.exs
+mix test test/scripts/companion_signing_contract_test.exs \
+  test/scripts/companion_external_prereqs_test.exs
 ```
+
+`--dry-run` always lists stable NEED codes (`APPLE_AGREEMENT`, `IOS_DEV_PROFILE`,
+`IOS_PHYSICAL_INSTALL`, …) and exits 0 when fixtures + the in-repo contract are
+green. It does **not** claim physical install. Enforce mode turns those NEED
+lines into a non-zero exit until an operator sets the matching
+`CASEIN_COMPANION_*` env markers on a machine that actually holds the material.
 
 The contract asserts:
 
