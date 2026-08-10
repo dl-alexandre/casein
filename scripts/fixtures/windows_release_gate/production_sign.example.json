@@ -1,0 +1,14 @@
+{
+  "example_only": true,
+  "not_real": true,
+  "signer_subject": "CN=Example Code Signing (NOT REAL)",
+  "signer_thumbprint": "0123456789ABCDEF0123456789ABCDEF01234567",
+  "require_signed": true,
+  "signed_files": [
+    {
+      "path": "Casein.exe",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "notes": "Committed example for schema shape only. Replace with operator production-sign fixture. Never use for release_gate_passed."
+}

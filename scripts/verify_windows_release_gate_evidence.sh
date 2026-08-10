@@ -22,6 +22,14 @@
 #   --print-operator-steps
 #       Print the exact external Windows operator commands for #376.
 #
+#   --print-prove-matrix
+#       Print what Linux dry-run proves vs what needs clean Win11 / Authenticode.
+#       Never implies release_gate_passed.
+#
+#   --check-example-fixtures
+#       Validate committed scripts/fixtures/windows_release_gate/*.example.json
+#       are marked example_only/not_real (structure smoke only).
+#
 # Exit codes:
 #   0  ok for the requested mode
 #   1  usage
@@ -45,6 +53,8 @@ Usage: verify_windows_release_gate_evidence.sh --self-check|--dry-run [--evidenc
        verify_windows_release_gate_evidence.sh --validate-evidence PATH [--fixture-dir DIR]
        verify_windows_release_gate_evidence.sh --print-template
        verify_windows_release_gate_evidence.sh --print-operator-steps
+       verify_windows_release_gate_evidence.sh --print-prove-matrix
+       verify_windows_release_gate_evidence.sh --check-example-fixtures
 
 Windows channel release-gate evidence for issue #376 (extends #795 honesty).
 
@@ -54,8 +64,11 @@ Windows channel release-gate evidence for issue #376 (extends #795 honesty).
   --fixture-dir DIR          Required when validating true strong claims.
   --print-template           Print an empty gate_incomplete template JSON.
   --print-operator-steps     Print production-sign + clean Win11 + reboot steps.
+  --print-prove-matrix       Linux-proven vs external-needed matrix (honesty).
+  --check-example-fixtures   Ensure committed *.example.json stay example_only.
 
 A Linux/devbox dry-run is not release-gate completion. Do not close #376 on it.
+Committed example fixtures are shape-only and cannot satisfy strong claims.
 EOF
 }
 
@@ -80,6 +93,8 @@ while [[ $# -gt 0 ]]; do
       ;;
     --print-template) MODE="template"; shift ;;
     --print-operator-steps) MODE="operator-steps"; shift ;;
+    --print-prove-matrix) MODE="prove-matrix"; shift ;;
+    --check-example-fixtures) MODE="check-examples"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -96,6 +111,67 @@ utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 git_sha() {
   git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf '%040d' 0
+}
+
+print_prove_matrix() {
+  cat <<'EOF'
+#376 prove / cannot-prove matrix (slice 2 honesty)
+
+| Claim | Proven on this Linux/devbox dry-run? | Needs external host? |
+|---|---|---|
+| Schema + claim honesty validator | YES | no |
+| Dry-run keeps strong claims false | YES | no |
+| Refuse production_signed without fixture | YES | no |
+| Refuse real_reboot without fixture / equal boot stamps / SelfTest | YES | no |
+| Refuse clean_machine without fixture | YES | no |
+| Refuse example_only / NOT REAL fixtures for strong claims | YES | no |
+| Committed *.example.json shape smoke | YES (--check-example-fixtures) | no |
+| package-windows-desktop.ps1 -RequireSigned production Authenticode | NO | protected Windows runner + cert |
+| Test-CaseinCleanMachine.ps1 clean Win11 no tooling/WSL | NO | disposable clean Windows 11 |
+| Test-CaseinRebootPersistence real reboot claims.real_reboot=true | NO | disposable host + actual reboot |
+| GH Actions desktop artifact upload retention | NO (quota may red upload only) | account billing |
+
+A green --dry-run or --check-example-fixtures is NOT release_gate_passed.
+Do not close #376 from this matrix alone.
+EOF
+}
+
+check_example_fixtures() {
+  local dir="${ROOT}/scripts/fixtures/windows_release_gate"
+  if [[ ! -d "$dir" ]]; then
+    echo "ERROR: missing example fixture dir: $dir" >&2
+    exit 3
+  fi
+  python3 - "$dir" <<'PY'
+import json, sys
+from pathlib import Path
+d = Path(sys.argv[1])
+required = {
+    "production_sign.example.json",
+    "clean_machine.example.json",
+    "real_reboot.example.json",
+}
+found = {p.name for p in d.glob("*.example.json")}
+missing = sorted(required - found)
+if missing:
+    print(f"ERROR: missing example fixtures: {missing}", file=sys.stderr)
+    sys.exit(3)
+for name in sorted(required):
+    path = d / name
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    if doc.get("example_only") is not True:
+        print(f"ERROR: {name} must set example_only=true", file=sys.stderr)
+        sys.exit(3)
+    if doc.get("not_real") is not True:
+        print(f"ERROR: {name} must set not_real=true", file=sys.stderr)
+        sys.exit(3)
+    blob = path.read_text(encoding="utf-8")
+    if "BEGIN " in blob and "PRIVATE KEY" in blob:
+        print(f"ERROR: {name} must not contain private key material", file=sys.stderr)
+        sys.exit(3)
+print("example_fixtures_ok")
+sys.exit(0)
+PY
 }
 
 print_operator_steps() {
@@ -421,6 +497,20 @@ def load_fixture(claim_key: str, ref_key: str) -> dict:
             fail(f"fixture {name} contains secret-like pattern")
     if not isinstance(fdoc, dict):
         fail(f"fixture {name} root must be object")
+    # Committed *.example.json and operator mistakes with placeholders.
+    if fdoc.get("example_only") is True or fdoc.get("not_real") is True:
+        fail(
+            f"fixture {name} is example_only/not_real and cannot satisfy "
+            f"claims.{claim_key}=true"
+        )
+    subject_probe = str(
+        fdoc.get("signer_subject") or fdoc.get("subject") or ""
+    )
+    if "NOT REAL" in subject_probe.upper():
+        fail(
+            f"fixture {name} signer_subject looks like an example placeholder "
+            f"(contains NOT REAL)"
+        )
     return fdoc
 
 
@@ -503,6 +593,16 @@ case "$MODE" in
     ;;
   operator-steps)
     print_operator_steps
+    exit 0
+    ;;
+  prove-matrix)
+    print_prove_matrix
+    exit 0
+    ;;
+  check-examples)
+    log "checking committed example fixtures (shape only; not release evidence)"
+    check_example_fixtures
+    log "OK: example fixtures marked example_only/not_real"
     exit 0
     ;;
   self-check)
