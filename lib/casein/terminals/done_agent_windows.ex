@@ -245,14 +245,27 @@ defmodule Casein.Terminals.DoneAgentWindows do
   end
 
   defp live_sessions_with_topology do
-    Enum.map(Casein.Terminals.Tmux.list_sessions(), fn session ->
-      {session, AgentState.enrich_topology(TmuxTopology.snapshot(session), session)}
+    backend = Casein.Terminals.Backend.module()
+
+    Enum.flat_map(backend.list_sessions(), fn entry ->
+      case session_name(entry) do
+        name when is_binary(name) and name != "" ->
+          [{name, AgentState.enrich_topology(TmuxTopology.snapshot(name, tmux: backend), name)}]
+
+        _ ->
+          []
+      end
     end)
   rescue
     # A tmux server that vanished mid-sweep is not an error worth crashing the
     # sweep over; the next tick will find it gone.
     _ -> []
   end
+
+  defp session_name(%{session: name}) when is_binary(name), do: name
+  defp session_name(%{"session" => name}) when is_binary(name), do: name
+  defp session_name(name) when is_binary(name), do: name
+  defp session_name(_), do: nil
 
   defp truthy?(true), do: true
   defp truthy?("1"), do: true

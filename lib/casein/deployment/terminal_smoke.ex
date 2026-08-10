@@ -28,6 +28,7 @@ defmodule Casein.Deployment.TerminalSmoke do
 
   require Logger
 
+  alias Casein.Terminals.Backend
   alias Casein.Terminals.TmuxServer
 
   @session_prefix "casein_smoke_"
@@ -129,7 +130,7 @@ defmodule Casein.Deployment.TerminalSmoke do
   # ── side-effecting steps ────────────────────────────────────────────────────
 
   defp create_session(session, cwd) do
-    case TmuxCtl.Client.ensure_session(session, cwd) do
+    case backend().ensure_session(session, cwd) do
       :ok -> :ok
       {:error, reason} -> {:error, {:create_failed, reason}}
     end
@@ -170,7 +171,7 @@ defmodule Casein.Deployment.TerminalSmoke do
   defp check_pane_cwd(session) do
     path =
       session
-      |> TmuxCtl.Client.list_session_panes()
+      |> backend().list_session_panes()
       |> List.first()
       |> case do
         %{current_path: p} -> p
@@ -186,7 +187,7 @@ defmodule Casein.Deployment.TerminalSmoke do
   defp check_pane_env_pairing(session) do
     nonce = "#{@pairing_marker}-#{System.unique_integer([:positive])}"
 
-    case TmuxCtl.Client.set_environment(session, @pairing_var, nonce) do
+    case backend().set_environment(session, @pairing_var, nonce) do
       :ok ->
         await_pairing(session, nonce, @pairing_attempts)
 
@@ -200,10 +201,10 @@ defmodule Casein.Deployment.TerminalSmoke do
   defp await_pairing(_session, _nonce, 0), do: {:error, {:pane_env_not_hydrated, @pairing_var}}
 
   defp await_pairing(session, nonce, attempts) do
-    _ = TmuxCtl.Client.send_command(session, pairing_probe())
+    _ = backend().send_command(session, pairing_probe())
     Process.sleep(@pairing_sleep_ms)
 
-    case TmuxCtl.Client.capture_recent(session, 40) do
+    case backend().capture_recent(session, 40, []) do
       {:ok, capture} ->
         case pairing_verdict(capture, nonce) do
           :hydrated ->
@@ -232,10 +233,12 @@ defmodule Casein.Deployment.TerminalSmoke do
   end
 
   defp kill_session(session) do
-    TmuxCtl.Client.kill(session)
+    backend().kill(session)
   rescue
     _ -> :ok
   end
+
+  defp backend, do: Backend.module()
 
   # First existing of $HOME, /tmp, / — the smoke only needs a valid -c; the point
   # is to inspect the server cwd, not this path.

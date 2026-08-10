@@ -192,6 +192,33 @@ defmodule Casein.Terminals.Backends.Tmux do
   @impl true
   def set_pane_role(session, pane_id, role), do: adapter().set_pane_role(session, pane_id, role)
 
+  # --- Adapter-forwarded ops not yet on Casein.Terminals.Backend -------------
+  # Product paths (template executors, MCP shared, deploy smoke) call these on
+  # Backend.module() so they ride `:tmux_adapter` / future native peers without
+  # hard-coding `Casein.Terminals.Tmux` or `TmuxCtl.Client`.
+
+  @doc "Send a shell command to a session/pane via the configured adapter."
+  def send_command(session, cmd, opts \\ [])
+
+  def send_command(session, cmd, opts)
+      when is_binary(session) and is_binary(cmd) and is_list(opts) do
+    adapter().send_command(session, cmd, opts)
+  end
+
+  @doc "Set one tmux session environment variable via the configured adapter."
+  def set_environment(session, key, value)
+      when is_binary(session) and is_binary(key) and is_binary(value) do
+    adapter().set_environment(session, key, value)
+  end
+
+  @doc "List live sessions via the configured adapter."
+  def list_sessions, do: adapter().list_sessions()
+
+  @doc "Workspace session prefix (naming policy; not adapter-swappable)."
+  def workspace_session_prefix(workspace_name) when is_binary(workspace_name) do
+    Tmux.workspace_session_prefix(workspace_name)
+  end
+
   defp adapter do
     Application.get_env(:casein, :tmux_adapter, Tmux)
   end

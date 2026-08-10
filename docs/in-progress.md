@@ -47,11 +47,10 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   PowerShell topology via the same dry-run plan as tmux.
 - **Landed:** PR #829 — `Backends.Fake` + `Backends.ConPTY` scaffold + contract
   tests for all 23 Backend callbacks (Linux-honest).
-- **Current slice:** Route bounded product call sites through
-  `Casein.Terminals.Backend.module/0` instead of direct `Tmux` /
-  `:tmux_adapter` reads — SessionOwner (name/exists/resize/window_size),
-  SessionDirectory.Compose, Runtimes/WorktreeAlarm, TmuxJanitor kill,
-  TmuxWindowJanitor kill, Panes.Terminal terminate, PreviewDeps Backend ops,
-  TmuxOps pane/session helpers. `Backends.Tmux` honors `:tmux_adapter` so
-  FakeTmuxAdapter tests keep working. LiveView chrome wiring and real-host
-  Job Object multi-window soak remain follow-ups.
+- **Landed:** PR #837 — SessionOwner/Compose/Runtimes/janitors/PreviewDeps/TmuxOps
+  route through `Backend.module/0`; `Backends.Tmux` honors `:tmux_adapter`.
+- **Current slice (slice 3 / %573):** template executors + MCP Shared + deploy
+  `TerminalSmoke` + `DoneAgentWindows` default to `Backend.module/0`; Tmux backend
+  forwards `send_command`/`set_environment`/`list_sessions`/`workspace_session_prefix`.
+  Sibling %576 owns Fake/contract expansion — do not collide. LiveView chrome
+  wiring and real-host Job Object multi-window soak remain follow-ups.
