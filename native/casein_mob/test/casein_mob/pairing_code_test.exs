@@ -17,6 +17,34 @@ defmodule CaseinMob.PairingCodeTest do
     end
   end
 
+  # Exact non-secret structural fixture from issue #457 / compact_pairing_vectors.json.
+  # Camera decode places this full URI in the pairing field; pre-exchange validation
+  # must accept it without contacting the server.
+  test "DairyPhone golden compact URI is accepted before exchange" do
+    uri =
+      "casein://pair/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9"
+
+    assert {:ok, payload} = PairingCode.decode(uri)
+
+    assert payload == %{
+             "h" => "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+             "o" => "https://casein.devbox.milcgroup.com",
+             "v" => 1
+           }
+
+    # Emitter shape (controller map key order v/o/h) must also decode.
+    handle = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    origin = "https://casein.devbox.milcgroup.com"
+
+    emitter =
+      "casein://pair/" <>
+        (%{"v" => 1, "o" => origin, "h" => handle}
+         |> Jason.encode!()
+         |> Base.url_encode64(padding: false))
+
+    assert {:ok, ^payload} = PairingCode.decode(emitter)
+  end
+
   test "trims scanner whitespace and accepts one percent-decoded path segment" do
     [vector] = Jason.decode!(File.read!(@vector_path))
     encoded = String.replace_prefix(vector["uri"], "casein://pair/", "")

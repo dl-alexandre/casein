@@ -63,6 +63,22 @@ class PairingActivityTest {
         assertNull(PairingDeepLink.notification("casein://pair?code="))
     }
 
+
+    @Test
+    fun `path form still wins when query component is empty string`() {
+        val vector = compactVector()
+        val uri = vector.getString("uri") + "?"
+        // Reject trailing bare ? (structurally ambiguous), but never treat a missing
+        // query as a present empty query that cancels a valid path payload.
+        assertNull(PairingDeepLink.notification(uri))
+
+        val notification = JSONObject(PairingDeepLink.notification(vector.getString("uri"))!!)
+        assertEquals(
+            vector.getString("uri").removePrefix("casein://pair/"),
+            notification.getJSONObject("data").getString("pairing_code")
+        )
+    }
+
     @Test
     fun `pending payload can only be consumed once`() {
         PairingLaunchPayload.put("one-shot")
