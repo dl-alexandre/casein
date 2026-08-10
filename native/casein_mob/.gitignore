@@ -13,9 +13,16 @@
 !native/ghostty_vt/lib-android-arm64/libghostty-vt.a
 erl_crash.dump
 
-# Signing secrets — NEVER commit
+# Signing secrets — NEVER commit (real profiles/certs/tokens stay off-repo; #416)
 android/keystore.properties
 android/*.keystore
+android/app/google-services.json
+google-services.json
+*.mobileprovision
+*.p12
+*.cer
+AuthKey_*.p8
+**/AuthKey_*.p8
 
 # Native build caches / outputs
 lib/**/.Elixir.*.zig
