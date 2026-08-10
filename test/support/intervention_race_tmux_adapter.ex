@@ -43,6 +43,13 @@ defmodule TmuxCtl.Test.InterventionRaceAdapter do
     end)
   end
 
+  # Product paths call TmuxCtl.Adapter.server_version/0 unguarded. Scenario
+  # override via FakeState; default matches FakeAdapter so stubs stay contract-
+  # complete (#817).
+  def server_version do
+    FakeState.get(:fake_tmux_server_version, {3, 4})
+  end
+
   defp window_id(%{window_id: id}) when is_binary(id) and id != "", do: id
   defp window_id(%{"window_id" => id}) when is_binary(id) and id != "", do: id
   defp window_id(_), do: nil
