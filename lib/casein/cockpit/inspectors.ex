@@ -76,11 +76,17 @@ defmodule Casein.Cockpit.Inspectors do
     }
   end
 
-  @doc "Open (or replace same-id) an inspector slot in the viewer-local list."
+  @doc """
+  Open an inspector in the region.
+
+  The region holds **one** inspector (#692): opening another replaces it.
+  There is no tab strip; returning to a previous inspector is a palette action.
+  """
   @spec open([slot()], map() | keyword(), keyword()) :: {[slot()], Geometry.t()}
   def open(slots, attrs, opts \\ []) when is_list(slots) do
+    _ = slots
     slot = build_slot(attrs)
-    slots = upsert(slots, slot)
+    slots = [slot]
     {slots, geometry(slots, opts)}
   end
 
@@ -137,10 +143,14 @@ defmodule Casein.Cockpit.Inspectors do
   def restore(list, opts \\ [])
 
   def restore(list, opts) when is_list(list) do
+    # One inspector at a time — keep the last serialized entry if a template
+    # still carries a multi-inspector list from before #692's amendment.
     slots =
       list
       |> Enum.map(&cast_serialized/1)
       |> Enum.reject(&is_nil/1)
+      |> List.last()
+      |> List.wrap()
 
     {slots, geometry(slots, opts)}
   end
@@ -176,13 +186,6 @@ defmodule Casein.Cockpit.Inspectors do
   @spec run_open?([slot()]) :: boolean()
   def run_open?(slots) when is_list(slots), do: Enum.any?(slots, &(&1.kind == :run))
   def run_open?(_), do: false
-
-  defp upsert(slots, slot) do
-    case Enum.find_index(slots, &(&1.id == slot.id)) do
-      nil -> slots ++ [slot]
-      idx -> List.replace_at(slots, idx, slot)
-    end
-  end
 
   defp build_slot(attrs) when is_list(attrs), do: build_slot(Map.new(attrs))
 

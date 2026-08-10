@@ -184,6 +184,16 @@ Sibling #736 owns tablet-range density; this rule only says which query to ask.
   `"active_sessions-<id>"` scheme.
 - **Mode is raw-everywhere.** `WindowTerminalMode` keeps a stable API but there is
   no governed/raw toggle anymore; `set_mode/2` always (re)starts the Ghostty pane.
+- **One inspector, no tab strip (#692).** The inspector region holds a single
+  LiveView-owned viewport; opening another replaces it. Chrome is a header
+  context strip (kind/title/close), not tabs. Returning to a previous inspector
+  is a palette/surface action.
+- **Inspector leader focus is `InspectorFocus.focus_target/1`.** When
+  `inspector_focus_id` names a live slot, `C-b z` / `C-b x` / arrows act on
+  socket state and never call tmux. Tmux active pane / `focused_pane_id` stay
+  the terminal region's PTY under zoom. Browser DOM focus edits panel content
+  only. Input-ownership ladder is unchanged: *global > leader > pane content*.
+  Authoritative write-up: `CaseinWeb.WorkspaceLive.Show.InspectorFocus`.
 
 ## See also
 

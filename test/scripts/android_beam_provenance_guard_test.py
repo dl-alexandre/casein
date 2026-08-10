@@ -1553,6 +1553,8 @@ sys.stdout.buffer.write(payload)
 
     def test_selector_failure_still_kills_and_reaps_the_owned_group(self) -> None:
         marker = Path(self.temp.name) / "selector-failure-child"
+        # Child must flush+fsync the pid before sleeping: exists() alone can
+        # race an empty create, and int("") is the gate-killing failure.
         program = textwrap.dedent(
             """
             import os
@@ -1561,6 +1563,8 @@ sys.stdout.buffer.write(payload)
 
             with open(sys.argv[1], "w", encoding="ascii") as stream:
                 stream.write(str(os.getpid()))
+                stream.flush()
+                os.fsync(stream.fileno())
             time.sleep(60)
             """
         )
@@ -1571,7 +1575,12 @@ sys.stdout.buffer.write(payload)
 
             def select(self, _timeout):
                 deadline = time.monotonic() + 1
-                while not marker.exists():
+                while True:
+                    try:
+                        if marker.exists() and marker.stat().st_size > 0:
+                            break
+                    except OSError:
+                        pass
                     if time.monotonic() >= deadline:
                         raise OSError
                     time.sleep(0.005)
@@ -1588,7 +1597,7 @@ sys.stdout.buffer.write(payload)
             )
 
         self.assertEqual("failed", result.category)
-        child_pid = int(marker.read_text(encoding="ascii"))
+        child_pid = int(self._wait_for_marker_text(marker))
         self.assertTrue(self._wait_for_process_exit(child_pid))
 
     def test_streaming_progress_completes_within_total_and_idle_caps(self) -> None:
@@ -1617,6 +1626,8 @@ sys.stdout.buffer.write(payload)
 
             with open(sys.argv[1], "w", encoding="ascii") as stream:
                 stream.write(str(os.getpid()))
+                stream.flush()
+                os.fsync(stream.fileno())
             sys.stdout.write("partial")
             sys.stdout.flush()
             time.sleep(60)
@@ -1632,7 +1643,7 @@ sys.stdout.buffer.write(payload)
         self.assertEqual("idle", result.timeout_reason)
         self.assertEqual(b"partial", result.stdout)
         self.assertTrue(
-            self._wait_for_process_exit(int(marker.read_text(encoding="ascii")))
+            self._wait_for_process_exit(int(self._wait_for_marker_text(marker)))
         )
 
     def test_continuous_trickle_cannot_extend_total_timeout(self) -> None:
@@ -1700,6 +1711,7 @@ sys.stdout.buffer.write(payload)
             marker = Path(self.temp.name) / f"silent-child-{returncode}"
             program = textwrap.dedent(
                 """
+                import os
                 import subprocess
                 import sys
 
@@ -1711,6 +1723,8 @@ sys.stdout.buffer.write(payload)
                 )
                 with open(sys.argv[1], "w", encoding="ascii") as stream:
                     stream.write(str(child.pid))
+                    stream.flush()
+                    os.fsync(stream.fileno())
                 sys.stdout.write("STATUS\\n")
                 raise SystemExit(int(sys.argv[2]))
                 """
@@ -1725,7 +1739,7 @@ sys.stdout.buffer.write(payload)
                 self.assertEqual("ok", result.category)
                 self.assertEqual(returncode, result.returncode)
                 self.assertEqual(b"STATUS\n", result.stdout)
-                child_pid = int(marker.read_text(encoding="ascii"))
+                child_pid = int(self._wait_for_marker_text(marker))
                 self.assertTrue(self._wait_for_process_exit(child_pid))
 
     def test_timeout_kills_child_group_without_orphan_or_reflection(self) -> None:
@@ -1751,6 +1765,8 @@ sys.stdout.buffer.write(payload)
                 time.sleep(0.005)
             with open(sys.argv[1], "w", encoding="ascii") as stream:
                 stream.write(str(child.pid))
+                stream.flush()
+                os.fsync(stream.fileno())
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
             sys.stdout.buffer.write(sys.argv[2].encode())
             sys.stdout.buffer.flush()
@@ -1779,13 +1795,14 @@ sys.stdout.buffer.write(payload)
         self.assertEqual("timeout", result.category)
         self.assertEqual("total", result.timeout_reason)
         self.assertIsNotNone(result.returncode)
-        child_pid = int(marker.read_text(encoding="ascii"))
+        child_pid = int(self._wait_for_marker_text(marker))
         self.assertTrue(self._wait_for_process_exit(child_pid))
 
     def test_exited_group_leader_cannot_leave_stdout_holder_orphaned(self) -> None:
         marker = Path(self.temp.name) / "stdout-holder"
         program = textwrap.dedent(
             """
+            import os
             import subprocess
             import sys
 
@@ -1796,6 +1813,8 @@ sys.stdout.buffer.write(payload)
             )
             with open(sys.argv[1], "w", encoding="ascii") as stream:
                 stream.write(str(child.pid))
+                stream.flush()
+                os.fsync(stream.fileno())
             """
         )
 
@@ -1807,8 +1826,23 @@ sys.stdout.buffer.write(payload)
 
         self.assertEqual("failed", result.category)
         self.assertEqual(0, result.returncode)
-        child_pid = int(marker.read_text(encoding="ascii"))
+        child_pid = int(self._wait_for_marker_text(marker))
         self.assertTrue(self._wait_for_process_exit(child_pid))
+
+    @staticmethod
+    def _wait_for_marker_text(marker: Path, timeout_seconds: float = 1.0) -> str:
+        """Wait until marker has non-empty content (create vs write race)."""
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            try:
+                if marker.exists():
+                    text = marker.read_text(encoding="ascii").strip()
+                    if text:
+                        return text
+            except OSError:
+                pass
+            time.sleep(0.005)
+        raise AssertionError(f"marker stayed empty: {marker}")
 
     @staticmethod
     def _wait_for_process_exit(pid: int) -> bool:
