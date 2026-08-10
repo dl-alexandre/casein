@@ -186,9 +186,27 @@ details; never use URLs containing credentials.
 
 ## Physical device matrix
 
-Run every row once on a physical iPad and once on a physical Android device.
-Record OS/app/server versions, active interface, timestamps, and redacted
-screenshots or logs.
+**Lab definition (issue #377):** full operator runbook, prove/cannot-prove matrix,
+forbidden evidence, and JSON contract live in
+[`windows_physical_device_lab.md`](windows_physical_device_lab.md). Validate
+operator files with:
+
+```bash
+bash scripts/verify_windows_physical_device_lab.sh --self-check \
+  --evidence /tmp/casein-377-self-check.json
+# → verdict lab_unreachable_on_this_host on a device-less host (not completion)
+
+bash scripts/verify_windows_physical_device_lab.sh \
+  --validate-evidence "$HOME/Desktop/casein-377-physical-lab.json"
+# → exit 0 only for schema-honest verdicts; matrix_passed closes #377
+```
+
+A Linux/devbox self-check, emulator, simulator, or source suite is **not**
+matrix completion and must not set `claims.physical_*=true`.
+
+Run every row once on a physical iPad and once on a physical Android device
+against a Windows origin on a private LAN. Record OS/app/server versions, active
+interface, timestamps, and redacted screenshots or logs.
 
 | State | Required observation |
 |---|---|
@@ -204,8 +222,8 @@ screenshots or logs.
 | Operator/verify target | Follow-up fails closed |
 | Escalation | Exact authenticated link opens the existing web/PWA cockpit |
 
-Attach evidence to #377. Never attach QR payloads, bearer tokens, or reusable
-credentials.
+Attach schema-valid evidence (`verdict: matrix_passed`) to #377. Never attach QR
+payloads, bearer tokens, or reusable credentials.
 
 ## Post-deploy verification
 

@@ -381,4 +381,6 @@ the listener to loopback. Uninstall also removes the rule before deleting the
 installed release.
 
 See [`desktop/windows_mobile_acceptance.md`](desktop/windows_mobile_acceptance.md)
-for the selection order, release evidence, and physical-device matrix.
+for the selection order and release evidence, and
+[`desktop/windows_physical_device_lab.md`](desktop/windows_physical_device_lab.md)
+for the physical iPad/Android matrix runbook (#377).
