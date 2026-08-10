@@ -31,6 +31,19 @@ defmodule Casein.Terminals.BackendTest do
     assert missing == []
   end
 
+  test "Fake and ConPTY peers also implement every Backend callback" do
+    for mod <- [Casein.Terminals.Backends.Fake, Casein.Terminals.Backends.ConPTY] do
+      assert {:module, ^mod} = Code.ensure_loaded(mod)
+
+      missing =
+        for {name, arity} <- Backend.behaviour_info(:callbacks),
+            not function_exported?(mod, name, arity),
+            do: {mod, name, arity}
+
+      assert missing == []
+    end
+  end
+
   test "defaults to the tmux backend" do
     assert Backend.module() == TmuxBackend
   end
