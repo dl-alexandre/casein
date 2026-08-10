@@ -10,6 +10,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
 
   use CaseinWeb, :html
 
+  alias Casein.Ops.GateQueue
   alias Casein.Terminals.FleetBoard
   alias Casein.Terminals.OrphanedClaims
 
@@ -22,6 +23,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
     total = Map.get(board, :total, 0)
     orphans = Map.get(board, :orphaned_claims) || OrphanedClaims.unknown()
     orphan_unknown? = OrphanedClaims.unknown?(orphans)
+    gate = Map.get(board, :gate_queue) || GateQueue.unknown()
+    gate_busy? = GateQueue.busy?(gate)
 
     assigns =
       assign(assigns,
@@ -29,7 +32,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
         attention: attention,
         total: total,
         orphans: orphans,
-        orphan_unknown?: orphan_unknown?
+        orphan_unknown?: orphan_unknown?,
+        gate: gate,
+        gate_busy?: gate_busy?
       )
 
     ~H"""
@@ -38,14 +43,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
       phx-click="fleet_drawer:toggle"
       class={[
         "fixed bottom-3 right-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-density-body shadow-sm",
-        badge_class(@attention, @orphan_unknown?)
+        badge_class(@attention, @gate_busy?, @orphan_unknown?)
       ]}
-      title={"Fleet board — " <> OrphanedClaims.summary(@orphans)}
+      title={"Fleet board — " <> badge_title(@gate, @orphans)}
     >
-      <span class={"inline-block h-1.5 w-1.5 rounded-full " <> attention_dot_class(@attention, @orphan_unknown?)}></span>
+      <span class={"inline-block h-1.5 w-1.5 rounded-full " <> attention_dot_class(@attention, @gate_busy?, @orphan_unknown?)}></span>
       <%= cond do %>
         <% @attention > 0 -> %>
           {@attention} need you · {@total} fleet
+        <% @gate_busy? -> %>
+          fleet · {@total} · gate busy
         <% @orphan_unknown? -> %>
           fleet · {@total} · claims ?
         <% true -> %>
@@ -65,9 +72,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
     rows = Map.get(board, :rows, [])
     counts = Map.get(board, :counts, %{})
     orphans = Map.get(board, :orphaned_claims) || OrphanedClaims.unknown()
+    gate = Map.get(board, :gate_queue) || GateQueue.unknown()
 
     assigns =
-      assign(assigns, board: board, rows: rows, counts: counts, orphans: orphans)
+      assign(assigns, board: board, rows: rows, counts: counts, orphans: orphans, gate: gate)
 
     ~H"""
     <div :if={@open} class="fixed inset-0 z-40 pointer-events-none" aria-hidden="false">
@@ -95,6 +103,28 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
             ×
           </button>
         </header>
+
+        <div
+          id="fleet-gate-queue"
+          class={"border-b px-3 py-2 font-mono text-density-label " <> gate_banner_class(@gate)}
+        >
+          <div class="flex items-center gap-2">
+            <span class={"inline-block h-1.5 w-1.5 shrink-0 rounded-full " <> gate_dot_class(@gate)}></span>
+            <span class="min-w-0 flex-1 truncate font-medium">{GateQueue.summary(@gate)}</span>
+            <span
+              :if={gate_depth(@gate)}
+              class="shrink-0 rounded border border-current/20 px-1.5 py-0.5"
+            >
+              depth {gate_depth(@gate)}
+            </span>
+          </div>
+          <div
+            :if={gate_holder_detail(@gate)}
+            class="mt-1 pl-3.5 text-base-content/60 truncate"
+          >
+            {gate_holder_detail(@gate)}
+          </div>
+        </div>
 
         <div
           id="fleet-orphaned-claims"
@@ -206,24 +236,33 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
         </div>
 
         <footer class="border-t px-3 py-2 font-mono text-density-label text-base-content/50">
-          projection · AgentState + IssueBinding + FleetChrome + OrphanedClaims · click focuses window
+          projection · AgentState + IssueBinding + FleetChrome + OrphanedClaims + GateQueue · click focuses window
         </footer>
       </aside>
     </div>
     """
   end
 
-  defp badge_class(n, _unknown?) when is_integer(n) and n > 0,
+  defp badge_title(gate, orphans) do
+    GateQueue.summary(gate) <> " · " <> OrphanedClaims.summary(orphans)
+  end
+
+  # attention > gate busy > claims unknown > default
+  defp badge_class(n, _gate_busy?, _orphan_unknown?) when is_integer(n) and n > 0,
     do: "border-status-warning-border bg-status-warning-soft text-status-warning-fg"
 
-  defp badge_class(_, true),
+  defp badge_class(_, true, _),
+    do: "border-status-live-border bg-status-live-soft text-status-live-fg"
+
+  defp badge_class(_, _, true),
     do: "border-base-300 bg-base-200 text-base-content/60"
 
-  defp badge_class(_, _), do: "border-base-300 bg-base-100 text-base-content/70"
+  defp badge_class(_, _, _), do: "border-base-300 bg-base-100 text-base-content/70"
 
-  defp attention_dot_class(n, _) when is_integer(n) and n > 0, do: "bg-status-warning"
-  defp attention_dot_class(_, true), do: "bg-base-content/40"
-  defp attention_dot_class(_, _), do: "bg-base-content/30"
+  defp attention_dot_class(n, _, _) when is_integer(n) and n > 0, do: "bg-status-warning"
+  defp attention_dot_class(_, true, _), do: "bg-status-live"
+  defp attention_dot_class(_, _, true), do: "bg-base-content/40"
+  defp attention_dot_class(_, _, _), do: "bg-base-content/30"
 
   defp orphan_banner_class(%{observe_state: :ok, orphan_count: n})
        when is_integer(n) and n > 0,
@@ -244,6 +283,39 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
   defp orphan_count_chip(%{observe_state: :ok, orphan_count: n}) when is_integer(n), do: n
   defp orphan_count_chip(%{observe_state: :unknown}), do: "?"
   defp orphan_count_chip(_), do: nil
+
+  defp gate_banner_class(%{lock_state: :held}),
+    do: "bg-status-live-soft/40 text-status-live-fg"
+
+  defp gate_banner_class(%{lock_state: :unknown}),
+    do: "bg-base-200/60 text-base-content/50"
+
+  defp gate_banner_class(_), do: "bg-base-200/40 text-base-content/60"
+
+  defp gate_dot_class(%{lock_state: :held}), do: "bg-status-live"
+  defp gate_dot_class(%{lock_state: :free}), do: "bg-status-ok"
+  defp gate_dot_class(_), do: "bg-base-content/30"
+
+  defp gate_depth(%{lock_state: state, depth: d})
+       when state in [:held, :free] and is_integer(d),
+       do: d
+
+  defp gate_depth(_), do: nil
+
+  defp gate_holder_detail(%{lock_state: :held, holder: h}) when is_map(h) do
+    parts =
+      [
+        h[:branch],
+        h[:sha] && String.slice(to_string(h[:sha]), 0, 7),
+        h[:run_id] && "run #{h[:run_id]}",
+        h[:pid] && "pid #{h[:pid]}"
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: nil, else: Enum.join(parts, " · ")
+  end
+
+  defp gate_holder_detail(_), do: nil
 
   defp count_chip_class(:needs_you),
     do: "border-status-danger-border bg-status-danger-soft text-status-danger-fg"

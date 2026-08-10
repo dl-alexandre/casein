@@ -119,11 +119,36 @@ Fleet drawer section `#fleet-orphaned-claims`; badge attention_count includes
 orphan count when observation succeeded. Multi-session workspace union and
 auto-reclaim are out of scope for the first slice (#812).
 
+## Gate queue (host flock depth)
+
+PR gates (and preview-e2e) serialise on one host flock
+(`/tmp/casein-pr-gate.lock` via `scripts/lib/casein-devbox-mix-lock.sh` —
+see `.github/workflows/pr-gate.yml`). With a 15-worker fleet that queue is
+operationally decisive: "who holds the box, and how deep is the wait?"
+
+`Casein.Ops.GateQueue.observe/1` answers from **outside**, same kind discipline
+as `AgentLiveness`:
+
+| Result | Meaning |
+|--------|---------|
+| `{:error, reason}` | lock/proc unscannable → render **unknown**, never free |
+| `{:ok, %{lock_state: :free}}` | scan ran; nobody holds the lock |
+| `{:ok, %{lock_state: :held, holder, waiter_count, depth}}` | holder + waiters |
+
+Holder identity prefers Actions-runner env on the lock-holding process
+(`GITHUB_REF` → PR number, `GITHUB_HEAD_REF`, `GITHUB_RUN_ID`, short SHA).
+Children that inherit the flock fd are the **same run**, not waiters; a waiter
+must be blocked in `flock` (`/proc/*/wchan`) and/or carry a distinct run id.
+
+The fleet drawer shows a gate-queue banner; the badge adds **gate busy** when
+held and no agent needs you. Projection only — no GenServer, no GitHub API.
+
 ## Code
 
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
-- `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans)
+- `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans + gate)
 - `Casein.Terminals.OrphanedClaims` — claimed-minus-bound lease projection
+- `Casein.Ops.GateQueue` — host flock observation (`/proc` + lock path)
 - `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
 - `Casein.Labels.enrich_topology/2` — join label strings onto panes
 - `Casein.Terminals.PaneState` — strips bare runtime banners from `task_summary`

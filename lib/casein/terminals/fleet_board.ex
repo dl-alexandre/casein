@@ -27,6 +27,7 @@ defmodule Casein.Terminals.FleetBoard do
 
   alias Casein.Attention.Delivery
   alias Casein.Attention.Salience
+  alias Casein.Ops.GateQueue
   alias Casein.Terminals.FleetChrome
   alias Casein.Terminals.OrphanedClaims
 
@@ -64,7 +65,8 @@ defmodule Casein.Terminals.FleetBoard do
           attention_count: non_neg_integer(),
           total: non_neg_integer(),
           empty?: boolean(),
-          orphaned_claims: OrphanedClaims.snapshot()
+          orphaned_claims: OrphanedClaims.snapshot(),
+          gate_queue: map()
         }
 
   @bucket_order [:needs_you, :working, :ready_no_task, :idle, :done, :unknown]
@@ -85,6 +87,9 @@ defmodule Casein.Terminals.FleetBoard do
       as unknown unless `:claimed` / `:list_claimed` is also supplied
     * `:claimed` / `:list_claimed` / `:tmux_session` — forwarded to
       `OrphanedClaims.observe/1` when `:orphaned_claims` is omitted
+    * `:gate_queue` — precomputed `GateQueue.observe/1` result map; when omitted
+      the board observes the host lock (cached). Pass `GateQueue.unknown()` to
+      skip observation (tests / offline).
   """
   @spec from_window_tabs([map()], keyword()) :: board()
   def from_window_tabs(tabs, opts \\ []) when is_list(tabs) do
@@ -112,7 +117,8 @@ defmodule Casein.Terminals.FleetBoard do
       attention_count: attention_count,
       total: length(rows),
       empty?: rows == [],
-      orphaned_claims: orphaned
+      orphaned_claims: orphaned,
+      gate_queue: resolve_gate_queue(opts)
     }
   end
 
@@ -125,7 +131,8 @@ defmodule Casein.Terminals.FleetBoard do
       attention_count: 0,
       total: 0,
       empty?: true,
-      orphaned_claims: OrphanedClaims.unknown()
+      orphaned_claims: OrphanedClaims.unknown(),
+      gate_queue: GateQueue.unknown()
     }
   end
 
@@ -289,6 +296,19 @@ defmodule Casein.Terminals.FleetBoard do
           OrphanedClaims.unknown(reason: :no_claimed_source)
           |> Map.put(:bound_issues, Enum.uniq(bound) |> Enum.sort())
           |> Map.put(:bound_count, length(Enum.uniq(bound)))
+        end
+    end
+  end
+
+  defp resolve_gate_queue(opts) do
+    case Keyword.fetch(opts, :gate_queue) do
+      {:ok, %{} = snap} ->
+        snap
+
+      :error ->
+        case GateQueue.observe() do
+          {:ok, snap} -> snap
+          {:error, _} -> GateQueue.unknown()
         end
     end
   end

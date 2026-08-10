@@ -1,26 +1,62 @@
 defmodule Casein.Terminals.FleetBoardTest do
   use ExUnit.Case, async: true
 
+  alias Casein.Ops.GateQueue
   alias Casein.Terminals.FleetBoard
+
+  @gate_free %{
+    lock_state: :free,
+    depth: 0,
+    waiter_count: 0,
+    holder: nil,
+    waiters: [],
+    observed_at: nil,
+    lock_path: "/tmp/casein-pr-gate.lock",
+    source: :proc
+  }
+
+  @gate_held %{
+    lock_state: :held,
+    depth: 2,
+    waiter_count: 1,
+    holder: %{
+      pid: 42,
+      pr: 806,
+      branch: "agent/opencode/demo",
+      run_id: "31342726258",
+      sha: "c9ea09e",
+      held_for_seconds: 120
+    },
+    waiters: [%{pid: 99, pr: 807}],
+    observed_at: nil,
+    lock_path: "/tmp/casein-pr-gate.lock",
+    source: :proc
+  }
+
+  # Default gate_queue free so orphan cases do not hit live /proc observation.
+  defp board(tabs, opts \\ []) do
+    FleetBoard.from_window_tabs(tabs, Keyword.put_new(opts, :gate_queue, @gate_free))
+  end
 
   describe "from_window_tabs/2" do
     test "empty tabs yield empty board" do
-      board = FleetBoard.from_window_tabs([])
+      board = board([])
       assert board.empty?
       assert board.total == 0
       assert board.attention_count == 0
       assert board.rows == []
+      assert board.gate_queue.lock_state == :free
     end
 
     test "drops pure shell windows when agent_only" do
       tabs = [tab("w-shell", name: "bash", agent_state: nil, quiet?: false)]
-      board = FleetBoard.from_window_tabs(tabs)
+      board = board(tabs)
       assert board.empty?
     end
 
     test "keeps shell windows when agent_only is false" do
       tabs = [tab("w-shell", name: "bash", agent_state: nil)]
-      board = FleetBoard.from_window_tabs(tabs, agent_only: false)
+      board = board(tabs, agent_only: false)
       assert board.total == 1
       assert hd(board.rows).bucket == :unknown
     end
@@ -32,7 +68,7 @@ defmodule Casein.Terminals.FleetBoardTest do
         tab("w3", agent_state: :stalled, name: "stalled-worker")
       ]
 
-      board = FleetBoard.from_window_tabs(tabs)
+      board = board(tabs)
       assert board.attention_count == 3
       assert board.counts.needs_you == 3
 
@@ -45,7 +81,7 @@ defmodule Casein.Terminals.FleetBoardTest do
     end
 
     test "working rows are not needs_you" do
-      board = FleetBoard.from_window_tabs([tab("w1", agent_state: :working)])
+      board = board([tab("w1", agent_state: :working)])
       assert board.counts.working == 1
       assert board.attention_count == 0
       refute hd(board.rows).needs_you?
@@ -60,7 +96,7 @@ defmodule Casein.Terminals.FleetBoardTest do
           ready_no_task_for_seconds: 240
         )
 
-      board = FleetBoard.from_window_tabs([tab])
+      board = board([tab])
       row = hd(board.rows)
       assert row.needs_you?
       assert row.bucket == :needs_you
@@ -70,7 +106,7 @@ defmodule Casein.Terminals.FleetBoardTest do
 
     test "quiet idle without readiness still needs you as idle" do
       board =
-        FleetBoard.from_window_tabs([
+        board([
           tab("w1", agent_state: :idle, quiet?: true, fleet_role: :worker)
         ])
 
@@ -81,7 +117,7 @@ defmodule Casein.Terminals.FleetBoardTest do
 
     test "unknown agent_state is never quiet/idle" do
       board =
-        FleetBoard.from_window_tabs([
+        board([
           tab("w1", agent_state: nil, quiet?: false, fleet_role: :worker)
         ])
 
@@ -102,7 +138,7 @@ defmodule Casein.Terminals.FleetBoardTest do
         )
       ]
 
-      board = FleetBoard.from_window_tabs(tabs)
+      board = board(tabs)
       assert Enum.map(board.rows, & &1.window_id) == ["w-block", "w-work"]
       lead = hd(board.rows)
       assert lead.issue == 384
@@ -111,7 +147,7 @@ defmodule Casein.Terminals.FleetBoardTest do
     end
 
     test "without claimed source orphaned_claims stays unknown, not empty-ok" do
-      board = FleetBoard.from_window_tabs([tab("w1", agent_state: :working, issue: 812)])
+      board = board([tab("w1", agent_state: :working, issue: 812)])
       oc = board.orphaned_claims
       assert oc.observe_state == :unknown
       assert oc.reason == :no_claimed_source
@@ -127,7 +163,7 @@ defmodule Casein.Terminals.FleetBoardTest do
       ]
 
       board =
-        FleetBoard.from_window_tabs(
+        board(
           [tab("w1", agent_state: :working, issue: 812)],
           claimed: claimed
         )
@@ -141,7 +177,7 @@ defmodule Casein.Terminals.FleetBoardTest do
 
     test "failed claimed observe does not count as zero orphans calm" do
       board =
-        FleetBoard.from_window_tabs(
+        board(
           [tab("w1", agent_state: :idle, quiet?: true, fleet_role: :worker)],
           claimed: {:error, :gh_failed}
         )
@@ -149,6 +185,23 @@ defmodule Casein.Terminals.FleetBoardTest do
       # quiet idle still needs you; orphan side is unknown and adds 0
       assert board.orphaned_claims.observe_state == :unknown
       assert board.attention_count == 1
+    end
+
+    test "carries gate_queue snapshot on the board" do
+      board = board([], gate_queue: @gate_held)
+      assert board.gate_queue.lock_state == :held
+      assert board.gate_queue.depth == 2
+      assert board.gate_queue.holder.pr == 806
+      assert GateQueue.busy?(board.gate_queue)
+      assert GateQueue.summary(board.gate_queue) =~ "PR #806"
+    end
+
+    test "empty/1 gate_queue is unknown not free" do
+      board = FleetBoard.empty()
+      assert board.gate_queue.lock_state == :unknown
+      refute GateQueue.busy?(board.gate_queue)
+      assert GateQueue.summary(board.gate_queue) == "gate unknown"
+      assert board.orphaned_claims.observe_state == :unknown
     end
   end
 
