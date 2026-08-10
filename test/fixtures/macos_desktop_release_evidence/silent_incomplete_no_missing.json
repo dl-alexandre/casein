@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "kind": "macos_desktop_release_evidence",
+  "issue": 382,
+  "started_at_utc": "2026-08-10T00:00:00Z",
+  "completed_at_utc": "2026-08-10T00:00:01Z",
+  "result": "incomplete",
+  "error": "",
+  "git": {
+    "revision": "0000000000000000000000000000000000000000",
+    "describe": "fixture-silent",
+    "github_sha": ""
+  },
+  "host": {
+    "os": "Linux",
+    "arch": "x86_64",
+    "release": "fixture",
+    "runner_name": "",
+    "runner_os": "",
+    "runner_arch": "",
+    "github_run_id": ""
+  },
+  "app": {
+    "path": "/tmp/x.app",
+    "exists": false,
+    "signature_kind": "missing",
+    "signer_authority": "",
+    "team_identifier": "",
+    "hardened_runtime": false,
+    "codesign_verify": "skipped",
+    "spctl": "skipped",
+    "stapler": "skipped"
+  },
+  "archive": {
+    "path": "",
+    "exists": false,
+    "sha256": "",
+    "bytes": 0
+  },
+  "phases": [],
+  "notes": [
+    "REJECT fixture: incomplete without missing[] is a silent pass."
+  ]
+}

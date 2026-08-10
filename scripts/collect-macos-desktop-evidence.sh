@@ -11,11 +11,16 @@
 #     [--app path/to/Casein\ MenuBar.app] \
 #     [--archive path/to/Casein-*-macos-*.zip] \
 #     [--out path/to/evidence.json] \
-#     [--dry-run]
+#     [--dry-run] \
+#     [--staging-receipt path/to/upload-receipt.json]
 #
 # --dry-run writes an incomplete evidence document with explicit
 # missing: ["developer_id","notary_profile","signed_lifecycle"] and never
 # claims signed/notarized success. Safe on Linux; no silent pass.
+#
+# --staging-receipt optionally embeds a skippable-artifact-upload receipt
+# summary under staging{} (mode/upload flags only — never secrets). Upload
+# success is not release evidence.
 #
 # Never embeds certificates, passwords, API keys, or provisioning profiles.
 set -euo pipefail
@@ -28,6 +33,7 @@ out=""
 result="running"
 error=""
 dry_run=0
+staging_receipt=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,8 +41,9 @@ while [[ $# -gt 0 ]]; do
     --archive) archive="$2"; shift 2 ;;
     --out) out="$2"; shift 2 ;;
     --dry-run) dry_run=1; shift ;;
+    --staging-receipt) staging_receipt="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -237,6 +244,56 @@ completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 phases_json="$(printf '%s\n' "${phases[@]+"${phases[@]}"}" | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
 missing_json="$(printf '%s\n' "${missing_codes[@]+"${missing_codes[@]}"}" | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
 
+# Optional staging receipt from skippable-artifact-upload (#834) — summary only.
+staging_receipt_path=""
+staging_mode="skip"
+staging_upload_attempted=false
+staging_upload_succeeded=false
+if [[ -n "$staging_receipt" ]]; then
+  if [[ -f "$staging_receipt" ]]; then
+    staging_receipt_path="$(cd "$(dirname "$staging_receipt")" && pwd)/$(basename "$staging_receipt")"
+    # shellcheck disable=SC2016
+    eval "$(
+      python3 - "$staging_receipt_path" <<'PY'
+import json, sys
+path = sys.argv[1]
+try:
+    data = json.load(open(path, encoding="utf-8"))
+except Exception:
+    print('staging_mode="unknown"')
+    print("staging_upload_attempted=false")
+    print("staging_upload_succeeded=false")
+    raise SystemExit(0)
+mode = data.get("mode") or data.get("upload_mode") or "unknown"
+attempted = data.get("upload_attempted")
+if attempted is None:
+    attempted = data.get("upload_ran")
+succeeded = data.get("upload_succeeded")
+if succeeded is None:
+    succeeded = data.get("upload_ok")
+def b(v):
+    return "true" if v is True else "false"
+# Sanitize mode to a short token for JSON embedding.
+mode_s = "".join(c if c.isalnum() or c in "-_" else "-" for c in str(mode))[:32] or "unknown"
+print(f'staging_mode="{mode_s}"')
+print(f"staging_upload_attempted={b(bool(attempted))}")
+print(f"staging_upload_succeeded={b(bool(succeeded))}")
+PY
+    )"
+    record_phase "staging_receipt"
+  else
+    error="${error:+$error; }staging receipt not found: $staging_receipt"
+    staging_receipt_path="$staging_receipt"
+    staging_mode="unknown"
+    record_phase "staging_receipt_missing"
+  fi
+fi
+
+# Optional operator fixture ref names (basenames only — never path secrets).
+fixture_ref_developer_id="${CASEIN_FIXTURE_REF_DEVELOPER_ID:-}"
+fixture_ref_notary_profile="${CASEIN_FIXTURE_REF_NOTARY_PROFILE:-}"
+fixture_ref_signed_lifecycle="${CASEIN_FIXTURE_REF_SIGNED_LIFECYCLE:-}"
+
 cat >"$out" <<EOF
 {
   "schema": 1,
@@ -253,6 +310,17 @@ cat >"$out" <<EOF
     "stapled": $claim_stapled,
     "signed_lifecycle": $claim_signed_lifecycle,
     "passed_release": $claim_passed_release
+  },
+  "fixture_refs": {
+    "developer_id": $(json_escape "$fixture_ref_developer_id"),
+    "notary_profile": $(json_escape "$fixture_ref_notary_profile"),
+    "signed_lifecycle": $(json_escape "$fixture_ref_signed_lifecycle")
+  },
+  "staging": {
+    "receipt_path": $(json_escape "$staging_receipt_path"),
+    "receipt_mode": $(json_escape "$staging_mode"),
+    "upload_attempted": $staging_upload_attempted,
+    "upload_succeeded": $staging_upload_succeeded
   },
   "git": {
     "revision": $(json_escape "$git_revision"),
@@ -292,7 +360,8 @@ cat >"$out" <<EOF
     "Ad-hoc CI smoke is not release evidence (issue #382).",
     "GitHub Actions artifact upload may fail on account storage quota even when build/sign/verify passed; this JSON is the durable evidence document.",
     "Never store Apple credentials, certificates, or notarization tokens in this file.",
-    "Dry-run and incomplete results must list missing[] explicitly; validate-macos-desktop-evidence.sh rejects silent passes."
+    "Dry-run and incomplete results must list missing[] explicitly; validate-macos-desktop-evidence.sh rejects silent passes.",
+    "staging.upload_succeeded is not release evidence; attach local evidence JSON to issue #382."
   ]
 }
 EOF
