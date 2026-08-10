@@ -237,6 +237,8 @@ defmodule Casein.Ops.GateQueue do
   # /proc/locks lines look like:
   #   1: FLOCK  ADVISORY  WRITE 3249091 103:02:33960 0 EOF
   # Device numbers are HEX (maj:min), inode is decimal.
+  # locks_path is Path.join(proc_root, "locks") — fixed segment, not user input.
+  # sobelow_skip ["Traversal.FileModule"]
   defp flock_holder_pids(proc_root, maj, min, ino) do
     locks_path = Path.join(proc_root, "locks")
     targets = lock_dev_tokens(maj, min, ino)
@@ -446,6 +448,8 @@ defmodule Casein.Ops.GateQueue do
     }
   end
 
+  # path is Path.join(proc_root, Integer.to_string(pid), "wchan") — pid is integer.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_wchan(proc_root, pid) do
     path = Path.join([proc_root, Integer.to_string(pid), "wchan"])
 
@@ -462,6 +466,8 @@ defmodule Casein.Ops.GateQueue do
     end
   end
 
+  # path is Path.join(proc_root, Integer.to_string(pid), "environ") — pid is integer.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_environ(proc_root, pid) do
     path = Path.join([proc_root, Integer.to_string(pid), "environ"])
 
@@ -481,6 +487,8 @@ defmodule Casein.Ops.GateQueue do
     end
   end
 
+  # path is Path.join(proc_root, Integer.to_string(pid), "cmdline") — pid is integer.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_cmdline(proc_root, pid) do
     path = Path.join([proc_root, Integer.to_string(pid), "cmdline"])
 
@@ -496,6 +504,8 @@ defmodule Casein.Ops.GateQueue do
     end
   end
 
+  # stat_path is Path.join(proc_root, Integer.to_string(pid), "stat") — pid is integer.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_started_at(proc_root, pid) do
     stat_path = Path.join([proc_root, Integer.to_string(pid), "stat"])
     # starttime is field 22 (1-indexed) after comm in parens — parse carefully.
@@ -538,6 +548,8 @@ defmodule Casein.Ops.GateQueue do
     end
   end
 
+  # Path.join(proc_root, "stat") — fixed segment under /proc, not user input.
+  # sobelow_skip ["Traversal.FileModule"]
   defp boot_time_seconds(proc_root) do
     case File.read(Path.join(proc_root, "stat")) do
       {:ok, body} ->
