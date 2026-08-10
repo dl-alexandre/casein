@@ -188,6 +188,40 @@ defmodule CaseinMob.PairingScreenTest do
     refute text(server_rejected) =~ "doesn't look valid"
   end
 
+  test "DairyPhone golden compact URI reaches exchange without local rejection" do
+    uri =
+      "casein://pair/eyJoIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsIm8iOiJodHRwczovL2Nhc2Vpbi5kZXZib3gubWlsY2dyb3VwLmNvbSIsInYiOjF9"
+
+    test_pid = self()
+
+    Application.put_env(:casein_mob, :device_link_exchange_client, fn url, request ->
+      send(test_pid, {:exchange, url, request})
+
+      {:ok,
+       %{
+         url: "https://casein.devbox.milcgroup.com",
+         token: "device-link-token",
+         workspace_id: "ws-dairy",
+         origin_id: "installation-1",
+         display_name: "Devbox"
+       }}
+    end)
+
+    view =
+      PairingScreen
+      |> mount_screen()
+      |> render_info({:scan, :result, %{type: :qr, value: uri}})
+
+    assert_receive {:exchange, "https://casein.devbox.milcgroup.com/api/device-links/exchange",
+                    request}
+
+    assert request.handle == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    assert request.origin == "https://casein.devbox.milcgroup.com"
+    assert SessionConfig.pinned_workspaces() == ["ws-dairy"]
+    assert text(view) =~ "Paired successfully"
+    refute text(view) =~ "doesn't look valid"
+  end
+
   test "explicit re-pair refreshes the same canonical profile without deleting its context" do
     SessionConfig.put_pairing(%{
       url: "https://casein.test",

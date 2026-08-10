@@ -222,14 +222,19 @@ static NSString* MobNotificationJSONFromPairURL(NSURL* url) {
 
     NSURLComponents* components = [NSURLComponents componentsWithURL:url
                                              resolvingAgainstBaseURL:NO];
-    if (!components || components.fragment != nil || components.user != nil ||
-        components.password != nil || components.port != nil) {
+    // Empty fragment/query strings are absent for pairing purposes. Some iOS
+    // URLComponents builds surface "" instead of nil for a missing component;
+    // treating those as present rejected a valid compact casein://pair/<payload>
+    // path (DairyPhone #457) before any exchange request left the device.
+    if (!components || components.user != nil || components.password != nil ||
+        components.port != nil ||
+        (components.fragment != nil && components.fragment.length > 0)) {
         return nil;
     }
 
     NSString* code = nil;
     BOOL hasPath = components.percentEncodedPath.length > 0;
-    BOOL hasQuery = components.percentEncodedQuery != nil;
+    BOOL hasQuery = components.percentEncodedQuery.length > 0;
     if (hasPath == hasQuery) {
         return nil;
     }

@@ -71,6 +71,7 @@ config :mob, :trusted_plugins, %{
   mob_ash: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg="
 }
 
+
 # Style packages (theming). Leave empty: product brand colours live in
 # CaseinMob.Theme and are applied via `use Mob.App, theme: CaseinMob.Theme`
 # (re-asserted in CaseinMob.App.on_start/0). Do not set :default_style to

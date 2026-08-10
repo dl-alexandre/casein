@@ -82,7 +82,8 @@ internal object PairingDeepLink {
 
     private fun pathCode(uri: java.net.URI): String? =
         uri.rawPath
-            ?.takeIf { uri.rawQuery == null && it.startsWith("/") && it.length > 1 }
+            // Empty query strings are absent (parity with iOS URLComponents length check).
+            ?.takeIf { uri.rawQuery.isNullOrEmpty() && it.startsWith("/") && it.length > 1 }
             ?.removePrefix("/")
             ?.takeIf { !it.contains("/") }
             ?.takeIf { it.isNotBlank() }
@@ -92,7 +93,8 @@ internal object PairingDeepLink {
 
     private fun queryCode(uri: java.net.URI): String? {
         if (!uri.rawPath.isNullOrEmpty()) return null
-        val pair = uri.rawQuery?.split("&")?.singleOrNull()?.split("=", limit = 2) ?: return null
+        val rawQuery = uri.rawQuery?.takeIf { it.isNotEmpty() } ?: return null
+        val pair = rawQuery.split("&").singleOrNull()?.split("=", limit = 2) ?: return null
         if (pair.size != 2 || pair[0] !in setOf("code", "pairing_code")) return null
         return decode(pair[1]).takeIf { it.isNotBlank() }
     }
