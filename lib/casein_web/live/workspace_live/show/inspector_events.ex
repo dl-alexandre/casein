@@ -1,10 +1,11 @@
 defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
   @moduledoc false
 
-  # LiveView-owned inspector slots (issue #690) + focus/tabs (#692) + diff open
-  # path (#691). Socket state only — no registry, no tmux holder, no
+  # LiveView-owned inspector slots (issue #690) + focus/zoom/close (#692) +
+  # diff open path (#691). Socket state only — no registry, no tmux holder, no
   # Panes.feature_types. Ordinary LiveView events + a workspace PubSub surface
   # request from Casein.Cockpit.Inspectors. Layout nodes are slots (#750).
+  # One inspector at a time: open replaces; no tab strip.
 
   import Phoenix.Component
   import Phoenix.LiveView
@@ -104,12 +105,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
 
   def open_inspector(socket, attrs) do
     opts = geometry_opts(socket)
+    # Region holds one inspector — open replaces any previous slot (#692).
     {slots, geometry} = Inspectors.open(socket.assigns.inspector_slots, attrs, opts)
-    opened_id = List.last(slots) && List.last(slots).id
+    opened_id = List.first(slots) && List.first(slots).id
 
     socket
     |> assign(:inspector_slots, slots)
     |> assign(:cockpit_geometry, geometry)
+    # Replace clears prior zoom; focus lands on the new viewport.
+    |> assign(:inspector_zoomed?, false)
     |> InspectorFocus.after_open(opened_id)
   end
 
@@ -121,23 +125,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorEvents do
     |> assign(:inspector_slots, slots)
     |> assign(:cockpit_geometry, geometry)
     |> maybe_clear_diff_assigns(slots)
+    |> assign(:active_inspector_id, nil)
+    |> assign(:inspector_focus_id, nil)
+    |> assign(:inspector_zoomed?, false)
+    |> assign(:ui_highlight_pane_id, socket.assigns[:tmux_active_pane_id])
     |> InspectorFocus.reconcile()
-    |> then(fn socket ->
-      case InspectorFocus.active_id(socket.assigns) do
-        nil ->
-          socket
-          |> assign(:inspector_focus_id, nil)
-          |> assign(:inspector_zoomed?, false)
-          |> assign(:ui_highlight_pane_id, socket.assigns[:tmux_active_pane_id])
-
-        next_id ->
-          if socket.assigns[:inspector_focus_id] do
-            InspectorFocus.focus_inspector(socket, next_id)
-          else
-            assign(socket, :active_inspector_id, next_id)
-          end
-      end
-    end)
   end
 
   def close_all(socket) do

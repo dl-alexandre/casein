@@ -119,29 +119,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.InspectorFocusTest do
     assert s2.assigns.inspector_focus_id == nil
   end
 
-  test "tabs: select switches active inspector without tmux" do
-    {slots, geometry} =
-      Inspectors.open([], %{id: "insp-a", kind: :diff, title: "A"}, placement: :right)
-
-    {slots, geometry} =
-      Inspectors.open(slots, %{id: "insp-b", kind: :run, title: "B"},
-        placement: :right,
-        fraction: Geometry.inspector_fraction(geometry)
-      )
-
-    s =
-      socket(%{
-        inspector_slots: slots,
-        cockpit_geometry: geometry,
-        inspector_focus_id: "insp-a",
-        active_inspector_id: "insp-a"
-      })
+  test "opening another inspector replaces the current one (no tabs)" do
+    s = with_inspector()
 
     assert {:noreply, s2} =
-             InspectorEvents.handle_event("inspector:select", %{"id" => "insp-b"}, s)
+             InspectorEvents.handle_event(
+               "inspector:open",
+               %{"id" => "insp-b", "kind" => "run", "title" => "Run"},
+               s
+             )
 
+    assert length(s2.assigns.inspector_slots) == 1
+    assert hd(s2.assigns.inspector_slots).id == "insp-b"
     assert s2.assigns.active_inspector_id == "insp-b"
     assert s2.assigns.inspector_focus_id == "insp-b"
+    assert s2.assigns.inspector_zoomed? == false
   end
 
   test "REGRESSION: real pane zoom still requests tmux transition" do

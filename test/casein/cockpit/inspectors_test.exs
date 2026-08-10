@@ -17,11 +17,17 @@ defmodule Casein.Cockpit.InspectorsTest do
     assert geo == Geometry.terminal_only()
   end
 
-  test "open replaces same id rather than duplicating" do
+  test "open replaces any previous inspector (one at a time, no tabs)" do
     {slots, _} = Inspectors.open([], %{id: "x", kind: :diff, title: "A"})
     {slots, _} = Inspectors.open(slots, %{id: "x", kind: :diff, title: "B"})
     assert length(slots) == 1
     assert hd(slots).title == "B"
+
+    {slots, geo} = Inspectors.open(slots, %{id: "y", kind: :run, title: "Run"})
+    assert length(slots) == 1
+    assert hd(slots).id == "y"
+    assert hd(slots).kind == :run
+    assert Geometry.inspector_open?(geo)
   end
 
   test "placement preference flows into geometry" do
@@ -92,5 +98,17 @@ defmodule Casein.Cockpit.InspectorsTest do
     assert Geometry.inspector_open?(geo)
     assert Inspectors.primary_run_id(restored) == "run-abc"
     refute hd(restored).id == hd(slots).id
+  end
+
+  test "restore keeps only the last entry from a multi-inspector template" do
+    serialized = [
+      %{"type" => "inspector", "kind" => "diff", "path" => "a.ex"},
+      %{"type" => "inspector", "kind" => "run"}
+    ]
+
+    {slots, geo} = Inspectors.restore(serialized)
+    assert length(slots) == 1
+    assert hd(slots).kind == :run
+    assert Geometry.inspector_open?(geo)
   end
 end

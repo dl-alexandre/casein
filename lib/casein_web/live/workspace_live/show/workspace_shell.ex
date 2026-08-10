@@ -1123,135 +1123,104 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :codex_exec_run, :any, required: true
 
   defp inspector_region(assigns) do
+    entry = List.first(List.wrap(assigns.entries))
+    assigns = assign(assigns, :entry, entry)
+
     ~H"""
     <div class="flex h-full min-h-0 flex-col" data-inspector-chrome="true">
-      <div class="flex shrink-0 items-center gap-1 border-b border-base-300/60 bg-base-200/80 px-1.5 py-1">
-        <div
-          id={"inspector-tabs-" <> @workspace_id}
-          class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
-          role="tablist"
-          aria-label="Inspector panes"
-        >
-          <button
-            :for={{entry, index} <- Enum.with_index(@entries)}
-            id={"inspector-tab-" <> entry.id}
-            type="button"
-            role="tab"
-            aria-selected={to_string(entry.id == @active_id)}
-            data-inspector-tab={entry.id}
-            data-pane-kind="inspector"
-            data-pane-index={index}
-            data-active={to_string(entry.id == @active_id)}
-            data-focused={to_string(@focused? and entry.id == @active_id)}
-            phx-click="inspector:select"
-            phx-value-id={entry.id}
-            class={[
-              "group flex max-w-[14rem] items-center gap-1.5 rounded-md px-2 py-1 text-left text-density-body transition",
-              entry.id == @active_id &&
-                "bg-base-100 text-base-content shadow-sm ring-1 ring-base-300/80",
-              entry.id != @active_id &&
-                "text-base-content/60 hover:bg-base-100/70 hover:text-base-content/80",
-              (@focused? and entry.id == @active_id) && "ring-primary/60"
-            ]}
+      <div
+        :if={@entry}
+        class={[
+          "flex shrink-0 items-center justify-between gap-2 border-b border-base-300/60 bg-base-200/80 px-2 py-1.5",
+          @focused? && "bg-primary/5"
+        ]}
+        data-inspector-header="true"
+        data-pane-kind="inspector"
+        data-focused={to_string(@focused?)}
+        phx-click="inspector:select"
+        phx-value-id={@entry.id}
+      >
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <span class="font-mono text-density-label text-base-content/40">0</span>
+          <span class="truncate text-sm font-medium text-base-content/90">
+            {inspector_title(@entry)}
+          </span>
+          <span class="rounded bg-base-300/50 px-1 py-density-badge font-mono text-density-badge uppercase tracking-wide text-base-content/45">
+            {inspector_kind_label(@entry)}
+          </span>
+          <span
+            :if={@zoomed?}
+            class="rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary text-density-label"
           >
-            <span class="font-mono text-density-label text-base-content/40">{index}</span>
-            <span class="truncate font-medium">{inspector_title(entry)}</span>
-            <span class="rounded bg-base-300/50 px-1 py-density-badge font-mono text-density-badge uppercase tracking-wide text-base-content/45">
-              {inspector_kind_label(entry)}
-            </span>
-            <span
-              role="button"
-              tabindex="-1"
-              data-inspector-tab-close={entry.id}
-              phx-click="inspector:close"
-              phx-value-id={entry.id}
-              class="ml-0.5 rounded p-0.5 text-base-content/35 opacity-70 hover:bg-base-300/60 hover:text-base-content/80 group-hover:opacity-100"
-              aria-label={"Close " <> inspector_title(entry)}
-            >
-              <.icon name="hero-x-mark" class="h-3 w-3" />
-            </span>
-          </button>
-        </div>
-        <div class="flex shrink-0 items-center gap-1 pl-1 text-density-label text-base-content/45">
-          <span :if={@zoomed?} class="rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
             zoomed
           </span>
-          <span class="font-mono uppercase tracking-wide">z/x</span>
+        </div>
+        <div class="flex shrink-0 items-center gap-1">
+          <span class="font-mono text-density-label uppercase tracking-wide text-base-content/45">
+            z/x
+          </span>
+          <button
+            type="button"
+            id={"inspector-close-" <> @entry.id}
+            phx-click="inspector:close"
+            phx-value-id={@entry.id}
+            class="btn btn-ghost btn-xs"
+            data-leader-second-key="x"
+            aria-label={"Close " <> inspector_title(@entry)}
+          >
+            <.icon name="hero-x-mark" class="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-auto">
-        <div
-          :for={entry <- @entries}
-          id={"inspector-pane-" <> entry.id}
-          data-inspector-pane-id={entry.id}
-          data-inspector-kind={inspector_kind_attr(entry.kind)}
-          data-pane-kind="inspector"
-          data-focused={to_string(@focused? and entry.id == @active_id)}
-          hidden={entry.id != @active_id}
-          class={[
-            "flex h-full min-h-0 flex-col",
-            entry.id != @active_id && "hidden",
-            (@focused? and entry.id == @active_id) && "bg-base-100/40"
-          ]}
-        >
-          <div class="flex shrink-0 items-center justify-between gap-2 border-b border-base-300/40 px-3 py-1.5">
-            <div class="min-w-0">
-              <div class="truncate text-sm font-medium text-base-content/90">
-                {inspector_title(entry)}
-              </div>
-              <div class="truncate font-mono text-density-body text-base-content/45">
-                {entry.id}
-              </div>
-            </div>
-            <button
-              type="button"
-              id={"inspector-close-" <> entry.id}
-              phx-click="inspector:close"
-              phx-value-id={entry.id}
-              class="btn btn-ghost btn-xs"
-              data-leader-second-key="x"
-            >
-              Close
-            </button>
-          </div>
-          <div class="min-h-0 flex-1 overflow-auto p-3 text-sm text-base-content/80">
-            <%= cond do %>
-              <% entry.kind == :diff -> %>
-                <.diff_panel
-                  git_status={@git_status}
-                  git_status_ready?={@git_status_ready?}
-                  git_status_error={@git_status_error}
-                  open_file={@open_file}
-                  file_diff={@file_diff}
-                />
-              <% entry.kind == :run -> %>
-                <.run_panel
-                  host_loc={@host_loc}
-                  active_run={@active_run}
-                  review_commands={@review_commands}
-                  agent_write_unlock={@agent_write_unlock}
-                  run_ledger={@run_ledger}
-                  run_ledger_loaded?={@run_ledger_loaded?}
-                  run_ledger_error={@run_ledger_error}
-                  selected_run_id={@selected_run_id}
-                  selected_run_timeline={@selected_run_timeline}
-                  selected_run_summary={@selected_run_summary}
-                  selected_run_failure_reason={@selected_run_failure_reason}
-                  selected_run_can_retry={@selected_run_can_retry}
-                  selected_run_artifacts={@selected_run_artifacts}
-                  codex_exec_form={@codex_exec_form}
-                  codex_exec_run={@codex_exec_run}
-                />
-              <% true -> %>
-                <div class="rounded-md border border-base-300/50 bg-base-100/70 px-3 py-2">
-                  <div class="text-density-body uppercase tracking-wide text-base-content/45">
-                    {inspector_kind_label(entry)}
-                  </div>
-                  <div class="mt-1 font-medium">{inspector_title(entry)}</div>
+      <div
+        :if={@entry}
+        id={"inspector-pane-" <> @entry.id}
+        data-inspector-pane-id={@entry.id}
+        data-inspector-kind={inspector_kind_attr(@entry.kind)}
+        data-pane-kind="inspector"
+        data-focused={to_string(@focused?)}
+        class={[
+          "flex min-h-0 flex-1 flex-col overflow-auto",
+          @focused? && "bg-base-100/40"
+        ]}
+      >
+        <div class="min-h-0 flex-1 overflow-auto p-3 text-sm text-base-content/80">
+          <%= cond do %>
+            <% @entry.kind == :diff -> %>
+              <.diff_panel
+                git_status={@git_status}
+                git_status_ready?={@git_status_ready?}
+                git_status_error={@git_status_error}
+                open_file={@open_file}
+                file_diff={@file_diff}
+              />
+            <% @entry.kind == :run -> %>
+              <.run_panel
+                host_loc={@host_loc}
+                active_run={@active_run}
+                review_commands={@review_commands}
+                agent_write_unlock={@agent_write_unlock}
+                run_ledger={@run_ledger}
+                run_ledger_loaded?={@run_ledger_loaded?}
+                run_ledger_error={@run_ledger_error}
+                selected_run_id={@selected_run_id}
+                selected_run_timeline={@selected_run_timeline}
+                selected_run_summary={@selected_run_summary}
+                selected_run_failure_reason={@selected_run_failure_reason}
+                selected_run_can_retry={@selected_run_can_retry}
+                selected_run_artifacts={@selected_run_artifacts}
+                codex_exec_form={@codex_exec_form}
+                codex_exec_run={@codex_exec_run}
+              />
+            <% true -> %>
+              <div class="rounded-md border border-base-300/50 bg-base-100/70 px-3 py-2">
+                <div class="text-density-body uppercase tracking-wide text-base-content/45">
+                  {inspector_kind_label(@entry)}
                 </div>
-            <% end %>
-          </div>
+                <div class="mt-1 font-medium">{inspector_title(@entry)}</div>
+              </div>
+          <% end %>
         </div>
       </div>
     </div>
