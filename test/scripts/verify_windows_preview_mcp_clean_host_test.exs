@@ -57,6 +57,8 @@ defmodule Scripts.VerifyWindowsPreviewMcpCleanHostTest do
     assert doc =~ "lab_unreachable_on_this_host"
     assert doc =~ "What this box can and cannot prove"
     assert doc =~ "verify_preview_bridge_file_page"
+    assert doc =~ "postMessage"
+    assert doc =~ "schema v2"
     assert doc =~ "not** clean-machine" or doc =~ "not clean-machine"
   end
 
@@ -169,7 +171,12 @@ defmodule Scripts.VerifyWindowsPreviewMcpCleanHostTest do
     assert content =~ "file://"
     assert content =~ "does_not_prove"
     assert content =~ "clean_win11_signed_install"
+    assert content =~ "own_origin_or_path_prefix_proxy"
     assert content =~ "casein_preview=1"
+    assert content =~ "post_message_envelope"
+    assert content =~ "disabled_without_preview_query"
+    assert content =~ "schema_version: 2"
+    refute content =~ "page.screenshot("
   end
 
   defp base_doc do

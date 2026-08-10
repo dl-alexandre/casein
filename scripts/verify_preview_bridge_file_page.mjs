@@ -3,17 +3,22 @@
  * #463 — real browser verification of assets/js/preview_bridge.js WITHOUT the
  * /verify harness and WITHOUT claiming clean-Win11 Preview MCP acceptance.
  *
- * Proves on this Linux box:
+ * Proves on this Linux box (slice 3 extends #832):
  *   - esbuild bundles preview_bridge.js to a browser IIFE
- *   - a static file:// HTML page loads that IIFE
- *   - playwright-core (from priv/scripts playwright) drives Chromium
+ *   - a static file:// HTML page loads that IIFE under Playwright Chromium
  *   - with ?casein_preview=1 the bridge emits casein:preview:bridge_ready
- *     and casein:preview:dom_loaded (captured via page.evaluate listeners)
+ *     and casein:preview:dom_loaded (CustomEvent + parent postMessage envelope)
+ *   - body class phx-connected/phx-disconnected flips emit live_socket_* signals
+ *   - window error emits casein:preview:client_error
+ *   - phx:page-loading-start/stop emit page_loading_* signals
+ *   - without casein_preview=1 (top-level, production NODE_ENV) the bridge
+ *     does NOT install
  *
  * Does NOT prove:
  *   - clean-machine Windows install
  *   - agent-driven Preview MCP discover/open/observe/click/type/press/screenshot/close
  *   - packaged Node/Playwright/Chromium on Windows (see package smoke + #803)
+ *   - own-origin / path-prefix preview proxy routing (sibling slice)
  *
  * Known host noise: page.screenshot Protocol error under load is host pressure;
  * this script does not require screenshots for the pass criteria.
@@ -42,6 +47,11 @@ const STEP_ORDER = [
   "load_file_url",
   "bridge_ready",
   "dom_loaded",
+  "post_message_envelope",
+  "live_socket_class_flip",
+  "client_error_signal",
+  "page_loading_signals",
+  "disabled_without_preview_query",
 ]
 
 function fail(code, msg, extra = {}) {
@@ -59,7 +69,6 @@ function resolveEsbuild() {
   for (const c of candidates) {
     if (fs.existsSync(c)) return c
   }
-  // try require from assets
   try {
     const req = createRequire(path.join(ROOT, "assets/package.json"))
     return req.resolve("esbuild/bin/esbuild")
@@ -77,6 +86,10 @@ function resolvePlaywright() {
     if (fs.existsSync(c)) return c
   }
   return null
+}
+
+function typesOf(sigs) {
+  return (sigs || []).map((s) => s && s.type).filter(Boolean)
 }
 
 async function main() {
@@ -97,14 +110,15 @@ async function main() {
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "casein-463-bridge-"))
   const iifePath = path.join(tmp, "preview_bridge.iife.js")
-  const htmlPath = path.join(tmp, "bridge_fixture.html")
+  const childPath = path.join(tmp, "bridge_child.html")
+  const parentPath = path.join(tmp, "bridge_parent.html")
+  const disabledPath = path.join(tmp, "bridge_disabled.html")
   const entry = path.join(ROOT, "assets/js/preview_bridge.js")
 
   if (!fs.existsSync(entry)) {
     fail(1, `missing entry ${entry}`)
   }
 
-  // --- esbuild IIFE ---
   const build = spawnSync(
     esbuildBin,
     [
@@ -115,8 +129,7 @@ async function main() {
       `--outfile=${iifePath}`,
       "--platform=browser",
       "--target=es2020",
-      // process.env.NODE_ENV is referenced; define for browser
-      "--define:process.env.NODE_ENV=\"production\"",
+      '--define:process.env.NODE_ENV="production"',
       "--log-level=warning",
     ],
     { encoding: "utf8" }
@@ -131,17 +144,15 @@ async function main() {
   }
   mark("esbuild_iife", "passed", `bytes=${fs.statSync(iifePath).size}`)
 
-  // --- static page ---
-  // Install exposes installPreviewBridge on the IIFE global.
-  // With ?casein_preview=1 the bridge enables even under production NODE_ENV.
-  const html = `<!doctype html>
+  // Child page: installed under ?casein_preview=1; parent captures postMessage.
+  const childHtml = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Casein Preview Bridge File Fixture</title>
+  <title>Casein Preview Bridge Child</title>
 </head>
 <body class="phx-connected">
-  <h1 id="title">Casein Preview Bridge File Fixture</h1>
+  <h1 id="title">Casein Preview Bridge Child</h1>
   <p id="status">loading</p>
   <script src="./preview_bridge.iife.js"></script>
   <script>
@@ -164,12 +175,61 @@ async function main() {
 </body>
 </html>
 `
-  fs.writeFileSync(htmlPath, html, "utf8")
-  // copy is unnecessary — iife already beside html; script src is relative
-  mark("write_static_page", "passed", path.basename(htmlPath))
 
-  // --- playwright ---
-  // Resolve from priv/scripts so package exports work (not a bare file URL).
+  const parentHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Casein Preview Bridge Parent</title>
+</head>
+<body>
+  <h1>Casein Preview Bridge Parent</h1>
+  <iframe id="child" src="./bridge_child.html?casein_preview=1" title="child"></iframe>
+  <script>
+    window.__caseinParentMessages = [];
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (data && data.source === "casein-preview") {
+        window.__caseinParentMessages.push(data);
+      }
+    });
+  </script>
+</body>
+</html>
+`
+
+  // Top-level page without casein_preview=1 under production NODE_ENV must not install.
+  const disabledHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Casein Preview Bridge Disabled</title>
+</head>
+<body>
+  <p id="status">loading</p>
+  <script src="./preview_bridge.iife.js"></script>
+  <script>
+    window.__caseinBridgeSignals = [];
+    window.addEventListener("casein:preview:signal", (event) => {
+      window.__caseinBridgeSignals.push(event.detail);
+    });
+    try {
+      const api = window.CaseinPreviewBridge;
+      const bridge = api && api.installPreviewBridge ? api.installPreviewBridge({}) : null;
+      document.getElementById("status").textContent = bridge ? "installed" : "disabled";
+    } catch (err) {
+      document.getElementById("status").textContent = "error:" + (err && err.message);
+    }
+  </script>
+</body>
+</html>
+`
+
+  fs.writeFileSync(childPath, childHtml, "utf8")
+  fs.writeFileSync(parentPath, parentHtml, "utf8")
+  fs.writeFileSync(disabledPath, disabledHtml, "utf8")
+  mark("write_static_page", "passed", "parent+child+disabled")
+
   const req = createRequire(path.join(ROOT, "priv/scripts/package.json"))
   const playwright = req("playwright")
   const chromium = playwright.chromium
@@ -185,29 +245,49 @@ async function main() {
     fail(1, "chromium launch failed", { steps })
   }
 
-  try {
-    const page = await browser.newPage()
-    const fileUrl = pathToFileURL(htmlPath).href + "?casein_preview=1"
+  const snapshot = {
+    title: null,
+    status: null,
+    types: [],
+    parentTypes: [],
+    hasBridge: false,
+    disabledStatus: null,
+  }
 
-    const resp = await page.goto(fileUrl, { waitUntil: "domcontentloaded", timeout: 30_000 })
-    // file:// may yield null response
+  try {
+    const context = await browser.newContext()
+    const parentPage = await context.newPage()
+    const parentUrl = pathToFileURL(parentPath).href
+
+    const resp = await parentPage.goto(parentUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    })
     if (resp && resp.status() >= 400) {
       mark("load_file_url", "failed", `status=${resp.status()}`)
-      fail(1, "file URL load failed", { steps })
+      fail(1, "parent file URL load failed", { steps })
     }
-    mark("load_file_url", "passed", fileUrl)
+    mark("load_file_url", "passed", parentUrl)
 
-    // Wait for bridge signals
-    await page.waitForFunction(
+    const child = parentPage.frameLocator("#child")
+    await child.locator("#status").waitFor({ state: "attached", timeout: 10_000 })
+
+    // Wait for child bridge_ready via evaluate on the iframe frame.
+    const childFrame = parentPage.frame({ url: /bridge_child\.html/ })
+    if (!childFrame) {
+      mark("bridge_ready", "failed", "child frame missing")
+      fail(1, "child iframe frame not found", { steps })
+    }
+
+    await childFrame.waitForFunction(
       () => {
         const sigs = window.__caseinBridgeSignals || []
-        const types = sigs.map((s) => s && s.type)
-        return types.includes("casein:preview:bridge_ready")
+        return sigs.some((s) => s && s.type === "casein:preview:bridge_ready")
       },
       { timeout: 10_000 }
     )
 
-    const snapshot = await page.evaluate(() => {
+    const childSnap = await childFrame.evaluate(() => {
       const sigs = window.__caseinBridgeSignals || []
       return {
         status: document.getElementById("status")?.textContent || "",
@@ -219,68 +299,202 @@ async function main() {
       }
     })
 
-    if (snapshot.status !== "installed") {
-      mark("bridge_ready", "failed", `status=${snapshot.status}`)
-      fail(1, "bridge did not install on page", { steps, snapshot })
+    snapshot.title = childSnap.title
+    snapshot.status = childSnap.status
+    snapshot.types = childSnap.types
+    snapshot.hasBridge = childSnap.hasBridge
+
+    if (childSnap.status !== "installed") {
+      mark("bridge_ready", "failed", `status=${childSnap.status}`)
+      fail(1, "bridge did not install on child page", { steps, snapshot })
     }
-    if (!snapshot.types.includes("casein:preview:bridge_ready")) {
-      mark("bridge_ready", "failed", `types=${snapshot.types.join(",")}`)
+    if (!childSnap.types.includes("casein:preview:bridge_ready")) {
+      mark("bridge_ready", "failed", `types=${childSnap.types.join(",")}`)
       fail(1, "missing bridge_ready signal", { steps, snapshot })
     }
-    if (!snapshot.sources.every((s) => s === "casein-preview")) {
+    if (!childSnap.sources.every((s) => s === "casein-preview")) {
       mark("bridge_ready", "failed", "bad source")
       fail(1, "signal source mismatch", { steps, snapshot })
     }
     mark("bridge_ready", "passed")
 
-    // dom_loaded may race before listener if emitted via microtask before
-    // listener attach — re-check; if missing, the bridge still installed.
-    // Our HTML attaches the listener BEFORE installPreviewBridge, so it should fire.
-    if (!snapshot.types.includes("casein:preview:dom_loaded")) {
-      // brief poll
+    if (!childSnap.types.includes("casein:preview:dom_loaded")) {
       try {
-        await page.waitForFunction(
+        await childFrame.waitForFunction(
           () =>
-            (window.__caseinBridgeSignals || [])
-              .map((s) => s?.type)
-              .includes("casein:preview:dom_loaded"),
+            (window.__caseinBridgeSignals || []).some(
+              (s) => s && s.type === "casein:preview:dom_loaded"
+            ),
           { timeout: 3_000 }
         )
+        const more = await childFrame.evaluate(() =>
+          (window.__caseinBridgeSignals || []).map((s) => s?.type).filter(Boolean)
+        )
+        snapshot.types = more
       } catch {
-        mark("dom_loaded", "failed", `types=${snapshot.types.join(",")}`)
+        mark("dom_loaded", "failed", `types=${childSnap.types.join(",")}`)
         fail(1, "missing dom_loaded signal", { steps, snapshot })
       }
     }
     mark("dom_loaded", "passed")
 
+    // Parent must have received the postMessage envelope (source/version/type).
+    await parentPage.waitForFunction(
+      () =>
+        (window.__caseinParentMessages || []).some(
+          (m) => m && m.type === "casein:preview:bridge_ready"
+        ),
+      { timeout: 5_000 }
+    )
+    const parentMsgs = await parentPage.evaluate(() => window.__caseinParentMessages || [])
+    snapshot.parentTypes = parentMsgs.map((m) => m?.type).filter(Boolean)
+    const readyMsg = parentMsgs.find((m) => m?.type === "casein:preview:bridge_ready")
+    if (
+      !readyMsg ||
+      readyMsg.source !== "casein-preview" ||
+      readyMsg.version !== 1 ||
+      !readyMsg.payload ||
+      typeof readyMsg.payload.request_id !== "string"
+    ) {
+      mark("post_message_envelope", "failed", JSON.stringify(readyMsg || null).slice(0, 200))
+      fail(1, "parent postMessage envelope invalid", { steps, snapshot })
+    }
+    mark("post_message_envelope", "passed")
+
+    // Live socket class flip: connected already emitted; flip to disconnected.
+    await childFrame.evaluate(() => {
+      document.body.classList.remove("phx-connected")
+      document.body.classList.add("phx-disconnected")
+    })
+    await childFrame.waitForFunction(
+      () =>
+        (window.__caseinBridgeSignals || []).some(
+          (s) => s && s.type === "casein:preview:live_socket_disconnected"
+        ),
+      { timeout: 5_000 }
+    )
+    await childFrame.evaluate(() => {
+      document.body.classList.remove("phx-disconnected")
+      document.body.classList.add("phx-connected")
+    })
+    await childFrame.waitForFunction(
+      () => {
+        const types = (window.__caseinBridgeSignals || []).map((s) => s?.type)
+        const disc = types.lastIndexOf("casein:preview:live_socket_disconnected")
+        const conn = types.lastIndexOf("casein:preview:live_socket_connected")
+        return disc >= 0 && conn > disc
+      },
+      { timeout: 5_000 }
+    )
+    mark("live_socket_class_flip", "passed")
+
+    // Client error via synthetic ErrorEvent.
+    await childFrame.evaluate(() => {
+      window.dispatchEvent(
+        new ErrorEvent("error", {
+          message: "casein_bridge_fixture_error",
+          filename: "bridge_child.html",
+          lineno: 1,
+          colno: 1,
+        })
+      )
+    })
+    await childFrame.waitForFunction(
+      () =>
+        (window.__caseinBridgeSignals || []).some(
+          (s) =>
+            s &&
+            s.type === "casein:preview:client_error" &&
+            s.payload &&
+            s.payload.message === "casein_bridge_fixture_error"
+        ),
+      { timeout: 5_000 }
+    )
+    mark("client_error_signal", "passed")
+
+    // Page loading start/stop custom events (LiveView page loading hooks).
+    await childFrame.evaluate(() => {
+      window.dispatchEvent(
+        new CustomEvent("phx:page-loading-start", { detail: { kind: "patch" } })
+      )
+      window.dispatchEvent(
+        new CustomEvent("phx:page-loading-stop", { detail: { kind: "patch" } })
+      )
+    })
+    await childFrame.waitForFunction(
+      () => {
+        const types = (window.__caseinBridgeSignals || []).map((s) => s?.type)
+        return (
+          types.includes("casein:preview:page_loading_start") &&
+          types.includes("casein:preview:page_loading_stop")
+        )
+      },
+      { timeout: 5_000 }
+    )
+    mark("page_loading_signals", "passed")
+
+    // Refresh types after exercised signals.
+    snapshot.types = await childFrame.evaluate(() =>
+      (window.__caseinBridgeSignals || []).map((s) => s?.type).filter(Boolean)
+    )
+
+    // Disabled path: no casein_preview query, top-level, production bundle.
+    const disabledPage = await context.newPage()
+    const disabledUrl = pathToFileURL(disabledPath).href
+    await disabledPage.goto(disabledUrl, { waitUntil: "domcontentloaded", timeout: 30_000 })
+    await disabledPage.waitForFunction(
+      () => {
+        const s = document.getElementById("status")?.textContent
+        return s === "disabled" || s === "installed" || (s && s.startsWith("error:"))
+      },
+      { timeout: 5_000 }
+    )
+    const disabledSnap = await disabledPage.evaluate(() => ({
+      status: document.getElementById("status")?.textContent || "",
+      types: (window.__caseinBridgeSignals || []).map((s) => s?.type).filter(Boolean),
+      hasBridge: Boolean(window.__caseinPreviewBridge),
+    }))
+    snapshot.disabledStatus = disabledSnap.status
+    if (disabledSnap.status !== "disabled" || disabledSnap.hasBridge || disabledSnap.types.length) {
+      mark(
+        "disabled_without_preview_query",
+        "failed",
+        JSON.stringify(disabledSnap).slice(0, 200)
+      )
+      fail(1, "bridge installed without casein_preview=1", { steps, snapshot })
+    }
+    mark("disabled_without_preview_query", "passed")
+    await disabledPage.close()
+
     const result = {
       ok: true,
       schema: "casein_preview_bridge_file_page",
-      schema_version: 1,
+      schema_version: 2,
       issue: 463,
       proves: [
         "esbuild_iife_bundle_of_preview_bridge",
         "file_url_static_page_load",
         "playwright_chromium_drive",
         "bridge_ready_and_dom_loaded_signals",
+        "parent_post_message_envelope",
+        "live_socket_class_flip_signals",
+        "client_error_signal",
+        "page_loading_start_stop_signals",
+        "disabled_without_casein_preview_query",
       ],
       does_not_prove: [
         "clean_win11_signed_install",
         "agent_driven_preview_mcp_walk",
         "packaged_windows_node_playwright_chromium",
+        "own_origin_or_path_prefix_proxy",
       ],
       steps,
-      snapshot: {
-        title: snapshot.title,
-        status: snapshot.status,
-        types: snapshot.types,
-        hasBridge: snapshot.hasBridge,
-      },
+      snapshot,
     }
 
     if (wantJson) console.log(JSON.stringify(result, null, 2))
     else {
-      console.log("OK: preview_bridge file:// IIFE walk passed")
+      console.log("OK: preview_bridge file:// IIFE walk passed (schema v2)")
       console.log("proves:", result.proves.join(", "))
       console.log("does_not_prove:", result.does_not_prove.join(", "))
     }
