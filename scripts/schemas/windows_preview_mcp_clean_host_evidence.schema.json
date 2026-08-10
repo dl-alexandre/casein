@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://casein.dev/schemas/windows-preview-mcp-clean-host-evidence-v1.json",
+  "title": "Casein Windows Preview MCP clean-host acceptance evidence",
+  "description": "Fixed-schema operator evidence for issue #463 clean Win11 Preview MCP walk. Package smoke, Linux dry-run, and hosted Windows CI do not set clean_host_exercised or verdict walk_passed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "issue",
+    "recorded_at_utc",
+    "product_revision",
+    "package_sha",
+    "host",
+    "claims",
+    "mcp_steps",
+    "verdict"
+  ],
+  "properties": {
+    "schema": {
+      "const": "casein_windows_preview_mcp_clean_host"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "issue": {
+      "const": 463
+    },
+    "recorded_at_utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "product_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "package_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Git SHA of the installed Windows desktop package under test (often equals product_revision)."
+    },
+    "operator": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "kind", "package_signed"],
+      "properties": {
+        "os": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "kind": {
+          "enum": [
+            "clean_win11_signed_install",
+            "linux_dry_run",
+            "package_smoke_ci",
+            "other"
+          ]
+        },
+        "package_signed": { "type": "boolean" },
+        "hostname_redacted": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._*-]{0,64}$"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clean_host_exercised",
+        "agent_inside_installed_workspace",
+        "package_smoke_only",
+        "linux_dry_run",
+        "secrets_redacted"
+      ],
+      "properties": {
+        "clean_host_exercised": { "type": "boolean" },
+        "agent_inside_installed_workspace": { "type": "boolean" },
+        "package_smoke_only": { "type": "boolean" },
+        "linux_dry_run": { "type": "boolean" },
+        "secrets_redacted": { "type": "boolean" }
+      }
+    },
+    "mcp_steps": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/mcp_step" }
+    },
+    "attachments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "screenshot_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "log_refs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9._:/-]{1,256}$"
+          }
+        },
+        "issue_comment_urls": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^https://github\\.com/dl-alexandre/casein/issues/463#issuecomment-[0-9]+$"
+          }
+        }
+      }
+    },
+    "host_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uname": { "type": "string", "maxLength": 128 },
+        "is_windows": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "verdict": {
+      "enum": [
+        "walk_passed",
+        "walk_failed",
+        "lab_incomplete",
+        "lab_unreachable_on_this_host",
+        "rejected_secrets_or_schema"
+      ]
+    }
+  },
+  "$defs": {
+    "mcp_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "outcome"],
+      "properties": {
+        "id": {
+          "enum": [
+            "discover",
+            "open",
+            "observe",
+            "click",
+            "type",
+            "press",
+            "screenshot",
+            "close"
+          ]
+        },
+        "outcome": {
+          "enum": ["passed", "failed", "skipped", "not_run"]
+        },
+        "at_utc": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    }
+  }
+}

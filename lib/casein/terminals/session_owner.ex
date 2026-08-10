@@ -528,9 +528,16 @@ defmodule Casein.Terminals.SessionOwner do
   def handle_info(:backend_recover, state) do
     state = %{state | backend_recover_timer: nil}
 
-    case attempt_backend_recover(state) do
-      {:stop, reason, next} -> {:stop, reason, next}
-      next -> {:noreply, next}
+    # A concurrent raw attach may have already reopened the attachment while
+    # this timer was pending. Opening again would leak the first handle and
+    # double-count Telemetry.open_attachments.
+    if state.attachment do
+      {:noreply, %{state | backend_recover_attempts: 0}}
+    else
+      case attempt_backend_recover(state) do
+        {:stop, reason, next} -> {:stop, reason, next}
+        next -> {:noreply, next}
+      end
     end
   end
 
@@ -800,6 +807,15 @@ defmodule Casein.Terminals.SessionOwner do
   end
 
   defp continue_backend_recover(state, attempts, missing?) do
+    # Race: ensure_attachment/4 may have reopened between schedule and fire.
+    if state.attachment do
+      %{state | backend_recover_attempts: 0}
+    else
+      do_continue_backend_recover(state, attempts, missing?)
+    end
+  end
+
+  defp do_continue_backend_recover(state, attempts, missing?) do
     session = tmux_session_for(state)
     history_restored? = is_binary(session) and ScrollbackArchive.present?(session)
 
@@ -1798,7 +1814,11 @@ defmodule Casein.Terminals.SessionOwner do
       with {:ok, attachment} <- open_attachment(state, opts) do
         Telemetry.owner_attachment_opened()
 
-        s2 = %{state | attachment: attachment}
+        # Cancel any pending term_exit recover so it cannot open a second
+        # attachment and leak the handle / Telemetry.open_attachments count.
+        s2 =
+          %{state | attachment: attachment, backend_recover_attempts: 0}
+          |> cancel_backend_recover_timer()
 
         s2 =
           if tmux_tracks_client_colors?() do
