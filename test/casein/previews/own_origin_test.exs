@@ -52,6 +52,14 @@ defmodule Casein.Previews.OwnOriginTest do
       assert OwnOrigin.origin(@workspace, 21_005) == :error
     end
 
+    test "refuse to build a host when no preview domain is configured" do
+      Application.put_env(:casein, :preview_own_origin, enabled: true, domain: nil)
+
+      assert OwnOrigin.domain() == nil
+      assert OwnOrigin.host(@workspace, 21_005) == :error
+      assert OwnOrigin.origin(@workspace, 21_005) == :error
+    end
+
     # Folder-attached workspaces use `folder:<base64url>` ids, which a DNS label
     # cannot carry. Those previews must fall back to the path proxy rather than
     # produce a hostname that resolves nowhere.

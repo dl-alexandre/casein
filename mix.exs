@@ -214,6 +214,8 @@ defmodule Casein.MixProject do
         "cmd ./scripts/check-heex-boolean-attr-guard.sh",
         # Vendored Ghostty bytes must match the reviewed SHA-256 pin.
         "cmd ./scripts/check-vendor-pin-guard.sh",
+        # Portable product defaults must not bake MILC home/domain paths (#248).
+        "cmd ./scripts/check-portable-defaults-guard.sh",
         "cmd ./scripts/test-cover-gate.sh"
       ]
     ]

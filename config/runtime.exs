@@ -441,9 +441,17 @@ if config_env() == :prod and not release_cli? do
   # Own-origin previews (`pv-<port>-<workspace>.<domain>`). Requires the edge
   # `pv-*` route from scripts/preview-router.sh to be live, so it is switched on
   # per-deployment rather than by default. See `Casein.Previews.OwnOrigin`.
+  # Domain has no portable product default — only CASEIN_PREVIEW_DOMAIN or the
+  # ON_DEVBOX overlay branch below may supply one.
+  preview_own_origin_domain =
+    case System.get_env("CASEIN_PREVIEW_DOMAIN") do
+      domain when is_binary(domain) and domain != "" -> domain
+      _ -> nil
+    end
+
   config :casein, :preview_own_origin,
     enabled: System.get_env("CASEIN_PREVIEW_OWN_ORIGIN", "0") in ~w(1 true yes),
-    domain: System.get_env("CASEIN_PREVIEW_DOMAIN", "devbox.milcgroup.com")
+    domain: preview_own_origin_domain
 
   # Bind address. Defaults to all interfaces for container/k8s deploys that
   # front Casein with their own network policy. When Casein runs behind a
@@ -522,6 +530,15 @@ if config_env() == :prod and not release_cli? do
     # are redirected to the canonical origin; credential-bearing requests keep
     # failing closed above.
     config :casein, :deprecated_public_hosts, ["devide.devbox.milcgroup.com"]
+
+    # Devbox overlay default for own-origin previews when the operator has not
+    # set CASEIN_PREVIEW_DOMAIN. Portable / desktop / LAN profiles leave domain
+    # unset so a fresh clone never inherits milcgroup DNS.
+    if is_nil(preview_own_origin_domain) do
+      config :casein, :preview_own_origin,
+        enabled: System.get_env("CASEIN_PREVIEW_OWN_ORIGIN", "0") in ~w(1 true yes),
+        domain: "devbox.milcgroup.com"
+    end
   end
 
   # Allow WebSocket connections from localhost (Preview MCP browser) when
@@ -658,8 +675,15 @@ if config_env() == :prod and not release_cli? do
   # Workspace tokens minted at runtime (Casein.Agents.WorkspaceTokens) persist
   # to this store so they survive restarts; the path must match
   # WorkspaceTokens.store_path/0. Env-provided tokens win on conflict.
+  # Resolve HOME portably — never invent a host-specific operator path.
+  workspace_tokens_home =
+    System.get_env("HOME") ||
+      System.get_env("USERPROFILE") ||
+      System.user_home() ||
+      raise "HOME or USERPROFILE is required to locate workspace API tokens"
+
   workspace_tokens_store =
-    Path.join(System.get_env("HOME") || "/home/devbox", ".casein/workspace-api-tokens.json")
+    Path.join(workspace_tokens_home, ".casein/workspace-api-tokens.json")
 
   stored_workspace_tokens =
     with true <- File.regular?(workspace_tokens_store),

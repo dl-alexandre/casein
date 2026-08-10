@@ -257,9 +257,11 @@ config :casein, :preview_proxy_hmr,
 #
 # Opt-in: it needs the edge `pv-*` route (scripts/preview-router.sh) to be live,
 # so it stays off until that is deployed. Off, previews keep using the path proxy.
+# Portable default: own-origin previews stay off until both the edge route and
+# CASEIN_PREVIEW_DOMAIN (or an ON_DEVBOX overlay default) are configured.
 config :casein, :preview_own_origin,
   enabled: false,
-  domain: "devbox.milcgroup.com"
+  domain: nil
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

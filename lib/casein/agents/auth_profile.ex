@@ -204,9 +204,7 @@ defmodule Casein.Agents.AuthProfile do
       Path.join([home_dir(), ".casein", "agent-auth"])
   end
 
-  defp home_dir do
-    System.get_env("HOME") || "/home/devbox"
-  end
+  defp home_dir, do: Casein.Paths.home!()
 
   # Profile dirs are rooted under the configured Casein auth-profile root after slugging owner keys.
   # sobelow_skip ["Traversal.FileModule"]

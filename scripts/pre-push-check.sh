@@ -259,6 +259,9 @@ MIX="${MIX[*]}" ./scripts/check-config-seam-guard.sh
 log "checking HEEx boolean data-/aria- attrs are to_string-wrapped (#163)"
 ./scripts/check-heex-boolean-attr-guard.sh
 
+log "checking portable product defaults stay host-agnostic (#248)"
+./scripts/check-portable-defaults-guard.sh
+
 if [[ -x "${ROOT}/scripts/preview-env.sh" ]]; then
   preview_json="$(
     bash "${ROOT}/scripts/preview-env.sh" tidewave-latest 2>/dev/null || true

@@ -159,7 +159,7 @@ defmodule CaseinWeb.API.MCPCapabilityScope do
   defp bound_transcript?(path, leader_id)
        when is_binary(path) and is_binary(leader_id) do
     if Regex.match?(~r/\A[0-9a-f]{24}\z/, leader_id) do
-      home = Path.expand(System.get_env("HOME") || "/home/devbox")
+      home = Path.expand(Casein.Paths.home!())
       root = Path.join([home, ".casein", "grok-homes", leader_id, "sessions"])
       expanded = Path.expand(path)
 

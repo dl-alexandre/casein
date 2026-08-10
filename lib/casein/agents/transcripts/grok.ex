@@ -571,7 +571,7 @@ defmodule Casein.Agents.Transcripts.Grok do
   end
 
   defp global_sessions_root do
-    home = System.get_env("HOME") || "/home/devbox"
+    home = Casein.Paths.home!()
     Path.expand(Path.join([home, ".grok", "sessions"]))
   end
 
@@ -588,7 +588,7 @@ defmodule Casein.Agents.Transcripts.Grok do
   end
 
   defp managed_sessions_root(path) do
-    home = Path.expand(System.get_env("HOME") || "/home/devbox")
+    home = Path.expand(Casein.Paths.home!())
     base = Path.join([home, ".casein", "grok-homes"])
     relative = Path.relative_to(path, base)
 
@@ -604,7 +604,7 @@ defmodule Casein.Agents.Transcripts.Grok do
   end
 
   defp no_symlink_components?(path) do
-    home = Path.expand(System.get_env("HOME") || "/home/devbox")
+    home = Path.expand(Casein.Paths.home!())
     relative = Path.relative_to(path, home)
 
     if relative == path or relative == ".." or String.starts_with?(relative, "../") do
