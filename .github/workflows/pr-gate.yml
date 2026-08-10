@@ -110,8 +110,10 @@ jobs:
             echo "skills_touched=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # One locked step: fail-fast Elixir (#818) then full pre-push + smoke.
+      # One locked step: cheap fail-fast (#818) then full pre-push + smoke.
       # Same host flock as preview-e2e (#816) so clean:false _build cannot race.
+      # Cheap phase must NOT need zigler/NIF compile — format + shell guards +
+      # doc citations first; compile/credo/sobelow stay inside pre-push after.
       - name: Run pre-push gate + release smoke
         if: steps.detect.outputs.docs_only != 'true'
         shell: bash
@@ -126,11 +128,27 @@ jobs:
           casein_devbox_mix_lock_acquire
           casein_devbox_heal_zigler_priv .
 
-          echo ">>> fail-fast: deps + compile + credo + format (#818)"
+          # --- Cheap fail-fast (seconds-class; no project compile) ---
+          echo ">>> fail-fast cheap: whitespace + bash -n + format + static guards + docs (#818)"
+          git diff --check
+          bash -n scripts/deploy-devbox-release.sh
+          bash -n scripts/deploy-poller.sh
+          bash -n scripts/build-release.sh
+          bash -n scripts/lib/canary-drain.sh
+          bash -n scripts/lib/caddy-upstream.sh
+          # deps.get only — needed so format plugins (phoenix_live_view) resolve.
+          # Does not compile the app or casein_mob NIFs.
           mise exec -- mix deps.get
-          mise exec -- mix compile --warnings-as-errors
-          mise exec -- mix credo --min-priority high
           mise exec -- mix format --check-formatted
+          ./scripts/check-heex-boolean-attr-guard.sh
+          ./scripts/check-portable-defaults-guard.sh
+          ./scripts/check-doc-citations.sh
+
+          # Tell precommit.ci / pre-push to skip identical checks already green.
+          export CASEIN_GATE_SKIP_FORMAT=1
+          export CASEIN_GATE_SKIP_HEEX_BOOL=1
+          export CASEIN_GATE_SKIP_PORTABLE=1
+          export CASEIN_GATE_SKIP_DOC_CITATIONS=1
 
           bash scripts/pre-push-check.sh
           # Reuse the production build cache warmed by earlier runs. The smoke
