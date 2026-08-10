@@ -16,6 +16,8 @@ name: Preview pane e2e
 # workflow + code, so there is no fork-PR exposure on the self-hosted runner.
 # NOTE: schedule triggers only fire from the workflow file on master — this takes
 # effect once merged, not from a PR branch.
+#
+# Shares host Mix lock with pr-gate (#816) so clean:false _build cannot race.
 
 on:
   schedule:
@@ -47,13 +49,18 @@ jobs:
           # (same rationale as the pr-gate job).
           clean: false
 
-      - name: Set up toolchain, node bridge, and Chromium
+      - name: Setup + run preview-pane e2e (visual regression)
         shell: bash
         run: |
+          set -euo pipefail
           # Non-login runner shell: put mise (reads .tool-versions) on PATH so
           # `mise exec -- mix ...` resolves the pinned elixir/erlang.
           export PATH="$HOME/.local/bin:$PATH"
           command -v mise >/dev/null || { echo "mise not found on runner PATH"; exit 1; }
+          # shellcheck source=scripts/lib/casein-devbox-mix-lock.sh
+          source scripts/lib/casein-devbox-mix-lock.sh
+          casein_devbox_mix_lock_acquire
+          casein_devbox_heal_zigler_priv .
           mise exec -- mix deps.get
           # Node Playwright bridge used by the :playwright adapter for
           # screenshot + compare_snapshots.
@@ -61,11 +68,6 @@ jobs:
           # Ensure the Chromium build Playwright expects is installed (idempotent
           # — a no-op once cached on the persistent runner).
           ( cd priv/scripts && npx --yes playwright install chromium )
-
-      - name: Run preview-pane e2e (visual regression)
-        shell: bash
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
           # Compare-only: never pass PREVIEW_UPDATE_GOLDEN here — a golden refresh
           # is a deliberate local action, committed and reviewed like any change.
           mise exec -- mix test --only preview_e2e
