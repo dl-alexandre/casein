@@ -143,13 +143,38 @@ must be blocked in `flock` (`/proc/*/wchan`) and/or carry a distinct run id.
 The fleet drawer shows a gate-queue banner; the badge adds **gate busy** when
 held and no agent needs you. Projection only — no GenServer, no GitHub API.
 
+## MCP: `orchestration_status` (M0 discovery)
+
+Read-only higher-order status for orchestrators (#384). Same projections as the
+fleet drawer, over the wire — **not** a second classifier and **not** shell.
+
+```text
+orchestration_status { workspace_id, session }
+→ counts, attention_count, rows[], gate_queue, orphaned_claims
+```
+
+| Field | Source |
+|-------|--------|
+| `counts` / `rows` | `FleetBoard` over topology-enriched window tabs |
+| `gate_queue` | `GateQueue.observe` — `observe_state: unknown` never free |
+| `orphaned_claims` | `OrphanedClaims` (claimed − live `IssueBinding`) |
+
+Fail closed when `workspace_id` or `session` is missing. No scrollback, no
+mutations, no `worker_launch`. Classified `mutation: false` with
+`:terminal_metadata` + `:terminal_read` so locked Grok grants still see it.
+
+**Out of scope for M0:** durable task graph, path contracts, verifier adapters,
+restricted orchestrator token profile, `worker_launch` / cancel / replace.
+
 ## Code
 
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
 - `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans + gate)
 - `Casein.Terminals.OrphanedClaims` — claimed-minus-bound lease projection
+- `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
 - `Casein.Ops.GateQueue` — host flock observation (`/proc` + lock path)
 - `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
+- `Casein.Agents.TerminalTools.OrchestrationStatus` — Jido action / MCP tool
 - `Casein.Labels.enrich_topology/2` — join label strings onto panes
 - `Casein.Terminals.PaneState` — strips bare runtime banners from `task_summary`
 - Wired from `Casein.Agents.TerminalTools.Impl.Session.topology/1`,

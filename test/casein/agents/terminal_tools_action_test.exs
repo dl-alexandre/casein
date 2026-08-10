@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 28
+      assert length(names) == 29
 
       for expected <- [
             "terminal_list_sessions",
@@ -41,6 +41,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_request_clarification",
             "terminal_request_human_input",
             "terminal_wait_agent_state",
+            "orchestration_status",
             "gate_report",
             "annotation_list",
             "annotation_propose"
@@ -115,6 +116,17 @@ defmodule Casein.Agents.TerminalToolsActionTest do
       assert topology.metadata.capabilities == [:terminal_read]
     end
 
+    test "orchestration_status is classified read-only metadata with required scope" do
+      tool = definition("orchestration_status")
+
+      assert tool.parameters.required == ["workspace_id", "session"]
+      assert tool.parameters.properties.session.type == "string"
+      assert tool.metadata.mutation? == false
+      assert tool.metadata.danger_level == :low
+      assert :terminal_metadata in tool.metadata.capabilities
+      assert :terminal_read in tool.metadata.capabilities
+    end
+
     test "terminal_send_command keeps high-danger mutation metadata" do
       tool = definition("terminal_send_command")
 
@@ -147,6 +159,14 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "terminal_topology rejects a missing session before tmux access" do
       assert {:error, {:missing_argument, "session"}} =
                TerminalTools.invoke("terminal_topology", %{"workspace_id" => "ws-1"})
+    end
+
+    test "orchestration_status fails closed without workspace_id or session" do
+      assert {:error, {:missing_argument, "workspace_id"}} =
+               TerminalTools.invoke("orchestration_status", %{"session" => "casein_ws-1_x"})
+
+      assert {:error, {:missing_argument, "session"}} =
+               TerminalTools.invoke("orchestration_status", %{"workspace_id" => "ws-1"})
     end
 
     test "terminal_send_keys rejects a non-string keys argument" do

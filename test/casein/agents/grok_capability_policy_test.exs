@@ -33,6 +33,7 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     refute snapshot.write_enabled
     assert "terminal_list_sessions" in snapshot.allowed_tools["terminal"]
     assert "terminal_report_agent_state" in snapshot.allowed_tools["terminal"]
+    assert "orchestration_status" in snapshot.allowed_tools["terminal"]
     assert "annotation_propose" in snapshot.allowed_tools["terminal"]
     refute "terminal_send_command" in snapshot.allowed_tools["terminal"]
     refute "terminal_send_agent_command" in snapshot.allowed_tools["terminal"]
