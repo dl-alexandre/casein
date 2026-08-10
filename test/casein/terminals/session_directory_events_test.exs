@@ -568,6 +568,13 @@ end
 defmodule Casein.Terminals.SessionDirectoryEventsTest.CountingAdapter do
   @moduledoc false
 
+  # Thin counter over FakeTmuxAdapter. Only list_sessions/0 is instrumented —
+  # every SessionDirectory recompute calls it. Other exports must stay
+  # scenario-aware delegates (never hardcode true/{3,4}): unguarded product
+  # paths include TerminalSessions.session_exists?/1 and TmuxOps.tmux_version/0
+  # (server_version/0). SessionDirectory itself guards list_session_windows/1
+  # and list_session_panes/1 with function_exported?/3.
+
   # Counts list_sessions/0 — every SessionDirectory recompute calls it.
   def list_sessions do
     case :persistent_term.get(
@@ -587,4 +594,8 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest.CountingAdapter do
 
   # Mobile terminal lease cleanup calls this unguarded (TerminalSessions).
   defdelegate session_exists?(session), to: Casein.Test.FakeTmuxAdapter
+
+  # TmuxOps.tmux_version/0 → adapter.server_version/0 is unguarded; FakeState
+  # scenario must still win (do not hardcode {3, 4}).
+  defdelegate server_version(), to: Casein.Test.FakeTmuxAdapter
 end
