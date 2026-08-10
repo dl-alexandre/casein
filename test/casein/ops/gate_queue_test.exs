@@ -193,8 +193,7 @@ defmodule Casein.Ops.GateQueueTest do
     env =
       opts
       |> Keyword.get(:environ, %{})
-      |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
-      |> Enum.join(<<0>>)
+      |> Enum.map_join(<<0>>, fn {k, v} -> "#{k}=#{v}" end)
 
     File.write!(Path.join(dir, "environ"), env <> <<0>>)
 
