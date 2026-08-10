@@ -52,6 +52,35 @@ defmodule Scripts.PrePushCheckTest do
     assert content =~ "failed_step=\"${GATE_CURRENT_STEP}\""
   end
 
+  test "cheap static checks run before native supply-chain and precommit.ci (#818)" do
+    content = File.read!(@script)
+
+    format_at = :binary.match(content, "checking mix format (before compile)")
+    heex_at = :binary.match(content, "checking HEEx boolean data-/aria- attrs (#163)")
+    docs_at = :binary.match(content, "checking doc citations resolve")
+    native_at = :binary.match(content, "checking native plugin supply-chain")
+    precommit_at = :binary.match(content, "running read-only precommit checks")
+
+    assert format_at
+    assert heex_at
+    assert docs_at
+    assert native_at
+    assert precommit_at
+
+    {format_idx, _} = format_at
+    {heex_idx, _} = heex_at
+    {docs_idx, _} = docs_at
+    {native_idx, _} = native_at
+    {precommit_idx, _} = precommit_at
+
+    assert heex_idx < format_idx
+    assert docs_idx < format_idx
+    assert format_idx < native_idx
+    assert format_idx < precommit_idx
+    assert content =~ "run_or_skip FORMAT"
+    assert content =~ "CASEIN_GATE_SKIP_"
+  end
+
   test "isolates inherited root dependencies and preserves native command order" do
     content = File.read!(@script)
     block = native_supply_chain_block(content)

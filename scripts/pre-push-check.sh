@@ -91,7 +91,20 @@ else
 fi
 
 # --- Cheap checks first: fail fast on trivial breakage (seconds, not minutes)
-# before paying for npm and the test suite. ---
+# before paying for npm, compile (zigler/NIF), and the test suite. ---
+# When CASEIN_GATE_SKIP_* is set (pr-gate fail-fast phase already green), skip
+# only the identical check — never drop a check from the set (#818).
+
+run_or_skip() {
+  local token="$1"
+  shift
+  local var="CASEIN_GATE_SKIP_${token}"
+  if [[ "${!var:-}" == "1" ]]; then
+    log "${token} already verified (CASEIN_GATE_SKIP_${token}=1) — skip"
+    return 0
+  fi
+  "$@"
+}
 
 log "checking staged/worktree whitespace"
 git diff --check
@@ -102,6 +115,16 @@ bash -n scripts/deploy-poller.sh
 bash -n scripts/build-release.sh
 bash -n scripts/lib/canary-drain.sh
 bash -n scripts/lib/caddy-upstream.sh
+
+# Pure shell/static guards — no Mix, no compile.
+log "checking HEEx boolean data-/aria- attrs (#163)"
+run_or_skip HEEX_BOOL ./scripts/check-heex-boolean-attr-guard.sh
+
+log "checking portable product defaults stay host-agnostic (#248)"
+run_or_skip PORTABLE ./scripts/check-portable-defaults-guard.sh
+
+log "checking doc citations resolve (docs/subsystems, docs/reference)"
+run_or_skip DOC_CITATIONS ./scripts/check-doc-citations.sh
 
 log "running hermetic shell unit tests (scoped-token validation/durability)"
 bash scripts/test-scoped-token-durability.sh
@@ -216,6 +239,19 @@ node .claude/skills/preview-ui-walk/references/selftest.mjs
 log "fetching Elixir dependencies"
 "${MIX[@]}" deps.get
 
+# Format needs deps (phoenix_live_view HTMLFormatter plugin) but NOT project
+# compile / zigler NIF. Run immediately after deps.get and BEFORE native tests
+# and precommit.ci so format-only reds never burn a compile (#818).
+log "checking mix format (before compile)"
+run_or_skip FORMAT "${MIX[@]}" format --check-formatted
+
+# precommit.ci repeats format/heex/portable for standalone `mix precommit.ci`
+# callers; after this script already verified them, skip the duplicates only.
+export CASEIN_GATE_SKIP_FORMAT=1
+export CASEIN_GATE_SKIP_HEEX_BOOL=1
+export CASEIN_GATE_SKIP_PORTABLE=1
+export CASEIN_GATE_SKIP_DOC_CITATIONS=1
+
 log "checking native plugin supply-chain signatures and committed manifest"
 (
   # The deploy poller shares MIX_DEPS_PATH across clean root builds. Running
@@ -242,11 +278,13 @@ log "checking native plugin supply-chain signatures and committed manifest"
 )
 
 # precommit.ci owns the complete read-only Elixir gate used by deploy-devbox.yml.
+# It re-orders format/heex/portable before compile (#818) and honours
+# CASEIN_GATE_SKIP_* so the fail-fast phase does not double-run those checks.
+# HEEx/portable/format also run above for local pre-push fail-fast; when skipped
+# here they already passed. Vendor pin + config-seam still run inside precommit.ci
+# (and again below for SCC/vendor where pre-push historically duplicated them).
 log "running read-only precommit checks"
 "${MIX[@]}" precommit.ci
-
-log "checking doc citations resolve (docs/subsystems, docs/reference)"
-./scripts/check-doc-citations.sh
 
 log "checking preview stays out of the core SCC (extraction guard, PRs #301-#303)"
 MIX="${MIX[*]}" ./scripts/check-scc-guard.sh
@@ -256,12 +294,6 @@ MIX="${MIX[*]}" ./scripts/check-vendor-pin-guard.sh
 
 log "checking config-seam module-literal defaults stay out of xref cycles (#347/#348)"
 MIX="${MIX[*]}" ./scripts/check-config-seam-guard.sh
-
-log "checking HEEx boolean data-/aria- attrs are to_string-wrapped (#163)"
-./scripts/check-heex-boolean-attr-guard.sh
-
-log "checking portable product defaults stay host-agnostic (#248)"
-./scripts/check-portable-defaults-guard.sh
 
 if [[ -x "${ROOT}/scripts/preview-env.sh" ]]; then
   preview_json="$(

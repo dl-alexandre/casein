@@ -31,6 +31,8 @@ bash scripts/pre-push-check.sh
 
 This mirrors the deploy workflow's blocking checks: JS hook lint (`assets/` with dev dependencies), deploy script syntax/sync, and `mix precommit.ci`. Use this instead of relying on a manual devbox deploy to prove durability. If the checkout is dirty with unrelated user/agent work, stage only your intended files and still run targeted tests plus this gate when possible; do not include unrelated dirty files in your commit.
 
+**Fail-fast ordering (#818):** cheap checks run before zigler/NIF compile — `mix format --check-formatted`, shell guards, HEEx/portable/doc-citation guards, then compile/credo/sobelow/cover. On the PR gate job, the same cheap phase runs first inside the host Mix flock; identical checks already green are skipped via `CASEIN_GATE_SKIP_*` (check set unchanged). Fix format/credo/sobelow locally before pushing so you do not burn a full ~10m serial gate slot.
+
 **Enforced by committed git hooks.** Enable once per checkout (git does not auto-apply committed hooks):
 
 ```bash

@@ -195,7 +195,14 @@ defmodule Casein.MixProject do
       ],
       # CI variant: identical checks, but read-only — verifies instead of
       # mutating (format --check-formatted, deps.unlock --check-unused).
+      # Ordering (#818): seconds-class static checks (format + pure shell guards)
+      # run BEFORE compile so a format-only red does not burn zigler/NIF compile.
+      # CASEIN_GATE_SKIP_* (via scripts/lib/gate-run-or-skip.sh) lets pr-gate's
+      # fail-fast phase avoid re-running identical checks it already passed.
       "precommit.ci": [
+        "cmd ./scripts/lib/gate-run-or-skip.sh FORMAT mix format --check-formatted",
+        "cmd ./scripts/lib/gate-run-or-skip.sh HEEX_BOOL ./scripts/check-heex-boolean-attr-guard.sh",
+        "cmd ./scripts/lib/gate-run-or-skip.sh PORTABLE ./scripts/check-portable-defaults-guard.sh",
         "compile --warnings-as-errors",
         "deps.unlock --check-unused",
         "deps.audit",
@@ -203,19 +210,15 @@ defmodule Casein.MixProject do
         # Mix VM on the gate runner (archive not loaded); a fresh mix invocation
         # always has them, and cmd propagates the exit code (enforcing).
         "cmd mix hex.audit",
-        "sobelow --skip --exit",
-        "credo --min-priority high",
-        "format --check-formatted",
+        "cmd ./scripts/lib/gate-run-or-skip.sh SOBELOW mix sobelow --skip --exit",
+        "cmd ./scripts/lib/gate-run-or-skip.sh CREDO mix credo --min-priority high",
         # Config-seam guard (sibling of check-scc-guard.sh). SCC stays
         # pre-push-only; this one also rides precommit.ci so PR gate and
         # deploy checks catch cycle-bound Application.get_env/3 defaults.
+        # Requires a compiled tree (mix xref).
         "cmd ./scripts/check-config-seam-guard.sh",
-        # HEEx boolean data-/aria- predicate attrs must use to_string/1 (#163).
-        "cmd ./scripts/check-heex-boolean-attr-guard.sh",
         # Vendored Ghostty bytes must match the reviewed SHA-256 pin.
         "cmd ./scripts/check-vendor-pin-guard.sh",
-        # Portable product defaults must not bake MILC home/domain paths (#248).
-        "cmd ./scripts/check-portable-defaults-guard.sh",
         "cmd ./scripts/test-cover-gate.sh"
       ]
     ]
