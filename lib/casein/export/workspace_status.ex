@@ -49,9 +49,9 @@ defmodule Casein.Export.WorkspaceStatus do
             workspace: summary(record),
             mode: %{value: mode, source: mode_source},
             db_isolation: db_isolation_payload(record),
-            # What spawn-agent-worker.sh preflights: whether a managed Grok pane
-            # launched right now would get a writable sandbox. Frozen at leader
-            # start, so a spawn into a locked workspace is dead on arrival.
+            # What spawn/launch preflight against: whether a managed Grok pane
+            # launched right now gets MCP mutations (terminal_send_*). The bwrap
+            # base is always strict (#605); the grant is frozen at leader start.
             agent_write: GrokCapabilityPolicy.agent_write_summary(record.external_id),
             git: git_summary(record),
             agent_capabilities: agent_capabilities(record),

@@ -120,14 +120,15 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
   @doc """
   Operator-facing summary of whether agent write is available right now.
 
-  `write_enabled` is the *same* predicate `launch-casein-agent.sh` resolves when
-  it picks a managed Grok leader's bwrap sandbox base, so every surface that
-  reports it (the workspace status API, `terminal_context`) agrees with the
-  sandbox a pane launched now would actually get. `unlock_status` is reported
-  alongside it because the two can diverge: a live unlock still yields
-  `write_enabled: false` when the workspace is not in manual mode or its DB
-  isolation is `shared_stage`/`unsafe`, and telling an operator to re-grant in
-  that case sends them down a dead end.
+  `write_enabled` is whether a managed Grok pane launched **now** would receive
+  MCP mutation tools (`terminal_send_command` / `terminal_send_keys`). The bwrap
+  sandbox base is always `strict` (see #605) — the unlock no longer selects
+  read-only. Surfaces that report this (workspace status API, `terminal_context`)
+  must agree with the capability grant `launch-casein-agent.sh` freezes at
+  leader start. `unlock_status` is reported alongside it because the two can
+  diverge: a live unlock still yields `write_enabled: false` when the workspace
+  is not in manual mode or its DB isolation is `shared_stage`/`unsafe`, and
+  telling an operator to re-grant in that case sends them down a dead end.
   """
   @spec agent_write_summary(String.t()) :: %{
           write_enabled: boolean(),

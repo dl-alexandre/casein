@@ -176,6 +176,8 @@ defmodule Scripts.LaunchCaseinAgentTest do
     # grant only, so "read-only" must not reappear as a sandbox base here.
     assert text =~ ~S(sandbox_base="strict")
     refute text =~ ~S(sandbox_base="read-only")
+    assert text =~ "CASEIN_AGENT_REQUIRE_WRITE"
+    assert text =~ "grok_refuse_locked_orchestrator"
     assert text =~ ~S|capability_file="$(dirname "$socket")/capability"|
     assert text =~ ~S(.launch-${grok_leader_id}.flock)
     assert text =~ ~S(flock -w 15 "$grok_launch_fd")

@@ -222,13 +222,17 @@ the leader starts, and stays frozen for the pane's life, so a later unlock does
 is the remaining sharp edge, and three surfaces make it discoverable instead of
 leaving it to be rediscovered by failure: the workspace status API and
 `terminal_context` both report an `agent_write` block (`write_enabled`,
-`unlock_status`, `unlock_until`, plus a remedy note when blocked), and
-`scripts/spawn-agent-worker.sh` preflights it. The preflight *advises and
-proceeds* — a locked worker still writes its worktree, runs `mix`, and commits,
-so refusing to open the window would block a worker that works. Note that
-`write_enabled` can be false while the unlock is *active*, when the workspace is
-not in manual mode or its DB isolation is `shared_stage`/`unsafe`; re-granting
-does not help there, so the surfaces say so explicitly.
+`orchestrator_ready`, `fail_fast`, `unlock_status`, `unlock_until`, plus a
+remedy note when blocked), and `scripts/spawn-agent-worker.sh` preflights it.
+The worker preflight *advises and proceeds* — a locked worker still writes its
+worktree, runs `mix`, and commits, so refusing to open the window would block a
+worker that works. Orchestrators that need pane control launch with
+`CASEIN_AGENT_REQUIRE_WRITE=1` so a locked grant refuses up front (exit 3)
+instead of a healthy-looking session that cannot `terminal_send_*`. See
+`docs/agent-write-preflight.md`. Note that `write_enabled` can be false while
+the unlock is *active*, when the workspace is not in manual mode or its DB
+isolation is `shared_stage`/`unsafe`; re-granting does not help there, so the
+surfaces say so explicitly.
 
 `search_tools` and `invoke_tool` are intentionally absent, so cross-server
 routing cannot bypass the exact grant. Streamable HTTP session ids are also bound
