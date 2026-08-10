@@ -30,13 +30,18 @@ bash scripts/verify-companion-external-prereqs.sh --dry-run --json /tmp/companio
 # Enforce mode (operator Mac): exits non-zero until CASEIN_COMPANION_* markers are set
 # after real material exists. Markers are presence-only — never commit their values.
 bash scripts/verify-companion-external-prereqs.sh
+
+# Fixture-only validator (synthetic plists; cheap pre-push guard):
+bash scripts/verify-companion-fixtures.sh
+bash scripts/verify-companion-fixtures.sh --json /tmp/companion-fixtures.evidence.json
 ```
 
 Or the ExUnit wrappers (Linux-safe):
 
 ```bash
 mix test test/scripts/companion_signing_contract_test.exs \
-  test/scripts/companion_external_prereqs_test.exs
+  test/scripts/companion_external_prereqs_test.exs \
+  test/scripts/companion_fixtures_test.exs
 ```
 
 `--dry-run` always lists stable NEED codes (`APPLE_AGREEMENT`, `IOS_DEV_PROFILE`,
