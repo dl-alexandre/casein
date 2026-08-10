@@ -55,9 +55,7 @@ defmodule CaseinMob.MixProject do
       # the native build shrinks accordingly. Browse more at
       # https://hexdocs.pm/mob/packages.html.
       {:mob_camera, "~> 0.1"},
-      # Vendored mob_scanner with DairyPhone #457 QR-preference fix.
-      # Path dep is unsigned; acknowledged in mob.exs.
-      {:mob_scanner, path: "vendor/mob_scanner", override: true},
+      {:mob_scanner, "~> 0.1.1"},
       {:mob_location, "~> 0.1"},
       {:mob_biometric, "~> 0.1"},
       # 0.1.3 fork master: signed-v2 + Android push_token_error bridge/JNI

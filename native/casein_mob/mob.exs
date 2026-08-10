@@ -71,9 +71,6 @@ config :mob, :trusted_plugins, %{
   mob_ash: "ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg="
 }
 
-# Path-vendored mob_scanner (DairyPhone #457 QR preference). Unsigned path
-# deps cannot satisfy the Hex signature gate; pin the exception to this name.
-config :mob, :acknowledge_unsafe_plugins, [:mob_scanner]
 
 # Style packages (theming). Leave empty: product brand colours live in
 # CaseinMob.Theme and are applied via `use Mob.App, theme: CaseinMob.Theme`
