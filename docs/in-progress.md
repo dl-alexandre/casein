@@ -45,7 +45,13 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   owners with stable create/close/focus topology.
 - **Landed:** PR #815 applies built-in templates (`agent_pair`) onto multipane
   PowerShell topology via the same dry-run plan as tmux.
-- **Current slice:** Backend seam completeness — `Backends.Fake` contract tests
-  (Linux-safe multipane topology/input) plus `Backends.ConPTY` scaffold that
-  accepts native spawn specs and fails closed off Windows. LiveView chrome
-  wiring and real-host Job Object multi-window soak remain follow-ups.
+- **Landed:** PR #829 — `Backends.Fake` + `Backends.ConPTY` scaffold + contract
+  tests for all 23 Backend callbacks (Linux-honest).
+- **Current slice:** Route bounded product call sites through
+  `Casein.Terminals.Backend.module/0` instead of direct `Tmux` /
+  `:tmux_adapter` reads — SessionOwner (name/exists/resize/window_size),
+  SessionDirectory.Compose, Runtimes/WorktreeAlarm, TmuxJanitor kill,
+  TmuxWindowJanitor kill, Panes.Terminal terminate, PreviewDeps Backend ops,
+  TmuxOps pane/session helpers. `Backends.Tmux` honors `:tmux_adapter` so
+  FakeTmuxAdapter tests keep working. LiveView chrome wiring and real-host
+  Job Object multi-window soak remain follow-ups.

@@ -111,20 +111,20 @@ defmodule Casein.Terminals.TmuxOps do
     TmuxScope.session_in_workspace?(session, workspace)
   end
 
-  @doc "Canonical tmux session prefix for a workspace identifier or name."
+  @doc "Canonical session prefix for a workspace identifier or name (via Backend)."
   @spec tmux_workspace_session_prefix(String.t()) :: String.t()
   def tmux_workspace_session_prefix(workspace_id_or_name) do
-    Tmux.workspace_session_prefix(workspace_id_or_name)
+    backend().session_name(workspace_id_or_name, "")
   end
 
-  @doc "Canonical tmux session name for a workspace shell id."
+  @doc "Canonical session name for a workspace shell id (via Backend)."
   @spec tmux_session_name(String.t(), String.t()) :: String.t()
   def tmux_session_name(workspace_name, sid) do
-    Tmux.session_name(workspace_name, sid)
+    backend().session_name(workspace_name, sid)
   end
 
-  @doc "Kills one exact managed tmux session through the configured adapter."
-  def kill_tmux_session_exact(session) when is_binary(session), do: tmux_adapter().kill(session)
+  @doc "Kills one exact managed session through the configured Backend."
+  def kill_tmux_session_exact(session) when is_binary(session), do: backend().kill(session)
 
   @doc "Snapshot tmux topology through the configured adapter unless one is supplied."
   @spec tmux_topology_snapshot(String.t(), keyword()) :: map()
@@ -153,30 +153,30 @@ defmodule Casein.Terminals.TmuxOps do
   @spec tmux_topology_event_source?(module()) :: boolean()
   def tmux_topology_event_source?(source), do: source == TmuxTopology
 
-  @doc "Selects a tmux pane through the configured adapter."
+  @doc "Selects a pane through the configured Backend."
   @spec select_tmux_pane(String.t(), String.t()) :: :ok | {:error, term()}
   def select_tmux_pane(session, pane_id) do
-    tmux_adapter().select_pane(session, pane_id)
+    backend().select_pane(session, pane_id)
   end
 
-  @doc "Splits a tmux pane through the configured adapter."
+  @doc "Splits a pane through the configured Backend."
   @spec split_tmux_pane(String.t(), String.t(), String.t(), keyword()) ::
           {:ok, String.t()} | {:error, term()}
   def split_tmux_pane(session, pane_id, direction, opts \\ []) do
-    tmux_adapter().split_pane(session, pane_id, direction, opts)
+    backend().split_pane(session, pane_id, direction, opts)
   end
 
-  @doc "Resizes a tmux pane through the configured adapter."
+  @doc "Resizes a pane through the configured Backend."
   @spec resize_tmux_pane(String.t(), String.t(), String.t(), pos_integer()) ::
           :ok | {:error, term()}
   def resize_tmux_pane(session, pane_id, direction, amount) do
-    tmux_adapter().resize_pane(session, pane_id, direction, amount)
+    backend().resize_pane(session, pane_id, direction, amount)
   end
 
-  @doc "Kills a tmux pane through the configured adapter."
+  @doc "Kills a pane through the configured Backend."
   @spec kill_tmux_pane(String.t(), String.t()) :: :ok | {:error, term()}
   def kill_tmux_pane(session, pane_id) do
-    tmux_adapter().kill_pane(session, pane_id)
+    backend().kill_pane(session, pane_id)
   end
 
   @doc "Default pane resize amount."

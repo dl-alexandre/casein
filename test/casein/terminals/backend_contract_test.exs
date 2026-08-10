@@ -15,6 +15,8 @@ defmodule Casein.Terminals.BackendContractTest do
   alias Casein.Terminals.Backends.Fake
   alias Casein.Terminals.Backends.Tmux, as: TmuxBackend
 
+  # Product routing tests below swap :terminal_backend / :tmux_adapter.
+
   @callbacks Backend.behaviour_info(:callbacks)
 
   @impl_modules [TmuxBackend, Fake, ConPTY]
@@ -168,6 +170,183 @@ defmodule Casein.Terminals.BackendContractTest do
       Application.put_env(:casein, :tmux_adapter, :not_a_backend)
       Application.put_env(:casein, :terminal_backend, Fake)
       assert Backend.module() == Fake
+    end
+
+    test "TmuxOps session/pane helpers route through Backend.module/0" do
+      previous = Application.get_env(:casein, :terminal_backend)
+      previous_tmux = Application.get_env(:casein, :tmux_adapter)
+
+      on_exit(fn ->
+        restore(:terminal_backend, previous)
+        restore(:tmux_adapter, previous_tmux)
+      end)
+
+      Application.put_env(:casein, :terminal_backend, Fake)
+      Application.put_env(:casein, :tmux_adapter, :not_a_backend)
+
+      assert Casein.Terminals.backend() == Fake
+      name = Casein.Terminals.tmux_session_name("ws-ops", "sid-1")
+      assert name == Fake.session_name("ws-ops", "sid-1")
+
+      assert String.starts_with?(
+               Casein.Terminals.tmux_workspace_session_prefix("ws-ops"),
+               "fake_"
+             )
+
+      assert :ok = Fake.ensure_session(name, File.cwd!())
+      assert {:ok, agent} = Casein.Terminals.split_tmux_pane(name, "%1", "right", role: "agent")
+      assert is_binary(agent)
+      assert :ok = Casein.Terminals.select_tmux_pane(name, agent)
+      assert :ok = Casein.Terminals.resize_tmux_pane(name, agent, "R", 2)
+      assert :ok = Casein.Terminals.kill_tmux_pane(name, agent)
+      assert :ok = Casein.Terminals.kill_tmux_session_exact(name)
+      refute Fake.session_exists?(name)
+    end
+
+    test "SessionDirectory.Compose names default shells via Backend" do
+      previous = Application.get_env(:casein, :terminal_backend)
+
+      on_exit(fn -> restore(:terminal_backend, previous) end)
+
+      Application.put_env(:casein, :terminal_backend, Fake)
+
+      [tab] =
+        Casein.Terminals.SessionDirectory.Compose.with_default_shell(
+          [],
+          "u-alice",
+          "ws-id",
+          "compose-ws"
+        )
+
+      assert tab.tmux_session == Fake.session_name("compose-ws", "u-alice")
+    end
+
+    test "Panes.Terminal.terminate/1 kills through Backend" do
+      previous = Application.get_env(:casein, :terminal_backend)
+      previous_tmux = Application.get_env(:casein, :tmux_adapter)
+
+      on_exit(fn ->
+        restore(:terminal_backend, previous)
+        restore(:tmux_adapter, previous_tmux)
+      end)
+
+      Application.put_env(:casein, :terminal_backend, Fake)
+      Application.put_env(:casein, :tmux_adapter, :not_a_backend)
+
+      assert :ok = Fake.ensure_session(@session, File.cwd!())
+      assert {:ok, pane} = Fake.split_pane(@session, "%1", "right", [])
+      assert :ok = Casein.Panes.Terminal.terminate({@session, pane})
+      panes = Fake.list_session_panes(@session)
+      refute Enum.any?(panes, &(&1.id == pane))
+    end
+  end
+
+  describe "Tmux backend adapter forwarding (Linux-honest)" do
+    defmodule CountingAdapter do
+      @moduledoc false
+      def configure(pid) when is_pid(pid), do: :persistent_term.put({__MODULE__, :pid}, pid)
+
+      defp notify(msg) do
+        case :persistent_term.get({__MODULE__, :pid}, nil) do
+          pid when is_pid(pid) -> send(pid, msg)
+          _ -> :ok
+        end
+      end
+
+      def session_exists?(session) do
+        notify({:counting_exists, session})
+        true
+      end
+
+      def session_exists?(session, opts) do
+        notify({:counting_exists_opts, session, opts})
+        true
+      end
+
+      def kill(session) do
+        notify({:counting_kill, session})
+        :ok
+      end
+
+      def resize_window(session, cols, rows) do
+        notify({:counting_resize, session, cols, rows})
+        :ok
+      end
+
+      def window_size(session) do
+        notify({:counting_window_size, session})
+        {:ok, {80, 24}}
+      end
+
+      def kill_pane(session, pane_id) do
+        notify({:counting_kill_pane, session, pane_id})
+        :ok
+      end
+    end
+
+    setup do
+      previous = Application.get_env(:casein, :tmux_adapter)
+      previous_backend = Application.get_env(:casein, :terminal_backend)
+      Application.delete_env(:casein, :terminal_backend)
+      Application.put_env(:casein, :tmux_adapter, CountingAdapter)
+      CountingAdapter.configure(self())
+
+      on_exit(fn ->
+        restore(:tmux_adapter, previous)
+        restore(:terminal_backend, previous_backend)
+      end)
+
+      :ok
+    end
+
+    test "Backends.Tmux forwards runtime ops through :tmux_adapter" do
+      assert TmuxBackend.session_exists?("s1")
+      assert_received {:counting_exists, "s1"}
+
+      assert TmuxBackend.session_exists?("s2", cwd: "/tmp")
+      assert_received {:counting_exists_opts, "s2", [cwd: "/tmp"]}
+
+      assert :ok = TmuxBackend.kill("s3")
+      assert_received {:counting_kill, "s3"}
+
+      assert :ok = TmuxBackend.resize_window("s4", 100, 30)
+      assert_received {:counting_resize, "s4", 100, 30}
+
+      assert {:ok, {80, 24}} = TmuxBackend.window_size("s5")
+      assert_received {:counting_window_size, "s5"}
+
+      assert :ok = TmuxBackend.kill_pane("s6", "%9")
+      assert_received {:counting_kill_pane, "s6", "%9"}
+    end
+
+    test "session_name stays on TmuxPolicy even when adapter is swapped" do
+      # Naming is not part of TmuxCtl.Adapter; product still gets casein_ prefixes.
+      name = TmuxBackend.session_name("my-ws", "u-1")
+      assert String.starts_with?(name, "casein_")
+      assert String.contains?(name, "my-ws")
+    end
+  end
+
+  describe "product modules avoid hardcoding Casein.Terminals.Tmux for Backend ops" do
+    @routed_sources [
+      "lib/casein/terminals/session_owner.ex",
+      "lib/casein/terminals/session_directory/compose.ex",
+      "lib/casein/runtimes.ex",
+      "lib/casein/runtimes/worktree_alarm.ex",
+      "lib/casein/terminals/tmux_janitor.ex",
+      "lib/casein/panes/terminal.ex"
+    ]
+
+    test "converted modules do not call Tmux.session_name/2 or Tmux.kill/1 directly" do
+      root = File.cwd!()
+
+      for rel <- @routed_sources do
+        src = File.read!(Path.join(root, rel))
+        refute src =~ ~r/\bTmux\.session_name\b/, "#{rel} still calls Tmux.session_name"
+        refute src =~ ~r/\bTmux\.kill\b/, "#{rel} still calls Tmux.kill"
+        refute src =~ ~r/\bTmux\.session_exists\?/, "#{rel} still calls Tmux.session_exists?"
+        assert src =~ "Backend", "#{rel} should reference Backend"
+      end
     end
   end
 

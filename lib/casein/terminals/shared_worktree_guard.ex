@@ -177,5 +177,9 @@ defmodule Casein.Terminals.SharedWorktreeGuard do
 
   # Same resolution as Impl.Shared.tmux/0, so a test that stubs the adapter for
   # the tool also stubs it for the guard.
-  defp default_tmux, do: Application.get_env(:casein, :tmux_adapter, Casein.Terminals.Tmux)
+  # Prefer Backend for topology reads covered by the behaviour; fall back to the
+  # legacy :tmux_adapter key so existing FakeTmuxAdapter tests stay green.
+  defp default_tmux do
+    Application.get_env(:casein, :tmux_adapter) || Casein.Terminals.Backend.module()
+  end
 end

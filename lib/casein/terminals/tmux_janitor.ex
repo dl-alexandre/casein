@@ -18,7 +18,8 @@ defmodule Casein.Terminals.TmuxJanitor do
 
   require Logger
 
-  alias Casein.Terminals.{SessionOwner, Tmux}
+  alias Casein.Terminals.Backend
+  alias Casein.Terminals.SessionOwner
 
   @prefix "casein_"
 
@@ -118,7 +119,7 @@ defmodule Casein.Terminals.TmuxJanitor do
               {:noreply, %{state | sessions: Map.delete(state.sessions, session)}}
             else
               Logger.info("TmuxJanitor: killing idle session #{session}")
-              _ = Tmux.kill(session)
+              _ = Backend.module().kill(session)
               {:noreply, %{state | sessions: Map.delete(state.sessions, session)}}
             end
 

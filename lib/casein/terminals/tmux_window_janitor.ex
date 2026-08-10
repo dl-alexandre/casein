@@ -42,6 +42,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
 
   require Logger
 
+  alias Casein.Terminals.Backend
   alias Casein.Terminals.Tmux
 
   @default_idle_seconds 600
@@ -132,7 +133,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
   # is never emptied here; whole-session reaping is sweep_sessions/1's job).
   defp sweep_windows(windows) do
     Enum.reduce(windows, 0, fn win, killed ->
-      case tmux().kill_window(win.session, win.window_id) do
+      case Backend.module().kill_window(win.session, win.window_id) do
         :ok ->
           Logger.info(
             "TmuxWindowJanitor: killed blank idle window #{win.session}:#{win.window_id} " <>
@@ -156,7 +157,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
   # pane — those are spared regardless of attach/idle state.
   defp sweep_sessions(sessions) do
     Enum.reduce(sessions, 0, fn sess, killed ->
-      case tmux().kill(sess.session) do
+      case Backend.module().kill(sess.session) do
         {_, 0} ->
           Logger.info(
             "TmuxWindowJanitor: killed orphaned idle session #{sess.session} " <>

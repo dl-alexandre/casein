@@ -29,7 +29,7 @@ defmodule Casein.Runtimes do
     StateMachine
   }
 
-  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.Backend
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.WorkspaceRecord
 
@@ -667,7 +667,7 @@ defmodule Casein.Runtimes do
 
     tmux_session_id =
       string_value(attrs, "tmux_session_id") || (existing && existing.tmux_session_id) ||
-        Tmux.session_name(record.name || record.external_id, runtime_id)
+        Backend.module().session_name(record.name || record.external_id, runtime_id)
 
     metadata =
       existing_metadata

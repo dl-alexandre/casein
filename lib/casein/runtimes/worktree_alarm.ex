@@ -14,7 +14,7 @@ defmodule Casein.Runtimes.WorktreeAlarm do
   alias Casein.Git.Inspector, as: GitInspector
   alias Casein.Runtimes
   alias Casein.Runtimes.Runtime
-  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.Backend
   alias Casein.Workspaces
   alias Casein.Workspaces.State.WorkspaceRecord
 
@@ -216,8 +216,10 @@ defmodule Casein.Runtimes.WorktreeAlarm do
   defp process_alive?(_path, _runtime), do: false
 
   defp tmux_session_alive?(session) do
-    if Code.ensure_loaded?(Tmux) and function_exported?(Tmux, :session_exists?, 1) do
-      Tmux.session_exists?(session)
+    backend = Backend.module()
+
+    if Code.ensure_loaded?(backend) and function_exported?(backend, :session_exists?, 1) do
+      backend.session_exists?(session)
     else
       false
     end

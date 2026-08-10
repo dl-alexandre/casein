@@ -12,8 +12,8 @@ defmodule Casein.Terminals.SessionDirectory.Compose do
   Shell button.
   """
 
+  alias Casein.Terminals.Backend
   alias Casein.Terminals.Session.Info, as: SessionInfo
-  alias Casein.Terminals.Tmux
 
   @doc """
   Merges scanned tmux sessions with live attachable sessions into the
@@ -67,7 +67,7 @@ defmodule Casein.Terminals.SessionDirectory.Compose do
       placeholder =
         workspace_id
         |> SessionInfo.new_shell(default_sid)
-        |> Map.put(:tmux_session, Tmux.session_name(workspace_name, default_sid))
+        |> Map.put(:tmux_session, Backend.module().session_name(workspace_name, default_sid))
 
       [placeholder | infos]
     end
@@ -157,7 +157,7 @@ defmodule Casein.Terminals.SessionDirectory.Compose do
   defp workspace_prefixes(workspace_names) when is_list(workspace_names) do
     workspace_names
     |> Enum.filter(&(is_binary(&1) and &1 != ""))
-    |> Enum.map(&Tmux.session_name(&1, ""))
+    |> Enum.map(&Backend.module().session_name(&1, ""))
     |> Enum.uniq()
   end
 
