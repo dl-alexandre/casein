@@ -102,7 +102,7 @@ defmodule Scripts.VerifyPostDeployCockpitTest do
     assert content =~ "human_remaining"
     assert content =~ "need_template"
     assert content =~ "--require-operator-evidence"
-    assert content =~ "operator evidence required (exit 5)"
+    assert content =~ "operator evidence still required (exit 5)"
     refute content =~ ~r/evidence\[.CASEIN_API_TOKEN/
   end
 
