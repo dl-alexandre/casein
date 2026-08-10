@@ -3,9 +3,9 @@ defmodule Casein.Ops.GateQueue do
   Host observation of the **PR-gate single-flight queue**.
 
   Work serialises behind util-linux `flock` on `/tmp/casein-pr-gate.lock`
-  (see `.github/workflows/pr-gate.yml`). Operators running a multi-worker
-  fleet need to know who holds the box and how deep the wait is — without
-  grepping `/proc` by hand.
+  (`scripts/lib/casein-devbox-mix-lock.sh`, used by pr-gate and preview-e2e).
+  Operators running a multi-worker fleet need to know who holds the box and
+  how deep the wait is — without grepping `/proc` by hand.
 
   ## Kind discipline
 

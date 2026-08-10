@@ -121,8 +121,9 @@ auto-reclaim are out of scope for the first slice (#812).
 
 ## Gate queue (host flock depth)
 
-PR gates serialise on one host flock (`/tmp/casein-pr-gate.lock` — see
-`.github/workflows/pr-gate.yml`). With a 15-worker fleet that queue is
+PR gates (and preview-e2e) serialise on one host flock
+(`/tmp/casein-pr-gate.lock` via `scripts/lib/casein-devbox-mix-lock.sh` —
+see `.github/workflows/pr-gate.yml`). With a 15-worker fleet that queue is
 operationally decisive: "who holds the box, and how deep is the wait?"
 
 `Casein.Ops.GateQueue.observe/1` answers from **outside**, same kind discipline
