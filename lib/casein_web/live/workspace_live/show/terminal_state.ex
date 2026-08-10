@@ -331,7 +331,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         issue_bindings: issue_bindings
       )
 
-    fleet_board = Casein.Terminals.FleetBoard.from_window_tabs(tabs)
+    fleet_board =
+      Casein.Terminals.FleetBoard.from_window_tabs(
+        tabs,
+        list_claimed: &Casein.Terminals.OrphanedClaims.list_claimed/0,
+        tmux_session: tmux_session
+      )
 
     socket
     |> assign(:tmux_window_tabs, tabs)

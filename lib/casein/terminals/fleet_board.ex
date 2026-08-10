@@ -28,6 +28,7 @@ defmodule Casein.Terminals.FleetBoard do
   alias Casein.Attention.Delivery
   alias Casein.Attention.Salience
   alias Casein.Terminals.FleetChrome
+  alias Casein.Terminals.OrphanedClaims
 
   @type bucket ::
           :needs_you | :working | :ready_no_task | :idle | :done | :unknown
@@ -62,7 +63,8 @@ defmodule Casein.Terminals.FleetBoard do
           counts: %{optional(bucket()) => non_neg_integer()},
           attention_count: non_neg_integer(),
           total: non_neg_integer(),
-          empty?: boolean()
+          empty?: boolean(),
+          orphaned_claims: OrphanedClaims.snapshot()
         }
 
   @bucket_order [:needs_you, :working, :ready_no_task, :idle, :done, :unknown]
@@ -78,6 +80,11 @@ defmodule Casein.Terminals.FleetBoard do
 
     * `:agent_only` — when true (default), drop windows with no agent role and
       no known agent state (pure shell windows stay off the fleet board)
+    * `:orphaned_claims` — precomputed `OrphanedClaims` snapshot; when omitted
+      the board derives bound issue numbers from tabs and leaves observation
+      as unknown unless `:claimed` / `:list_claimed` is also supplied
+    * `:claimed` / `:list_claimed` / `:tmux_session` — forwarded to
+      `OrphanedClaims.observe/1` when `:orphaned_claims` is omitted
   """
   @spec from_window_tabs([map()], keyword()) :: board()
   def from_window_tabs(tabs, opts \\ []) when is_list(tabs) do
@@ -95,14 +102,17 @@ defmodule Casein.Terminals.FleetBoard do
         Map.update!(acc, row.bucket, &(&1 + 1))
       end)
 
-    attention_count = Enum.count(rows, & &1.needs_you?)
+    orphaned = resolve_orphaned_claims(rows, opts)
+    orphan_attention = orphan_attention_count(orphaned)
+    attention_count = Enum.count(rows, & &1.needs_you?) + orphan_attention
 
     %{
       rows: rows,
       counts: counts,
       attention_count: attention_count,
       total: length(rows),
-      empty?: rows == []
+      empty?: rows == [],
+      orphaned_claims: orphaned
     }
   end
 
@@ -114,11 +124,12 @@ defmodule Casein.Terminals.FleetBoard do
       counts: empty_counts(),
       attention_count: 0,
       total: 0,
-      empty?: true
+      empty?: true,
+      orphaned_claims: OrphanedClaims.unknown()
     }
   end
 
-  @doc "True when the board has any needs-you row."
+  @doc "True when the board has any needs-you row or orphaned claim."
   @spec needs_attention?(board()) :: boolean()
   def needs_attention?(%{attention_count: n}) when is_integer(n) and n > 0, do: true
   def needs_attention?(_), do: false
@@ -256,6 +267,37 @@ defmodule Casein.Terminals.FleetBoard do
   defp empty_counts do
     Map.new(@bucket_order, &{&1, 0})
   end
+
+  defp resolve_orphaned_claims(rows, opts) do
+    case Keyword.fetch(opts, :orphaned_claims) do
+      {:ok, %{} = snap} ->
+        snap
+
+      :error ->
+        bound = Enum.flat_map(rows, fn row -> if row.issue, do: [row.issue], else: [] end)
+
+        observe_opts =
+          opts
+          |> Keyword.take([:claimed, :list_claimed, :tmux_session, :repo, :workspace_label, :now])
+          |> Keyword.put_new(:bound, bound)
+
+        # Without a claimed source, stay unknown — never invent "no orphans".
+        if Keyword.has_key?(observe_opts, :claimed) or
+             Keyword.has_key?(observe_opts, :list_claimed) do
+          OrphanedClaims.observe(observe_opts)
+        else
+          OrphanedClaims.unknown(reason: :no_claimed_source)
+          |> Map.put(:bound_issues, Enum.uniq(bound) |> Enum.sort())
+          |> Map.put(:bound_count, length(Enum.uniq(bound)))
+        end
+    end
+  end
+
+  defp orphan_attention_count(%{observe_state: :ok, orphan_count: n})
+       when is_integer(n) and n > 0,
+       do: n
+
+  defp orphan_attention_count(_), do: 0
 
   defp normalize_state(state)
        when state in [:working, :blocked, :done, :idle, :errored, :stalled],

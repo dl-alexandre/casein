@@ -109,6 +109,47 @@ defmodule Casein.Terminals.FleetBoardTest do
       assert lead.issue_title == "control plane"
       assert lead.fleet_role == :manager
     end
+
+    test "without claimed source orphaned_claims stays unknown, not empty-ok" do
+      board = FleetBoard.from_window_tabs([tab("w1", agent_state: :working, issue: 812)])
+      oc = board.orphaned_claims
+      assert oc.observe_state == :unknown
+      assert oc.reason == :no_claimed_source
+      assert oc.bound_issues == [812]
+      # unknown must not inflate attention_count as if orphans were counted
+      assert board.attention_count == 0
+    end
+
+    test "orphaned claims add to attention_count and stay on the board snapshot" do
+      claimed = [
+        %{number: 690, title: "stale a", labels: ["priority/p0"]},
+        %{number: 812, title: "live", labels: ["priority/p0"]}
+      ]
+
+      board =
+        FleetBoard.from_window_tabs(
+          [tab("w1", agent_state: :working, issue: 812)],
+          claimed: claimed
+        )
+
+      assert board.orphaned_claims.observe_state == :ok
+      assert board.orphaned_claims.orphan_count == 1
+      assert hd(board.orphaned_claims.orphans).number == 690
+      assert board.attention_count == 1
+      assert FleetBoard.needs_attention?(board)
+    end
+
+    test "failed claimed observe does not count as zero orphans calm" do
+      board =
+        FleetBoard.from_window_tabs(
+          [tab("w1", agent_state: :idle, quiet?: true, fleet_role: :worker)],
+          claimed: {:error, :gh_failed}
+        )
+
+      # quiet idle still needs you; orphan side is unknown and adds 0
+      assert board.orphaned_claims.observe_state == :unknown
+      assert board.attention_count == 1
+    end
   end
 
   defp tab(id, opts) do

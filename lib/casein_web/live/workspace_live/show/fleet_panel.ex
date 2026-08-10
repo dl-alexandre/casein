@@ -11,6 +11,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
   use CaseinWeb, :html
 
   alias Casein.Terminals.FleetBoard
+  alias Casein.Terminals.OrphanedClaims
 
   attr :board, :map, required: true
   attr :open, :boolean, required: true
@@ -19,7 +20,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
     board = assigns.board || FleetBoard.empty()
     attention = Map.get(board, :attention_count, 0)
     total = Map.get(board, :total, 0)
-    assigns = assign(assigns, board: board, attention: attention, total: total)
+    orphans = Map.get(board, :orphaned_claims) || OrphanedClaims.unknown()
+    orphan_unknown? = OrphanedClaims.unknown?(orphans)
+
+    assigns =
+      assign(assigns,
+        board: board,
+        attention: attention,
+        total: total,
+        orphans: orphans,
+        orphan_unknown?: orphan_unknown?
+      )
 
     ~H"""
     <button
@@ -27,15 +38,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
       phx-click="fleet_drawer:toggle"
       class={[
         "fixed bottom-3 right-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-density-body shadow-sm",
-        badge_class(@attention)
+        badge_class(@attention, @orphan_unknown?)
       ]}
-      title="Fleet board — worker states across this session"
+      title={"Fleet board — " <> OrphanedClaims.summary(@orphans)}
     >
-      <span class={"inline-block h-1.5 w-1.5 rounded-full " <> attention_dot_class(@attention)}></span>
-      <%= if @attention > 0 do %>
-        {@attention} need you · {@total} fleet
-      <% else %>
-        fleet · {@total}
+      <span class={"inline-block h-1.5 w-1.5 rounded-full " <> attention_dot_class(@attention, @orphan_unknown?)}></span>
+      <%= cond do %>
+        <% @attention > 0 -> %>
+          {@attention} need you · {@total} fleet
+        <% @orphan_unknown? -> %>
+          fleet · {@total} · claims ?
+        <% true -> %>
+          fleet · {@total}
       <% end %>
     </button>
     """
@@ -50,7 +64,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
     board = assigns.board || FleetBoard.empty()
     rows = Map.get(board, :rows, [])
     counts = Map.get(board, :counts, %{})
-    assigns = assign(assigns, board: board, rows: rows, counts: counts)
+    orphans = Map.get(board, :orphaned_claims) || OrphanedClaims.unknown()
+
+    assigns =
+      assign(assigns, board: board, rows: rows, counts: counts, orphans: orphans)
 
     ~H"""
     <div :if={@open} class="fixed inset-0 z-40 pointer-events-none" aria-hidden="false">
@@ -78,6 +95,49 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
             ×
           </button>
         </header>
+
+        <div
+          id="fleet-orphaned-claims"
+          class={"border-b px-3 py-2 font-mono text-density-label " <> orphan_banner_class(@orphans)}
+        >
+          <div class="flex items-center gap-2">
+            <span class={"inline-block h-1.5 w-1.5 shrink-0 rounded-full " <> orphan_dot_class(@orphans)}></span>
+            <span class="min-w-0 flex-1 truncate font-medium">{OrphanedClaims.summary(@orphans)}</span>
+            <span
+              :if={orphan_count_chip(@orphans)}
+              class="shrink-0 rounded border border-current/20 px-1.5 py-0.5"
+            >
+              {orphan_count_chip(@orphans)}
+            </span>
+          </div>
+          <ul
+            :if={OrphanedClaims.any?(@orphans)}
+            id="fleet-orphaned-claim-list"
+            class="mt-1.5 space-y-1 pl-3.5"
+          >
+            <li
+              :for={orphan <- @orphans.orphans}
+              id={"fleet-orphan-" <> Integer.to_string(orphan.number)}
+              class="flex min-w-0 items-center gap-2 text-base-content/70"
+            >
+              <span class="shrink-0 font-medium text-status-warning-fg">#{orphan.number}</span>
+              <span
+                :if={orphan.priority}
+                class="shrink-0 rounded bg-base-200 px-1 py-0.5 text-density-label"
+              >
+                {orphan.priority}
+              </span>
+              <span class="min-w-0 flex-1 truncate">{orphan.title || "claimed, no live pane"}</span>
+              <span class="shrink-0 text-status-warning-fg">no pane</span>
+            </li>
+          </ul>
+          <p
+            :if={OrphanedClaims.unknown?(@orphans)}
+            class="mt-1 pl-3.5 text-base-content/50"
+          >
+            claimed set not observed — not the same as zero orphans
+          </p>
+        </div>
 
         <div class="flex flex-wrap gap-1.5 border-b px-3 py-2 font-mono text-density-label">
           <span
@@ -146,20 +206,44 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
         </div>
 
         <footer class="border-t px-3 py-2 font-mono text-density-label text-base-content/50">
-          projection · AgentState + IssueBinding + FleetChrome · click focuses window
+          projection · AgentState + IssueBinding + FleetChrome + OrphanedClaims · click focuses window
         </footer>
       </aside>
     </div>
     """
   end
 
-  defp badge_class(n) when is_integer(n) and n > 0,
+  defp badge_class(n, _unknown?) when is_integer(n) and n > 0,
     do: "border-status-warning-border bg-status-warning-soft text-status-warning-fg"
 
-  defp badge_class(_), do: "border-base-300 bg-base-100 text-base-content/70"
+  defp badge_class(_, true),
+    do: "border-base-300 bg-base-200 text-base-content/60"
 
-  defp attention_dot_class(n) when is_integer(n) and n > 0, do: "bg-status-warning"
-  defp attention_dot_class(_), do: "bg-base-content/30"
+  defp badge_class(_, _), do: "border-base-300 bg-base-100 text-base-content/70"
+
+  defp attention_dot_class(n, _) when is_integer(n) and n > 0, do: "bg-status-warning"
+  defp attention_dot_class(_, true), do: "bg-base-content/40"
+  defp attention_dot_class(_, _), do: "bg-base-content/30"
+
+  defp orphan_banner_class(%{observe_state: :ok, orphan_count: n})
+       when is_integer(n) and n > 0,
+       do: "bg-status-warning-soft/40 text-status-warning-fg"
+
+  defp orphan_banner_class(%{observe_state: :unknown}),
+    do: "bg-base-200/60 text-base-content/50"
+
+  defp orphan_banner_class(_), do: "bg-base-200/40 text-base-content/60"
+
+  defp orphan_dot_class(%{observe_state: :ok, orphan_count: n})
+       when is_integer(n) and n > 0,
+       do: "bg-status-warning"
+
+  defp orphan_dot_class(%{observe_state: :ok}), do: "bg-status-ok"
+  defp orphan_dot_class(_), do: "bg-base-content/30"
+
+  defp orphan_count_chip(%{observe_state: :ok, orphan_count: n}) when is_integer(n), do: n
+  defp orphan_count_chip(%{observe_state: :unknown}), do: "?"
+  defp orphan_count_chip(_), do: nil
 
   defp count_chip_class(:needs_you),
     do: "border-status-danger-border bg-status-danger-soft text-status-danger-fg"
@@ -198,6 +282,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
   defp attention_chip(%{attention_reason: :blocked}), do: "needs input"
   defp attention_chip(%{attention_reason: :errored}), do: "error"
   defp attention_chip(%{attention_reason: :stalled}), do: "stalled"
+  defp attention_chip(%{attention_reason: :orphaned_claim}), do: "orphaned claim"
   defp attention_chip(%{attention_reason: reason}) when is_atom(reason), do: to_string(reason)
   defp attention_chip(_), do: "needs you"
 

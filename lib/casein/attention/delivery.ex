@@ -79,7 +79,15 @@ defmodule Casein.Attention.Delivery do
 
   @type session_section :: :needs_you | :working | :recent
   @type session_reason ::
-          :blocked | :errored | :stalled | :error | :completed | :idle | :working | :recent
+          :blocked
+          | :errored
+          | :stalled
+          | :error
+          | :orphaned_claim
+          | :completed
+          | :idle
+          | :working
+          | :recent
   @type session_classification :: %{section: session_section(), reason: session_reason()}
 
   # ---------------------------------------------------------------------------
@@ -110,11 +118,14 @@ defmodule Casein.Attention.Delivery do
                 ])
 
   # Within `:needs_you`, lower urgency sorts first.
+  # `:orphaned_claim` is fleet-board lease debt (#812) — after hard agent
+  # failures, before quiet-idle capacity.
   @session_reason_urgency %{
     blocked: 0,
     errored: 0,
     error: 0,
     stalled: 1,
+    orphaned_claim: 2,
     completed: 2,
     idle: 3
   }

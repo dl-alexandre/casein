@@ -98,10 +98,32 @@ row → `tmux:select_window` focuses that worker. Rebuilt whenever
 This is **M5-lite** for issue #384 (operator-visible fleet surface). It is not
 orchestration MCP, durable task graphs, path contracts, or verifier adapters.
 
+## Orphaned claims (stale `queue/claimed` leases)
+
+`IssueBinding` answers "is anyone on #N?". The inverse — open GitHub issues
+labelled `queue/claimed` for this workspace with **no** live binding in the
+session — is `Casein.Terminals.OrphanedClaims`.
+
+| Result | Meaning |
+|--------|---------|
+| `observe_state: :unknown` | claimed set not observed / `{:error, _}` → **never** "no orphans" |
+| `observe_state: :ok, orphan_count: 0` | scan ran; every claimed issue has a pane |
+| `observe_state: :ok, orphan_count: n` | lease debt; each orphan is needs-you |
+
+Pure projection: callers supply the claimed set (tests) or the board uses the
+`gh issue list` port (`list_claimed/1`, cached ~30s). Bindings come from window
+tabs / `IssueBinding`. Attention reason `:orphaned_claim` sits on
+`Casein.Attention.Delivery.session_reason_urgency/1` — not a parallel ranker.
+
+Fleet drawer section `#fleet-orphaned-claims`; badge attention_count includes
+orphan count when observation succeeded. Multi-session workspace union and
+auto-reclaim are out of scope for the first slice (#812).
+
 ## Code
 
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
-- `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs
+- `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans)
+- `Casein.Terminals.OrphanedClaims` — claimed-minus-bound lease projection
 - `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
 - `Casein.Labels.enrich_topology/2` — join label strings onto panes
 - `Casein.Terminals.PaneState` — strips bare runtime banners from `task_summary`
