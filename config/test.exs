@@ -1,5 +1,30 @@
 import Config
 
+# ---------------------------------------------------------------------------
+# Ambient operator CASEIN_* scrub (#248)
+#
+# Must run here — not only in test_helper.exs — because `mix test` starts the
+# application *before* evaluating test_helper, and boot paths
+# (Deployment.Registry, HostMode, WorkspaceTokens, …) still read System.get_env
+# for CASEIN_INSTANCE_UUID / CASEIN_HTTP_SOCKET / CASEIN_ON_DEVBOX / tokens /
+# worktree roots. A paired-agent shell exports ~70 of these; leaving them in
+# place reds unrelated tests on a shared box while CI stays green.
+#
+# Keep-list mirrors Casein.Test.AmbientEnv (test/support cannot be required
+# from config/). test_helper.exs re-runs the same scrub via AmbientEnv so the
+# keep-list has a single code owner + hermetic tests.
+# ---------------------------------------------------------------------------
+keep_exact = MapSet.new(["CASEIN_REPO_ADAPTER", "CASEIN_TEST_TMPDIR"])
+keep_prefixes = ["CASEIN_GATE_", "CASEIN_TEST_"]
+
+for {key, _value} <- System.get_env() do
+  if String.starts_with?(key, "CASEIN_") and
+       not MapSet.member?(keep_exact, key) and
+       not Enum.any?(keep_prefixes, &String.starts_with?(key, &1)) do
+    System.delete_env(key)
+  end
+end
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used
