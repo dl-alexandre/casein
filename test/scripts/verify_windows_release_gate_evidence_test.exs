@@ -4,8 +4,10 @@ defmodule Scripts.VerifyWindowsReleaseGateEvidenceTest do
 
   Never talks to Windows, Authenticode, or a clean VM. Pins: dry-run keeps
   production_signed/real_reboot/clean_machine_no_tooling false, validator
-  rejects true strong claims without operator fixture files, and docs name
-  package-windows-desktop.ps1 -RequireSigned plus clean Win11 steps.
+  rejects true strong claims without operator fixture files and rejects
+  committed example_only fixtures, prove-matrix / check-example-fixtures
+  stay honest, and docs name package-windows-desktop.ps1 -RequireSigned
+  plus clean Win11 steps.
   """
   use ExUnit.Case, async: true
 
@@ -17,6 +19,7 @@ defmodule Scripts.VerifyWindowsReleaseGateEvidenceTest do
   @gate_doc Path.expand("../../docs/desktop/windows_release_gate_evidence.md", __DIR__)
   @acceptance Path.expand("../../docs/desktop/windows_mobile_acceptance.md", __DIR__)
   @gap Path.expand("../../docs/desktop/windows_acceptance_gap_audit.md", __DIR__)
+  @fixture_dir Path.expand("../../scripts/fixtures/windows_release_gate", __DIR__)
 
   setup do
     tmp = Path.join(System.tmp_dir!(), "casein-376-gate-#{System.unique_integer([:positive])}")
@@ -63,6 +66,9 @@ defmodule Scripts.VerifyWindowsReleaseGateEvidenceTest do
     assert doc =~ "Test-CaseinCleanMachine"
     assert doc =~ "Test-CaseinRebootPersistence"
     assert doc =~ "fixture"
+    assert doc =~ "print-prove-matrix"
+    assert doc =~ "check-example-fixtures"
+    assert doc =~ "example_only"
     refute doc =~ "BEGIN RSA PRIVATE KEY"
   end
 
@@ -193,7 +199,7 @@ defmodule Scripts.VerifyWindowsReleaseGateEvidenceTest do
     File.write!(
       Path.join(fixtures, "production_sign.json"),
       Jason.encode!(%{
-        "signer_subject" => "CN=Example Code Signing (NOT REAL)",
+        "signer_subject" => "CN=Operator Test Signing Fixture",
         "signer_thumbprint" => "0123456789ABCDEF0123456789ABCDEF01234567",
         "require_signed" => true,
         "signed_files" => [%{"path" => "Casein.exe", "sha256" => String.duplicate("a", 64)}]
@@ -242,7 +248,7 @@ defmodule Scripts.VerifyWindowsReleaseGateEvidenceTest do
     File.write!(
       Path.join(fixtures, "production_sign.json"),
       Jason.encode!(%{
-        "signer_subject" => "CN=Example Code Signing (NOT REAL)",
+        "signer_subject" => "CN=Operator Test Signing Fixture",
         "signer_thumbprint" => "0123456789ABCDEF0123456789ABCDEF01234567",
         "require_signed" => true,
         "signed_files" => [%{"path" => "Casein.exe", "sha256" => String.duplicate("b", 64)}]
@@ -290,6 +296,106 @@ defmodule Scripts.VerifyWindowsReleaseGateEvidenceTest do
     assert status == 3, out
   end
 
+  test "print-prove-matrix names Linux YES and external NO cells" do
+    {out, status} =
+      System.cmd("bash", [@script, "--print-prove-matrix"], stderr_to_stdout: true)
+
+    assert status == 0
+    assert out =~ "#376"
+    assert out =~ "NOT release_gate_passed"
+    assert out =~ "-RequireSigned"
+    assert out =~ "example_only"
+    assert out =~ "YES"
+    assert out =~ "NO"
+  end
+
+  test "check-example-fixtures accepts committed example_only shapes" do
+    assert File.dir?(@fixture_dir)
+
+    {out, status} =
+      System.cmd("bash", [@script, "--check-example-fixtures"], stderr_to_stdout: true)
+
+    assert status == 0, out
+    assert out =~ "example_fixtures_ok" or out =~ "example_only"
+  end
+
+  test "committed example fixtures set example_only and not_real" do
+    for name <- [
+          "production_sign.example.json",
+          "clean_machine.example.json",
+          "real_reboot.example.json"
+        ] do
+      path = Path.join(@fixture_dir, name)
+      assert File.exists?(path), name
+      doc = Jason.decode!(File.read!(path))
+      assert doc["example_only"] == true
+      assert doc["not_real"] == true
+    end
+  end
+
+  test "validate-evidence rejects example_only fixture for production_signed", %{tmp: tmp} do
+    fixtures = Path.join(tmp, "fixtures")
+    File.mkdir_p!(fixtures)
+
+    File.cp!(
+      Path.join(@fixture_dir, "production_sign.example.json"),
+      Path.join(fixtures, "production_sign.json")
+    )
+
+    path = Path.join(tmp, "example-lie.json")
+
+    doc =
+      base_doc()
+      |> put_in(["claims", "production_signed"], true)
+      |> put_in(["fixture_refs", "production_sign"], "production_sign.json")
+
+    File.write!(path, Jason.encode!(doc))
+
+    {out, status} =
+      System.cmd(
+        "bash",
+        [@script, "--validate-evidence", path, "--fixture-dir", fixtures],
+        stderr_to_stdout: true
+      )
+
+    assert status == 3, out
+    assert out =~ "example_only" or out =~ "NOT REAL" or out =~ "not_real"
+  end
+
+  test "validate-evidence rejects NOT REAL signer without example_only flag", %{tmp: tmp} do
+    fixtures = Path.join(tmp, "fixtures")
+    File.mkdir_p!(fixtures)
+
+    File.write!(
+      Path.join(fixtures, "production_sign.json"),
+      Jason.encode!(%{
+        "signer_subject" => "CN=Example Code Signing (NOT REAL)",
+        "signer_thumbprint" => "0123456789ABCDEF0123456789ABCDEF01234567",
+        "require_signed" => true,
+        "signed_files" => [%{"path" => "Casein.exe", "sha256" => String.duplicate("c", 64)}]
+      })
+    )
+
+    path = Path.join(tmp, "placeholder-subject.json")
+
+    doc =
+      base_doc()
+      |> put_in(["claims", "production_signed"], true)
+      |> put_in(["fixture_refs", "production_sign"], "production_sign.json")
+
+    File.write!(path, Jason.encode!(doc))
+
+    {out, status} =
+      System.cmd(
+        "bash",
+        [@script, "--validate-evidence", path, "--fixture-dir", fixtures],
+        stderr_to_stdout: true
+      )
+
+    assert status == 3, out
+    assert out =~ "NOT REAL"
+  end
+
   test "script never pretends production Authenticode or clean-machine pass" do
     content = File.read!(@script)
     assert content =~ "NEVER pretends"
@@ -298,6 +404,9 @@ defmodule Scripts.VerifyWindowsReleaseGateEvidenceTest do
     assert content =~ "clean_machine_no_tooling\": False"
     assert content =~ "gate_unreachable_on_this_host"
     assert content =~ "-RequireSigned"
+    assert content =~ "example_only"
+    assert content =~ "print-prove-matrix"
+    assert content =~ "check-example-fixtures"
     refute content =~ "signtool sign"
     refute content =~ "Invoke-Pester"
   end

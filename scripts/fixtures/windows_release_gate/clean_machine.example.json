@@ -1,0 +1,9 @@
+{
+  "example_only": true,
+  "not_real": true,
+  "claims": {
+    "clean_machine_no_tooling": true,
+    "real_reboot": false
+  },
+  "notes": "Committed example only. Real fixture comes from Test-CaseinCleanMachine.ps1 on disposable clean Win11."
+}

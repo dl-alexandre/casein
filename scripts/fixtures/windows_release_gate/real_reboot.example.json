@@ -1,0 +1,11 @@
+{
+  "example_only": true,
+  "not_real": true,
+  "claims": {
+    "real_reboot": true
+  },
+  "boot_stamp_before": "2026-01-01T00:00:00Z",
+  "boot_stamp_after": "2026-01-01T00:05:00Z",
+  "self_test_continuation": false,
+  "notes": "Committed example only. Real fixture requires actual reboot between prepare and continue."
+}
