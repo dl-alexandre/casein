@@ -327,7 +327,9 @@ defmodule Casein.Terminals.PaneSubmit do
   defp settle(_ms), do: :ok
 
   defp tmux(opts) do
-    Keyword.get(opts, :tmux) || Application.get_env(:casein, :tmux_adapter, Casein.Terminals.Tmux)
+    Keyword.get(opts, :tmux) ||
+      Application.get_env(:casein, :tmux_adapter) ||
+      Casein.Terminals.Backend.module()
   end
 
   defp settle_ms(opts), do: config(opts, :settle_ms, @default_settle_ms)

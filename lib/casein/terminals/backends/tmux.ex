@@ -5,6 +5,11 @@ defmodule Casein.Terminals.Backends.Tmux do
   Keeping this wrapper separate avoids coupling the product behaviour to the
   lower-level `TmuxCtl.Adapter` contract and gives future native backends a
   clean peer module.
+
+  Runtime session ops honor `:tmux_adapter` so existing test fakes keep working
+  while product code migrates from direct `Casein.Terminals.Tmux` calls to
+  `Casein.Terminals.Backend.module/0`. Session naming stays on `Tmux`/`TmuxPolicy`
+  (not part of the swappable adapter contract).
   """
 
   @behaviour Casein.Terminals.Backend
@@ -18,7 +23,7 @@ defmodule Casein.Terminals.Backends.Tmux do
   alias Casein.Terminals.TmuxServer
 
   @impl true
-  defdelegate session_name(workspace_name, sid), to: Tmux
+  def session_name(workspace_name, sid), do: Tmux.session_name(workspace_name, sid)
 
   @impl true
   def spawn_spec({:local, cwd}, session) do
@@ -107,47 +112,89 @@ defmodule Casein.Terminals.Backends.Tmux do
   end
 
   @impl true
-  defdelegate ensure_session(session, cwd), to: Tmux
+  def ensure_session(session, cwd), do: adapter().ensure_session(session, cwd)
+
   @impl true
-  defdelegate attach(session), to: Tmux
+  def attach(session), do: adapter().attach(session)
+
   @impl true
-  defdelegate session_exists?(session), to: Tmux
+  def session_exists?(session), do: adapter().session_exists?(session)
+
+  @doc """
+  Adapter-compatible existence check with optional `cwd:` (container tmux).
+
+  Not a Backend callback — product recovery paths that already pass `cwd`
+  call this on the Tmux backend module when available.
+  """
+  def session_exists?(session, opts) when is_list(opts) do
+    mod = adapter()
+
+    if function_exported?(mod, :session_exists?, 2) do
+      mod.session_exists?(session, opts)
+    else
+      mod.session_exists?(session)
+    end
+  end
+
   @impl true
-  defdelegate session_alive?(session), to: Tmux
+  def session_alive?(session), do: adapter().session_alive?(session)
+
   @impl true
-  defdelegate kill(session), to: Tmux
+  def kill(session), do: adapter().kill(session)
+
   @impl true
-  defdelegate send_keys(session, keys, opts), to: Tmux
+  def send_keys(session, keys, opts), do: adapter().send_keys(session, keys, opts)
+
   @impl true
-  defdelegate capture_recent(session, lines, opts), to: Tmux
+  def capture_recent(session, lines, opts), do: adapter().capture_recent(session, lines, opts)
+
   @impl true
-  defdelegate capture_scrollback(session, opts), to: Tmux
+  def capture_scrollback(session, opts), do: adapter().capture_scrollback(session, opts)
+
   @impl true
-  defdelegate resize_window(session, cols, rows), to: Tmux
+  def resize_window(session, cols, rows), do: adapter().resize_window(session, cols, rows)
+
   @impl true
-  defdelegate window_size(session), to: Tmux
+  def window_size(session), do: adapter().window_size(session)
+
   @impl true
-  defdelegate list_session_windows(session), to: Tmux
+  def list_session_windows(session), do: adapter().list_session_windows(session)
+
   @impl true
-  defdelegate list_session_panes(session), to: Tmux
+  def list_session_panes(session), do: adapter().list_session_panes(session)
+
   @impl true
-  defdelegate session_topology(session), to: Tmux
+  def session_topology(session), do: adapter().session_topology(session)
+
   @impl true
-  defdelegate new_window(session, opts), to: Tmux
+  def new_window(session, opts), do: adapter().new_window(session, opts)
+
   @impl true
-  defdelegate select_window(session, window_id), to: Tmux
+  def select_window(session, window_id), do: adapter().select_window(session, window_id)
+
   @impl true
-  defdelegate kill_window(session, window_id), to: Tmux
+  def kill_window(session, window_id), do: adapter().kill_window(session, window_id)
+
   @impl true
-  defdelegate split_pane(session, pane_id, direction, opts), to: Tmux
+  def split_pane(session, pane_id, direction, opts),
+    do: adapter().split_pane(session, pane_id, direction, opts)
+
   @impl true
-  defdelegate select_pane(session, pane_id), to: Tmux
+  def select_pane(session, pane_id), do: adapter().select_pane(session, pane_id)
+
   @impl true
-  defdelegate kill_pane(session, pane_id), to: Tmux
+  def kill_pane(session, pane_id), do: adapter().kill_pane(session, pane_id)
+
   @impl true
-  defdelegate resize_pane(session, pane_id, direction, amount), to: Tmux
+  def resize_pane(session, pane_id, direction, amount),
+    do: adapter().resize_pane(session, pane_id, direction, amount)
+
   @impl true
-  defdelegate set_pane_role(session, pane_id, role), to: Tmux
+  def set_pane_role(session, pane_id, role), do: adapter().set_pane_role(session, pane_id, role)
+
+  defp adapter do
+    Application.get_env(:casein, :tmux_adapter, Tmux)
+  end
 
   defp login_shell_command do
     Application.get_env(:casein, :tmux_login_shell_command) ||

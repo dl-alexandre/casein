@@ -67,13 +67,16 @@ three peer modules:
 
 Backend selection uses `config :casein, :terminal_backend`; the older
 `:tmux_adapter` test and compatibility key is used as a migration fallback
-while call sites are moved in small slices. Durable session naming, existence
-checks, replay capture, initial size discovery, and initial resize now cross
-this boundary. PTY process spawning now crosses it through
-`Casein.Terminals.Backend.SpawnSpec`; the tmux backend owns host, container, and
-remote SSH command construction. Contract tests in
+while call sites are moved in small slices. `Backends.Tmux` forwards runtime
+ops through `:tmux_adapter` so existing fakes keep working. Durable session
+naming, existence checks, replay capture, initial size discovery, initial
+resize, pane kill/split/select/resize, session kill, and window kill now cross
+this boundary from product modules (SessionOwner, SessionDirectory.Compose,
+Runtimes, janitors, PreviewDeps, Panes.Terminal, TmuxOps). PTY process spawning
+crosses it through `Casein.Terminals.Backend.SpawnSpec`; the tmux backend owns
+host, container, and remote SSH command construction. Contract tests in
 `test/casein/terminals/backend_contract_test.exs` lock every callback on all
-three modules.
+three modules and assert product routing uses `Backend.module/0`.
 
 Product code consumes these boundaries. Host-specific adapters may use ports,
 NIFs, or sidecars, but those implementation details do not leak into LiveView or

@@ -10,12 +10,12 @@ defmodule Casein.Terminals.SessionOwner do
   require Logger
 
   alias Casein.Terminals.{Attachment, CommandTracker, Session.Info, SessionEvents}
+  alias Casein.Terminals.Backend
   alias Casein.Terminals.ScrollbackArchive
   alias Casein.Terminals.SessionOwner.{Payload, ResponseClassifier, SizeMath}
   alias Casein.Terminals.SessionRecovery
   alias Casein.Terminals.Telemetry
   alias Casein.Terminals.Theme
-  alias Casein.Terminals.Tmux
 
   # Default replay buffer; overridable via Application env for the knob.
   # See `replay_buffer_limit/0`.
@@ -900,7 +900,7 @@ defmodule Casein.Terminals.SessionOwner do
 
   defp tmux_session_for(%{workspace_key: key, info: %{sid: sid}})
        when is_binary(key) and is_binary(sid),
-       do: Tmux.session_name(key, sid)
+       do: Backend.module().session_name(key, sid)
 
   defp tmux_session_for(_), do: nil
 
@@ -911,7 +911,7 @@ defmodule Casein.Terminals.SessionOwner do
          %{workspace_key: key, info: %{kind: :shell, sid: sid}, attachment: att} = state
        )
        when is_binary(key) and is_binary(sid) and not is_nil(att) do
-    session = Tmux.session_name(key, sid)
+    session = Backend.module().session_name(key, sid)
     start_session_exists_probe(state, session, :recover_if_missing)
   end
 
@@ -937,11 +937,11 @@ defmodule Casein.Terminals.SessionOwner do
   end
 
   defp do_start_session_exists_probe(state, session, purpose) do
-    tmux = Casein.Terminals.tmux_adapter()
+    backend = Backend.module()
 
     task =
       Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
-        session_exists?(tmux, session, state.loc)
+        session_exists?(backend, session, state.loc)
       end)
 
     timer =
@@ -963,16 +963,16 @@ defmodule Casein.Terminals.SessionOwner do
     }
   end
 
-  defp session_exists?(tmux, session, {:local, cwd})
+  defp session_exists?(backend, session, {:local, cwd})
        when is_binary(cwd) and cwd != "" do
-    if function_exported?(tmux, :session_exists?, 2) do
-      tmux.session_exists?(session, cwd: cwd)
+    if function_exported?(backend, :session_exists?, 2) do
+      backend.session_exists?(session, cwd: cwd)
     else
-      tmux.session_exists?(session)
+      backend.session_exists?(session)
     end
   end
 
-  defp session_exists?(tmux, session, _loc), do: tmux.session_exists?(session)
+  defp session_exists?(backend, session, _loc), do: backend.session_exists?(session)
 
   defp cancel_session_exists_probe(
          %{tmux_session_exists_probe: %{ref: ref, pid: pid, timer: timer}} = state
@@ -1349,14 +1349,20 @@ defmodule Casein.Terminals.SessionOwner do
     # the two releases ping-pong `resize-window` against each other every drift
     # tick — the operator sees the window snap between sizes twice a minute.
     case Casein.Deployment.Drain.guard_shared_write(fn ->
-           session = Tmux.session_name(key, sid)
+           session = Backend.module().session_name(key, sid)
            # Resolve inside the owner (not the task) so test adapter swaps are stable.
-           tmux = Casein.Terminals.tmux_adapter()
+           backend = Backend.module()
+           # refresh_client is tmux-adapter-only (not on Backend); keep via TmuxOps.
+           refresh = Casein.Terminals.tmux_adapter()
 
            task =
              Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
-               _ = tmux.resize_window(session, cols, rows)
-               _ = tmux.refresh_client(session)
+               _ = backend.resize_window(session, cols, rows)
+
+               if function_exported?(refresh, :refresh_client, 1) do
+                 _ = refresh.refresh_client(session)
+               end
+
                :ok
              end)
 
@@ -1461,13 +1467,13 @@ defmodule Casein.Terminals.SessionOwner do
         state
 
       nil ->
-        session = Tmux.session_name(key, sid)
+        session = Backend.module().session_name(key, sid)
         # Resolve inside the owner (not the task) so test adapter swaps are stable.
-        tmux = Casein.Terminals.tmux_adapter()
+        backend = Backend.module()
 
         task =
           Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
-            tmux.window_size(session)
+            backend.window_size(session)
           end)
 
         timer =
@@ -1611,11 +1617,14 @@ defmodule Casein.Terminals.SessionOwner do
        when is_binary(key) and is_binary(sid) do
     _ =
       Casein.Deployment.Drain.guard_shared_write(fn ->
-        session = Tmux.session_name(key, sid)
+        session = Backend.module().session_name(key, sid)
+        # refresh_client remains adapter-only until Backend gains a redraw hook.
         tmux = Casein.Terminals.tmux_adapter()
 
         Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
-          _ = tmux.refresh_client(session)
+          if function_exported?(tmux, :refresh_client, 1) do
+            _ = tmux.refresh_client(session)
+          end
         end)
       end)
 
@@ -2206,7 +2215,7 @@ defmodule Casein.Terminals.SessionOwner do
 
   defp tmux_session_name_for(key, sid)
        when is_binary(key) and is_binary(sid) and sid != "",
-       do: Tmux.session_name(key, sid)
+       do: Backend.module().session_name(key, sid)
 
   defp tmux_session_name_for(_key, _sid), do: nil
 end
