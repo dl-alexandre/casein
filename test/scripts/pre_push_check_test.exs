@@ -81,6 +81,35 @@ defmodule Scripts.PrePushCheckTest do
     assert content =~ "CASEIN_GATE_SKIP_"
   end
 
+  test "JS gate npm-ci's priv/scripts before assets tests (bridge file:// walk deps)" do
+    content = File.read!(@script)
+
+    # test 121 (preview_bridge_file_page) needs playwright under priv/scripts,
+    # not only assets/ esbuild. Gate must install both; never skip the walk.
+    assert content =~ ~s(ensure_npm_ci assets --include=dev)
+    assert content =~ ~s(ensure_npm_ci priv/scripts)
+    assert content =~ "preview_bridge_file_page"
+
+    assets_at = :binary.match(content, "ensure_npm_ci assets --include=dev")
+    priv_at = :binary.match(content, "ensure_npm_ci priv/scripts")
+    lint_at = :binary.match(content, "NODE_ENV=development npm run lint")
+    test_at = :binary.match(content, "NODE_ENV=development npm test")
+
+    assert assets_at
+    assert priv_at
+    assert lint_at
+    assert test_at
+
+    {assets_idx, _} = assets_at
+    {priv_idx, _} = priv_at
+    {lint_idx, _} = lint_at
+    {test_idx, _} = test_at
+
+    assert assets_idx < priv_idx
+    assert priv_idx < lint_idx
+    assert lint_idx < test_idx
+  end
+
   test "isolates inherited root dependencies and preserves native command order" do
     content = File.read!(@script)
     block = native_supply_chain_block(content)
