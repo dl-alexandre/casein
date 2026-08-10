@@ -139,22 +139,14 @@ defmodule Casein.Agents.AgentEvents.MemoryAdapter do
         &(&1.workspace_id == workspace_id and
             &1.event_type in [request_type, resolved_type])
       )
-      |> Enum.sort_by(&{&1.occurred_at, &1.inserted_at, &1.id}, :desc)
-
-    # Filter resolved BEFORE newest-per-pane distinct (H28). Memory path must
-    # match EctoAdapter: an older open request stays answerable when a newer
-    # same-pane request was resolved.
-    resolved_ids =
-      clarification_events
-      |> Enum.filter(&(&1.event_type == resolved_type))
-      |> MapSet.new(&payload(&1, "request_event_id"))
 
     events =
-      clarification_events
-      |> Enum.filter(&(&1.event_type == request_type))
-      |> Enum.reject(&MapSet.member?(resolved_ids, &1.id))
-      |> Enum.uniq_by(&{&1.agent_session_id, &1.tmux_session_id, &1.pane_id})
-      |> Enum.take(limit)
+      Casein.Agents.AgentEvents.OpenClarifications.project(
+        clarification_events,
+        request_type,
+        resolved_type,
+        limit
+      )
 
     {:reply, events, state}
   end
@@ -207,10 +199,6 @@ defmodule Casein.Agents.AgentEvents.MemoryAdapter do
   end
 
   defp sort_key(event), do: {event.occurred_at, event.inserted_at, event.id}
-
-  defp payload(%AgentEvent{payload: payload}, key) when is_map(payload) do
-    Map.get(payload, key) || Map.get(payload, :request_event_id)
-  end
 
   defp after_cursor?(event, %DateTime{} = after_at, after_id) when is_binary(after_id) do
     DateTime.compare(event.inserted_at, after_at) == :gt or

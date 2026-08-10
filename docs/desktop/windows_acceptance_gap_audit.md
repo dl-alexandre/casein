@@ -1,7 +1,8 @@
 # Native Windows acceptance gap audit
 
-**Snapshot:** 2026-08-09 after #794 reboot-persistence harness + #795 honesty/self-test
-slice + #377 physical-lab definition
+**Snapshot:** 2026-08-10 after Windows SQLite open-clarification H28 portability
+slice (mobile inbox on desktop host path) on top of #794/#795 acceptance harnesses
++ #377 physical-lab definition
 **Authority:** issue #371 remains the parent checklist; #376 holds production
 signing and clean-machine evidence; #377 holds physical iPad/Android matrix
 evidence. This audit subtracts repository work that is already merged or actively
@@ -27,6 +28,7 @@ owned. It does not replace those issues.
 | #794 | Two-stage reboot-resumable acceptance runner (`Test-CaseinRebootPersistence.ps1`) with boot-stamp fail-closed continue; clean-machine schema-3 phase timestamps/outcomes and path prerequisites |
 | #795 | Explicit `claims.real_reboot` / `claims.clean_machine_no_tooling` on both harnesses; reboot marker `-SelfTestContinuation` in package smoke; docs prove/cannot-prove matrix (no parallel two-stage in CleanMachine) |
 | #377 lab def | Operator runbook [`windows_physical_device_lab.md`](windows_physical_device_lab.md), fixed evidence schema, and `scripts/verify_windows_physical_device_lab.sh` (`--self-check` never sets `physical_*=true`; `--validate-evidence` rejects secrets and dishonest `matrix_passed`) |
+| SQLite H28 | Desktop `CASEIN_REPO_ADAPTER=sqlite` open-clarification hydration shares `OpenClarifications.project/4` (filter resolved **before** newest-per-pane distinct) with MemoryAdapter; Postgres Ecto keeps SQL `NOT EXISTS` + `DISTINCT ON`. Prevents silent unanswerable mobile inbox on Windows host path |
 
 ## Remaining repository-feasible gaps
 
