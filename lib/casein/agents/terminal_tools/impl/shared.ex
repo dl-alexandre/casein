@@ -2,7 +2,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   @moduledoc false
 
   alias Casein.Agents.AgentPane
-  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.Backend
   alias Casein.Terminals.TmuxPolicy
   alias Casein.Terminals.TmuxTopology
   alias Casein.Workspaces
@@ -11,7 +11,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   @session_prefix "casein_"
   @default_capture_lines 120
 
-  def tmux, do: Application.get_env(:casein, :tmux_adapter, Tmux)
+  # Prefer Backend.module/0 (honors :terminal_backend + :tmux_adapter on Tmux
+  # backend). Explicit :tmux_adapter alone still wins for legacy test installs
+  # that never set :terminal_backend.
+  def tmux do
+    Application.get_env(:casein, :tmux_adapter) || Backend.module()
+  end
 
   def compact(map) do
     map
@@ -168,7 +173,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   end
 
   defp scratch_session?(%{session: name}) when is_binary(name) do
-    String.starts_with?(name, Tmux.workspace_session_prefix(Scratch.id()))
+    String.starts_with?(name, workspace_session_prefix(Scratch.id()))
   end
 
   defp scratch_session?(_), do: false
@@ -186,17 +191,30 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   end
 
   defp workspace_session_prefixes(id) do
-    prefixes = [Tmux.workspace_session_prefix(id)]
+    prefixes = [workspace_session_prefix(id)]
 
     case Workspaces.get(id) do
       {:ok, ws} ->
         for candidate <- [ws.name, ws.id], is_binary(candidate), candidate != "" do
-          Tmux.workspace_session_prefix(candidate)
+          workspace_session_prefix(candidate)
         end
         |> Enum.uniq()
 
       _ ->
         prefixes
+    end
+  end
+
+  defp workspace_session_prefix(name) when is_binary(name) do
+    backend = Backend.module()
+
+    cond do
+      function_exported?(backend, :workspace_session_prefix, 1) ->
+        backend.workspace_session_prefix(name)
+
+      true ->
+        # Backend.session_name(ws, "") is the same prefix shape as TmuxPolicy.
+        Backend.module().session_name(name, "")
     end
   end
 

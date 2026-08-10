@@ -8,8 +8,8 @@ defmodule Casein.Terminals.Templates.Executor do
   """
 
   alias Casein.Panes.Pane, as: PaneBehaviour
+  alias Casein.Terminals.Backend
   alias Casein.Terminals.SessionTemplate.Pane
-  alias Casein.Terminals.Tmux
   alias Casein.Terminals.TmuxTopology
 
   @type saved :: map()
@@ -216,7 +216,7 @@ defmodule Casein.Terminals.Templates.Executor do
   defp execute_steps(session, dry_run, opts) do
     state = %{
       session: session,
-      tmux: Keyword.get(opts, :tmux, Tmux),
+      tmux: Keyword.get(opts, :tmux, Backend.module()),
       workspace_root: Keyword.get(opts, :workspace_root),
       workspace_id: Keyword.get(opts, :workspace_id),
       refs: %{},

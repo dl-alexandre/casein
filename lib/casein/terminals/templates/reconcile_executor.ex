@@ -8,15 +8,15 @@ defmodule Casein.Terminals.Templates.ReconcileExecutor do
   """
 
   alias Casein.Panes.Pane, as: PaneBehaviour
+  alias Casein.Terminals.Backend
   alias Casein.Terminals.SessionTemplate.Pane
-  alias Casein.Terminals.Tmux
   alias Casein.Terminals.TmuxTopology
 
   @spec execute(String.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
   def execute(session, diff, opts \\ []) when is_binary(session) and is_map(diff) do
     state = %{
       session: session,
-      tmux: Keyword.get(opts, :tmux, Tmux),
+      tmux: Keyword.get(opts, :tmux, Backend.module()),
       workspace_root: Keyword.get(opts, :workspace_root),
       workspace_id: Keyword.get(opts, :workspace_id),
       refs: %{},
