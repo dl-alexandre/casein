@@ -40,6 +40,53 @@ session id as a failure.
 Probe both legs from a paired shell: `bash scripts/lib/agent-doctor.sh` (legacy
 `initialize` + `server/discover` × three Casein endpoints).
 
+### Host-only remaining (#751) — operator checklist
+
+On-box client work for [#751](https://github.com/dl-alexandre/casein/issues/751) is
+done (agent-doctor dual-stack probe, materializer `client_protocol_declare` hook,
+this dual-stack section). **What is left is laptop-side only** and cannot be
+applied from the devbox.
+
+Do **not** rewrite host `~/.grok/config.toml` from a Casein pane, pairing script,
+or health check. Do **not** touch `~/.grok/auth.json`.
+
+When Grok Build documents a stable MCP config field (or CLI flag) that declares
+`2026-07-28` / `_meta` `protocolVersion` per server:
+
+1. **Inventory first** on the Mac (show intent; no silent rewrite):
+
+   ```bash
+   cp -a ~/.grok/config.toml ~/.grok/config.toml.bak.$(date -u +%Y%m%dT%H%M%SZ)
+   grep -n 'casein-terminal\|casein-preview\|casein-artifact\|protocol\|mcp_servers' ~/.grok/config.toml
+   grok --version   # note the build that gained the field
+   ```
+
+2. **Apply only the documented field** for the three Casein servers (shape is
+   runtime-owned — do not invent keys). Prefer a visible edit + `diff` against
+   the backup. Keep `Authorization = "Bearer ${CASEIN_API_TOKEN}"` env-ref
+   headers ([Host secrets hygiene](#host-secrets-hygiene-715)).
+
+3. **Verify both legs** still work (dual-stack must remain healthy for older
+   tools):
+
+   ```bash
+   grok mcp doctor casein-terminal
+   grok mcp doctor casein-preview
+   grok mcp doctor casein-artifact
+   # Optional: curl-style probe against public Casein MCP with
+   # server/discover + _meta 2026-07-28 (same body as scripts/lib/agent-doctor.sh)
+   ```
+
+4. **If no field exists yet** — leave host Grok on legacy `initialize` →
+   `2025-03-26`. That is correct: Casein servers stay dual-stack; default server
+   revision stays `2025-03-26`. File the Grok version on #751 rather than
+   forcing unknown TOML.
+
+5. **When on-box runtimes gain a schema** — flip
+   `Casein.Agents.MCPMaterializer.client_protocol_declare/0` (and
+   `merge-agent-mcp.client_protocol_declare`) for that runtime only; do not
+   change `@default_protocol_version` on the server.
+
 ## Operator policy
 
 1. **Dual-plane honesty** — Mac/host shell ≠ remote Casein panes. State which plane you are on when paths matter.
@@ -302,6 +349,7 @@ If `CASEIN_WORKSPACE_ID` is unset on a host ops console, treat MCP as multi-work
 | P3 | #716 | Product cwd discipline — [section above](#product-cwd-discipline-716) |
 | P4 | #717 | Reap stale local `casein_test_*` sockets — `scripts/casein-test-tmux-socket-reaper.sh` (inventory + dry-run default; see script header) |
 | P5 | #714 | Short agent note (this folder / AGENTS link) |
+| P6 | #751 | Client 2026 declare — on-box done (#762/#799); **host Grok remaining** — [checklist above](#host-only-remaining-751--operator-checklist) |
 
 **Explicitly deferred:** default URL scope-down to a single workspace only; Mode B for host-home Grok.
 
