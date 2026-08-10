@@ -212,7 +212,6 @@ fi
 
 log "linting JS hooks"
 (
-  cd assets
   # `npm` here is whatever is on PATH — .tool-versions pins erlang/elixir only.
   # jsdom >= 30 needs node >= 22.22.2; on node 20 its undici blows up with a
   # bare "webidl.util.markAsUncloneable is not a function" from seven terminal
@@ -224,19 +223,40 @@ log "linting JS hooks"
     echo "       Try: mise exec node@22 -- bash scripts/pre-push-check.sh" >&2
     exit 1
   fi
+
   # Skip the (slow) `npm ci` when package-lock.json is unchanged since the last
   # successful install — a sha256 stamp inside node_modules records what was
   # installed. Benefits the local hook and the self-hosted runner, which now
   # persists node_modules across runs (checkout clean:false). npm ci wipes
   # node_modules, so the stamp is written *after* it succeeds.
-  stamp="node_modules/.package-lock.sha256"
-  want="$(sha256sum package-lock.json | awk '{print $1}')"
-  if [[ -d node_modules && -f "${stamp}" && "$(cat "${stamp}")" == "${want}" ]]; then
-    log "node_modules up to date (package-lock.json unchanged) — skipping npm ci"
-  else
-    NODE_ENV=development npm ci --include=dev
-    printf '%s\n' "${want}" >"${stamp}"
-  fi
+  ensure_npm_ci() {
+    local dir="$1"
+    shift
+    local stamp want
+    (
+      cd "${dir}"
+      stamp="node_modules/.package-lock.sha256"
+      want="$(sha256sum package-lock.json | awk '{print $1}')"
+      if [[ -d node_modules && -f "${stamp}" && "$(cat "${stamp}")" == "${want}" ]]; then
+        log "${dir}/node_modules up to date (package-lock.json unchanged) — skipping npm ci"
+      else
+        log "npm ci in ${dir}"
+        NODE_ENV=development npm ci "$@"
+        printf '%s\n' "${want}" >"${stamp}"
+      fi
+    )
+  }
+
+  ensure_npm_ci assets --include=dev
+  # assets/test/preview_bridge_file_page.test.mjs drives
+  # scripts/verify_preview_bridge_file_page.mjs, which resolves playwright from
+  # priv/scripts/node_modules (not assets/). A clean poller/deploy worktree that
+  # only npm-ci'd assets fails test 121 with exit 2 / "playwright not found"
+  # while CI stays green on a runner that still has priv/scripts node_modules
+  # from prior clean:false checkouts. Install both trees before npm test.
+  ensure_npm_ci priv/scripts
+
+  cd assets
   NODE_ENV=development npm run lint
   NODE_ENV=development npm test
 )
