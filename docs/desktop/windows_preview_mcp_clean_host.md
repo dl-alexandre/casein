@@ -20,7 +20,7 @@ package smoke, or hosted Windows CI job is **not** clean-machine acceptance.
 |---|---|---|
 | Evidence JSON schema + fail-closed validator | Yes (`scripts/verify_windows_preview_mcp_clean_host.sh`) | — |
 | Dry-run keeps `clean_host_exercised=false` | Yes (`--dry-run`) | — |
-| `preview_bridge.js` esbuild IIFE on `file://` emits bridge signals under Playwright | Yes (`scripts/verify_preview_bridge_file_page.mjs`) | assets + priv/scripts node_modules |
+| `preview_bridge.js` esbuild IIFE on `file://` emits bridge signals under Playwright (ready/dom_loaded, parent postMessage envelope, live_socket class flip, client_error, page_loading_*, disabled without `casein_preview=1`) | Yes (`scripts/verify_preview_bridge_file_page.mjs`, schema v2) | assets + priv/scripts node_modules |
 | Packaged Node/Playwright/Chromium daemon observe/type/click/… on Windows package smoke | Yes (package smoke / #803) | Hosted Windows package job when billing allows |
 | Agent inside **installed** Windows workspace drives Preview MCP discover→open→observe→click→type→press→screenshot→close | **No** | Disposable signed Win11 host + installed desktop package |
 
@@ -39,17 +39,23 @@ alone.
 
 ## Real browser verification without `/verify` (landed software)
 
-`scripts/verify_preview_bridge_file_page.mjs`:
+`scripts/verify_preview_bridge_file_page.mjs` (schema v2):
 
 1. esbuilds `assets/js/preview_bridge.js` to a browser IIFE
-2. writes a static HTML fixture beside the IIFE
+2. writes parent + child + disabled static HTML fixtures beside the IIFE
 3. launches Chromium via `priv/scripts` Playwright
-4. opens `file://…/bridge_fixture.html?casein_preview=1`
-5. asserts `casein:preview:bridge_ready` and `casein:preview:dom_loaded`
+4. loads parent `file://` page with child iframe `?casein_preview=1`
+5. asserts `bridge_ready` + `dom_loaded` on the child
+6. asserts parent `postMessage` envelope (`source`/`version`/`type`/`request_id`)
+7. flips `phx-connected` ↔ `phx-disconnected` and asserts live_socket_* signals
+8. dispatches a synthetic `error` and `phx:page-loading-*` events
+9. asserts top-level page **without** `casein_preview=1` does not install
 
-**Proves:** bridge module bundles, loads on a static page, and emits the parent
-signal contract under a real Chromium. **Does not prove:** clean Win11, MCP
-tooling, packaged Windows runtime, or agent-inside-workspace control.
+**Proves:** bridge module bundles, loads on a static page, parent postMessage
+contract, live-socket class transitions, client_error + page_loading signals,
+and the production top-level disable gate — under real Chromium. **Does not
+prove:** clean Win11, MCP tooling, packaged Windows runtime, own-origin/path
+prefix proxy, or agent-inside-workspace control.
 
 Known host noise: `page.screenshot` can fail under load with
 `Protocol error (Page.captureScreenshot)`. This walk does **not** require
