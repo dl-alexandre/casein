@@ -8,6 +8,6 @@
     "pngjs": "^7.0.0"
   },
   "scripts": {
-    "test": "node --test preview_diff.test.mjs preview_runtime_diagnostic.test.mjs"
+    "test": "node --test preview_diff.test.mjs preview_runtime_diagnostic.test.mjs preview_playwright_paths.test.mjs"
   }
 }

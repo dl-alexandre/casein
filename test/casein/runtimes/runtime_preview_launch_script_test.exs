@@ -2,6 +2,7 @@ defmodule Casein.Runtimes.RuntimePreviewLaunchScriptTest do
   use ExUnit.Case, async: true
 
   @script Path.expand("../../../priv/scripts/runtime-preview-launch.sh", __DIR__)
+  @windows_script Path.expand("../../../priv/scripts/runtime-preview-launch.ps1", __DIR__)
 
   test "has valid shell syntax" do
     assert {_, 0} = System.cmd("bash", ["-n", @script])
@@ -47,5 +48,20 @@ defmodule Casein.Runtimes.RuntimePreviewLaunchScriptTest do
     assert registry["status"] == "failed"
     assert registry["port"] == Integer.to_string(port)
     assert registry["worktree"] == root
+  end
+
+  test "windows launcher declares kill-on-close Job Object process-tree cleanup" do
+    script = File.read!(@windows_script)
+
+    assert script =~ "Initialize-CaseinPreviewJobObjectSupport"
+    assert script =~ "PreviewJobObject"
+    assert script =~ "CreateKillOnClose"
+    assert script =~ "AssignProcessToJobObject"
+    assert script =~ "Stop-PreviewProcessTree"
+    assert script =~ "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE"
+    assert script =~ "process_tree = 'job_object_kill_on_close'"
+    # Fallback remains when Job Object assignment is unavailable.
+    assert script =~ "taskkill.exe /PID"
+    assert script =~ "/T"
   end
 end

@@ -11,6 +11,7 @@ import fs from "fs/promises";
 import { chromium } from "playwright";
 import { computeDiff, wantsVisualDiff } from "./preview_diff.mjs";
 import { diagnoseChromium } from "./preview_runtime_diagnostic.mjs";
+import { dirnameOf, sanitizeStorageStatePath } from "./preview_playwright_paths.mjs";
 
 const browsers = new Map();
 const instrumentedPages = new WeakSet();
@@ -609,7 +610,9 @@ async function persistStorageState(entry) {
   const context = entry.browser.contexts()[0];
   if (!context) return;
 
-  await fs.mkdir(dirname(entry.storageStatePath), { recursive: true });
+  // dirnameOf picks win32 vs posix from the path shape so LocalAppData
+  // backslash paths on the packaged Windows helper mkdir the real parent.
+  await fs.mkdir(dirnameOf(entry.storageStatePath), { recursive: true });
   await context.storageState({ path: entry.storageStatePath });
 }
 
@@ -620,17 +623,6 @@ async function fileExists(path) {
   } catch {
     return false;
   }
-}
-
-function dirname(path) {
-  const index = path.lastIndexOf("/");
-  return index > 0 ? path.slice(0, index) : ".";
-}
-
-function sanitizeStorageStatePath(path) {
-  if (typeof path !== "string" || path.length === 0) return null;
-  if (path.includes("\0")) return null;
-  return path;
 }
 
 function sanitizeHeaders(headers) {

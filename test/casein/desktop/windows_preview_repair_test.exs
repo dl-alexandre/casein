@@ -57,4 +57,32 @@ defmodule Casein.Desktop.WindowsPreviewRepairTest do
     assert helper =~ ~s/case "close"/
     assert helper =~ "process.argv.includes(\"--daemon\")"
   end
+
+  test "playwright helper uses path-shape-aware dirname for Windows storage_state_path" do
+    helper = File.read!(@helper)
+    paths = File.read!(Path.expand("../../../priv/scripts/preview_playwright_paths.mjs", __DIR__))
+
+    assert helper =~ ~s|from "./preview_playwright_paths.mjs"|
+    assert helper =~ "dirnameOf(entry.storageStatePath)"
+    refute helper =~ "path.lastIndexOf(\"/\")"
+
+    assert paths =~ "path.win32"
+    assert paths =~ "path.posix"
+    assert paths =~ "looksWindowsPath"
+    assert paths =~ "sanitizeStorageStatePath"
+  end
+
+  test "runtime preview launcher assigns a kill-on-close Job Object" do
+    launcher =
+      File.read!(Path.expand("../../../priv/scripts/runtime-preview-launch.ps1", __DIR__))
+
+    assert launcher =~ "function Initialize-CaseinPreviewJobObjectSupport"
+    assert launcher =~ "Casein.Windows.PreviewJobObject"
+    assert launcher =~ "CreateKillOnClose"
+    assert launcher =~ "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE"
+    assert launcher =~ "AssignProcessToJobObject"
+    assert launcher =~ "function Stop-PreviewProcessTree"
+    assert launcher =~ "process_tree = 'job_object_kill_on_close'"
+    assert launcher =~ "taskkill.exe /PID"
+  end
 end
