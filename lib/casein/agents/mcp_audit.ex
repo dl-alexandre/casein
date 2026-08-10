@@ -157,7 +157,8 @@ defmodule Casein.Agents.MCPAudit do
         "terminal_set_agent_label",
         "gate_report",
         "file_open_in_pane",
-        "diff_open"
+        "diff_open",
+        "run_open"
       ]
 
   defp mutating_preview_tool?(tool),
@@ -331,6 +332,18 @@ defmodule Casein.Agents.MCPAudit do
       |> Enum.reject(&is_nil/1)
 
     if parts == [], do: "diff_open", else: "diff_open · " <> Enum.join(parts, " ")
+  end
+
+  defp terminal_summary("run_open", args) do
+    run_id = Map.get(args, "run_id") || Map.get(args, :run_id)
+
+    parts =
+      [
+        if(is_binary(run_id) and run_id != "", do: "run_id=#{truncate(run_id)}")
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: "run_open", else: "run_open · " <> Enum.join(parts, " ")
   end
 
   defp terminal_summary(tool, args) do

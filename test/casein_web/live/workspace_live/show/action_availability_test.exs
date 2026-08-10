@@ -57,6 +57,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.ActionAvailabilityTest do
       assert Avail.available?("diff:open_in_pane", ctx(%{tmux_session: nil, tmux_panes: []}))
       assert Avail.available?("diff:open_in_pane", ctx(%{terminal_mode: :governed}))
     end
+
+    test "run:open_in_pane is always available (falls back to the run tab)" do
+      assert Avail.available?("run:open_in_pane", ctx(%{tmux_session: nil, tmux_panes: []}))
+      assert Avail.available?("run:open_in_pane", ctx(%{terminal_mode: :governed}))
+    end
   end
 
   describe "relevant?/2 — soft gate" do

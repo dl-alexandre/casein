@@ -107,10 +107,10 @@ defmodule Casein.Cockpit.Inspectors do
   end
 
   @doc """
-  Serialize open inspectors for a session template (issue #691).
+  Serialize open inspectors for a session template (issues #691 / #694).
 
-  Records kind + optional path only — restore reopens the viewport and the
-  LiveView re-derives content from current git state. There is no snapshot.
+  Records kind + optional path/run_id only — restore reopens the viewport and
+  the LiveView re-derives content from current git/ledger state. No snapshot.
   """
   @spec serialize([slot()]) :: [map()]
   def serialize(slots) when is_list(slots) do
@@ -120,13 +120,9 @@ defmodule Casein.Cockpit.Inspectors do
         "kind" => kind_string(slot.kind)
       }
 
-      path = slot_path(slot)
-
-      if is_binary(path) and path != "" do
-        Map.put(base, "path", path)
-      else
-        base
-      end
+      base
+      |> maybe_put_path(slot_path(slot))
+      |> maybe_put_run_id(slot_run_id(slot))
     end)
   end
 
@@ -165,6 +161,21 @@ defmodule Casein.Cockpit.Inspectors do
   @spec diff_open?([slot()]) :: boolean()
   def diff_open?(slots) when is_list(slots), do: Enum.any?(slots, &(&1.kind == :diff))
   def diff_open?(_), do: false
+
+  @doc "Primary (first) run id among open run inspectors, if any."
+  @spec primary_run_id([slot()]) :: String.t() | nil
+  def primary_run_id(slots) when is_list(slots) do
+    slots
+    |> Enum.filter(&(&1.kind == :run))
+    |> Enum.find_value(&slot_run_id/1)
+  end
+
+  def primary_run_id(_), do: nil
+
+  @doc "True when any open inspector is a run viewport."
+  @spec run_open?([slot()]) :: boolean()
+  def run_open?(slots) when is_list(slots), do: Enum.any?(slots, &(&1.kind == :run))
+  def run_open?(_), do: false
 
   defp upsert(slots, slot) do
     case Enum.find_index(slots, &(&1.id == slot.id)) do
@@ -243,6 +254,31 @@ defmodule Casein.Cockpit.Inspectors do
 
   defp slot_path(_), do: nil
 
+  defp slot_run_id(%{attrs: attrs}) when is_map(attrs) do
+    case attrs["run_id"] || attrs[:run_id] do
+      id when is_binary(id) ->
+        case String.trim(id) do
+          "" -> nil
+          p -> p
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp slot_run_id(_), do: nil
+
+  defp maybe_put_path(base, path) when is_binary(path) and path != "",
+    do: Map.put(base, "path", path)
+
+  defp maybe_put_path(base, _), do: base
+
+  defp maybe_put_run_id(base, run_id) when is_binary(run_id) and run_id != "",
+    do: Map.put(base, "run_id", run_id)
+
+  defp maybe_put_run_id(base, _), do: base
+
   defp cast_serialized(%{"type" => "inspector"} = raw), do: cast_serialized_kind(raw)
   defp cast_serialized(%{type: "inspector"} = raw), do: cast_serialized_kind(raw)
   defp cast_serialized(%{"kind" => _} = raw), do: cast_serialized_kind(raw)
@@ -252,17 +288,38 @@ defmodule Casein.Cockpit.Inspectors do
   defp cast_serialized_kind(raw) when is_map(raw) do
     kind = Map.get(raw, "kind") || Map.get(raw, :kind) || :inspector
     path = Map.get(raw, "path") || Map.get(raw, :path)
+    run_id = Map.get(raw, "run_id") || Map.get(raw, :run_id)
     title = Map.get(raw, "title") || Map.get(raw, :title)
+    kind_atom = normalize_kind(kind)
 
     attrs =
-      cond do
-        is_binary(path) and String.trim(path) != "" ->
-          %{kind: normalize_kind(kind), title: title || path, path: String.trim(path)}
+      %{kind: kind_atom, title: title}
+      |> maybe_put_attr(:path, path)
+      |> maybe_put_attr(:run_id, run_id)
+      |> then(fn a ->
+        cond do
+          is_binary(a[:path]) and (is_nil(a[:title]) or a[:title] == "") ->
+            Map.put(a, :title, a[:path])
 
-        true ->
-          %{kind: normalize_kind(kind), title: title}
-      end
+          is_binary(a[:run_id]) and (is_nil(a[:title]) or a[:title] == "") ->
+            Map.put(a, :title, "Run")
+
+          true ->
+            a
+        end
+      end)
 
     build_slot(attrs)
   end
+
+  defp maybe_put_attr(map, _key, value) when value in [nil, ""], do: map
+
+  defp maybe_put_attr(map, key, value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> map
+      trimmed -> Map.put(map, key, trimmed)
+    end
+  end
+
+  defp maybe_put_attr(map, _key, _), do: map
 end

@@ -76,4 +76,21 @@ defmodule Casein.Cockpit.InspectorsTest do
     assert empty == []
     assert geo == Geometry.terminal_only()
   end
+
+  test "serialize/restore re-derives run_id only (no content snapshot)" do
+    {slots, _} =
+      Inspectors.open([], %{kind: :run, id: "insp-run", title: "Run", run_id: "run-abc"})
+
+    assert Inspectors.serialize(slots) == [
+             %{"type" => "inspector", "kind" => "run", "run_id" => "run-abc"}
+           ]
+
+    assert Inspectors.primary_run_id(slots) == "run-abc"
+    assert Inspectors.run_open?(slots)
+
+    {restored, geo} = Inspectors.restore(Inspectors.serialize(slots))
+    assert Geometry.inspector_open?(geo)
+    assert Inspectors.primary_run_id(restored) == "run-abc"
+    refute hd(restored).id == hd(slots).id
+  end
 end

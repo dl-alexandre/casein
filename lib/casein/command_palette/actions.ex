@@ -78,6 +78,16 @@ defmodule Casein.CommandPalette.Actions do
         detail: "Review git changes beside the terminal (falls back to the diff tab)",
         keywords: ~w(git changes patch review),
         payload: %{event: "diff:open_in_pane", params: %{}}
+      },
+      # Run inspector (#694). Same fallback contract: no tmux context → run tab.
+      %Item{
+        id: "run:open_in_pane",
+        kind: :action,
+        category: :view,
+        label: "Open run inspector",
+        detail: "Watch the run ledger beside the terminal (falls back to the run tab)",
+        keywords: ~w(run ledger timeline artifacts command),
+        payload: %{event: "run:open_in_pane", params: %{}}
       }
     ]
   end
@@ -362,6 +372,7 @@ defmodule Casein.CommandPalette.Actions do
       "annotation:open",
       "tree:open_in_pane",
       "diff:open_in_pane",
+      "run:open_in_pane",
       "attach_terminal_session",
       "terminal:set_mode",
       "terminal:switch_to_shell",

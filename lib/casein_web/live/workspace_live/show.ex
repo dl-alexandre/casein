@@ -54,6 +54,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias CaseinWeb.WorkspaceLive.Show.LeaderHelpEvents
   alias CaseinWeb.WorkspaceLive.Show.LogsEvents
   alias CaseinWeb.WorkspaceLive.Show.DiffEvents
+  alias CaseinWeb.WorkspaceLive.Show.RunInspectorEvents
   alias CaseinWeb.WorkspaceLive.Show.NavEvents
   alias CaseinWeb.WorkspaceLive.Show.PaletteEvents
   alias CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents
@@ -170,7 +171,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
     pane:input file-pane:dirty
     inspector:open inspector:close inspector:close_all inspector:select inspector:set_placement
-    diff:open_inspector
+    diff:open_inspector run:open_inspector
     run:cancel set_log_service
     ctx:open ctx:close
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:open
@@ -630,6 +631,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_event("diff:open_in_pane" = event, params, socket),
     do: DiffEvents.handle_event(event, params, socket)
 
+  def handle_event("run:open_in_pane" = event, params, socket),
+    do: RunInspectorEvents.handle_event(event, params, socket)
+
   def handle_event("refresh" = event, params, socket),
     do: NavEvents.handle_event(event, params, socket)
 
@@ -847,6 +851,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   end
 
   def handle_event("notification:open_conversation", _params, socket), do: {:noreply, socket}
+
+  # Run inspector open (#694) must beat the run: catch-all below.
+  def handle_event("run:open_inspector" = event, params, socket),
+    do: InspectorEvents.handle_event(event, params, socket)
 
   # Run / workflow / run-ledger events are handled by RunEvents (extracted from
   # this module — pure code motion).
@@ -2908,9 +2916,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         _ = Open.subscribe(workspace_id)
-        # Presence for one-shot inspector surface intents (diff_open MCP).
+        # Presence for one-shot inspector surface intents (diff_open / run_open MCP).
         # Inspectors.request_open/2 itself is subscribed via InspectorEvents.
         _ = Casein.Inspectors.Diff.register_viewer(workspace_id)
+        _ = Casein.Inspectors.Run.register_viewer(workspace_id)
       end
     end
 

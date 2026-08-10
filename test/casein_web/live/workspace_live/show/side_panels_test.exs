@@ -650,8 +650,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assert html =~ "No runs yet."
       assert html =~ "Run ledger"
-      assert html =~ "No runs recorded."
-      assert html =~ "Select a run to inspect its canonical events."
+      assert html =~ "No runs yet"
+      assert html =~ "Nothing selected"
     end
 
     test "renders an active running run with cancel button and buffer" do

@@ -1,0 +1,100 @@
+defmodule Casein.Agents.TerminalToolsOpenRunTest do
+  use Casein.DataCase, async: false
+
+  alias Casein.Agents.MCPAudit
+  alias Casein.Agents.TerminalTools
+  alias Casein.Audit
+  alias Casein.Cockpit.Inspectors
+  alias Casein.Inspectors.Run
+
+  setup do
+    prev_root = Application.get_env(:casein, :workspaces_root)
+
+    on_exit(fn ->
+      restore(:workspaces_root, prev_root)
+    end)
+
+    :ok
+  end
+
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
+
+  defp seed_workspace! do
+    root = Casein.TmpWorkspace.root!("mcp-open-run")
+    path = Path.join(root, "ws")
+    File.mkdir_p!(path)
+    File.write!(Path.join(path, "README.md"), "run\n")
+    Application.put_env(:casein, :workspaces_root, root)
+    {:ok, workspace} = Casein.Workspaces.attach_folder(path)
+    {path, workspace}
+  end
+
+  test "surfaces a run when a viewer is watching" do
+    {_root, workspace} = seed_workspace!()
+    :ok = Inspectors.subscribe(workspace.id)
+    :ok = Run.register_viewer(workspace.id)
+
+    assert {:ok, %{status: "surfaced", workspace_id: ws_id, run_id: "run-1"}} =
+             TerminalTools.invoke("run_open", %{
+               "workspace_id" => workspace.id,
+               "run_id" => "run-1"
+             })
+
+    assert ws_id == workspace.id
+    assert_receive {:inspector_open, attrs}, 200
+    assert attrs[:run_id] == "run-1" or attrs["run_id"] == "run-1"
+    assert attrs[:kind] == :run or attrs["kind"] == :run or attrs["kind"] == "run"
+  end
+
+  test "is a no-op when nobody is watching" do
+    {_root, workspace} = seed_workspace!()
+    refute Run.viewer_present?(workspace.id)
+
+    assert {:ok, %{status: "no_viewer", workspace_id: ws_id}} =
+             TerminalTools.invoke("run_open", %{"workspace_id" => workspace.id})
+
+    assert ws_id == workspace.id
+  end
+
+  test "rejects any placement argument" do
+    {_root, workspace} = seed_workspace!()
+
+    for key <- ~w(placement size position pane_id geometry focus fraction ratio) do
+      assert {:error, %{error: :placement_not_allowed, rejected: rejected}} =
+               TerminalTools.invoke("run_open", %{
+                 "workspace_id" => workspace.id,
+                 key => "right"
+               })
+
+      assert key in rejected
+    end
+  end
+
+  test "is audited as a mutating terminal tool" do
+    {_root, workspace} = seed_workspace!()
+
+    result =
+      TerminalTools.invoke("run_open", %{
+        "workspace_id" => workspace.id,
+        "run_id" => "run-9"
+      })
+
+    assert {:ok, _} = result
+
+    assert :ok =
+             MCPAudit.record_terminal(
+               "run_open",
+               %{"workspace_id" => workspace.id, "run_id" => "run-9"},
+               result
+             )
+
+    actions = workspace.id |> Audit.recent_for(10) |> Enum.map(& &1.action)
+    assert "agent.terminal_run_open" in actions
+  end
+
+  test "requires workspace_id" do
+    assert {:error, {:missing_argument, "workspace_id"}} =
+             TerminalTools.invoke("run_open", %{})
+  end
+end

@@ -17,6 +17,7 @@ defmodule Casein.Supervision.Agents do
       # Duplicate: many cockpit LiveViews may watch the same workspace for
       # one-shot inspector surface intents (diff/run). Process-linked presence.
       {Registry, keys: :duplicate, name: Casein.Inspectors.Diff.ViewerRegistry},
+      {Registry, keys: :duplicate, name: Casein.Inspectors.Run.ViewerRegistry},
       Casein.Codex.EventHub,
       Casein.Codex.SessionTitles,
       Casein.Codex.RuntimeSupervisor,
