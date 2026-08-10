@@ -1,0 +1,3 @@
+Obviously fake lifecycle fixture for #382 software tests only.
+Not a real clean-Mac run. Do not treat as release evidence.
+Checklist codes exercised in tests: first_launch login_item uninstall.

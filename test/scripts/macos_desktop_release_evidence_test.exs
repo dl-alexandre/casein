@@ -14,6 +14,8 @@ defmodule Scripts.MacosDesktopReleaseEvidenceTest do
   @notarize Path.join(@repo_root, "scripts/notarize-macos-desktop.sh")
   @collect Path.join(@repo_root, "scripts/collect-macos-desktop-evidence.sh")
   @validate Path.join(@repo_root, "scripts/validate-macos-desktop-evidence.sh")
+  @schema Path.join(@repo_root, "scripts/schemas/macos_desktop_release_evidence.schema.json")
+  @fixtures Path.join(@repo_root, "test/fixtures/macos_desktop_release_evidence")
   @bundle Path.join(@repo_root, "native/casein_menubar/scripts/bundle.sh")
   @entitlements Path.join(@repo_root, "native/casein_menubar/Resources/Casein.entitlements")
   @workflow Path.join(@repo_root, ".github/workflows/macos-desktop.yml")
@@ -27,6 +29,12 @@ defmodule Scripts.MacosDesktopReleaseEvidenceTest do
       assert executable?(path), "not executable: #{path}"
       assert {_, 0} = System.cmd("bash", ["-n", path])
     end
+
+    assert File.exists?(@schema)
+    schema = @schema |> File.read!() |> Jason.decode!()
+    assert schema["$schema"]
+    assert schema["properties"]["kind"]["const"] == "macos_desktop_release_evidence"
+    assert schema["properties"]["issue"]["const"] == 382
   end
 
   test "hardened-runtime entitlements fixture is present and non-secret" do
@@ -297,6 +305,161 @@ defmodule Scripts.MacosDesktopReleaseEvidenceTest do
     assert body =~ "validate-macos-desktop-evidence.sh"
     assert body =~ "--dry-run"
     assert body =~ "missing"
+    assert body =~ "--print-template"
+    assert body =~ "--fixture-dir"
+    assert body =~ "macos_desktop_release_evidence.schema.json"
+  end
+
+  test "validator check-schema, print-template, and print-operator-steps" do
+    assert {out, 0} = System.cmd("bash", [@validate, "--check-schema"], stderr_to_stdout: true)
+    assert out =~ "SCHEMA_OK"
+
+    assert {template, 0} =
+             System.cmd("bash", [@validate, "--print-template"], stderr_to_stdout: true)
+
+    doc = Jason.decode!(template)
+    assert doc["result"] == "incomplete"
+    assert doc["missing"] == @canonical_missing
+    assert doc["claims"]["passed_release"] == false
+    assert is_map(doc["staging"])
+    assert is_map(doc["fixture_refs"])
+
+    assert {steps, 0} =
+             System.cmd("bash", [@validate, "--print-operator-steps"], stderr_to_stdout: true)
+
+    assert steps =~ "NEED (human): Apple notarize credentials"
+    assert steps =~ "Developer ID"
+    assert steps =~ "notarytool store-credentials"
+    assert steps =~ "CASEIN_LIFECYCLE_ATTESTED=1"
+    assert steps =~ "stage-macos-desktop-artifacts.sh"
+    refute steps =~ "BEGIN CERTIFICATE"
+    refute steps =~ ~r/password\s*=\s*['\"][^'\"]{8,}/i
+  end
+
+  test "checked-in fixtures: dry-run accepts, silent and overclaim reject" do
+    dry = Path.join(@fixtures, "incomplete_dry_run.json")
+    silent = Path.join(@fixtures, "silent_incomplete_no_missing.json")
+    overclaim = Path.join(@fixtures, "overclaim_adhoc_passed_release.json")
+
+    assert {out, 0} = System.cmd("bash", [@validate, dry], stderr_to_stdout: true)
+    assert out =~ "VALID:"
+    assert out =~ "incomplete"
+
+    assert {_, 2} = System.cmd("bash", [@validate, silent], stderr_to_stdout: true)
+
+    assert {rej, 2} = System.cmd("bash", [@validate, overclaim], stderr_to_stdout: true)
+    assert rej =~ "INVALID:"
+  end
+
+  test "fixture-dir backs signed_lifecycle claim only when file present" do
+    tmp =
+      Path.join(System.tmp_dir!(), "casein-macos-fix-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp)
+    on_exit(fn -> File.rm_rf(tmp) end)
+
+    evidence = Path.join(tmp, "evidence.json")
+
+    base = %{
+      "schema" => 1,
+      "kind" => "macos_desktop_release_evidence",
+      "issue" => 382,
+      "started_at_utc" => "2026-08-10T00:00:00Z",
+      "completed_at_utc" => "2026-08-10T00:00:01Z",
+      "result" => "incomplete",
+      "error" => "",
+      "missing" => ["developer_id", "notary_profile"],
+      "claims" => %{
+        "developer_id" => false,
+        "notarized" => false,
+        "stapled" => false,
+        "signed_lifecycle" => true,
+        "passed_release" => false
+      },
+      "fixture_refs" => %{"signed_lifecycle" => "lifecycle_notes"},
+      "git" => %{"revision" => "abc", "describe" => "abc"},
+      "host" => %{"os" => "Linux", "arch" => "x86_64"},
+      "app" => %{
+        "path" => "/tmp/x.app",
+        "exists" => false,
+        "signature_kind" => "missing",
+        "signer_authority" => "",
+        "team_identifier" => "",
+        "hardened_runtime" => false,
+        "codesign_verify" => "skipped",
+        "spctl" => "skipped",
+        "stapler" => "skipped"
+      },
+      "archive" => %{"path" => "", "exists" => false, "sha256" => "", "bytes" => 0},
+      "phases" => [],
+      "notes" => ["fixture test"]
+    }
+
+    File.write!(evidence, Jason.encode!(base))
+
+    # No fixture dir → reject lifecycle claim on incomplete/Linux host.
+    assert {_, 2} = System.cmd("bash", [@validate, evidence], stderr_to_stdout: true)
+
+    empty_dir = Path.join(tmp, "empty")
+    File.mkdir_p!(empty_dir)
+
+    assert {_, 2} =
+             System.cmd(
+               "bash",
+               [@validate, "--fixture-dir", empty_dir, evidence],
+               stderr_to_stdout: true
+             )
+
+    op_dir = Path.join(@fixtures, "operator")
+
+    assert {out, 0} =
+             System.cmd(
+               "bash",
+               [@validate, "--fixture-dir", op_dir, evidence],
+               stderr_to_stdout: true
+             )
+
+    assert out =~ "VALID:"
+    assert out =~ "fixture_dir="
+  end
+
+  test "collect dry-run embeds staging receipt summary without claiming upload=release" do
+    tmp =
+      Path.join(System.tmp_dir!(), "casein-macos-evidence-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(tmp)
+    out = Path.join(tmp, "dry.evidence.json")
+    receipt = Path.join(tmp, "upload-receipt.json")
+    on_exit(fn -> File.rm_rf(tmp) end)
+
+    File.write!(
+      receipt,
+      Jason.encode!(%{
+        "mode" => "skip",
+        "upload_attempted" => false,
+        "upload_succeeded" => false,
+        "label" => "Casein-macos-fixture"
+      })
+    )
+
+    assert {_, 0} =
+             System.cmd(
+               "bash",
+               [@collect, "--dry-run", "--out", out, "--staging-receipt", receipt],
+               stderr_to_stdout: true
+             )
+
+    evidence = out |> File.read!() |> Jason.decode!()
+    assert evidence["result"] == "incomplete"
+    assert evidence["missing"] == @canonical_missing
+    assert evidence["staging"]["receipt_mode"] == "skip"
+    assert evidence["staging"]["upload_attempted"] == false
+    assert evidence["staging"]["upload_succeeded"] == false
+    assert evidence["staging"]["receipt_path"] =~ "upload-receipt.json"
+    assert is_map(evidence["fixture_refs"])
+    assert evidence["claims"]["passed_release"] == false
+
+    assert {_, 0} = System.cmd("bash", [@validate, out], stderr_to_stdout: true)
   end
 
   defp executable?(path) do

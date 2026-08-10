@@ -109,15 +109,36 @@ scripts/collect-macos-desktop-evidence.sh --dry-run \
 # → missing: ["developer_id","notary_profile","signed_lifecycle"]
 # → prints NEED (human): … checklist lines
 
+# Optional: embed skippable-upload receipt summary (not release proof)
+scripts/collect-macos-desktop-evidence.sh --dry-run \
+  --staging-receipt /path/to/upload-receipt.json \
+  --out /tmp/casein-macos-dry-run.evidence.json
+
 scripts/validate-macos-desktop-evidence.sh --print-needs \
   /tmp/casein-macos-dry-run.evidence.json
+scripts/validate-macos-desktop-evidence.sh --print-template
+scripts/validate-macos-desktop-evidence.sh --print-operator-steps
+scripts/validate-macos-desktop-evidence.sh --check-schema
 ```
+
+Formal schema (const/required/missing enums):  
+`scripts/schemas/macos_desktop_release_evidence.schema.json`
 
 `validate-macos-desktop-evidence.sh` rejects:
 
 - incomplete documents with empty/absent `missing[]` (silent pass)
-- `passed_release` without Developer ID + hardened runtime + `spctl=accepted` + `stapler=valid` + archive sha256
+- `passed_release` without Developer ID + hardened runtime + `spctl=accepted` + `stapler=valid` + archive sha256 + lifecycle attestation
+- strong `claims.*=true` without app material **or** `--fixture-dir` + `fixture_refs` file
 - any evidence embedding certificate/private-key material
+
+Operator fixture files (optional honesty backstop):
+
+```bash
+# fixture_refs.signed_lifecycle=lifecycle_notes → file lifecycle_notes.txt under dir
+scripts/validate-macos-desktop-evidence.sh \
+  --fixture-dir ./operator-fixtures \
+  path/to/*.evidence.json
+```
 
 `result` values:
 
@@ -161,7 +182,9 @@ files here.
 | `scripts/test-macos-desktop-package.sh` | Structure, launch, auth; optional `--require-developer-id` / `--require-notarized` |
 | `scripts/verify-macos-desktop-release.sh` | Deep codesign / hardened runtime / spctl / stapler |
 | `scripts/notarize-macos-desktop.sh` | `notarytool submit` + staple (`CASEIN_NOTARY_DRY_RUN=1` offline) |
-| `scripts/collect-macos-desktop-evidence.sh` | Immutable JSON for the issue/release (`--dry-run` = incomplete + explicit `missing[]`) |
-| `scripts/validate-macos-desktop-evidence.sh` | Schema + honesty gate; prints NEED codes; rejects silent pass / overclaim |
+| `scripts/collect-macos-desktop-evidence.sh` | Immutable JSON for the issue/release (`--dry-run` = incomplete + explicit `missing[]`; optional `--staging-receipt`) |
+| `scripts/validate-macos-desktop-evidence.sh` | Schema + honesty gate; `--print-template` / `--print-operator-steps` / `--fixture-dir`; rejects silent pass / overclaim |
+| `scripts/schemas/macos_desktop_release_evidence.schema.json` | Formal schema-1 document for #382 evidence |
+| `scripts/stage-macos-desktop-artifacts.sh` | Local stage + skippable upload receipt (#834); not release proof |
 | `native/casein_menubar/Resources/Casein.entitlements` | Hardened-runtime entitlements for Developer ID |
 | `native/casein_menubar/scripts/bundle.sh` | Nested Mach-O sign; runtime+timestamp when identity ≠ `-` |

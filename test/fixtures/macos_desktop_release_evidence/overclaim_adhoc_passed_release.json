@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "kind": "macos_desktop_release_evidence",
+  "issue": 382,
+  "started_at_utc": "2026-08-10T00:00:00Z",
+  "completed_at_utc": "2026-08-10T00:00:01Z",
+  "result": "passed_release",
+  "error": "",
+  "missing": [],
+  "claims": {
+    "developer_id": true,
+    "notarized": true,
+    "stapled": true,
+    "signed_lifecycle": true,
+    "passed_release": true
+  },
+  "fixture_refs": {},
+  "git": {
+    "revision": "0000000000000000000000000000000000000000",
+    "describe": "fixture-overclaim",
+    "github_sha": ""
+  },
+  "host": {
+    "os": "Darwin",
+    "arch": "arm64",
+    "release": "fixture",
+    "runner_name": "",
+    "runner_os": "",
+    "runner_arch": "",
+    "github_run_id": ""
+  },
+  "app": {
+    "path": "/tmp/Fake Casein MenuBar.app",
+    "exists": true,
+    "bundle_identifier": "com.example.fake",
+    "signature_kind": "adhoc",
+    "signer_authority": "",
+    "team_identifier": "",
+    "codesign_flags": "",
+    "hardened_runtime": false,
+    "codesign_verify": "passed",
+    "spctl": "skipped",
+    "stapler": "skipped"
+  },
+  "archive": {
+    "path": "",
+    "exists": false,
+    "sha256": "",
+    "bytes": 0
+  },
+  "phases": ["fixture_overclaim"],
+  "notes": [
+    "Obviously fake REJECT fixture: adhoc cannot be passed_release."
+  ]
+}

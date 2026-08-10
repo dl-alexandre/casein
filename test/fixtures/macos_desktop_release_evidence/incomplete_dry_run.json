@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "kind": "macos_desktop_release_evidence",
+  "issue": 382,
+  "started_at_utc": "2026-08-10T00:00:00Z",
+  "completed_at_utc": "2026-08-10T00:00:01Z",
+  "result": "incomplete",
+  "error": "dry-run fixture: no Developer ID, notary profile, or signed lifecycle material claimed",
+  "missing": ["developer_id", "notary_profile", "signed_lifecycle"],
+  "claims": {
+    "developer_id": false,
+    "notarized": false,
+    "stapled": false,
+    "signed_lifecycle": false,
+    "passed_release": false
+  },
+  "fixture_refs": {},
+  "staging": {
+    "receipt_path": "",
+    "receipt_mode": "skip",
+    "upload_attempted": false,
+    "upload_succeeded": false
+  },
+  "git": {
+    "revision": "0000000000000000000000000000000000000000",
+    "describe": "fixture-dry-run",
+    "github_sha": ""
+  },
+  "host": {
+    "os": "Linux",
+    "arch": "x86_64",
+    "release": "fixture",
+    "runner_name": "",
+    "runner_os": "",
+    "runner_arch": "",
+    "github_run_id": ""
+  },
+  "app": {
+    "path": "native/casein_menubar/build/Casein MenuBar.app",
+    "exists": false,
+    "bundle_identifier": "",
+    "signature_kind": "missing",
+    "signer_authority": "",
+    "team_identifier": "",
+    "codesign_flags": "",
+    "hardened_runtime": false,
+    "codesign_verify": "skipped",
+    "spctl": "skipped",
+    "stapler": "skipped"
+  },
+  "archive": {
+    "path": "",
+    "exists": false,
+    "sha256": "",
+    "bytes": 0
+  },
+  "phases": ["dry_run", "fixture"],
+  "notes": [
+    "Obviously fake fixture for #382 software tests. Not release evidence.",
+    "Never store Apple credentials in evidence documents."
+  ]
+}
