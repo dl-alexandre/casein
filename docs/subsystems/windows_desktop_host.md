@@ -3,6 +3,27 @@
 > Thin Windows infrastructure that supervises the packaged Casein release and
 > opens the existing Phoenix/LiveView cockpit. It is not a second product UI.
 
+## Mobile open-clarification inbox (SQLite)
+
+Windows desktop releases compile with `CASEIN_REPO_ADAPTER=sqlite`. Mobile Needs
+Me / open-clarification hydration must filter resolved requests **before**
+newest-per-pane distinct (H28). Doing distinct first permanently hides older
+still-open requests when a newer same-pane request was resolved — unanswerable
+with no marker.
+
+The portable projector is `Casein.Agents.AgentEvents.OpenClarifications`. The
+SQLite Ecto adapter and MemoryAdapter both call it; the Postgres Ecto path keeps
+SQL `NOT EXISTS` + `DISTINCT ON` with the same filter-before-distinct order.
+Repository evidence:
+
+```bash
+mise exec -- mix test \
+  test/casein/agents/agent_events/open_clarifications_test.exs \
+  test/casein/agents/agent_events_ecto_adapter_test.exs
+```
+
+This does not claim physical Device Link or clean Windows 11 evidence (#376/#377).
+
 ## Crash and recovery diagnostics
 
 The tray owns the release process through a kill-on-close Job Object and checks

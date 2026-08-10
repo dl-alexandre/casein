@@ -61,55 +61,86 @@ defmodule Casein.Agents.AgentEvents.EctoAdapter do
     |> Repo.all()
   end
 
-  @impl true
-  def list_open_clarifications(workspace_id, request_type, resolved_type, opts) do
-    # Filter resolved BEFORE newest-per-pane distinct. Doing distinct first
-    # permanently hides older OPEN requests when a newer request on the same
-    # pane was resolved (H28 / mobile inbox trap) — unanswerable with no error.
-    resolved =
-      from(resolution in AgentEvent,
-        where:
-          resolution.workspace_id == ^workspace_id and
-            resolution.event_type == ^resolved_type,
-        where:
-          fragment(
-            "?->>'request_event_id' = (?::text)",
-            resolution.payload,
-            parent_as(:request).id
-          ),
-        select: 1
-      )
+  # Windows desktop is CASEIN_REPO_ADAPTER=sqlite. Postgres `payload->>'…'` and
+  # DISTINCT ON are unavailable there; project in Elixir after a typed fetch so
+  # mobile open-clarification hydration (H28 filter-before-distinct) works on
+  # the Windows host path without a second inbox contract.
+  if Casein.Repo.Adapter.sqlite?() do
+    @impl true
+    def list_open_clarifications(workspace_id, request_type, resolved_type, opts) do
+      limit = Keyword.fetch!(opts, :limit)
 
-    open_requests =
-      from(request in AgentEvent,
-        as: :request,
-        where:
-          request.workspace_id == ^workspace_id and
-            request.event_type == ^request_type,
-        where: not exists(subquery(resolved))
-      )
+      events =
+        from(event in AgentEvent,
+          where:
+            event.workspace_id == ^workspace_id and
+              event.event_type in [^request_type, ^resolved_type],
+          order_by: [
+            desc: event.occurred_at,
+            desc: event.inserted_at,
+            desc: event.id
+          ]
+        )
+        |> Repo.all()
 
-    newest_open_per_target =
-      from(request in subquery(open_requests),
-        distinct: [
-          request.agent_session_id,
-          request.tmux_session_id,
-          request.pane_id
-        ],
-        order_by: [
-          asc: request.agent_session_id,
-          asc: request.tmux_session_id,
-          asc: request.pane_id,
-          desc: request.inserted_at,
-          desc: request.id
-        ]
+      Casein.Agents.AgentEvents.OpenClarifications.project(
+        events,
+        request_type,
+        resolved_type,
+        limit
       )
+    end
+  else
+    @impl true
+    def list_open_clarifications(workspace_id, request_type, resolved_type, opts) do
+      # Filter resolved BEFORE newest-per-pane distinct. Doing distinct first
+      # permanently hides older OPEN requests when a newer request on the same
+      # pane was resolved (H28 / mobile inbox trap) — unanswerable with no error.
+      resolved =
+        from(resolution in AgentEvent,
+          where:
+            resolution.workspace_id == ^workspace_id and
+              resolution.event_type == ^resolved_type,
+          where:
+            fragment(
+              "?->>'request_event_id' = (?::text)",
+              resolution.payload,
+              parent_as(:request).id
+            ),
+          select: 1
+        )
 
-    from(request in subquery(newest_open_per_target),
-      order_by: [desc: request.inserted_at, desc: request.id],
-      limit: ^Keyword.fetch!(opts, :limit)
-    )
-    |> Repo.all()
+      open_requests =
+        from(request in AgentEvent,
+          as: :request,
+          where:
+            request.workspace_id == ^workspace_id and
+              request.event_type == ^request_type,
+          where: not exists(subquery(resolved))
+        )
+
+      newest_open_per_target =
+        from(request in subquery(open_requests),
+          distinct: [
+            request.agent_session_id,
+            request.tmux_session_id,
+            request.pane_id
+          ],
+          order_by: [
+            asc: request.agent_session_id,
+            asc: request.tmux_session_id,
+            asc: request.pane_id,
+            desc: request.inserted_at,
+            desc: request.id
+          ]
+        )
+
+      from(request in subquery(newest_open_per_target),
+        order_by: [desc: request.inserted_at, desc: request.id],
+        limit: ^Keyword.fetch!(opts, :limit)
+      )
+      |> Repo.all()
+    end
   end
 
   @impl true

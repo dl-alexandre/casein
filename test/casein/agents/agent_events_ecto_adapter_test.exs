@@ -69,6 +69,21 @@ defmodule Casein.Agents.AgentEvents.ClarificationEctoAdapterTest do
              )
   end
 
+  test "windows desktop sqlite path uses shared H28 projector without postgres fragments" do
+    # Desktop packages compile with CASEIN_REPO_ADAPTER=sqlite. The Ecto adapter
+    # must not hard-code Postgres-only payload->>'…' / DISTINCT ON on that path;
+    # OpenClarifications is the portable projector both SQLite Ecto and Memory use.
+    source =
+      File.read!(Path.expand("../../../lib/casein/agents/agent_events/ecto_adapter.ex", __DIR__))
+
+    assert source =~ "if Casein.Repo.Adapter.sqlite?()"
+    assert source =~ "OpenClarifications.project"
+    assert source =~ "CASEIN_REPO_ADAPTER=sqlite"
+    # Postgres branch retains the filter-before-distinct SQL contract.
+    assert source =~ "?->>'request_event_id' = (?::text)"
+    assert source =~ "not exists(subquery(resolved))"
+  end
+
   defp insert_request(workspace_id, task_id, tmux_session, pane_id, seconds) do
     insert_event(%{
       workspace_id: workspace_id,

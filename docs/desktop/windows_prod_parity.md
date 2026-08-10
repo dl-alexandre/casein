@@ -13,6 +13,7 @@ tmux implementation details on Windows.
 | Local security boundary | Caddy, scoped tokens | loopback binding, DPAPI-protected bearer/launch tokens, and health-validated tray rotation with rollback | Add production-signed evidence |
 | Mobile origin identity | Deployment-defined origin | installation-stable `windows-<uuid>` and `<machine> (Windows)` identity | Add trusted-LAN pairing transport |
 | Persistent product data | PostgreSQL | SQLite under LocalAppData; integrity check before migration; DPAPI-encrypted pre-update snapshot restored by rollback | Clean-VM migration and rollback evidence |
+| Mobile open-clarification inbox | Postgres `NOT EXISTS` + `DISTINCT ON` filter-before-distinct (H28) | Same H28 contract via shared `OpenClarifications.project/4` on SQLite Ecto + Memory paths (no Postgres JSON operators) | Clean-VM paired-device evidence still external (#377) |
 | Interactive terminal | tmux PTY | PowerShell through ConPTY | Job Object containment and richer diagnostics |
 | Resize and reconnect | tmux capture/attach | ConPTY resize and application-owned session | Crash/reboot restoration |
 | Agent MCP pairing | launch script injects scoped MCP | native shell injects scoped MCP and project discovery | Verify every supported agent runtime |
