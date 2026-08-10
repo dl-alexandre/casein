@@ -338,17 +338,21 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   end
 
   @doc """
-  Read-only fleet orchestration status (M0): FleetBoard + GateQueue + orphans.
+  Read-only fleet orchestration status (M1): FleetBoard + GateQueue + orphans.
 
   Requires workspace_id and session. Builds the same enriched topology path as
-  `topology/1`, projects window tabs into `FleetBoard`, then shapes the wire
-  payload via `OrchestrationStatus.project/2`. No mutations, no scrollback.
+  `topology/1` with **liveness on by default** (external observation is what
+  distinguishes wedged from thinking). Projects window tabs into `FleetBoard`,
+  then shapes the wire payload via `OrchestrationStatus.project/2`.
+
+  Optional gate identity keys (`gate_pr` / `gate_run_id` / `gate_branch` /
+  `gate_pid`) populate `gate_queue.my_position`. No mutations, no scrollback.
   """
   @spec orchestration_status(map()) :: {:ok, map()} | {:error, term()}
   def orchestration_status(params) do
     with {:ok, workspace_id} <- workspace_id_arg(params),
          {:ok, session} <- session_arg(params),
-         {:ok, topology} <- topology(params) do
+         {:ok, topology} <- topology(Map.put_new(params, :include_liveness, true)) do
       tabs = OrchestrationStatus.tabs_from_topology(topology)
 
       board =
@@ -357,13 +361,61 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
           tmux_session: session
         )
 
-      {:ok,
-       OrchestrationStatus.project(board,
-         workspace_id: workspace_id,
-         session: session
-       )}
+      project_opts =
+        [
+          workspace_id: workspace_id,
+          session: session
+        ]
+        |> maybe_put_gate_identity(params)
+
+      {:ok, OrchestrationStatus.project(board, project_opts)}
     end
   end
+
+  defp maybe_put_gate_identity(opts, params) do
+    identity =
+      %{
+        pr: parse_gate_pr(Map.get(params, :gate_pr) || Map.get(params, "gate_pr")),
+        run_id: blank_gate(Map.get(params, :gate_run_id) || Map.get(params, "gate_run_id")),
+        branch: blank_gate(Map.get(params, :gate_branch) || Map.get(params, "gate_branch")),
+        pid: parse_gate_pid(Map.get(params, :gate_pid) || Map.get(params, "gate_pid"))
+      }
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+      |> Map.new()
+
+    if map_size(identity) == 0, do: opts, else: Keyword.put(opts, :gate_identity, identity)
+  end
+
+  defp parse_gate_pr(n) when is_integer(n) and n > 0, do: n
+
+  defp parse_gate_pr(n) when is_binary(n) do
+    case Integer.parse(String.trim_leading(String.trim(n), "#")) do
+      {i, ""} when i > 0 -> i
+      _ -> nil
+    end
+  end
+
+  defp parse_gate_pr(_), do: nil
+
+  defp parse_gate_pid(n) when is_integer(n) and n > 0, do: n
+
+  defp parse_gate_pid(n) when is_binary(n) do
+    case Integer.parse(String.trim(n)) do
+      {i, ""} when i > 0 -> i
+      _ -> nil
+    end
+  end
+
+  defp parse_gate_pid(_), do: nil
+
+  defp blank_gate(v) when is_binary(v) do
+    case String.trim(v) do
+      "" -> nil
+      t -> t
+    end
+  end
+
+  defp blank_gate(_), do: nil
 
   defp filter_contains(sessions, nil), do: sessions
   defp filter_contains(sessions, ""), do: sessions

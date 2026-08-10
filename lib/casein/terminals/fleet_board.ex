@@ -34,6 +34,20 @@ defmodule Casein.Terminals.FleetBoard do
   @type bucket ::
           :needs_you | :working | :ready_no_task | :idle | :done | :unknown
 
+  @type liveness_view :: %{
+          optional(:state) => :active | :quiet | :unknown,
+          optional(:reason) => atom() | String.t() | nil,
+          optional(:quiet_for_seconds) => non_neg_integer() | nil,
+          optional(:last_write_at) => String.t() | DateTime.t() | nil,
+          optional(:commit_count) => non_neg_integer() | nil
+        }
+
+  @type blocked_on :: %{
+          kind: :report | :derived | :unknown,
+          reason: atom() | nil,
+          detail: String.t() | nil
+        }
+
   @type row :: %{
           window_id: String.t(),
           pane_id: String.t() | nil,
@@ -56,7 +70,9 @@ defmodule Casein.Terminals.FleetBoard do
           needs_you?: boolean(),
           attention_reason: atom() | nil,
           bucket: bucket(),
-          active?: boolean()
+          active?: boolean(),
+          liveness: liveness_view() | nil,
+          blocked_on: blocked_on() | nil
         }
 
   @type board :: %{
@@ -170,6 +186,8 @@ defmodule Casein.Terminals.FleetBoard do
       needs_you_projection(agent_state, quiet?, fleet_readiness)
 
     bucket = bucket_for(needs_you?, agent_state, fleet_readiness)
+    liveness = liveness_from_tab(tab)
+    blocked_on = blocked_on_from(agent_state, message, attention_reason, liveness)
 
     %{
       window_id: window_id,
@@ -201,13 +219,120 @@ defmodule Casein.Terminals.FleetBoard do
       needs_you?: needs_you?,
       attention_reason: attention_reason,
       bucket: bucket,
-      active?: Map.get(tab, :active?) == true or Map.get(tab, :active) == true
+      active?: Map.get(tab, :active?) == true or Map.get(tab, :active) == true,
+      liveness: liveness,
+      blocked_on: blocked_on
     }
   catch
     :skip -> nil
   end
 
   defp row_from_window_tab(_), do: nil
+
+  # External observation only. Missing liveness is nil (not observed), never quiet.
+  # `:unknown` keeps its reason so chrome cannot render "could not observe" as idle.
+  defp liveness_from_tab(tab) when is_map(tab) do
+    case Map.get(tab, :liveness) || Map.get(tab, "liveness") do
+      nil ->
+        nil
+
+      %{state: state} = live ->
+        normalize_liveness(state, live)
+
+      %{"state" => state} = live ->
+        normalize_liveness(state, live)
+
+      state when state in [:active, :quiet, :unknown, "active", "quiet", "unknown"] ->
+        normalize_liveness(state, %{})
+
+      _ ->
+        %{state: :unknown, reason: :malformed}
+    end
+  end
+
+  defp normalize_liveness(state, live) do
+    state = normalize_liveness_state(state)
+
+    base = %{
+      state: state,
+      quiet_for_seconds: liveness_int(live, :quiet_for_seconds),
+      last_write_at: liveness_time(live, :last_write_at),
+      commit_count: liveness_int(live, :commit_count)
+    }
+
+    case state do
+      :unknown ->
+        Map.put(base, :reason, liveness_reason(live))
+
+      _ ->
+        base
+    end
+  end
+
+  defp normalize_liveness_state(state) when state in [:active, :quiet, :unknown], do: state
+  defp normalize_liveness_state("active"), do: :active
+  defp normalize_liveness_state("quiet"), do: :quiet
+  defp normalize_liveness_state("unknown"), do: :unknown
+  defp normalize_liveness_state(_), do: :unknown
+
+  defp liveness_int(live, key) when is_map(live) do
+    case Map.get(live, key) || Map.get(live, Atom.to_string(key)) do
+      n when is_integer(n) and n >= 0 -> n
+      _ -> nil
+    end
+  end
+
+  defp liveness_time(live, key) when is_map(live) do
+    case Map.get(live, key) || Map.get(live, Atom.to_string(key)) do
+      %DateTime{} = dt -> DateTime.to_iso8601(dt)
+      s when is_binary(s) and s != "" -> s
+      _ -> nil
+    end
+  end
+
+  defp liveness_reason(live) when is_map(live) do
+    case Map.get(live, :reason) || Map.get(live, "reason") do
+      r when is_atom(r) -> r
+      r when is_binary(r) and r != "" -> r
+      _ -> :unscanned
+    end
+  end
+
+  # Structured "blocked on what?" — report-only vs derived-only stay distinct.
+  # Never invent a blocker for :working/:idle/:done without an attention reason.
+  defp blocked_on_from(:blocked, message, _reason, _liveness) do
+    %{kind: :report, reason: :blocked, detail: message}
+  end
+
+  defp blocked_on_from(:errored, message, _reason, _liveness) do
+    %{kind: :report, reason: :errored, detail: message}
+  end
+
+  defp blocked_on_from(:stalled, message, _reason, liveness) do
+    detail =
+      message ||
+        case liveness do
+          %{quiet_for_seconds: s} when is_integer(s) and s > 0 ->
+            "worktree quiet #{s}s while pane looks busy"
+
+          _ ->
+            "worktree quiet while pane looks busy"
+        end
+
+    %{kind: :derived, reason: :stalled, detail: detail}
+  end
+
+  defp blocked_on_from(_state, _message, :ready_no_task, _liveness) do
+    %{kind: :derived, reason: :ready_no_task, detail: "idle capacity, no issue binding"}
+  end
+
+  defp blocked_on_from(_state, message, reason, _liveness)
+       when reason in [:blocked, :errored, :stalled, :idle, :orphaned_claim] do
+    kind = if reason in [:blocked, :errored], do: :report, else: :derived
+    %{kind: kind, reason: reason, detail: message}
+  end
+
+  defp blocked_on_from(_state, _message, _reason, _liveness), do: nil
 
   defp fleet_row?(%{agent_state: state})
        when state in [:working, :blocked, :done, :idle, :errored, :stalled],
@@ -301,16 +426,19 @@ defmodule Casein.Terminals.FleetBoard do
   end
 
   defp resolve_gate_queue(opts) do
-    case Keyword.fetch(opts, :gate_queue) do
-      {:ok, %{} = snap} ->
-        snap
+    snap =
+      case Keyword.fetch(opts, :gate_queue) do
+        {:ok, %{} = snap} ->
+          snap
 
-      :error ->
-        case GateQueue.observe() do
-          {:ok, snap} -> snap
-          {:error, _} -> GateQueue.unknown()
-        end
-    end
+        :error ->
+          case GateQueue.observe() do
+            {:ok, snap} -> snap
+            {:error, _} -> GateQueue.unknown()
+          end
+      end
+
+    GateQueue.with_positions(snap)
   end
 
   defp orphan_attention_count(%{observe_state: :ok, orphan_count: n})

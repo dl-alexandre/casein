@@ -143,36 +143,61 @@ must be blocked in `flock` (`/proc/*/wchan`) and/or carry a distinct run id.
 The fleet drawer shows a gate-queue banner; the badge adds **gate busy** when
 held and no agent needs you. Projection only — no GenServer, no GitHub API.
 
-## MCP: `orchestration_status` (M0 discovery)
+## MCP: `orchestration_status` (M1 operator questions)
 
 Read-only higher-order status for orchestrators (#384). Same projections as the
 fleet drawer, over the wire — **not** a second classifier and **not** shell.
 
+M0 shipped the aggregate. **M1** answers the three questions that cost real
+operator time on an 18-worker night:
+
+| Question | Field |
+|----------|-------|
+| Which worker is blocked, and on what? | `blocked[]` + per-row `blocked_on` (`kind: report\|derived`, reason, detail). Report-only (`blocked`/`errored`) stays distinct from derived-only (`stalled`). |
+| Where am I in the gate queue? | `gate_queue.holder.position` / `waiters[].position` (1 = holding). Optional `gate_pr` / `gate_run_id` / `gate_branch` / `gate_pid` → `gate_queue.my_position`. |
+| Working or wedged? | Per-row `liveness` from external worktree observation (on by default for this tool). `state: unknown` **never** becomes quiet/idle. |
+
 ```text
-orchestration_status { workspace_id, session }
-→ counts, attention_count, rows[], gate_queue, orphaned_claims
+orchestration_status { workspace_id, session, gate_pr? }
+→ counts, attention_count, rows[] (liveness, blocked_on),
+  blocked[], gate_queue (+ positions, my_position), orphaned_claims
 ```
 
 | Field | Source |
 |-------|--------|
-| `counts` / `rows` | `FleetBoard` over topology-enriched window tabs |
-| `gate_queue` | `GateQueue.observe` — `observe_state: unknown` never free |
+| `counts` / `rows` | `FleetBoard` over topology-enriched window tabs (**liveness on**) |
+| `blocked` | rows with `blocked_on` or blocked/errored/stalled state |
+| `gate_queue` | `GateQueue.observe` + `with_positions` — `observe_state: unknown` never free |
+| `gate_queue.my_position` | `GateQueue.position/2` when identity args given; unknown lock → `status: unknown` not `not_in_queue` |
 | `orphaned_claims` | `OrphanedClaims` (claimed − live `IssueBinding`) |
+
+Kind discipline (non-negotiable):
+
+- `AgentLiveness` `{:error, reason}` → liveness `state: unknown` with reason
+- missing liveness observation → field omitted (`nil`), **not** quiet
+- gate `observe_state: unknown` → never free; `position/2` returns `:unknown`
 
 Fail closed when `workspace_id` or `session` is missing. No scrollback, no
 mutations, no `worker_launch`. Classified `mutation: false` with
 `:terminal_metadata` + `:terminal_read` so locked Grok grants still see it.
 
-**Out of scope for M0:** durable task graph, path contracts, verifier adapters,
+**Traps this surface must not reintroduce:**
+
+- 0% CPU ≠ idle (OpenCode works in a grandchild) — we never use CPU; pane
+  content + worktree mtimes only.
+- `git rev-list HEAD --not --remotes` false-unpushed after squash merge — not
+  used on this path (`Operator.Risks` uses `@{upstream}...HEAD` ahead).
+
+**Out of scope for M1:** durable task graph, path contracts, verifier adapters,
 restricted orchestrator token profile, `worker_launch` / cancel / replace.
 
 ## Code
 
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
-- `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans + gate)
+- `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans + gate + liveness + blocked_on)
 - `Casein.Terminals.OrphanedClaims` — claimed-minus-bound lease projection
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
-- `Casein.Ops.GateQueue` — host flock observation (`/proc` + lock path)
+- `Casein.Ops.GateQueue` — host flock observation (`/proc` + lock path) + `position/2`
 - `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
 - `Casein.Agents.TerminalTools.OrchestrationStatus` — Jido action / MCP tool
 - `Casein.Labels.enrich_topology/2` — join label strings onto panes

@@ -43,6 +43,57 @@ defmodule Casein.Ops.GateQueueTest do
     end
   end
 
+  describe "position/2 and with_positions/1" do
+    @held %{
+      lock_state: :held,
+      depth: 3,
+      waiter_count: 2,
+      holder: %{pid: 10, pr: 100, branch: "holder-branch", run_id: "run-h"},
+      waiters: [
+        %{pid: 20, pr: 200, run_id: "run-w1"},
+        %{pid: 30, pr: 300, branch: "waiter-2"}
+      ]
+    }
+
+    test "unknown lock never reports not_in_queue or free" do
+      assert GateQueue.position(GateQueue.unknown(), pr: 100) == %{status: :unknown}
+      assert GateQueue.position(GateQueue.unknown(), nil) == %{status: :unknown}
+    end
+
+    test "free scan reports free with depth 0" do
+      free = %{lock_state: :free, depth: 0, holder: nil, waiters: []}
+      assert GateQueue.position(free, pr: 1) == %{status: :free, depth: 0}
+    end
+
+    test "holder is position 1; waiters are 2..n" do
+      assert %{status: :holding, position: 1, depth: 3} =
+               GateQueue.position(@held, pr: 100)
+
+      assert %{status: :waiting, position: 2, ahead: 1, depth: 3} =
+               GateQueue.position(@held, pr: 200)
+
+      assert %{status: :waiting, position: 3, ahead: 2} =
+               GateQueue.position(@held, branch: "waiter-2")
+
+      assert %{status: :not_in_queue, depth: 3} =
+               GateQueue.position(@held, pr: 999)
+    end
+
+    test "with_positions annotates holder and waiters" do
+      snap = GateQueue.with_positions(@held)
+      assert snap.holder.position == 1
+      assert Enum.map(snap.waiters, & &1.position) == [2, 3]
+    end
+
+    test "nil identity on held returns queue overview, not unknown" do
+      pos = GateQueue.position(@held, nil)
+      assert pos.status == :held
+      assert pos.depth == 3
+      assert length(pos.waiters) == 2
+      assert hd(pos.waiters).position == 2
+    end
+  end
+
   describe "observe/1 against a fixture proc tree" do
     setup do
       root = Path.join(System.tmp_dir!(), "gate-queue-test-#{System.unique_integer([:positive])}")

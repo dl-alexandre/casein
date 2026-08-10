@@ -596,20 +596,38 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       capabilities: [:terminal_metadata, :terminal_read],
       recovery_hints: [
         "Requires workspace_id and session — fail closed when either is missing.",
-        "gate_queue.observe_state unknown never means free; orphaned_claims same discipline.",
-        "M0 discovery only — use terminal_topology for per-pane detail; no worker_launch here."
+        "gate_queue.observe_state unknown never means free; liveness.state unknown never means quiet.",
+        "Pass gate_pr (or gate_run_id/branch/pid) for gate_queue.my_position.",
+        "M1 aggregate — blocked[] + blocked_on + liveness on rows; no worker_launch here."
       ],
       examples: [
         %{
           arguments: %{
             "workspace_id" => "ws-1",
-            "session" => "casein_ws-1_default"
+            "session" => "casein_ws-1_default",
+            "gate_pr" => 384
           },
           structured_content: %{
             "total" => 3,
             "attention_count" => 1,
             "counts" => %{"needs_you" => 1, "working" => 2},
-            "gate_queue" => %{"observe_state" => "ok", "lock_state" => "free", "depth" => 0}
+            "blocked" => [
+              %{
+                "pane_id" => "%3",
+                "agent_state" => "blocked",
+                "blocked_on" => %{
+                  "kind" => "report",
+                  "reason" => "blocked",
+                  "detail" => "need unlock"
+                }
+              }
+            ],
+            "gate_queue" => %{
+              "observe_state" => "ok",
+              "lock_state" => "held",
+              "depth" => 2,
+              "my_position" => %{"status" => "waiting", "position" => 2, "ahead" => 1}
+            }
           }
         }
       ]

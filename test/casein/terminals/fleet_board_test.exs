@@ -63,9 +63,17 @@ defmodule Casein.Terminals.FleetBoardTest do
 
     test "buckets blocked/errored/stalled into needs_you with distinct reasons" do
       tabs = [
-        tab("w1", agent_state: :blocked, name: "blocked-worker"),
+        tab("w1",
+          agent_state: :blocked,
+          name: "blocked-worker",
+          agent_state_message: "need unlock"
+        ),
         tab("w2", agent_state: :errored, name: "errored-worker"),
-        tab("w3", agent_state: :stalled, name: "stalled-worker")
+        tab("w3",
+          agent_state: :stalled,
+          name: "stalled-worker",
+          liveness: %{state: :quiet, quiet_for_seconds: 700}
+        )
       ]
 
       board = board(tabs)
@@ -78,6 +86,39 @@ defmodule Casein.Terminals.FleetBoardTest do
         |> Enum.sort()
 
       assert reasons == [:blocked, :errored, :stalled]
+
+      by_name = Map.new(board.rows, &{&1.name, &1})
+
+      assert by_name["blocked-worker"].blocked_on == %{
+               kind: :report,
+               reason: :blocked,
+               detail: "need unlock"
+             }
+
+      assert by_name["stalled-worker"].blocked_on.kind == :derived
+      assert by_name["stalled-worker"].blocked_on.reason == :stalled
+      assert by_name["stalled-worker"].liveness.state == :quiet
+    end
+
+    test "liveness unknown keeps reason and is never quiet; missing stays nil" do
+      board =
+        board([
+          tab("w1",
+            agent_state: :working,
+            liveness: %{state: :unknown, reason: :enoent}
+          ),
+          tab("w2", agent_state: :working)
+        ])
+
+      [unknown_row, bare] = board.rows
+      # sort is stable by name when same bucket — pin by pane
+      by_id = Map.new(board.rows, &{&1.window_id, &1})
+
+      assert by_id["w1"].liveness.state == :unknown
+      assert by_id["w1"].liveness.reason == :enoent
+      refute by_id["w1"].liveness.state == :quiet
+      assert is_nil(by_id["w2"].liveness)
+      assert is_nil(unknown_row.blocked_on) or bare.bucket == :working
     end
 
     test "working rows are not needs_you" do
