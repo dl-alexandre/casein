@@ -62,7 +62,7 @@ three peer modules:
 | Module | Role |
 |--------|------|
 | `Casein.Terminals.Backends.Tmux` | Production Unix backend (existing facade). |
-| `Casein.Terminals.Backends.Fake` | In-memory multipane backend for contract tests on any host. **Not** Windows coverage. |
+| `Casein.Terminals.Backends.Fake` | In-memory multipane backend for contract tests on any host. **Not** Windows coverage. Also exposes adapter-parity helpers (`session_exists?/2`, `send_command/3`, `apply_plan/2`, `mark_dead!/1`) so conversion slices can drive template/recovery shapes without tmux. |
 | `Casein.Terminals.Backends.ConPTY` | Named Windows peer scaffold: native `SpawnSpec` shape + fail-closed ops off `win32`. Full session attach/topology still owned by `Casein.Desktop.PowerShellSession` until wired. |
 
 Backend selection uses `config :casein, :terminal_backend`; the older

@@ -49,8 +49,10 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   tests for all 23 Backend callbacks (Linux-honest).
 - **Landed:** PR #837 — SessionOwner/Compose/Runtimes/janitors/PreviewDeps/TmuxOps
   route through `Backend.module/0`; `Backends.Tmux` honors `:tmux_adapter`.
-- **Current slice (slice 3 / %573):** template executors + MCP Shared + deploy
-  `TerminalSmoke` + `DoneAgentWindows` default to `Backend.module/0`; Tmux backend
-  forwards `send_command`/`set_environment`/`list_sessions`/`workspace_session_prefix`.
-  Sibling %576 owns Fake/contract expansion — do not collide. LiveView chrome
-  wiring and real-host Job Object multi-window soak remain follow-ups.
+- **Landed:** PR #844 — template executors + MCP Shared + deploy `TerminalSmoke`
+  + `DoneAgentWindows` default to `Backend.module/0`; Tmux backend forwards
+  `send_command`/`set_environment`/`list_sessions`/`workspace_session_prefix`.
+- **Current slice (contract/%576, PR #843):** Expand Fake Backend helpers +
+  dedicated contract tests (`session_exists?/2`, `send_command`, direction
+  norms, dead-session errors, `apply_plan` for agent_pair dry-run). LiveView
+  chrome wiring and real-host Job Object multi-window soak remain follow-ups.
