@@ -115,6 +115,10 @@ bash -n scripts/deploy-poller.sh
 bash -n scripts/build-release.sh
 bash -n scripts/lib/canary-drain.sh
 bash -n scripts/lib/caddy-upstream.sh
+# Companion signing helpers (#416) — syntax only here; fixture content below.
+bash -n scripts/verify-companion-signing-contract.sh
+bash -n scripts/verify-companion-external-prereqs.sh
+bash -n scripts/verify-companion-fixtures.sh
 
 # Pure shell/static guards — no Mix, no compile.
 log "checking HEEx boolean data-/aria- attrs (#163)"
@@ -149,6 +153,10 @@ bash scripts/test-agent-worktree-bare.sh
 
 log "running hermetic shell unit tests (spawn worker cross-session env isolation)"
 bash scripts/test-spawn-worker-env-resolve.sh
+
+# Companion Mob synthetic fixtures only (#416) — never real profiles/devices.
+log "checking companion signing fixtures are synthetic (#416)"
+run_or_skip COMPANION_FIXTURES bash scripts/verify-companion-fixtures.sh
 
 log "shellcheck (warning+) on agent shim/launch scripts"
 if command -v shellcheck >/dev/null 2>&1; then
