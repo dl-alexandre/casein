@@ -57,16 +57,23 @@ platform module:
 - `Casein.Platform.Lifecycle`: readiness publication and graceful shutdown.
 
 The first terminal boundary is now present as `Casein.Terminals.Backend`, with
-`Casein.Terminals.Backends.Tmux` adapting the existing implementation. Backend
-selection uses `config :casein, :terminal_backend`; the older
+three peer modules:
+
+| Module | Role |
+|--------|------|
+| `Casein.Terminals.Backends.Tmux` | Production Unix backend (existing facade). |
+| `Casein.Terminals.Backends.Fake` | In-memory multipane backend for contract tests on any host. **Not** Windows coverage. |
+| `Casein.Terminals.Backends.ConPTY` | Named Windows peer scaffold: native `SpawnSpec` shape + fail-closed ops off `win32`. Full session attach/topology still owned by `Casein.Desktop.PowerShellSession` until wired. |
+
+Backend selection uses `config :casein, :terminal_backend`; the older
 `:tmux_adapter` test and compatibility key is used as a migration fallback
 while call sites are moved in small slices. Durable session naming, existence
 checks, replay capture, initial size discovery, and initial resize now cross
 this boundary. PTY process spawning now crosses it through
 `Casein.Terminals.Backend.SpawnSpec`; the tmux backend owns host, container, and
-remote SSH command construction. The next native-Windows seam is the transport
-that executes a spawn spec, writes input, resizes the PTY, and terminates its
-process tree.
+remote SSH command construction. Contract tests in
+`test/casein/terminals/backend_contract_test.exs` lock every callback on all
+three modules.
 
 Product code consumes these boundaries. Host-specific adapters may use ports,
 NIFs, or sidecars, but those implementation details do not leak into LiveView or

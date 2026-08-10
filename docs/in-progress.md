@@ -43,7 +43,9 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   stable identity and deterministic ConPTY process-tree cleanup.
 - **Landed:** PR #805 refactors `PowerShellSession` onto multiple `PowerShellPane`
   owners with stable create/close/focus topology.
-- **Current slice:** native template reconciliation — apply built-in templates
-  (starting with `agent_pair`) onto multipane PowerShell topology without a
-  second UI. LiveView chrome wiring and real-host Job Object multi-window soak
-  remain follow-ups.
+- **Landed:** PR #815 applies built-in templates (`agent_pair`) onto multipane
+  PowerShell topology via the same dry-run plan as tmux.
+- **Current slice:** Backend seam completeness — `Backends.Fake` contract tests
+  (Linux-safe multipane topology/input) plus `Backends.ConPTY` scaffold that
+  accepts native spawn specs and fails closed off Windows. LiveView chrome
+  wiring and real-host Job Object multi-window soak remain follow-ups.
