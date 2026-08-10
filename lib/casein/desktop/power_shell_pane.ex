@@ -22,6 +22,7 @@ defmodule Casein.Desktop.PowerShellPane do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
   def snapshot(pane), do: GenServer.call(pane, :snapshot)
+  def handles(pane), do: GenServer.call(pane, :handles)
   def capture(pane), do: GenServer.call(pane, :capture)
   def send_input(pane, data) when is_binary(data), do: GenServer.call(pane, {:input, data})
   def resize(pane, cols, rows), do: GenServer.call(pane, {:resize, cols, rows})
@@ -77,6 +78,10 @@ defmodule Casein.Desktop.PowerShellPane do
 
   @impl true
   def handle_call(:snapshot, _from, state), do: {:reply, snapshot_from(state), state}
+
+  def handle_call(:handles, _from, state),
+    do: {:reply, {:ok, state.term, state.pty, state.status}, state}
+
   def handle_call(:capture, _from, state), do: {:reply, {:ok, state.capture}, state}
 
   def handle_call({:input, data}, _from, state) do
