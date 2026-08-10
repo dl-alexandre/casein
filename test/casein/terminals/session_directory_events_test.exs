@@ -568,12 +568,15 @@ end
 defmodule Casein.Terminals.SessionDirectoryEventsTest.CountingAdapter do
   @moduledoc false
 
-  # Thin counter over FakeTmuxAdapter. Only list_sessions/0 is instrumented —
-  # every SessionDirectory recompute calls it. Other exports must stay
-  # scenario-aware delegates (never hardcode true/{3,4}): unguarded product
-  # paths include TerminalSessions.session_exists?/1 and TmuxOps.tmux_version/0
-  # (server_version/0). SessionDirectory itself guards list_session_windows/1
-  # and list_session_panes/1 with function_exported?/3.
+  # Installed as `:tmux_adapter` while counting SessionDirectory recomputes.
+  # Scenario override: list_sessions/0 bumps a counter. Everything else
+  # delegates to FakeTmuxAdapter so unguarded product paths cannot mystery-red
+  # the gate (#817 strategy a). Other exports must stay scenario-aware
+  # delegates (never hardcode true/{3,4}): unguarded product paths include
+  # TerminalSessions.session_exists?/1 and TmuxOps.tmux_version/0
+  # (server_version/0). FakeState scenario must still win for version.
+
+  @behaviour TmuxCtl.Adapter
 
   # Counts list_sessions/0 — every SessionDirectory recompute calls it.
   def list_sessions do
@@ -588,14 +591,64 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest.CountingAdapter do
     Casein.Test.FakeTmuxAdapter.list_sessions()
   end
 
-  def directory_inventory, do: Casein.Test.FakeTmuxAdapter.directory_inventory()
-  def list_session_windows(session), do: Casein.Test.FakeTmuxAdapter.list_session_windows(session)
-  def list_session_panes(session), do: Casein.Test.FakeTmuxAdapter.list_session_panes(session)
+  defdelegate ensure_session(session, cwd), to: Casein.Test.FakeTmuxAdapter
+  defdelegate attach(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate inject(target, text), to: Casein.Test.FakeTmuxAdapter
+  defdelegate inject(target, text, opts), to: Casein.Test.FakeTmuxAdapter
+  defdelegate capture_recent(target), to: Casein.Test.FakeTmuxAdapter
+  defdelegate capture_recent(target, lines), to: Casein.Test.FakeTmuxAdapter
+  defdelegate capture_recent(target, lines, opts), to: Casein.Test.FakeTmuxAdapter
+  defdelegate send_keys(session, keys), to: Casein.Test.FakeTmuxAdapter
+  defdelegate send_keys(session, keys, opts), to: Casein.Test.FakeTmuxAdapter
+  defdelegate list_session_windows(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate list_session_panes(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate session_topology(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate directory_inventory(), to: Casein.Test.FakeTmuxAdapter
+  defdelegate capture_scrollback(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate capture_scrollback(session, opts), to: Casein.Test.FakeTmuxAdapter
+  defdelegate new_window(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate new_window(session, opts), to: Casein.Test.FakeTmuxAdapter
+  defdelegate select_window(session, window_id), to: Casein.Test.FakeTmuxAdapter
+  defdelegate last_window(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate cycle_window(session, dir), to: Casein.Test.FakeTmuxAdapter
 
-  # Mobile terminal lease cleanup calls this unguarded (TerminalSessions).
+  defdelegate consolidate_sessions(target_session, source_sessions),
+    to: Casein.Test.FakeTmuxAdapter
+
+  defdelegate select_pane(session, pane_id), to: Casein.Test.FakeTmuxAdapter
+  defdelegate navigate_pane(session, dir), to: Casein.Test.FakeTmuxAdapter
+  defdelegate zoom_pane(session, pane_id), to: Casein.Test.FakeTmuxAdapter
+  defdelegate swap_pane(session, pane_id, direction), to: Casein.Test.FakeTmuxAdapter
+  defdelegate ensure_zoomed(session, pane_id, desired?), to: Casein.Test.FakeTmuxAdapter
+  defdelegate kill_other_panes(session, pane_id), to: Casein.Test.FakeTmuxAdapter
+  defdelegate select_layout(session, layout), to: Casein.Test.FakeTmuxAdapter
+  defdelegate next_layout(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate kill_pane(session, pane_id), to: Casein.Test.FakeTmuxAdapter
+  defdelegate split_pane(session, pane_id, direction), to: Casein.Test.FakeTmuxAdapter
+  defdelegate split_pane(session, pane_id, direction, opts), to: Casein.Test.FakeTmuxAdapter
+  defdelegate resize_pane(session, pane_id, direction), to: Casein.Test.FakeTmuxAdapter
+  defdelegate resize_pane(session, pane_id, direction, amount), to: Casein.Test.FakeTmuxAdapter
+  defdelegate resize_amount_default(), to: Casein.Test.FakeTmuxAdapter
+  defdelegate resize_amount_max(), to: Casein.Test.FakeTmuxAdapter
+  defdelegate rename_window(session, window_id, name), to: Casein.Test.FakeTmuxAdapter
+  defdelegate set_session_alias(session, name), to: Casein.Test.FakeTmuxAdapter
+  defdelegate set_pane_role(session, pane_id, role), to: Casein.Test.FakeTmuxAdapter
+  defdelegate list_windows(), to: Casein.Test.FakeTmuxAdapter
+  defdelegate list_panes(), to: Casein.Test.FakeTmuxAdapter
+  defdelegate kill_window(session, window_id), to: Casein.Test.FakeTmuxAdapter
+  defdelegate kill(session), to: Casein.Test.FakeTmuxAdapter
   defdelegate session_exists?(session), to: Casein.Test.FakeTmuxAdapter
-
-  # TmuxOps.tmux_version/0 → adapter.server_version/0 is unguarded; FakeState
-  # scenario must still win (do not hardcode {3, 4}).
+  defdelegate session_exists?(session, opts), to: Casein.Test.FakeTmuxAdapter
+  defdelegate session_alive?(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate apply_defaults(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate set_environment(session, key, value), to: Casein.Test.FakeTmuxAdapter
+  defdelegate set_environments(session, env), to: Casein.Test.FakeTmuxAdapter
+  defdelegate send_command(session, command), to: Casein.Test.FakeTmuxAdapter
+  defdelegate send_command(session, command, opts), to: Casein.Test.FakeTmuxAdapter
+  defdelegate paste_text(session, text), to: Casein.Test.FakeTmuxAdapter
+  defdelegate paste_text(session, text, opts), to: Casein.Test.FakeTmuxAdapter
+  defdelegate resize_window(session, cols, rows), to: Casein.Test.FakeTmuxAdapter
+  defdelegate refresh_client(session), to: Casein.Test.FakeTmuxAdapter
+  defdelegate tail_lines(output, n), to: Casein.Test.FakeTmuxAdapter
   defdelegate server_version(), to: Casein.Test.FakeTmuxAdapter
 end

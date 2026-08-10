@@ -206,6 +206,38 @@ defmodule Casein.Mobile.TerminalSessionsTest do
     def session_exists?(session),
       do: Agent.get(__MODULE__, &Map.has_key?(&1.sessions, session))
 
+    # Unguarded product paths that can reach a tmux stub even when this module
+    # is only passed via opts (lease cleanup, topology naming, version gates).
+    # Reflect the Agent scenario — never a constant (#817).
+    def session_exists?(session, _opts), do: session_exists?(session)
+    def session_alive?(session), do: session_exists?(session)
+
+    def list_session_windows(session) do
+      case list_session_panes(session) do
+        [] ->
+          []
+
+        panes ->
+          panes
+          |> Enum.map(fn
+            %{window_id: id} when is_binary(id) and id != "" -> id
+            _ -> "@1"
+          end)
+          |> Enum.uniq()
+          |> Enum.map(&%{id: &1, name: "shell", active: true, last: false})
+      end
+    end
+
+    def list_sessions do
+      Agent.get(__MODULE__, fn state ->
+        state.sessions
+        |> Map.keys()
+        |> Enum.map(&%{session: &1, attached: false, activity: 0})
+      end)
+    end
+
+    def server_version, do: TmuxCtl.Test.FakeState.get(:fake_tmux_server_version, {3, 4})
+
     def kills, do: Agent.get(__MODULE__, & &1.kills)
     def ensure_count, do: Agent.get(__MODULE__, & &1.ensure_count)
     def ensure_error(reason), do: Agent.update(__MODULE__, &%{&1 | ensure_error: reason})

@@ -1,6 +1,13 @@
 defmodule Casein.FilePanesTest.CountingTmuxAdapter do
   @moduledoc false
 
+  # Installed as `:tmux_adapter` while counting topology reads. Scenario
+  # override: session_topology/1 bumps a counter. Everything else delegates to
+  # FakeAdapter so unguarded product paths cannot mystery-red the gate
+  # (#817 strategy a).
+
+  @behaviour TmuxCtl.Adapter
+
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -9,6 +16,64 @@ defmodule Casein.FilePanesTest.CountingTmuxAdapter do
     FakeState.put(:topology_reads, n + 1)
     FakeAdapter.session_topology(session)
   end
+
+  defdelegate ensure_session(session, cwd), to: FakeAdapter
+  defdelegate attach(session), to: FakeAdapter
+  defdelegate inject(target, text), to: FakeAdapter
+  defdelegate inject(target, text, opts), to: FakeAdapter
+  defdelegate capture_recent(target), to: FakeAdapter
+  defdelegate capture_recent(target, lines), to: FakeAdapter
+  defdelegate capture_recent(target, lines, opts), to: FakeAdapter
+  defdelegate send_keys(session, keys), to: FakeAdapter
+  defdelegate send_keys(session, keys, opts), to: FakeAdapter
+  defdelegate list_session_windows(session), to: FakeAdapter
+  defdelegate list_session_panes(session), to: FakeAdapter
+  defdelegate directory_inventory(), to: FakeAdapter
+  defdelegate capture_scrollback(session), to: FakeAdapter
+  defdelegate capture_scrollback(session, opts), to: FakeAdapter
+  defdelegate new_window(session), to: FakeAdapter
+  defdelegate new_window(session, opts), to: FakeAdapter
+  defdelegate select_window(session, window_id), to: FakeAdapter
+  defdelegate last_window(session), to: FakeAdapter
+  defdelegate cycle_window(session, dir), to: FakeAdapter
+  defdelegate consolidate_sessions(target_session, source_sessions), to: FakeAdapter
+  defdelegate select_pane(session, pane_id), to: FakeAdapter
+  defdelegate navigate_pane(session, dir), to: FakeAdapter
+  defdelegate zoom_pane(session, pane_id), to: FakeAdapter
+  defdelegate swap_pane(session, pane_id, direction), to: FakeAdapter
+  defdelegate ensure_zoomed(session, pane_id, desired?), to: FakeAdapter
+  defdelegate kill_other_panes(session, pane_id), to: FakeAdapter
+  defdelegate select_layout(session, layout), to: FakeAdapter
+  defdelegate next_layout(session), to: FakeAdapter
+  defdelegate kill_pane(session, pane_id), to: FakeAdapter
+  defdelegate split_pane(session, pane_id, direction), to: FakeAdapter
+  defdelegate split_pane(session, pane_id, direction, opts), to: FakeAdapter
+  defdelegate resize_pane(session, pane_id, direction), to: FakeAdapter
+  defdelegate resize_pane(session, pane_id, direction, amount), to: FakeAdapter
+  defdelegate resize_amount_default(), to: FakeAdapter
+  defdelegate resize_amount_max(), to: FakeAdapter
+  defdelegate rename_window(session, window_id, name), to: FakeAdapter
+  defdelegate set_session_alias(session, name), to: FakeAdapter
+  defdelegate set_pane_role(session, pane_id, role), to: FakeAdapter
+  defdelegate list_windows(), to: FakeAdapter
+  defdelegate list_sessions(), to: FakeAdapter
+  defdelegate list_panes(), to: FakeAdapter
+  defdelegate kill_window(session, window_id), to: FakeAdapter
+  defdelegate kill(session), to: FakeAdapter
+  defdelegate session_exists?(session), to: FakeAdapter
+  defdelegate session_exists?(session, opts), to: FakeAdapter
+  defdelegate session_alive?(session), to: FakeAdapter
+  defdelegate apply_defaults(session), to: FakeAdapter
+  defdelegate set_environment(session, key, value), to: FakeAdapter
+  defdelegate set_environments(session, env), to: FakeAdapter
+  defdelegate send_command(session, command), to: FakeAdapter
+  defdelegate send_command(session, command, opts), to: FakeAdapter
+  defdelegate paste_text(session, text), to: FakeAdapter
+  defdelegate paste_text(session, text, opts), to: FakeAdapter
+  defdelegate resize_window(session, cols, rows), to: FakeAdapter
+  defdelegate refresh_client(session), to: FakeAdapter
+  defdelegate tail_lines(output, n), to: FakeAdapter
+  defdelegate server_version(), to: FakeAdapter
 end
 
 defmodule Casein.FilePanesTest do
