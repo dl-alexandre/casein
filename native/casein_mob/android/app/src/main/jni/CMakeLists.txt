@@ -25,13 +25,23 @@ set(_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../")
 # Gradle's default jniLibs.srcDirs scan picks it up — no add_library
 # target needed in that case.
 #
-# Three fallbacks for non-Mix invocations (Android Studio "Sync Project",
-# `./gradlew assembleDebug` standalone, etc.):
-#   1. zig-built lib<app>.so in jniLibs/  →  CMake skips main library
-#   2. zig-built .o files in zig-out/    →  CMake links them via NDK clang
-#   3. .c sources                          →  NDK clang compiles + links
+# Standalone Gradle/CMake (Android Studio "Sync Project",
+# `./gradlew assembleDebug` without Mix) does NOT compile the removed Mob
+# 0.7.5 C sources. It only consumes Zig artifacts:
+#   1. zig-built libcasein_mob.so in jniLibs/<abi>/  →  IMPORTED target
+#   2. zig-built .o files in android/app/build/zig-out/<abi>/  →  NDK link
+#   3. neither present  →  FATAL_ERROR with the authoritative Mix/Zig path
+#
+# Do not restore mob_nif.c / mob_beam.c / driver_tab_android.c — mob 0.7+
+# ships Zig replacements only.
 set(ZIG_OUT_DIR "${_PROJECT_ROOT}/android/app/build/zig-out/${ANDROID_ABI}")
 set(ZIG_LIB_SO "${_PROJECT_ROOT}/android/app/src/main/jniLibs/${ANDROID_ABI}/libcasein_mob.so")
+set(ZIG_SQLITE_SO "${_PROJECT_ROOT}/android/app/src/main/jniLibs/${ANDROID_ABI}/libsqlite3_nif.so")
+
+set(_ZIG_OBJ_DRIVER "${ZIG_OUT_DIR}/driver_tab_android.o")
+set(_ZIG_OBJ_BEAM_JNI "${ZIG_OUT_DIR}/beam_jni.o")
+set(_ZIG_OBJ_MOB_NIF "${ZIG_OUT_DIR}/mob_nif.o")
+set(_ZIG_OBJ_MOB_BEAM "${ZIG_OUT_DIR}/mob_beam.o")
 
 if(EXISTS "${ZIG_LIB_SO}")
     # build.zig already produced the .so. Gradle picks it up from jniLibs/.
@@ -46,56 +56,42 @@ if(EXISTS "${ZIG_LIB_SO}")
         IMPORTED_LOCATION "${ZIG_LIB_SO}"
         IMPORTED_SONAME "libcasein_mob.so"
     )
-elseif(EXISTS "${ZIG_OUT_DIR}/driver_tab_android.o")
+elseif(
+    EXISTS "${_ZIG_OBJ_DRIVER}"
+    AND EXISTS "${_ZIG_OBJ_BEAM_JNI}"
+    AND EXISTS "${_ZIG_OBJ_MOB_NIF}"
+    AND EXISTS "${_ZIG_OBJ_MOB_BEAM}"
+)
+    # Zig compiled objects only (e.g. `zig build c-objects`). Link them with
+    # the NDK clang driver — same object set build.zig's native-lib step uses.
     add_library(casein_mob SHARED
-        ${ZIG_OUT_DIR}/beam_jni.o
-        ${ZIG_OUT_DIR}/mob_nif.o
-        ${ZIG_OUT_DIR}/mob_beam.o
-        ${ZIG_OUT_DIR}/driver_tab_android.o
+        ${_ZIG_OBJ_BEAM_JNI}
+        ${_ZIG_OBJ_MOB_NIF}
+        ${_ZIG_OBJ_MOB_BEAM}
+        ${_ZIG_OBJ_DRIVER}
     )
     # CMake can't infer linker language from .o files alone — pin it to C
     # so it picks clang's C driver.
     set_target_properties(casein_mob PROPERTIES LINKER_LANGUAGE C)
 else()
-    if(EXISTS "${_PROJECT_ROOT}/priv/generated/driver_tab_android.c")
-        set(DRIVER_TAB_ANDROID "${_PROJECT_ROOT}/priv/generated/driver_tab_android.c")
-    else()
-        set(DRIVER_TAB_ANDROID "${MOB_DIR}/android/jni/driver_tab_android.c")
-    endif()
-
-    # Project-side C NIFs (auto-wired from mob.exs :static_nifs). Picked
-    # up by GLOB so this CMakeLists doesn't need to be regenerated every
-    # time a NIF is added/removed — `mix mob.add_nif --type c` drops the
-    # source at c_src/<name>.c and that's enough.
-    #
-    # This fallback only fires when neither the zig-built .so nor the
-    # zig-out/<abi>/ .o files exist (Android Studio "Sync Project" or a
-    # standalone `./gradlew assembleDebug` without Mix). The Mix-driven
-    # path (zig build) handles project NIFs via the build.zig template's
-    # `project_c_nifs` flag — see jni/build.zig.
-    file(GLOB PROJECT_NIF_C_SRCS "${_PROJECT_ROOT}/c_src/*.c")
-
-    add_library(casein_mob SHARED
-        beam_jni.c
-        ${MOB_DIR}/android/jni/mob_nif.c
-        ${MOB_DIR}/android/jni/mob_beam.c
-        ${DRIVER_TAB_ANDROID}
-        ${PROJECT_NIF_C_SRCS}
+    message(FATAL_ERROR
+        "\n"
+        "Standalone Gradle/CMake has no Zig-native artifacts for ABI '${ANDROID_ABI}'.\n"
+        "\n"
+        "mob 0.7+ builds the Android JNI layer with Zig (build.zig). The legacy\n"
+        "CMake path that compiled deps/mob/android/jni/mob_nif.c (and friends)\n"
+        "is retired — those C sources no longer ship.\n"
+        "\n"
+        "Authoritative build (produces jniLibs/<abi>/libcasein_mob.so):\n"
+        "  mix mob.deploy --native --android\n"
+        "\n"
+        "Or, after a prior Zig native-lib / c-objects step that left artifacts at:\n"
+        "  ${ZIG_LIB_SO}\n"
+        "  or ${ZIG_OUT_DIR}/*.o\n"
+        "re-run Gradle and this CMakeLists will consume them without recompiling C.\n"
+        "\n"
+        "Verify the toolchain with: mix mob.doctor\n"
     )
-
-    # Per-NIF -DSTATIC_ERLANG_NIF_LIBNAME=<name>. The base STATIC_ERLANG_NIF
-    # define is added below as a target-level compile definition; this
-    # adds the per-source libname so ERL_NIF_INIT emits `<name>_nif_init`
-    # (matching the driver_tab declaration) rather than mangling the BEAM
-    # module name (e.g. `Elixir.App.Nifs.Foo`) into a C identifier.
-    foreach(_nif_src IN LISTS PROJECT_NIF_C_SRCS)
-        get_filename_component(_nif_name "${_nif_src}" NAME_WE)
-        set_property(
-            SOURCE "${_nif_src}"
-            APPEND PROPERTY COMPILE_DEFINITIONS
-            "STATIC_ERLANG_NIF_LIBNAME=${_nif_name}"
-        )
-    endforeach()
 endif()
 
 # Everything below applies only to CMake-built main library targets. When
@@ -141,7 +137,7 @@ if(NOT EXISTS "${ZIG_LIB_SO}")
         ${OTP_DIR}/${ERTS_VSN}/lib/asn1rt_nif.a
         # crypto NIF + OpenSSL, statically linked. crypto_nif_init is exported
         # by crypto.a and resolved at on_load time via STATIC_ERLANG_NIF (see
-        # mob/android/jni/driver_tab_android.c). libcrypto.a is OpenSSL 3.x
+        # the Zig driver_tab). libcrypto.a is OpenSSL 3.x
         # built with no-shared. No separate crypto.so ships in the APK.
         ${OTP_DIR}/${ERTS_VSN}/lib/crypto.a
         -Wl,--no-whole-archive
@@ -161,10 +157,19 @@ endif()  # NOT EXISTS ZIG_LIB_SO
 # ── exqlite / SQLite NIF ──────────────────────────────────────────────────────
 # As of Phase 2 iter 11, build.zig owns sqlite3_nif's compile + link
 # (mirrors libsqlite3_nif.so into jniLibs/<abi>/ alongside lib<app>.so).
-# CMake only takes over when build.zig didn't run — same fallback logic
-# as the main library above.
-set(ZIG_SQLITE_SO "${_PROJECT_ROOT}/android/app/src/main/jniLibs/${ANDROID_ABI}/libsqlite3_nif.so")
-if(NOT EXISTS "${ZIG_SQLITE_SO}")
+# CMake only takes over when build.zig didn't run — and only when the Zig
+# object-link fallback is active (main library built here). A pure
+# jniLibs/.so install already includes sqlite; missing both is a hard error.
+if(EXISTS "${ZIG_SQLITE_SO}")
+    # build.zig already installed libsqlite3_nif.so next to libcasein_mob.so.
+elseif(EXISTS "${ZIG_LIB_SO}")
+    message(FATAL_ERROR
+        "\n"
+        "Found ${ZIG_LIB_SO} but not ${ZIG_SQLITE_SO}.\n"
+        "Zig's native-lib step must install both shared libraries into jniLibs.\n"
+        "Re-run: mix mob.deploy --native --android\n"
+    )
+elseif(EXISTS "${MOB_DEPS_DIR}/exqlite/c_src/sqlite3_nif.c")
     add_library(sqlite3_nif SHARED
         ${MOB_DEPS_DIR}/exqlite/c_src/sqlite3_nif.c
         ${MOB_DEPS_DIR}/exqlite/c_src/sqlite3.c
@@ -184,4 +189,11 @@ if(NOT EXISTS "${ZIG_SQLITE_SO}")
         android
         log
     )
-endif()  # NOT EXISTS ZIG_SQLITE_SO
+else()
+    message(FATAL_ERROR
+        "\n"
+        "No libsqlite3_nif.so in jniLibs/${ANDROID_ABI}/ and no deps/exqlite sources.\n"
+        "Run the authoritative Mix/Zig native build first:\n"
+        "  mix mob.deploy --native --android\n"
+    )
+endif()
