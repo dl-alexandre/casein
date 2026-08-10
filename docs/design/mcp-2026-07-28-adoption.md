@@ -267,7 +267,7 @@ agents still declare 2025.
 | --- | --- | --- |
 | `scripts/lib/agent-doctor.sh` | Casein | Dual-probes legacy `initialize` **and** `server/discover` + `_meta` 2026-07-28 (PR #762). |
 | Claude / OpenCode / Codex / on-box Grok materializer | Runtime wire client; materializer only writes URL + headers (+ launch `-c` for Codex) | **No runtime MCP config schema yet accepts a per-server `_meta.protocolVersion` / protocol pin.** `Casein.Agents.MCPMaterializer` and `scripts/materialize-agent-mcp.sh` keep a single `client_protocol_declare/0` hook that returns empty until a schema allows it — then fold the declare in there only. Forcing unknown JSON/TOML keys would break plain startups. |
-| Host Grok (`~/.grok/config.toml` on the laptop) | Operator on the host | Still legacy `initialize` → 2025-03-26. **Unreachable from the devbox**; never rewrite box-global `~/.grok/config.toml` as a side effect. Documented in [`docs/agents/host-grok-dual-plane.md`](../agents/host-grok-dual-plane.md). |
+| Host Grok (`~/.grok/config.toml` on the laptop) | Operator on the host | Still legacy `initialize` → 2025-03-26. **Unreachable from the devbox**; never rewrite box-global `~/.grok/config.toml` as a side effect. Operator checklist (inventory → apply documented field only → dual-leg verify) lives in [`docs/agents/host-grok-dual-plane.md`](../agents/host-grok-dual-plane.md#host-only-remaining-751--operator-checklist). |
 | Stateless POST | All of the above | **Default path even on 2025** — no `Mcp-Session-Id` required. Sessions remain optional/additive. |
 
 When a runtime gains a supported config field for protocol declare, flip
