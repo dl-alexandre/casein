@@ -8,7 +8,7 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
 
 ## Windows workstream A — native terminal/session and agent runtime
 
-- **Owner:** Codex workstream A
+- **Owner:** OpenCode workstream A (%540 / #462)
 - **Tracking:** [GitHub issue #462](https://github.com/dl-alexandre/casein/issues/462)
 - **Direction:** keep the Phoenix/LiveView cockpit and shared MCP contracts;
   implement Windows-native terminal topology, ConPTY transport, Job Object
@@ -41,6 +41,9 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   session entry point, including agent-role topology reporting and failure handoff.
 - **Landed:** PR #554 introduces independently supervised native pane owners with
   stable identity and deterministic ConPTY process-tree cleanup.
-- **Current slice:** refactor `PowerShellSession` onto multiple `PowerShellPane`
-  owners with stable create/close/focus topology. Template reconciliation remains
-  a follow-up.
+- **Landed:** PR #805 refactors `PowerShellSession` onto multiple `PowerShellPane`
+  owners with stable create/close/focus topology.
+- **Current slice:** native template reconciliation — apply built-in templates
+  (starting with `agent_pair`) onto multipane PowerShell topology without a
+  second UI. LiveView chrome wiring and real-host Job Object multi-window soak
+  remain follow-ups.

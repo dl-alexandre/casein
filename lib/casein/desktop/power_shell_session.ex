@@ -9,6 +9,7 @@ defmodule Casein.Desktop.PowerShellSession do
   use GenServer
 
   alias Casein.Desktop.{NativeAgentLaunch, PowerShellPane}
+  alias Casein.Terminals.SessionTemplate
 
   @name __MODULE__
   @registry Module.concat(__MODULE__, Registry)
@@ -84,6 +85,23 @@ defmodule Casein.Desktop.PowerShellSession do
   def close_pane(workspace, pane_id) when is_binary(pane_id) do
     GenServer.call(server(workspace), {:close_pane, pane_id})
   end
+
+  @doc """
+  Applies a built-in session template onto the native multipane topology.
+
+  Uses the same dry-run plan as tmux (`SessionTemplate.dry_run/2`), but executes
+  against owned `PowerShellPane` processes. The first `new_window` step adopts the
+  existing default native window when the session still has a single root pane so
+  `agent_pair` does not leave a spare empty PowerShell window.
+  """
+  def apply_template(workspace \\ nil, template_or_id, opts \\ [])
+
+  def apply_template(workspace, template_or_id, opts)
+      when (is_binary(template_or_id) or is_map(template_or_id)) and is_list(opts) do
+    GenServer.call(server(workspace), {:apply_template, template_or_id, opts}, 30_000)
+  end
+
+  def apply_template(_workspace, _template_or_id, _opts), do: {:error, :invalid_arguments}
 
   @doc "Returns retained raw terminal output for a validated native pane target."
   def capture(workspace, pane_id), do: GenServer.call(server(workspace), {:capture, pane_id})
@@ -222,6 +240,14 @@ defmodule Casein.Desktop.PowerShellSession do
     end
   end
 
+  def handle_call({:apply_template, template_or_id, opts}, _from, state) do
+    case apply_template_plan(state, template_or_id, opts) do
+      {:ok, result, state} -> {:reply, {:ok, result}, state}
+      {:error, reason, state} -> {:reply, {:error, reason}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
   def handle_call({:capture, pane_id}, _from, state) do
     case fetch_pane(state, pane_id) do
       {:ok, pane} -> {:reply, PowerShellPane.capture(pane.pid), state}
@@ -338,6 +364,7 @@ defmodule Casein.Desktop.PowerShellSession do
     name = Keyword.get(opts, :name, "PowerShell")
     role = Keyword.get(opts, :role, "operator")
     active? = Keyword.get(opts, :active?, false)
+    cwd = Keyword.get(opts, :cwd)
 
     with :ok <- validate_role(role),
          :ok <- validate_window_name(name) do
@@ -356,10 +383,14 @@ defmodule Casein.Desktop.PowerShellSession do
             )
       }
 
-      case open_pane(tentative, window_id,
-             role: role,
-             active?: active? or state.active_pane_id == nil
-           ) do
+      pane_opts =
+        compact_keyword(
+          role: role,
+          cwd: cwd,
+          active?: active? or state.active_pane_id == nil
+        )
+
+      case open_pane(tentative, window_id, pane_opts) do
         {:ok, pane, state} ->
           {:ok, window_entry(state, window_id), pane, state}
 
@@ -514,6 +545,239 @@ defmodule Casein.Desktop.PowerShellSession do
 
     state
   end
+
+  defp apply_template_plan(state, template_or_id, opts) do
+    with {:ok, dry_run} <- SessionTemplate.dry_run(template_or_id, opts),
+         :ok <- reject_non_terminal_steps(dry_run.steps) do
+      workspace_root = Keyword.get(opts, :workspace_root, state.cwd)
+
+      exec_state = %{
+        session_state: state,
+        workspace_root: workspace_root,
+        refs: %{},
+        executed_steps: [],
+        adopted_default_window?: false
+      }
+
+      dry_run.steps
+      |> Enum.reduce_while({:ok, exec_state}, fn step, {:ok, exec_state} ->
+        case execute_native_step(step, exec_state) do
+          {:ok, exec_state} ->
+            {:cont, {:ok, exec_state}}
+
+          {:error, reason} ->
+            {:halt,
+             {:error, {reason, step, native_execution_summary(dry_run, exec_state)},
+              exec_state.session_state}}
+        end
+      end)
+      |> case do
+        {:ok, exec_state} ->
+          {:ok,
+           dry_run
+           |> Map.take([:template, :step_count])
+           |> Map.merge(%{
+             executed_steps: Enum.reverse(exec_state.executed_steps),
+             refs: exec_state.refs,
+             topology: topology_snapshot(exec_state.session_state)
+           }), exec_state.session_state}
+
+        {:error, reason, session_state} ->
+          {:error, reason, session_state}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp reject_non_terminal_steps(steps) do
+    if Enum.any?(steps, &(&1.action == "attach_pane")) do
+      {:error, :unsupported_native_template_step}
+    else
+      :ok
+    end
+  end
+
+  defp execute_native_step(%{action: "new_window"} = step, exec_state) do
+    with {:ok, cwd} <-
+           resolve_template_cwd(get_in(step, [:params, :cwd]), exec_state.workspace_root),
+         name <- get_in(step, [:params, :name]) || "PowerShell",
+         role <- step_role(step) || "operator",
+         {:ok, window, root_pane, session_state, adopted?} <-
+           open_or_adopt_window(exec_state.session_state, exec_state, name, role, cwd) do
+      exec_state
+      |> Map.put(:session_state, session_state)
+      |> Map.put(
+        :adopted_default_window?,
+        exec_state.adopted_default_window? or adopted?
+      )
+      |> put_native_ref(step.ref, window.id)
+      |> put_native_ref(root_ref(step.ref), root_pane.id)
+      |> record_native_step(step, %{
+        window_id: window.id,
+        root_pane_id: root_pane.id,
+        adopted_default?: adopted?
+      })
+      |> ok()
+    end
+  end
+
+  defp execute_native_step(%{action: "split_pane"} = step, exec_state) do
+    with {:ok, target_pane_id} <- resolve_native_ref(exec_state, step.target_ref),
+         {:ok, target_pane} <- fetch_pane(exec_state.session_state, target_pane_id),
+         {:ok, cwd} <-
+           resolve_template_cwd(get_in(step, [:params, :cwd]), exec_state.workspace_root),
+         role <- step_role(step) || "operator",
+         opts <- compact_keyword(role: role, cwd: cwd || target_pane.cwd, active?: false),
+         {:ok, pane, session_state} <-
+           open_pane(exec_state.session_state, target_pane.window_id, opts) do
+      exec_state
+      |> Map.put(:session_state, session_state)
+      |> put_native_ref(step.ref, pane.id)
+      |> record_native_step(step, %{pane_id: pane.id, target_pane_id: target_pane_id})
+      |> ok()
+    end
+  end
+
+  defp execute_native_step(%{action: "send_command"} = step, exec_state) do
+    with {:ok, target_pane_id} <- resolve_native_ref(exec_state, step.target_ref),
+         {:ok, pane} <- fetch_pane(exec_state.session_state, target_pane_id),
+         command when is_binary(command) and command != "" <- get_in(step, [:params, :command]),
+         payload <- native_command_payload(command),
+         :ok <- PowerShellPane.send_input(pane.pid, payload) do
+      exec_state
+      |> record_native_step(step, %{target_pane_id: target_pane_id})
+      |> ok()
+    else
+      nil -> {:error, :missing_template_command}
+      "" -> {:error, :missing_template_command}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp execute_native_step(%{action: "select_pane"} = step, exec_state) do
+    with {:ok, target_pane_id} <- resolve_native_ref(exec_state, step.target_ref),
+         {:ok, session_state} <- focus(exec_state.session_state, target_pane_id) do
+      exec_state
+      |> Map.put(:session_state, session_state)
+      |> record_native_step(step, %{pane_id: target_pane_id})
+      |> ok()
+    end
+  end
+
+  defp execute_native_step(step, _exec_state), do: {:error, {:unsupported_step, step.action}}
+
+  defp open_or_adopt_window(state, exec_state, name, role, cwd) do
+    if can_adopt_default_window?(state, exec_state) do
+      adopt_default_window(state, name, role, cwd)
+    else
+      opts = compact_keyword(name: name, role: role, cwd: cwd, active?: false)
+
+      case open_window(state, opts) do
+        {:ok, window, pane, state} -> {:ok, window, pane, state, false}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp can_adopt_default_window?(state, exec_state) do
+    not exec_state.adopted_default_window? and length(state.windows) == 1 and
+      map_size(state.panes) == 1
+  end
+
+  defp adopt_default_window(state, name, role, cwd) do
+    window = hd(state.windows)
+    {pane_id, pane} = Enum.at(state.panes, 0)
+
+    with :ok <- validate_role(role),
+         :ok <- validate_window_name(name),
+         :ok <- PowerShellPane.set_role(pane.pid, role) do
+      updated_window = %{window | name: name}
+      updated_pane = %{pane | role: role, cwd: cwd || pane.cwd}
+
+      state = %{
+        state
+        | windows: [updated_window],
+          panes: Map.put(state.panes, pane_id, updated_pane)
+      }
+
+      {:ok, window_entry(state, window.id), pane_entry(state, pane_id), state, true}
+    end
+  end
+
+  defp native_command_payload(command) when is_binary(command) do
+    trimmed = String.trim_trailing(command)
+
+    cond do
+      String.ends_with?(trimmed, "\r") -> trimmed
+      String.ends_with?(trimmed, "\n") -> String.trim_trailing(trimmed, "\n") <> "\r"
+      true -> trimmed <> "\r"
+    end
+  end
+
+  defp resolve_template_cwd(nil, _workspace_root), do: {:ok, nil}
+  defp resolve_template_cwd("", _workspace_root), do: {:ok, nil}
+
+  defp resolve_template_cwd(".", workspace_root) when is_binary(workspace_root),
+    do: validate_cwd(workspace_root)
+
+  defp resolve_template_cwd(path, nil) when is_binary(path), do: validate_cwd(path)
+
+  defp resolve_template_cwd(path, workspace_root)
+       when is_binary(path) and is_binary(workspace_root) do
+    case Path.type(path) do
+      :absolute ->
+        validate_cwd(path)
+
+      _ ->
+        workspace_root
+        |> Path.join(path)
+        |> Path.expand()
+        |> validate_cwd()
+    end
+  end
+
+  defp resolve_template_cwd(_path, _workspace_root), do: {:error, :invalid_native_cwd}
+
+  defp step_role(step), do: get_in(step, [:metadata, :role])
+
+  defp root_ref("window:" <> window_id), do: "pane:" <> window_id <> ":root"
+  defp root_ref(ref), do: ref <> ":root"
+
+  defp put_native_ref(exec_state, ref, value),
+    do: %{exec_state | refs: Map.put(exec_state.refs, ref, value)}
+
+  defp resolve_native_ref(%{refs: refs}, ref) do
+    case Map.fetch(refs, ref) do
+      {:ok, value} -> {:ok, value}
+      :error -> {:error, {:unresolved_ref, ref}}
+    end
+  end
+
+  defp record_native_step(exec_state, step, result) do
+    executed_step =
+      step
+      |> Map.take([:index, :action, :ref, :target_ref, :params, :metadata])
+      |> Map.put(:result, result)
+
+    %{exec_state | executed_steps: [executed_step | exec_state.executed_steps]}
+  end
+
+  defp native_execution_summary(dry_run, exec_state) do
+    %{
+      template: dry_run.template,
+      step_count: dry_run.step_count,
+      executed_steps: Enum.reverse(exec_state.executed_steps),
+      refs: exec_state.refs,
+      topology: topology_snapshot(exec_state.session_state)
+    }
+  end
+
+  defp compact_keyword(opts) do
+    Enum.reject(opts, fn {_key, value} -> value in [nil, ""] end)
+  end
+
+  defp ok(value), do: {:ok, value}
 
   defp restart_topology(state, cwd, workspace) do
     Enum.each(state.panes, fn {_id, pane} ->
