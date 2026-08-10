@@ -242,10 +242,13 @@ defmodule Casein.Terminals.OrphanedClaims do
   defp unwrap_claimed(list) when is_list(list), do: list
   defp unwrap_claimed(_), do: {:error, :bad_claimed}
 
+  # Host-side `gh` only — binary is the fixed string "gh", args are label/repo
+  # filters (not shell). Injection risk is the variable-executable form Sobelow
+  # flags; we never take the executable from caller input.
+  # sobelow_skip ["CI.System"]
   defp list_claimed_uncached(opts) do
     repo = Keyword.get(opts, :repo, @default_repo)
     workspace_label = Keyword.get(opts, :workspace_label, @default_workspace_label)
-    gh = Keyword.get(opts, :gh_executable, "gh")
 
     if not is_binary(repo) or repo == "" do
       {:error, :bad_repo}
@@ -269,7 +272,7 @@ defmodule Casein.Terminals.OrphanedClaims do
 
       env = gh_env(opts)
 
-      case System.cmd(gh, args, env: env, stderr_to_stdout: true) do
+      case System.cmd("gh", args, env: env, stderr_to_stdout: true) do
         {body, 0} ->
           case decode_issues(body) do
             {:ok, claims} ->
