@@ -190,15 +190,37 @@ That call is what upgrades a poll into an exact wait — see §6.
 
 ## 5. Send to the worker
 
-Use explicit-pane tools (not `terminal_send_agent_*`):
+**Put the prompt in the worker's inbox, then type one line to wake it.** Typing a
+multi-thousand-token prompt into a TUI is the least reliable step in this whole
+flow: keystrokes race whatever the agent is drawing, a chunked send can interleave,
+and a paste that half-landed looks identical to one that worked.
 
 ```text
-terminal_send_keys(session, pane: <worker_pane>, keys: <single-line prompt>)
+terminal_say(to: "pane:<worker_pane>", body: <the full prompt>, message_id: <task-slug>)
+terminal_send_keys(session, pane: <worker_pane>, keys: "Read your Casein inbox with terminal_inbox and follow it.")
 terminal_send_keys(session, pane: <worker_pane>, keys: "Enter")
 ```
 
-For multiline prompts use `terminal_paste_agent_text`, or send in chunks and
-verify with `terminal_capture` that the prompt landed before pressing Enter.
+The wake line is short, fixed, and goes to a worker sitting at an empty prompt —
+the one moment pane-typing is safe. Everything of substance travels as a message,
+where it is durable, size-checked, and *visibly uncollected* until the worker
+actually reads it.
+
+`terminal_say` refuses an ambiguous recipient rather than delivering to a guess,
+so pass `pane:<id>` when two windows share a name.
+
+### Follow-ups to a running worker
+
+Never type at a worker mid-turn. Send another message instead:
+
+```text
+terminal_say(to: "pane:<worker_pane>", body: "Requirements changed: skip the migration.")
+```
+
+The template tells the worker to check its inbox between phases, so a follow-up
+lands at the next safe point in its loop instead of racing its input box. If the
+worker never collects it, that stays visible — `terminal_inbox` on its address
+still shows the message as uncollected, which a keystroke could never tell you.
 
 ## 6. Wait loop
 

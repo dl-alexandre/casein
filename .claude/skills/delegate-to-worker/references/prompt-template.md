@@ -28,6 +28,11 @@ absolute path.
 ## Constraints
 
 - Touch only files required by the task.
+- Check your Casein inbox (`terminal_inbox`, no arguments — it defaults to your
+  own pane) between phases of the work, and again before you report done. The
+  orchestrator sends corrections there rather than typing at you mid-turn, so an
+  uncollected message is a change you have not applied yet. Pass `collect=true`
+  once you have acted on what you read.
 - Run targeted tests for changed modules.
 - If blocked (missing credentials, ambiguous requirement, cross-worktree conflict), say so explicitly.
 
