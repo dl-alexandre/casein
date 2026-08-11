@@ -14,6 +14,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # emitted while handling it are traced (covers delegated sub-module events).
   use Casein.Signals.EntryContext
 
+  alias Casein.Agents.AgentCapabilityTokens
   alias Casein.Agents.PaneEnv
   alias Casein.Agents.PreviewTools.BrowserControl
   alias Casein.Audit
@@ -452,7 +453,12 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:template_duplicate_form, template_duplicate_form())
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, workspace_mode_source)
-        |> assign(:agent_write_unlock, %{status: :inactive, until: nil, by: nil})
+        |> assign(:agent_write_unlock, %{
+          status: :inactive,
+          until: nil,
+          by: nil,
+          capability_bound: false
+        })
         |> assign(:deployment_panel, deployment_panel())
         |> assign_policy_permissions()
         |> maybe_subscribe_terminal_infrastructure()
@@ -1225,6 +1231,17 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # viewer or any other connected viewer, so the banner and revoke button
   # stay live for everyone watching the workspace, not just the granter.
   def handle_info({:agent_write_unlock_changed, ws_id, _until, _by}, socket) do
+    if socket.assigns.workspace.id == ws_id do
+      {:noreply, assign_agent_write_unlock(socket, ws_id)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # A capability-scoped agent bound or unbound. Recomputed through the same
+  # function as the unlock itself so the banner's two conditions can never be
+  # read from different moments.
+  def handle_info({:agent_capability_binding_changed, ws_id}, socket) do
     if socket.assigns.workspace.id == ws_id do
       {:noreply, assign_agent_write_unlock(socket, ws_id)}
     else
@@ -2182,6 +2199,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   defp subscribe_agent_write_unlock(socket) do
     if connected?(socket) do
       _ = Workspaces.subscribe_agent_write_unlock_changes(socket.assigns.workspace.id)
+      _ = AgentCapabilityTokens.subscribe_binding_changes(socket.assigns.workspace.id)
       assign_agent_write_unlock(socket, socket.assigns.workspace.id)
     else
       socket
@@ -2195,6 +2213,12 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         {:active, until, by} -> %{status: :active, until: until, by: by}
         _ -> %{status: :inactive, until: nil, by: nil}
       end
+
+    # The locked banner is chrome for a control that only binds capability-scoped
+    # runtimes, so it renders only while one is bound. The run panel's unlock
+    # form is unconditional — an operator can still grant ahead of a launch.
+    status =
+      Map.put(status, :capability_bound, AgentCapabilityTokens.any_active_for_workspace?(ws_id))
 
     assign(socket, :agent_write_unlock, status)
   end

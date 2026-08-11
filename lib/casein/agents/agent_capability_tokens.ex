@@ -73,10 +73,70 @@ defmodule Casein.Agents.AgentCapabilityTokens do
              {:error, changeset} -> Repo.rollback(changeset)
            end
          end) do
-      {:ok, record} -> {:ok, raw_token, record}
-      {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
+      {:ok, record} ->
+        broadcast_binding_changed(record.workspace_id)
+        {:ok, raw_token, record}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:error, changeset}
     end
   end
+
+  @doc """
+  Whether any capability-scoped agent is currently bound to this workspace.
+
+  "Bound" is a property of the *credential*, not of a pane: a live, unrevoked,
+  unexpired bearer can call MCP whether or not the tmux pane that received it
+  still exists. Chrome that reports the agent-write grant keys off this so a
+  workspace running only ungated runtimes (Claude / Codex / OpenCode) does not
+  advertise a control that binds nothing.
+
+  The launcher never revokes on pane exit — it re-verifies and reuses a cached
+  bearer — so a closed Grok pane keeps its workspace "bound" until the token
+  hits its 12h TTL or the same leader mints a replacement. That tail is
+  deliberate: the credential really is still usable during it.
+  """
+  @spec any_active_for_workspace?(String.t()) :: boolean()
+  def any_active_for_workspace?(workspace_id) when is_binary(workspace_id) do
+    now = DateTime.utc_now()
+
+    AgentCapabilityToken
+    |> where(
+      [token],
+      token.workspace_id == ^workspace_id and is_nil(token.revoked_at) and token.expires_at > ^now
+    )
+    |> Repo.exists?()
+  end
+
+  def any_active_for_workspace?(_workspace_id), do: false
+
+  @doc """
+  Subscribes the caller to capability binding changes for a workspace.
+
+  Delivers `{:agent_capability_binding_changed, workspace_id}` after a mint or
+  a revoke. Broadcasting lives here rather than in the controller for the same
+  reason the unlock audit lives in `Casein.Workspaces.State`: a control whose
+  chrome depends on the binding cannot rely on each caller remembering to say
+  it changed. Passive expiry is not broadcast — nothing re-reads the table on a
+  timer, so a subscriber can hold a stale `true` until the next mint, revoke,
+  or remount.
+  """
+  @spec subscribe_binding_changes(String.t()) :: :ok | {:error, term()}
+  def subscribe_binding_changes(workspace_id) when is_binary(workspace_id) do
+    Phoenix.PubSub.subscribe(Casein.PubSub, binding_topic(workspace_id))
+  end
+
+  defp broadcast_binding_changed(workspace_id) when is_binary(workspace_id) do
+    Phoenix.PubSub.broadcast(
+      Casein.PubSub,
+      binding_topic(workspace_id),
+      {:agent_capability_binding_changed, workspace_id}
+    )
+  end
+
+  defp broadcast_binding_changed(_workspace_id), do: :ok
+
+  defp binding_topic(workspace_id), do: "workspace_agent_capabilities:" <> workspace_id
 
   @doc """
   Verify an active raw bearer and return only authorization-safe claims.
@@ -233,9 +293,14 @@ defmodule Casein.Agents.AgentCapabilityTokens do
   defp revoke_record(nil), do: {:error, :not_found}
 
   defp revoke_record(%AgentCapabilityToken{revoked_at: nil} = record) do
-    record
-    |> Ecto.Changeset.change(revoked_at: DateTime.utc_now())
-    |> Repo.update()
+    case record |> Ecto.Changeset.change(revoked_at: DateTime.utc_now()) |> Repo.update() do
+      {:ok, updated} = ok ->
+        broadcast_binding_changed(updated.workspace_id)
+        ok
+
+      other ->
+        other
+    end
   end
 
   defp revoke_record(%AgentCapabilityToken{} = record), do: {:ok, record}

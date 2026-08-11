@@ -3,14 +3,24 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentWriteBanner do
 
   use CaseinWeb, :html
 
-  @doc "Chrome banner when agent-write unlock is inactive (Casein #592)."
+  @doc """
+  Chrome banner when agent-write unlock is inactive (Casein #592).
+
+  Renders only while a capability-scoped agent is bound (`capability_bound`).
+  The unlock gates the MCP mutation grant issued to managed Grok leaders; every
+  other runtime (Claude / Codex / OpenCode) authenticates outside that grant and
+  keeps its mutation tools regardless. On a workspace running only ungated
+  runtimes the banner claimed a read-only state that was not in force, so it
+  stays hidden there — Run panel → Agent write unlock still grants ahead of a
+  launch.
+  """
   attr :workspace, :map, required: true
   attr :agent_write_unlock, :map, required: true
 
   def agent_write_locked_banner(assigns) do
     ~H"""
     <div
-      :if={@agent_write_unlock.status != :active}
+      :if={@agent_write_unlock.status != :active and @agent_write_unlock.capability_bound}
       id={"agent-write-locked-banner-" <> @workspace.id}
       class="flex shrink-0 flex-wrap items-center gap-2 border-b border-status-warning/30 bg-status-warning/[0.09] px-3 py-1.5 text-density-body text-status-warning-fg"
       role="status"

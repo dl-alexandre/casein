@@ -128,6 +128,44 @@ defmodule Casein.Agents.AgentCapabilityTokensTest do
     assert id == second.id
   end
 
+  test "any_active_for_workspace? tracks the credential, not the pane" do
+    refute AgentCapabilityTokens.any_active_for_workspace?("workspace-123")
+    refute AgentCapabilityTokens.any_active_for_workspace?(nil)
+
+    {:ok, _raw, record} = AgentCapabilityTokens.create_for_grok(attrs())
+
+    assert AgentCapabilityTokens.any_active_for_workspace?("workspace-123")
+    refute AgentCapabilityTokens.any_active_for_workspace?("workspace-other")
+
+    # Expiry unbinds without anyone revoking — the 12h tail after a pane closes
+    # ends here, not at pane exit (the launcher never revokes on exit).
+    record
+    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -1, :second))
+    |> Repo.update!()
+
+    refute AgentCapabilityTokens.any_active_for_workspace?("workspace-123")
+
+    {:ok, _raw, live} = AgentCapabilityTokens.create_for_grok(attrs())
+    assert AgentCapabilityTokens.any_active_for_workspace?("workspace-123")
+
+    assert {:ok, _} = AgentCapabilityTokens.revoke(live.id, live.workspace_id)
+    refute AgentCapabilityTokens.any_active_for_workspace?("workspace-123")
+  end
+
+  test "mint and revoke broadcast binding changes to workspace subscribers" do
+    :ok = AgentCapabilityTokens.subscribe_binding_changes("workspace-123")
+
+    {:ok, _raw, record} = AgentCapabilityTokens.create_for_grok(attrs())
+    assert_receive {:agent_capability_binding_changed, "workspace-123"}
+
+    assert {:ok, _} = AgentCapabilityTokens.revoke_current(record.id)
+    assert_receive {:agent_capability_binding_changed, "workspace-123"}
+
+    # Idempotent revoke changes nothing, so it must not re-announce.
+    assert {:ok, _} = AgentCapabilityTokens.revoke_current(record.id)
+    refute_receive {:agent_capability_binding_changed, "workspace-123"}
+  end
+
   test "fails closed on invalid identifiers, digests, modes, runtimes, and tool grants" do
     invalid = [
       %{workspace_id: "../workspace"},

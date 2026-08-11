@@ -40,5 +40,16 @@ launch. Do **not** bypass with `CASEIN_GROK_SANDBOX_BASE=workspace`.
 
 ## Chrome
 
-When unlock is inactive, workspace chrome shows a **Read-only agents** banner
-with a one-click **Unlock 30 min** control.
+When unlock is inactive **and a capability-scoped agent is bound**, workspace
+chrome shows a **Read-only agents** banner with a one-click **Unlock 30 min**
+control. Bound means the workspace has a live (unrevoked, unexpired) agent
+capability — only managed Grok mints one. A workspace running Claude / Codex /
+OpenCode gets no banner, because those runtimes keep their mutation tools
+whatever the unlock says, so the banner's claim would be false there.
+
+The launcher never revokes on pane exit, so a closed Grok pane keeps the
+workspace bound until its capability hits the 12h TTL or that leader mints a
+replacement. That tail is intentional — the bearer is still usable.
+
+Run panel → **Agent write unlock** is unconditional: an operator can still grant
+before launching a Grok pane, with no banner on screen.
