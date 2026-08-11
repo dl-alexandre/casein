@@ -135,6 +135,7 @@ config :casein,
 # logic itself is exercised as-is, with tests injecting a :capture function.
 config :casein, :pane_submit,
   settle_ms: 0,
+  retry_settle_ms: 0,
   poll_ms: 1,
   attempt_timeout_ms: 5
 
