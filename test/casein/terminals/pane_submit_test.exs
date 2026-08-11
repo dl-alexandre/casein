@@ -28,17 +28,10 @@ defmodule Casein.Terminals.PaneSubmitTest do
   defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
   defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 
-  # Stay on `baseline` for `after_reads` capture calls (baseline + polls), then
-  # flip to `changed`. Used to model a TUI that only reacts after a second Enter.
-  defp frozen_then_change(baseline, changed, opts) do
-    after_reads = Keyword.fetch!(opts, :after_reads)
-    key = {__MODULE__, :frozen_reads, System.unique_integer([:positive])}
-
-    fn ->
-      n = Process.get(key, 0) + 1
-      Process.put(key, n)
-      if n > after_reads, do: changed, else: baseline
-    end
+  # Production defaults settle ~400ms and wait for a stable screen. Unit tests
+  # drive the capture frames themselves, so settle is always zeroed here.
+  defp fast(opts \\ []) do
+    Keyword.merge([settle_ms: 0, stable_timeout_ms: 0, stable_reads: 1], opts)
   end
 
   # A capture that yields each frame in turn and then repeats the last one,
@@ -69,7 +62,7 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = scripted_capture(["> rebase first", "⏺ working on it"])
 
       assert {:ok, result} =
-               PaneSubmit.confirm_submit(@session, @pane, capture: capture)
+               PaneSubmit.confirm_submit(@session, @pane, fast(capture: capture))
 
       assert result.submitted == true
       assert result.delivery == :delivered
@@ -82,7 +75,7 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = scripted_capture(["> rebase first"])
 
       assert {:ok, result} =
-               PaneSubmit.confirm_submit(@session, @pane, capture: capture)
+               PaneSubmit.confirm_submit(@session, @pane, fast(capture: capture))
 
       assert result.submitted == false
       assert result.delivery == :not_confirmed
@@ -98,7 +91,11 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = scripted_capture(["> rebase first"])
 
       assert {:error, error} =
-               PaneSubmit.confirm_submit(@session, @pane, capture: capture, strict: true)
+               PaneSubmit.confirm_submit(
+                 @session,
+                 @pane,
+                 fast(capture: capture, strict: true)
+               )
 
       assert error.error == :submit_not_confirmed
       assert error.delivery == :not_confirmed
@@ -109,13 +106,14 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = scripted_capture(["> rebase first   ", "> rebase first"])
 
       assert {:ok, %{delivery: :not_confirmed}} =
-               PaneSubmit.confirm_submit(@session, @pane, capture: capture)
+               PaneSubmit.confirm_submit(@session, @pane, fast(capture: capture))
     end
 
     test "an unreadable pane reports uncertain and never presses Enter twice" do
       capture = scripted_capture([""])
 
-      assert {:ok, result} = PaneSubmit.confirm_submit(@session, @pane, capture: capture)
+      assert {:ok, result} =
+               PaneSubmit.confirm_submit(@session, @pane, fast(capture: capture))
 
       assert result.delivery == :uncertain
       assert result.confirmation == :unavailable
@@ -126,9 +124,10 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = scripted_capture(["before", "after"])
 
       assert {:ok, result} =
-               PaneSubmit.confirm_submit(@session, @pane,
-                 capture: capture,
-                 enter_already_sent: true
+               PaneSubmit.confirm_submit(
+                 @session,
+                 @pane,
+                 fast(capture: capture, enter_already_sent: true)
                )
 
       assert result.delivery == :delivered
@@ -137,7 +136,8 @@ defmodule Casein.Terminals.PaneSubmitTest do
     end
 
     test "confirm: false short-circuits to skipped" do
-      assert {:ok, result} = PaneSubmit.confirm_submit(@session, @pane, confirm: false)
+      assert {:ok, result} =
+               PaneSubmit.confirm_submit(@session, @pane, fast(confirm: false))
 
       assert result.delivery == :skipped
       assert result.enter_presses == 0
@@ -155,10 +155,10 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = report_on_second_call(frozen, :working, source: :hook)
 
       assert {:ok, result} =
-               PaneSubmit.confirm_submit(@session, @pane,
-                 capture: capture,
-                 attempt_timeout_ms: 500,
-                 poll_ms: 5
+               PaneSubmit.confirm_submit(
+                 @session,
+                 @pane,
+                 fast(capture: capture, attempt_timeout_ms: 500, poll_ms: 5)
                )
 
       assert result.delivery == :delivered
@@ -173,7 +173,7 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = scripted_capture(["> rebase first"])
 
       assert {:ok, %{delivery: :not_confirmed}} =
-               PaneSubmit.confirm_submit(@session, @pane, capture: capture)
+               PaneSubmit.confirm_submit(@session, @pane, fast(capture: capture))
     end
 
     test "a dispatch-sourced report is Casein's own send and does not self-confirm" do
@@ -181,10 +181,10 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = report_on_second_call(frozen, :working, source: :dispatch)
 
       assert {:ok, %{delivery: :not_confirmed}} =
-               PaneSubmit.confirm_submit(@session, @pane,
-                 capture: capture,
-                 attempt_timeout_ms: 50,
-                 poll_ms: 5
+               PaneSubmit.confirm_submit(
+                 @session,
+                 @pane,
+                 fast(capture: capture, attempt_timeout_ms: 50, poll_ms: 5)
                )
     end
   end
@@ -212,7 +212,12 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = scripted_capture(["idle", "⏺ thinking"])
 
       assert {:ok, result} =
-               PaneSubmit.deliver(@session, @pane, "rebase onto master first", capture: capture)
+               PaneSubmit.deliver(
+                 @session,
+                 @pane,
+                 "rebase onto master first",
+                 fast(capture: capture)
+               )
 
       assert result.chunks_sent == 1
       assert result.delivery == :delivered
@@ -223,17 +228,44 @@ defmodule Casein.Terminals.PaneSubmitTest do
       refute Keyword.get(opts, :submit)
     end
 
-    test "OpenCode-style race: Enter during drain needs a second press, then delivers" do
-      # Freeze through baseline + first-attempt polls, then redraw on attempt 2.
-      # With settle 0 / timeout 80 / poll 10 ≈ 1 baseline + ~8 polls before retry.
-      capture = frozen_then_change("> long brief", "⏺ working", after_reads: 12)
+    test "OpenCode-style race: retry re-baselines so a failed first Enter cannot false-confirm" do
+      # Sequence of captures:
+      #   1. baseline (drained composer)
+      #   2..n first-attempt polls (frozen — first Enter did nothing)
+      #   n+1 rebaseline after first attempt fails (composer still drained, or
+      #       with a newline from the failed press — either way, new baseline)
+      #   n+2.. second-attempt polls flip to working after the second Enter
+      #
+      # If we did NOT re-baseline, a newline left by the first Enter would make
+      # screen_changed? true on the second attempt without a real submit.
+      capture =
+        scripted_capture([
+          # baseline
+          "> long brief",
+          # first-attempt polls (frozen)
+          "> long brief",
+          "> long brief",
+          "> long brief",
+          "> long brief",
+          "> long brief",
+          # rebaseline after failed first Enter (newline inserted — new baseline)
+          "> long brief\n",
+          "> long brief\n",
+          # second-attempt polls — real submit redraw
+          "⏺ working"
+        ])
 
       assert {:ok, result} =
-               PaneSubmit.deliver(@session, @pane, "long fleet brief\nline 2\nline 3",
-                 capture: capture,
-                 settle_ms: 0,
-                 attempt_timeout_ms: 80,
-                 poll_ms: 10
+               PaneSubmit.deliver(
+                 @session,
+                 @pane,
+                 "long fleet brief\nline 2\nline 3",
+                 fast(
+                   capture: capture,
+                   attempt_timeout_ms: 30,
+                   poll_ms: 5,
+                   stable_reads: 1
+                 )
                )
 
       assert result.submitted == true
@@ -245,8 +277,41 @@ defmodule Casein.Terminals.PaneSubmitTest do
       assert_received {:fake_tmux_keys, @session, @pane, "Enter", _}
     end
 
+    test "baseline is taken after settle so paste-drain redraws do not false-confirm" do
+      # Frames: still-draining paste, then stable composer, then (after Enter)
+      # the working marker. If baseline were taken before settle, the drain
+      # step alone would look like a successful submit with zero Enter presses
+      # pending — the #886 probe lie.
+      capture =
+        scripted_capture([
+          "> brief…",
+          "> fleet brief ready",
+          "> fleet brief ready",
+          "⏺ working"
+        ])
+
+      assert {:ok, result} =
+               PaneSubmit.confirm_submit(
+                 @session,
+                 @pane,
+                 fast(
+                   capture: capture,
+                   stable_reads: 2,
+                   stable_timeout_ms: 50,
+                   poll_ms: 5,
+                   attempt_timeout_ms: 200
+                 )
+               )
+
+      assert result.submitted == true
+      assert result.delivery == :delivered
+      assert result.confirmation == :screen
+      assert result.enter_presses == 1
+      assert_received {:fake_tmux_keys, @session, @pane, "Enter", _}
+    end
+
     test "an empty prompt sends nothing and never presses Enter" do
-      assert {:ok, result} = PaneSubmit.deliver(@session, @pane, "   ")
+      assert {:ok, result} = PaneSubmit.deliver(@session, @pane, "   ", fast())
 
       assert result.chunks_sent == 0
       assert result.delivery == :skipped
@@ -257,7 +322,7 @@ defmodule Casein.Terminals.PaneSubmitTest do
       capture = scripted_capture(["idle"])
 
       assert {:error, error} =
-               PaneSubmit.deliver(@session, @pane, "rebase first", capture: capture)
+               PaneSubmit.deliver(@session, @pane, "rebase first", fast(capture: capture))
 
       assert error.error == :submit_not_confirmed
     end

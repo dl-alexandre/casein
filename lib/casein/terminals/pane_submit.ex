@@ -46,6 +46,20 @@ defmodule Casein.Terminals.PaneSubmit do
   unavailable, because there is nothing to distinguish "did not land" from
   "cannot tell".
 
+  ## Baseline order (OpenCode / #886)
+
+  The screen baseline is taken **after** the settle window, once consecutive
+  captures agree the pane has stopped redrawing. Taking it *before* settle
+  caused two coupled failures on OpenCode:
+
+    * Enter pressed while paste-buffer was still draining became a newline in
+      the composer (submit not landing);
+    * the drain's own redraw during the poll window looked like a successful
+      submit (confirmation probe lying).
+
+  Retry presses also re-baseline, so a newline from a failed first press cannot
+  confirm the second.
+
   ## Strict vs. reporting
 
   `strict: true` turns an unconfirmed submit into an error. That is right for
@@ -63,11 +77,21 @@ defmodule Casein.Terminals.PaneSubmit do
   alias Casein.Terminals.AgentPromptSender
   alias Casein.Terminals.AgentState
 
-  @default_settle_ms 250
+  # Paste drain before the first Enter. OpenCode (and similar TUIs) apply a
+  # paste-buffer over several frames; Enter pressed while that is still
+  # draining becomes a newline in the composer instead of a submit — the
+  # failure #886 reproduces on every opencode pane. 250ms was too short for
+  # multi-line briefs on a busy host; 400ms is the floor, and
+  # `await_stable_screen/3` extends it until the pane stops redrawing.
+  @default_settle_ms 400
   @default_poll_ms 100
-  @default_attempt_timeout_ms 1_200
+  @default_attempt_timeout_ms 1_500
   @default_max_enter_presses 2
   @default_capture_lines 40
+  # Identical captures required after the settle sleep before we trust the
+  # baseline. 1 when settle is 0 (tests), 2 in production.
+  @default_stable_reads 2
+  @default_stable_timeout_ms 800
 
   @type confirmation :: :hook | :screen | :unavailable | :unconfirmed
 
@@ -154,11 +178,23 @@ defmodule Casein.Terminals.PaneSubmit do
 
   defp run_confirm(session, pane, opts) when is_binary(pane) do
     capture = capture_fun(session, pane, opts)
-    baseline = capture.()
-    since = DateTime.utc_now()
     already_sent? = Keyword.get(opts, :enter_already_sent, false)
 
-    settle(settle_ms(opts))
+    # Baseline MUST be taken after the paste has finished applying. Capturing
+    # first and then settling (the previous order) had two failure modes on
+    # OpenCode:
+    #
+    #   1. not-landing — Enter lands while the TUI is still draining
+    #      paste-buffer and is folded into the composer as a newline;
+    #   2. false-confirm — the drain itself redraws the pane during the poll
+    #      window, so `screen_changed?` fires without any submit having
+    #      happened.
+    #
+    # Settle, wait until the screen stops moving, *then* snapshot. That is the
+    # #886 fix: class = not-landing (and the probe is honest only once Enter
+    # is pressed against a quiet composer).
+    baseline = await_stable_screen(capture, opts)
+    since = DateTime.utc_now()
 
     attempt(session, pane, %{
       capture: capture,
@@ -206,9 +242,17 @@ defmodule Casein.Terminals.PaneSubmit do
          }}
 
       :unconfirmed ->
+        # Re-baseline before the retry Enter. A first press that inserted a
+        # newline (OpenCode paste-drain race) changed the composer without
+        # submitting; keeping the pre-press baseline would then treat that
+        # newline as confirmation of the *second* press.
+        baseline = await_stable_screen(ctx.capture, rebaseline_opts(ctx.opts))
+
         attempt(session, pane, %{
           ctx
-          | remaining: ctx.remaining - 1,
+          | baseline: baseline,
+            since: DateTime.utc_now(),
+            remaining: ctx.remaining - 1,
             pending_press?: true
         })
     end
@@ -326,6 +370,50 @@ defmodule Casein.Terminals.PaneSubmit do
   defp settle(ms) when is_integer(ms) and ms > 0, do: Process.sleep(ms)
   defp settle(_ms), do: :ok
 
+  # Wait for paste-buffer to finish applying, then require consecutive identical
+  # captures before returning the baseline. When settle_ms is 0 (tests), a
+  # single capture is enough — the suite drives frames explicitly.
+  defp await_stable_screen(capture, opts) do
+    settle_ms = settle_ms(opts)
+    settle(settle_ms)
+
+    needed = stable_reads(opts, settle_ms)
+    poll = poll_ms(opts)
+    deadline = System.monotonic_time(:millisecond) + stable_timeout_ms(opts, settle_ms)
+
+    do_await_stable(capture, capture.(), 1, needed, poll, deadline)
+  end
+
+  defp do_await_stable(_capture, last, count, needed, _poll, _deadline) when count >= needed,
+    do: last
+
+  defp do_await_stable(capture, last, count, needed, poll, deadline) do
+    if System.monotonic_time(:millisecond) >= deadline do
+      last
+    else
+      settle(poll)
+      current = capture.()
+
+      if normalize(current) == normalize(last) do
+        do_await_stable(capture, current, count + 1, needed, poll, deadline)
+      else
+        # Still redrawing (paste drain / spinner). Reset the streak.
+        do_await_stable(capture, current, 1, needed, poll, deadline)
+      end
+    end
+  end
+
+  # Retry path: do not sleep the full settle again — the paste already drained.
+  # Just require a short stable window so a newline from the failed press is in
+  # the new baseline before we press Enter a second time. When the caller already
+  # pinned stable_reads/timeout (tests), honour those.
+  defp rebaseline_opts(opts) do
+    opts
+    |> Keyword.put(:settle_ms, 0)
+    |> Keyword.put_new(:stable_reads, 2)
+    |> Keyword.put_new(:stable_timeout_ms, 300)
+  end
+
   defp tmux(opts) do
     Keyword.get(opts, :tmux) ||
       Application.get_env(:casein, :tmux_adapter) ||
@@ -337,6 +425,16 @@ defmodule Casein.Terminals.PaneSubmit do
 
   defp attempt_timeout_ms(opts),
     do: config(opts, :attempt_timeout_ms, @default_attempt_timeout_ms)
+
+  defp stable_reads(opts, settle_ms) do
+    default = if settle_ms > 0, do: @default_stable_reads, else: 1
+    opts |> config(:stable_reads, default) |> max(1)
+  end
+
+  defp stable_timeout_ms(opts, settle_ms) do
+    default = if settle_ms > 0, do: @default_stable_timeout_ms, else: 0
+    config(opts, :stable_timeout_ms, default)
+  end
 
   defp max_enter_presses(opts) do
     opts

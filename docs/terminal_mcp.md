@@ -409,13 +409,14 @@ Responses carry `submitted`, `delivery`, `confirmation`, and `enter_presses`:
 A single Enter often fails when it is folded into the same `paste-buffer` call
 as a multiline brief: OpenCode (and similar TUIs) are still draining the paste
 when the keystroke arrives, so Enter becomes a newline mid-composer rather than
-a submit. Casein owns that race:
+a submit (#886). Casein owns that race:
 
 1. Paste text **without** Enter (`paste-buffer` only).
-2. Settle briefly, then press Enter.
-3. If the pane did not move and no runtime hook reported a new turn, press
-   Enter **once more** (max two presses).
-4. Return `delivery` honestly — never claim success from tmux write alone.
+2. Settle until the pane stops redrawing (paste drain finished), **then**
+   snapshot the screen baseline.
+3. Press Enter and watch for a hook or a post-baseline screen change.
+4. If unconfirmed, re-baseline and press Enter **once more** (max two presses).
+5. Return `delivery` honestly — never claim success from tmux write alone.
 
 Operators and orchestrators should **not** send a second Enter as folklore. Call
 with `submit: true` (paste) or the normal command tools and trust
