@@ -1,5 +1,7 @@
 defmodule Casein.Terminals.FleetSummaryTest do
-  use ExUnit.Case, async: true
+  # Shares Application env for the process-liveness ETS table with other
+  # PaneProcessLiveness tests — must not run async against those.
+  use ExUnit.Case, async: false
 
   alias Casein.Terminals.FleetSummary
   alias Casein.Terminals.PaneProcessLiveness
