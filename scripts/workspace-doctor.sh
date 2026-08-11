@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Labeled tmux only — bare tmux follows $TMUX / default server (#248).
+# shellcheck source=lib/tmux-label.sh
+source "${ROOT}/scripts/lib/tmux-label.sh"
 cd "$ROOT"
 
 CASEIN_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
@@ -106,7 +109,7 @@ terminal_rpc 1 tools/call \
   | write_json "${out_dir}/terminal_sessions.json" || true
 
 if command -v tmux >/dev/null 2>&1; then
-  tmux list-sessions -F '#{session_name} #{session_attached} #{session_activity}' \
+  casein_tmux list-sessions -F '#{session_name} #{session_attached} #{session_activity}' \
     | WORKSPACE_ID="${WORKSPACE_ID}" WORKSPACE_TERMINAL_ID="${WORKSPACE_TERMINAL_ID}" python3 -c '
 import os, sys
 prefixes = [
@@ -121,7 +124,7 @@ for line in sys.stdin:
 
   while read -r session _rest; do
     [[ -n "${session:-}" ]] || continue
-    tmux list-panes -t "${session}" -a \
+    casein_tmux list-panes -t "${session}" -a \
       -F '#{session_name} #{window_index}.#{pane_index} #{pane_id} #{pane_active} #{pane_current_command} #{pane_current_path}' \
       >>"${out_dir}/tmux_panes.txt" 2>/dev/null || true
   done <"${out_dir}/tmux_sessions.txt"

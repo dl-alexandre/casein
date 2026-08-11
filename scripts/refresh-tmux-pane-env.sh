@@ -10,6 +10,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Labeled tmux only — bare tmux follows $TMUX / default server (#248).
+# shellcheck source=lib/tmux-label.sh
+source "${ROOT}/scripts/lib/tmux-label.sh"
 REPAIR="${ROOT}/scripts/lib/repair-tmux-env.sh"
 
 log() { printf '>>> %s\n' "$*"; }
@@ -44,7 +47,7 @@ else
     pattern="^casein_${WORKSPACE_PREFIX}_"
   fi
 
-  mapfile -t sessions < <(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -E "$pattern" || true)
+  mapfile -t sessions < <(casein_tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -E "$pattern" || true)
   if [[ ${#sessions[@]} -eq 0 ]]; then
     log "no matching casein tmux sessions found"
     exit 0
