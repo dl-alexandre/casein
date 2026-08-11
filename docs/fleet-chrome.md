@@ -206,6 +206,26 @@ worker_status { workspace_id, session, pane, window_id? }
   blocked_on, liveness, worktree_path, ready_no_task_for_seconds, …
 ```
 
+## MCP: `orchestration_list_workers` (M3 compact fleet list)
+
+Read-only scan list over the same `FleetBoard` projection as
+`orchestration_status` — **not** a second classifier. Compact rows only:
+`pane_id`, `window`, `issue`, `agent_state`, `blocked_on` (kind/reason/detail),
+`fleet_role`, `needs_you?`. Optional filters: `fleet_role` (`manager`|`worker`),
+`needs_you_only`. Liveness is on by default on the topology path; unknown
+liveness never becomes idle (FleetBoard kind discipline). Requires
+`workspace_id` + `session`. No scrollback, no shell, no mutations.
+**`worker_launch`, durable graph, and verifiers remain out of scope.**
+
+```text
+orchestration_list_workers { workspace_id, session, fleet_role?, needs_you_only? }
+→ total, filtered_total, filters, workers[]
+```
+
+Use `worker_status` when you need one-pane depth (`worktree_path`, full
+liveness); use this tool to answer "which of my N workers need me?" without the
+gate/orphan aggregate payload.
+
 ## Code
 
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
@@ -213,10 +233,12 @@ worker_status { workspace_id, session, pane, window_id? }
 - `Casein.Terminals.OrphanedClaims` — claimed-minus-bound lease projection
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
 - `Casein.Terminals.WorkerStatus` — MCP wire projection for one pane (M2)
+- `Casein.Terminals.OrchestrationListWorkers` — compact worker-list projection (M3)
 - `Casein.Ops.GateQueue` — host flock observation (`/proc` + lock path) + `position/2`
 - `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
 - `Casein.Agents.TerminalTools.OrchestrationStatus` — Jido action / MCP tool
 - `Casein.Agents.TerminalTools.WorkerStatus` — Jido action / MCP tool (`worker_status`)
+- `Casein.Agents.TerminalTools.OrchestrationListWorkers` — Jido action / MCP tool (`orchestration_list_workers`)
 - `Casein.Labels.enrich_topology/2` — join label strings onto panes
 - `Casein.Terminals.PaneState` — strips bare runtime banners from `task_summary`
 - Wired from `Casein.Agents.TerminalTools.Impl.Session.topology/1`,

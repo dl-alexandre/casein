@@ -711,6 +711,45 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("orchestration_list_workers") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_metadata, :terminal_read],
+      recovery_hints: [
+        "Requires workspace_id and session — fail closed when either is missing.",
+        "Compact FleetBoard rows only; optional fleet_role and needs_you_only filters.",
+        "liveness unknown never becomes idle (FleetBoard kind discipline).",
+        "M3 list — not worker_launch; use worker_status for one-pane depth."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_default",
+            "fleet_role" => "worker",
+            "needs_you_only" => true
+          },
+          structured_content: %{
+            "total" => 3,
+            "filtered_total" => 1,
+            "workers" => [
+              %{
+                "pane_id" => "%3",
+                "window" => "worker-384",
+                "issue" => 384,
+                "agent_state" => "blocked",
+                "blocked_on" => %{"kind" => "report", "reason" => "blocked"},
+                "fleet_role" => "worker",
+                "needs_you?" => true
+              }
+            ]
+          }
+        }
+      ]
+    }
+  end
+
   def metadata("terminal_wait_agent_state") do
     %{
       mutation?: false,
