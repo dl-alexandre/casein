@@ -1,23 +1,26 @@
 defmodule Casein.Terminals.FleetSummary do
   @moduledoc """
-  Read-only fleet picture for the `casein://fleet/summary` MCP resource (#859).
+  Read-only fleet picture for the `casein://fleet/summary` MCP resource (#859/#879).
 
   One call replaces `terminal_topology` + N `terminal_capture` scrapes for
   "what is my fleet doing?". Per pane it returns runtime, worktree, branch,
-  whether the branch has commits not on origin, and a **process/CPU** liveness
-  signal (`Casein.Terminals.PaneProcessLiveness`) — never the rendered spinner.
+  whether the branch has commits not on origin, process/CPU presence, and a
+  composite **progress** verdict.
 
-  Process/CPU answers "is the pane process still running?", not "is the agent
-  making progress?". Composite progress (context/spend/worktree/screen deltas,
-  running-but-not-progressing) is #879 and out of scope here.
+  * `liveness` — `PaneProcessLiveness` process presence (CPU jiffies; never the
+    spinner). Necessary, not sufficient.
+  * `progress` — `AgentProgress` composite (#879): context/spend/worktree/screen
+    deltas plus CPU. Emits distinct `running_but_not_progressing` when the
+    process is active but ≥2 independent axes are stalled.
 
-  Pure projection over existing session/topology enrichment plus process
-  sampling. No mutation verbs, no scrollback.
+  Pure projection over existing session/topology enrichment plus process and
+  progress sampling. No mutation verbs.
   """
 
   alias Casein.Agents.TerminalTools.Impl.Shared
   alias Casein.Git.Inspector
   alias Casein.Labels
+  alias Casein.Terminals.AgentProgress
   alias Casein.Terminals.AgentState
   alias Casein.Terminals.FleetChrome
   alias Casein.Terminals.IssueBinding
@@ -52,10 +55,10 @@ defmodule Casein.Terminals.FleetSummary do
       name: "Fleet summary",
       description:
         "Read-only fleet picture: sessions, panes, runtime, worktree, branch, " <>
-          "commits-not-on-origin, and process/CPU liveness in one call. " <>
-          "Liveness is process presence from cumulative CPU jiffies on the pane " <>
-          "process tree — never the rendered spinner. CPU alone does not prove " <>
-          "agent progress (see #879).",
+          "commits-not-on-origin, process/CPU presence, and composite progress " <>
+          "in one call. Progress reports running_but_not_progressing when the " <>
+          "process burns CPU while context/spend/worktree/screen stay flat (#879). " <>
+          "Liveness never trusts the rendered spinner alone.",
       mimeType: @mime
     }
   end
@@ -69,6 +72,7 @@ defmodule Casein.Terminals.FleetSummary do
     * `:now` — `DateTime` for `generated_at`
     * `:tmux` — topology adapter override
     * `:process_liveness_opts` — forwarded to `PaneProcessLiveness.observe_session/2`
+    * `:progress_opts` — forwarded to `AgentProgress.observe/1` (plus per-pane keys)
     * `:git` — set `false` to skip branch/ahead inspection
   """
   @spec build(keyword()) :: payload()
@@ -91,10 +95,10 @@ defmodule Casein.Terminals.FleetSummary do
       pane_count: length(panes),
       sessions: sessions,
       note:
-        "Read-only fleet summary (#859). Liveness is process/CPU presence " <>
-          "(PaneProcessLiveness cumulative jiffies), not the rendered spinner — " <>
-          "necessary-not-sufficient; CPU alone ≠ agent progress (#879). " <>
-          "branch/ahead come from Git.Inspector per worktree. No mutations."
+        "Read-only fleet summary (#859/#879). liveness=process/CPU presence " <>
+          "(necessary-not-sufficient). progress=composite " <>
+          "(context/spend/worktree/screen/CPU) with distinct " <>
+          "running_but_not_progressing. branch/ahead via Git.Inspector. No mutations."
     }
   end
 
@@ -160,7 +164,11 @@ defmodule Casein.Terminals.FleetSummary do
   defp summarize_session(%{session: session_name} = session_meta, opts) do
     topology = enriched_topology(session_name, opts)
     proc_by_pane = PaneProcessLiveness.observe_session(session_name, process_opts(opts))
-    panes = Enum.map(topology.panes || [], &pane_json(&1, topology, proc_by_pane, opts))
+
+    panes =
+      Enum.map(topology.panes || [], fn pane ->
+        pane_json(pane, topology, proc_by_pane, session_name, opts)
+      end)
 
     %{
       session: session_name,
@@ -234,7 +242,11 @@ defmodule Casein.Terminals.FleetSummary do
     Keyword.get(opts, :process_liveness_opts, [])
   end
 
-  defp pane_json(pane, topology, proc_by_pane, opts) do
+  defp progress_opts(opts) do
+    Keyword.get(opts, :progress_opts, [])
+  end
+
+  defp pane_json(pane, topology, proc_by_pane, session_name, opts) do
     pane_id = PaneState.map_get(pane, :id)
     proc = Map.get(proc_by_pane, pane_id) || %{}
     worktree = PaneState.map_get(pane, :worktree_path)
@@ -245,6 +257,9 @@ defmodule Casein.Terminals.FleetSummary do
       PaneState.map_get(pane, :agent_runtime) ||
         Map.get(proc, :runtime) ||
         PaneProcessLiveness.runtime_from_command(PaneState.map_get(pane, :current_command))
+
+    progress =
+      observe_progress(session_name, pane_id, worktree, proc, opts)
 
     %{
       pane_id: pane_id,
@@ -272,10 +287,25 @@ defmodule Casein.Terminals.FleetSummary do
       behind: Map.get(git, :behind),
       commits_not_on_origin?: Map.get(git, :commits_not_on_origin?),
       detached?: Map.get(git, :detached?),
-      liveness: liveness_json(proc)
+      liveness: liveness_json(proc),
+      progress: AgentProgress.to_json(progress)
     }
     |> reject_nil()
   end
+
+  defp observe_progress(session, pane_id, worktree, proc, opts)
+       when is_binary(session) and is_binary(pane_id) do
+    progress_opts(opts)
+    |> Keyword.put(:session, session)
+    |> Keyword.put(:pane_id, pane_id)
+    |> Keyword.put(:worktree_path, worktree)
+    |> Keyword.put(:process, proc)
+    |> AgentProgress.observe()
+  rescue
+    _ -> %{state: :unknown, reason: :observe_failed, axes: %{}}
+  end
+
+  defp observe_progress(_, _, _, _, _), do: %{state: :unknown, reason: :no_pane, axes: %{}}
 
   defp liveness_json(%{state: state} = proc) do
     %{

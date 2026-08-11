@@ -226,7 +226,7 @@ Use `worker_status` when you need one-pane depth (`worktree_path`, full
 liveness); use this tool to answer "which of my N workers need me?" without the
 gate/orphan aggregate payload.
 
-## MCP resource: `casein://fleet/summary` (#859)
+## MCP resource: `casein://fleet/summary` (#859 / #879)
 
 Read-only **one-call fleet picture** on Terminal MCP `resources/list` /
 `resources/read`. Replaces `terminal_topology` + N `terminal_capture` scrapes
@@ -236,22 +236,39 @@ for "what is my fleet doing?".
 resources/read { uri: "casein://fleet/summary" }
 → sessions[], each with panes[]:
     runtime, worktree_path, branch, ahead/behind,
-    commits_not_on_origin?, liveness { source: "process_cpu", state, … }
+    commits_not_on_origin?,
+    liveness { source: "process_cpu", state, … },
+    progress { state, axes, … }
 ```
 
-**Liveness is process/CPU evidence, not the spinner.** `PaneProcessLiveness`
+**`liveness` is process/CPU presence, not the spinner.** `PaneProcessLiveness`
 samples `pane_pid` + its `/proc` process tree and compares cumulative CPU
-jiffies across reads. A pane whose screen shows a frozen build timer but is
-burning CPU reports `active` rather than dead — far better than screen-scraping
-for "is the process still there?". First sample is `unknown`/`warming` (not
-quiet). Missing pid/proc is `unknown` with reason — never collapsed into quiet.
+jiffies. A frozen UI that is still burning CPU reports `active` (process still
+there). First sample is `unknown`/`warming`. Missing pid/proc is `unknown` with
+reason — never collapsed into quiet.
 
-**CPU alone does not prove the agent is making progress.** A wedged worker can
-burn hours of CPU with zero commits, frozen context, and a frozen timer while
-its process tree still advances jiffies. Treat process/CPU as necessary-not-
-sufficient process presence. Composite progress signals (context delta, spend
-delta, worktree delta, screen delta, distinct running-but-not-progressing) are
-tracked in #879 and are out of scope for this resource.
+**`progress` is the composite (#879).** CPU alone does not prove the agent is
+making progress — production incident: 2h07m of advancing CPU with frozen build
+timer, stuck context %, stuck spend, zero commits. `AgentProgress` samples:
+
+| axis | advanced when | notes |
+|------|---------------|-------|
+| process CPU | jiffies increase | necessary-not-sufficient presence |
+| worktree | commit count / HEAD / `git status` fingerprint moves | rebase/merge via `git rev-parse --git-dir` (linked worktrees: `.git` is a **file**) |
+| screen | `capture-pane` hash changes | changing screen = positive proof; frozen alone is inconclusive |
+| context | scraped context size grows | e.g. `54.9K (11%)` |
+| spend | scraped spend grows | e.g. `$0.11` |
+
+`progress.state`:
+
+- `progressing` — ≥1 non-CPU progress axis advanced (or rebase/merge in flight)
+- `running_but_not_progressing` — process active **and** ≥2 non-CPU axes stalled
+  past the stall window (needs two axes disagreeing — no single axis produces it)
+- `quiet` / `unknown` — same absence discipline as liveness
+
+Detached HEAD + staged files mid-rebase is **normal**, not broken. Do not use
+`pgrep -af git | grep <worktree>` (matches its own cmdline); progress never
+does that.
 
 Per-worktree branch + `commits_not_on_origin?` come from `Git.Inspector`
 (`ahead` vs upstream), not `rev-list HEAD --not --remotes`.
@@ -267,8 +284,9 @@ orchestration_list_workers paths owned by #384.
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
 - `Casein.Terminals.WorkerStatus` — MCP wire projection for one pane (M2)
 - `Casein.Terminals.OrchestrationListWorkers` — compact worker-list projection (M3)
-- `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859)
-- `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy liveness (#859)
+- `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859/#879)
+- `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy presence (#859)
+- `Casein.Terminals.AgentProgress` — composite progress + running_but_not_progressing (#879)
 - `Casein.Ops.GateQueue` — host flock observation (`/proc` + lock path) + `position/2`
 - `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
 - `Casein.Agents.TerminalTools.OrchestrationStatus` — Jido action / MCP tool

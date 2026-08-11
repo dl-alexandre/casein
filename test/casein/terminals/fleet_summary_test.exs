@@ -73,7 +73,7 @@ defmodule Casein.Terminals.FleetSummaryTest do
     assert desc.uri == "casein://fleet/summary"
     assert desc.mimeType == "application/json"
     assert desc.description =~ "process/CPU"
-    assert desc.description =~ "never the rendered spinner"
+    assert desc.description =~ "running_but_not_progressing"
   end
 
   test "build projects sessions/panes with process_cpu liveness source" do
@@ -101,6 +101,11 @@ defmodule Casein.Terminals.FleetSummaryTest do
           pid_reader: fn _ -> seeds end,
           stat_reader: fn 4242 -> {:ok, 80} end,
           children_reader: fn _ -> [] end
+        ],
+        progress_opts: [
+          now_ms: 2_000,
+          screen_reader: fn _, _ -> {:ok, "frame"} end,
+          git_reader: fn _ -> %{available?: false} end
         ]
       )
 
@@ -109,7 +114,7 @@ defmodule Casein.Terminals.FleetSummaryTest do
     assert payload.session_count == 1
     assert payload.pane_count == 1
     assert payload.note =~ "process/CPU"
-    assert payload.note =~ "not the rendered spinner"
+    assert payload.note =~ "running_but_not_progressing"
 
     [session] = payload.sessions
     assert session.session == "casein_ws-1_main"
@@ -119,6 +124,8 @@ defmodule Casein.Terminals.FleetSummaryTest do
     assert pane.liveness.source == "process_cpu"
     assert pane.liveness.state == "active"
     assert pane.liveness.cpu_jiffies_delta == 70
+    assert is_map(pane.progress)
+    assert pane.progress.state in ~w(unknown progressing quiet running_but_not_progressing)
     # Fake cwd is not a git checkout; worktree_path is omitted (reject_nil).
     # Production panes under a worktree get branch/ahead via Git.Inspector.
     refute Map.has_key?(pane, :worktree_path)
