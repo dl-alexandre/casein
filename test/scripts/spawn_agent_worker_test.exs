@@ -32,20 +32,23 @@ defmodule Scripts.SpawnAgentWorkerTest do
     File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
     File.chmod!(Path.join(fakebin, "tmux"), 0o755)
 
+    headroom = healthy_headroom_env(tmp)
+
     {out, 0} =
       System.cmd("bash", [@script, "grok", "iso", "casein_test_u-x"],
-        env: [
-          {"CASEIN_SPAWN_DRY_RUN", "1"},
-          {"CASEIN_CHECKOUT", linked},
-          {"HOME", home},
-          {"PATH", fakebin <> ":" <> System.get_env("PATH")},
-          # Satisfy agent_env_resolve's first branch (already-exported creds) so
-          # the script doesn't abort looking for a Casein tmux pane / env file.
-          {"CASEIN_API_TOKEN", "test-token"},
-          {"CASEIN_WORKSPACE_ID", "test-ws"},
-          {"CASEIN_WORKSPACE_NAME", "test"},
-          {"CASEIN_AGENT_ENV_FILE", env_file}
-        ]
+        env:
+          [
+            {"CASEIN_SPAWN_DRY_RUN", "1"},
+            {"CASEIN_CHECKOUT", linked},
+            {"HOME", home},
+            {"PATH", fakebin <> ":" <> System.get_env("PATH")},
+            # Satisfy agent_env_resolve's first branch (already-exported creds) so
+            # the script doesn't abort looking for a Casein tmux pane / env file.
+            {"CASEIN_API_TOKEN", "test-token"},
+            {"CASEIN_WORKSPACE_ID", "test-ws"},
+            {"CASEIN_WORKSPACE_NAME", "test"},
+            {"CASEIN_AGENT_ENV_FILE", env_file}
+          ] ++ headroom
       )
 
     # Tolerant of git/realpath normalization: the resolved checkout must be the
@@ -136,18 +139,21 @@ defmodule Scripts.SpawnAgentWorkerTest do
     File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
     File.chmod!(Path.join(fakebin, "tmux"), 0o755)
 
+    headroom = healthy_headroom_env(tmp)
+
     {out, 0} =
       System.cmd("bash", [@script, "grok", "audit", "casein_test_u-audit"],
-        env: [
-          {"CASEIN_SPAWN_DRY_RUN", "1"},
-          {"CASEIN_CHECKOUT", product},
-          {"HOME", home},
-          {"CASEIN_API_TOKEN", "test-token"},
-          {"CASEIN_WORKSPACE_ID", "test-ws"},
-          {"CASEIN_WORKSPACE_NAME", "test"},
-          {"CASEIN_AGENT_ENV_FILE", env_file},
-          {"PATH", fakebin <> ":" <> System.get_env("PATH")}
-        ]
+        env:
+          [
+            {"CASEIN_SPAWN_DRY_RUN", "1"},
+            {"CASEIN_CHECKOUT", product},
+            {"HOME", home},
+            {"CASEIN_API_TOKEN", "test-token"},
+            {"CASEIN_WORKSPACE_ID", "test-ws"},
+            {"CASEIN_WORKSPACE_NAME", "test"},
+            {"CASEIN_AGENT_ENV_FILE", env_file},
+            {"PATH", fakebin <> ":" <> System.get_env("PATH")}
+          ] ++ headroom
       )
 
     casein_root = Path.expand("../..", __DIR__)
@@ -185,19 +191,22 @@ defmodule Scripts.SpawnAgentWorkerTest do
     File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
     File.chmod!(Path.join(fakebin, "tmux"), 0o755)
 
+    headroom = healthy_headroom_env(tmp)
+
     {out, status} =
       System.cmd("bash", [@script, "grok", "audit", "casein_test_u-audit"],
-        env: [
-          {"CASEIN_SPAWN_DRY_RUN", "1"},
-          {"CASEIN_CHECKOUT", product},
-          {"HOME", home},
-          {"CASEIN_API_TOKEN", "test-token"},
-          {"CASEIN_WORKSPACE_ID", "test-ws"},
-          {"CASEIN_WORKSPACE_NAME", "caller-ws"},
-          {"CASEIN_AGENT_ENV_FILE", Path.join(tmp, "missing-env.sh")},
-          {"CASEIN_AGENT_MCP_HOME", Path.join(tmp, "missing-staging")},
-          {"PATH", fakebin <> ":" <> System.get_env("PATH")}
-        ],
+        env:
+          [
+            {"CASEIN_SPAWN_DRY_RUN", "1"},
+            {"CASEIN_CHECKOUT", product},
+            {"HOME", home},
+            {"CASEIN_API_TOKEN", "test-token"},
+            {"CASEIN_WORKSPACE_ID", "test-ws"},
+            {"CASEIN_WORKSPACE_NAME", "caller-ws"},
+            {"CASEIN_AGENT_ENV_FILE", Path.join(tmp, "missing-env.sh")},
+            {"CASEIN_AGENT_MCP_HOME", Path.join(tmp, "missing-staging")},
+            {"PATH", fakebin <> ":" <> System.get_env("PATH")}
+          ] ++ headroom,
         stderr_to_stdout: true
       )
 
@@ -235,21 +244,24 @@ defmodule Scripts.SpawnAgentWorkerTest do
     File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
     File.chmod!(Path.join(fakebin, "tmux"), 0o755)
 
+    headroom = healthy_headroom_env(tmp)
+
     {out, 0} =
       System.cmd(
         "bash",
         [@script, "codex", "cross", "casein_workspace-b_art-deadbeef"],
-        env: [
-          {"CASEIN_SPAWN_DRY_RUN", "1"},
-          {"CASEIN_CHECKOUT", product},
-          {"HOME", home},
-          {"CASEIN_API_TOKEN", "caller-a-token"},
-          {"CASEIN_WORKSPACE_ID", "ws-a"},
-          {"CASEIN_WORKSPACE_NAME", "workspace-a"},
-          {"CASEIN_AGENT_ENV_FILE", env_a},
-          {"CASEIN_AGENT_MCP_HOME", Path.dirname(env_a)},
-          {"PATH", fakebin <> ":" <> System.get_env("PATH")}
-        ]
+        env:
+          [
+            {"CASEIN_SPAWN_DRY_RUN", "1"},
+            {"CASEIN_CHECKOUT", product},
+            {"HOME", home},
+            {"CASEIN_API_TOKEN", "caller-a-token"},
+            {"CASEIN_WORKSPACE_ID", "ws-a"},
+            {"CASEIN_WORKSPACE_NAME", "workspace-a"},
+            {"CASEIN_AGENT_ENV_FILE", env_a},
+            {"CASEIN_AGENT_MCP_HOME", Path.dirname(env_a)},
+            {"PATH", fakebin <> ":" <> System.get_env("PATH")}
+          ] ++ headroom
       )
 
     assert out =~ "env_file=#{env_b}"
@@ -540,13 +552,34 @@ defmodule Scripts.SpawnAgentWorkerTest do
     File.write!(Path.join(fakebin, "curl"), curl)
     File.chmod!(Path.join(fakebin, "curl"), 0o755)
 
+    # Healthy headroom fixtures so suite runs do not refuse on a loaded fleet box (#863).
+    loadavg = Path.join(tmp, "loadavg")
+    meminfo = Path.join(tmp, "meminfo")
+    File.write!(loadavg, "1.00 1.00 1.00 1/100 1\n")
+
+    File.write!(meminfo, """
+    MemTotal:       999999999 kB
+    MemFree:        40000000 kB
+    MemAvailable:   40000000 kB
+    """)
+
     %{
       product: product,
       fakebin: fakebin,
       home: home,
       env_file: env_file,
-      tmux_log: Path.join(tmp, "tmux-calls.log")
+      tmux_log: Path.join(tmp, "tmux-calls.log"),
+      loadavg: loadavg,
+      meminfo: meminfo
     }
+  end
+
+  defp headroom_env(ctx) do
+    [
+      {"CASEIN_SPAWN_LOADAVG_PATH", ctx.loadavg},
+      {"CASEIN_SPAWN_MEMINFO_PATH", ctx.meminfo},
+      {"CASEIN_SPAWN_NPROC", "32"}
+    ]
   end
 
   defp spawn_dry_run(ctx, runtime, extra_env) do
@@ -562,7 +595,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
           {"CASEIN_API_BASE_URL", "http://127.0.0.1:4000"},
           {"CASEIN_AGENT_ENV_FILE", ctx.env_file},
           {"PATH", ctx.fakebin <> ":" <> System.get_env("PATH")}
-        ] ++ extra_env,
+        ] ++ headroom_env(ctx) ++ extra_env,
       stderr_to_stdout: true
     )
   end
@@ -585,7 +618,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
           {"CASEIN_SPAWN_READY_SECONDS", "2"},
           {"FAKE_TMUX_LOG", ctx.tmux_log},
           {"PATH", ctx.fakebin <> ":" <> System.get_env("PATH")}
-        ] ++ extra_env,
+        ] ++ headroom_env(ctx) ++ extra_env,
       stderr_to_stdout: true
     )
   end
@@ -622,6 +655,25 @@ defmodule Scripts.SpawnAgentWorkerTest do
       {"GIT_AUTHOR_EMAIL", "t@t"},
       {"GIT_COMMITTER_NAME", "t"},
       {"GIT_COMMITTER_EMAIL", "t@t"}
+    ]
+  end
+
+  # Healthy headroom for inline dry-run fixtures that do not use preflight_fixture!/2 (#863).
+  defp healthy_headroom_env(tmp) do
+    loadavg = Path.join(tmp, "loadavg")
+    meminfo = Path.join(tmp, "meminfo")
+    File.write!(loadavg, "1.00 1.00 1.00 1/100 1\n")
+
+    File.write!(meminfo, """
+    MemTotal:       999999999 kB
+    MemFree:        40000000 kB
+    MemAvailable:   40000000 kB
+    """)
+
+    [
+      {"CASEIN_SPAWN_LOADAVG_PATH", loadavg},
+      {"CASEIN_SPAWN_MEMINFO_PATH", meminfo},
+      {"CASEIN_SPAWN_NPROC", "32"}
     ]
   end
 end

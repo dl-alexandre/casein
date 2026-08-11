@@ -17,6 +17,9 @@ source "${ROOT}/scripts/lib/agent-env.sh"
 # looks for exactly that process, not a guess at its name.
 # shellcheck source=lib/real-agent-bin.sh
 source "${ROOT}/scripts/lib/real-agent-bin.sh"
+# Load/memory gate before opening a worker window (#863).
+# shellcheck source=lib/spawn-host-headroom.sh
+source "${ROOT}/scripts/lib/spawn-host-headroom.sh"
 
 usage() {
   cat <<'EOF'
@@ -47,6 +50,9 @@ Environment: same as launch-casein-agent.sh (resolve via .devbox-agent.env or tm
   CASEIN_SPAWN_KEEP_FAILED_WINDOW   1 keeps a failed window (renamed failed-*) instead of closing it
   CASEIN_SPAWN_DRY_RUN              1 prints the resolved launch plan without opening a window
   CASEIN_SPAWN_SKIP_WRITE_PREFLIGHT 1 skips the Grok locked-MCP-grant advisory
+  CASEIN_SPAWN_FORCE                1 spawn despite exhausted headroom (loud warn; operator risk)
+  CASEIN_SPAWN_MAX_LOAD_RATIO       refuse when load1 > nproc × ratio (default 1.0)
+  CASEIN_SPAWN_MIN_MEM_AVAILABLE_KB refuse when MemAvailable below this KiB (default 2097152 = 2 GiB)
 EOF
 }
 
@@ -600,6 +606,10 @@ if ! casein_tmux has-session -t "$SESSION" 2>/dev/null; then
   exit 1
 fi
 
+# Headroom before any window open (and before dry-run print) so a full box never
+# looks "successful" under CASEIN_SPAWN_DRY_RUN. Decline is loud; FORCE overrides.
+spawn_host_headroom_check || exit $?
+
 if [[ "$RUNTIME" == "grok" && "${CASEIN_SPAWN_SKIP_WRITE_PREFLIGHT:-0}" != "1" ]]; then
   spawn_worker_preflight_grok_write
 fi
@@ -624,8 +634,9 @@ WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
 LAUNCH_CMD="source $(printf '%q' "$ENV_FILE") && export CASEIN_TMUX_SESSION=$(printf '%q' "$SESSION") && unset CASEIN_TMUX_SOCKET_RESOLVED CASEIN_AGENT_WORKTREE_PATH CASEIN_WORKTREE CASEIN_GIT_DIR CASEIN_SCRIPTS && cd $(printf '%q' "$CHECKOUT") && export CASEIN_CHECKOUT=$(printf '%q' "$CHECKOUT") CASEIN_AGENT_FORCE_FRESH_WORKTREE=1 && CASEIN_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "$LAUNCHER") $(printf '%q' "$RUNTIME")"
 
 if [[ "${CASEIN_SPAWN_DRY_RUN:-0}" == "1" ]]; then
-  printf 'session=%s\ncheckout=%s\nenv_file=%s\nlauncher=%s\nwindow=%s\nlaunch=%s\n' \
-    "$SESSION" "$CHECKOUT" "$ENV_FILE" "$LAUNCHER" "$WINDOW_NAME" "$LAUNCH_CMD"
+  printf 'session=%s\ncheckout=%s\nenv_file=%s\nlauncher=%s\nwindow=%s\nheadroom=%s\nlaunch=%s\n' \
+    "$SESSION" "$CHECKOUT" "$ENV_FILE" "$LAUNCHER" "$WINDOW_NAME" \
+    "${SPAWN_HOST_HEADROOM_LAST:-ok}" "$LAUNCH_CMD"
   exit 0
 fi
 
