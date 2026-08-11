@@ -126,13 +126,11 @@ defmodule Casein.Agents.GrokCapabilityBundle do
 
       digest = digest(temp)
       target = Path.join(root, "sha256-" <> digest)
-      :ok = make_read_only(temp)
-
-      case File.rename(temp, target) do
-        :ok -> :ok
-        {:error, reason} when reason in [:eexist, :enotempty] -> verify(target, digest)
-        {:error, reason} -> raise File.Error, reason: reason, action: "publish", path: target
-      end
+      # Content-addressed immutability is the digest, not FS write bits. Stripping
+      # u+w (555/444) makes macOS rename onto an existing digest child return
+      # :eacces and blocks every later refresh — provision owner-write instead.
+      :ok = ensure_owner_writable(temp)
+      :ok = publish_bundle(temp, target, digest)
 
       if File.exists?(temp), do: remove_temp(temp)
 
@@ -217,23 +215,61 @@ defmodule Casein.Agents.GrokCapabilityBundle do
   # root is the compiler-created temporary bundle; descendants/1 rejects
   # symlinks and unsupported entries before any chmod occurs.
   # sobelow_skip ["Traversal.FileModule"]
-  defp make_read_only(root) do
+  defp ensure_owner_writable(root) do
     with {:ok, entries} <- descendants(root) do
       Enum.each(entries, fn path ->
         case File.stat!(path).type do
-          :directory -> File.chmod!(path, 0o555)
-          :regular -> File.chmod!(path, if(executable?(path), do: 0o555, else: 0o444))
+          :directory -> File.chmod!(path, 0o755)
+          :regular -> File.chmod!(path, if(executable?(path), do: 0o755, else: 0o644))
         end
       end)
 
-      File.chmod(root, 0o555)
+      File.chmod!(root, 0o755)
+      :ok
+    end
+  end
+
+  # target is a content-addressed child of the trusted bundle root.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp publish_bundle(temp, target, digest) do
+    case File.rename(temp, target) do
+      :ok ->
+        ensure_owner_writable(target)
+
+      {:error, reason} when reason in [:eexist, :enotempty, :eacces] ->
+        # macOS returns :eacces (not :eexist) when the digest child already
+        # exists without owner-write — reuse only after modes + digest check.
+        if File.dir?(target) and not symlink?(target) do
+          _ = ensure_owner_writable(target)
+
+          case verify(target, digest) do
+            :ok ->
+              :ok
+
+            {:error, _reason} ->
+              remove_temp(target)
+
+              case File.rename(temp, target) do
+                :ok ->
+                  ensure_owner_writable(target)
+
+                {:error, rename_reason} ->
+                  raise File.Error, reason: rename_reason, action: "publish", path: target
+              end
+          end
+        else
+          raise File.Error, reason: reason, action: "publish", path: target
+        end
+
+      {:error, reason} ->
+        raise File.Error, reason: reason, action: "publish", path: target
     end
   end
 
   defp reject_symlinks_and_writes(root) do
     with false <- symlink?(root),
          {:ok, entries} <- descendants(root),
-         true <- Enum.all?([root | entries], &(not symlink?(&1) and read_only?(&1))) do
+         true <- Enum.all?([root | entries], &(not symlink?(&1) and owner_writable?(&1))) do
       :ok
     else
       _ -> {:error, :bundle_not_immutable}
@@ -350,7 +386,7 @@ defmodule Casein.Agents.GrokCapabilityBundle do
   end
 
   defp executable?(path), do: band(File.stat!(path).mode, 0o100) != 0
-  defp read_only?(path), do: band(File.stat!(path).mode, 0o222) == 0
+  defp owner_writable?(path), do: band(File.stat!(path).mode, 0o200) != 0
 
   defp symlink?(path) do
     match?({:ok, %File.Stat{type: :symlink}}, File.lstat(path))

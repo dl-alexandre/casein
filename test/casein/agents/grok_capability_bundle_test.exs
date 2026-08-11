@@ -56,7 +56,7 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
     }
   end
 
-  test "compiles one immutable bundle and reuses it by content digest", context do
+  test "compiles one content-addressed bundle and reuses it by digest", context do
     opts = compile_opts(context)
 
     assert {:ok, first} = GrokCapabilityBundle.compile(opts)
@@ -71,10 +71,49 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
     assert File.regular?(Path.join([first.dir, "hooks", "casein-agent-state.sh"]))
     assert File.regular?(Path.join([first.dir, "skills", "verify", "SKILL.md"]))
 
+    assert_owner_writable!(first.dir)
+
     for path <- [first.dir | descendants(first.dir)] do
-      assert band(File.stat!(path).mode, 0o222) == 0
       refute match?({:ok, %File.Stat{type: :symlink}}, File.lstat(path))
     end
+  end
+
+  test "refresh restores owner-write on a legacy read-only digest child", context do
+    opts = compile_opts(context)
+    assert {:ok, first} = GrokCapabilityBundle.compile(opts)
+
+    # Simulate the pre-fix 555/444 publish modes that left macOS runners
+    # unable to rename onto the existing digest child (:eacces).
+    strip_owner_write!(first.dir)
+    refute_owner_writable(first.dir)
+
+    assert {:ok, second} = GrokCapabilityBundle.compile(opts)
+    assert second == first
+    assert :ok = GrokCapabilityBundle.verify(second.dir, second.digest)
+    assert_owner_writable!(second.dir)
+
+    {output, 0} =
+      System.cmd("python3", [
+        @python_builder,
+        "build",
+        "--bundle-root",
+        context.bundle_root,
+        "--mcp-config",
+        context.mcp,
+        "--hook-config",
+        context.hook_config,
+        "--hook-script",
+        context.hook_script,
+        "--skills-root",
+        context.skills,
+        "--skill",
+        "verify"
+      ])
+
+    [python_dir, python_digest] = String.split(String.trim(output), "\n")
+    assert python_digest == first.digest
+    assert python_dir == first.dir
+    assert_owner_writable!(python_dir)
   end
 
   test "shell and Elixir compilers produce the same content digest", context do
@@ -228,6 +267,28 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
       Enum.each(descendants(path), &File.chmod(&1, if(File.dir?(&1), do: 0o700, else: 0o600)))
     end
   end
+
+  defp strip_owner_write!(root) do
+    for path <- descendants(root) do
+      mode = if File.dir?(path), do: 0o555, else: if(executable?(path), do: 0o555, else: 0o444)
+      File.chmod!(path, mode)
+    end
+
+    File.chmod!(root, 0o555)
+  end
+
+  defp assert_owner_writable!(root) do
+    for path <- [root | descendants(root)] do
+      assert band(File.stat!(path).mode, 0o200) != 0,
+             "#{path} lacks owner write (u+w) after bundle refresh"
+    end
+  end
+
+  defp refute_owner_writable(root) do
+    assert Enum.any?([root | descendants(root)], &(band(File.stat!(&1).mode, 0o200) == 0))
+  end
+
+  defp executable?(path), do: band(File.stat!(path).mode, 0o100) != 0
 
   defp restore_env(key, nil), do: Application.delete_env(:casein, key)
   defp restore_env(key, value), do: Application.put_env(:casein, key, value)

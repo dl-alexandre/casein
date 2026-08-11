@@ -48,17 +48,23 @@ def content_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def make_read_only(root: Path) -> None:
+def ensure_owner_writable(root: Path) -> None:
+    """Provision u+w on every path so a later refresh can rename/reuse safely.
+
+    Content-addressed immutability is the digest, not FS write bits. Stripping
+    owner-write (555/444) makes macOS rename onto an existing digest child
+    return EACCES and blocks every later refresh.
+    """
     for path in files_under(root):
         executable = bool(path.stat().st_mode & stat.S_IXUSR)
-        path.chmod(0o555 if executable else 0o444)
+        path.chmod(0o755 if executable else 0o644)
     for path in sorted((p for p in root.rglob("*") if p.is_dir()), reverse=True):
-        path.chmod(0o555)
-    root.chmod(0o555)
+        path.chmod(0o755)
+    root.chmod(0o755)
 
 
-def remove_read_only_tree(root: Path) -> None:
-    """Remove a temporary bundle after its files were made immutable."""
+def remove_bundle_tree(root: Path) -> None:
+    """Remove a temporary or replaced bundle tree."""
     for path in [root, *root.rglob("*")]:
         try:
             path.chmod(0o700 if path.is_dir() else 0o600)
@@ -82,8 +88,10 @@ def verify_bundle(root: Path, expected: str | None = None) -> str:
     for path in [root, *root.rglob("*")]:
         if path.is_symlink():
             raise ValueError(f"bundle contains a symlink: {path}")
-        if path.stat().st_mode & 0o222:
-            raise ValueError(f"bundle path is writable: {path}")
+        # Owner write must survive every refresh — missing u+w reintroduces the
+        # macOS EACCES publish failure on the next materialize.
+        if not (path.stat().st_mode & stat.S_IWUSR):
+            raise ValueError(f"bundle path lacks owner write (u+w): {path}")
 
     return actual
 
@@ -129,25 +137,36 @@ def build(args: argparse.Namespace) -> tuple[Path, str]:
 
         digest = content_digest(temp)
         target = bundle_root / f"sha256-{digest}"
-        make_read_only(temp)
+        ensure_owner_writable(temp)
 
         try:
             temp.rename(target)
+            ensure_owner_writable(target)
         except OSError as error:
             # Linux reports a directory-on-existing-nonempty-directory rename
             # as ENOTEMPTY, while other platforms use EEXIST/FileExistsError.
-            # Both mean a concurrent or previous compiler won the content-
-            # addressed destination. Reuse it only after full verification.
-            if error.errno not in {errno.EEXIST, errno.ENOTEMPTY}:
+            # macOS additionally returns EACCES when the existing digest child
+            # was published without owner-write. Reuse only after full
+            # verification (and after restoring u+w so the next refresh works).
+            if error.errno not in {errno.EEXIST, errno.ENOTEMPTY, errno.EACCES}:
                 raise
-            verify_bundle(target, digest)
-            remove_read_only_tree(temp)
+            if not target.is_dir() or target.is_symlink():
+                raise
+            try:
+                ensure_owner_writable(target)
+                verify_bundle(target, digest)
+            except Exception:
+                remove_bundle_tree(target)
+                temp.rename(target)
+                ensure_owner_writable(target)
+            else:
+                remove_bundle_tree(temp)
 
         verify_bundle(target, digest)
         return target, digest
     except Exception:
         if temp.exists():
-            remove_read_only_tree(temp)
+            remove_bundle_tree(temp)
         raise
 
 
