@@ -78,7 +78,7 @@ defmodule Casein.Scripts.CleanupAgentWorktreesDetachedHeadTest do
            #{out}
            """
 
-    assert out =~ "on no remote", "the reason should name what is actually wrong"
+    assert out =~ "unpushed commit", "the reason should name what is actually wrong"
   end
 
   test "a normal branch tracking its upstream is still removable", ctx do

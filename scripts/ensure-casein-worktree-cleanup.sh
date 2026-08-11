@@ -5,6 +5,10 @@
 # idle + clean + fully pushed (dirty/live/unpushed/current are always kept).
 # Idempotent; installs units from this checkout so the timer is repo-owned.
 #
+# Scripts are installed to a DURABLE path (default /opt/casein/maintenance),
+# never left pointing at an agent worktree checkout that can be reaped. Units
+# ExecStart that path. Re-running after a deploy refreshes the installed copy.
+#
 # Rollout is dry-run-first: by default the installed service is LOG-ONLY. Watch
 # a cycle (journalctl -u casein-worktree-cleanup.service), then re-run with
 # --apply to arm real deletion.
@@ -22,6 +26,9 @@ UNIT_DIR="/etc/systemd/system"
 SERVICE="casein-worktree-cleanup.service"
 TIMER="casein-worktree-cleanup.timer"
 WT_ROOT="${CASEIN_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
+# Durable install root — never an agent worktree. deploy-build is also durable
+# but maintenance/ is dedicated so janitors survive poller rebuilds of deploy-build.
+MAINT_ROOT="${CASEIN_MAINTENANCE_ROOT:-/opt/casein/maintenance}"
 
 APPLY=0
 START=1
@@ -34,7 +41,7 @@ while [[ $# -gt 0 ]]; do
     --no-start) START=0; shift ;;
     --disable) DISABLE=1; shift ;;
     --user) RUN_USER="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -73,11 +80,19 @@ fi
 
 chmod 0755 "${ROOT}/scripts/cleanup-agent-worktrees.sh"
 
+# Stage script into durable maintenance root so units never point at a
+# reaped agent worktree (or a transient deploy-build tree mid-rebuild).
+log "staging cleanup script to ${MAINT_ROOT}"
+sudo mkdir -p "${MAINT_ROOT}/scripts"
+sudo install -m 0755 -o root -g root \
+  "${ROOT}/scripts/cleanup-agent-worktrees.sh" \
+  "${MAINT_ROOT}/scripts/cleanup-agent-worktrees.sh"
+
 for f in "$SERVICE" "$TIMER"; do
   src="${ROOT}/scripts/${f}"
   [ -f "$src" ] || { echo "error: missing ${src}" >&2; exit 1; }
-  log "installing ${f} (checkout=${ROOT} user=${RUN_USER})"
-  sed -e "s#__CHECKOUT__#${ROOT}#g" \
+  log "installing ${f} (ExecStart root=${MAINT_ROOT} user=${RUN_USER})"
+  sed -e "s#__CHECKOUT__#${MAINT_ROOT}#g" \
       -e "s#__USER__#${RUN_USER}#g" \
       -e "s#__CLEANUP_ARGS__#${CLEANUP_ARGS}#g" \
       "$src" | sudo tee "${UNIT_DIR}/${f}" >/dev/null
