@@ -110,6 +110,66 @@ defmodule Casein.Operator.Detectors do
     end
   end
 
+  @doc """
+  Skills whose copies disagree across the roots agents actually load from.
+
+  `skills` is a `Casein.Agents.SkillIntegrity.observe/2` result. Divergence is
+  a `:warn`, not `:info`: an agent following a stale copy of a skill does not
+  fail loudly — it does the wrong thing confidently, and the operator has no
+  reason to suspect the instructions rather than the agent.
+
+  `:unknown` (a copy that could not be read) is reported too, at `:info`, so an
+  unreadable tree is not silently filed as agreement.
+  """
+  @spec divergent_skill([map()], DateTime.t()) :: [map()]
+  def divergent_skill(skills, %DateTime{} = now) when is_list(skills) do
+    for skill <- skills, skill[:state] in [:divergent, :unknown] do
+      risk(
+        :divergent_skill,
+        if(skill[:state] == :divergent, do: :warn, else: :info),
+        skill[:name],
+        now,
+        %{
+          state: skill[:state],
+          copies: length(skill[:copies] || []),
+          versions: length(skill[:fingerprints] || []),
+          # Paths, not contents: the operator needs to know which copy to look
+          # at, and skill bodies are not this projection's to carry.
+          roots: skill_roots(skill)
+        },
+        skill_suggestion(skill[:state])
+      )
+    end
+  end
+
+  def divergent_skill(_skills, _now), do: []
+
+  defp skill_roots(skill) do
+    for copy <- skill[:copies] || [] do
+      %{
+        label: copy[:label],
+        path: copy[:path],
+        fingerprint: short_fingerprint(copy[:fingerprint]),
+        reason: copy[:reason]
+      }
+      |> compact()
+    end
+  end
+
+  defp short_fingerprint(value) when is_binary(value), do: binary_part(value, 0, 12)
+  defp short_fingerprint(_value), do: nil
+
+  defp skill_suggestion(:divergent) do
+    "Agents in different config homes are following different versions of this skill. " <>
+      "Relaunch the affected agents to restage from the canonical .claude/skills copy, " <>
+      "or reconcile the copy that was edited in place."
+  end
+
+  defp skill_suggestion(_state) do
+    "A copy of this skill could not be read, so Casein cannot tell whether it matches " <>
+      "the canonical one. Check the path's permissions."
+  end
+
   defp risk(id, severity, subject, detected_at, evidence, suggestion) do
     %{
       id: id,
