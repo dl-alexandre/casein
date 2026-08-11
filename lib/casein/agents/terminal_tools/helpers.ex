@@ -634,6 +634,42 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("worker_status") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_metadata, :terminal_read],
+      recovery_hints: [
+        "Requires workspace_id, session, and pane — fail closed when any is missing.",
+        "liveness.state unknown never means quiet; missing liveness is omitted, not idle.",
+        "blocked_on.kind report vs derived stays distinct (M1 discipline).",
+        "M2 single-worker deep status — inverse of orchestration_status; no worker_launch here."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_default",
+            "pane" => "%3"
+          },
+          structured_content: %{
+            "found?" => true,
+            "pane_id" => "%3",
+            "agent_state" => "blocked",
+            "issue" => 384,
+            "blocked_on" => %{
+              "kind" => "report",
+              "reason" => "blocked",
+              "detail" => "need unlock"
+            },
+            "liveness" => %{"state" => "active"},
+            "worktree_path" => "/tmp/casein-agent-worktrees/wt-demo"
+          }
+        }
+      ]
+    }
+  end
+
   def metadata("terminal_wait_agent_state") do
     %{
       mutation?: false,

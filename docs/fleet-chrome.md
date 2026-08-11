@@ -191,15 +191,32 @@ mutations, no `worker_launch`. Classified `mutation: false` with
 **Out of scope for M1:** durable task graph, path contracts, verifier adapters,
 restricted orchestrator token profile, `worker_launch` / cancel / replace.
 
+## MCP: `worker_status` (M2 single-worker deep status)
+
+Read-only inverse of `orchestration_status`: one pane's deep status instead of
+the fleet aggregate. Same kind discipline — `blocked_on` keeps report vs derived
+distinct; external `liveness` with `state: unknown` never becomes quiet/idle;
+missing observation is omitted, not rendered as idle. Requires `workspace_id`,
+`session`, and `pane` (optional `window_id`). Liveness is on by default. No
+scrollback, no shell, no mutations. **`worker_launch` remains out of scope.**
+
+```text
+worker_status { workspace_id, session, pane, window_id? }
+→ found?, pane_id, window_id/name, fleet_role, agent_state, issue,
+  blocked_on, liveness, worktree_path, ready_no_task_for_seconds, …
+```
+
 ## Code
 
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
 - `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans + gate + liveness + blocked_on)
 - `Casein.Terminals.OrphanedClaims` — claimed-minus-bound lease projection
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
+- `Casein.Terminals.WorkerStatus` — MCP wire projection for one pane (M2)
 - `Casein.Ops.GateQueue` — host flock observation (`/proc` + lock path) + `position/2`
 - `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
 - `Casein.Agents.TerminalTools.OrchestrationStatus` — Jido action / MCP tool
+- `Casein.Agents.TerminalTools.WorkerStatus` — Jido action / MCP tool (`worker_status`)
 - `Casein.Labels.enrich_topology/2` — join label strings onto panes
 - `Casein.Terminals.PaneState` — strips bare runtime banners from `task_summary`
 - Wired from `Casein.Agents.TerminalTools.Impl.Session.topology/1`,
