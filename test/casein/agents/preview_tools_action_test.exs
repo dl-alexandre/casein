@@ -14,7 +14,7 @@ defmodule Casein.Agents.PreviewToolsActionTest do
     test "preview_open pins mode on the wire" do
       tool = definition("preview_open")
 
-      assert tool.parameters.properties.mode.enum == ["app", "localhost", "here"]
+      assert tool.parameters.properties.mode.enum == ["app", "localhost", "here", "external"]
       assert tool.parameters.required == ["workspace_id"]
       assert tool.metadata.mutation? == true
     end

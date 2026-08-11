@@ -25,12 +25,13 @@
   },
   "open": {
     "tool": "preview_open",
-    "modes": ["app", "localhost", "here"],
+    "modes": ["app", "localhost", "here", "external"],
     "required_when_unscoped": ["workspace_id"],
     "mode_notes": {
       "app": "named surface from preview_surfaces",
       "localhost": "port must be owned/declared or live-registered",
-      "here": "tmux_session required; session-scoped MCP injects it"
+      "here": "tmux_session required; session-scoped MCP injects it",
+      "external": "url required; origin must be operator-allowlisted (CASEIN_PREVIEW_EXTERNAL_ORIGINS) — for apps outside this deployment's workspaces"
     }
   },
   "visibility_gate": {
