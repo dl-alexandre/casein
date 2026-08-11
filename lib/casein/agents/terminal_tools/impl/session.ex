@@ -14,6 +14,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.OrphanedClaims
   alias Casein.Terminals.PaneLiveness
   alias Casein.Terminals.TmuxTopology
+  alias Casein.Terminals.WorkerStatus
 
   import Casein.Agents.TerminalTools.Impl.Shared
 
@@ -369,6 +370,35 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         |> maybe_put_gate_identity(params)
 
       {:ok, OrchestrationStatus.project(board, project_opts)}
+    end
+  end
+
+  @doc """
+  Read-only single-worker deep status (M2).
+
+  Requires workspace_id, session, and pane. Builds the same enriched topology
+  path as `topology/1` with **liveness on by default**, then projects one pane
+  via `WorkerStatus.project/2`. Optional `window_id` disambiguates. No mutations.
+  """
+  @spec worker_status(map()) :: {:ok, map()} | {:error, term()}
+  def worker_status(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_arg(params),
+         {:ok, pane} <- string_arg(params, "pane"),
+         {:ok, topology} <- topology(Map.put_new(params, :include_liveness, true)) do
+      window_id = string_param(params, "window_id")
+
+      opts =
+        [
+          workspace_id: workspace_id,
+          session: session,
+          pane: pane
+        ]
+        |> then(fn opts ->
+          if is_binary(window_id), do: Keyword.put(opts, :window_id, window_id), else: opts
+        end)
+
+      {:ok, WorkerStatus.project(topology, opts)}
     end
   end
 

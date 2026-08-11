@@ -41,6 +41,7 @@ defmodule Casein.Agents.TerminalTools do
     OpenRun,
     OpenFileInPane,
     OrchestrationStatus,
+    WorkerStatus,
     PasteAgentText,
     RequestClarification,
     RequestHumanInput,
@@ -90,6 +91,7 @@ defmodule Casein.Agents.TerminalTools do
     WaitAgentState,
     WorkspaceDigest,
     OrchestrationStatus,
+    WorkerStatus,
     GateReport
   ]
 
@@ -181,6 +183,8 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate workspace_digest(params), to: Session
   @doc false
   defdelegate orchestration_status(params), to: Session
+  @doc false
+  defdelegate worker_status(params), to: Session
   @doc false
   defdelegate gate_report(params), to: Report
 end

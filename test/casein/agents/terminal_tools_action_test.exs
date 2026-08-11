@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 29
+      assert length(names) == 30
 
       for expected <- [
             "terminal_list_sessions",
@@ -42,6 +42,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_request_human_input",
             "terminal_wait_agent_state",
             "orchestration_status",
+            "worker_status",
             "gate_report",
             "annotation_list",
             "annotation_propose"
@@ -127,6 +128,17 @@ defmodule Casein.Agents.TerminalToolsActionTest do
       assert :terminal_read in tool.metadata.capabilities
     end
 
+    test "worker_status is classified read-only metadata with required pane scope" do
+      tool = definition("worker_status")
+
+      assert tool.parameters.required == ["workspace_id", "session", "pane"]
+      assert tool.parameters.properties.pane.type == "string"
+      assert tool.metadata.mutation? == false
+      assert tool.metadata.danger_level == :low
+      assert :terminal_metadata in tool.metadata.capabilities
+      assert :terminal_read in tool.metadata.capabilities
+    end
+
     test "terminal_send_command keeps high-danger mutation metadata" do
       tool = definition("terminal_send_command")
 
@@ -167,6 +179,23 @@ defmodule Casein.Agents.TerminalToolsActionTest do
 
       assert {:error, {:missing_argument, "session"}} =
                TerminalTools.invoke("orchestration_status", %{"workspace_id" => "ws-1"})
+    end
+
+    test "worker_status fails closed without workspace_id, session, or pane" do
+      assert {:error, {:missing_argument, "workspace_id"}} =
+               TerminalTools.invoke("worker_status", %{
+                 "session" => "casein_ws-1_x",
+                 "pane" => "%3"
+               })
+
+      assert {:error, {:missing_argument, "session"}} =
+               TerminalTools.invoke("worker_status", %{"workspace_id" => "ws-1", "pane" => "%3"})
+
+      assert {:error, {:missing_argument, "pane"}} =
+               TerminalTools.invoke("worker_status", %{
+                 "workspace_id" => "ws-1",
+                 "session" => "casein_ws-1_x"
+               })
     end
 
     test "terminal_send_keys rejects a non-string keys argument" do
