@@ -431,6 +431,109 @@ defmodule Casein.Terminals.AgentStateTest do
     defp now, do: DateTime.utc_now()
   end
 
+  describe "resolve/5 with transcript evidence" do
+    @stale 700
+
+    test "a hook-less pane sitting on a question is surfaced, not left unknown" do
+      # The gap this closes: Claude's asterisk means "ready OR waiting for
+      # input", so without hooks a pane blocked on a question renders as
+      # nothing at all.
+      assert AgentState.resolve_for_display(nil, :ready, now(), nil, :awaiting_input) ==
+               {:awaiting_input, nil}
+
+      assert AgentState.resolve_for_display(nil, :ready, now(), nil, nil) == {:unknown, nil}
+    end
+
+    test "transcript evidence outranks a stall inferred from absence" do
+      # A stall is inferred from nothing-on-disk; this is the conversation
+      # itself saying the agent finished its turn.
+      assert AgentState.resolve(nil, :working, now(), :quiet, :awaiting_input) ==
+               {:awaiting_input, nil}
+
+      assert AgentState.resolve(entry(:working, @stale), :working, now(), :quiet, :awaiting_input) ==
+               {:awaiting_input, nil}
+    end
+
+    test "transcript evidence replaces the missed-Stop fallback to idle" do
+      assert AgentState.resolve(entry(:working, 300), :ready, now(), :quiet, :awaiting_input) ==
+               {:awaiting_input, nil}
+
+      # Worktree still moving: the report was right and nothing is waiting.
+      assert AgentState.resolve(entry(:working, 300), :ready, now(), :active, :awaiting_input) ==
+               {:working, nil}
+    end
+
+    test "a live report is never overridden by transcript shape" do
+      # H28 kind discipline: :blocked and :errored are claims about cause, and
+      # conversation shape cannot refute them.
+      assert AgentState.resolve(entry(:blocked, 1, "perm"), :ready, now(), nil, :awaiting_input) ==
+               {:blocked, "perm"}
+
+      assert AgentState.resolve(
+               entry(:errored, 60, "provider 400"),
+               :ready,
+               now(),
+               nil,
+               :awaiting_input
+             ) ==
+               {:errored, "provider 400"}
+
+      assert AgentState.resolve(entry(:done, 60), :ready, now(), nil, :awaiting_input) ==
+               {:done, nil}
+    end
+
+    test "a working transcript never invents a state" do
+      # Only :awaiting_input is a verdict; :working means "nothing to add".
+      for transcript <- [:working, :unknown, nil] do
+        assert AgentState.resolve(nil, :working, now(), :quiet, transcript) == {:stalled, nil}
+
+        assert AgentState.resolve_for_display(nil, :ready, now(), nil, transcript) ==
+                 {:unknown, nil}
+
+        assert AgentState.resolve(entry(:working, 300), :ready, now(), :quiet, transcript) ==
+                 {:idle, nil}
+      end
+    end
+
+    test "awaiting_input is derived, never reportable" do
+      refute :awaiting_input in AgentState.report_states()
+    end
+
+    test "topology enrichment folds pane transcript evidence" do
+      pane = %{
+        id: "%1",
+        window_id: "@1",
+        pane_state: :ready,
+        active: true,
+        transcript: %{state: :awaiting_input, last_shape: :assistant_prose}
+      }
+
+      topology = %{panes: [pane], windows: [%{id: "@1", pane_list: [pane]}]}
+
+      assert %{panes: [%{agent_state: :awaiting_input}], windows: [window]} =
+               AgentState.enrich_topology(topology, "casein_x")
+
+      assert window.agent_state == :awaiting_input
+    end
+
+    test "an unresolvable transcript yields no claim" do
+      # Same discipline as liveness: PaneLiveness reports :unknown with a reason
+      # when discovery failed, and that is not evidence of waiting.
+      pane = %{
+        id: "%1",
+        window_id: "@1",
+        pane_state: :ready,
+        active: true,
+        transcript: %{state: :unknown, reason: :ambiguous}
+      }
+
+      topology = %{panes: [pane], windows: [%{id: "@1", pane_list: [pane]}]}
+
+      assert %{panes: [enriched]} = AgentState.enrich_topology(topology, "casein_x")
+      refute Map.has_key?(enriched, :agent_state)
+    end
+  end
+
   describe "folding pane liveness into topology enrichment" do
     setup do
       AgentState.clear()

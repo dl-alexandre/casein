@@ -3,11 +3,22 @@ defmodule Casein.Agents.Transcripts do
   Read and normalize agent CLI session transcripts.
 
   Supports Claude Code JSONL and Grok's persisted ACP `updates.jsonl` stream.
-  Callers must pass an explicit `transcript_path` reported by the agent pane —
-  Casein never lists profile directories to discover sessions.
+
+  ## Two ways in, one gate
+
+  `read/2`, `activity_hint/2` and `evidence/2` take an explicit
+  `transcript_path` reported by the agent pane. Casein does not sweep profile
+  directories looking for sessions.
+
+  `discover/2` is the narrow exception, for panes whose agent reports nothing:
+  given a pane's working directory it lists the *single* directory Claude
+  derives from that cwd, under the owner's auth profile and then the host global
+  login. It cannot reach another owner's profile or any path outside that one
+  directory, it refuses to guess when two sessions look live, and its result
+  still clears `allowed_path?/1` before anything reads it.
   """
 
-  alias Casein.Agents.Transcripts.{Claude, Grok}
+  alias Casein.Agents.Transcripts.{Claude, Discovery, Evidence, Grok}
 
   @default_tail 30
 
@@ -63,6 +74,63 @@ defmodule Casein.Agents.Transcripts do
       {:error, _reason} -> nil
     end
   end
+
+  @doc """
+  Conversation-shape evidence for a transcript — see
+  `Casein.Agents.Transcripts.Evidence`.
+
+  Only Claude Code transcripts carry turn shapes we can read; Grok's ACP stream
+  returns `{:error, :unsupported_transcript_kind}` rather than a guess.
+  """
+  @spec evidence(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def evidence(path, opts \\ []) when is_binary(path) do
+    case transcript_adapter(path) do
+      {:ok, Claude, expanded} -> Evidence.observe(expanded, opts)
+      {:ok, _other, _expanded} -> {:error, :unsupported_transcript_kind}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Find the live Claude transcript for a pane's working directory.
+
+  Unlike `read/2`, this does not need the agent to have reported anything — it
+  is the path for hook-less panes. Discovery is scoped to the directory Claude
+  derives from `cwd`, under `owner`'s auth profile and then the host global
+  login. See `Casein.Agents.Transcripts.Discovery` for the ambiguity rule.
+
+  Options: `:claude_home` (an already-resolved provider home, as
+  `Casein.Agents.AuthProfile.active_profile_dir/2` returns) or `:owner` (a
+  profile slug), plus anything `Discovery.resolve/3` accepts.
+  """
+  @spec discover(String.t() | nil, keyword()) ::
+          {:ok, String.t()} | {:error, Discovery.error_reason()}
+  def discover(cwd, opts \\ []) do
+    roots = project_roots(Keyword.get(opts, :claude_home), Keyword.get(opts, :owner))
+
+    with {:ok, path} <- Discovery.resolve(cwd, roots, opts) do
+      # Discovery builds paths from a slug, so the result must still clear the
+      # same gate a reported path does before anything reads it.
+      if allowed_path?(path), do: {:ok, path}, else: {:error, :no_live_transcript}
+    end
+  end
+
+  # Owner profile first: on a multi-owner box the host global login is the
+  # fallback for owners who have not signed in, and must never shadow another
+  # owner's profile.
+  defp project_roots(claude_home, owner) do
+    [claude_home, owner_profile_dir(owner)]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&Path.join(&1, "projects"))
+    |> Kernel.++([Path.join(Path.expand(Path.join(Casein.Paths.home!(), ".claude")), "projects")])
+    |> Enum.uniq()
+  end
+
+  defp owner_profile_dir(owner) when is_binary(owner) and owner != "" do
+    Casein.Agents.AuthProfile.named_profile_dir(owner, :claude)
+  end
+
+  defp owner_profile_dir(_owner), do: nil
 
   defp transcript_adapter(path) do
     expanded = Path.expand(path)

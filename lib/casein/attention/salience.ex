@@ -25,6 +25,8 @@ defmodule Casein.Attention.Salience do
   - `:blocked` → `:agent_blocked` (report-only human need)
   - `:errored` → `:agent_errored` (report-only failure claim)
   - `:stalled` → `:agent_stalled` (derived-only; liveness quiet + busy look)
+  - `:awaiting_input` → `:agent_awaiting` (derived-only; transcript went quiet
+    on an assistant turn)
 
   Never treat observation failure as quiet/idle — that path is not represented
   here; callers must not pass a fabricated quiet fact when liveness is unknown.
@@ -269,6 +271,22 @@ defmodule Casein.Attention.Salience do
           true
         )
 
+      # Derived-only: the agent's transcript shows it stopped talking. Ranks
+      # above :stalled — "it will not move until you act" is a stronger claim
+      # than "it looks busy and I see no work" — and below the report-only
+      # bands, because conversation shape cannot tell a question from a
+      # finished turn. Not a phone interrupt while it is this new (H28).
+      :awaiting_input in states ->
+        band(
+          :agent_awaiting,
+          "high",
+          520,
+          "agent_awaiting",
+          "Agent stopped and is waiting on you",
+          "Respond",
+          true
+        )
+
       # Derived-only: looks busy, worktree quiet. Cockpit-visible; not a phone interrupt.
       :stalled in states ->
         band(
@@ -394,6 +412,9 @@ defmodule Casein.Attention.Salience do
   defp normalize_agent_state(state) when state in [:errored, "errored"], do: :errored
 
   defp normalize_agent_state(state) when state in [:stalled, "stalled"], do: :stalled
+
+  defp normalize_agent_state(state) when state in [:awaiting_input, "awaiting_input"],
+    do: :awaiting_input
 
   defp normalize_agent_state(state) when state in [:done, "done", :completed, "completed"],
     do: :done

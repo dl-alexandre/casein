@@ -5,7 +5,7 @@ defmodule Casein.Terminals.AgentState do
   title-derived heuristic from `Casein.Terminals.PaneState`.
 
   States are `:working | :blocked | :done | :idle | :errored | :stalled |
-  :unknown`, split by who is allowed to claim them:
+  :awaiting_input | :unknown`, split by who is allowed to claim them:
 
     * **Report-only** — `:blocked`, `:done`, `:errored`. The title heuristic can
       never claim these. Claude's heavy-asterisk marker means "ready *or waiting
@@ -13,9 +13,37 @@ defmodule Casein.Terminals.AgentState do
       would render a blocked permission prompt as finished whenever hooks are
       absent.
 
-    * **Derived-only** — `:stalled`. Never reported, because the agents that
-      most need it are exactly the ones that have stopped reporting anything.
-      See "Stale spinners" below.
+    * **Derived-only** — `:stalled` and `:awaiting_input`. Never reported,
+      because the agents that most need them are exactly the ones that have
+      stopped reporting anything. See "Stale spinners" and "Ready or waiting"
+      below.
+
+  ## Ready or waiting
+
+  Claude's heavy-asterisk marker is ambiguous by construction: it means "ready
+  **or** waiting for input". That ambiguity is why the title heuristic may not
+  claim `:done`, and it leaves a real gap — a hook-less pane sitting on a
+  question is indistinguishable from one that finished an hour ago. Both render
+  as nothing.
+
+  `Casein.Agents.Transcripts.Evidence` resolves it from outside the agent, by
+  reading the shape of the last turn in the agent's own session transcript. An
+  assistant prose turn followed by silence means the agent said its piece and
+  stopped; nothing is outstanding on its side. That is `:awaiting_input`.
+
+  Like `:stalled`, it claims only what is observed. It does not distinguish
+  "asked you a question" from "finished and is idle" — the transcript looks the
+  same either way, and a permission prompt is not written to it at all. It says
+  the agent is not going to do anything else until a human acts.
+
+  ### Why it outranks the other derived states
+
+  `:stalled` and the missed-`Stop` fallback to `:idle` are both *inferences from
+  absence*: nothing on disk, no fresh report. `:awaiting_input` is positive
+  evidence from the conversation itself, so it replaces them where they would
+  otherwise be reached. It never replaces a live report — an agent that says it
+  is `:blocked` or `:errored` is making a claim about cause that no amount of
+  transcript shape can refute.
 
   ## Stale spinners
 
@@ -68,8 +96,10 @@ defmodule Casein.Terminals.AgentState do
 
   @report_states [:working, :blocked, :done, :idle, :errored]
 
-  @type state :: :working | :blocked | :done | :idle | :errored | :stalled | :unknown
+  @type state ::
+          :working | :blocked | :done | :idle | :errored | :stalled | :awaiting_input | :unknown
   @type liveness :: :active | :quiet | :unknown | nil
+  @type transcript :: :working | :awaiting_input | :unknown | nil
   @type entry :: %{
           state: state(),
           message: String.t() | nil,
@@ -207,21 +237,41 @@ defmodule Casein.Terminals.AgentState do
   """
   @spec resolve(entry() | nil, PaneState.state(), DateTime.t(), liveness()) ::
           {state(), String.t() | nil}
-  def resolve(nil, heuristic, _now, liveness) do
+  def resolve(entry, heuristic, now, liveness), do: resolve(entry, heuristic, now, liveness, nil)
+
+  @doc """
+  `resolve/4` with a transcript-shape verdict from
+  `Casein.Agents.Transcripts.Evidence.classify/2`.
+
+  `transcript` is `:working | :awaiting_input | :unknown | nil`. As with
+  `liveness`, `:unknown` and `nil` are treated identically and change nothing.
+  `:awaiting_input` replaces the states that would otherwise be *inferred from
+  absence* (`:stalled`, and the missed-`Stop` fallback to `:idle`), and never
+  replaces a live report — see "Ready or waiting" in the module doc.
+  """
+  @spec resolve(entry() | nil, PaneState.state(), DateTime.t(), liveness(), transcript()) ::
+          {state(), String.t() | nil}
+  def resolve(nil, heuristic, _now, liveness, transcript) do
     case {semantic_from_heuristic(heuristic), liveness} do
       # An unreported pane whose spinner is frozen and whose worktree is silent.
       # Without this, an abandoned agent shows `:working` forever.
-      {:working, :quiet} -> {:stalled, nil}
-      {state, _liveness} -> {state, nil}
+      {:working, :quiet} -> {derived(:stalled, transcript), nil}
+      {state, _liveness} -> {derived(state, transcript), nil}
     end
   end
 
-  def resolve(%{state: rstate, message: msg, reported_at: at}, heuristic, now, liveness) do
+  def resolve(
+        %{state: rstate, message: msg, reported_at: at},
+        heuristic,
+        now,
+        liveness,
+        transcript
+      ) do
     age = DateTime.diff(now, at, :second)
 
     cond do
       age > @max_report_ttl_seconds ->
-        resolve(nil, heuristic, now, liveness)
+        resolve(nil, heuristic, now, liveness, transcript)
 
       age < @grace_seconds ->
         {rstate, msg}
@@ -231,24 +281,36 @@ defmodule Casein.Terminals.AgentState do
       # signature, and promoting it to `:working` is what made a wedged window
       # indistinguishable from a busy one.
       heuristic == :working and rstate != :working ->
-        if liveness == :quiet and age > @stall_seconds, do: {:stalled, nil}, else: {:working, nil}
+        if liveness == :quiet and age > @stall_seconds,
+          do: {derived(:stalled, transcript), nil},
+          else: {derived(:working, transcript), nil}
 
       # The agent claims to be working and the title agrees, but nothing has
       # touched the worktree. Believe the evidence over both.
       heuristic == :working and rstate == :working and liveness == :quiet and
           age > @stall_seconds ->
-        {:stalled, nil}
+        {derived(:stalled, transcript), nil}
 
       # The hook probably missed a `Stop` event... unless the worktree says the
       # agent is still writing, in which case the report was right and the title
       # is merely between spinner frames.
       heuristic == :ready and rstate == :working and age > @working_ttl_seconds ->
-        if liveness == :active, do: {:working, msg}, else: {:idle, nil}
+        if liveness == :active, do: {:working, msg}, else: {derived(:idle, transcript), nil}
 
       true ->
         {rstate, msg}
     end
   end
+
+  # Applied only where the state being returned was inferred rather than
+  # reported. `:unknown` is included because a pane whose title we cannot read
+  # is exactly the hook-less case this evidence exists for — but the caller only
+  # attaches transcript evidence to agent panes, so a plain shell never lands
+  # here with a verdict.
+  defp derived(state, :awaiting_input) when state in [:stalled, :working, :idle, :unknown],
+    do: :awaiting_input
+
+  defp derived(state, _transcript), do: state
 
   @doc """
   Like `resolve/3`, but returns `{:unknown, nil}` when there is no live report
@@ -260,22 +322,35 @@ defmodule Casein.Terminals.AgentState do
           {state(), String.t() | nil}
   def resolve_for_display(entry, heuristic, now \\ DateTime.utc_now(), liveness \\ nil)
 
+  def resolve_for_display(entry, heuristic, now, liveness),
+    do: resolve_for_display(entry, heuristic, now, liveness, nil)
+
+  @doc "`resolve_for_display/4` with a transcript-shape verdict."
+  @spec resolve_for_display(
+          entry() | nil,
+          PaneState.state(),
+          DateTime.t(),
+          liveness(),
+          transcript()
+        ) :: {state(), String.t() | nil}
   # A pane with no report is normally left unlabeled, so a plain shell showing
-  # `ready` does not read as an idle agent. A frozen spinner over a silent
-  # worktree is the exception worth naming: that pane is displaying activity
-  # that is not happening, and saying nothing lets the lie stand.
-  def resolve_for_display(nil, heuristic, now, liveness) do
-    case resolve(nil, heuristic, now, liveness) do
+  # `ready` does not read as an idle agent. Two exceptions are worth naming: a
+  # frozen spinner over a silent worktree is displaying activity that is not
+  # happening, and an agent that stopped talking is waiting on a human. Saying
+  # nothing lets the first lie stand and leaves the second unanswered.
+  def resolve_for_display(nil, heuristic, now, liveness, transcript) do
+    case resolve(nil, heuristic, now, liveness, transcript) do
       {:stalled, message} -> {:stalled, message}
+      {:awaiting_input, message} -> {:awaiting_input, message}
       _other -> {:unknown, nil}
     end
   end
 
-  def resolve_for_display(%{reported_at: at} = entry, heuristic, now, liveness) do
+  def resolve_for_display(%{reported_at: at} = entry, heuristic, now, liveness, transcript) do
     if DateTime.diff(now, at, :second) > @max_report_ttl_seconds do
-      resolve_for_display(nil, heuristic, now, liveness)
+      resolve_for_display(nil, heuristic, now, liveness, transcript)
     else
-      resolve(entry, heuristic, now, liveness)
+      resolve(entry, heuristic, now, liveness, transcript)
     end
   end
 
@@ -303,7 +378,9 @@ defmodule Casein.Terminals.AgentState do
         heuristic = PaneState.window_state(window)
         pane = PaneState.agent_or_active_pane(window)
         entry = pane && Map.get(reports, PaneState.map_get(pane, :id))
-        resolved = resolve_for_display(entry, heuristic, now, pane_liveness(pane))
+
+        resolved =
+          resolve_for_display(entry, heuristic, now, pane_liveness(pane), pane_transcript(pane))
 
         window
         |> put_state(resolved)
@@ -318,7 +395,9 @@ defmodule Casein.Terminals.AgentState do
   defp enrich_pane(pane, reports, now) when is_map(pane) do
     heuristic = normalize_heuristic(PaneState.map_get(pane, :pane_state))
     entry = Map.get(reports, PaneState.map_get(pane, :id))
-    resolved = resolve_for_display(entry, heuristic, now, pane_liveness(pane))
+
+    resolved =
+      resolve_for_display(entry, heuristic, now, pane_liveness(pane), pane_transcript(pane))
 
     pane
     |> put_state(resolved)
@@ -375,6 +454,19 @@ defmodule Casein.Terminals.AgentState do
 
   defp pane_liveness(_pane), do: nil
 
+  # `Casein.Terminals.PaneLiveness` attaches `:transcript` only for agent panes
+  # whose transcript it could unambiguously resolve. Anything else stays nil so
+  # `resolve/5` treats it as "no evidence" — in particular a plain shell sitting
+  # in an agent's worktree must never inherit that agent's conversation.
+  defp pane_transcript(pane) when is_map(pane) do
+    case PaneState.map_get(pane, :transcript) do
+      %{state: state} when state in [:working, :awaiting_input] -> state
+      _ -> nil
+    end
+  end
+
+  defp pane_transcript(_pane), do: nil
+
   defp normalize_heuristic(:working), do: :working
   defp normalize_heuristic(:ready), do: :ready
   defp normalize_heuristic("working"), do: :working
@@ -394,6 +486,8 @@ defmodule Casein.Terminals.AgentState do
   # doing. Neither is something the fleet will resolve on its own.
   defp picker_status(:errored), do: "attention"
   defp picker_status(:stalled), do: "attention"
+  # The whole point of deriving it: this pane will not move until a human acts.
+  defp picker_status(:awaiting_input), do: "attention"
   defp picker_status(:done), do: "done"
   defp picker_status(:idle), do: "noop"
   defp picker_status(_), do: nil
