@@ -80,6 +80,8 @@ env -u GH_TOKEN gh api -X PUT repos/dl-alexandre/casein/branches/master/protecti
 
 **Why `enforce_admins=false` / `strict=false`.** The branch protection *must* let admins bypass: the canonical deploy path is a direct push to `master` (through the local pre-push gate), which carries no PR check — `enforce_admins=true` would reject it and break deploys. So the `gate` check hard-blocks red *non-admin* PR merges and is an advisory red/green signal for the owner's own merges. `strict=false` avoids forcing every PR up-to-date amid the concurrent-agent FF-race churn.
 
+**macOS desktop lane stays REQUIRED (#866).** When `.github/workflows/macos-desktop.yml` runs, check `Build and verify (macOS 26 arm64 (self-hosted))` is required for merge/AM discipline — not advisory. Do not rename that job (name-matched). Do not `continue-on-error` it. Infra reds (EACCES) are #865, not hand-patches. Escape hatch: label `ci/macos-quarantine` (SUP/owner only) while the red **stays reported**. Policy: `docs/decisions/macos-gate-policy.md`; guard: `scripts/check-macos-gate-policy.sh`.
+
 **Auto-deploy is self-hosted — no GitHub Actions.** An on-box systemd timer (`casein-deploy.timer` → `scripts/deploy-poller.sh`) polls `origin/master` every ~2 min and, when it advances, builds a release from a *clean detached worktree at that SHA* and activates it via `deploy-devbox-release.sh`. So a green push to `master` auto-deploys within a couple of minutes — no manual step required. Install/enable once per box:
 
 ```bash
