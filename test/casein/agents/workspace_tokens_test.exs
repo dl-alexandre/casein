@@ -89,6 +89,37 @@ defmodule Casein.Agents.WorkspaceTokensTest do
     assert log =~ "global token"
   end
 
+  test "rotate_for mints a new bearer, drops the old one, and marks it stale", %{store: store} do
+    Application.put_env(:casein, :workspace_api_tokens, %{"tok-old" => "ws-rot"})
+    Application.put_env(:casein, :workspace_api_tokens_retired, %{})
+    File.write!(store, Jason.encode!(%{"tok-old" => "ws-rot"}))
+
+    assert {:ok, new_token, "tok-old"} = WorkspaceTokens.rotate_for("ws-rot")
+    assert new_token != "tok-old"
+    assert new_token =~ ~r/^[0-9a-f]{64}$/
+
+    assert WorkspaceTokens.token_for("ws-rot") == new_token
+    refute Map.has_key?(Application.get_env(:casein, :workspace_api_tokens), "tok-old")
+    assert WorkspaceTokens.stale_grant?("tok-old")
+    refute WorkspaceTokens.stale_grant?(new_token)
+    assert WorkspaceTokens.stale_workspace_id("tok-old") == "ws-rot"
+
+    stored = Jason.decode!(File.read!(store))
+    assert stored[new_token] == "ws-rot"
+    refute Map.has_key?(stored, "tok-old")
+  end
+
+  test "rotate_for rejects a missing workspace id" do
+    assert {:error, :workspace_id_missing} = WorkspaceTokens.rotate_for(nil)
+    assert {:error, :workspace_id_missing} = WorkspaceTokens.rotate_for("")
+  end
+
+  test "stale_grant?/1 is false for unknown tokens" do
+    Application.put_env(:casein, :workspace_api_tokens_retired, %{})
+    refute WorkspaceTokens.stale_grant?("never-seen")
+    refute WorkspaceTokens.stale_grant?(nil)
+  end
+
   defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
   defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 

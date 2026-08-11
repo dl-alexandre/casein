@@ -175,6 +175,61 @@ defmodule Casein.Agents.PaneEnvTest do
     refute Map.has_key?(vars, "CODEX_HOME")
   end
 
+  test "rebind_workspace rotates the bearer and pushes session env", %{staging: staging} do
+    Application.put_env(:casein, :workspace_api_tokens, %{"old-ws-token" => "ws-123"})
+    Application.put_env(:casein, :workspace_api_tokens_retired, %{})
+
+    parent = self()
+
+    fake =
+      start_supervised!({
+        Agent,
+        fn -> %{sessions: ["casein_dalexandre-casein_wt-agent"], envs: []} end
+      })
+
+    Application.put_env(:casein, :tmux_adapter, __MODULE__.FakeTmux)
+    Process.put({__MODULE__.FakeTmux, :agent}, fake)
+    Process.put({__MODULE__.FakeTmux, :parent}, parent)
+
+    on_exit(fn ->
+      Application.delete_env(:casein, :tmux_adapter)
+      Process.delete({__MODULE__.FakeTmux, :agent})
+      Process.delete({__MODULE__.FakeTmux, :parent})
+    end)
+
+    assert {:ok, result} =
+             PaneEnv.rebind_workspace(@workspace,
+               staging_home: staging,
+               checkout: @workspace.path,
+               tmux_session: "casein_dalexandre-casein_wt-agent"
+             )
+
+    assert result.token != "old-ws-token"
+    assert result.previous_token == "old-ws-token"
+    assert result.sessions == ["casein_dalexandre-casein_wt-agent"]
+    assert result.rebound
+    assert Casein.Agents.WorkspaceTokens.stale_grant?("old-ws-token")
+    assert Casein.Agents.WorkspaceTokens.token_for("ws-123") == result.token
+
+    assert_receive {:set_environments, "casein_dalexandre-casein_wt-agent", vars}
+    assert vars["CASEIN_API_TOKEN"] == result.token
+  end
+
+  defmodule FakeTmux do
+    def list_sessions do
+      case Process.get({Casein.Agents.PaneEnvTest.FakeTmux, :agent}) do
+        nil -> []
+        agent -> Agent.get(agent, & &1.sessions)
+      end
+    end
+
+    def set_environments(session, vars) do
+      parent = Process.get({Casein.Agents.PaneEnvTest.FakeTmux, :parent})
+      if is_pid(parent), do: send(parent, {:set_environments, session, vars})
+      :ok
+    end
+  end
+
   defp restore_workspace_tokens(nil), do: Application.delete_env(:casein, :workspace_api_tokens)
 
   defp restore_workspace_tokens(value),

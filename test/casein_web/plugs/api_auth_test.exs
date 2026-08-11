@@ -104,4 +104,58 @@ defmodule CaseinWeb.Plugs.ApiAuthTest do
     assert conn.status == 403
     assert Jason.decode!(conn.resp_body) == %{"error" => "workspace_forbidden"}
   end
+
+  test "rotated workspace bearer returns explicit stale_grant on MCP" do
+    Application.put_env(:casein, :workspace_api_tokens_retired, %{
+      "retired-ws-token" => @workspace_id
+    })
+
+    conn =
+      conn(:post, "/api/terminals/mcp?workspace_id=#{@workspace_id}")
+      |> put_req_header("authorization", "Bearer retired-ws-token")
+      |> ApiAuth.call([])
+
+    assert conn.halted
+    assert conn.status == 401
+    body = Jason.decode!(conn.resp_body)
+    assert body["error"] == "stale_grant"
+    assert body["code"] == "stale_grant"
+    assert body["kind"] == "workspace_token"
+    assert body["reason"] == "rotated"
+    assert body["message"] =~ "stale"
+  end
+
+  test "revoked grok capability bearer returns explicit stale_grant on MCP" do
+    # Capability tokens are DB-backed; check out the sandbox for this case only.
+    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Casein.Repo)
+    Ecto.Adapters.SQL.Sandbox.mode(Casein.Repo, {:shared, self()})
+
+    {:ok, raw, record} =
+      Casein.Agents.AgentCapabilityTokens.create_for_grok(%{
+        workspace_id: @workspace_id,
+        tmux_session_id: "casein_ws-scoped_agent",
+        pane_id: "%1",
+        leader_id: String.duplicate("a", 24),
+        bundle_digest: String.duplicate("b", 64),
+        workspace_mode: "manual",
+        allowed_tools: %{"terminal" => ["terminal_list_sessions"]}
+      })
+
+    assert {:ok, _} = Casein.Agents.AgentCapabilityTokens.revoke_current(record.id)
+
+    conn =
+      conn(
+        :post,
+        "/api/terminals/mcp?workspace_id=#{@workspace_id}&tmux_session=casein_ws-scoped_agent"
+      )
+      |> put_req_header("authorization", "Bearer " <> raw)
+      |> ApiAuth.call([])
+
+    assert conn.halted
+    assert conn.status == 401
+    body = Jason.decode!(conn.resp_body)
+    assert body["error"] == "stale_grant"
+    assert body["kind"] == "agent_capability"
+    assert body["reason"] == "revoked"
+  end
 end

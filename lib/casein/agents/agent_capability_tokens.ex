@@ -154,6 +154,25 @@ defmodule Casein.Agents.AgentCapabilityTokens do
 
   def verify(_raw_token), do: {:error, :missing}
 
+  @doc """
+  Classify a raw capability bearer for operator/agent surfaces.
+
+  Returns `:active` when `verify/1` succeeds, `:stale_grant` when the bearer
+  was revoked or expired (live pane still holding a frozen launch grant),
+  `:invalid` for unknown/malformed tokens, and `:missing` when empty.
+  """
+  @spec grant_status(String.t() | nil) :: :active | :stale_grant | :invalid | :missing
+  def grant_status(raw_token) when is_binary(raw_token) do
+    case verify(raw_token) do
+      {:ok, _claims} -> :active
+      {:error, reason} when reason in [:revoked, :expired] -> :stale_grant
+      {:error, :missing} -> :missing
+      {:error, _} -> :invalid
+    end
+  end
+
+  def grant_status(_), do: :missing
+
   @doc "Revoke a capability by id, scoped to its owning workspace."
   @spec revoke(String.t(), String.t()) ::
           {:ok, AgentCapabilityToken.t()} | {:error, :not_found}
