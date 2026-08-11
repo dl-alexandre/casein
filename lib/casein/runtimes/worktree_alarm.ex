@@ -337,28 +337,9 @@ defmodule Casein.Runtimes.WorktreeAlarm do
   defp agent_worktree_runtime?(_), do: false
 
   defp worktree_roots do
-    configured =
-      Application.get_env(:casein, :agent_worktree_roots, []) ++ env_agent_worktree_roots()
-
-    if configured != [] do
-      configured
-    else
-      default_agent_worktree_roots()
-    end
-  end
-
-  defp default_agent_worktree_roots do
-    [Path.join(System.tmp_dir!(), "casein-agent-worktrees")]
-  end
-
-  defp env_agent_worktree_roots do
-    case System.get_env("CASEIN_AGENT_WORKTREE_ROOTS") do
-      nil ->
-        []
-
-      value ->
-        String.split(value, [",", ":"], trim: true)
-    end
+    # Scan configured roots when set; otherwise portable defaults only.
+    # No host-specific path literals — see Casein.Paths.
+    Casein.Paths.agent_worktree_roots()
   end
 
   defp under_root?(path, root) when is_binary(path) and is_binary(root) do

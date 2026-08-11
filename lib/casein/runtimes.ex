@@ -1149,9 +1149,7 @@ defmodule Casein.Runtimes do
 
   defp under_agent_worktree_root?(path) do
     roots =
-      Application.get_env(:casein, :agent_worktree_roots, []) ++
-        configured_artifact_project_roots() ++
-        env_agent_worktree_roots() ++ default_agent_worktree_roots()
+      Casein.Paths.agent_worktree_admission_roots(extra: configured_artifact_project_roots())
 
     path = Path.expand(path)
     Enum.any?(roots, &under_root?(path, &1))
@@ -1161,23 +1159,6 @@ defmodule Casein.Runtimes do
     case Application.get_env(:casein, :artifact_projects_root) do
       root when is_binary(root) and root != "" -> [root]
       _ -> []
-    end
-  end
-
-  defp default_agent_worktree_roots do
-    [
-      Path.join(System.tmp_dir!(), "casein-agent-worktrees"),
-      Path.expand("~/.local/share/opencode"),
-      Path.expand("~/.local/share/codex"),
-      Path.expand("~/.cache/codex"),
-      Path.expand("~/.claude")
-    ]
-  end
-
-  defp env_agent_worktree_roots do
-    case System.get_env("CASEIN_AGENT_WORKTREE_ROOTS") do
-      nil -> []
-      value -> String.split(value, [",", ":"], trim: true)
     end
   end
 

@@ -112,10 +112,14 @@ Processes: only `MemoryAdapter` is a long-lived process (test-only GenServer). T
 - **Single runtime, no fleet.** Placement/orchestration/runner-assignment was
   removed. Treat any "fleet"/"runner picks work" language as historical.
 - **Agent-worktree admission is a security boundary.** Paths must be under the
-  workspace root or a configured agent-worktree root (`:agent_worktree_roots` config,
-  `CASEIN_AGENT_WORKTREE_ROOTS` env, plus defaults like
-  `$TMPDIR/casein-agent-worktrees`, `~/.claude`, `~/.local/share/{opencode,codex}`).
-  The main checkout is explicitly refused.
+  workspace root or a configured agent-worktree root. Resolution is centralized
+  in `Casein.Paths` (`configured_agent_worktree_roots/0`,
+  `default_agent_worktree_roots/0`, `agent_worktree_admission_roots/1`):
+  `:agent_worktree_roots` config, `CASEIN_AGENT_WORKTREE_ROOTS` env, plus
+  portable defaults (`$TMPDIR/casein-agent-worktrees` and home-relative
+  `~/.claude` / `~/.local/share/{opencode,codex}` via `Paths.home/0`). No
+  host-specific `/data/casein-agent-worktrees` product default. The main
+  checkout is explicitly refused.
 - **`isolation_mode`** for observed worktrees is always `"worktree"`; `host_id`
   defaults to `"local"`.
 - **`events_for/1` is intentionally unbounded** (see the audit note in
