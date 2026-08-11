@@ -1,6 +1,9 @@
 # ADR: Herdr as session runtime under MCP (Phase 0)
 
-Status: **PROPOSED — blocked on license ACK**
+Status: **PROPOSED — license ACK cleared for phase-1 evaluation only (2026-08-10 on #822); product default still blocked**
+
+Phase-1 design ADR (flagged dual-path, not default):
+[`docs/design/herdr-backend-adr.md`](../design/herdr-backend-adr.md)
 
 Parent: [#822](https://github.com/dl-alexandre/casein/issues/822) —
 "arch: evaluate Herdr as Terminals.Backend session runtime (replace tmux under MCP)"
