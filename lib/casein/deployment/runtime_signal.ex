@@ -6,23 +6,25 @@ defmodule Casein.Deployment.RuntimeSignal do
   A git SHA alone is not enough: production once resolved MCP pane writes through
   `Backends.Tmux` while every repo default and `Application.get_env(..., Tmux)`
   site still *read* as `Casein.Terminals.Tmux`. That divergence only showed up as
-  `UndefinedFunctionError` on a live MCP call.
+  `UndefinedFunctionError` on a live MCP call (#854). #892 converged both paths
+  onto `Casein.Terminals.tmux_adapter/0` (default `Terminals.Tmux`).
 
   This module reports:
 
     * deployed revision vs remote branch head (behind/ahead when countable)
-    * **resolved** values of runtime-selected modules, `:tmux_adapter` first,
-      including both the MCP path (`get_env(:tmux_adapter) || Backend.module/0`)
-      and the legacy ops path (`get_env(:tmux_adapter, Tmux)`)
+    * **resolved** values of runtime-selected modules, `:tmux_adapter` first —
+      MCP and ops now share one resolver; `paths_disagree?` is the canary if
+      that ever splits again
     * whether critical MCP callbacks exist on the module agents actually call
 
   Pure observation — no mutations, no deploy, no adapter swap.
   """
 
   alias Casein.Deployment.{Drift, Version}
+  alias Casein.Terminals
   alias Casein.Terminals.Backend
 
-  @legacy_tmux_default Casein.Terminals.Tmux
+  @tmux_adapter_default Casein.Terminals.Tmux
 
   # MCP-facing callbacks that must exist on the module TerminalTools.Shared.tmux/0
   # resolves. Missing paste_text is the fleet-wide failure mode for #854/#867.
@@ -182,15 +184,27 @@ defmodule Casein.Deployment.RuntimeSignal do
     tmux_env = env_reader.(:tmux_adapter)
     terminal_backend_env = env_reader.(:terminal_backend)
 
-    # MCP TerminalTools.Shared.tmux/0 path — what agents actually call.
-    mcp_resolved = tmux_env || backend
-    mcp_source = if is_nil(tmux_env), do: "backend_module_fallback", else: "application_env"
+    # #892: MCP Shared.tmux/0 and ops TmuxOps.tmux_adapter/0 share ONE formula:
+    #   Application.get_env(:casein, :tmux_adapter, Terminals.Tmux)
+    # Both sides of the report use that formula so paths_disagree? only fires if
+    # a second default is re-introduced (regression canary).
+    resolved = tmux_env || @tmux_adapter_default
+    source = if is_nil(tmux_env), do: "tmux_adapter_default", else: "application_env"
 
-    # Legacy TmuxOps / many call sites: get_env(:tmux_adapter, Tmux).
-    ops_resolved = if is_nil(tmux_env), do: @legacy_tmux_default, else: tmux_env
-    ops_source = if is_nil(tmux_env), do: "hardcoded_default_tmux", else: "application_env"
-
+    mcp_resolved = resolved
+    ops_resolved = resolved
     paths_disagree? = mcp_resolved != ops_resolved
+
+    # Live canary: the process's Terminals.tmux_adapter/0 must match the formula
+    # when the real Application env is being read (not a test :env override).
+    live_resolved =
+      if Keyword.has_key?(opts, :env) do
+        resolved
+      else
+        Terminals.tmux_adapter()
+      end
+
+    live_disagrees? = live_resolved != resolved
 
     mcp_surface = surface_probe(mcp_resolved)
 
@@ -199,17 +213,17 @@ defmodule Casein.Deployment.RuntimeSignal do
         env_key: "tmux_adapter",
         configured: module_name(tmux_env),
         configured?: not is_nil(tmux_env),
-        # What a naive reader of get_env(..., Tmux) call sites believes.
-        repo_default: module_name(@legacy_tmux_default),
-        # What Backend.module/0 resolves to (production terminal engine).
+        # Default when :tmux_adapter env is unset (Terminals.tmux_adapter/0).
+        repo_default: module_name(@tmux_adapter_default),
+        # What Backend.module/0 resolves to (product engine; not MCP adapter).
         backend_module: module_name(backend),
-        # Path agents hit via TerminalTools.Shared.
+        # Path agents hit via TerminalTools.Shared.tmux/0.
         mcp_resolved: module_name(mcp_resolved),
-        mcp_source: mcp_source,
-        # Path TmuxOps and many internal callers hit when env unset.
+        mcp_source: source,
+        # Path ops hits via Terminals.tmux_adapter/0 — same function as MCP.
         ops_resolved: module_name(ops_resolved),
-        ops_source: ops_source,
-        paths_disagree?: paths_disagree?,
+        ops_source: source,
+        paths_disagree?: paths_disagree? or live_disagrees?,
         mcp_surface: mcp_surface
       },
       terminal_backend: %{

@@ -1307,7 +1307,5 @@ defmodule Casein.FilePanes do
 
   defp kill_pane(_), do: :ok
 
-  defp tmux_adapter do
-    Application.get_env(:casein, :tmux_adapter, Casein.Terminals.Tmux)
-  end
+  defp tmux_adapter, do: Casein.Terminals.tmux_adapter()
 end

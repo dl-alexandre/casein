@@ -114,16 +114,35 @@ defmodule Casein.Terminals.Backends.McpAdapterConformanceTest do
       Application.delete_env(:casein, :terminal_backend)
 
       mod = Shared.tmux()
-      assert is_atom(mod)
+      assert mod == Tmux
+      assert mod == Casein.Terminals.tmux_adapter()
       assert_exports_mcp_surface!(mod)
     end
 
-    test "Shared.tmux/0 honors explicit :tmux_adapter over Backend.module/0" do
+    test "Shared.tmux/0 and Terminals.tmux_adapter/0 always resolve the same module (#892)" do
+      Application.delete_env(:casein, :tmux_adapter)
+      assert Shared.tmux() == Casein.Terminals.tmux_adapter()
+
+      Application.put_env(:casein, :tmux_adapter, TmuxBackend)
+      assert Shared.tmux() == TmuxBackend
+      assert Casein.Terminals.tmux_adapter() == TmuxBackend
+    end
+
+    test "Shared.tmux/0 honors explicit :tmux_adapter" do
       Application.put_env(:casein, :tmux_adapter, Tmux)
       Application.put_env(:casein, :terminal_backend, TmuxBackend)
 
       assert Shared.tmux() == Tmux
       assert_exports_mcp_surface!(Shared.tmux())
+    end
+
+    test "MCP-called arities are exported on BOTH production modules (#892 safety net)" do
+      # Even after converge, Backends.Tmux remains a product engine candidate.
+      # Keep the MCP call surface complete on both so a future dual-path cannot
+      # silently ship incomplete again.
+      for mod <- [TmuxBackend, Tmux] do
+        assert_exports_mcp_surface!(mod)
+      end
     end
   end
 

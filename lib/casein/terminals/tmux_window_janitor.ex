@@ -43,7 +43,6 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
   require Logger
 
   alias Casein.Terminals.Backend
-  alias Casein.Terminals.Tmux
 
   @default_idle_seconds 600
 
@@ -234,7 +233,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
 
   defp schedule(ms), do: Process.send_after(self(), :sweep, ms)
 
-  defp tmux, do: Application.get_env(:casein, :tmux_adapter, Tmux)
+  defp tmux, do: Casein.Terminals.tmux_adapter()
 
   defp sweep_ms do
     case Application.get_env(:casein, :tmux_window_sweep_ms) do

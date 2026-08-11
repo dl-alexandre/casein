@@ -38,7 +38,6 @@ defmodule Casein.Terminals.SessionDirectory do
   alias Casein.Terminals.PaneState
   alias Casein.Terminals.SessionDirectory.Compose
   alias Casein.Terminals.SessionRegistry
-  alias Casein.Terminals.Tmux
   alias Casein.Terminals.TmuxEvents
   alias Casein.Git.Inspector, as: GitInspector
   alias Casein.Runtimes.WorktreeReconciler
@@ -1077,5 +1076,5 @@ defmodule Casein.Terminals.SessionDirectory do
 
   defp truthy?(value), do: value in [true, 1, "1", "true", "yes", "on"]
 
-  defp tmux_adapter, do: Application.get_env(:casein, :tmux_adapter, Tmux)
+  defp tmux_adapter, do: Casein.Terminals.tmux_adapter()
 end

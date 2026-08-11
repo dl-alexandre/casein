@@ -324,13 +324,16 @@ defmodule Casein.Terminals.BackendProductRoutingTest do
     assert_receive {:backend_route, {:new_window, "casein_route_recon", _}}
   end
 
-  test "MCP Shared.tmux/0 resolves Backend.module when no bare tmux_adapter override" do
+  test "MCP Shared.tmux/0 shares Terminals.tmux_adapter/0 (not Backend.module) (#892)" do
     Application.delete_env(:casein, :tmux_adapter)
     Application.put_env(:casein, :terminal_backend, TmuxBackend)
-    assert Shared.tmux() == TmuxBackend
+    # Product engine may be Backends.Tmux; MCP pane writes use the facade default.
+    assert Shared.tmux() == Casein.Terminals.Tmux
+    assert Shared.tmux() == Casein.Terminals.tmux_adapter()
 
     Application.put_env(:casein, :tmux_adapter, RecordingAdapter)
     assert Shared.tmux() == RecordingAdapter
+    assert Casein.Terminals.tmux_adapter() == RecordingAdapter
   end
 
   test "MCP Shared workspace prefixes go through Backend session naming" do

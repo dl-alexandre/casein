@@ -282,9 +282,9 @@ defmodule Casein.Agents.TerminalTools.Impl.SelfTest do
   defp classify_write({out, code}) when is_integer(code), do: {:error, {:exit, code, out}}
   defp classify_write(other), do: {:error, {:unexpected_return, other}}
 
-  # Prefer the same module MCP dispatch uses (`adapter` == Shared.tmux/0).
-  # Falling through to Backend.module/0 would hit a different surface when
-  # tests pin only :tmux_adapter (the #854 divergence shape).
+  # Prefer the same module MCP dispatch uses (`adapter` == Shared.tmux/0 ==
+  # Terminals.tmux_adapter/0 after #892). Backend.module/0 is only a fallback
+  # when the adapter does not export ensure_session/2.
   defp ensure_scratch_session(adapter, backend, session, cwd) do
     Code.ensure_loaded(adapter)
     Code.ensure_loaded(backend)

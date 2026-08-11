@@ -530,5 +530,5 @@ defmodule Casein.Operator.SituationDigest do
   defp present(value) when is_binary(value) and value != "", do: value
   defp present(_value), do: nil
 
-  defp tmux_adapter, do: Application.get_env(:casein, :tmux_adapter, Casein.Terminals.Tmux)
+  defp tmux_adapter, do: Casein.Terminals.tmux_adapter()
 end

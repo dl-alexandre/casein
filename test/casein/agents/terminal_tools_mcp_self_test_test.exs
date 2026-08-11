@@ -110,15 +110,16 @@ defmodule Casein.Agents.TerminalToolsMcpSelfTestTest do
     end
   end
 
-  describe "resolved adapter follows Shared.tmux/0, not checkout defaults" do
-    test "when :tmux_adapter is unset, reports Backend.module/0" do
+  describe "resolved adapter follows Shared.tmux/0 == Terminals.tmux_adapter/0 (#892)" do
+    test "when :tmux_adapter is unset, reports Terminals.Tmux (not Backend.module/0)" do
       Application.delete_env(:casein, :tmux_adapter)
       Application.delete_env(:casein, :terminal_backend)
 
       assert {:ok, report} = SelfTest.run(%{})
-      assert report.resolved_adapter == inspect(Backend.module())
-      # Default Backend.module/0 is Backends.Tmux — the prod divergence surface.
-      assert report.resolved_adapter == "Casein.Terminals.Backends.Tmux"
+      # Converged default — MCP and ops share this module.
+      assert report.resolved_adapter == "Casein.Terminals.Tmux"
+      assert report.resolved_adapter == inspect(Casein.Terminals.tmux_adapter())
+      refute report.resolved_adapter == inspect(Backend.module())
       refute Map.has_key?(report, :tmux_adapter_env)
     end
   end
