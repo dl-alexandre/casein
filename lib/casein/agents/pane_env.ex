@@ -97,6 +97,110 @@ defmodule Casein.Agents.PaneEnv do
   end
 
   @doc """
+  Rotate the workspace API bearer and push the new grant into live tmux sessions.
+
+  Steps:
+
+  1. `WorkspaceTokens.rotate_for/1` — mint + retire previous bearer
+  2. Rematerialize MCP client configs / `env.sh` with the new token
+  3. `tmux set-environment` on every matching workspace session so new panes
+     and shell integrations that re-sync pick up `CASEIN_API_TOKEN`
+
+  Running agent *processes* that already expanded the bearer into memory
+  (managed Grok `grokcap_*` cache, some MCP client bootstraps) cannot be
+  rewritten in-place — those keep calling with the retired token and receive
+  an explicit `stale_grant` from API auth until relaunch. Shell-backed panes
+  that re-export session env (Casein shell integration) rebound without
+  relaunch.
+
+  Returns `{:ok, %{token, previous_token, sessions}}`.
+  """
+  @spec rebind_workspace(map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def rebind_workspace(workspace, opts \\ []) when is_map(workspace) do
+    workspace_id = workspace_id(workspace)
+
+    with true <- workspace_id != "" || {:error, :workspace_id_missing},
+         {:ok, token, previous} <- WorkspaceTokens.rotate_for(workspace_id),
+         sessions <- target_sessions(workspace, opts),
+         :ok <- push_sessions(sessions, workspace, opts) do
+      {:ok,
+       %{
+         workspace_id: workspace_id,
+         token: token,
+         previous_token: previous,
+         sessions: sessions,
+         rebound: sessions != [],
+         note: rebind_note(sessions, previous)
+       }}
+    end
+  end
+
+  @doc """
+  Push the current workspace bearer into one tmux session without rotating.
+
+  Use after an external rotation (or to heal a session that missed the last
+  `ensure_for_session/3`). Prefer `rebind_workspace/2` when the secret itself
+  must change.
+  """
+  @spec rebind_for_session(String.t(), map(), keyword()) :: :ok | {:error, term()}
+  def rebind_for_session(tmux_session, workspace, opts \\ [])
+      when is_binary(tmux_session) and is_map(workspace) do
+    ensure_for_session(tmux_session, workspace, opts)
+  end
+
+  defp target_sessions(workspace, opts) do
+    case Keyword.get(opts, :tmux_session) do
+      session when is_binary(session) and session != "" ->
+        [session]
+
+      _ ->
+        workspace_id = workspace_id(workspace)
+        workspace_name = workspace_name(workspace)
+
+        prefixes =
+          [workspace_id, workspace_name]
+          |> Enum.filter(&(is_binary(&1) and &1 != ""))
+          |> Enum.map(&Casein.Terminals.tmux_workspace_session_prefix/1)
+          |> Enum.uniq()
+
+        tmux_adapter().list_sessions()
+        |> Enum.map(fn
+          %{session: name} when is_binary(name) -> name
+          name when is_binary(name) -> name
+          _ -> nil
+        end)
+        |> Enum.filter(
+          &(is_binary(&1) and Enum.any?(prefixes, fn p -> String.starts_with?(&1, p) end))
+        )
+        |> Enum.uniq()
+    end
+  end
+
+  defp push_sessions([], _workspace, _opts), do: :ok
+
+  defp push_sessions(sessions, workspace, opts) do
+    Enum.reduce_while(sessions, :ok, fn session, :ok ->
+      case ensure_for_session(session, workspace, Keyword.put(opts, :tmux_session, session)) do
+        :ok -> {:cont, :ok}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp rebind_note([], _previous) do
+    "token rotated; no live tmux sessions matched — new panes will pick up the grant on ensure"
+  end
+
+  defp rebind_note(_sessions, previous) when is_binary(previous) do
+    "token rotated and pushed to session env; shell integrations re-export CASEIN_API_TOKEN. " <>
+      "Managed Grok grokcap_* caches and process-frozen MCP clients report stale_grant until relaunch."
+  end
+
+  defp rebind_note(_sessions, _previous) do
+    "token minted and pushed to session env"
+  end
+
+  @doc """
   Command to send to a raw terminal pane when launching an interactive agent.
 
   Agent binaries on PATH are shimmed (grok, claude, codex, …) so the bare

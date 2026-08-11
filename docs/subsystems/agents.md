@@ -224,6 +224,20 @@ leaving it to be rediscovered by failure: the workspace status API and
 `terminal_context` both report an `agent_write` block (`write_enabled`,
 `orchestrator_ready`, `fail_fast`, `unlock_status`, `unlock_until`, plus a
 remedy note when blocked), and `scripts/spawn-agent-worker.sh` preflights it.
+
+**Token rotation / live rebind (#864):** `POST /api/workspaces/:id/api-token/rotate`
+(via `Casein.Agents.WorkspaceTokens.rotate_for/1` + `PaneEnv.rebind_workspace/2`)
+mints a new workspace-scoped bearer, retires the previous value, rewrites
+materialized `env.sh` / MCP client configs, and `tmux set-environment`s matching
+sessions. Casein shell integration re-exports `CASEIN_API_TOKEN` on each prompt
+after the first full sync, so shell-backed agents pick up the new grant without
+relaunch. Managed Grok `grokcap_*` capabilities are process-frozen at launch —
+they **cannot** be rewritten in-place; a revoked/expired/rotated capability (or
+retired workspace bearer still presented by a frozen client) receives an explicit
+HTTP `401` with `error: "stale_grant"` / `code: "stale_grant"` instead of a
+generic unauthorized. `AgentCapabilityTokens.grant_status/1` classifies
+`:active | :stale_grant | :invalid | :missing` for operator surfaces;
+`terminal_context.agent_write` advertises `grant_lifecycle` + `token_rebind`.
 The worker preflight *advises and proceeds* — a locked worker still writes its
 worktree, runs `mix`, and commits, so refusing to open the window would block a
 worker that works. Orchestrators that need pane control launch with

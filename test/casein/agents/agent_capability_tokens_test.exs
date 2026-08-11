@@ -104,6 +104,26 @@ defmodule Casein.Agents.AgentCapabilityTokensTest do
     assert {:error, :expired} = AgentCapabilityTokens.verify(raw2)
   end
 
+  test "grant_status classifies active vs stale vs invalid" do
+    assert AgentCapabilityTokens.grant_status(nil) == :missing
+    assert AgentCapabilityTokens.grant_status("") == :missing
+    assert AgentCapabilityTokens.grant_status("not-a-capability") == :invalid
+
+    {:ok, raw, record} = AgentCapabilityTokens.create_for_grok(attrs())
+    assert AgentCapabilityTokens.grant_status(raw) == :active
+
+    assert {:ok, _} = AgentCapabilityTokens.revoke_current(record.id)
+    assert AgentCapabilityTokens.grant_status(raw) == :stale_grant
+
+    {:ok, raw2, record2} = AgentCapabilityTokens.create_for_grok(attrs())
+
+    record2
+    |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -1, :second))
+    |> Repo.update!()
+
+    assert AgentCapabilityTokens.grant_status(raw2) == :stale_grant
+  end
+
   test "workspace-scoped and current-token revocation are idempotent" do
     {:ok, raw, record} = AgentCapabilityTokens.create_for_grok(attrs())
 

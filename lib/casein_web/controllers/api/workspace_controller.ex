@@ -13,7 +13,10 @@ defmodule CaseinWeb.API.WorkspaceController do
 
   import CaseinWeb.API.WorkspaceAPI
 
+  alias Casein.Agents.PaneEnv
+  alias Casein.Audit
   alias Casein.Export
+  alias Casein.Workspaces
 
   def index(conn, _params), do: json(conn, Export.list_summary())
 
@@ -21,6 +24,84 @@ defmodule CaseinWeb.API.WorkspaceController do
     case Export.status(id) do
       {:ok, payload} -> json(conn, payload)
       :error -> not_found(conn)
+    end
+  end
+
+  @doc """
+  Rotate the workspace-scoped API bearer and push it into live tmux sessions.
+
+  Requires a workspace-scoped token for `id` (or global). Returns the new token
+  once; process-frozen clients (managed Grok `grokcap_*`) still need a relaunch
+  and will see `stale_grant` until then.
+  """
+  def rotate_token(conn, %{"id" => id}) do
+    with :ok <- require_workspace_issuer(conn, id),
+         {:ok, workspace} <- resolve_workspace(id),
+         {:ok, result} <- PaneEnv.rebind_workspace(workspace, rotate_opts(conn)) do
+      _ =
+        Audit.emit(%{
+          workspace_id: id,
+          action: "workspace.api_token_rotated",
+          target_type: "workspace",
+          target_ref: id,
+          decision: :allow,
+          metadata: %{
+            sessions: result.sessions,
+            rebound: result.rebound,
+            had_previous: is_binary(result.previous_token)
+          }
+        })
+
+      json(conn, %{
+        workspace_id: result.workspace_id,
+        token: result.token,
+        sessions: result.sessions,
+        rebound: result.rebound,
+        note: result.note
+      })
+    else
+      {:error, :forbidden} ->
+        conn |> put_status(:forbidden) |> json(%{error: "workspace_token_issuer_required"})
+
+      {:error, :not_found} ->
+        not_found(conn)
+
+      {:error, reason} ->
+        rejected(conn, :unprocessable_entity, reason)
+    end
+  end
+
+  defp require_workspace_issuer(conn, workspace_id) do
+    case conn.assigns[:api_token_scope] do
+      {:workspace, ^workspace_id} -> :ok
+      :global -> :ok
+      {:orchestrator, _} -> :ok
+      _ -> {:error, :forbidden}
+    end
+  end
+
+  defp resolve_workspace(id) do
+    case Workspaces.get(id) do
+      {:ok, workspace} ->
+        {:ok,
+         %{
+           id: workspace.id || id,
+           name: workspace.name || id,
+           path: Map.get(workspace, :path) || Map.get(workspace, "path")
+         }}
+
+      _ ->
+        case Export.status(id) do
+          {:ok, _} -> {:ok, %{id: id, name: id, path: nil}}
+          :error -> {:error, :not_found}
+        end
+    end
+  end
+
+  defp rotate_opts(conn) do
+    case param(conn, "tmux_session") do
+      session when is_binary(session) and session != "" -> [tmux_session: session]
+      _ -> []
     end
   end
 

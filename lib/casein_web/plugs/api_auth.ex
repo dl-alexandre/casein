@@ -9,7 +9,7 @@ defmodule CaseinWeb.Plugs.ApiAuth do
 
   import Plug.Conn
 
-  alias Casein.Agents.{AgentCapabilityTokens, McpTickets, OrchestratorTokens}
+  alias Casein.Agents.{AgentCapabilityTokens, McpTickets, OrchestratorTokens, WorkspaceTokens}
   alias CaseinWeb.API.MCPProtectedResource
 
   def init(opts), do: opts
@@ -55,10 +55,17 @@ defmodule CaseinWeb.Plugs.ApiAuth do
         authorize_scope(conn, scope)
 
       nil ->
-        # Fall through to the DB-backed, hash-at-rest orchestrator tokens
-        # (self-serve, subject-attributed). Only reached when no env/workspace
-        # token matched, so the extra lookup is off the hot path.
-        authorize_db_token(conn, token) || fail_closed_or_deny(conn, configured)
+        # Rotated workspace bearer: explicit stale_grant before any DB lookup so
+        # live panes that still present the previous value do not get a generic
+        # 401 (and so tests without a sandbox checkout do not hit Repo).
+        if WorkspaceTokens.stale_grant?(token) do
+          deny_stale_grant(conn, :rotated, "workspace_token")
+        else
+          # Fall through to the DB-backed, hash-at-rest orchestrator tokens
+          # (self-serve, subject-attributed). Only reached when no env/workspace
+          # token matched, so the extra lookup is off the hot path.
+          authorize_db_token(conn, token) || fail_closed_or_deny(conn, configured)
+        end
     end
   end
 
@@ -98,9 +105,15 @@ defmodule CaseinWeb.Plugs.ApiAuth do
           |> assign(:api_token_scope, {:agent_capability, claims.id})
           |> assign(:api_workspace_id, claims.workspace_id)
           |> assign(:api_agent_capability, claims)
+          |> assign(:api_grant_status, :active)
         else
           deny(conn, 403, "agent_capability_path_forbidden")
         end
+
+      # Live pane still holding a launch-frozen bearer after revoke/expiry —
+      # say so explicitly rather than falling through to a generic 401.
+      {:error, reason} when reason in [:revoked, :expired] ->
+        deny_stale_grant(conn, reason, "agent_capability")
 
       {:error, _reason} ->
         nil
@@ -142,6 +155,27 @@ defmodule CaseinWeb.Plugs.ApiAuth do
   end
 
   defp fail_closed_or_deny(conn, _configured), do: deny(conn)
+
+  defp deny_stale_grant(conn, reason, kind) do
+    conn
+    |> maybe_challenge(401)
+    |> put_resp_content_type("application/json")
+    |> send_resp(
+      401,
+      Jason.encode!(%{
+        error: "stale_grant",
+        code: "stale_grant",
+        reason: Atom.to_string(reason),
+        kind: kind,
+        message:
+          "MCP grant is stale on this pane (token #{reason}). " <>
+            "Rebind via workspace token rotation + shell env sync when possible; " <>
+            "otherwise relaunch the agent pane to pick up a fresh grant.",
+        error_version: "mcp-grant-v1"
+      })
+    )
+    |> halt()
+  end
 
   defp api_tokens do
     global_tokens =

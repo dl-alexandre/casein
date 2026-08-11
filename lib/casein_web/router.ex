@@ -253,6 +253,7 @@ defmodule CaseinWeb.Router do
 
     get "/workspaces", WorkspaceController, :index
     get "/workspaces/:id/status", WorkspaceController, :status
+    post "/workspaces/:id/api-token/rotate", WorkspaceController, :rotate_token
     get "/workspaces/:id/topology", WorkspaceController, :topology
     get "/workspaces/:id/runs", WorkspaceController, :runs
     get "/workspaces/:id/runs/:run_id", WorkspaceController, :run

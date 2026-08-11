@@ -628,6 +628,16 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         else: "blocked: need agent-write unlock — stop; do not poll"
       )
     )
+    # #864: grant lifecycle — workspace bearer can rebind live shell panes via
+    # POST /api/workspaces/:id/api-token/rotate; managed Grok grokcap_* is frozen
+    # at launch and reports stale_grant (401) until relaunch.
+    |> Map.put(:grant_lifecycle, "frozen_at_launch")
+    |> Map.put(
+      :token_rebind,
+      "POST /api/workspaces/#{workspace_id}/api-token/rotate rotates the workspace " <>
+        "bearer and pushes tmux session env (shell integrations re-export CASEIN_API_TOKEN). " <>
+        "Managed Grok grokcap_* cannot rebind in-process — next MCP call returns stale_grant until relaunch."
+    )
     |> compact()
   end
 

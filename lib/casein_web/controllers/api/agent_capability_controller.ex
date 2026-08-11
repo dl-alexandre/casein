@@ -94,7 +94,10 @@ defmodule CaseinWeb.API.AgentCapabilityController do
       expires_at: claims.expires_at,
       effective_tools: effective_tools,
       current_workspace_mode: policy.mode,
-      write_enabled: policy.write_enabled
+      write_enabled: policy.write_enabled,
+      # Active when this request authenticated; stale_grant is returned as 401
+      # by ApiAuth before we reach here for revoked/expired bearers.
+      grant_status: "active"
     })
   end
 

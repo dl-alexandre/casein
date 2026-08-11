@@ -785,6 +785,9 @@ defmodule Casein.Terminals.Shims do
       command -v tmux >/dev/null 2>&1 || return 0
 
       local __casein_line __casein_key __casein_value
+      # Optional: only re-export token/URL keys after the first full sync so a
+      # later workspace api-token rotate rebinds live shells without relaunch.
+      local __casein_token_only="${1:-}"
 
       while IFS= read -r __casein_line; do
         case "$__casein_line" in
@@ -805,6 +808,13 @@ defmodule Casein.Terminals.Shims do
           CASEIN_SHELL_INTEGRATION_LOADED | CASEIN_SHELL_INTEGRATION_RC_SOURCED) continue ;;
         esac
 
+        if [ "$__casein_token_only" = "token" ]; then
+          case "$__casein_key" in
+            CASEIN_API_TOKEN | CASEIN_TERMINAL_MCP_URL | CASEIN_PREVIEW_MCP_URL | CASEIN_ARTIFACT_MCP_URL | CASEIN_API_BASE_URL | CASEIN_AGENT_ENV_FILE) ;;
+            *) continue ;;
+          esac
+        fi
+
         export "$__casein_key=$__casein_value"
       done <<CASEIN_SESSION_ENV
     $(tmux show-environment 2>/dev/null)
@@ -818,7 +828,11 @@ defmodule Casein.Terminals.Shims do
     }
 
     __casein_sync_session_env_if_pending() {
-      [ "${__casein_session_env_synced:-0}" = "1" ] && return 0
+      if [ "${__casein_session_env_synced:-0}" = "1" ]; then
+        # Full map already landed — keep CASEIN_API_TOKEN fresh after rotation.
+        casein_sync_session_env token
+        return 0
+      fi
       casein_sync_session_env
     }
 

@@ -80,13 +80,63 @@ defmodule Casein.Agents.WorkspaceTokens do
     end)
   end
 
+  @doc """
+  Rotate the scoped bearer for `workspace_id`.
+
+  Mints a fresh token, registers it, drops the previous token from the live
+  registry and store, and records the previous value in the retired set so
+  `stale_grant?/1` can tell a rotated pane from a never-valid bearer.
+
+  Returns `{:ok, new_token, old_token | nil}`.
+  """
+  @spec rotate_for(String.t()) :: {:ok, String.t(), String.t() | nil} | {:error, term()}
+  def rotate_for(workspace_id) when is_binary(workspace_id) and workspace_id != "" do
+    :global.trans({__MODULE__, self()}, fn ->
+      old = token_for(workspace_id)
+      token = mint_token()
+      register(token, workspace_id)
+      drop_token(old)
+      retire_token(old, workspace_id)
+      persist_rotation(token, old, workspace_id)
+      {:ok, token, old}
+    end)
+  end
+
+  def rotate_for(_workspace_id), do: {:error, :workspace_id_missing}
+
+  @doc """
+  True when `token` was a valid workspace bearer that has since been rotated
+  out. Used by auth to return an explicit `stale_grant` instead of a generic
+  unauthorized for live panes still holding the previous value.
+  """
+  @spec stale_grant?(String.t()) :: boolean()
+  def stale_grant?(token) when is_binary(token) and token != "" do
+    case retired_registry() do
+      %{^token => _} -> true
+      _ -> false
+    end
+  end
+
+  def stale_grant?(_), do: false
+
+  @doc "Workspace id a retired token used to scope, if any."
+  @spec stale_workspace_id(String.t()) :: String.t() | nil
+  def stale_workspace_id(token) when is_binary(token) do
+    case retired_registry() do
+      %{^token => workspace_id} when is_binary(workspace_id) -> workspace_id
+      _ -> nil
+    end
+  end
+
+  def stale_workspace_id(_), do: nil
+
   defp mint_for(workspace_id) do
     # Serialized so concurrent agent launches for a fresh workspace agree on
     # one token instead of last-write-wins clobbering the registry merge.
     :global.trans({__MODULE__, self()}, fn ->
       case token_for(workspace_id) do
         nil ->
-          token = :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
+          token = mint_token()
           register(token, workspace_id)
           persist(token, workspace_id)
           {:ok, token}
@@ -97,6 +147,8 @@ defmodule Casein.Agents.WorkspaceTokens do
     end)
   end
 
+  defp mint_token, do: :crypto.strong_rand_bytes(32) |> Base.encode16(case: :lower)
+
   defp register(token, workspace_id) do
     updated =
       :casein
@@ -104,6 +156,35 @@ defmodule Casein.Agents.WorkspaceTokens do
       |> Map.put(token, workspace_id)
 
     Application.put_env(:casein, :workspace_api_tokens, updated)
+  end
+
+  defp drop_token(nil), do: :ok
+
+  defp drop_token(token) when is_binary(token) do
+    updated =
+      :casein
+      |> Application.get_env(:workspace_api_tokens, %{})
+      |> Map.delete(token)
+
+    Application.put_env(:casein, :workspace_api_tokens, updated)
+  end
+
+  defp retire_token(nil, _workspace_id), do: :ok
+
+  defp retire_token(token, workspace_id) when is_binary(token) do
+    updated =
+      :casein
+      |> Application.get_env(:workspace_api_tokens_retired, %{})
+      |> Map.put(token, workspace_id)
+
+    Application.put_env(:casein, :workspace_api_tokens_retired, updated)
+  end
+
+  defp retired_registry do
+    case Application.get_env(:casein, :workspace_api_tokens_retired, %{}) do
+      map when is_map(map) -> map
+      _ -> %{}
+    end
   end
 
   # Best effort: a persist failure still leaves the minted token valid in the
@@ -122,6 +203,31 @@ defmodule Casein.Agents.WorkspaceTokens do
         Logger.warning(
           "workspace token for #{workspace_id} minted but not persisted " <>
             "to #{path}: #{inspect(reason)}; it will not survive a restart"
+        )
+
+        :ok
+    end
+  end
+
+  # sobelow_skip ["Traversal.FileModule"]
+  defp persist_rotation(token, old, workspace_id) do
+    path = store_path()
+    stored = read_store(path)
+
+    stored =
+      stored
+      |> Map.put(token, workspace_id)
+      |> then(fn map -> if is_binary(old), do: Map.delete(map, old), else: map end)
+
+    with :ok <- File.mkdir_p(Path.dirname(path)),
+         :ok <- File.write(path, Jason.encode!(stored)),
+         :ok <- File.chmod(path, 0o600) do
+      :ok
+    else
+      {:error, reason} ->
+        Logger.warning(
+          "workspace token rotation for #{workspace_id} not fully persisted " <>
+            "to #{path}: #{inspect(reason)}"
         )
 
         :ok
