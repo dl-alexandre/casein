@@ -292,13 +292,15 @@ defmodule Scripts.AgentDoctorTest do
     refute output =~ "fail=0"
   end
 
-  test "Grok diagnostics reject a mutable bundle and redact probe output", %{
+  test "Grok diagnostics reject a digest-mismatched bundle and redact probe output", %{
     home: home,
     cwd: cwd
   } do
     bundle = build_bundle!(home)
     leader = listen_unix_socket!(home)
-    File.chmod!(Path.join(bundle.dir, ".mcp.json"), 0o644)
+    # Content-addressed immutability is the digest, not FS write bits. Corrupt
+    # a payload byte so verify fails while the path still looks like a bundle.
+    File.write!(Path.join(bundle.dir, ".mcp.json"), ~s({"mcpServers":{"tampered":{}}}\n))
 
     inspect_json =
       Jason.encode!(%{
