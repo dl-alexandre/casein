@@ -41,11 +41,29 @@ defmodule Casein.Terminals.PaneSubmit do
   Unconfirmed submits get **one** extra Enter (`max_enter_presses`, default 2)
   before the call gives up: the recurring cause is a race, and a second press
   after the buffer has drained resolves it. A second Enter on a TUI that already
-  submitted lands on an empty composer and is a no-op, which is what makes the
-  retry safe to attempt blind. It is never issued when the capture is
-  unavailable, because there is nothing to distinguish "did not land" from
-  "cannot tell".
+  submitted lands on an empty composer and is a no-op **when confirmation is
+  honest** — but a false-negative confirmation that retries Enter against a
+  TUI that *did* accept the first press can interrupt the new turn (OpenCode
+  "esc interrupt"). Retries therefore wait an extra settle (`retry_settle_ms`)
+  and confirmation also accepts busy-footer signals (see below).
 
+  ## OpenCode / hook-less TUIs (#886)
+
+  OpenCode does not fire `UserPromptSubmit` hooks. Confirmation is screen-only.
+  Two failure modes showed up after paste_text was restored:
+
+    * **Early Enter** while the composer is still draining a large paste is
+      folded into the buffer as a newline rather than a submit. Two early
+      Enters yield two newlines and `submit_not_confirmed` with the text still
+      sitting unsent — exactly the fleet symptom. Settle scales with paste
+      size and retries wait longer between presses.
+    * **Busy footer** (`esc interrupt`, Braille spinner) is a successful
+      submit for OpenCode even when the pasted marker remains visible in the
+      transcript. Treating only whole-screen diffs as success missed this and
+      encouraged a second Enter that interrupted the turn.
+
+  Busy-footer confirmation is reported as `:screen` (still a capture signal,
+  not a hook) so callers do not need a new enum.
   ## Strict vs. reporting
 
   `strict: true` turns an unconfirmed submit into an error. That is right for
@@ -64,11 +82,25 @@ defmodule Casein.Terminals.PaneSubmit do
   alias Casein.Terminals.AgentState
 
   @default_settle_ms 250
+  # Extra wait before a *retry* Enter — OpenCode folds an early second press
+  # into the composer; giving the first press time to become a submit (or the
+  # busy footer to appear) avoids interrupt-on-false-negative (#886).
+  @default_retry_settle_ms 400
   @default_poll_ms 100
   @default_attempt_timeout_ms 1_200
   @default_max_enter_presses 2
   @default_capture_lines 40
+  # Large pastes need longer drain time before Enter means "submit".
+  @settle_bytes_per_ms 8
+  @max_settle_ms 2_000
 
+  # Footer / chrome tokens that mean the TUI accepted a turn (OpenCode, etc.).
+  # Matched case-insensitively on the captured tail.
+  @busy_footer_needles [
+    "esc interrupt",
+    "esc to interrupt",
+    "ctrl+c to stop"
+  ]
   @type confirmation :: :hook | :screen | :unavailable | :unconfirmed
 
   @type delivery :: :delivered | :not_confirmed | :uncertain | :skipped
@@ -90,9 +122,10 @@ defmodule Casein.Terminals.PaneSubmit do
   `:name_session`, `:name_window`, and `:name_pane` all apply.
 
   Confirmation options: `:confirm` (default `true`), `:max_enter_presses`,
-  `:settle_ms`, `:attempt_timeout_ms`, `:poll_ms`, `:capture_lines`, and
-  `:capture` (a 0-arity function returning the pane tail, for tests).
-
+  `:settle_ms`, `:retry_settle_ms`, `:attempt_timeout_ms`, `:poll_ms`,
+  `:capture_lines`, `:paste_bytes` (scales settle when set — `deliver/4` sets
+  it from the text), and `:capture` (a 0-arity function returning the pane
+  tail, for tests).
   Returns `{:ok, sender_result_with_submit_fields}` or `{:error, map}`. A submit
   that could not be confirmed is an **error**, not a warning: the caller asked
   for text to reach an agent, and reporting success for text parked in a
@@ -119,7 +152,12 @@ defmodule Casein.Terminals.PaneSubmit do
          })}
 
       {:ok, result} ->
-        case confirm_submit(session, pane, Keyword.put_new(opts, :strict, true)) do
+        confirm_opts =
+          opts
+          |> Keyword.put_new(:strict, true)
+          |> Keyword.put_new(:paste_bytes, byte_size(text))
+
+        case confirm_submit(session, pane, confirm_opts) do
           {:ok, confirmation} -> {:ok, Map.merge(result, confirmation)}
           {:error, error} -> {:error, Map.merge(result, error)}
         end
@@ -154,11 +192,14 @@ defmodule Casein.Terminals.PaneSubmit do
 
   defp run_confirm(session, pane, opts) when is_binary(pane) do
     capture = capture_fun(session, pane, opts)
-    baseline = capture.()
-    since = DateTime.utc_now()
     already_sent? = Keyword.get(opts, :enter_already_sent, false)
 
+    # Drain paste / TUI reflow *before* stamping the baseline. An early baseline
+    # that still changes during settle would look like a false "screen" confirm
+    # before Enter, or hide a real Enter behind reflow noise (#886).
     settle(settle_ms(opts))
+    baseline = capture.()
+    since = DateTime.utc_now()
 
     attempt(session, pane, %{
       capture: capture,
@@ -174,6 +215,10 @@ defmodule Casein.Terminals.PaneSubmit do
   defp attempt(session, pane, %{remaining: remaining} = ctx) when remaining > 0 do
     ctx =
       if ctx.pending_press? do
+        # Retry presses wait longer so an early first Enter that became a
+        # newline can settle, and so a successful-but-unconfirmed first press
+        # has time to show the busy footer before we risk interrupting it.
+        if ctx.presses > 0, do: settle(retry_settle_ms(ctx.opts))
         press_enter(session, pane, ctx.opts)
         %{ctx | presses: ctx.presses + 1}
       else
@@ -240,15 +285,22 @@ defmodule Casein.Terminals.PaneSubmit do
   end
 
   defp do_poll(session, pane, ctx, deadline, poll_ms) do
+    current = ctx.capture.()
+
     cond do
       hook_confirmed?(session, pane, ctx.since) ->
         :hook
 
-      screen_changed?(ctx.capture, ctx.baseline) ->
+      # Busy footer / spinner means the TUI accepted a turn even when the
+      # pasted text is still visible in the transcript (OpenCode #886).
+      busy_footer?(current) and not busy_footer?(ctx.baseline) ->
+        :screen
+
+      screen_changed_text?(current, ctx.baseline) ->
         :screen
 
       System.monotonic_time(:millisecond) >= deadline ->
-        if blank?(ctx.baseline) and blank?(ctx.capture.()),
+        if blank?(ctx.baseline) and blank?(current),
           do: :unavailable,
           else: :unconfirmed
 
@@ -271,9 +323,31 @@ defmodule Casein.Terminals.PaneSubmit do
     end
   end
 
-  defp screen_changed?(capture, baseline) do
-    current = capture.()
+  defp screen_changed_text?(current, baseline) do
     not blank?(current) and normalize(current) != normalize(baseline)
+  end
+
+  # OpenCode (and similar hook-less TUIs) flip the footer to a cancel/interrupt
+  # affordance the moment a turn is accepted. That is a stronger "submitted"
+  # signal than a generic redraw, and it stays true while the prompt text is
+  # still painted above the spinner.
+  defp busy_footer?(text) when is_binary(text) do
+    down = String.downcase(text)
+
+    Enum.any?(@busy_footer_needles, &String.contains?(down, &1)) or
+      braille_spinner_line?(text)
+  end
+
+  defp busy_footer?(_), do: false
+
+  # Braille spinner glyphs in the footer (OpenCode / Claude title spinners).
+  defp braille_spinner_line?(text) do
+    text
+    |> String.split("\n")
+    |> Enum.take(-6)
+    |> Enum.any?(fn line ->
+      String.match?(line, ~r/[\x{2800}-\x{28FF}]{2,}/u)
+    end)
   end
 
   defp press_enter(session, pane, opts) do
@@ -332,7 +406,21 @@ defmodule Casein.Terminals.PaneSubmit do
       Casein.Terminals.Backend.module()
   end
 
-  defp settle_ms(opts), do: config(opts, :settle_ms, @default_settle_ms)
+  defp settle_ms(opts) do
+    base = config(opts, :settle_ms, @default_settle_ms)
+    bytes = Keyword.get(opts, :paste_bytes, 0)
+
+    scaled =
+      if is_integer(bytes) and bytes > 0 do
+        base + div(bytes, @settle_bytes_per_ms)
+      else
+        base
+      end
+
+    min(scaled, @max_settle_ms)
+  end
+
+  defp retry_settle_ms(opts), do: config(opts, :retry_settle_ms, @default_retry_settle_ms)
   defp poll_ms(opts), do: config(opts, :poll_ms, @default_poll_ms)
 
   defp attempt_timeout_ms(opts),

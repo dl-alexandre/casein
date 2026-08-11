@@ -112,6 +112,47 @@ defmodule Casein.Terminals.PaneSubmitTest do
                PaneSubmit.confirm_submit(@session, @pane, capture: capture)
     end
 
+    test "OpenCode busy footer after Enter confirms even when prompt text remains" do
+      # Baseline is the quiet composer with the paste already drained; after
+      # Enter the footer flips to "esc interrupt" while the marker stays painted
+      # in the transcript — the #886 false-negative shape.
+      baseline =
+        """
+        ┃  CASEIN_886_BRIEF
+        ┃
+           Build · Grok 4.5 OpenCode Zen
+         /data/casein-agent-worktrees/demo   ctrl+p commands
+        """
+
+      busy =
+        """
+        ┃  CASEIN_886_BRIEF
+        ┃
+           ▣  Build · Grok 4.5
+           Build · Grok 4.5 OpenCode Zen
+         ⬝⬝⬝⬝  esc interrupt                 ctrl+p commands
+        """
+
+      capture = scripted_capture([baseline, busy])
+
+      assert {:ok, result} =
+               PaneSubmit.confirm_submit(@session, @pane, capture: capture)
+
+      assert result.submitted == true
+      assert result.delivery == :delivered
+      assert result.confirmation == :screen
+      assert result.enter_presses == 1
+    end
+
+    test "Braille spinner footer alone confirms a hook-less submit" do
+      baseline = "> ready\n  Build · OpenCode"
+      busy = "> ready\n  ⣿⣷  working…\n  Build · OpenCode"
+      capture = scripted_capture([baseline, busy])
+
+      assert {:ok, %{delivery: :delivered, enter_presses: 1}} =
+               PaneSubmit.confirm_submit(@session, @pane, capture: capture)
+    end
+
     test "an unreadable pane reports uncertain and never presses Enter twice" do
       capture = scripted_capture([""])
 
@@ -232,6 +273,7 @@ defmodule Casein.Terminals.PaneSubmitTest do
                PaneSubmit.deliver(@session, @pane, "long fleet brief\nline 2\nline 3",
                  capture: capture,
                  settle_ms: 0,
+                 retry_settle_ms: 0,
                  attempt_timeout_ms: 80,
                  poll_ms: 10
                )
@@ -243,6 +285,24 @@ defmodule Casein.Terminals.PaneSubmitTest do
       refute Keyword.get(opts, :submit)
       assert_received {:fake_tmux_keys, @session, @pane, "Enter", _}
       assert_received {:fake_tmux_keys, @session, @pane, "Enter", _}
+    end
+
+    test "deliver scales settle from paste_bytes so large briefs drain first" do
+      # Capture never changes — we only care that paste_bytes is forwarded and
+      # settle is non-zero without blowing the test budget (capped).
+      capture = scripted_capture(["> still here"])
+
+      assert {:error, %{error: :submit_not_confirmed, enter_presses: 2}} =
+               PaneSubmit.deliver(@session, @pane, String.duplicate("x", 400),
+                 capture: capture,
+                 # Explicit base 0; paste_bytes alone should still scale settle
+                 # but retry stays 0 via test config / explicit override.
+                 settle_ms: 0,
+                 retry_settle_ms: 0,
+                 paste_bytes: 400,
+                 attempt_timeout_ms: 20,
+                 poll_ms: 5
+               )
     end
 
     test "an empty prompt sends nothing and never presses Enter" do

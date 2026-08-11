@@ -157,7 +157,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
         :ok ->
           if submit? do
             report_dispatch_working(params, session, pane.id, text, "terminal_paste_agent_text")
-            confirm_sent(session, pane.id, params, enter_already_sent: false)
+            # paste_bytes scales PaneSubmit settle so large OpenCode briefs are
+            # not Enter'd while the composer is still draining (#886).
+            confirm_sent(session, pane.id, params,
+              enter_already_sent: false,
+              paste_bytes: byte_size(text)
+            )
           else
             {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
           end
@@ -201,7 +206,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
     payload = sent_payload(session, pane_id, "terminal_capture_agent", params)
 
     if confirm? do
-      case PaneSubmit.confirm_submit(session, pane_id, Keyword.put(opts, :confirm, true)) do
+      confirm_opts =
+        opts
+        |> Keyword.put(:confirm, true)
+        |> Keyword.put_new(:paste_bytes, 0)
+
+      case PaneSubmit.confirm_submit(session, pane_id, confirm_opts) do
         {:ok, confirmation} ->
           {:ok, Map.merge(payload, stringify_confirmation(confirmation))}
 
