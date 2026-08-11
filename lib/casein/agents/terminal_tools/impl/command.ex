@@ -23,8 +23,13 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
       {target, implicit?} = resolve_implicit_target(session, raw_target)
 
       with :ok <- guard_shared_worktree(session, target, keys, params) do
+        # Backend/Adapter contract is `:ok | {:error, _}`; some adapters still
+        # return `{out, code}`. Accept both so pinning `:tmux_adapter` to
+        # Backends.Tmux (normalized) or legacy Client does not CaseClauseError.
         case tmux().send_keys(target, keys) do
+          :ok -> {:ok, raw_sent_payload(session, target, implicit?, params)}
           {_out, 0} -> {:ok, raw_sent_payload(session, target, implicit?, params)}
+          {:error, reason} -> {:error, reason}
           {out, _code} -> {:error, String.trim(out)}
         end
       end
