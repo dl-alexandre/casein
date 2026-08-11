@@ -268,25 +268,34 @@ defmodule Casein.Terminals.PaneProcessLiveness do
     reader.(pid)
   end
 
-  defp default_children_reader(pid) do
+  # pid is a positive integer from tmux pane_pid / prior /proc children — never
+  # attacker-controlled path input. Path is always under /proc/<pid>/task/.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp default_children_reader(pid) when is_integer(pid) and pid > 0 do
     task_dir = "/proc/#{pid}/task"
 
     case File.ls(task_dir) do
       {:ok, tasks} ->
         Enum.flat_map(tasks, fn task ->
-          case File.read(Path.join([task_dir, task, "children"])) do
-            {:ok, body} ->
-              body
-              |> String.split(~r/\s+/, trim: true)
-              |> Enum.flat_map(fn tok ->
-                case Integer.parse(tok) do
-                  {n, ""} when n > 0 -> [n]
-                  _ -> []
-                end
-              end)
+          # Task dir names are kernel tids (digits only); reject anything else
+          # so a future Path.join cannot leave /proc/<pid>/task/.
+          if tid?(task) do
+            case File.read(Path.join([task_dir, task, "children"])) do
+              {:ok, body} ->
+                body
+                |> String.split(~r/\s+/, trim: true)
+                |> Enum.flat_map(fn tok ->
+                  case Integer.parse(tok) do
+                    {n, ""} when n > 0 -> [n]
+                    _ -> []
+                  end
+                end)
 
-            _ ->
-              []
+              _ ->
+                []
+            end
+          else
+            []
           end
         end)
         |> Enum.uniq()
@@ -296,9 +305,14 @@ defmodule Casein.Terminals.PaneProcessLiveness do
     end
   end
 
+  defp default_children_reader(_pid), do: []
+
   # /proc/<pid>/stat field 14 = utime, 15 = stime (jiffies). Comm may contain
   # spaces/parens, so split on the trailing ") " and index from there.
-  defp read_proc_jiffies(pid) when is_integer(pid) do
+  # pid is a positive integer from tmux pane_pid / process-tree walk — not user
+  # path input. Path is fixed-shape /proc/<pid>/stat only.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp read_proc_jiffies(pid) when is_integer(pid) and pid > 0 do
     case File.read("/proc/#{pid}/stat") do
       {:ok, body} ->
         case split_stat_fields(body) do
@@ -323,6 +337,13 @@ defmodule Casein.Terminals.PaneProcessLiveness do
   end
 
   defp read_proc_jiffies(_), do: :error
+
+  defp tid?(name) when is_binary(name) do
+    byte_size(name) > 0 and match?({_, ""}, Integer.parse(name)) and
+      String.match?(name, ~r/\A[1-9][0-9]*\z/)
+  end
+
+  defp tid?(_), do: false
 
   defp split_stat_fields(body) when is_binary(body) do
     case :binary.split(body, ") ") do
