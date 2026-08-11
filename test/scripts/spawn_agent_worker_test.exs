@@ -486,8 +486,13 @@ defmodule Scripts.SpawnAgentWorkerTest do
     # `list-panes` reports whatever liveness FAKE_PANE_STATE asks for, and
     # `display-message` hands back the pane's root pid so the readiness walk has
     # somewhere to start. Window disposal is journalled for assertions.
+    # casein_tmux always prefixes `-L <label>` (#248). Strip that before the
+    # subcommand case so the stub still matches list-panes/new-window/etc.
     File.write!(Path.join(fakebin, "tmux"), """
     #!/usr/bin/env bash
+    if [[ "${1:-}" == "-L" || "${1:-}" == "-S" ]]; then
+      shift 2
+    fi
     case "${1:-}" in
       list-panes)
         case "${FAKE_PANE_STATE:-alive}" in

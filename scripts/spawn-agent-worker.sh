@@ -8,6 +8,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Labeled tmux only — bare tmux follows $TMUX / default server (#248).
+# shellcheck source=lib/tmux-label.sh
+source "${ROOT}/scripts/lib/tmux-label.sh"
 # shellcheck source=lib/agent-env.sh
 source "${ROOT}/scripts/lib/agent-env.sh"
 # Resolves the executable the launcher will exec — the readiness check below
@@ -74,7 +77,7 @@ spawn_worker_resolve_session() {
   fi
 
   if [[ -n "${TMUX:-}" ]]; then
-    tmux display-message -p '#{session_name}' 2>/dev/null || true
+    casein_tmux display-message -p '#{session_name}' 2>/dev/null || true
     return 0
   fi
 
@@ -309,7 +312,7 @@ spawn_worker_pane_alive() {
   # `list-panes -a` + exact match: `-t <pane>` silently falls back to the
   # current pane for some tmux targets, which would mask a vanished pane.
   dead="$(
-    tmux list-panes -a -F '#{pane_id} #{pane_dead}' 2>/dev/null |
+    casein_tmux list-panes -a -F '#{pane_id} #{pane_dead}' 2>/dev/null |
       awk -v p="$pane_id" '$1 == p { print $2; found = 1 } END { exit !found }'
   )" || return 1
 
@@ -443,7 +446,7 @@ spawn_worker_wait_for_agent() {
   while ((elapsed < budget)); do
     spawn_worker_pane_alive "$pane_id" || return 2
 
-    pane_pid="$(tmux display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null || true)"
+    pane_pid="$(casein_tmux display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null || true)"
     if [[ -n "$pane_pid" ]] && spawn_worker_agent_process "$pane_pid" "$pattern" >/dev/null; then
       return 0
     fi
@@ -466,7 +469,7 @@ spawn_worker_wait_for_agent() {
 # nothing.
 spawn_worker_pane_tail() {
   local pane_id="$1"
-  tmux capture-pane -p -t "$pane_id" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -20 ||
+  casein_tmux capture-pane -p -t "$pane_id" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -20 ||
     echo "(pane is gone — no output captured)"
 }
 
@@ -479,12 +482,12 @@ spawn_worker_dispose_window() {
   local pane_id="$1" window_name="$2"
 
   if [[ "${CASEIN_SPAWN_KEEP_FAILED_WINDOW:-0}" == "1" ]]; then
-    tmux rename-window -t "$pane_id" "failed-${window_name}" 2>/dev/null || true
+    casein_tmux rename-window -t "$pane_id" "failed-${window_name}" 2>/dev/null || true
     echo "note: left the window open as 'failed-${window_name}' — close it when you are done" >&2
     return 0
   fi
 
-  tmux kill-window -t "$pane_id" 2>/dev/null || true
+  casein_tmux kill-window -t "$pane_id" 2>/dev/null || true
   echo "note: closed the failed worker window (CASEIN_SPAWN_KEEP_FAILED_WINDOW=1 keeps it for inspection)" >&2
 }
 
@@ -592,7 +595,7 @@ if [[ ! -f "$LAUNCHER" ]]; then
   exit 1
 fi
 
-if ! tmux has-session -t "$SESSION" 2>/dev/null; then
+if ! casein_tmux has-session -t "$SESSION" 2>/dev/null; then
   echo "error: tmux session not found: ${SESSION}" >&2
   exit 1
 fi
@@ -627,8 +630,8 @@ if [[ "${CASEIN_SPAWN_DRY_RUN:-0}" == "1" ]]; then
 fi
 
 PANE_ID="$(
-  tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -P -F '#{pane_id}' "$LAUNCH_CMD" 2>/dev/null ||
-    tmux new-window -t "$SESSION" -P -F '#{pane_id}' "$LAUNCH_CMD"
+  casein_tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -P -F '#{pane_id}' "$LAUNCH_CMD" 2>/dev/null ||
+    casein_tmux new-window -t "$SESSION" -P -F '#{pane_id}' "$LAUNCH_CMD"
 )"
 
 if [[ -z "$PANE_ID" ]]; then

@@ -14,6 +14,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Labeled tmux only — bare tmux follows $TMUX / default server (#248).
+# shellcheck source=tmux-label.sh
+source "${ROOT}/scripts/lib/tmux-label.sh"
 ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/casein.env}"
 LOCAL_URL="${CASEIN_URL:-http://127.0.0.1:4000}"
 CANONICAL_SCRIPTS="${CASEIN_SCRIPTS_ROOT:-${ROOT}/scripts}"
@@ -132,12 +135,12 @@ set_provider_auth_profiles() {
   local workspace_name="$2"
   local key value
 
-  tmux set-environment -t "$session" -u CLAUDE_CONFIG_DIR 2>/dev/null || true
-  tmux set-environment -t "$session" -u CODEX_HOME 2>/dev/null || true
+  casein_tmux set-environment -t "$session" -u CLAUDE_CONFIG_DIR 2>/dev/null || true
+  casein_tmux set-environment -t "$session" -u CODEX_HOME 2>/dev/null || true
 
   while IFS=$'\t' read -r key value; do
     [[ -n "$key" && -n "$value" ]] || continue
-    tmux set-environment -t "$session" "$key" "$value"
+    casein_tmux set-environment -t "$session" "$key" "$value"
   done < <(
     bash "${ROOT}/scripts/lib/agent-auth-profile.sh" --pairs "$workspace_name" claude
     bash "${ROOT}/scripts/lib/agent-auth-profile.sh" --pairs "$workspace_name" codex
@@ -149,7 +152,7 @@ session_env_present() {
   local key="$2"
   local line
 
-  line="$(tmux show-environment -t "$session" "$key" 2>/dev/null || true)"
+  line="$(casein_tmux show-environment -t "$session" "$key" 2>/dev/null || true)"
   [[ "$line" == "${key}="* ]]
 }
 
@@ -159,7 +162,7 @@ set_session_env_if_missing() {
   local value="$3"
 
   if ! session_env_present "$session" "$key"; then
-    tmux set-environment -t "$session" "$key" "$value"
+    casein_tmux set-environment -t "$session" "$key" "$value"
   fi
 }
 
@@ -191,10 +194,10 @@ refresh_live_panes() {
     # Leading space keeps this out of history under HISTCONTROL=ignorespace.
     # Newer panes define casein_sync_session_env via shell integration; older
     # ones predate it and fall back to the materialized env file.
-    tmux send-keys -t "$pane" \
+    casein_tmux send-keys -t "$pane" \
       " casein_sync_session_env 2>/dev/null || source ${quoted_env_sh}" C-m
   done < <(
-    tmux list-panes -s -t "$session" -F "#{pane_id}"$'\t'"#{pane_current_command}" 2>/dev/null
+    casein_tmux list-panes -s -t "$session" -F "#{pane_id}"$'\t'"#{pane_current_command}" 2>/dev/null
   )
 }
 
@@ -240,29 +243,29 @@ repair_session() {
 
   materialize_workspace "$workspace_name" "$workspace_id" "$session" "$agent_token"
 
-  tmux set-environment -t "$session" -u GROK_HOME 2>/dev/null || true
-  tmux set-environment -t "$session" -u OPENCODE_CONFIG 2>/dev/null || true
+  casein_tmux set-environment -t "$session" -u GROK_HOME 2>/dev/null || true
+  casein_tmux set-environment -t "$session" -u OPENCODE_CONFIG 2>/dev/null || true
   set_provider_auth_profiles "$session" "$workspace_name"
   set_session_env_if_missing "$session" CASEIN_TERMINAL_SCHEME dark
   set_session_env_if_missing "$session" COLORFGBG "15;0"
 
-  tmux set-environment -t "$session" CASEIN_API_TOKEN "$agent_token"
-  tmux set-environment -t "$session" CASEIN_WORKSPACE_ID "$workspace_id"
-  tmux set-environment -t "$session" CASEIN_WORKSPACE_NAME "$workspace_name"
-  tmux set-environment -t "$session" CASEIN_TMUX_SESSION "$session"
-  tmux set-environment -t "$session" CASEIN_API_BASE_URL "${LOCAL_URL}"
-  tmux set-environment -t "$session" CASEIN_TERMINAL_MCP_URL "${LOCAL_URL}/api/terminals/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
-  tmux set-environment -t "$session" CASEIN_PREVIEW_MCP_URL "${LOCAL_URL}/api/preview/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
-  tmux set-environment -t "$session" CASEIN_ARTIFACT_MCP_URL "${LOCAL_URL}/api/artifacts/mcp?workspace_id=${workspace_id}"
+  casein_tmux set-environment -t "$session" CASEIN_API_TOKEN "$agent_token"
+  casein_tmux set-environment -t "$session" CASEIN_WORKSPACE_ID "$workspace_id"
+  casein_tmux set-environment -t "$session" CASEIN_WORKSPACE_NAME "$workspace_name"
+  casein_tmux set-environment -t "$session" CASEIN_TMUX_SESSION "$session"
+  casein_tmux set-environment -t "$session" CASEIN_API_BASE_URL "${LOCAL_URL}"
+  casein_tmux set-environment -t "$session" CASEIN_TERMINAL_MCP_URL "${LOCAL_URL}/api/terminals/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
+  casein_tmux set-environment -t "$session" CASEIN_PREVIEW_MCP_URL "${LOCAL_URL}/api/preview/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
+  casein_tmux set-environment -t "$session" CASEIN_ARTIFACT_MCP_URL "${LOCAL_URL}/api/artifacts/mcp?workspace_id=${workspace_id}"
   if [[ -n "$tidewave_url" ]]; then
-    tmux set-environment -t "$session" CASEIN_TIDEWAVE_MCP_URL "$tidewave_url"
+    casein_tmux set-environment -t "$session" CASEIN_TIDEWAVE_MCP_URL "$tidewave_url"
   else
-    tmux set-environment -t "$session" -u CASEIN_TIDEWAVE_MCP_URL 2>/dev/null || true
+    casein_tmux set-environment -t "$session" -u CASEIN_TIDEWAVE_MCP_URL 2>/dev/null || true
   fi
-  tmux set-environment -t "$session" CASEIN_CHECKOUT "$checkout"
-  tmux set-environment -t "$session" CASEIN_AGENT_MCP_HOME "$staging"
-  tmux set-environment -t "$session" CASEIN_SCRIPTS "$scripts"
-  tmux set-environment -t "$session" CASEIN_AGENT_ENV_FILE "$env_sh"
+  casein_tmux set-environment -t "$session" CASEIN_CHECKOUT "$checkout"
+  casein_tmux set-environment -t "$session" CASEIN_AGENT_MCP_HOME "$staging"
+  casein_tmux set-environment -t "$session" CASEIN_SCRIPTS "$scripts"
+  casein_tmux set-environment -t "$session" CASEIN_AGENT_ENV_FILE "$env_sh"
   local npm_prefix terminal_shims tools_bin repaired_path
   npm_prefix="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
   terminal_shims="${CASEIN_TERMINAL_SHIMS_DIR:-${HOME}/.casein/terminal-shims}"
@@ -282,8 +285,8 @@ for part in os.environ.get("PATH", "").split(":"):
 print(":".join(out))
 PY
   )"
-  tmux set-environment -t "$session" CASEIN_NPM_PREFIX "$npm_prefix"
-  tmux set-environment -t "$session" PATH "$repaired_path"
+  casein_tmux set-environment -t "$session" CASEIN_NPM_PREFIX "$npm_prefix"
+  casein_tmux set-environment -t "$session" PATH "$repaired_path"
 
   refresh_live_panes "$session" "$env_sh"
 
@@ -297,7 +300,7 @@ resolve_session() {
   fi
 
   if [[ -n "${TMUX:-}" ]]; then
-    tmux display-message -p '#{session_name}' 2>/dev/null || true
+    casein_tmux display-message -p '#{session_name}' 2>/dev/null || true
     return 0
   fi
 

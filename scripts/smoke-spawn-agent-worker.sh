@@ -19,6 +19,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Labeled tmux only — bare tmux follows $TMUX / default server (#248).
+# shellcheck source=lib/tmux-label.sh
+source "${ROOT}/scripts/lib/tmux-label.sh"
 
 RUNTIME="claude"
 KEEP=0
@@ -58,8 +61,8 @@ cleanup() {
   fi
 
   local worktree=""
-  worktree="$(tmux display-message -p -t "$PANE_ID" '#{pane_current_path}' 2>/dev/null || true)"
-  tmux kill-window -t "$PANE_ID" 2>/dev/null || true
+  worktree="$(casein_tmux display-message -p -t "$PANE_ID" '#{pane_current_path}' 2>/dev/null || true)"
+  casein_tmux kill-window -t "$PANE_ID" 2>/dev/null || true
 
   # Only worktrees this smoke run created, and only when clean — `git worktree
   # remove` without --force is the second net.
@@ -74,7 +77,7 @@ trap cleanup EXIT
 # Independent verification: walk the pane's own process tree and look for
 # something that is plainly the agent rather than a shell. Deliberately does not
 # reuse the helpers in spawn-agent-worker.sh — this is the check on that check.
-PANE_PID="$(tmux display-message -p -t "$PANE_ID" '#{pane_pid}' 2>/dev/null || true)"
+PANE_PID="$(casein_tmux display-message -p -t "$PANE_ID" '#{pane_pid}' 2>/dev/null || true)"
 [[ -n "$PANE_PID" ]] || fail "pane ${PANE_ID} is gone — spawn printed a dead pane id"
 
 TREE="$(
@@ -101,7 +104,7 @@ if ! printf '%s\n' "$TREE" | grep -qE "(^|/)(${RUNTIME}|claude[.]exe|codex[.]js|
   fail "no ${RUNTIME} process under pane ${PANE_ID} — spawn reported success for a window that holds only a shell"
 fi
 
-CURRENT="$(tmux display-message -p -t "$PANE_ID" '#{pane_current_command}' 2>/dev/null || true)"
+CURRENT="$(casein_tmux display-message -p -t "$PANE_ID" '#{pane_current_command}' 2>/dev/null || true)"
 say "pane_current_command=${CURRENT}"
 case "$CURRENT" in
   bash | sh | zsh | fish | dash)
