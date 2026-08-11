@@ -25,18 +25,33 @@ defmodule Casein.Agents.PreviewTools.Helpers do
     Params.preview_open_props()
     |> Map.put(:port, Params.port())
     |> Map.put(:anchor_pane_id, %{type: "string"})
+    |> Map.put(:url, external_url_param())
   end
 
   @doc false
   def mode_param do
     %{
       type: "string",
-      enum: ["app", "localhost", "here"],
+      enum: ["app", "localhost", "here", "external"],
       default: "app",
       description:
-        "Which surface to open: \"app\" (the workspace app surface), \"localhost\" " <>
-          "(a specific dev-server port — requires port), or \"here\" (the app surface " <>
-          "beside the calling agent — requires tmux_session)."
+        ~s|Which surface to open: "app" (the workspace app surface), "localhost" | <>
+          ~s|(a specific dev-server port — requires port), "here" (the app surface | <>
+          ~s|beside the calling agent — requires tmux_session), or "external" (an | <>
+          ~s|operator-allowlisted origin outside this workspace — requires url).|
+    }
+  end
+
+  @doc false
+  def external_url_param do
+    %{
+      type: "string",
+      description:
+        "Absolute http(s) URL for mode=external, e.g. https://staging.example.com/login. " <>
+          "Its origin must be allowlisted by the operator (CASEIN_PREVIEW_EXTERNAL_ORIGINS " <>
+          "or workspace metadata external_preview_origins); anything else is refused and no " <>
+          "pane is opened. The browser loads this URL directly, so the target app keeps its " <>
+          "own origin for routing, cookies, CSRF, and its LiveView websocket."
     }
   end
 
@@ -155,6 +170,7 @@ defmodule Casein.Agents.PreviewTools.Helpers do
         assignment_id: [type: :string],
         port: [type: {:or, [:integer, :string]}],
         path: [type: :string],
+        url: [type: :string],
         mode: [type: :string],
         anchor_pane_id: [type: :string],
         anchor_window_id: [type: :string],

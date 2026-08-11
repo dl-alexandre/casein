@@ -140,7 +140,7 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
             %{
               error: :invalid_mode,
               mode: "sideways",
-              allowed_modes: ["app", "localhost", "here"],
+              allowed_modes: ["app", "localhost", "here", "external"],
               message: message
             }} =
              PreviewTools.invoke("preview_open", @v3_workspace, %{"mode" => "sideways"})
@@ -162,6 +162,56 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
              PreviewTools.invoke("preview_open", @v3_workspace, %{"mode" => "here"})
 
     assert guidance =~ "pass tmux_session"
+  end
+
+  test "preview_open mode external refuses an origin the operator never allowlisted" do
+    Application.delete_env(:casein, :preview_external_origins)
+
+    assert {:error, %{error: :external_previews_not_configured, env_var: env_var}} =
+             PreviewTools.invoke("preview_open", @v3_workspace, %{
+               "mode" => "external",
+               "url" => "https://dev.example.com/login"
+             })
+
+    assert env_var == "CASEIN_PREVIEW_EXTERNAL_ORIGINS"
+  end
+
+  test "preview_open mode external refuses a url outside the allowlist" do
+    Application.put_env(:casein, :preview_external_origins, ["https://dev.example.com"])
+    on_exit(fn -> Application.delete_env(:casein, :preview_external_origins) end)
+
+    assert {:error, %{error: :external_origin_not_allowed, origin: "https://elsewhere.test:443"}} =
+             PreviewTools.invoke("preview_open", @v3_workspace, %{
+               "mode" => "external",
+               "url" => "https://elsewhere.test/login"
+             })
+  end
+
+  test "preview_open mode external requires a url" do
+    Application.put_env(:casein, :preview_external_origins, ["https://dev.example.com"])
+    on_exit(fn -> Application.delete_env(:casein, :preview_external_origins) end)
+
+    assert {:error, %{error: :invalid_external_url}} =
+             PreviewTools.invoke("preview_open", @v3_workspace, %{"mode" => "external"})
+  end
+
+  test "preview_open mode external opens a pane on the real external origin" do
+    Application.put_env(:casein, :preview_external_origins, ["https://dev.example.com"])
+    on_exit(fn -> Application.delete_env(:casein, :preview_external_origins) end)
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_open", @v3_workspace, %{
+               "mode" => "external",
+               "url" => "https://dev.example.com/login"
+             })
+
+    assert payload.preview_source == %{via: "external"}
+    assert is_binary(payload.pane_id)
+
+    # The pane must sit on the target's own origin — a rewritten or
+    # path-prefixed URL is what reconnect-loops a LiveView app.
+    registration = PreviewPanes.get_by_pane(payload.pane_id)
+    assert registration.url == "https://dev.example.com/login"
   end
 
   # ---------------------------------------------------------------------------

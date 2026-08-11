@@ -67,7 +67,7 @@ config :casein,
        :allow_global_mcp_tool_calls,
        truthy_env?.("CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS")
 
-mobile_terminal_allowlist = fn name ->
+csv_allowlist = fn name ->
   name
   |> System.get_env("")
   |> String.split(",", trim: true)
@@ -82,9 +82,18 @@ end
 config :casein, :mobile_terminal,
   enabled: truthy_env?.("CASEIN_MOBILE_TERMINAL_ENABLED"),
   kill_switch: not falsey_env?.("CASEIN_MOBILE_TERMINAL_KILL_SWITCH"),
-  user_ids: mobile_terminal_allowlist.("CASEIN_MOBILE_TERMINAL_USER_IDS"),
-  device_link_ids: mobile_terminal_allowlist.("CASEIN_MOBILE_TERMINAL_DEVICE_LINK_IDS"),
-  workspace_ids: mobile_terminal_allowlist.("CASEIN_MOBILE_TERMINAL_WORKSPACE_IDS")
+  user_ids: csv_allowlist.("CASEIN_MOBILE_TERMINAL_USER_IDS"),
+  device_link_ids: csv_allowlist.("CASEIN_MOBILE_TERMINAL_DEVICE_LINK_IDS"),
+  workspace_ids: csv_allowlist.("CASEIN_MOBILE_TERMINAL_WORKSPACE_IDS")
+
+# Origins outside this deployment's workspaces that `preview_open mode=external`
+# may open (comma-separated, e.g. "https://dev.example.com,https://staging.example.test").
+# Empty by default: with nothing set the external lane is off and every call is
+# refused, so a preview can still only reach workspace-owned surfaces. Host
+# matching is exact-or-subdomain, scheme and port exact.
+config :casein,
+       :preview_external_origins,
+       csv_allowlist.("CASEIN_PREVIEW_EXTERNAL_ORIGINS")
 
 # When on, MCP `tools/list` advertises only a small core set + the search_tools
 # / invoke_tool meta-tools instead of every tool, to cut context and improve

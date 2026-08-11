@@ -56,6 +56,10 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
    - `mode: "localhost"` opens a specific dev-server `port`.
    - `mode: "here"` opens the app surface beside the calling agent (needs
      `tmux_session`, injected automatically by a session-scoped MCP URL).
+   - `mode: "external"` opens an **allowlisted origin outside this
+     deployment's workspaces** (needs `url`). Off unless an operator sets
+     `CASEIN_PREVIEW_EXTERNAL_ORIGINS`; see
+     [`docs/preview-external-origins.md`](preview-external-origins.md).
 
    `preview_open` splits the active tmux window and runs `casein-preview <url>`
    in the new pane. The response includes `pane_id` plus the usual `session_id`.

@@ -9,21 +9,56 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
   alias Casein.Agents.PreviewTools.ControlSession.Navigation
   alias Casein.PreviewControl
   alias Casein.PreviewPanes
+  alias Casein.Previews.ExternalOrigins
   alias Casein.Previews.Url
 
   # Unified entry point for the preview_open tool. Routes by `mode` to the
   # existing per-surface handlers, which each validate their own required
-  # arguments (localhost → port, here → tmux_session) and return structured
-  # errors. The deprecated preview_open_app/_localhost/_here tools call those
-  # same handlers directly.
-  @valid_open_modes ~w(app localhost here)
+  # arguments (localhost → port, here → tmux_session, external → url) and
+  # return structured errors. The deprecated preview_open_app/_localhost/_here
+  # tools call those same handlers directly.
+  @valid_open_modes ~w(app localhost here external)
   def open_unified(workspace, params) do
     case Shared.string_param(params, :mode) || "app" do
       "app" -> open_app_preview(workspace, params)
       "localhost" -> PortProbing.open_localhost_preview(workspace, params)
       "here" -> open_app_here(workspace, params)
+      "external" -> open_external_preview(workspace, params)
       other -> {:error, invalid_open_mode_error(other)}
     end
+  end
+
+  @doc """
+  Open an allowlisted external origin (a host this workspace does not own).
+
+  The browser is pointed at the caller's URL verbatim, so the target app keeps
+  its own origin for routing, cookies, CSRF, and the LiveView `wss://` join.
+  Only origins an operator allowlisted are reachable; see
+  `Casein.Previews.ExternalOrigins`.
+  """
+  @spec open_external_preview(map(), map()) :: {:ok, map()} | {:error, term()}
+  def open_external_preview(workspace, params \\ %{}) do
+    with {:ok, url} <- ExternalOrigins.validate(external_url_param(params), workspace) do
+      if native_windows?() do
+        {:error, external_requires_pane_error(url)}
+      else
+        open_visible_url(workspace, params, url, "external")
+      end
+    end
+  end
+
+  defp external_url_param(params) do
+    Shared.string_param(params, :url) || Map.get(params, "url") || Map.get(params, :url)
+  end
+
+  defp external_requires_pane_error(url) do
+    %{
+      error: :external_preview_requires_pane,
+      url: url,
+      message:
+        "External-origin previews need a tmux preview pane, which this host " <>
+          "(CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY) does not create. No preview pane was opened."
+    }
   end
 
   defp invalid_open_mode_error(mode) do
@@ -149,11 +184,15 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
     if native_windows?() do
       open_control_only_localhost(workspace, params, url)
     else
-      open_visible_localhost(workspace, params, url)
+      open_visible_url(workspace, params, url, "localhost")
     end
   end
 
-  defp open_visible_localhost(workspace, params, url) do
+  # Shared visible-pane open for the lanes that already know their absolute URL
+  # (a validated localhost port, an allowlisted external origin) rather than
+  # resolving one from a workspace surface. `preview_source` records which lane
+  # the pane came from so the caller can tell what it is looking at.
+  defp open_visible_url(workspace, params, url, preview_source) do
     with :ok <- SessionResolve.ensure_unambiguous_tmux_session(workspace, params),
          opts <- SessionResolve.split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
@@ -166,6 +205,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
       payload =
         Shared.session_payload(result.session)
         |> Map.put(:pane_id, result.pane_id)
+        |> Map.put(:preview_source, %{via: preview_source})
         |> put_shared_registration(result.registration)
         |> Map.put(:health, health)
         |> Map.put(:visibility, operator_visibility.visibility)

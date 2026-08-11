@@ -16,6 +16,7 @@ defmodule Casein.Agents.PreviewTools.Open do
       assignment_id: [type: :string],
       port: [type: {:or, [:integer, :string]}],
       path: [type: :string],
+      url: [type: :string],
       mode: [type: :string],
       anchor_pane_id: [type: :string],
       anchor_window_id: [type: :string],
