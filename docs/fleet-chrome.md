@@ -226,6 +226,39 @@ Use `worker_status` when you need one-pane depth (`worktree_path`, full
 liveness); use this tool to answer "which of my N workers need me?" without the
 gate/orphan aggregate payload.
 
+## MCP resource: `casein://fleet/summary` (#859)
+
+Read-only **one-call fleet picture** on Terminal MCP `resources/list` /
+`resources/read`. Replaces `terminal_topology` + N `terminal_capture` scrapes
+for "what is my fleet doing?".
+
+```text
+resources/read { uri: "casein://fleet/summary" }
+→ sessions[], each with panes[]:
+    runtime, worktree_path, branch, ahead/behind,
+    commits_not_on_origin?, liveness { source: "process_cpu", state, … }
+```
+
+**Liveness is process/CPU evidence, not the spinner.** `PaneProcessLiveness`
+samples `pane_pid` + its `/proc` process tree and compares cumulative CPU
+jiffies across reads. A pane whose screen shows a frozen build timer but is
+burning CPU reports `active` rather than dead — far better than screen-scraping
+for "is the process still there?". First sample is `unknown`/`warming` (not
+quiet). Missing pid/proc is `unknown` with reason — never collapsed into quiet.
+
+**CPU alone does not prove the agent is making progress.** A wedged worker can
+burn hours of CPU with zero commits, frozen context, and a frozen timer while
+its process tree still advances jiffies. Treat process/CPU as necessary-not-
+sufficient process presence. Composite progress signals (context delta, spend
+delta, worktree delta, screen delta, distinct running-but-not-progressing) are
+tracked in #879 and are out of scope for this resource.
+
+Per-worktree branch + `commits_not_on_origin?` come from `Git.Inspector`
+(`ahead` vs upstream), not `rev-list HEAD --not --remotes`.
+
+No mutation verbs. Does **not** edit orchestration_status / worker_status /
+orchestration_list_workers paths owned by #384.
+
 ## Code
 
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
@@ -234,11 +267,14 @@ gate/orphan aggregate payload.
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
 - `Casein.Terminals.WorkerStatus` — MCP wire projection for one pane (M2)
 - `Casein.Terminals.OrchestrationListWorkers` — compact worker-list projection (M3)
+- `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859)
+- `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy liveness (#859)
 - `Casein.Ops.GateQueue` — host flock observation (`/proc` + lock path) + `position/2`
 - `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
 - `Casein.Agents.TerminalTools.OrchestrationStatus` — Jido action / MCP tool
 - `Casein.Agents.TerminalTools.WorkerStatus` — Jido action / MCP tool (`worker_status`)
 - `Casein.Agents.TerminalTools.OrchestrationListWorkers` — Jido action / MCP tool (`orchestration_list_workers`)
+- `CaseinWeb.API.TerminalMCP` — publishes `casein://fleet/summary` resource
 - `Casein.Labels.enrich_topology/2` — join label strings onto panes
 - `Casein.Terminals.PaneState` — strips bare runtime banners from `task_summary`
 - Wired from `Casein.Agents.TerminalTools.Impl.Session.topology/1`,

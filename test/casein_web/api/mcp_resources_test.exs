@@ -2,13 +2,20 @@ defmodule CaseinWeb.API.MCPResourcesTest do
   @moduledoc """
   The `resources/*` surface and the MCP Apps declaration built on it.
 
-  Casein serves resources for exactly one reason today: the artifact viewer that
-  hosts render inline.
+  Casein serves resources for the artifact viewer (MCP App) and the terminal
+  fleet summary (`casein://fleet/summary`).
   """
 
   use ExUnit.Case, async: false
 
   alias CaseinWeb.API.{ArtifactMCP, MCPEnvelope, TerminalMCP}
+
+  defmodule EmptyTmux do
+    def list_sessions, do: []
+    def session_topology(_), do: {[], []}
+    def list_session_windows(_), do: []
+    def list_session_panes(_), do: []
+  end
 
   @ui_uri "ui://casein-artifact/artifact-app.html"
   @ui_mime "text/html;profile=mcp-app"
@@ -92,20 +99,46 @@ defmodule CaseinWeb.API.MCPResourcesTest do
     end
   end
 
-  describe "servers without an app" do
-    test "resources/list is empty and templates are never advertised" do
-      assert {:reply, %{result: %{resources: []}}} =
+  describe "terminal fleet summary resource" do
+    test "resources/list publishes casein://fleet/summary" do
+      assert {:reply, %{result: result}} =
                MCPEnvelope.handle(modern("resources/list"), TerminalMCP, [])
+
+      assert Enum.any?(result.resources, fn r ->
+               r.uri == "casein://fleet/summary" and r.mimeType == "application/json"
+             end)
 
       assert {:reply, %{result: %{resourceTemplates: []}}} =
                MCPEnvelope.handle(modern("resources/templates/list"), TerminalMCP, [])
     end
 
-    test "the ui extension is not declared without an app resource" do
+    test "resources/read returns JSON fleet summary text" do
+      previous = Application.get_env(:casein, :tmux_adapter)
+      Application.put_env(:casein, :tmux_adapter, EmptyTmux)
+      on_exit(fn -> Application.put_env(:casein, :tmux_adapter, previous) end)
+
+      assert {:reply, %{result: result}} =
+               MCPEnvelope.handle(
+                 modern("resources/read", %{"uri" => "casein://fleet/summary"}),
+                 TerminalMCP,
+                 default_workspace_id: "ws-scoped"
+               )
+
+      assert [%{uri: "casein://fleet/summary", mimeType: "application/json", text: text}] =
+               result.contents
+
+      decoded = Jason.decode!(text)
+      assert decoded["uri"] == "casein://fleet/summary"
+      assert decoded["workspace_id"] == "ws-scoped"
+      assert decoded["sessions"] == []
+      assert decoded["note"] =~ "process/CPU"
+    end
+
+    test "the ui extension is not declared for a JSON-only resource" do
       assert {:reply, %{result: result}} =
                MCPEnvelope.handle(modern("server/discover"), TerminalMCP, [])
 
-      # "Has the resources methods" is not the same claim as "renders UI".
+      # Fleet summary is a resources/* entry, not an MCP App.
       refute Map.has_key?(result.capabilities.extensions, @ui_ext)
       assert is_map(result.capabilities.resources)
     end
