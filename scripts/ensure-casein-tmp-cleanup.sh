@@ -72,11 +72,18 @@ fi
 
 chmod 0755 "${ROOT}/scripts/casein-tmp-cleanup.sh"
 
+MAINT_ROOT="${CASEIN_MAINTENANCE_ROOT:-/opt/casein/maintenance}"
+log "staging tmp-cleanup script to ${MAINT_ROOT}"
+sudo mkdir -p "${MAINT_ROOT}/scripts"
+sudo install -m 0755 -o root -g root \
+  "${ROOT}/scripts/casein-tmp-cleanup.sh" \
+  "${MAINT_ROOT}/scripts/casein-tmp-cleanup.sh"
+
 for f in "$SERVICE" "$TIMER"; do
   src="${ROOT}/scripts/${f}"
   [ -f "$src" ] || { echo "error: missing ${src}" >&2; exit 1; }
-  log "installing ${f} (checkout=${ROOT} user=${RUN_USER})"
-  sed -e "s#__CHECKOUT__#${ROOT}#g" \
+  log "installing ${f} (ExecStart root=${MAINT_ROOT} user=${RUN_USER})"
+  sed -e "s#__CHECKOUT__#${MAINT_ROOT}#g" \
       -e "s#__USER__#${RUN_USER}#g" \
       -e "s#__CLEANUP_ARGS__#${CLEANUP_ARGS}#g" \
       "$src" | sudo tee "${UNIT_DIR}/${f}" >/dev/null

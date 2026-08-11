@@ -70,11 +70,19 @@ fi
 ensure_env_policy
 chmod 0755 "${ROOT}/scripts/casein-worktree-alarm-sweep.sh"
 
+# Stage into durable maintenance root so units never point at a reaped agent worktree.
+MAINT_ROOT="${CASEIN_MAINTENANCE_ROOT:-/opt/casein/maintenance}"
+log "staging alarm-sweep script to ${MAINT_ROOT}"
+sudo mkdir -p "${MAINT_ROOT}/scripts"
+sudo install -m 0755 -o root -g root \
+  "${ROOT}/scripts/casein-worktree-alarm-sweep.sh" \
+  "${MAINT_ROOT}/scripts/casein-worktree-alarm-sweep.sh"
+
 for f in "$SERVICE" "$TIMER"; do
   src="${ROOT}/scripts/${f}"
   [ -f "$src" ] || { echo "error: missing ${src}" >&2; exit 1; }
-  log "installing ${f} (checkout=${ROOT})"
-  sed "s#__CHECKOUT__#${ROOT}#g" "$src" | sudo tee "${UNIT_DIR}/${f}" >/dev/null
+  log "installing ${f} (ExecStart root=${MAINT_ROOT})"
+  sed "s#__CHECKOUT__#${MAINT_ROOT}#g" "$src" | sudo tee "${UNIT_DIR}/${f}" >/dev/null
 done
 
 sudo systemctl daemon-reload
