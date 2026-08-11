@@ -77,9 +77,13 @@ jobs:
             dist/*.zip.sha256
             dist/casein-*.json
             dist/casein-*.json.cat
-          # Matches macos-desktop.yml and deploy-devbox.yml. Without it this step
-          # inherits the repo default (90 days) — at ~382 MB per commit that
-          # accumulated 20.6 GB in four days and hit the account artifact storage
-          # quota, which fails the *upload* step of every desktop job (and only
-          # that step) with "Artifact storage quota has been hit".
-          retention-days: 7
+          # Without an explicit cap this step inherits the repo default (90 days).
+          # At ~0.40 GB per Casein-windows-x64 package, three 7-day survivors were
+          # ~1.2 GB of this repo's live artifacts when quota blew (2026-08-11,
+          # #888) while the Windows workstream is PARKED. Keep upload fatal —
+          # do not continue-on-error (#889 owns louder quota messaging).
+          # 3 days: enough to debug a recent CI package or PR smoke; shorter
+          # than macOS's 7 (smaller ~50 MB packages, active release-evidence
+          # path). Not 1 day — weekend/PR review lag would lose the only zip.
+          # Not blanket-short on other workflows — release evidence stays longer.
+          retention-days: 3
