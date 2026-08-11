@@ -130,12 +130,14 @@ defmodule Casein.Terminals.Backends.McpAdapterConformanceTest do
   describe "falsifiability (incomplete backends must fail the checker)" do
     test "backend missing paste_text/3 is rejected" do
       missing = missing_exports(__MODULE__.MissingPasteAdapter)
+
       assert {:paste_text, 3} in missing,
              "checker must flag missing paste_text/3, got: #{inspect(missing)}"
     end
 
     test "backend with send_keys/3 only (no arity 2) is rejected" do
       missing = missing_exports(__MODULE__.SendKeysArity3OnlyAdapter)
+
       assert {:send_keys, 2} in missing,
              "checker must flag missing send_keys/2 (command.ex), got: #{inspect(missing)}"
     end
