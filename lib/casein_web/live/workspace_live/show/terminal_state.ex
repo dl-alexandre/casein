@@ -58,6 +58,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
       # pane id tmux recycles next.
       Casein.Terminals.NextPrompt.prune_session(topology.session, pane_ids)
       Casein.Terminals.IssueBinding.prune_session(topology.session, pane_ids)
+      # Drop pane pointers only — durable handle ids survive respawn (#858).
+      Casein.Terminals.WorkHandles.prune_session(topology.session, pane_ids)
       # Pane death closes open agent Runs (design: prefer close over hang).
       Casein.Runs.AgentLifecycle.prune_session(topology.session, pane_ids)
     end

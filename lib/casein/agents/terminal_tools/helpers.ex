@@ -578,6 +578,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       when name in [
              "terminal_set_agent_label",
              "terminal_bind_issue",
+             "terminal_work_handle_create",
              "terminal_report_worktree",
              "terminal_report_agent_state",
              "terminal_request_clarification",
@@ -614,6 +615,22 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Omit address to read the caller pane's own mailbox.",
         "Pass collect=true only once you have acted; an uncollected message stays " <>
           "visible as one nobody handled."
+      ]
+    }
+  end
+
+  def metadata(name)
+      when name in [
+             "terminal_work_handle_get",
+             "terminal_work_handle_list"
+           ] do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read, :terminal_metadata],
+      recovery_hints: [
+        "Pass workspace_id and handle_id from terminal_work_handle_create.",
+        "Status is always source=recorded — never scraped from the pane screen."
       ]
     }
   end
