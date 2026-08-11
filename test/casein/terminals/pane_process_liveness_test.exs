@@ -1,5 +1,6 @@
 defmodule Casein.Terminals.PaneProcessLivenessTest do
-  use ExUnit.Case, async: true
+  # Mutates Application env for the process-liveness ETS table name.
+  use ExUnit.Case, async: false
 
   alias Casein.Terminals.PaneProcessLiveness
 
