@@ -16,6 +16,9 @@ defmodule Casein.Supervision.StateStores do
       # Joins a claimed GitHub issue to the pane working it. Deliberately not in
       # AgentState: bindings must not expire the way state reports do.
       Casein.Terminals.IssueBinding,
+      # Durable work handles outlive pane respawn; prune only clears the pane
+      # pointer, never the handle id (see #858).
+      Casein.Terminals.WorkHandles,
       # Lifts AgentState transitions into Runs.Ledger. Owns open-run identity
       # per pane; AgentState stays Ledger-free (see docs/design/agent-work-as-a-run.md).
       Casein.Runs.AgentLifecycle,

@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 34
+      assert length(names) == 37
 
       for expected <- [
             "terminal_list_sessions",
@@ -36,6 +36,9 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_send_keys",
             "terminal_send_command",
             "terminal_bind_issue",
+            "terminal_work_handle_create",
+            "terminal_work_handle_get",
+            "terminal_work_handle_list",
             "file_open_in_pane",
             "diff_open",
             "run_open",

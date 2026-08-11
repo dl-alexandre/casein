@@ -44,6 +44,9 @@ defmodule Casein.Agents.TerminalTools do
     OrchestrationListWorkers,
     OrchestrationStatus,
     WorkerStatus,
+    WorkHandleCreate,
+    WorkHandleGet,
+    WorkHandleList,
     PasteAgentText,
     McpSelfTest,
     RequestClarification,
@@ -92,6 +95,9 @@ defmodule Casein.Agents.TerminalTools do
     OpenFileInPane,
     SetAgentLabel,
     BindIssue,
+    WorkHandleCreate,
+    WorkHandleGet,
+    WorkHandleList,
     ReportWorktree,
     ReportAgentState,
     WaitAgentState,
@@ -181,6 +187,12 @@ defmodule Casein.Agents.TerminalTools do
   @doc false
   defdelegate set_agent_label(params), to: Agent
   defdelegate bind_issue(params), to: Agent
+  @doc false
+  defdelegate work_handle_create(params), to: Agent
+  @doc false
+  defdelegate work_handle_get(params), to: Agent
+  @doc false
+  defdelegate work_handle_list(params), to: Agent
   @doc false
   defdelegate report_agent_state(params), to: Agent
   @doc false

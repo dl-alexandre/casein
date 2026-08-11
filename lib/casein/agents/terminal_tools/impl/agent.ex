@@ -12,6 +12,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   alias Casein.Terminals.NextPrompt
   alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.TmuxTopology
+  alias Casein.Terminals.WorkHandles
 
   import Casein.Agents.TerminalTools.Impl.Shared
 
@@ -524,6 +525,133 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
           end
       end
     end
+  end
+
+  @doc """
+  Create a durable work handle, or reattach an existing one after pane respawn.
+
+  When `handle_id` is present the id is preserved and only the pane pointer
+  moves — that is the respawn path. Otherwise a new handle is minted.
+  """
+  @spec work_handle_create(map()) :: {:ok, map()} | {:error, term()}
+  def work_handle_create(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params) do
+      case string_param(params, "handle_id") do
+        handle_id when is_binary(handle_id) ->
+          reattach_work_handle(handle_id, workspace_id, params)
+
+        nil ->
+          mint_work_handle(workspace_id, params)
+      end
+    end
+  end
+
+  @doc "Resolve a durable work handle to its current pane and recorded status."
+  @spec work_handle_get(map()) :: {:ok, map()} | {:error, term()}
+  def work_handle_get(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, handle_id} <- string_arg(params, "handle_id"),
+         {:ok, resolved} <- WorkHandles.get(handle_id),
+         true <- resolved.workspace_id == workspace_id || {:error, :unknown_handle} do
+      {:ok, work_handle_payload(resolved)}
+    else
+      {:error, :unknown_handle} -> {:error, :unknown_handle}
+      other -> other
+    end
+  end
+
+  @doc "List durable work handles for a workspace."
+  @spec work_handle_list(map()) :: {:ok, map()} | {:error, term()}
+  def work_handle_list(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params) do
+      handles = Enum.map(WorkHandles.list(workspace_id), &work_handle_payload/1)
+      {:ok, %{workspace_id: workspace_id, handles: handles, count: length(handles)}}
+    end
+  end
+
+  defp mint_work_handle(workspace_id, params) do
+    opts =
+      [
+        session: optional_session(params),
+        pane_id: string_param(params, "pane"),
+        label: string_param(params, "label"),
+        status: string_param(params, "status"),
+        message: string_param(params, "message")
+      ]
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+
+    case maybe_validate_session_for_handle(opts, params) do
+      {:error, _} = err ->
+        err
+
+      :ok ->
+        {:ok, handle} = WorkHandles.create(workspace_id, opts)
+        {:ok, resolved} = WorkHandles.get(handle.handle_id)
+        {:ok, Map.put(work_handle_payload(resolved), :status_action, "created")}
+    end
+  end
+
+  defp reattach_work_handle(handle_id, workspace_id, params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, pane} <- required_pane_arg(params),
+         {:ok, _handle} <- WorkHandles.attach(handle_id, workspace_id, session, pane) do
+      case string_param(params, "status") do
+        status when is_binary(status) ->
+          _ = WorkHandles.record_status(handle_id, status, string_param(params, "message"))
+
+        nil ->
+          :ok
+      end
+
+      {:ok, resolved} = WorkHandles.get(handle_id)
+      {:ok, Map.put(work_handle_payload(resolved), :status_action, "reattached")}
+    else
+      {:error, :unknown_handle} -> {:error, :unknown_handle}
+      {:error, :workspace_mismatch} -> {:error, :unknown_handle}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp required_pane_arg(params) do
+    case string_param(params, "pane") do
+      pane when is_binary(pane) -> {:ok, pane}
+      _ -> {:error, :missing_pane}
+    end
+  end
+
+  defp optional_session(params) do
+    case Map.get(params, "session") || Map.get(params, :session) do
+      session when is_binary(session) and session != "" -> session
+      _ -> nil
+    end
+  end
+
+  defp maybe_validate_session_for_handle(opts, params) do
+    case Keyword.get(opts, :session) do
+      session when is_binary(session) ->
+        case session_or_default_arg(Map.put(params, "session", session)) do
+          {:ok, _} -> :ok
+          {:error, _} = err -> err
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp work_handle_payload(resolved) do
+    compact(%{
+      handle_id: resolved.handle_id,
+      workspace_id: resolved.workspace_id,
+      label: resolved.label,
+      session: resolved.session,
+      pane_id: resolved.pane_id,
+      pane: resolved.pane,
+      status: resolved.status,
+      created_at: resolved.created_at,
+      updated_at: resolved.updated_at,
+      attached_at: resolved.attached_at
+    })
   end
 
   @doc "Record an explicit semantic-state report for an agent pane."
