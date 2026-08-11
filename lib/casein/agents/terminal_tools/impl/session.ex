@@ -11,6 +11,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.FleetChrome
   alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
+  alias Casein.Terminals.OrchestrationListWorkers
   alias Casein.Terminals.OrchestrationStatus
   alias Casein.Terminals.OrphanedClaims
   alias Casein.Terminals.PaneLiveness
@@ -418,6 +419,55 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
 
       {:ok, WorkerStatus.project(topology, opts)}
     end
+  end
+
+  @doc """
+  Read-only compact fleet worker list (M3).
+
+  Requires workspace_id and session. Same enriched topology path as
+  `orchestration_status/1` (liveness on by default), then projects via
+  `OrchestrationListWorkers.project/2`. Optional `fleet_role` /
+  `needs_you_only` filters. No mutations, no scrollback.
+  """
+  @spec orchestration_list_workers(map()) :: {:ok, map()} | {:error, term()}
+  def orchestration_list_workers(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_arg(params),
+         {:ok, topology} <- topology(Map.put_new(params, :include_liveness, true)) do
+      tabs = OrchestrationStatus.tabs_from_topology(topology)
+
+      board =
+        FleetBoard.from_window_tabs(tabs,
+          list_claimed: &OrphanedClaims.list_claimed/0,
+          tmux_session: session
+        )
+
+      opts =
+        [
+          workspace_id: workspace_id,
+          session: session
+        ]
+        |> maybe_put_list_filters(params)
+
+      {:ok, OrchestrationListWorkers.project(board, opts)}
+    end
+  end
+
+  defp maybe_put_list_filters(opts, params) do
+    opts
+    |> then(fn opts ->
+      case blank_gate(Map.get(params, :fleet_role) || Map.get(params, "fleet_role")) do
+        role when role in ["manager", "worker"] -> Keyword.put(opts, :fleet_role, role)
+        _ -> opts
+      end
+    end)
+    |> then(fn opts ->
+      case Map.get(params, :needs_you_only) || Map.get(params, "needs_you_only") do
+        true -> Keyword.put(opts, :needs_you_only, true)
+        "true" -> Keyword.put(opts, :needs_you_only, true)
+        _ -> opts
+      end
+    end)
   end
 
   defp maybe_put_gate_identity(opts, params) do

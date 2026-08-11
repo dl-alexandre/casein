@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 33
+      assert length(names) == 34
 
       for expected <- [
             "terminal_list_sessions",
@@ -45,6 +45,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_wait_agent_state",
             "orchestration_status",
             "worker_status",
+            "orchestration_list_workers",
             "gate_report",
             "mcp_self_test",
             "annotation_list",
@@ -142,6 +143,19 @@ defmodule Casein.Agents.TerminalToolsActionTest do
       assert :terminal_read in tool.metadata.capabilities
     end
 
+    test "orchestration_list_workers is classified read-only metadata with required scope" do
+      tool = definition("orchestration_list_workers")
+
+      assert tool.parameters.required == ["workspace_id", "session"]
+      assert tool.parameters.properties.session.type == "string"
+      assert tool.parameters.properties.fleet_role.enum == ["manager", "worker"]
+      assert tool.parameters.properties.needs_you_only.type == "boolean"
+      assert tool.metadata.mutation? == false
+      assert tool.metadata.danger_level == :low
+      assert :terminal_metadata in tool.metadata.capabilities
+      assert :terminal_read in tool.metadata.capabilities
+    end
+
     test "terminal_send_command keeps high-danger mutation metadata" do
       tool = definition("terminal_send_command")
 
@@ -199,6 +213,16 @@ defmodule Casein.Agents.TerminalToolsActionTest do
                  "workspace_id" => "ws-1",
                  "session" => "casein_ws-1_x"
                })
+    end
+
+    test "orchestration_list_workers fails closed without workspace_id or session" do
+      assert {:error, {:missing_argument, "workspace_id"}} =
+               TerminalTools.invoke("orchestration_list_workers", %{
+                 "session" => "casein_ws-1_x"
+               })
+
+      assert {:error, {:missing_argument, "session"}} =
+               TerminalTools.invoke("orchestration_list_workers", %{"workspace_id" => "ws-1"})
     end
 
     test "terminal_send_keys rejects a non-string keys argument" do
