@@ -22,10 +22,12 @@ defmodule CaseinWeb.API.TerminalMCP do
 
   alias Casein.Agents.{MCPAudit, MCPError, MCPTasks, TerminalTools}
   alias Casein.MCP.Scope
+  alias Casein.Terminals.FleetSummary
   alias CaseinWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
   alias McpCtl.Tool
 
   @server_name "Casein Terminal MCP Server"
+  @fleet_summary_uri FleetSummary.resource_uri()
 
   # One wait leg self-limits at 55s; this only has to outlast that plus the tool's
   # own setup, and exists so a wedged leg cannot hang a task forever.
@@ -60,7 +62,10 @@ defmodule CaseinWeb.API.TerminalMCP do
         "\"the pane beside me\" from the caller.adjacent_panes block that " <>
         "terminal_context/terminal_topology return when the caller pane is known " <>
         "(sent automatically via X-Casein-Caller-Pane for Casein-launched agents), " <>
-        "and pass explicit pane ids on capture/send calls.",
+        "and pass explicit pane ids on capture/send calls. " <>
+        "For a one-shot fleet picture (sessions, panes, runtime, worktree, branch, " <>
+        "commits-not-on-origin, process/CPU liveness) read the MCP resource " <>
+        "casein://fleet/summary — do not topology + N capture scrapes.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )
   end
@@ -73,11 +78,29 @@ defmodule CaseinWeb.API.TerminalMCP do
   def task_tools, do: ["terminal_wait_agent_state"]
 
   @impl true
-  # No MCP App yet. Pane capture and the candidate_sessions picker are the
-  # obvious candidates — both read badly as JSON — but neither is built.
-  def list_resources(_opts), do: []
+  # Fleet summary is a concrete JSON resource (not an MCP App). Pane capture and
+  # the candidate_sessions picker remain tool-shaped for now.
+  def list_resources(_opts) do
+    [FleetSummary.resource_descriptor()]
+  end
 
   @impl true
+  def read_resource(@fleet_summary_uri, opts) do
+    workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
+
+    payload =
+      FleetSummary.build(workspace_id: workspace_id)
+
+    {:ok,
+     [
+       %{
+         uri: @fleet_summary_uri,
+         mimeType: "application/json",
+         text: FleetSummary.to_json(payload)
+       }
+     ]}
+  end
+
   def read_resource(_uri, _opts), do: {:error, :not_found}
 
   @impl true
