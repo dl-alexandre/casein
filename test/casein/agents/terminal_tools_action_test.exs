@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 37
+      assert length(names) == 38
 
       for expected <- [
             "terminal_list_sessions",
@@ -49,6 +49,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "orchestration_status",
             "worker_status",
             "orchestration_list_workers",
+            "runtime_signal",
             "gate_report",
             "mcp_self_test",
             "annotation_list",
@@ -157,6 +158,16 @@ defmodule Casein.Agents.TerminalToolsActionTest do
       assert tool.metadata.danger_level == :low
       assert :terminal_metadata in tool.metadata.capabilities
       assert :terminal_read in tool.metadata.capabilities
+    end
+
+    test "runtime_signal is classified read-only metadata (S11)" do
+      tool = definition("runtime_signal")
+
+      assert tool.metadata.mutation? == false
+      assert tool.metadata.danger_level == :low
+      assert :terminal_metadata in tool.metadata.capabilities
+      assert :terminal_read in tool.metadata.capabilities
+      refute "workspace_id" in (tool.parameters.required || [])
     end
 
     test "terminal_send_command keeps high-danger mutation metadata" do
