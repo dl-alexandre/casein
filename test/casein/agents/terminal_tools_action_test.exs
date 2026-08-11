@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 30
+      assert length(names) == 32
 
       for expected <- [
             "terminal_list_sessions",
@@ -29,6 +29,10 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_set_next_prompt",
             "terminal_clear_next_prompt",
             "terminal_get_next_prompt",
+            "terminal_request_clarification",
+            "terminal_request_human_input",
+            "terminal_say",
+            "terminal_inbox",
             "terminal_send_keys",
             "terminal_send_command",
             "terminal_bind_issue",
@@ -38,8 +42,6 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "terminal_set_agent_label",
             "terminal_report_worktree",
             "terminal_report_agent_state",
-            "terminal_request_clarification",
-            "terminal_request_human_input",
             "terminal_wait_agent_state",
             "orchestration_status",
             "worker_status",

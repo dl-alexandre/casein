@@ -1,7 +1,8 @@
 defmodule Casein.Agents.TerminalTools.Impl.Agent do
   @moduledoc false
 
-  alias Casein.Agents.{TerminalOutputFormat, Transcripts}
+  alias Casein.Agents.{Inbox, TerminalOutputFormat, Transcripts}
+  alias Casein.Agents.Inbox.Address
   alias Casein.AgentSessions.GrokACP.Attachments
   alias Casein.Labels
   alias Casein.Mobile.Clarification
@@ -258,6 +259,140 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
          target_role: "agent",
          status: if(status == :inserted, do: "created", else: "duplicate")
        }}
+    end
+  end
+
+  @doc """
+  Leave a message for another agent at an address.
+
+  Resolution happens against the live topology so an orchestrator can address a
+  window by name, but an ambiguous name is returned as an error with its
+  candidates rather than delivered to a guess.
+  """
+  @spec say(map()) :: {:ok, map()} | {:error, term()}
+  def say(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_or_default_arg(params),
+         {:ok, recipient} <- string_arg(params, "to"),
+         {:ok, body} <- string_arg(params, "body"),
+         {:ok, address} <- resolve_address(recipient, session),
+         {:ok, event, status} <-
+           Inbox.send(%{
+             workspace_id: workspace_id,
+             to: address,
+             from: sender_address(params),
+             body: body,
+             message_id: string_param(params, "message_id"),
+             tmux_session_id: session,
+             pane_id: caller_pane(params) || string_param(params, "from_pane")
+           }) do
+      {:ok,
+       %{
+         message_event_id: event.id,
+         to: address,
+         from: event.payload["from"],
+         session: session,
+         status: if(status == :inserted, do: "sent", else: "duplicate"),
+         note:
+           "Left at an address, not typed into a pane. The recipient sees it on its next " <>
+             "terminal_inbox call; it stays uncollected until then."
+       }}
+    end
+  end
+
+  @doc "Read messages left for a pane, defaulting to the caller's own mailbox."
+  @spec inbox(map()) :: {:ok, map()} | {:error, term()}
+  def inbox(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_or_default_arg(params),
+         {:ok, address} <- inbox_address(params, session) do
+      limit = integer_param(params, "limit", 50)
+      messages = Inbox.list(workspace_id, address, limit: limit)
+      collect? = truthy?(Map.get(params, "collect") || Map.get(params, :collect))
+
+      if collect? do
+        Enum.each(messages, fn message ->
+          Inbox.collect(workspace_id, message.id, %{
+            to: address,
+            tmux_session_id: session,
+            pane_id: caller_pane(params)
+          })
+        end)
+      end
+
+      {:ok,
+       %{
+         address: address,
+         session: session,
+         collected: collect?,
+         messages: Enum.map(messages, &inbox_message/1),
+         count: length(messages)
+       }}
+    end
+  end
+
+  defp inbox_message(message) do
+    %{
+      message_event_id: message.id,
+      from: message.from,
+      body: message.body,
+      sent_at: message.sent_at
+    }
+    |> compact()
+  end
+
+  # An explicit address wins; otherwise an agent reading "my mail" means the
+  # pane it is running in.
+  defp inbox_address(params, session) do
+    cond do
+      is_binary(string_param(params, "address")) ->
+        resolve_address(string_param(params, "address"), session)
+
+      is_binary(string_param(params, "pane")) ->
+        {:ok, Address.for_pane(string_param(params, "pane"))}
+
+      is_binary(caller_pane(params)) ->
+        {:ok, Address.for_pane(caller_pane(params))}
+
+      true ->
+        {:error, :no_inbox_address}
+    end
+  end
+
+  defp sender_address(params) do
+    case caller_pane(params) || string_param(params, "from_pane") do
+      pane when is_binary(pane) and pane != "" -> Address.for_pane(pane)
+      _ -> nil
+    end
+  end
+
+  # Ambiguity is surfaced with its candidates so the caller can retry with an
+  # exact pane id — never resolved to a best match.
+  defp resolve_address(recipient, session) do
+    topology = TmuxTopology.snapshot(session, tmux: tmux())
+
+    case Address.resolve(recipient, topology) do
+      {:ok, address} ->
+        {:ok, address}
+
+      {:error, {:ambiguous, candidates}} ->
+        {:error,
+         %{
+           error: :ambiguous_recipient,
+           recipient: recipient,
+           candidates: candidates,
+           note: "More than one agent window matches. Re-send with an exact pane address."
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp integer_param(params, key, default) do
+    case Map.get(params, key) do
+      value when is_integer(value) and value > 0 -> value
+      _ -> default
     end
   end
 

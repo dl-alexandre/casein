@@ -592,6 +592,32 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("terminal_say") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:terminal_metadata],
+      recovery_hints: [
+        "On ambiguous_recipient, re-send to one of the returned pane addresses.",
+        "On unknown_recipient, call terminal_topology to see the live window names.",
+        "Delivery is not reading: the recipient collects with terminal_inbox."
+      ]
+    }
+  end
+
+  def metadata("terminal_inbox") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:terminal_metadata],
+      recovery_hints: [
+        "Omit address to read the caller pane's own mailbox.",
+        "Pass collect=true only once you have acted; an uncollected message stays " <>
+          "visible as one nobody handled."
+      ]
+    }
+  end
+
   def metadata("workspace_digest") do
     %{
       mutation?: false,

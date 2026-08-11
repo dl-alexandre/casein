@@ -1,0 +1,165 @@
+defmodule Casein.Agents.InboxTest do
+  use Casein.TestCase, async: false
+
+  alias Casein.Agents.AgentEvents
+  alias Casein.Agents.Inbox
+  alias Casein.Agents.Inbox.Address
+
+  setup do
+    AgentEvents.clear()
+    on_exit(fn -> AgentEvents.clear() end)
+    %{ws: "ws-inbox-#{System.unique_integer([:positive])}"}
+  end
+
+  describe "send/1" do
+    test "leaves a message at an address", %{ws: ws} do
+      assert {:ok, event, :inserted} =
+               Inbox.send(%{
+                 workspace_id: ws,
+                 to: Address.for_pane("%3"),
+                 from: Address.for_pane("%1"),
+                 body: "I changed the auth schema; rebase before editing"
+               })
+
+      assert event.event_type == Inbox.message_type()
+      # A message body is content, not metadata.
+      assert event.privacy_class == "operator_content"
+      assert event.payload["body"] =~ "auth schema"
+    end
+
+    test "the summary carries addresses, never the body", %{ws: ws} do
+      {:ok, event, _} =
+        Inbox.send(%{
+          workspace_id: ws,
+          to: Address.for_pane("%3"),
+          from: Address.for_pane("%1"),
+          body: "secret-sounding detail"
+        })
+
+      # Summaries land in surfaces not entitled to operator content.
+      refute event.summary =~ "secret-sounding"
+      assert event.summary =~ "%1"
+      assert event.summary =~ "%3"
+    end
+
+    test "a retried send with the same id coalesces", %{ws: ws} do
+      attrs = %{
+        workspace_id: ws,
+        to: Address.for_pane("%3"),
+        body: "rebase before editing",
+        message_id: "msg-1"
+      }
+
+      assert {:ok, first, :inserted} = Inbox.send(attrs)
+      assert {:ok, second, :duplicate} = Inbox.send(attrs)
+      assert first.id == second.id
+
+      assert length(Inbox.list(ws, Address.for_pane("%3"))) == 1
+    end
+
+    test "two different messages to one address both survive", %{ws: ws} do
+      to = Address.for_pane("%3")
+      assert {:ok, _, :inserted} = Inbox.send(%{workspace_id: ws, to: to, body: "first"})
+      assert {:ok, _, :inserted} = Inbox.send(%{workspace_id: ws, to: to, body: "second"})
+
+      assert length(Inbox.list(ws, to)) == 2
+    end
+
+    test "refuses an empty body and a non-canonical address", %{ws: ws} do
+      to = Address.for_pane("%3")
+      assert {:error, :empty_body} = Inbox.send(%{workspace_id: ws, to: to, body: "   "})
+      assert {:error, :invalid_address} = Inbox.send(%{workspace_id: ws, to: "%3", body: "hi"})
+      assert {:error, :missing_workspace_id} = Inbox.send(%{to: to, body: "hi"})
+    end
+
+    test "caps a runaway body rather than storing it whole", %{ws: ws} do
+      body = String.duplicate("x", Inbox.body_limit() * 2)
+      {:ok, event, _} = Inbox.send(%{workspace_id: ws, to: Address.for_pane("%3"), body: body})
+
+      assert String.length(event.payload["body"]) == Inbox.body_limit()
+    end
+  end
+
+  describe "list/3" do
+    test "returns every uncollected message, oldest first", %{ws: ws} do
+      # The starvation trap: the clarification projector keeps only the newest
+      # per pane, which for a mailbox permanently hides the earlier message.
+      to = Address.for_pane("%3")
+      Inbox.send(%{workspace_id: ws, to: to, body: "first", message_id: "m1"})
+      Inbox.send(%{workspace_id: ws, to: to, body: "second", message_id: "m2"})
+      Inbox.send(%{workspace_id: ws, to: to, body: "third", message_id: "m3"})
+
+      bodies = ws |> Inbox.list(to) |> Enum.map(& &1.body)
+      assert bodies == ["first", "second", "third"]
+    end
+
+    test "only messages for this address", %{ws: ws} do
+      Inbox.send(%{workspace_id: ws, to: Address.for_pane("%3"), body: "for three"})
+      Inbox.send(%{workspace_id: ws, to: Address.for_pane("%4"), body: "for four"})
+
+      assert [%{body: "for three"}] = Inbox.list(ws, Address.for_pane("%3"))
+    end
+
+    test "a worktree address is its own mailbox", %{ws: ws} do
+      to = Address.for_worktree("/data/worktrees/wt-a")
+      Inbox.send(%{workspace_id: ws, to: to, body: "for whoever is in this checkout"})
+
+      assert [%{body: "for whoever is in this checkout"}] = Inbox.list(ws, to)
+      assert Inbox.list(ws, Address.for_pane("%3")) == []
+    end
+
+    test "an empty mailbox is empty, not an error", %{ws: ws} do
+      assert Inbox.list(ws, Address.for_pane("%9")) == []
+    end
+  end
+
+  describe "collect/3" do
+    test "collected messages leave the mailbox", %{ws: ws} do
+      to = Address.for_pane("%3")
+      {:ok, event, _} = Inbox.send(%{workspace_id: ws, to: to, body: "read me"})
+
+      assert [%{id: id}] = Inbox.list(ws, to)
+      assert id == event.id
+
+      assert {:ok, _receipt, :inserted} = Inbox.collect(ws, event.id, %{to: to})
+      assert Inbox.list(ws, to) == []
+    end
+
+    test "collecting one message does not collect the others", %{ws: ws} do
+      to = Address.for_pane("%3")
+      {:ok, first, _} = Inbox.send(%{workspace_id: ws, to: to, body: "first", message_id: "m1"})
+      Inbox.send(%{workspace_id: ws, to: to, body: "second", message_id: "m2"})
+
+      Inbox.collect(ws, first.id, %{to: to})
+
+      assert [%{body: "second"}] = Inbox.list(ws, to)
+    end
+
+    test "collecting twice is a duplicate receipt, not a second one", %{ws: ws} do
+      to = Address.for_pane("%3")
+      {:ok, event, _} = Inbox.send(%{workspace_id: ws, to: to, body: "read me"})
+
+      assert {:ok, _, :inserted} = Inbox.collect(ws, event.id, %{to: to})
+      assert {:ok, _, :duplicate} = Inbox.collect(ws, event.id, %{to: to})
+    end
+
+    test "sent-but-never-read stays visible", %{ws: ws} do
+      # The property the pane path could never provide: an uncollected message
+      # is distinguishable from a delivered one.
+      to = Address.for_pane("%3")
+      Inbox.send(%{workspace_id: ws, to: to, body: "never read"})
+
+      assert [%{body: "never read"}] = Inbox.list(ws, to)
+      assert length(Inbox.list(ws, to, include_collected: true)) == 1
+    end
+
+    test "a receipt is metadata, carrying no body", %{ws: ws} do
+      to = Address.for_pane("%3")
+      {:ok, event, _} = Inbox.send(%{workspace_id: ws, to: to, body: "sensitive"})
+      {:ok, receipt, _} = Inbox.collect(ws, event.id, %{to: to})
+
+      assert receipt.privacy_class == "metadata"
+      refute inspect(receipt) =~ "sensitive"
+    end
+  end
+end

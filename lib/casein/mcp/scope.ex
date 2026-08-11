@@ -67,6 +67,8 @@ defmodule Casein.MCP.Scope do
     terminal_set_next_prompt
     terminal_clear_next_prompt
     terminal_get_next_prompt
+    terminal_say
+    terminal_inbox
   )
 
   @doc """
