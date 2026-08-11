@@ -108,6 +108,26 @@ For Casein-hosted preview pane URLs, the iframe keeps the public display URL,
 while the control session uses the configured loopback Casein URL. This lets
 on-box Playwright automation avoid the external forward-auth redirect.
 
+## S12 / Mira walk-runnable contract
+
+Product workers (Mira) that run **budgeted UI walks** against Casein-hosted
+previews must follow the open surface contract — Casein does **not** run the
+soak and does not own Facility parity.
+
+- Contract: [`docs/agents/preview-walk-runnable-contract.md`](agents/preview-walk-runnable-contract.md)
+- Checklist shape: [`docs/agents/examples/s12-preview-walk-shape.json`](agents/examples/s12-preview-walk-shape.json)
+- Classifier: `Casein.Agents.PreviewTools.SurfaceDiscovery.classify_walk_runnable/1`
+  (`:walk_ready` vs `:not_ready`; **unknown observation ≠ ready**)
+- Visibility: claim operator-visible only when `operator_visible == true` **and**
+  `browser_loaded == true` (`operator_visible?/1`). Pane registration alone is
+  insufficient.
+- Evidence after steps: `preview_observe` → `preview_observe_live` →
+  `preview_report_errors` → `preview_screenshot` (cite `session_id` /
+  artifact path). Product manifests stay under the product repo’s
+  `.casein/preview-walks/` (`preview-ui-walk` skill).
+
+Issue #855.
+
 ## Agent Bug-Fix Loop
 
 Casein now exposes the primitives needed for an external agent to work a bug

@@ -14,6 +14,16 @@ description: >
 
 # Preview UI walk
 
+## S12 / Mira worker (Casein shape only)
+
+Mira (or any external soak worker) must open and prove Casein preview surfaces
+via the **walk-runnable contract** before claiming operator-visible walks:
+`docs/agents/preview-walk-runnable-contract.md` and
+`docs/agents/examples/s12-preview-walk-shape.json`. Casein does **not** run the
+soak; this skill walks **product** UIs from product-owned manifests under
+`.casein/preview-walks/`. Visibility fail-closed: `operator_visible` **and**
+`browser_loaded` (see `SurfaceDiscovery.operator_visible?/1`). Issue #855.
+
 A **generic** UI walk engine for product apps on Casein. Default is **read-only**
 (navigate + assert + screenshot). Product workflows may opt into **gated
 interactions** (`safety.allow_interactions`) when env_check is non-prod.

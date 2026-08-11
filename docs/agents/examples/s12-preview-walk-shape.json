@@ -1,0 +1,86 @@
+{
+  "_note": "Mira-facing checklist shape for Casein preview walk-runnable contract (S12). Not a product route list. Product repos own .casein/preview-walks/*.json; Casein owns MCP fields and tools below. See docs/agents/preview-walk-runnable-contract.md.",
+  "contract_version": 1,
+  "issue": 855,
+  "roles": {
+    "casein": "surface discovery, preview_open, visibility fields, evidence tools",
+    "mira_worker": "pick surface, walk steps, budget, report",
+    "product_repo": "manifests under .casein/preview-walks/"
+  },
+  "out_of_scope": [
+    "casein_as_soak_runner",
+    "facility_parity",
+    "hidden_subagent_walks"
+  ],
+  "discovery": {
+    "tool": "preview_surfaces",
+    "required_args": ["workspace_id"],
+    "pick_rules": [
+      "server_active == true",
+      "server_status.liveness != dead",
+      "prefer declared ports.http or runtime-owned ports over hand-picked loopback",
+      "classify_walk_runnable == walk_ready before open"
+    ],
+    "classifier": "Casein.Agents.PreviewTools.SurfaceDiscovery.classify_walk_runnable/1"
+  },
+  "open": {
+    "tool": "preview_open",
+    "modes": ["app", "localhost", "here"],
+    "required_when_unscoped": ["workspace_id"],
+    "mode_notes": {
+      "app": "named surface from preview_surfaces",
+      "localhost": "port must be owned/declared or live-registered",
+      "here": "tmux_session required; session-scoped MCP injects it"
+    }
+  },
+  "visibility_gate": {
+    "claim_visible_only_when": {
+      "operator_visible": true,
+      "browser_loaded": true
+    },
+    "fail_closed": [
+      "missing either field => not visible",
+      "unknown observation => not visible",
+      "pane_registered alone is insufficient",
+      "preview_open_state != visible => not visible"
+    ],
+    "helper": "Casein.Agents.PreviewTools.SurfaceDiscovery.operator_visible?/1",
+    "sources": ["preview_surfaces", "preview_open response", "preview_observe_pane"]
+  },
+  "walk_loop_owner": "mira",
+  "step_tools": [
+    "preview_navigate",
+    "preview_observe_live",
+    "preview_elements",
+    "preview_click",
+    "preview_type",
+    "preview_press"
+  ],
+  "evidence_sequence": [
+    {"order": 1, "tool": "preview_observe", "requires": "session_id"},
+    {"order": 2, "tool": "preview_observe_live", "requires": "session_id"},
+    {"order": 3, "tool": "preview_report_errors", "requires": "session_id"},
+    {"order": 4, "tool": "preview_screenshot", "produces": "artifact_path"},
+    {"order": 5, "tool": "preview_observe_pane", "when": "pane_id already exists"}
+  ],
+  "evidence_minimum_for_pass_claim": [
+    "session_id_or_pane_id",
+    "observe_or_observe_live",
+    "screenshot_or_record_artifact",
+    "errors_inspected",
+    "visibility_fields_if_claiming_operator_saw_it"
+  ],
+  "env": {
+    "casein": ["CASEIN_API_TOKEN", "CASEIN_WORKSPACE_ID", "Preview MCP URL"],
+    "product_only": ["PHX_HOST", "product base URL for manifest paths"],
+    "notes": [
+      "Preview uses own-origin host (pv-*), not a Casein path prefix",
+      "Prefer preview_ensure_server_here for durable loopback ownership"
+    ]
+  },
+  "target_class": "one-v3-dev",
+  "docs": [
+    "docs/agents/preview-walk-runnable-contract.md",
+    "docs/preview_mcp.md"
+  ]
+}

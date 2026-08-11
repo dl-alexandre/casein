@@ -345,6 +345,127 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
   def list_surfaces(workspace),
     do: Previews.discover_surfaces(WorkspaceResolution.prepare(workspace))
 
+  @doc """
+  Classify a `preview_surfaces` row for Mira S12 walk openability (#855).
+
+  Returns:
+
+    * `{:walk_ready, meta}` — surface may be passed to `preview_open`
+    * `{:not_ready, reason}` — do not open; reason is fail-closed
+
+  Reasons:
+
+    * `:server_dead` — loopback probe saw nothing listening
+    * `:server_inactive` — `server_active` explicitly false
+    * `:unknown_observation` — missing/malformed fields (**never** treat as ready;
+      same discipline as AgentLiveness: unknown ≠ quiet/ready)
+
+  This is **openability**, not operator visibility. A walk_ready surface is still
+  not "operator visible" until `operator_visible?/1` is true after open.
+  """
+  @spec classify_walk_runnable(map() | term()) ::
+          {:walk_ready, map()} | {:not_ready, atom()}
+  def classify_walk_runnable(surface) when is_map(surface) do
+    liveness = surface_liveness_field(surface)
+    active? = surface_bool(surface, :server_active)
+
+    cond do
+      liveness == "dead" ->
+        {:not_ready, :server_dead}
+
+      active? == false ->
+        {:not_ready, :server_inactive}
+
+      # Openable: probed alive, public unprobed, or server_active true with known liveness.
+      liveness in ["alive", "unprobed"] or active? == true ->
+        {:walk_ready,
+         %{
+           openable?: true,
+           server_active: active? == true,
+           liveness: liveness || "unprobed",
+           operator_visible?: operator_visible?(surface),
+           name: surface_string(surface, :name),
+           url: surface_string(surface, :url),
+           port: surface_port(surface)
+         }}
+
+      true ->
+        {:not_ready, :unknown_observation}
+    end
+  end
+
+  def classify_walk_runnable(_), do: {:not_ready, :unknown_observation}
+
+  @doc """
+  Fail-closed operator visibility: both `operator_visible` and `browser_loaded`
+  must be strictly true. Missing either field is **not** visible (unknown ≠ visible).
+  """
+  @spec operator_visible?(map() | term()) :: boolean()
+  def operator_visible?(surface) when is_map(surface) do
+    surface_bool(surface, :operator_visible) == true and
+      surface_bool(surface, :browser_loaded) == true
+  end
+
+  def operator_visible?(_), do: false
+
+  defp surface_liveness_field(surface) when is_map(surface) do
+    status = Map.get(surface, :server_status) || Map.get(surface, "server_status") || %{}
+
+    case Map.get(status, :liveness) || Map.get(status, "liveness") do
+      l when l in ["alive", "dead", "unprobed"] -> l
+      l when l in [:alive, :dead, :unprobed] -> Atom.to_string(l)
+      _ -> nil
+    end
+  end
+
+  # Do not use `||` — false is a legitimate server_active / visibility value.
+  defp surface_bool(surface, key) when is_map(surface) do
+    raw =
+      cond do
+        Map.has_key?(surface, key) -> Map.get(surface, key)
+        Map.has_key?(surface, Atom.to_string(key)) -> Map.get(surface, Atom.to_string(key))
+        true -> nil
+      end
+
+    case raw do
+      true -> true
+      false -> false
+      "true" -> true
+      "false" -> false
+      1 -> true
+      0 -> false
+      _ -> nil
+    end
+  end
+
+  defp surface_string(surface, key) when is_map(surface) do
+    raw =
+      cond do
+        Map.has_key?(surface, key) -> Map.get(surface, key)
+        Map.has_key?(surface, Atom.to_string(key)) -> Map.get(surface, Atom.to_string(key))
+        true -> nil
+      end
+
+    case raw do
+      s when is_binary(s) and s != "" -> s
+      _ -> nil
+    end
+  end
+
+  defp surface_port(surface) when is_map(surface) do
+    raw =
+      cond do
+        Map.has_key?(surface, :port) -> Map.get(surface, :port)
+        Map.has_key?(surface, "port") -> Map.get(surface, "port")
+        true -> nil
+      end
+
+    case raw do
+      p when is_integer(p) and p > 0 -> p
+      _ -> nil
+    end
+  end
+
   defp put_preview_next(payload, tool, args) do
     payload
     |> Map.put(:next_tool, tool)
