@@ -10,7 +10,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentStateChrome do
   """
 
   @type state ::
-          :working | :blocked | :done | :idle | :errored | :stalled | :unknown | nil | String.t()
+          :working
+          | :blocked
+          | :done
+          | :idle
+          | :errored
+          | :stalled
+          | :awaiting_input
+          | :unknown
+          | nil
+          | String.t()
 
   @type presentation :: %{
           state: atom(),
@@ -29,16 +38,29 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentStateChrome do
   @dot_idle "bg-base-content/20"
   @dot_errored "bg-status-danger shadow-[0_0_0_3px] shadow-status-danger/30"
   @dot_stalled "bg-status-warning shadow-[0_0_0_3px] shadow-status-warning/30 animate-pulse"
+  # Steady rather than pulsing: nothing is happening, and nothing will until you
+  # act. The pulse is reserved for states that claim ongoing activity.
+  @dot_awaiting "bg-status-warning shadow-[0_0_0_3px] shadow-status-warning/30"
 
   @chip_blocked "bg-status-danger/15 text-status-danger-fg"
   @chip_done "bg-status-live/15 text-status-live-fg"
   @chip_errored "bg-status-danger/15 text-status-danger-fg"
   @chip_stalled "bg-status-warning/15 text-status-warning-fg"
+  @chip_awaiting "bg-status-warning/15 text-status-warning-fg"
 
   @doc "Normalize a topology/report state token to an atom, or `:unknown`."
   @spec normalize(state()) :: atom()
   def normalize(state)
-      when state in [:working, :blocked, :done, :idle, :errored, :stalled, :unknown],
+      when state in [
+             :working,
+             :blocked,
+             :done,
+             :idle,
+             :errored,
+             :stalled,
+             :awaiting_input,
+             :unknown
+           ],
       do: state
 
   def normalize("working"), do: :working
@@ -47,6 +69,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentStateChrome do
   def normalize("idle"), do: :idle
   def normalize("errored"), do: :errored
   def normalize("stalled"), do: :stalled
+  def normalize("awaiting_input"), do: :awaiting_input
   def normalize("unknown"), do: :unknown
   def normalize(_), do: :unknown
 
@@ -91,6 +114,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.AgentStateChrome do
 
       :stalled ->
         known(state, @dot_stalled, "stalled", @chip_stalled, stalled_label(message))
+
+      # Deliberately not the blocked chrome: this is derived from transcript
+      # shape, and it cannot tell a question from a finished turn. It asks for a
+      # look, it does not claim the agent said it is blocked.
+      :awaiting_input ->
+        known(
+          state,
+          @dot_awaiting,
+          "waiting",
+          @chip_awaiting,
+          "Agent stopped and is waiting on you"
+        )
 
       _unknown ->
         %{

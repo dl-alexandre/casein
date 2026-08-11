@@ -227,7 +227,7 @@ defmodule Casein.Terminals.FleetChrome do
   defp role_token_rest(_, _), do: nil
 
   defp normalize_agent_state(state)
-       when state in [:idle, :done, :working, :blocked, :errored, :stalled],
+       when state in [:idle, :done, :working, :blocked, :errored, :stalled, :awaiting_input],
        do: state
 
   defp normalize_agent_state("idle"), do: :idle

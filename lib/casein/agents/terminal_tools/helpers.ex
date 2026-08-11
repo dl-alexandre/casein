@@ -211,6 +211,21 @@ defmodule Casein.Agents.TerminalTools.Helpers do
   end
 
   @doc false
+  def include_transcript_param do
+    %{
+      type: "boolean",
+      description:
+        "Read each agent pane's own session transcript and fold the shape of its last turn " <>
+          "into agent_state. This is what separates an agent that is waiting for you from " <>
+          "one that merely finished: an assistant turn followed by silence resolves to " <>
+          "awaiting_input, while an outstanding tool call stays working. Claude Code panes " <>
+          "only; a pane whose transcript could not be resolved reports a reason and makes " <>
+          "no claim. Costs one directory listing plus a bounded tail read per agent pane. " <>
+          "Defaults to false."
+    }
+  end
+
+  @doc false
   def exit_status_param do
     %{
       type: "string",

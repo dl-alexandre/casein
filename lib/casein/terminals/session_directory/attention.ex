@@ -30,6 +30,7 @@ defmodule Casein.Terminals.SessionDirectory.Attention do
   - `:blocked` — agent reported it needs a human (report-only)
   - `:errored` — agent reported failure (report-only)
   - `:stalled` — derived from liveness; looks busy, worktree quiet
+  - `:awaiting_input` — derived from transcript shape; stopped talking, quiet
 
   These project from `Casein.Attention.Delivery.session_classification/1`.
   UI chrome must not re-derive the kind by re-inspecting window agent_state.

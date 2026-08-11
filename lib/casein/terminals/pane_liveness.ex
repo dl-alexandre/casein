@@ -21,8 +21,24 @@ defmodule Casein.Terminals.PaneLiveness do
   Enrichment is opt-in because a worktree walk is not free. Callers that render
   on every LiveView update should pass `liveness: false` and refresh on a slower
   cadence.
+
+  ## Transcript evidence
+
+  `transcript: true` adds a third answer, to the question the other two cannot
+  reach: **is this agent waiting for me?** A worktree looks the same whether the
+  agent finished, asked a question, or hit a permission prompt, and the pane
+  title is ambiguous by construction (see `Casein.Terminals.AgentState`). The
+  shape of the last turn in the agent's own session transcript is not — see
+  `Casein.Agents.Transcripts.Evidence`.
+
+  The pane → transcript join runs through the same cwd tmux already tracks, so
+  like liveness it needs nothing from the agent. It is off by default: it costs
+  a directory listing and a bounded tail read per agent pane, and it is only
+  meaningful for panes running a Claude Code CLI.
   """
 
+  alias Casein.Agents.Transcripts
+  alias Casein.Agents.Transcripts.Evidence
   alias Casein.Git.Inspector
   alias Casein.Terminals.AgentLiveness
   alias Casein.Terminals.PaneState
@@ -39,6 +55,9 @@ defmodule Casein.Terminals.PaneLiveness do
     * `:window_seconds` — activity window passed to `AgentLiveness.classify/2`
     * `:agent_panes_only` — only observe liveness for role-tagged agent panes
       (default `true`); a plain shell's cwd is not an agent worktree
+    * `:transcript` — set `true` to attach `:transcript` conversation-shape
+      evidence (default `false`; see "Transcript evidence" above)
+    * `:owner` — profile slug whose Claude auth home holds the transcripts
   """
   @spec enrich_topology(map(), keyword()) :: map()
   def enrich_topology(topology, opts \\ [])
@@ -57,6 +76,7 @@ defmodule Casein.Terminals.PaneLiveness do
         |> put_worktree(worktree)
         |> put_shared(shared, worktree, pane_id)
         |> put_liveness(Map.get(observations, worktree), opts)
+        |> put_transcript(opts)
       end)
 
     %{topology | panes: panes}
@@ -216,6 +236,50 @@ defmodule Casein.Terminals.PaneLiveness do
   # "nothing happened" from "the check did not run" will report false stalls.
   defp put_liveness(pane, {:error, reason}, _opts),
     do: Map.put(pane, :liveness, %{state: :unknown, reason: reason})
+
+  # Only agent panes, and only on request: this costs a directory listing plus a
+  # tail read per pane. A plain shell sharing the agent's worktree would resolve
+  # to the agent's own transcript, so `agent_panes_only` is doing load-bearing
+  # correctness work here, not just saving syscalls.
+  defp put_transcript(pane, opts) do
+    if Keyword.get(opts, :transcript, false) and observable?(pane, opts) do
+      Map.put(pane, :transcript, transcript_evidence(pane, opts))
+    else
+      pane
+    end
+  end
+
+  defp transcript_evidence(pane, opts) do
+    with {:ok, path} <- discover_transcript(pane, opts),
+         {:ok, observation} <- Transcripts.evidence(path, opts) do
+      %{
+        state: Evidence.classify(observation, opts),
+        transcript_path: path,
+        last_shape: observation.last_shape,
+        silent_for_seconds: observation.silent_for_seconds
+      }
+    else
+      # Same discipline as liveness: report *why* there is no verdict rather
+      # than omitting the pane, so "no transcript found" cannot be mistaken for
+      # "this agent is not waiting".
+      {:error, reason} -> %{state: :unknown, reason: reason}
+    end
+  end
+
+  # The transcript directory is keyed on the cwd the agent was launched in.
+  # That is normally the worktree root, but a pane that has since `cd`-ed
+  # elsewhere still belongs to its launch directory, so the worktree is tried as
+  # a fallback.
+  defp discover_transcript(pane, opts) do
+    cwd = PaneState.map_get(pane, :current_path)
+    worktree = pane_worktree(pane)
+
+    case Transcripts.discover(cwd, opts) do
+      {:ok, path} -> {:ok, path}
+      {:error, reason} when worktree in [nil, cwd] -> {:error, reason}
+      {:error, _reason} -> Transcripts.discover(worktree, opts)
+    end
+  end
 
   defp liveness_map(observation, opts) do
     %{

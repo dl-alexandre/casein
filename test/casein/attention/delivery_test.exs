@@ -124,7 +124,49 @@ defmodule Casein.Attention.DeliveryTest do
       refute Delivery.notify_eligible?(salience)
       refute Delivery.push_eligible?(salience)
       refute Delivery.drawer_eligible?(salience)
-      assert Delivery.session_reason_urgency(:stalled) == 1
+      assert Delivery.session_reason_urgency(:stalled) == 2
+    end
+
+    test "awaiting_input agent: cockpit needs_you, sorts above a stall, no phone interrupt" do
+      salience =
+        Salience.compute(%{
+          agent_states: [:awaiting_input],
+          quiet?: false,
+          lifecycle_status: :other
+        })
+
+      assert salience.signal == :agent_awaiting
+      assert salience.rank == 520
+      assert Delivery.session_needs_you?(salience)
+      assert Delivery.session_classification(salience).reason == :awaiting_input
+
+      # Above the notify floor — it belongs in the drawer — but derived signals
+      # do not page until their accuracy is observed.
+      assert Delivery.notify_eligible?(salience)
+      assert Delivery.drawer_eligible?(salience)
+      refute Delivery.push_eligible?(salience)
+
+      # The ordering contract, stated as an order rather than as magic numbers.
+      assert Delivery.session_reason_urgency(:blocked) <
+               Delivery.session_reason_urgency(:awaiting_input)
+
+      assert Delivery.session_reason_urgency(:awaiting_input) <
+               Delivery.session_reason_urgency(:stalled)
+
+      assert Delivery.session_reason_urgency(:idle) <
+               Delivery.session_reason_urgency(:some_unranked_reason)
+    end
+
+    test "a reported blocked agent outranks derived awaiting_input" do
+      # Kind discipline (H28): the agent's own claim wins over conversation shape.
+      salience =
+        Salience.compute(%{
+          agent_states: [:awaiting_input, :blocked],
+          quiet?: false,
+          lifecycle_status: :other
+        })
+
+      assert salience.signal == :agent_blocked
     end
 
     test "completed work: notify true (rank 400) on push/drawer and needs_you" do
@@ -140,7 +182,7 @@ defmodule Casein.Attention.DeliveryTest do
       assert Delivery.drawer_eligible?(salience)
       assert Delivery.session_needs_you?(salience)
       assert Delivery.session_classification(salience).reason == :completed
-      assert Delivery.session_reason_urgency(:completed) == 2
+      assert Delivery.session_reason_urgency(:completed) == 3
       assert Delivery.drawer_severity(salience.priority) == "info"
     end
 
@@ -160,7 +202,7 @@ defmodule Casein.Attention.DeliveryTest do
       refute Delivery.push_eligible?(salience)
       assert Delivery.session_needs_you?(salience)
       assert Delivery.session_classification(salience) == %{section: :needs_you, reason: :idle}
-      assert Delivery.session_reason_urgency(:idle) == 3
+      assert Delivery.session_reason_urgency(:idle) == 4
 
       assert Delivery.chrome_attention_label(1, 1) == "unseen"
       assert Delivery.chrome_attention_label(0, 1) == "inline"

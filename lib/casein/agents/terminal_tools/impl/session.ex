@@ -1,6 +1,7 @@
 defmodule Casein.Agents.TerminalTools.Impl.Session do
   @moduledoc false
 
+  alias Casein.Agents.AuthProfile
   alias Casein.Agents.GrokCapabilityPolicy
   alias Casein.Agents.TerminalOutputFormat
   alias Casein.Labels
@@ -145,7 +146,24 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   # have to shell out to `tmux list-panes` to learn where a window is working.
   # The liveness *walk* is the part that costs, so it stays opt-in.
   defp put_liveness(snapshot, params) do
-    PaneLiveness.enrich_topology(snapshot, liveness: truthy?(Map.get(params, :include_liveness)))
+    PaneLiveness.enrich_topology(snapshot,
+      liveness: truthy?(Map.get(params, :include_liveness)),
+      transcript: truthy?(Map.get(params, :include_transcript)),
+      claude_home: claude_home(params)
+    )
+  end
+
+  # Transcripts live under the *workspace owner's* auth profile. Resolving it
+  # here rather than sweeping `profiles/` is what keeps one owner's sessions
+  # invisible to another's agents on a shared box.
+  defp claude_home(params) do
+    case workspace_id(params) do
+      workspace when is_binary(workspace) and workspace != "" ->
+        AuthProfile.active_profile_dir(workspace, :claude)
+
+      _ ->
+        nil
+    end
   end
 
   # Several panes in one worktree share a git index. Adoption is deliberate

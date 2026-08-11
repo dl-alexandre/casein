@@ -15,6 +15,11 @@ defmodule Casein.Attention.Signal do
     never derived from liveness.
   - `:agent_stalled` — pane looks busy and external liveness is quiet
     (derived-only). Never reported by an agent; never collapsed into blocked.
+  - `:agent_awaiting` — the agent's own transcript shows it stopped talking and
+    went quiet (derived-only). Distinct from `:agent_blocked`, which is the
+    agent *reporting* that it needs a human: this one is inferred from
+    conversation shape and cannot tell a question from a finished turn. Never
+    collapsed into blocked, for the same kind-discipline reason as `:stalled`.
   - Other atoms name lifecycle/domain facts (`:run_failed`, …).
 
   ## Kind discipline (from `Casein.Terminals.AgentState`)
@@ -28,6 +33,7 @@ defmodule Casein.Attention.Signal do
           :agent_blocked
           | :agent_errored
           | :agent_stalled
+          | :agent_awaiting
           | :approval_pending
           | :deploy_failed
           | :run_failed

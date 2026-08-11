@@ -16,7 +16,7 @@ defmodule Casein.Attention.Delivery do
   | Notifications drawer create (mobile) | Salience `notify` ∧ rank ≥ **400** | `drawer_eligible?/1` (= `notify_eligible?/1`) |
   | Mobile inbox `notify` bit / floor | Salience `notify` ∧ rank ≥ **400** | `notify_eligible?/1`, `notify_rank_floor/0` |
   | Session rail `:needs_you` | signal → section via classification | `session_classification/1`, `session_needs_you?/1` |
-  | Session rail urgency sort | blocked/errored < stalled < completed < idle | `session_reason_urgency/1` |
+  | Session rail urgency sort | blocked/errored < awaiting_input < stalled < completed < idle | `session_reason_urgency/1` |
   | Quiet chrome badge | unseen > 0 → `"unseen"`, else quiet → `"inline"` | `chrome_attention_label/2` |
   | Needs Me pin | unresolved decision card types | `needs_me_pin?/1` |
   | Drawer severity chrome | priority critical/high → `"warning"` | `drawer_severity/1` |
@@ -37,6 +37,8 @@ defmodule Casein.Attention.Delivery do
   already pages today. It deliberately excludes:
 
   - `:agent_stalled` — derived observation; high cockpit value, low interrupt value
+  - `:agent_awaiting` — derived from transcript shape; clears the drawer floor
+    but does not page, because it cannot yet tell a question from a finished turn
   - `:idle` — quiet-window chrome on the rail; drawer/notify floor may still clear
   - `:working` / `:informational` / `:offline_resumable` — below the floor
 
@@ -81,6 +83,7 @@ defmodule Casein.Attention.Delivery do
   @type session_reason ::
           :blocked
           | :errored
+          | :awaiting_input
           | :stalled
           | :error
           | :orphaned_claim
@@ -124,11 +127,17 @@ defmodule Casein.Attention.Delivery do
     blocked: 0,
     errored: 0,
     error: 0,
-    stalled: 1,
-    orphaned_claim: 2,
-    completed: 2,
-    idle: 3
+    # Derived, but actionable: it will not move until you answer. Sorts after
+    # the reported failures and before a stall, which may still be thinking.
+    awaiting_input: 1,
+    stalled: 2,
+    orphaned_claim: 3,
+    completed: 3,
+    idle: 4
   }
+
+  # Anything unranked sorts after every named reason, `:idle` included.
+  @session_reason_urgency_default 5
 
   # Priorities that paint the notifications drawer row as warning chrome.
   @drawer_warning_priorities ~w(critical high)
@@ -245,7 +254,9 @@ defmodule Casein.Attention.Delivery do
   drawer/notify floor (`notify_eligible?/1`). Requires:
 
   1. `notify_eligible?/1` (rank floor + Salience notify bit), and
-  2. signal ∈ `push_signals/0` (excludes `:idle` and `:agent_stalled`).
+  2. signal ∈ `push_signals/0` (excludes `:idle`, `:agent_stalled` and
+     `:agent_awaiting` — the derived signals, which must earn a phone
+     interrupt with observed accuracy first).
   """
   @spec push_eligible?(Salience.t() | map()) :: boolean()
   def push_eligible?(%{signal: signal} = salience) do
@@ -284,10 +295,10 @@ defmodule Casein.Attention.Delivery do
   """
   @spec session_reason_urgency(session_reason() | term()) :: non_neg_integer()
   def session_reason_urgency(reason) when is_atom(reason) do
-    Map.get(@session_reason_urgency, reason, 4)
+    Map.get(@session_reason_urgency, reason, @session_reason_urgency_default)
   end
 
-  def session_reason_urgency(_), do: 4
+  def session_reason_urgency(_), do: @session_reason_urgency_default
 
   @doc """
   Cockpit quiet-chrome attention label for a window or session aggregate.
@@ -359,6 +370,9 @@ defmodule Casein.Attention.Delivery do
 
       :agent_stalled ->
         %{section: :needs_you, reason: :stalled}
+
+      :agent_awaiting ->
+        %{section: :needs_you, reason: :awaiting_input}
 
       :run_failed ->
         # Session lifecycle error without a blocked agent window.

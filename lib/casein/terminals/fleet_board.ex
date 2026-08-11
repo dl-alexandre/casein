@@ -13,9 +13,10 @@ defmodule Casein.Terminals.FleetBoard do
 
   ## Kind discipline
 
-  Report-only (`:blocked`, `:errored`) and derived-only (`:stalled`) stay
-  distinct on each row. Unknown observation never becomes quiet/idle — a row
-  without a known agent state lands in `:unknown`, not `:idle`.
+  Report-only (`:blocked`, `:errored`) and derived-only (`:stalled`,
+  `:awaiting_input`) stay distinct on each row. Unknown observation never
+  becomes quiet/idle — a row without a known agent state lands in `:unknown`,
+  not `:idle`.
 
   ## Attention model
 
@@ -322,12 +323,20 @@ defmodule Casein.Terminals.FleetBoard do
     %{kind: :derived, reason: :stalled, detail: detail}
   end
 
+  defp blocked_on_from(:awaiting_input, message, _reason, _liveness) do
+    %{
+      kind: :derived,
+      reason: :awaiting_input,
+      detail: message || "agent stopped on its own turn and went quiet"
+    }
+  end
+
   defp blocked_on_from(_state, _message, :ready_no_task, _liveness) do
     %{kind: :derived, reason: :ready_no_task, detail: "idle capacity, no issue binding"}
   end
 
   defp blocked_on_from(_state, message, reason, _liveness)
-       when reason in [:blocked, :errored, :stalled, :idle, :orphaned_claim] do
+       when reason in [:blocked, :errored, :stalled, :awaiting_input, :idle, :orphaned_claim] do
     kind = if reason in [:blocked, :errored], do: :report, else: :derived
     %{kind: kind, reason: reason, detail: message}
   end
@@ -335,7 +344,7 @@ defmodule Casein.Terminals.FleetBoard do
   defp blocked_on_from(_state, _message, _reason, _liveness), do: nil
 
   defp fleet_row?(%{agent_state: state})
-       when state in [:working, :blocked, :done, :idle, :errored, :stalled],
+       when state in [:working, :blocked, :done, :idle, :errored, :stalled, :awaiting_input],
        do: true
 
   defp fleet_row?(%{fleet_role: role}) when role in [:manager, :worker], do: true
@@ -349,7 +358,7 @@ defmodule Casein.Terminals.FleetBoard do
       fleet_readiness == :ready_no_task ->
         {true, :ready_no_task}
 
-      agent_state in [:blocked, :errored, :stalled] or
+      agent_state in [:blocked, :errored, :stalled, :awaiting_input] or
           (quiet? and agent_state in [:done, :idle, nil]) ->
         cls =
           %{
@@ -448,7 +457,7 @@ defmodule Casein.Terminals.FleetBoard do
   defp orphan_attention_count(_), do: 0
 
   defp normalize_state(state)
-       when state in [:working, :blocked, :done, :idle, :errored, :stalled],
+       when state in [:working, :blocked, :done, :idle, :errored, :stalled, :awaiting_input],
        do: state
 
   defp normalize_state("working"), do: :working
@@ -457,6 +466,7 @@ defmodule Casein.Terminals.FleetBoard do
   defp normalize_state("idle"), do: :idle
   defp normalize_state("errored"), do: :errored
   defp normalize_state("stalled"), do: :stalled
+  defp normalize_state("awaiting_input"), do: :awaiting_input
   defp normalize_state(_), do: nil
 
   defp normalize_role(role) when role in [:manager, :worker], do: role
