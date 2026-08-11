@@ -470,6 +470,26 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
     end)
   end
 
+  @doc """
+  Read-only deployed runtime signal (S11 / #867).
+
+  Reports deployed revision vs origin branch **and** resolved runtime-selected
+  modules (`:tmux_adapter` first). Optional `workspace_id` is echo-only for
+  audit scope. No mutations, no tmux.
+  """
+  @spec runtime_signal(map()) :: {:ok, map()}
+  def runtime_signal(params \\ %{}) do
+    snap = Casein.Deployment.RuntimeSignal.snapshot()
+
+    payload =
+      case workspace_id(params) do
+        id when is_binary(id) -> Map.put(snap, :workspace_id, id)
+        _ -> snap
+      end
+
+    {:ok, payload}
+  end
+
   defp maybe_put_gate_identity(opts, params) do
     identity =
       %{

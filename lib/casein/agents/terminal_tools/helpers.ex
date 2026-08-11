@@ -767,6 +767,37 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("runtime_signal") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_metadata, :terminal_read],
+      recovery_hints: [
+        "S11/#867: read modules.tmux_adapter first — SHA alone misses adapter/default mismatches.",
+        "paths_disagree? true means MCP path (Backend.module fallback) ≠ legacy get_env(..., Tmux).",
+        "mcp_surface.ok? false means missing callbacks (e.g. paste_text/3) on the live module.",
+        "revision.status unknown never means current."
+      ],
+      examples: [
+        %{
+          arguments: %{"workspace_id" => "ws-1"},
+          structured_content: %{
+            "diverged?" => true,
+            "attention" => ["tmux_adapter_paths_disagree"],
+            "revision" => %{"status" => "current", "branch" => "master"},
+            "modules" => %{
+              "tmux_adapter" => %{
+                "mcp_resolved" => "Casein.Terminals.Backends.Tmux",
+                "ops_resolved" => "Casein.Terminals.Tmux",
+                "paths_disagree?" => true
+              }
+            }
+          }
+        }
+      ]
+    }
+  end
+
   def metadata("terminal_wait_agent_state") do
     %{
       mutation?: false,
