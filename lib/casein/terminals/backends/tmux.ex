@@ -142,14 +142,34 @@ defmodule Casein.Terminals.Backends.Tmux do
   @impl true
   def kill(session), do: adapter().kill(session)
 
+  @doc """
+  Send keys to a session/pane.
+
+  MCP `terminal_send_keys` calls arity 2 with the resolved target (session or
+  pane id) as the first argument. Backend/Adapter callbacks are arity 3 with
+  opts. Both shapes are exported and normalize adapter returns to
+  `:ok | {:error, term()}` so MCP does not `CaseClauseError` on a bare `:ok`
+  when the underlying client still returns `{out, code}`.
+  """
   @impl true
-  def send_keys(session, keys, opts), do: adapter().send_keys(session, keys, opts)
+  def send_keys(session, keys, opts \\ [])
+
+  def send_keys(session, keys, opts)
+      when is_binary(session) and is_binary(keys) and is_list(opts) do
+    session
+    |> adapter().send_keys(keys, opts)
+    |> normalize_run_result()
+  end
 
   @impl true
   def capture_recent(session, lines, opts), do: adapter().capture_recent(session, lines, opts)
 
   @impl true
-  def capture_scrollback(session, opts), do: adapter().capture_scrollback(session, opts)
+  def capture_scrollback(session, opts \\ [])
+
+  def capture_scrollback(session, opts) when is_binary(session) and is_list(opts) do
+    adapter().capture_scrollback(session, opts)
+  end
 
   @impl true
   def resize_window(session, cols, rows), do: adapter().resize_window(session, cols, rows)
@@ -202,7 +222,24 @@ defmodule Casein.Terminals.Backends.Tmux do
 
   def send_command(session, cmd, opts)
       when is_binary(session) and is_binary(cmd) and is_list(opts) do
-    adapter().send_command(session, cmd, opts)
+    session
+    |> adapter().send_command(cmd, opts)
+    |> normalize_run_result()
+  end
+
+  @doc """
+  Paste literal text via the configured adapter (tmux paste-buffer path).
+
+  Required by MCP `terminal_paste_agent_text`. Not yet on `Casein.Terminals.Backend`
+  callbacks — product MCP still reaches it through Backend.module()/`:tmux_adapter`.
+  """
+  def paste_text(session, text, opts \\ [])
+
+  def paste_text(session, text, opts)
+      when is_binary(session) and is_binary(text) and is_list(opts) do
+    session
+    |> adapter().paste_text(text, opts)
+    |> normalize_run_result()
   end
 
   @doc "Set one tmux session environment variable via the configured adapter."
@@ -219,8 +256,35 @@ defmodule Casein.Terminals.Backends.Tmux do
     Tmux.workspace_session_prefix(workspace_name)
   end
 
+  # TmuxCtl.Client historically returns `{stdout, exit_code}` from several
+  # mutations while TmuxCtl.Adapter / Casein.Terminals.Backend declare
+  # `:ok | {:error, term()}`. MCP impls historically matched only the tuple
+  # shape — fixing arity alone then raised CaseClauseError on `:ok`. Normalize
+  # at the Backend boundary so both contracts hold.
+  defp normalize_run_result(:ok), do: :ok
+  defp normalize_run_result({:ok, _} = ok), do: ok
+  defp normalize_run_result({:error, _} = err), do: err
+  defp normalize_run_result({_out, 0}), do: :ok
+  defp normalize_run_result({out, _code}) when is_binary(out), do: {:error, String.trim(out)}
+  defp normalize_run_result({out, _code}), do: {:error, out}
+  defp normalize_run_result(other), do: other
+
+  # Default lower hop is the Casein.Terminals.Tmux facade. When tests (or a
+  # misconfig) set `:tmux_adapter` to *this* module — the #854 production shape
+  # MCP saw — fall through to `:tmux_adapter_inner` or the Tmux facade so we do
+  # not recurse forever on every send/paste/capture.
   defp adapter do
-    Application.get_env(:casein, :tmux_adapter, Tmux)
+    case Application.get_env(:casein, :tmux_adapter_inner) do
+      inner when is_atom(inner) and not is_nil(inner) and inner != __MODULE__ ->
+        inner
+
+      _ ->
+        case Application.get_env(:casein, :tmux_adapter, Tmux) do
+          mod when mod == __MODULE__ -> Tmux
+          mod when is_atom(mod) and not is_nil(mod) -> mod
+          _ -> Tmux
+        end
+    end
   end
 
   defp login_shell_command do

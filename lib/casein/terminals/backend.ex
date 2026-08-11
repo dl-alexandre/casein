@@ -34,7 +34,7 @@ defmodule Casein.Terminals.Backend do
   @callback session_exists?(session_id()) :: boolean()
   @callback session_alive?(session_id()) :: boolean()
   @callback kill(session_id()) :: term()
-  @callback send_keys(session_id(), String.t(), keyword()) :: term()
+  @callback send_keys(session_id(), String.t(), keyword()) :: :ok | {:error, term()}
   @callback capture_recent(session_id(), pos_integer(), keyword()) ::
               {:ok, String.t()} | {:error, term()}
   @callback capture_scrollback(session_id(), keyword()) :: String.t()
