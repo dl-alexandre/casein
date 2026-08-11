@@ -51,5 +51,11 @@ The launcher never revokes on pane exit, so a closed Grok pane keeps the
 workspace bound until its capability hits the 12h TTL or that leader mints a
 replacement. That tail is intentional — the bearer is still usable.
 
-Run panel → **Agent write unlock** is unconditional: an operator can still grant
-before launching a Grok pane, with no banner on screen.
+Run panel → **Agent write unlock** follows the same binding rule: the grant form
+appears only while a capability-scoped agent is bound. An **active** unlock always
+renders regardless of binding — `Revoke now` is the kill switch and must stay
+reachable after the capability it was granted for has lapsed.
+
+Consequence: there is no pre-launch grant. Launch the Grok pane first, unlock
+once it is bound, then **relaunch** it — the MCP grant is frozen at leader start,
+so unlocking does not expand a live pane's tools/list.

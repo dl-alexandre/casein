@@ -11,7 +11,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
   attr :host_loc, :any, required: true
   attr :active_run, :any, default: nil
   attr :review_commands, :list, default: []
-  attr :agent_write_unlock, :any, default: %{status: :inactive, until: nil, by: nil}
+
+  attr :agent_write_unlock, :any,
+    default: %{status: :inactive, until: nil, by: nil, capability_bound: false}
+
   attr :run_ledger, :list, required: true
   attr :run_ledger_loaded?, :boolean, default: true
   attr :run_ledger_error, :string, default: nil
@@ -165,7 +168,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
             </div>
           <% end %>
 
-          <div id="agent-write-unlock" class="border-t pt-3 mt-3">
+          <%!-- Only capability-scoped runtimes (managed Grok) are bound by this unlock,
+               so the grant form is offered only while one is bound. An ACTIVE unlock
+               always renders regardless: `Revoke now` is the kill switch and must stay
+               reachable even after the capability it was granted for has lapsed.
+               Cost of hiding the form: an operator can no longer grant *before*
+               launching, and the MCP grant is frozen at leader start — so unlocking a
+               live locked pane still requires relaunching it. --%>
+          <div
+            :if={@agent_write_unlock.status == :active or @agent_write_unlock.capability_bound}
+            id="agent-write-unlock"
+            class="border-t pt-3 mt-3"
+          >
             <h3 class="mb-2 text-xs font-medium text-zinc-700">Agent write unlock</h3>
             <%= if @agent_write_unlock.status == :active do %>
               <div class="flex flex-wrap items-center gap-2 rounded border border-status-warning-border bg-status-warning-soft px-2 py-1.5 text-xs">
