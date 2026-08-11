@@ -11,6 +11,7 @@ on:
       - "scripts/package-windows-desktop.ps1"
       - "scripts/prepare-windows-preview-runtime.ps1"
       - "scripts/test-windows-desktop-package.ps1"
+      - "scripts/report-actions-artifact-quota-failure.sh"
       - ".github/workflows/windows-desktop.yml"
 
 permissions:
@@ -69,6 +70,7 @@ jobs:
         run: scripts/test-windows-desktop-package.ps1 -PackageRoot dist/Casein-windows-x64-ci
 
       - name: Upload package and integrity metadata
+        id: upload_package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: Casein-windows-x64
@@ -87,3 +89,13 @@ jobs:
           # path). Not 1 day — weekend/PR review lag would lose the only zip.
           # Not blanket-short on other workflows — release evidence stays longer.
           retention-days: 3
+
+      # Hard fail with a structured message when CreateArtifact dies on quota.
+      # Do NOT continue-on-error / skip upload — red stays red (#889).
+      - name: Diagnose artifact upload failure
+        if: failure() && steps.upload_package.conclusion == 'failure'
+        env:
+          CASEIN_DESKTOP_PLATFORM: Windows
+          CASEIN_DESKTOP_WORKFLOW_NAME: Windows desktop package
+        shell: bash
+        run: bash scripts/report-actions-artifact-quota-failure.sh

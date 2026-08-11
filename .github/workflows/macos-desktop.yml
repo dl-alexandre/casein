@@ -24,6 +24,7 @@ on:
       - "scripts/notarize-macos-desktop.sh"
       - "scripts/collect-macos-desktop-evidence.sh"
       - "scripts/with-ephemeral-macos-keychain.sh"
+      - "scripts/report-actions-artifact-quota-failure.sh"
       - "docs/desktop/macos_release_evidence.md"
       - ".github/workflows/macos-desktop.yml"
   pull_request:
@@ -47,6 +48,7 @@ on:
       - "scripts/notarize-macos-desktop.sh"
       - "scripts/collect-macos-desktop-evidence.sh"
       - "scripts/with-ephemeral-macos-keychain.sh"
+      - "scripts/report-actions-artifact-quota-failure.sh"
       - "docs/desktop/macos_release_evidence.md"
       - ".github/workflows/macos-desktop.yml"
 
@@ -155,8 +157,9 @@ jobs:
       # a later upload-artifact quota failure does not erase the only proof.
       # Account-level Actions artifact storage quota has failed desktop jobs
       # after build/sign/verify already passed; do not treat upload red as a
-      # packaging regression, and do not weaken this job to go green.
+      # packaging regression, and do not weaken this job to go green (#889).
       - name: Upload package and integrity metadata
+        id: upload_package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: Casein-${{ matrix.cache }}
@@ -164,3 +167,12 @@ jobs:
           # Matches windows-desktop.yml. Without an explicit cap, desktop zips
           # accumulate under the account artifact quota and fail only this step.
           retention-days: 7
+
+      # Hard fail with a structured message when CreateArtifact dies on quota.
+      # Do NOT continue-on-error / skip upload — red stays red (#889).
+      - name: Diagnose artifact upload failure
+        if: failure() && steps.upload_package.conclusion == 'failure'
+        env:
+          CASEIN_DESKTOP_PLATFORM: macOS
+          CASEIN_DESKTOP_WORKFLOW_NAME: macOS desktop package
+        run: bash scripts/report-actions-artifact-quota-failure.sh
