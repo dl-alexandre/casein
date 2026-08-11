@@ -45,6 +45,7 @@ defmodule Casein.Operator.SituationServer do
   require Logger
 
   alias Casein.Agents.Activity
+  alias Casein.Agents.SkillIntegrity
   alias Casein.Audit
   alias Casein.Export.Sanitizer
   alias Casein.Operator.Detectors
@@ -102,7 +103,13 @@ defmodule Casein.Operator.SituationServer do
     worktree_alarms: [],
     worktree_swept_at_ms: nil,
     worktree_sweep_ref: nil,
-    worktree_sweep_pid: nil
+    worktree_sweep_pid: nil,
+    # Cached SkillIntegrity scan (hashes skill trees off-process, same
+    # rate-limited pattern as the worktree sweep).
+    skill_integrity: [],
+    skill_scanned_at_ms: nil,
+    skill_scan_ref: nil,
+    skill_scan_pid: nil
   ]
 
   ## Public API
@@ -329,6 +336,15 @@ defmodule Casein.Operator.SituationServer do
     {:noreply, run_detectors(state)}
   end
 
+  # Async skill-integrity scan result (see maybe_start_skill_scan/1).
+  def handle_info({:skill_integrity, skills}, state) when is_list(skills) do
+    {:noreply, %{state | skill_integrity: skills}}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{skill_scan_ref: ref} = state) do
+    {:noreply, %{state | skill_scan_ref: nil, skill_scan_pid: nil}}
+  end
+
   # Async worktree sweep result (see maybe_start_worktree_sweep/1).
   def handle_info({:worktree_alarms, alarms}, state) when is_list(alarms) do
     state = %{state | worktree_alarms: alarms}
@@ -459,13 +475,14 @@ defmodule Casein.Operator.SituationServer do
 
   defp run_detectors(state) do
     now = DateTime.utc_now()
-    state = maybe_start_worktree_sweep(state)
+    state = state |> maybe_start_worktree_sweep() |> maybe_start_skill_scan()
 
     risks =
       Risks.detect(state.digest) ++
         Detectors.blocked_too_long(state.agent_entries, now, blocked_threshold_s()) ++
         Detectors.working_no_output(state.digest, state.last_output_at, now, output_threshold_s()) ++
         Detectors.leaked_worktree(state.worktree_alarms, state.workspace_id, now) ++
+        Detectors.divergent_skill(state.skill_integrity, now) ++
         Map.values(state.ops_risks)
 
     next_active = Map.new(risks, fn risk -> {{risk.id, risk.subject}, risk} end)
@@ -556,6 +573,43 @@ defmodule Casein.Operator.SituationServer do
           | worktree_sweep_ref: ref,
             worktree_sweep_pid: pid,
             worktree_swept_at_ms: now_ms
+        }
+    end
+  end
+
+  # Hashing every skill tree across every provider config home is filesystem
+  # work, not server-loop work, so it runs in a monitored helper on the same
+  # rate-limited-from-start schedule as the worktree sweep. Skills change when
+  # someone edits or restages them, so a stale-by-one-interval answer is fine.
+  defp maybe_start_skill_scan(state) do
+    now_ms = System.monotonic_time(:millisecond)
+
+    fresh? =
+      is_integer(state.skill_scanned_at_ms) and
+        now_ms - state.skill_scanned_at_ms < skill_scan_interval_ms()
+
+    cond do
+      state.skill_scan_ref != nil ->
+        if not fresh?, do: Process.exit(state.skill_scan_pid, :kill)
+        state
+
+      fresh? ->
+        state
+
+      true ->
+        parent = self()
+        roots = SkillIntegrity.default_roots()
+
+        {pid, ref} =
+          spawn_monitor(fn ->
+            send(parent, {:skill_integrity, SkillIntegrity.observe(roots)})
+          end)
+
+        %{
+          state
+          | skill_scan_ref: ref,
+            skill_scan_pid: pid,
+            skill_scanned_at_ms: now_ms
         }
     end
   end
@@ -749,6 +803,11 @@ defmodule Casein.Operator.SituationServer do
   defp tick_ms, do: Application.get_env(:casein, :situation_tick_ms, 60_000)
 
   defp sweep_interval_ms, do: Application.get_env(:casein, :situation_worktree_sweep_ms, 60_000)
+
+  # Longer than the worktree sweep: skills only change on an edit or a
+  # relaunch, and the scan reads every skill tree on the box.
+  defp skill_scan_interval_ms,
+    do: Application.get_env(:casein, :situation_skill_scan_ms, 300_000)
 
   defp sanitize(text) when is_binary(text), do: Sanitizer.redact_text(text)
   defp sanitize(_text), do: nil
