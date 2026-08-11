@@ -35,8 +35,16 @@ casein_tmux_label() {
 # Drop-in for bare `tmux …` in product scripts. Always passes `-L <label>`.
 # Prefer this over hand-rolling `tmux -L "$CASEIN_TMUX_LABEL"` so the resolve
 # order stays in one place.
+#
+# CASEIN_TMUX_BIN overrides the tmux executable (hermetic tests inject a stub).
+# The override still receives `-L <label>` so callers stay label-disciplined.
 casein_tmux() {
-  local label
+  local label bin
   label="$(casein_tmux_label)"
-  command tmux -L "${label}" "$@"
+  bin="${CASEIN_TMUX_BIN:-tmux}"
+  if [[ "$bin" == */* ]]; then
+    "$bin" -L "${label}" "$@"
+  else
+    command "$bin" -L "${label}" "$@"
+  fi
 }

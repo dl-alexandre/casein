@@ -85,6 +85,22 @@ would write a shared tree (`shared_worktree_mutation`) — soft, so
 "Multiple windows in one worktree" in AGENTS.md for exactly which subcommands
 that covers.
 
+### Spawn file-set discipline (#862)
+
+**Lane labels lie.** Before a spawned worker writes code, declare its intended
+paths and intersect them with every **live** worktree's committed set:
+
+```bash
+git -C <worktree> diff --name-only origin/master...HEAD
+# or one command:
+bash scripts/fleet-lane-files.sh list
+bash scripts/fleet-lane-files.sh check --files path/a.ex,path/b.ex
+```
+
+Ground truth is that diff — never pane title, window name, or slug. On
+intersection the newcomer yields to the incumbent and takes only the remainder.
+Full rule: [`agents/spawn-file-discipline.md`](agents/spawn-file-discipline.md).
+
 Environment knobs:
 
 | Variable | Default | Purpose |
