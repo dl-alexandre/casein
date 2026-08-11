@@ -399,7 +399,7 @@ defmodule Casein.Agents.PreviewToolsMoreTest do
     tool = Enum.find(PreviewTools.definitions(), &(&1.name == "preview_open"))
     mode = tool.parameters.properties.mode
 
-    assert mode.enum == ["app", "localhost", "here"]
+    assert mode.enum == ["app", "localhost", "here", "external"]
     assert mode.default == "app"
   end
 
