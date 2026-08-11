@@ -723,6 +723,37 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("mcp_self_test") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read, :terminal_metadata],
+      recovery_hints: [
+        "Safe on a live fleet: writes stay inside a throwaway casein_mcp_self_test_* session.",
+        "status undefined means the running adapter is missing the function at the called arity.",
+        "resolved_adapter is what Shared.tmux/0 actually dispatches to — compare with checkout defaults."
+      ],
+      examples: [
+        %{
+          arguments: %{},
+          structured_content: %{
+            "ok?" => false,
+            "resolved_adapter" => "Casein.Terminals.Backends.Tmux",
+            "summary" => %{"ok" => 7, "undefined" => 2, "error" => 0, "total" => 9},
+            "verbs" => [
+              %{
+                "verb" => "terminal_paste_agent_text",
+                "fun" => "paste_text",
+                "arity" => 3,
+                "status" => "undefined"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  end
+
   def metadata(_name), do: %{}
 
   @doc """

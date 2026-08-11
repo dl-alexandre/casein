@@ -44,6 +44,7 @@ defmodule Casein.Agents.TerminalTools do
     OrchestrationStatus,
     WorkerStatus,
     PasteAgentText,
+    McpSelfTest,
     RequestClarification,
     RequestHumanInput,
     ReportAgentState,
@@ -60,7 +61,7 @@ defmodule Casein.Agents.TerminalTools do
     WorkspaceDigest
   }
 
-  alias Casein.Agents.TerminalTools.Impl.{Agent, Command, Report, Session}
+  alias Casein.Agents.TerminalTools.Impl.{Agent, Command, Report, Session, SelfTest}
   alias Casein.Agents.ToolAction
 
   @type tool :: McpCtl.Tool.t()
@@ -96,7 +97,8 @@ defmodule Casein.Agents.TerminalTools do
     WorkspaceDigest,
     OrchestrationStatus,
     WorkerStatus,
-    GateReport
+    GateReport,
+    McpSelfTest
   ]
 
   @by_name Map.new(@actions, &{&1.name(), &1})
@@ -191,4 +193,6 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate worker_status(params), to: Session
   @doc false
   defdelegate gate_report(params), to: Report
+  @doc false
+  defdelegate mcp_self_test(params \\ %{}), to: SelfTest, as: :run
 end
