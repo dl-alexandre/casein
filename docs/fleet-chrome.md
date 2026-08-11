@@ -226,6 +226,56 @@ Use `worker_status` when you need one-pane depth (`worktree_path`, full
 liveness); use this tool to answer "which of my N workers need me?" without the
 gate/orphan aggregate payload.
 
+## MCP resource: `casein://fleet/summary` (#859 / #879)
+
+Read-only **one-call fleet picture** on Terminal MCP `resources/list` /
+`resources/read`. Replaces `terminal_topology` + N `terminal_capture` scrapes
+for "what is my fleet doing?".
+
+```text
+resources/read { uri: "casein://fleet/summary" }
+→ sessions[], each with panes[]:
+    runtime, worktree_path, branch, ahead/behind,
+    commits_not_on_origin?,
+    liveness { source: "process_cpu", state, … },
+    progress { state, axes, … }
+```
+
+**`liveness` is process/CPU presence, not the spinner.** `PaneProcessLiveness`
+samples `pane_pid` + its `/proc` process tree and compares cumulative CPU
+jiffies. A frozen UI that is still burning CPU reports `active` (process still
+there). First sample is `unknown`/`warming`. Missing pid/proc is `unknown` with
+reason — never collapsed into quiet.
+
+**`progress` is the composite (#879).** CPU alone does not prove the agent is
+making progress — production incident: 2h07m of advancing CPU with frozen build
+timer, stuck context %, stuck spend, zero commits. `AgentProgress` samples:
+
+| axis | advanced when | notes |
+|------|---------------|-------|
+| process CPU | jiffies increase | necessary-not-sufficient presence |
+| worktree | commit count / HEAD / `git status` fingerprint moves | rebase/merge via `git rev-parse --git-dir` (linked worktrees: `.git` is a **file**) |
+| screen | `capture-pane` hash changes | changing screen = positive proof; frozen alone is inconclusive |
+| context | scraped context size grows | e.g. `54.9K (11%)` |
+| spend | scraped spend grows | e.g. `$0.11` |
+
+`progress.state`:
+
+- `progressing` — ≥1 non-CPU progress axis advanced (or rebase/merge in flight)
+- `running_but_not_progressing` — process active **and** ≥2 non-CPU axes stalled
+  past the stall window (needs two axes disagreeing — no single axis produces it)
+- `quiet` / `unknown` — same absence discipline as liveness
+
+Detached HEAD + staged files mid-rebase is **normal**, not broken. Do not use
+`pgrep -af git | grep <worktree>` (matches its own cmdline); progress never
+does that.
+
+Per-worktree branch + `commits_not_on_origin?` come from `Git.Inspector`
+(`ahead` vs upstream), not `rev-list HEAD --not --remotes`.
+
+No mutation verbs. Does **not** edit orchestration_status / worker_status /
+orchestration_list_workers paths owned by #384.
+
 ## Code
 
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
@@ -234,11 +284,15 @@ gate/orphan aggregate payload.
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
 - `Casein.Terminals.WorkerStatus` — MCP wire projection for one pane (M2)
 - `Casein.Terminals.OrchestrationListWorkers` — compact worker-list projection (M3)
+- `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859/#879)
+- `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy presence (#859)
+- `Casein.Terminals.AgentProgress` — composite progress + running_but_not_progressing (#879)
 - `Casein.Ops.GateQueue` — host flock observation (`/proc` + lock path) + `position/2`
 - `CaseinWeb.WorkspaceLive.Show.FleetPanel` / `FleetEvents` — badge + drawer
 - `Casein.Agents.TerminalTools.OrchestrationStatus` — Jido action / MCP tool
 - `Casein.Agents.TerminalTools.WorkerStatus` — Jido action / MCP tool (`worker_status`)
 - `Casein.Agents.TerminalTools.OrchestrationListWorkers` — Jido action / MCP tool (`orchestration_list_workers`)
+- `CaseinWeb.API.TerminalMCP` — publishes `casein://fleet/summary` resource
 - `Casein.Labels.enrich_topology/2` — join label strings onto panes
 - `Casein.Terminals.PaneState` — strips bare runtime banners from `task_summary`
 - Wired from `Casein.Agents.TerminalTools.Impl.Session.topology/1`,
