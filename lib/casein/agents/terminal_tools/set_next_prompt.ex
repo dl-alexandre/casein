@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.SetNextPrompt do
   use Jido.Action,
     name: "terminal_set_next_prompt",
     description:
-      "Leave one sticky operator message for an agent pane, delivered on its next state edge instead of mid-turn. At most one message is pending per pane: setting another replaces it (latest wins) — this is not a queue. Delivers immediately when the pane is already in the requested state, and drops the message if the runtime session changes or the pane dies. Use this instead of terminal_paste_agent_text when the target agent is busy.",
+      "Leave one sticky operator message for an agent pane, delivered on its next state edge instead of mid-turn. At most one message is pending per pane: setting another replaces it (latest wins) — this is not a queue. Delivers immediately when the pane is already in the requested state, and drops the message if the runtime session changes or the pane dies. Refuses with state_edges_unavailable on hook-less runtimes (OpenCode) rather than parking a message that can never be released — paste with terminal_paste_agent_text instead. Use this instead of terminal_paste_agent_text when the target agent is busy and reports state edges.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

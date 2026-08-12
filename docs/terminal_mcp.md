@@ -381,6 +381,12 @@ Semantics worth knowing before you rely on it:
 - **Already-free panes get it immediately.** `status` in the response is
   `"delivered"` rather than `"pending"` when the requested edge had already
   passed, so a message is never silently held forever.
+- **Hook-less runtimes (OpenCode) are refused, not parked.** They never emit
+  the idle/done edge that releases a sticky message. `terminal_set_next_prompt`
+  returns `state_edges_unavailable` (`refused: true`, `remedy:
+  terminal_paste_agent_text`) instead of `pending_next_prompt: true` forever.
+  An honest refusal beats a silent hold. Paste with
+  `terminal_paste_agent_text` when the pane is idle.
 - **It is dropped, not delivered, if the agent restarts** (bound
   `agent_session_id` changes), the pane dies, or `expires_in_seconds` elapses
   (24h default).

@@ -97,7 +97,9 @@ defmodule Casein.Agents.TerminalTools.Helpers do
           "transition into idle OR done — read it as \"when the agent stops working\", " <>
           "which is what every wired runtime actually reports at end of turn. " <>
           "next_done waits for a completed turn only; next_blocked waits for a permission " <>
-          "prompt or a wedged turn. Nothing here interrupts a working agent."
+          "prompt or a wedged turn. Hook-less runtimes (OpenCode) never emit these edges: " <>
+          "set refuses with state_edges_unavailable instead of holding silently. " <>
+          "Nothing here interrupts a working agent."
     }
   end
 

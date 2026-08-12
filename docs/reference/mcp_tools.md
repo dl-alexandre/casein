@@ -82,7 +82,7 @@ is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 | `terminal_send_agent_keys` | Send raw keys to the agent pane only (requires marker) | `keys`\*, `session` | `send_agent_keys/1` |
 | `terminal_send_agent_command` | Type command + Enter into the agent pane (requires marker); confirms submit | `command`\*, `confirm`, `session` | `send_agent_command/1` |
 | `terminal_paste_agent_text` | Paste literal/multiline text via tmux paste buffer; optional `pane` skips agent_pair; `submit` confirms Enter | `text`\*, `submit`, `confirm`, `pane`, `session` | `paste_agent_text/1` |
-| `terminal_set_next_prompt` | Stage the one sticky operator message for an agent pane, delivered on its next state edge | `workspace_id`\*, `text`\*, `deliver_when`, `coalesce_key`, `expires_in_seconds`, `session`, `pane` | `set_next_prompt/1` |
+| `terminal_set_next_prompt` | Stage the one sticky operator message for an agent pane, delivered on its next state edge. Refuses `state_edges_unavailable` on hook-less runtimes (OpenCode) rather than parking forever | `workspace_id`\*, `text`\*, `deliver_when`, `coalesce_key`, `expires_in_seconds`, `session`, `pane` | `set_next_prompt/1` |
 | `terminal_clear_next_prompt` | Retract the staged message (only when `coalesce_key` matches, if given) | `workspace_id`\*, `coalesce_key`, `session`, `pane` | `clear_next_prompt/1` |
 | `terminal_get_next_prompt` | Read the staged message for a pane | `workspace_id`\*, `session`, `pane` | `get_next_prompt/1` |
 | `terminal_send_keys` | Send raw keys to a pane, no trailing Enter (tmux key names) | `session`\*, `keys`\*, `pane` | `send_keys/1` |

@@ -10,6 +10,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   alias Casein.Terminals.AgentState
   alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
+  alias Casein.Terminals.PaneProcessLiveness
   alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.TmuxTopology
   alias Casein.Terminals.WorkHandles
@@ -817,6 +818,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
          {:ok, pane} <- label_target_pane(session, params, :other),
          {:ok, deliver_when} <- deliver_when_arg(params) do
       {current_state, _message} = current_agent_state(session, pane.id)
+      runtime = pane_runtime(pane)
 
       opts = [
         workspace_id: workspace_id,
@@ -825,7 +827,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
         agent_session_id: bound_agent_session_id(session, pane.id, params),
         expires_at: NextPrompt.expires_at(expires_in_param(params)),
         set_by: string_param(params, "actor_id"),
-        current_state: current_state
+        current_state: current_state,
+        runtime: runtime
       ]
 
       case NextPrompt.set(session, pane.id, text, opts) do
@@ -845,6 +848,9 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
              next_prompt_next_args(session, pane.id, params)
            )
            |> compact()}
+
+        {:error, :state_edges_unavailable} ->
+          {:error, state_edges_unavailable_error(pane.id, runtime, deliver_when)}
 
         {:error, reason} ->
           {:error, reason}
@@ -924,6 +930,29 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       {:ok, deliver_when} -> {:ok, deliver_when}
       :error -> {:error, :invalid_deliver_when}
     end
+  end
+
+  defp pane_runtime(pane) do
+    command = Map.get(pane, :current_command) || Map.get(pane, "current_command")
+    PaneProcessLiveness.runtime_from_command(command)
+  end
+
+  defp state_edges_unavailable_error(pane_id, runtime, deliver_when) do
+    runtime_name = runtime || "unknown"
+
+    %{
+      error: :state_edges_unavailable,
+      refused: true,
+      pane: pane_id,
+      runtime: runtime_name,
+      deliver_when: Atom.to_string(deliver_when),
+      remedy: "terminal_paste_agent_text",
+      message:
+        "Refused: #{runtime_name} does not report agent-state edges, so a sticky " <>
+          "next_prompt with deliver_when=#{deliver_when} can never be released. " <>
+          "This is not pending — it was not accepted. Paste now with " <>
+          "terminal_paste_agent_text when the pane is idle."
+    }
   end
 
   defp expires_in_param(params) do
