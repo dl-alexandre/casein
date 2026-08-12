@@ -140,7 +140,7 @@ defmodule Casein.MixProject do
       # three copies of this project in the repo (this NIF, the vendored JS fork
       # in assets/vendor/ghostty, and casein_ghostty_windows' version literal),
       # so a bump is a coordinated change, not a routine `deps.update`.
-      {:ghostty, "~> 0.4.9"}
+      {:ghostty, "~> 0.5.0"}
     end
   end
 
