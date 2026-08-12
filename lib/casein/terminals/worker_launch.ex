@@ -23,6 +23,18 @@ defmodule Casein.Terminals.WorkerLaunch do
 
   Durable task graph, path contracts, verifier adapters, cancel/replace lifecycle
   beyond attaching a `WorkHandles` id, restricted orchestrator token profile rewrite.
+
+  ## Constraints carried in this module (not only in briefs)
+
+  Briefs die with the pane. Do **not** "helpfully" undo these:
+
+  * **No hidden-subagent fallback** — spawn failure is a hard error; never claim a
+    pane that Casein did not open (`hidden_subagent?` is always `false` on success).
+  * **dry_run never invents a live pane** — `visible?: false` and no `pane_id`.
+  * **No durable graph / path contracts / verifiers here** — that is later #384 work;
+    do not grow this module into `orchestration_create` by stealth.
+  * **Do not edit `pane_submit.ex` from this lane** — #886 owns OpenCode paste submit.
+  * **Do not widen Backend/Fake adapter surface from this lane** — #896/#901 own that.
   """
 
   alias Casein.Terminals.Backend
@@ -77,6 +89,8 @@ defmodule Casein.Terminals.WorkerLaunch do
 
       case runner.(runtime, slug, session, Keyword.put(opts, :dry_run, dry_run?)) do
         {:ok, %{dry_run: true} = plan} ->
+          # do not set pane_id or visible?: true on dry_run — operators treat those
+          # as proof a worker exists (#384 M4-lite; dry_run is plan-only).
           {:ok,
            %{
              ok: true,
@@ -97,6 +111,8 @@ defmodule Casein.Terminals.WorkerLaunch do
           observe = Keyword.get(opts, :observe, &default_observe/2)
           facts = observe.(session, pane_id)
 
+          # hidden_subagent? is a constant false on success — never invent a
+          # "soft" launch path that claims a pane Casein did not open (#384 product principle).
           receipt =
             %{
               ok: true,

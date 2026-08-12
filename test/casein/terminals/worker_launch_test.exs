@@ -147,4 +147,75 @@ defmodule Casein.Terminals.WorkerLaunchTest do
       refute Map.has_key?(plan, :pane_id)
     end
   end
+
+  # Constraints in the artifact (not only the brief). If a later slice "helpfully"
+  # adds hidden-subagent fallback, durable graph fields, or dry_run pane ids,
+  # these fail first — briefs die with the pane (#384 / fleet signal-honesty).
+  describe "contract: no silent product-principle undo" do
+    test "success receipt never claims a hidden subagent" do
+      runner = fn _, slug, _, _ -> {:ok, %{pane_id: "%7", window_name: "worker-#{slug}"}} end
+      observe = fn _, _ -> %{} end
+
+      assert {:ok, receipt} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "opencode",
+                 task_slug: "contract",
+                 runner: runner,
+                 observe: observe,
+                 attach_handle: false
+               )
+
+      assert receipt.hidden_subagent? == false
+      assert receipt.visible? == true
+      assert is_binary(receipt.pane_id)
+    end
+
+    test "receipt does not invent durable-graph / verifier fields (out of scope)" do
+      runner = fn _, slug, _, _ -> {:ok, %{pane_id: "%8", window_name: "worker-#{slug}"}} end
+      observe = fn _, _ -> %{} end
+
+      assert {:ok, receipt} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "claude",
+                 task_slug: "no-graph",
+                 runner: runner,
+                 observe: observe,
+                 attach_handle: false
+               )
+
+      # do not grow M4-lite into orchestration_create by stealth — durable graph
+      # / path contracts / verifiers stay on later #384 milestones.
+      forbid = [
+        :orchestration_id,
+        :task_id,
+        :attempt_id,
+        :contract_version,
+        :path_contract,
+        :verifier_run_id,
+        :evidence_packet
+      ]
+
+      for key <- forbid do
+        refute Map.has_key?(receipt, key),
+               "receipt must not carry #{key} (out of scope for worker_launch M4-lite)"
+      end
+    end
+
+    test "spawn error never soft-succeeds with a fabricated pane" do
+      runner = fn _, _, _, _ -> {:error, %{error: :spawn_failed, exit_status: 3}} end
+
+      assert {:error, %{error: :spawn_failed}} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "codex",
+                 task_slug: "fail",
+                 runner: runner
+               )
+    end
+  end
 end

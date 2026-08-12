@@ -198,7 +198,8 @@ the fleet aggregate. Same kind discipline — `blocked_on` keeps report vs deriv
 distinct; external `liveness` with `state: unknown` never becomes quiet/idle;
 missing observation is omitted, not rendered as idle. Requires `workspace_id`,
 `session`, and `pane` (optional `window_id`). Liveness is on by default. No
-scrollback, no shell, no mutations. **`worker_launch` remains out of scope.**
+scrollback, no shell, no mutations. **`worker_launch` is M4-lite (below) — not
+this tool.**
 
 ```text
 worker_status { workspace_id, session, pane, window_id? }
@@ -215,7 +216,7 @@ Read-only scan list over the same `FleetBoard` projection as
 `needs_you_only`. Liveness is on by default on the topology path; unknown
 liveness never becomes idle (FleetBoard kind discipline). Requires
 `workspace_id` + `session`. No scrollback, no shell, no mutations.
-**`worker_launch`, durable graph, and verifiers remain out of scope.**
+**Durable graph and verifiers remain out of scope; spawn is `worker_launch`.**
 
 ```text
 orchestration_list_workers { workspace_id, session, fleet_role?, needs_you_only? }
@@ -253,9 +254,16 @@ worker_launch {
 | Receipt | Single payload: pane + window + worktree/branch when observable + optional `WorkHandles` id |
 | Fail closed | Missing args, bad runtime, missing script, non-zero spawn, empty pane id, timeout |
 
-**Still out of scope for this slice:** durable task graph / path contracts /
-verifier adapters / cancel·replace lifecycle beyond handle attach / restricted
-orchestrator token profile rewrite. Leave #384 open.
+**Still out of scope for this slice** (carried in `WorkerLaunch` moduledoc +
+contract tests so a respawned worker does not re-derive them from a dead brief):
+
+- durable task graph / path contracts / verifier adapters
+- cancel·replace lifecycle beyond handle attach
+- restricted orchestrator token profile rewrite
+- hidden-subagent fallback (spawn failure is hard error)
+- dry_run claiming `visible?` / `pane_id`
+
+Leave #384 open for those milestones.
 
 ## MCP resource: `casein://fleet/summary` (#859 / #879)
 
