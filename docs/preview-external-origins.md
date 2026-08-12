@@ -67,7 +67,20 @@ Refusals never open a pane:
 | `external_previews_not_configured` | Allowlist empty — operator must opt in |
 | `external_origin_not_allowed` | Origin not allowlisted; the error lists what is |
 | `invalid_external_url` | Missing `url`, or not an absolute http(s) URL |
-| `external_preview_requires_pane` | Windows control-only host (`CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY`), which creates no tmux pane |
+
+## Hosts without a tmux pane (native Windows)
+
+Native Windows runs preview as a pure browser-control session and creates no
+tmux pane (`CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY`). The external lane is
+supported there: the allowlisted origin is opened directly on the control
+runtime, and the response reports it honestly rather than implying a pane —
+`control_only: true`, `pane_id: null`, `preview_open_state: "agent_only"`,
+`preview_source: "external"`.
+
+The same reachability preflight runs first, and the same allowlist applies —
+a host with no pane is *more* dependent on fail-closed policy, not less, since
+there is no visible surface in which a wrong origin would be noticed.
+Observe/click/type/press/screenshot/navigate all work against that session.
 
 ## Why an allowlist and not a proxy
 

@@ -34,6 +34,7 @@ defmodule Casein.PreviewControl do
   defdelegate latest_observation_for_preview(preview_id), to: Control
   defdelegate get_open_session_for_preview(session_id, preview_id), to: Control
   defdelegate open_localhost_session(workspace, port, opts \\ []), to: Control
+  defdelegate open_external_session(workspace, url, opts \\ []), to: Control
   defdelegate open_for_preview(workspace, preview, opts \\ []), to: Control
   defdelegate close_sessions_for_preview(preview_id), to: Control
 

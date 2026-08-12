@@ -215,6 +215,76 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
   end
 
   # ---------------------------------------------------------------------------
+  # preview_open mode external on a native-Windows (tmux-free) host
+  # ---------------------------------------------------------------------------
+
+  test "Windows opens an allowlisted external origin as a control-only session" do
+    Application.put_env(:casein, :preview_external_origins, ["https://dev.example.com"])
+    System.put_env("CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY", "true")
+
+    on_exit(fn ->
+      Application.delete_env(:casein, :preview_external_origins)
+      System.delete_env("CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY")
+    end)
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_open", @v3_workspace, %{
+               "mode" => "external",
+               "url" => "https://dev.example.com/login",
+               "actor_id" => "agent-1"
+             })
+
+    assert payload.control_only
+    assert payload.pane_id == nil
+    assert payload.preview_source == "external"
+    assert payload.preview_open_state == "agent_only"
+    assert is_integer(payload.session_id)
+    refute_received {:fake_tmux_split_pane, _, _, _, _}
+  end
+
+  test "Windows external control session may navigate its own origin" do
+    Application.put_env(:casein, :preview_external_origins, ["https://dev.example.com"])
+    System.put_env("CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY", "true")
+
+    on_exit(fn ->
+      Application.delete_env(:casein, :preview_external_origins)
+      System.delete_env("CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY")
+    end)
+
+    assert {:ok, %{session_id: session_id}} =
+             PreviewTools.invoke("preview_open", @v3_workspace, %{
+               "mode" => "external",
+               "url" => "https://dev.example.com/login"
+             })
+
+    # Without the target origin on the session allowlist this refuses every
+    # navigation on the origin the caller was just allowed to open.
+    assert {:ok, _} =
+             PreviewTools.invoke("preview_navigate", @v3_workspace, %{
+               "session_id" => session_id,
+               "path" => "/dashboard"
+             })
+
+    assert {:error, _} =
+             PreviewTools.invoke("preview_navigate", @v3_workspace, %{
+               "session_id" => session_id,
+               "path" => "https://elsewhere.test/"
+             })
+  end
+
+  test "Windows external open stays fail-closed when nothing is allowlisted" do
+    Application.delete_env(:casein, :preview_external_origins)
+    System.put_env("CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY", "true")
+    on_exit(fn -> System.delete_env("CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY") end)
+
+    assert {:error, %{error: :external_previews_not_configured}} =
+             PreviewTools.invoke("preview_open", @v3_workspace, %{
+               "mode" => "external",
+               "url" => "https://dev.example.com/login"
+             })
+  end
+
+  # ---------------------------------------------------------------------------
   # navigate / navigate_pane argument validation + not-found
   # ---------------------------------------------------------------------------
 
