@@ -11,7 +11,14 @@
 //   node scripts/term-latency-probe.mjs [baseURL] [samples]
 //   node scripts/term-latency-probe.mjs http://127.0.0.1:4196/workspaces/preview-sandbox?host=local 50
 //
-import { chromium } from "/data/workspaces/dalexandre/casein/priv/scripts/node_modules/playwright/index.mjs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Resolve playwright from this checkout (never a host operator path) — #248.
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(path.join(root, "priv/scripts/package.json"));
+const { chromium } = require("playwright");
 
 const base =
   process.argv[2] ||
