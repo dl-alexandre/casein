@@ -70,6 +70,8 @@ defmodule CaseinWeb do
       # missed is still findable. Global on purpose: there are ~120 put_flash
       # call sites and no other seam sees all of them.
       on_mount CaseinWeb.FlashJournal
+      # #899 measure-only: changed-assign ranking on WorkspaceLive.Show after_render.
+      on_mount CaseinWeb.LiveDiffMeasure
 
       unquote(html_helpers())
     end
