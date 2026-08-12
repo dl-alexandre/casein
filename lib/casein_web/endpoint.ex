@@ -10,9 +10,24 @@ defmodule CaseinWeb.Endpoint do
   # Set :encryption_salt if you would also like to encrypt it.
   @session_config {CaseinWeb.SessionOptions, :options, []}
 
+  # V2 serializer wraps stock JSON to measure LiveView diff wire bytes (#899).
+  # Measurement-only — encode path identical to Phoenix.Socket.V2.JSONSerializer.
+  # V1 kept for protocol negotiation parity with Phoenix defaults.
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_config]],
-    longpoll: [connect_info: [session: @session_config]]
+    websocket: [
+      connect_info: [session: @session_config],
+      serializer: [
+        {Phoenix.Socket.V1.JSONSerializer, "~> 1.0.0"},
+        {CaseinWeb.LiveDiffMeasure.Serializer, "~> 2.0.0"}
+      ]
+    ],
+    longpoll: [
+      connect_info: [session: @session_config],
+      serializer: [
+        {Phoenix.Socket.V1.JSONSerializer, "~> 1.0.0"},
+        {CaseinWeb.LiveDiffMeasure.Serializer, "~> 2.0.0"}
+      ]
+    ]
 
   socket "/socket", CaseinWeb.UserSocket,
     websocket: true,

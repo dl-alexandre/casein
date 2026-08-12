@@ -116,6 +116,13 @@ defmodule CaseinWeb.Telemetry do
       summary("casein.terminal.live_view.push_frame.payload_bytes", tags: [:full_frame?]),
       summary("casein.terminal.live_view.push_frame.changed_rows", tags: [:full_frame?]),
 
+      # #899 measure-only: LiveView diff wire + dirty-assign ranking (no optimisations).
+      counter("casein.live_view.diff_wire.count", tags: [:kind, :event]),
+      summary("casein.live_view.diff_wire.payload_bytes", tags: [:kind, :event]),
+      counter("casein.live_view.changed_assigns.count", tags: [:view]),
+      summary("casein.live_view.changed_assigns.payload_bytes", tags: [:view]),
+      summary("casein.live_view.changed_assigns.changed_count", tags: [:view]),
+
       # Operator attention routing: why a quiet-agent transition stayed silent,
       # rendered inline, or requested an OS notification.
       counter("casein.attention.quiet_agent.transition.count",
