@@ -922,6 +922,67 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert [row] = SessionBarVM.needs_you_strip(current, "ws-a", summaries: [])
       assert row.agent_blocked_count == 2
     end
+
+    # #910 catalogue + split counts + search. Constraints live here so a future
+    # edit cannot collapse Stalled into idle/Quiet update or sum quiet windows
+    # into Needs-you.
+    test "chip catalogue keeps stalled distinct from idle and quiet" do
+      assert SessionBarVM.attention_chip_label(:blocked) == "Needs input"
+      assert SessionBarVM.attention_chip_label(:awaiting_input) == "Needs input"
+      assert SessionBarVM.attention_chip_label(:errored) == "Error"
+      assert SessionBarVM.attention_chip_label(:completed) == "Finished"
+      # Stalled ≡ AgentProgress.running_but_not_progressing — NOT idle.
+      assert SessionBarVM.attention_chip_label(:stalled) == "Stalled"
+      assert SessionBarVM.attention_chip_label(:idle) == "Quiet update"
+
+      refute SessionBarVM.attention_chip_label(:stalled) ==
+               SessionBarVM.attention_chip_label(:idle)
+    end
+
+    test "stalled strip row carries Stalled reason, message, window deep-link fields" do
+      # Messages ride agent_state_messages metadata (not a free window field).
+      current =
+        SessionBarVM.session_tabs([
+          SessionInfo.new_shell("ws-a", "wedged",
+            metadata: %{
+              windows: [%{id: "@9", index: 0, name: "agent", agent_state: :stalled}],
+              agent_state_messages: %{"@9" => "worktree quiet 900s"}
+            }
+          )
+        ])
+
+      assert [row] = SessionBarVM.needs_you_strip(current, "ws-a", summaries: [])
+      assert row.reason == :stalled
+      assert row.message == "worktree quiet 900s"
+      assert row.window_id == "@9"
+      assert row.search_text =~ "stalled"
+      assert row.search_text =~ "worktree quiet"
+      refute row.reason == :idle
+    end
+
+    test "needs_you_sessions and unseen_quiet_windows are distinct units" do
+      tabs =
+        SessionBarVM.session_tabs(
+          [
+            shell_info_with_windows("blocked", [
+              %{id: "@1", index: 0, name: "a", agent_state: :blocked}
+            ]),
+            shell_info_with_windows("quiet", [
+              %{id: "@2", index: 0, name: "b", quiet: true}
+            ])
+          ],
+          unseen_quiet_window_ids: MapSet.new([{"quiet", "@2"}])
+        )
+
+      # One blocked + one quiet-idle triage session both count as needs_you sessions.
+      assert SessionBarVM.needs_you_sessions(tabs) == 2
+      # Unseen quiet is a window count — never added into Needs-you chip text.
+      assert SessionBarVM.count_unseen_quiet_windows(tabs) >= 1
+
+      refute SessionBarVM.needs_you_sessions(tabs) ==
+               SessionBarVM.needs_you_sessions(tabs) +
+                 SessionBarVM.count_unseen_quiet_windows(tabs)
+    end
   end
 
   # Workspace names are slugs that need not match the checkout on disk

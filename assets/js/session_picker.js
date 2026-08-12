@@ -460,8 +460,13 @@ export const SessionPicker = {
 
 // Filter matches the entry's name/detail spans ([data-picker-label]) so index
 // digits, window-count badges, and kbd hints don't produce surprise matches.
+// #910: needs-you rows also expose data-picker-search (label/workspace/branch/
+// tmux/reason/message) so type-to-filter hits reason chips and messages.
 // Entries without tagged labels fall back to their full text.
 function itemFilterText(el) {
+  const search = el.getAttribute?.("data-picker-search")
+  if (search && search.trim()) return search.toLowerCase()
+
   const labels = el.querySelectorAll("[data-picker-label]")
   const text = labels.length
     ? Array.from(labels)

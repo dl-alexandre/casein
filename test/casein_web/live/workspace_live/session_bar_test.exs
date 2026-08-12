@@ -963,16 +963,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
           session_tabs: tabs
         )
 
-      # Session-row badges carry the semantic reason and human text.
+      # Session-row badges carry the semantic reason and #910 catalogue chips.
       assert html =~ ~s(id="session-agent-badge-active_sessions-agent_blocked")
       assert html =~ ~s(data-agent-attention="blocked")
-      assert html =~ "needs input"
+      assert html =~ "Needs input"
       assert html =~ ~s(id="session-agent-badge-active_sessions-agent_finished")
       assert html =~ ~s(data-agent-attention="completed")
+      assert html =~ "Finished"
 
-      # Workspace header rolls the needs-you sessions up into a count chip.
+      # Workspace header rolls the needs-you sessions up into a count chip
+      # (sessions only — not unseen quiet windows).
       assert html =~ ~s(id="sidebar-ws-needs-you-sidebar-ws-ws-1")
       assert html =~ ~s(data-needs-you-count="2")
+      assert html =~ ~s(data-needs-you-sessions="2")
       assert html =~ "2 sessions need you"
     end
 
