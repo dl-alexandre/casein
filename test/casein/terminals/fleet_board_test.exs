@@ -156,7 +156,7 @@ defmodule Casein.Terminals.FleetBoardTest do
       assert row.attention_reason == :idle
     end
 
-    test "unknown agent_state is never quiet/idle" do
+    test "unknown agent_state without liveness is never quiet/idle and carries reason (#916)" do
       board =
         board([
           tab("w1", agent_state: nil, quiet?: false, fleet_role: :worker)
@@ -164,7 +164,69 @@ defmodule Casein.Terminals.FleetBoardTest do
 
       row = hd(board.rows)
       assert row.bucket == :unknown
+      assert row.unknown_reason == :agent_state_absent_liveness_not_observed
       refute row.needs_you?
+      refute row.bucket == :idle
+    end
+
+    test "live worker with active liveness and no agent_state report buckets working (#916)" do
+      # OpenCode / hook-less panes: fleet_role=worker, no cooperative report,
+      # but worktree/process evidence says active. Must not classify unknown.
+      board =
+        board([
+          tab("w1",
+            agent_state: nil,
+            fleet_role: :worker,
+            name: "worker-s2-alive",
+            liveness: %{
+              state: :active,
+              quiet_for_seconds: 3,
+              last_write_at: "2026-08-12T18:00:00Z",
+              commit_count: 12
+            }
+          )
+        ])
+
+      row = hd(board.rows)
+      assert row.bucket == :working
+      assert is_nil(row.unknown_reason)
+      assert row.liveness.state == :active
+      refute row.bucket == :unknown
+      refute row.bucket == :idle
+    end
+
+    test "live worker with quiet liveness and no agent_state report buckets idle not unknown" do
+      board =
+        board([
+          tab("w1",
+            agent_state: nil,
+            fleet_role: :worker,
+            liveness: %{state: :quiet, quiet_for_seconds: 400}
+          )
+        ])
+
+      row = hd(board.rows)
+      assert row.bucket == :idle
+      assert is_nil(row.unknown_reason)
+      # Observed quiet ≠ unscanned unknown
+      refute row.bucket == :unknown
+    end
+
+    test "unscanned liveness stays unknown with reason — never collapsed to idle" do
+      board =
+        board([
+          tab("w1",
+            agent_state: nil,
+            fleet_role: :worker,
+            liveness: %{state: :unknown, reason: :eacces}
+          )
+        ])
+
+      row = hd(board.rows)
+      assert row.bucket == :unknown
+      assert row.unknown_reason == {:liveness_unknown, :eacces}
+      refute row.bucket == :idle
+      refute row.bucket == :working
     end
 
     test "sorts needs_you before working and carries issue + role" do

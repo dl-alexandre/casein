@@ -14,9 +14,21 @@ defmodule Casein.Terminals.FleetBoard do
   ## Kind discipline
 
   Report-only (`:blocked`, `:errored`) and derived-only (`:stalled`,
-  `:awaiting_input`) stay distinct on each row. Unknown observation never
-  becomes quiet/idle — a row without a known agent state lands in `:unknown`,
-  not `:idle`.
+  `:awaiting_input`) stay distinct on each row.
+
+  ## Unknown vs quiet vs idle (#916)
+
+  `:unknown` is reserved for **could not classify** — not a synonym for quiet.
+  A worker row with no cooperative agent_state report (common for OpenCode /
+  hook-less panes) is still classifiable from external liveness:
+
+    * liveness `:active` → bucket `:working` (process/worktree evidence)
+    * liveness `:quiet` → bucket `:idle` (observed quiet, not a missing signal)
+    * liveness `:unknown` or missing → bucket `:unknown` **with**
+      `unknown_reason` explaining why (never a bare unknown)
+
+  Collapsing unscanned/unknown liveness into idle is forbidden — that is the
+  #910 distinction this board exists to protect.
 
   ## Attention model
 
@@ -71,6 +83,7 @@ defmodule Casein.Terminals.FleetBoard do
           needs_you?: boolean(),
           attention_reason: atom() | nil,
           bucket: bucket(),
+          unknown_reason: atom() | String.t() | nil,
           active?: boolean(),
           liveness: liveness_view() | nil,
           blocked_on: blocked_on() | nil
@@ -186,8 +199,8 @@ defmodule Casein.Terminals.FleetBoard do
     {needs_you?, attention_reason} =
       needs_you_projection(agent_state, quiet?, fleet_readiness)
 
-    bucket = bucket_for(needs_you?, agent_state, fleet_readiness)
     liveness = liveness_from_tab(tab)
+    {bucket, unknown_reason} = bucket_for(needs_you?, agent_state, fleet_readiness, liveness)
     blocked_on = blocked_on_from(agent_state, message, attention_reason, liveness)
 
     %{
@@ -220,6 +233,7 @@ defmodule Casein.Terminals.FleetBoard do
       needs_you?: needs_you?,
       attention_reason: attention_reason,
       bucket: bucket,
+      unknown_reason: unknown_reason,
       active?: Map.get(tab, :active?) == true or Map.get(tab, :active) == true,
       liveness: liveness,
       blocked_on: blocked_on
@@ -380,12 +394,47 @@ defmodule Casein.Terminals.FleetBoard do
     end
   end
 
-  defp bucket_for(true, _state, _readiness), do: :needs_you
-  defp bucket_for(false, :working, _), do: :working
-  defp bucket_for(false, _state, :ready_no_task), do: :ready_no_task
-  defp bucket_for(false, :idle, _), do: :idle
-  defp bucket_for(false, :done, _), do: :done
-  defp bucket_for(false, _state, _), do: :unknown
+  # Returns `{bucket, unknown_reason | nil}`. unknown_reason is set only when
+  # bucket is :unknown — a bare unknown is the silent-failure class #916 fixes.
+  defp bucket_for(true, _state, _readiness, _liveness), do: {:needs_you, nil}
+  defp bucket_for(false, :working, _, _liveness), do: {:working, nil}
+  defp bucket_for(false, _state, :ready_no_task, _liveness), do: {:ready_no_task, nil}
+  defp bucket_for(false, :idle, _, _liveness), do: {:idle, nil}
+  defp bucket_for(false, :done, _, _liveness), do: {:done, nil}
+
+  # Cooperative agent_state absent (OpenCode / no hook report). Classify from
+  # external liveness when observed — never invent idle from unscanned.
+  defp bucket_for(false, nil, _readiness, %{state: :active}), do: {:working, nil}
+  defp bucket_for(false, nil, _readiness, %{state: :quiet}), do: {:idle, nil}
+
+  defp bucket_for(false, nil, _readiness, %{state: :unknown} = live) do
+    {:unknown, liveness_unknown_reason(live)}
+  end
+
+  defp bucket_for(false, nil, _readiness, nil) do
+    {:unknown, :agent_state_absent_liveness_not_observed}
+  end
+
+  # stalled/awaiting_input/blocked/errored should already be needs_you via
+  # needs_you_projection; if they land here readiness was nil and needs_you?
+  # was false — still surface them as needs_you rather than bare unknown.
+  defp bucket_for(false, state, _, _)
+       when state in [:stalled, :awaiting_input, :errored, :blocked],
+       do: {:needs_you, nil}
+
+  defp bucket_for(false, state, _readiness, _liveness) do
+    {:unknown, {:unmapped_agent_state, state}}
+  end
+
+  defp liveness_unknown_reason(%{reason: reason}) when is_atom(reason) and not is_nil(reason) do
+    {:liveness_unknown, reason}
+  end
+
+  defp liveness_unknown_reason(%{reason: reason}) when is_binary(reason) and reason != "" do
+    {:liveness_unknown, reason}
+  end
+
+  defp liveness_unknown_reason(_), do: :liveness_unknown
 
   defp row_sort_key(row) do
     {

@@ -60,7 +60,12 @@ defmodule Casein.Terminals.OrchestrationStatus do
       blocked: Enum.filter(rows, &blocked_row?/1),
       note:
         "M1 operator fleet status. Reuses FleetBoard/GateQueue/OrphanedClaims. " <>
-          "liveness unknown ≠ quiet; gate position via gate_queue.my_position when identity given. " <>
+          "liveness unknown ≠ quiet; bare unknown is forbidden — rows carry unknown_reason. " <>
+          "Counts are NOT the same population: topology panes = all panes in the session; " <>
+          "fleet board total/rows = agent/worker/manager windows only (shells excluded); " <>
+          "fleet_role=worker is a subset of board rows; badge \"fleet · N\" uses board attention " <>
+          "and working-ish buckets, not raw pane count. SUP/MGR panes are legitimately not workers. " <>
+          "gate position via gate_queue.my_position when identity given. " <>
           "worker_launch, durable graphs, path contracts, and verifiers are out of scope."
     }
   end
@@ -239,6 +244,7 @@ defmodule Casein.Terminals.OrchestrationStatus do
       needs_you?: Map.get(row, :needs_you?) == true,
       attention_reason: atom_or_nil(Map.get(row, :attention_reason)),
       bucket: atom_or_nil(Map.get(row, :bucket)),
+      unknown_reason: unknown_reason_json(Map.get(row, :unknown_reason)),
       active?: Map.get(row, :active?) == true,
       liveness: liveness_json(Map.get(row, :liveness)),
       blocked_on: blocked_on_json(Map.get(row, :blocked_on))
@@ -286,6 +292,21 @@ defmodule Casein.Terminals.OrchestrationStatus do
   end
 
   defp blocked_on_json(_), do: nil
+
+  # Bare unknown is the silent-failure class — always stringify a reason.
+  defp unknown_reason_json(nil), do: nil
+  defp unknown_reason_json(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp unknown_reason_json(reason) when is_binary(reason), do: reason
+
+  defp unknown_reason_json({:liveness_unknown, inner}) do
+    "liveness_unknown:#{atom_or_nil(inner) || "unscanned"}"
+  end
+
+  defp unknown_reason_json({:unmapped_agent_state, state}) do
+    "unmapped_agent_state:#{atom_or_nil(state) || "nil"}"
+  end
+
+  defp unknown_reason_json(other), do: inspect(other)
 
   defp atom_or_nil(nil), do: nil
   defp atom_or_nil(value) when is_atom(value), do: Atom.to_string(value)
