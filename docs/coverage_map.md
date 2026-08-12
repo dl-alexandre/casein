@@ -37,6 +37,7 @@ column names the pre-existing doc the subsystem doc threads back into.
 | `lib/casein/annotations/` | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) | `leader_keys.md` |
 | `lib/casein/policy/` | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | `deploy.md` |
 | `lib/casein/deployment/` | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | `deploy.md` |
+| `lib/casein/clock.ex` (+ `lib/casein/clock/`) | [`prototypes/clock-step-determinism.md`](prototypes/clock-step-determinism.md) | `subsystems/policy_deploy_export.md` |
 | `lib/casein/export/` | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | `deploy.md` |
 | `lib/casein/cli/` | [`reference/cli_and_keys.md`](reference/cli_and_keys.md) | `leader_keys.md` |
 | `lib/casein/integrations/` | [`integrations/manager.md`](integrations/manager.md) | `deploy.md` |

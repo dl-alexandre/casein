@@ -31,7 +31,8 @@ Three adjacent concerns, grouped because they sit at the trust boundary:
 | `Casein.Policy.Decision` | `lib/casein/policy/decision.ex` | Verdict struct (`:allow`/`:deny` + reason + mode + metadata) returned by every policy check. Constructors `allow/3`, `deny/4`, predicate `allow?/1`. |
 | `Casein.Policy.WorkspaceMode` | `lib/casein/policy/workspace_mode.ex` | The four safety modes (`:manual`, `:review`, `:agent_write_locked`, `:shared_stage_guarded`) and their config resolution order. `resolve/1`, `valid_modes/0`. |
 | `Casein.Deployment.Registry` | `lib/casein/deployment/registry.ex` | GenServer writing a per-instance JSON heartbeat file; owns instance id, version, socket path, and the `current.sock` symlink. `list_instances/0`, `mark_draining/0`, `version/0`, `socket_path/0`. |
-| `Casein.Deployment.Drain` | `lib/casein/deployment/drain.ex` | GenServer counting live LiveView connections; on `start_drain/1` broadcasts an update notice and stops the VM once connections hit zero (or hard-timeout). `track/1`, `draining?/0`, `connection_count/0`. |
+| `Casein.Deployment.Drain` | `lib/casein/deployment/drain.ex` | GenServer counting live LiveView connections; on `start_drain/1` broadcasts an update notice and stops the VM once connections hit zero (or hard-timeout). `track/1`, `draining?/0`, `connection_count/0`. Timers go through `Casein.Clock`. |
+| `Casein.Clock` | `lib/casein/clock.ex` | Prototype virtual clock + `send_after` scheduler (#897). Idle in production (real `Process.send_after/3`). Verdict: [`../prototypes/clock-step-determinism.md`](../prototypes/clock-step-determinism.md). |
 | `Casein.Deployment.Drift` | `lib/casein/deployment/drift.ex` | Detects when the running revision ≠ `origin/master` HEAD via cached `git ls-remote`. Pure `assess/3`; runtime `check_and_broadcast/0`, `remote_head/1`, `check_async/0`. |
 | `Casein.Deployment.Health` | `lib/casein/deployment/health.ex` | Deploy-wiring health probe: socket exists, `current.sock` points at this instance, Caddy upstream dials the socket, deploy not drifted. `status/1`, `caddy_app_dial/2`. |
 | `Casein.Export.Sanitizer` | `lib/casein/export/sanitizer.ex` | Deny-list redaction: `scrub/1` drops secret keys from maps/lists/env, `redact_text/1` masks secrets in text streams. Second-line egress defense. |
@@ -119,6 +120,11 @@ application tree (see `lib/casein/application.ex`).
   `:casein, :drain_stop_system` env injects a no-op in `test_helper.exs`.
 - **`start_drain/1` is idempotent-guarded.** A second call while already
   draining returns `{:error, :already_draining}`.
+- **Drain timers are clock-mediated.** `Casein.Clock.send_after/3` is a
+  real `Process.send_after/3` unless `Casein.Clock.Scheduler` is running.
+  Starting the scheduler is a test-only seam; it does not change production
+  drain timing. Step-determinism constraints live in
+  [`../prototypes/clock-step-determinism.md`](../prototypes/clock-step-determinism.md).
 - **`ls-remote` is time-boxed and cached.** `Drift.remote_head/1` caches per
   branch in `:persistent_term` (`:remote_head_cache_ttl_ms`, default 60s) and
   brutal-kills the subprocess after `:ls_remote_timeout_ms` (default 5s) so a

@@ -14,6 +14,11 @@ defmodule Casein.Deployment.Drain do
   `{:deploy_reconnect}` so those clients do a background LiveSocket reconnect
   onto the live instance — draining this node in ~seconds instead of lingering
   until the hard timeout.
+
+  Timers go through `Casein.Clock.send_after/3`. Production leaves
+  `Casein.Clock.Scheduler` down (real `Process.send_after/3`). Starting the
+  scheduler lets tests step drain time; see
+  `docs/prototypes/clock-step-determinism.md`.
   """
 
   use GenServer
@@ -120,8 +125,8 @@ defmodule Casein.Deployment.Drain do
       {:update_available, version, commits_behind}
     )
 
-    hard_ref = Process.send_after(self(), :hard_timeout, @hard_ms)
-    auto_ref = Process.send_after(self(), :auto_reconnect, @auto_reconnect_ms)
+    hard_ref = Casein.Clock.send_after(self(), :hard_timeout, @hard_ms)
+    auto_ref = Casein.Clock.send_after(self(), :auto_reconnect, @auto_reconnect_ms)
 
     state = %{state | draining: true, hard_ref: hard_ref, auto_ref: auto_ref}
     state = if state.count == 0, do: maybe_start_grace(state), else: state
@@ -137,10 +142,12 @@ defmodule Casein.Deployment.Drain do
     {:reply, state.count, state}
   end
 
+  def handle_call(:clock_sync, _from, state), do: {:reply, :ok, state}
+
   def handle_call(:reset_for_test, _from, state) do
     for ref <- [state.grace_ref, state.hard_ref, state.auto_ref],
         ref,
-        do: Process.cancel_timer(ref)
+        do: Casein.Clock.cancel_timer(ref)
 
     {:reply, :ok,
      %{
@@ -212,7 +219,7 @@ defmodule Casein.Deployment.Drain do
   end
 
   defp maybe_start_grace(%{grace_ref: nil} = state) do
-    ref = Process.send_after(self(), :grace_timeout, @grace_ms)
+    ref = Casein.Clock.send_after(self(), :grace_timeout, @grace_ms)
     %{state | grace_ref: ref}
   end
 
