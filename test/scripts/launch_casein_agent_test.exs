@@ -266,10 +266,10 @@ defmodule Scripts.LaunchCaseinAgentTest do
 
   test "opencode launches pin a default model, since the host-global one is shared" do
     # Default TUI invocation — the one delegation uses.
-    assert opencode_model_args([]) == ["--model", "opencode/grok-4.5"]
+    assert opencode_model_args([]) == ["--model", "opencode/grok-4.6"]
 
     # `run` accepts --model; the flag rides ahead of the subcommand.
-    assert opencode_model_args(["run", "do x"]) == ["--model", "opencode/grok-4.5"]
+    assert opencode_model_args(["run", "do x"]) == ["--model", "opencode/grok-4.6"]
 
     # Overridable per launch.
     assert opencode_model_args([], "CASEIN_OPENCODE_DEFAULT_MODEL=opencode/claude-fable-5") ==
