@@ -10,9 +10,10 @@
 #   - config/runtime.exs  — ON_DEVBOX-gated overlay defaults only
 #   - lib/casein/origin.ex — legacy origin rewrite table (retired hosts only)
 #
-# Not scanned: docs/, scripts/ host-ops, test fixtures (except when this script
-# is driven against a planted temp tree). Host-ops scripts and AGENTS.md remain
-# private-overlay debt, not product defaults.
+# Not scanned: docs/, shell host-ops under scripts/*.sh, test fixtures (except
+# when this script is driven against a planted temp tree). Host-ops shell and
+# AGENTS.md remain private-overlay debt. Shipped JS tooling under scripts/*
+# *is* scanned (rule 7) — absolute operator imports break fresh clones.
 #
 # Exit 0 = clean. Exit 1 = violation (printed).
 
@@ -124,6 +125,19 @@ if [ -f lib/casein/origin.ex ]; then
     grep -nE 'milcgroup\.com|devbox\.milc' lib/casein/origin.ex 2>/dev/null || true
   )
 fi
+
+# --- 7. scripts/* tool imports must not pin an operator checkout --------------
+# Node tooling under scripts/ ships with the repo. Absolute imports of
+# /data/workspaces/… (or other host roots) break every fresh clone and every
+# non-MILC host — same class as #846 cold-tree npm ci.
+while IFS= read -r hit; do
+  [ -z "$hit" ] && continue
+  fail "operator path in shipped script tooling: ${hit}"
+done < <(
+  grep -RIn --include='*.mjs' --include='*.js' --include='*.cjs' --include='*.ts' \
+    -E '/data/workspaces/|/data/casein-agent-worktrees|["'\'']/home/devbox["'\'']|["'\'']/Users/milc' \
+    scripts 2>/dev/null || true
+)
 
 if [ "$violations" -gt 0 ]; then
   printf '\n>>> check-portable-defaults-guard: %s violation(s). See issue #248.\n' "$violations" >&2

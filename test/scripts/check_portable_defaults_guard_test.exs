@@ -64,6 +64,35 @@ defmodule Scripts.CheckPortableDefaultsGuardTest do
     )
   end
 
+  test "guard flags a planted operator path in scripts/*.mjs tooling" do
+    tmp = tmp_tree!()
+
+    File.write!(Path.join(tmp, "scripts/bad-tool.mjs"), """
+    import { chromium } from "/data/workspaces/dalexandre/casein/priv/scripts/node_modules/playwright/index.mjs";
+    """)
+
+    {output, status} = run_planted(tmp)
+    File.rm_rf!(tmp)
+
+    assert status == 1, output
+    assert output =~ "/data/workspaces/"
+    assert output =~ "operator path in shipped script tooling"
+  end
+
+  test "guard flags a planted /Users/milc path in scripts tooling" do
+    tmp = tmp_tree!()
+
+    File.write!(Path.join(tmp, "scripts/bad-tool.mjs"), """
+    import x from "/Users/milc/casein/priv/scripts/node_modules/x.mjs";
+    """)
+
+    {output, status} = run_planted(tmp)
+    File.rm_rf!(tmp)
+
+    assert status == 1, output
+    assert output =~ "/Users/milc"
+  end
+
   test "guard allows a clean tree with no product leaks" do
     tmp = tmp_tree!()
 
@@ -77,6 +106,16 @@ defmodule Scripts.CheckPortableDefaultsGuardTest do
     File.write!(Path.join(tmp, "config/runtime.exs"), "# clean — no on_devbox milcgroup\n")
     File.mkdir_p!(Path.join(tmp, "lib/casein"))
     File.write!(Path.join(tmp, "lib/casein/origin.ex"), "defmodule Casein.Origin do\nend\n")
+
+    File.write!(Path.join(tmp, "scripts/clean-tool.mjs"), """
+    import { createRequire } from "node:module";
+    import path from "node:path";
+    import { fileURLToPath } from "node:url";
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+    const require = createRequire(path.join(root, "priv/scripts/package.json"));
+    const { chromium } = require("playwright");
+    void chromium;
+    """)
 
     {output, status} = run_planted(tmp)
     File.rm_rf!(tmp)

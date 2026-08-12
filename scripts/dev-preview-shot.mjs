@@ -12,7 +12,14 @@
 //   WxH        viewport, default 390x844 (iPhone-ish). Ignored shape for --desktop.
 //   --desktop  fine pointer, 1280x900 — use to confirm mobile chrome is HIDDEN.
 //
-import { chromium } from "/data/workspaces/dalexandre/casein/priv/scripts/node_modules/playwright/index.mjs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Resolve playwright from this checkout (never a host operator path) — #248.
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(path.join(root, "priv/scripts/package.json"));
+const { chromium } = require("playwright");
 
 const [, , url, out, sizeArg] = process.argv;
 const desktop = process.argv.includes("--desktop");
