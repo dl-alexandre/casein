@@ -11,7 +11,6 @@ defmodule Casein.Terminals.PreviewDeps do
   @behaviour Casein.Previews.Deps.Terminals
 
   alias Casein.Terminals.Backend
-  alias Casein.Terminals.Tmux
   alias Casein.Terminals.TmuxTopology
 
   @impl true
@@ -53,6 +52,6 @@ defmodule Casein.Terminals.PreviewDeps do
 
   @impl true
   def adapter do
-    Application.get_env(:casein, :tmux_adapter, Tmux)
+    Casein.Terminals.tmux_adapter()
   end
 end

@@ -2,6 +2,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   @moduledoc false
 
   alias Casein.Agents.AgentPane
+  alias Casein.Terminals
   alias Casein.Terminals.Backend
   alias Casein.Terminals.TmuxPolicy
   alias Casein.Terminals.TmuxTopology
@@ -11,12 +12,9 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   @session_prefix "casein_"
   @default_capture_lines 120
 
-  # Prefer Backend.module/0 (honors :terminal_backend + :tmux_adapter on Tmux
-  # backend). Explicit :tmux_adapter alone still wins for legacy test installs
-  # that never set :terminal_backend.
-  def tmux do
-    Application.get_env(:casein, :tmux_adapter) || Backend.module()
-  end
+  # ONE resolver with ops (#892). Never fall back to Backend.module/0 here —
+  # that is how MCP called Backends.Tmux while ops hardcoded Terminals.Tmux.
+  def tmux, do: Terminals.tmux_adapter()
 
   def compact(map) do
     map

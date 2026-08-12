@@ -175,11 +175,6 @@ defmodule Casein.Terminals.SharedWorktreeGuard do
   defp plural_verb([_one]), do: "is"
   defp plural_verb(_many), do: "are"
 
-  # Same resolution as Impl.Shared.tmux/0, so a test that stubs the adapter for
-  # the tool also stubs it for the guard.
-  # Prefer Backend for topology reads covered by the behaviour; fall back to the
-  # legacy :tmux_adapter key so existing FakeTmuxAdapter tests stay green.
-  defp default_tmux do
-    Application.get_env(:casein, :tmux_adapter) || Casein.Terminals.Backend.module()
-  end
+  # Same single resolver as MCP Shared.tmux/0 and ops (#892).
+  defp default_tmux, do: Casein.Terminals.tmux_adapter()
 end

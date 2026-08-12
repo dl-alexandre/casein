@@ -63,14 +63,16 @@ defmodule Casein.Deployment.RuntimeSignalTest do
     end
   end
 
-  describe "snapshot/1 modules — the S11 failure mode" do
-    test "when :tmux_adapter unset, MCP path falls back to Backend.module not Tmux default" do
+  describe "snapshot/1 modules — converged tmux_adapter (#892)" do
+    test "when :tmux_adapter unset, MCP and ops share Terminals.Tmux default" do
       snap =
         RuntimeSignal.snapshot(
           version: @deployed,
           remote: {:ok, @remote},
           now: @now,
           env: fn _ -> nil end,
+          # Backend.module may still be Backends.Tmux — that is the product
+          # engine, not the MCP pane-write adapter after #892.
           backend_module: Backends.Tmux
         )
 
@@ -80,18 +82,19 @@ defmodule Casein.Deployment.RuntimeSignalTest do
       assert ta.configured? == false
       assert ta.repo_default == "Casein.Terminals.Tmux"
       assert ta.backend_module == "Casein.Terminals.Backends.Tmux"
-      # Agents via Shared.tmux/0
-      assert ta.mcp_resolved == "Casein.Terminals.Backends.Tmux"
-      assert ta.mcp_source == "backend_module_fallback"
-      # Legacy get_env(..., Tmux) call sites
+      # Agents via Shared.tmux/0 → Terminals.tmux_adapter/0
+      assert ta.mcp_resolved == "Casein.Terminals.Tmux"
+      assert ta.mcp_source == "tmux_adapter_default"
+      # Ops via the same Terminals.tmux_adapter/0
       assert ta.ops_resolved == "Casein.Terminals.Tmux"
-      assert ta.ops_source == "hardcoded_default_tmux"
-      assert ta.paths_disagree? == true
-      assert "tmux_adapter_paths_disagree" in snap.attention
-      assert snap.diverged? == true
+      assert ta.ops_source == "tmux_adapter_default"
+      assert ta.paths_disagree? == false
+      refute "tmux_adapter_paths_disagree" in snap.attention
+      # Revision current + paths agree + surface ok → not diverged
+      refute snap.diverged?
     end
 
-    test "explicit :tmux_adapter env makes both paths agree" do
+    test "explicit :tmux_adapter env makes both paths agree on that module" do
       snap =
         RuntimeSignal.snapshot(
           version: @deployed,

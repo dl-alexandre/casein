@@ -9,7 +9,6 @@ defmodule Casein.Terminals.TmuxTopology do
 
   alias Casein.Audit
   alias Casein.Terminals.PaneState
-  alias Casein.Terminals.Tmux
   alias TmuxCtl.Topology
   alias TmuxCtl.Topology.Watcher
 
@@ -145,7 +144,7 @@ defmodule Casein.Terminals.TmuxTopology do
   end
 
   defp tmux_adapter do
-    Application.get_env(:casein, :tmux_adapter, Tmux)
+    Casein.Terminals.tmux_adapter()
   end
 
   defp emit_session_terminated_audit(%{workspace_id: workspace_id} = state, reason)

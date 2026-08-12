@@ -14,7 +14,7 @@ defmodule Casein.Agents.PaneEnv do
     WorkspaceTokens
   }
 
-  alias Casein.Terminals.{Shims, Tmux}
+  alias Casein.Terminals.Shims
 
   @doc """
   Build the environment map agents need for Casein MCP, keyed as strings.
@@ -272,5 +272,5 @@ defmodule Casein.Agents.PaneEnv do
     end
   end
 
-  defp tmux_adapter, do: Application.get_env(:casein, :tmux_adapter, Tmux)
+  defp tmux_adapter, do: Casein.Terminals.tmux_adapter()
 end

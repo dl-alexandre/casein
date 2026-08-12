@@ -18,7 +18,18 @@ defmodule Casein.Terminals.TmuxOps do
   @spec backend() :: module()
   def backend, do: Casein.Terminals.Backend.module()
 
-  @doc "Configured tmux-compatible adapter during the platform migration."
+  @doc """
+  Single resolver for every tmux-compatible adapter call site (#892).
+
+  MCP (`TerminalTools.Impl.Shared.tmux/0`), LiveView ops, pane submit, file
+  panes, and janitors **must** all call this (or `Casein.Terminals.tmux_adapter/0`).
+  Do not re-implement `Application.get_env(:casein, :tmux_adapter, …)` with a
+  different default — that is the #854 generator (`Backend.module/0` vs
+  hardcoded `Tmux`).
+
+  Default is `Casein.Terminals.Tmux` (full facade over `TmuxCtl.Client`). Tests
+  and rare prod overrides set `:tmux_adapter` explicitly.
+  """
   @spec tmux_adapter() :: module()
   def tmux_adapter do
     Application.get_env(:casein, :tmux_adapter, Tmux)
