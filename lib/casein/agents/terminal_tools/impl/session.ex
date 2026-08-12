@@ -490,6 +490,31 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
     {:ok, payload}
   end
 
+  @doc """
+  Launch a visible worker window and return a structured receipt (M4-lite #384).
+
+  Requires workspace_id, session, runtime, task_slug. Fail closed on missing
+  args or spawn failure. Optional dry_run plans without opening a window.
+  """
+  @spec worker_launch(map()) :: {:ok, map()} | {:error, term()}
+  def worker_launch(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_arg(params),
+         {:ok, runtime} <- string_arg(params, "runtime"),
+         {:ok, task_slug} <- string_arg(params, "task_slug") do
+      opts = [
+        workspace_id: workspace_id,
+        session: session,
+        runtime: runtime,
+        task_slug: task_slug,
+        label: string_param(params, "label"),
+        dry_run: truthy?(Map.get(params, "dry_run") || Map.get(params, :dry_run))
+      ]
+
+      Casein.Terminals.WorkerLaunch.launch(opts)
+    end
+  end
+
   defp maybe_put_gate_identity(opts, params) do
     identity =
       %{

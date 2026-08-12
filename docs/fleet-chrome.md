@@ -226,6 +226,37 @@ Use `worker_status` when you need one-pane depth (`worktree_path`, full
 liveness); use this tool to answer "which of my N workers need me?" without the
 gate/orphan aggregate payload.
 
+## MCP: `worker_launch` (M4-lite visible spawn + receipt)
+
+**One call** spawns a Casein-managed worker window and returns a structured
+receipt — same property as `runtime_signal` / `mcp_self_test`: the operator (or
+orchestrator) does not need topology + N captures to learn what just launched.
+
+```text
+worker_launch {
+  workspace_id, session,
+  runtime: grok|codex|claude|opencode|agent,
+  task_slug,
+  label?, dry_run?
+}
+→ ok, visible?, hidden_subagent?: false,
+  pane_id, window_name, window_id?,
+  worktree_path?, branch?, handle_id?, label, note
+```
+
+| Property | Behaviour |
+|----------|-----------|
+| Placement | New tmux window `worker-<slug>` on the given Casein session (via `scripts/spawn-agent-worker.sh`) |
+| Isolation | Fresh git worktree (`CASEIN_AGENT_FORCE_FRESH_WORKTREE=1`) — never the orchestrator's tree |
+| Visibility | `visible?: true` only when a live pane id is returned; dry_run never claims visible |
+| Hidden subagent | **Never** — spawn failure is a hard error, no silent fallback |
+| Receipt | Single payload: pane + window + worktree/branch when observable + optional `WorkHandles` id |
+| Fail closed | Missing args, bad runtime, missing script, non-zero spawn, empty pane id, timeout |
+
+**Still out of scope for this slice:** durable task graph / path contracts /
+verifier adapters / cancel·replace lifecycle beyond handle attach / restricted
+orchestrator token profile rewrite. Leave #384 open.
+
 ## MCP resource: `casein://fleet/summary` (#859 / #879)
 
 Read-only **one-call fleet picture** on Terminal MCP `resources/list` /
@@ -284,6 +315,8 @@ orchestration_list_workers paths owned by #384.
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
 - `Casein.Terminals.WorkerStatus` — MCP wire projection for one pane (M2)
 - `Casein.Terminals.OrchestrationListWorkers` — compact worker-list projection (M3)
+- `Casein.Terminals.WorkerLaunch` — visible spawn + structured receipt (M4-lite)
+- `Casein.Agents.TerminalTools.WorkerLaunch` — Jido / MCP `worker_launch`
 - `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859/#879)
 - `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy presence (#859)
 - `Casein.Terminals.AgentProgress` — composite progress + running_but_not_progressing (#879)

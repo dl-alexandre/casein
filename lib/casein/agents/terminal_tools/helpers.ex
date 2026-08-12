@@ -773,8 +773,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       danger_level: :low,
       capabilities: [:terminal_metadata, :terminal_read],
       recovery_hints: [
-        "S11/#867+#892: read modules.tmux_adapter first — SHA alone misses adapter mismatches.",
-        "paths_disagree? should be false after #892 (MCP + ops share Terminals.tmux_adapter/0).",
+        "S11/#867: read modules.tmux_adapter first — SHA alone misses adapter/default mismatches.",
+        "paths_disagree? true means MCP path (Backend.module fallback) ≠ legacy get_env(..., Tmux).",
         "mcp_surface.ok? false means missing callbacks (e.g. paste_text/3) on the live module.",
         "revision.status unknown never means current."
       ],
@@ -782,16 +782,50 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         %{
           arguments: %{"workspace_id" => "ws-1"},
           structured_content: %{
-            "diverged?" => false,
-            "attention" => [],
+            "diverged?" => true,
+            "attention" => ["tmux_adapter_paths_disagree"],
             "revision" => %{"status" => "current", "branch" => "master"},
             "modules" => %{
               "tmux_adapter" => %{
-                "mcp_resolved" => "Casein.Terminals.Tmux",
+                "mcp_resolved" => "Casein.Terminals.Backends.Tmux",
                 "ops_resolved" => "Casein.Terminals.Tmux",
-                "paths_disagree?" => false
+                "paths_disagree?" => true
               }
             }
+          }
+        }
+      ]
+    }
+  end
+
+  def metadata("worker_launch") do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:terminal_mutation, :terminal_metadata],
+      recovery_hints: [
+        "Requires workspace_id, session, runtime, task_slug — fail closed when any is missing.",
+        "One call returns the full receipt (pane_id, worktree_path, handle_id) — no topology scrape required.",
+        "dry_run: true plans without opening a window.",
+        "Never falls back to a hidden subagent; spawn failure is a hard error.",
+        "Follow with worker_status / orchestration_list_workers; durable graph still out of scope."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_default",
+            "runtime" => "opencode",
+            "task_slug" => "384-item"
+          },
+          structured_content: %{
+            "ok" => true,
+            "visible?" => true,
+            "hidden_subagent?" => false,
+            "pane_id" => "%42",
+            "window_name" => "worker-384-item",
+            "worktree_path" => "/tmp/casein-agent-worktrees/wt-demo",
+            "handle_id" => "wh_abc"
           }
         }
       ]

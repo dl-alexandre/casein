@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 38
+      assert length(names) == 39
 
       for expected <- [
             "terminal_list_sessions",
@@ -50,6 +50,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "worker_status",
             "orchestration_list_workers",
             "runtime_signal",
+            "worker_launch",
             "gate_report",
             "mcp_self_test",
             "annotation_list",
@@ -168,6 +169,40 @@ defmodule Casein.Agents.TerminalToolsActionTest do
       assert :terminal_metadata in tool.metadata.capabilities
       assert :terminal_read in tool.metadata.capabilities
       refute "workspace_id" in (tool.parameters.required || [])
+    end
+
+    test "worker_launch is a medium mutation with required spawn scope" do
+      tool = definition("worker_launch")
+
+      assert tool.parameters.required == ["workspace_id", "session", "runtime", "task_slug"]
+
+      assert tool.parameters.properties.runtime.enum == [
+               "grok",
+               "codex",
+               "claude",
+               "opencode",
+               "agent"
+             ]
+
+      assert tool.metadata.mutation? == true
+      assert tool.metadata.danger_level == :medium
+      assert :terminal_mutation in tool.metadata.capabilities
+    end
+
+    test "worker_launch fails closed without required args" do
+      assert {:error, {:missing_argument, "workspace_id"}} =
+               TerminalTools.invoke("worker_launch", %{
+                 "session" => "casein_ws-1_x",
+                 "runtime" => "opencode",
+                 "task_slug" => "x"
+               })
+
+      assert {:error, {:missing_argument, "runtime"}} =
+               TerminalTools.invoke("worker_launch", %{
+                 "workspace_id" => "ws-1",
+                 "session" => "casein_ws-1_x",
+                 "task_slug" => "x"
+               })
     end
 
     test "terminal_send_command keeps high-danger mutation metadata" do
