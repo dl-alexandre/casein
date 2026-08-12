@@ -1,9 +1,14 @@
 # ADR: Herdr as session runtime under MCP (Phase 0)
 
-Status: **PROPOSED — license ACK cleared for phase-1 evaluation only (2026-08-10 on #822); product default still blocked**
+Status: **PROPOSED — license ACK cleared for phase-1 evaluation only (2026-08-10 on #822); product default still blocked; SPARE-ONLY**
 
-Phase-1 design ADR (flagged dual-path, not default):
+Phase-1 design ADR (flagged dual-path, not default; **50-callback surface after #901**):
 [`docs/design/herdr-backend-adr.md`](../design/herdr-backend-adr.md)
+
+Note: early phase-0 text still cites “23 Backend callbacks” as a coupling
+snapshot from 2026-08-10. That number is **historical**. Live contract length is
+`length(Casein.Terminals.Backend.required_callbacks())` (**50** on 2026-08-12).
+Do not size a Herdr spike from the 23 figure.
 
 Parent: [#822](https://github.com/dl-alexandre/casein/issues/822) —
 "arch: evaluate Herdr as Terminals.Backend session runtime (replace tmux under MCP)"
