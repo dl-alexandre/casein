@@ -104,5 +104,11 @@ Conventions and tracked follow-ups for contributors (human or agent).
 > gate) fails the push if any `Module` cited in `docs/subsystems`/`docs/reference`
 > stops resolving — keeping these docs from silently rotting.
 
+## Prototypes
+
+| Doc | Description |
+|-----|-------------|
+| [`prototypes/clock-step-determinism.md`](prototypes/clock-step-determinism.md) | #897 verdict: virtual `Casein.Clock` + drain-path `send_after`. Holds only inside a closed scheduler; drop-in timer replacement is not enough for #898. |
+
 > Not indexed above (historical / evaluation notes, kept for context):
 > `dogfood_phase_2.md`, `odysseus_evaluation.md`.
