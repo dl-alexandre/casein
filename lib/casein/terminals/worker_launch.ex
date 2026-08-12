@@ -398,7 +398,7 @@ defmodule Casein.Terminals.WorkerLaunch do
       Path.expand("scripts/spawn-agent-worker.sh")
     ]
 
-    Enum.find(candidates, &is_binary_and_regular?/1) ||
+    Enum.find(candidates, &binary_and_regular?/1) ||
       Path.expand("scripts/spawn-agent-worker.sh")
   end
 
@@ -406,8 +406,8 @@ defmodule Casein.Terminals.WorkerLaunch do
   defp scripts_join(""), do: nil
   defp scripts_join(root), do: Path.join(root, "spawn-agent-worker.sh")
 
-  defp is_binary_and_regular?(path) when is_binary(path), do: File.regular?(path)
-  defp is_binary_and_regular?(_), do: false
+  defp binary_and_regular?(path) when is_binary(path), do: File.regular?(path)
+  defp binary_and_regular?(_), do: false
 
   defp scripts_cd(opts) do
     cond do
