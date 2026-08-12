@@ -17,7 +17,9 @@ defmodule Casein.Terminals.BackendContractTest do
 
   # Product routing tests below swap :terminal_backend / :tmux_adapter.
 
-  @callbacks Backend.behaviour_info(:callbacks)
+  # #896 — adapter half is derived from TmuxCtl.Adapter, not a hand list.
+  @adapter_callbacks Backend.adapter_callbacks()
+  @required_callbacks Backend.required_callbacks()
 
   @impl_modules [TmuxBackend, Fake, ConPTY]
 
@@ -26,19 +28,58 @@ defmodule Casein.Terminals.BackendContractTest do
     :ok
   end
 
-  describe "behaviour completeness" do
-    test "every registered backend exports all Backend callbacks" do
+  describe "behaviour completeness (#896)" do
+    test "Backend adapter callbacks equal TmuxCtl.Adapter.behaviour_info(:callbacks)" do
+      adapter =
+        TmuxCtl.Adapter.behaviour_info(:callbacks)
+        |> Enum.uniq()
+        |> Enum.sort()
+
+      assert @adapter_callbacks == adapter
+      # Measured 2026-08-12: Adapter unique=47. Guard against silent shrink.
+      assert length(@adapter_callbacks) >= 47
+    end
+
+    test "Backend.behaviour_info includes every adapter callback plus product-only" do
+      declared =
+        Backend.behaviour_info(:callbacks)
+        |> Enum.uniq()
+        |> Enum.sort()
+
+      for {name, arity} <- @required_callbacks do
+        assert {name, arity} in declared,
+               "Backend missing callback #{name}/#{arity} (required surface)"
+      end
+
+      for {name, arity} <- Backend.product_only_callbacks() do
+        assert {name, arity} in declared
+        refute {name, arity} in @adapter_callbacks
+      end
+    end
+
+    test "every registered backend exports the full required surface" do
       for mod <- @impl_modules do
         assert {:module, ^mod} = Code.ensure_loaded(mod)
 
         missing =
-          for {name, arity} <- @callbacks,
+          for {name, arity} <- @required_callbacks,
               not function_exported?(mod, name, arity),
               do: {mod, name, arity}
 
         assert missing == [],
                "#{inspect(mod)} missing Backend callbacks: #{inspect(missing)}"
       end
+    end
+
+    test "Fake is not a half-baked adapter surface (full Adapter export)" do
+      # Guardrail: a partial Fake makes the contract test lie.
+      missing =
+        for {name, arity} <- @adapter_callbacks,
+            not function_exported?(Fake, name, arity),
+            do: {name, arity}
+
+      assert missing == [],
+             "Backends.Fake incomplete vs TmuxCtl.Adapter: #{inspect(missing)}"
     end
   end
 

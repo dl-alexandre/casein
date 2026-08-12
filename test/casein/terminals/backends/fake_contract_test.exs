@@ -42,10 +42,11 @@ defmodule Casein.Terminals.Backends.FakeContractTest do
       assert {:error, :session_not_found} = Fake.mark_dead!("ghost")
     end
 
-    test "list_sessions/0 enumerates registered ids" do
-      assert @session in Fake.list_sessions()
+    test "list_sessions/0 enumerates registered sessions as adapter maps" do
+      sessions = Fake.list_sessions()
+      assert Enum.any?(sessions, &(&1.session == @session))
       assert :ok = Fake.ensure_session("other_fake", File.cwd!())
-      ids = Fake.list_sessions() |> Enum.sort()
+      ids = Fake.session_ids() |> Enum.sort()
       assert "other_fake" in ids
       assert @session in ids
     end
@@ -59,6 +60,31 @@ defmodule Casein.Terminals.Backends.FakeContractTest do
       assert :ok = Fake.send_command(@session, "git status", target: agent)
       assert Fake.capture_scrollback(@session, target: agent) =~ "git status\n"
       refute Fake.capture_scrollback(@session, target: "%1") =~ "git status"
+    end
+
+    test "paste_text/3 and inject/3 write scrollback; directory_inventory is complete" do
+      assert :ok = Fake.paste_text(@session, "brief body", submit: false)
+      assert Fake.capture_scrollback(@session) =~ "brief body"
+      refute Fake.capture_scrollback(@session) =~ "brief body\n"
+
+      assert :ok = Fake.paste_text(@session, "line", submit: true)
+      assert Fake.capture_scrollback(@session) =~ "line\n"
+
+      assert :ok = Fake.inject(@session, "injected", enter: false)
+      assert Fake.capture_scrollback(@session) =~ "injected"
+
+      assert {:ok, %{windows: windows, panes: panes}} = Fake.directory_inventory()
+      assert Map.has_key?(windows, @session)
+      assert Map.has_key?(panes, @session)
+      assert is_list(windows[@session])
+      assert is_list(panes[@session])
+
+      assert is_list(Fake.list_windows())
+      assert is_list(Fake.list_panes())
+      assert Fake.resize_amount_default() > 0
+      assert Fake.resize_amount_max() >= Fake.resize_amount_default()
+      assert Fake.server_version() == {0, 0}
+      assert Fake.tail_lines("a\nb\nc", 2) == "b\nc"
     end
   end
 

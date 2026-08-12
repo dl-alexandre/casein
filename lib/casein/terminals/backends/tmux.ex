@@ -212,12 +212,11 @@ defmodule Casein.Terminals.Backends.Tmux do
   @impl true
   def set_pane_role(session, pane_id, role), do: adapter().set_pane_role(session, pane_id, role)
 
-  # --- Adapter-forwarded ops not yet on Casein.Terminals.Backend -------------
-  # Product paths (template executors, MCP shared, deploy smoke) call these on
-  # Backend.module() so they ride `:tmux_adapter` / future native peers without
-  # hard-coding `Casein.Terminals.Tmux` or `TmuxCtl.Client`.
+  # --- Full TmuxCtl.Adapter surface (Backend #896) ---------------------------
+  # Every Adapter callback is a Backend callback. Forward through `:tmux_adapter`
+  # so product code never hard-codes `Casein.Terminals.Tmux` / `TmuxCtl.Client`.
 
-  @doc "Send a shell command to a session/pane via the configured adapter."
+  @impl true
   def send_command(session, cmd, opts \\ [])
 
   def send_command(session, cmd, opts)
@@ -227,12 +226,7 @@ defmodule Casein.Terminals.Backends.Tmux do
     |> normalize_run_result()
   end
 
-  @doc """
-  Paste literal text via the configured adapter (tmux paste-buffer path).
-
-  Required by MCP `terminal_paste_agent_text`. Not yet on `Casein.Terminals.Backend`
-  callbacks — product MCP still reaches it through Backend.module()/`:tmux_adapter`.
-  """
+  @impl true
   def paste_text(session, text, opts \\ [])
 
   def paste_text(session, text, opts)
@@ -242,14 +236,96 @@ defmodule Casein.Terminals.Backends.Tmux do
     |> normalize_run_result()
   end
 
-  @doc "Set one tmux session environment variable via the configured adapter."
+  @impl true
+  def inject(session, text, opts \\ [])
+
+  def inject(session, text, opts)
+      when is_binary(session) and is_binary(text) and is_list(opts) do
+    session
+    |> adapter().inject(text, opts)
+    |> normalize_run_result()
+  end
+
+  @impl true
   def set_environment(session, key, value)
       when is_binary(session) and is_binary(key) and is_binary(value) do
     adapter().set_environment(session, key, value)
   end
 
-  @doc "List live sessions via the configured adapter."
+  @impl true
+  def set_environments(session, env) when is_binary(session) and is_map(env) do
+    adapter().set_environments(session, env)
+  end
+
+  @impl true
   def list_sessions, do: adapter().list_sessions()
+
+  @impl true
+  def list_windows, do: adapter().list_windows()
+
+  @impl true
+  def list_panes, do: adapter().list_panes()
+
+  @impl true
+  def directory_inventory, do: adapter().directory_inventory()
+
+  @impl true
+  def apply_defaults(session), do: adapter().apply_defaults(session)
+
+  @impl true
+  def last_window(session), do: adapter().last_window(session)
+
+  @impl true
+  def cycle_window(session, dir), do: adapter().cycle_window(session, dir)
+
+  @impl true
+  def consolidate_sessions(session, sources),
+    do: adapter().consolidate_sessions(session, sources)
+
+  @impl true
+  def rename_window(session, window_id, name),
+    do: adapter().rename_window(session, window_id, name)
+
+  @impl true
+  def set_session_alias(session, name), do: adapter().set_session_alias(session, name)
+
+  @impl true
+  def refresh_client(session), do: adapter().refresh_client(session)
+
+  @impl true
+  def navigate_pane(session, dir), do: adapter().navigate_pane(session, dir)
+
+  @impl true
+  def zoom_pane(session, pane_id), do: adapter().zoom_pane(session, pane_id)
+
+  @impl true
+  def swap_pane(session, pane_id, direction),
+    do: adapter().swap_pane(session, pane_id, direction)
+
+  @impl true
+  def ensure_zoomed(session, pane_id, desired?),
+    do: adapter().ensure_zoomed(session, pane_id, desired?)
+
+  @impl true
+  def kill_other_panes(session, pane_id), do: adapter().kill_other_panes(session, pane_id)
+
+  @impl true
+  def select_layout(session, layout), do: adapter().select_layout(session, layout)
+
+  @impl true
+  def next_layout(session), do: adapter().next_layout(session)
+
+  @impl true
+  def resize_amount_default, do: adapter().resize_amount_default()
+
+  @impl true
+  def resize_amount_max, do: adapter().resize_amount_max()
+
+  @impl true
+  def tail_lines(output, n), do: adapter().tail_lines(output, n)
+
+  @impl true
+  def server_version, do: adapter().server_version()
 
   @doc "Workspace session prefix (naming policy; not adapter-swappable)."
   def workspace_session_prefix(workspace_name) when is_binary(workspace_name) do

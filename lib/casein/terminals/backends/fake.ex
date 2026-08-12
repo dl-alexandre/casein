@@ -149,9 +149,19 @@ defmodule Casein.Terminals.Backends.Fake do
     end
   end
 
-  @doc "List fake session ids currently registered."
-  @spec list_sessions() :: [String.t()]
+  @impl true
   def list_sessions do
+    ensure_table!()
+
+    :ets.select(@table, [{{:"$1", :_}, [], [:"$1"]}])
+    |> Enum.map(fn session ->
+      %{session: session, attached: false, activity: nil}
+    end)
+  end
+
+  @doc "Session ids only (test helper; `list_sessions/0` returns adapter maps)."
+  @spec session_ids() :: [String.t()]
+  def session_ids do
     ensure_table!()
     :ets.select(@table, [{{:"$1", :_}, [], [:"$1"]}])
   end
@@ -161,6 +171,11 @@ defmodule Casein.Terminals.Backends.Fake do
     ensure_table!()
     :ets.delete(@table, session)
     :ok
+  end
+
+  @impl true
+  def apply_defaults(session) when is_binary(session) do
+    with {:ok, _state} <- fetch_alive(session), do: :ok
   end
 
   @impl true
@@ -177,13 +192,7 @@ defmodule Casein.Terminals.Backends.Fake do
     end
   end
 
-  @doc """
-  Template/MCP-shaped command send: appends `command` plus a trailing newline
-  to the target pane scrollback. Not a Backend callback — product template
-  executors still call adapter `send_command/3`; this lets Fake stand in when
-  tests drive the same shape through Backend-selected modules.
-  """
-  @spec send_command(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @impl true
   def send_command(session, command, opts \\ [])
 
   def send_command(session, command, opts)
@@ -196,6 +205,32 @@ defmodule Casein.Terminals.Backends.Fake do
       end
 
     send_keys(session, payload, opts)
+  end
+
+  @impl true
+  def paste_text(session, text, opts \\ [])
+
+  def paste_text(session, text, opts)
+      when is_binary(session) and is_binary(text) and is_list(opts) do
+    with :ok <- send_keys(session, text, opts) do
+      if Keyword.get(opts, :submit, false) do
+        send_keys(session, "\n", opts)
+      else
+        :ok
+      end
+    end
+  end
+
+  @impl true
+  def inject(session, text, opts \\ [])
+
+  def inject(session, text, opts)
+      when is_binary(session) and is_binary(text) and is_list(opts) do
+    enter? = Keyword.get(opts, :enter, true)
+
+    with :ok <- paste_text(session, text, Keyword.put(opts, :submit, false)) do
+      if enter?, do: send_keys(session, "\n", opts), else: :ok
+    end
   end
 
   @impl true
@@ -491,6 +526,318 @@ defmodule Casein.Terminals.Backends.Fake do
       :ok
     end
   end
+
+  @impl true
+  def directory_inventory do
+    ensure_table!()
+
+    sessions = session_ids()
+
+    windows =
+      Map.new(sessions, fn session ->
+        {session, list_session_windows(session)}
+      end)
+
+    panes =
+      Map.new(sessions, fn session ->
+        {session, list_session_panes(session)}
+      end)
+
+    {:ok, %{windows: windows, panes: panes}}
+  end
+
+  @impl true
+  def list_windows do
+    ensure_table!()
+
+    Enum.flat_map(session_ids(), fn session ->
+      list_session_windows(session)
+      |> Enum.map(&Map.put(&1, :session, session))
+    end)
+  end
+
+  @impl true
+  def list_panes do
+    ensure_table!()
+
+    Enum.flat_map(session_ids(), fn session ->
+      list_session_panes(session)
+      |> Enum.map(&Map.put(&1, :session, session))
+    end)
+  end
+
+  @impl true
+  def last_window(session) when is_binary(session) do
+    with {:ok, state} <- fetch_alive(session),
+         %{} = active <- Enum.find(state.windows, & &1.active),
+         candidates when candidates != [] <- Enum.reject(state.windows, &(&1.id == active.id)),
+         %{} = prev <- Enum.max_by(candidates, & &1.index, fn -> nil end) do
+      select_window(session, prev.id)
+    else
+      nil -> {:error, :no_previous_window}
+      [] -> {:error, :no_previous_window}
+      other -> other
+    end
+  end
+
+  @impl true
+  def cycle_window(session, dir) when is_binary(session) and dir in ["next", "prev"] do
+    with {:ok, state} <- fetch_alive(session),
+         [_ | _] = windows <- Enum.sort_by(state.windows, & &1.index) do
+      active_idx = Enum.find_index(windows, & &1.active) || 0
+
+      next_idx =
+        case dir do
+          "next" -> rem(active_idx + 1, length(windows))
+          "prev" -> rem(active_idx - 1 + length(windows), length(windows))
+        end
+
+      select_window(session, Enum.at(windows, next_idx).id)
+    else
+      [] -> {:error, :session_not_found}
+      other -> other
+    end
+  end
+
+  def cycle_window(_session, _dir), do: {:error, :invalid_direction}
+
+  @impl true
+  def consolidate_sessions(target, sources)
+      when is_binary(target) and is_list(sources) do
+    with {:ok, target_state} <- fetch_alive(target) do
+      Enum.reduce_while(sources, {:ok, target_state, 0}, fn source, {:ok, tstate, moved} ->
+        case get(source) do
+          nil ->
+            {:cont, {:ok, tstate, moved}}
+
+          sstate ->
+            {tstate, n} = absorb_session(tstate, sstate)
+            :ets.delete(@table, source)
+            put_session(target, tstate)
+            {:cont, {:ok, tstate, moved + n}}
+        end
+      end)
+      |> case do
+        {:ok, _state, moved} -> {:ok, %{moved_windows: moved}}
+      end
+    end
+  end
+
+  @impl true
+  def rename_window(session, window_id, name)
+      when is_binary(session) and is_binary(window_id) and is_binary(name) do
+    with {:ok, state} <- fetch_alive(session),
+         true <- Enum.any?(state.windows, &(&1.id == window_id)) || {:error, :invalid_window} do
+      windows =
+        Enum.map(state.windows, fn window ->
+          if window.id == window_id,
+            do: %{window | name: name, automatic_rename: false},
+            else: window
+        end)
+
+      put_session(session, %{state | windows: windows})
+      :ok
+    end
+  end
+
+  @impl true
+  def set_session_alias(session, name) when is_binary(session) and is_binary(name) do
+    with {:ok, state} <- fetch_alive(session) do
+      put_session(session, Map.put(state, :alias, name))
+      :ok
+    end
+  end
+
+  @impl true
+  def refresh_client(session) when is_binary(session) do
+    with {:ok, _state} <- fetch_alive(session), do: :ok
+  end
+
+  @impl true
+  def navigate_pane(session, dir) when is_binary(session) and is_binary(dir) do
+    with {:ok, state} <- fetch_alive(session),
+         panes when panes != [] <-
+           Enum.sort_by(state.panes, &{window_index(state, &1.window_id), &1.index}),
+         active_idx <- Enum.find_index(panes, & &1.active) || 0 do
+      next_idx =
+        case dir do
+          d when d in ["R", "D", "n", "l"] -> rem(active_idx + 1, length(panes))
+          d when d in ["L", "U", "p"] -> rem(active_idx - 1 + length(panes), length(panes))
+          _ -> active_idx
+        end
+
+      select_pane(session, Enum.at(panes, next_idx).id)
+    else
+      [] -> {:error, :invalid_pane}
+      other -> other
+    end
+  end
+
+  @impl true
+  def zoom_pane(session, pane_id) when is_binary(session) and is_binary(pane_id) do
+    with {:ok, state} <- fetch_alive(session),
+         {:ok, _pane} <- fetch_pane(state, pane_id) do
+      panes =
+        Enum.map(state.panes, fn entry ->
+          Map.put(entry, :zoomed, entry.id == pane_id and not Map.get(entry, :zoomed, false))
+        end)
+
+      put_session(session, %{state | panes: panes})
+      :ok
+    end
+  end
+
+  @impl true
+  def swap_pane(session, pane_id, direction)
+      when is_binary(session) and is_binary(pane_id) and is_binary(direction) do
+    with {:ok, state} <- fetch_alive(session),
+         {:ok, pane} <- fetch_pane(state, pane_id),
+         siblings <-
+           state.panes
+           |> Enum.filter(&(&1.window_id == pane.window_id))
+           |> Enum.sort_by(& &1.index),
+         true <- length(siblings) > 1 || {:error, :no_sibling},
+         idx when not is_nil(idx) <- Enum.find_index(siblings, &(&1.id == pane_id)) do
+      other_idx =
+        case direction do
+          d when d in ["U", "L"] -> rem(idx - 1 + length(siblings), length(siblings))
+          d when d in ["D", "R"] -> rem(idx + 1, length(siblings))
+          _ -> nil
+        end
+
+      if is_nil(other_idx) do
+        {:error, :invalid_direction}
+      else
+        a = Enum.at(siblings, idx)
+        b = Enum.at(siblings, other_idx)
+
+        panes =
+          Enum.map(state.panes, fn entry ->
+            cond do
+              entry.id == a.id -> %{entry | index: b.index}
+              entry.id == b.id -> %{entry | index: a.index}
+              true -> entry
+            end
+          end)
+
+        put_session(session, %{state | panes: panes})
+        :ok
+      end
+    end
+  end
+
+  @impl true
+  def ensure_zoomed(session, pane_id, desired?)
+      when is_binary(session) and is_binary(pane_id) and is_boolean(desired?) do
+    with {:ok, state} <- fetch_alive(session),
+         {:ok, pane} <- fetch_pane(state, pane_id) do
+      if Map.get(pane, :zoomed, false) == desired? do
+        :ok
+      else
+        zoom_pane(session, pane_id)
+      end
+    end
+  end
+
+  @impl true
+  def kill_other_panes(session, pane_id)
+      when is_binary(session) and is_binary(pane_id) do
+    with {:ok, state} <- fetch_alive(session),
+         {:ok, keep} <- fetch_pane(state, pane_id) do
+      removed =
+        state.panes
+        |> Enum.reject(&(&1.id == pane_id))
+        |> Enum.map(& &1.id)
+
+      panes = Enum.filter(state.panes, &(&1.id == pane_id))
+      scrollback = Map.take(state.scrollback, [pane_id])
+
+      windows =
+        Enum.map(state.windows, fn window ->
+          if window.id == keep.window_id do
+            %{window | panes: 1, active: true}
+          else
+            Map.put(window, :active, false)
+          end
+        end)
+        |> Enum.filter(fn window ->
+          window.id == keep.window_id or
+            Enum.any?(panes, &(&1.window_id == window.id))
+        end)
+
+      panes = Enum.map(panes, &Map.put(&1, :active, true))
+
+      put_session(session, %{
+        state
+        | panes: panes,
+          windows: windows,
+          scrollback: scrollback
+      })
+
+      _ = removed
+      :ok
+    end
+  end
+
+  @impl true
+  def select_layout(session, layout) when is_binary(session) and is_binary(layout) do
+    with {:ok, state} <- fetch_alive(session) do
+      put_session(session, Map.put(state, :layout, layout))
+      :ok
+    end
+  end
+
+  @impl true
+  def next_layout(session) when is_binary(session) do
+    layouts = ~w(even-horizontal even-vertical main-horizontal main-vertical tiled)
+
+    with {:ok, state} <- fetch_alive(session) do
+      current = Map.get(state, :layout)
+      idx = Enum.find_index(layouts, &(&1 == current)) || -1
+      next = Enum.at(layouts, rem(idx + 1, length(layouts)))
+      put_session(session, Map.put(state, :layout, next))
+      :ok
+    end
+  end
+
+  @impl true
+  def resize_amount_default, do: 5
+
+  @impl true
+  def resize_amount_max, do: 50
+
+  @impl true
+  def set_environment(session, key, value)
+      when is_binary(session) and is_binary(key) and is_binary(value) do
+    with {:ok, state} <- fetch_alive(session) do
+      env = Map.get(state, :env, %{})
+      put_session(session, Map.put(state, :env, Map.put(env, key, value)))
+      :ok
+    end
+  end
+
+  @impl true
+  def set_environments(session, env) when is_binary(session) and is_map(env) do
+    with {:ok, state} <- fetch_alive(session) do
+      merged = Map.merge(Map.get(state, :env, %{}), env)
+      put_session(session, Map.put(state, :env, merged))
+      :ok
+    end
+  end
+
+  @impl true
+  def tail_lines(output, n) when is_binary(output) and is_integer(n) and n > 0 do
+    output
+    |> String.split("\n")
+    |> Enum.take(-n)
+    |> Enum.join("\n")
+  end
+
+  def tail_lines(output, _) when is_binary(output), do: output
+  def tail_lines(_, _), do: ""
+
+  @impl true
+  def server_version, do: {0, 0}
 
   @doc """
   Apply a SessionTemplate dry-run plan (list of step maps) against a Fake session.
@@ -827,5 +1174,46 @@ defmodule Casein.Terminals.Backends.Fake do
     value
     |> String.replace(~r/[^A-Za-z0-9._-]+/, "-")
     |> String.trim("-")
+  end
+
+  defp absorb_session(target_state, source_state) do
+    window_base = target_state.window_seq
+    pane_base = target_state.pane_seq
+
+    {windows, window_map, window_seq} =
+      Enum.reduce(source_state.windows, {target_state.windows, %{}, window_base}, fn win,
+                                                                                     {acc, map,
+                                                                                      seq} ->
+        seq = seq + 1
+        new_id = "@#{seq}"
+        map = Map.put(map, win.id, new_id)
+        win = %{win | id: new_id, index: seq - 1, active: false}
+        {acc ++ [win], map, seq}
+      end)
+
+    {panes, scrollback, pane_seq} =
+      Enum.reduce(
+        source_state.panes,
+        {target_state.panes, target_state.scrollback, pane_base},
+        fn pane, {acc, sb, seq} ->
+          seq = seq + 1
+          new_id = "%#{seq}"
+          new_window = Map.fetch!(window_map, pane.window_id)
+          text = Map.get(source_state.scrollback, pane.id, "")
+          pane = %{pane | id: new_id, window_id: new_window, active: false, index: seq - 1}
+          {acc ++ [pane], Map.put(sb, new_id, text), seq}
+        end
+      )
+
+    state = %{
+      target_state
+      | windows: windows,
+        panes: panes,
+        scrollback: scrollback,
+        window_seq: window_seq,
+        pane_seq: pane_seq
+    }
+
+    {state, map_size(window_map)}
   end
 end
