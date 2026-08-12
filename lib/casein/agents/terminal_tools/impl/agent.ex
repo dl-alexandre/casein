@@ -311,43 +311,113 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
     end
   end
 
-  @doc "Read messages left for a pane, defaulting to the caller's own mailbox."
+  @doc """
+  Read messages left for a pane, defaulting to the caller's own mailbox.
+
+  #911 lifecycle: each message carries `status` (`queued`|`collected`),
+  `unread?`, and stable `message_id`. Collect clears unread — peek does not.
+  This is an addressed store; it never writes into panes.
+  """
   @spec inbox(map()) :: {:ok, map()} | {:error, term()}
   def inbox(params) do
     with {:ok, workspace_id} <- workspace_id_arg(params),
          {:ok, session} <- session_or_default_arg(params),
          {:ok, address} <- inbox_address(params, session) do
       limit = integer_param(params, "limit", 50)
-      messages = Inbox.list(workspace_id, address, limit: limit)
+
+      include_collected? =
+        truthy?(Map.get(params, "include_collected") || Map.get(params, :include_collected))
+
       collect? = truthy?(Map.get(params, "collect") || Map.get(params, :collect))
+      before = Inbox.summary(workspace_id, address)
 
-      if collect? do
-        Enum.each(messages, fn message ->
-          Inbox.collect(workspace_id, message.id, %{
-            to: address,
-            tmux_session_id: session,
-            pane_id: caller_pane(params)
-          })
-        end)
-      end
+      messages =
+        Inbox.list(workspace_id, address,
+          limit: limit,
+          include_collected: include_collected?
+        )
 
-      {:ok,
-       %{
-         address: address,
-         session: session,
-         collected: collect?,
-         messages: Enum.map(messages, &inbox_message/1),
-         count: length(messages)
-       }}
+      collect_results =
+        if collect? do
+          Enum.map(messages, fn message ->
+            # Prefer stable message_id so double-collect is idempotent across
+            # retries that only retained the send-side id (#911 / #872 pattern).
+            ref = message.message_id || message.id
+
+            case Inbox.collect(workspace_id, ref, %{
+                   to: address,
+                   tmux_session_id: session,
+                   pane_id: caller_pane(params)
+                 }) do
+              {:ok, _receipt, outcome} ->
+                %{message_id: message.message_id, message_event_id: message.id, outcome: outcome}
+
+              {:error, reason} ->
+                %{
+                  message_id: message.message_id,
+                  message_event_id: message.id,
+                  outcome: :error,
+                  error: reason
+                }
+            end
+          end)
+        else
+          []
+        end
+
+      # After collect, re-list so wire status reflects cleared unread — never
+      # report collected:true while messages still show unread?/queued.
+      messages_after =
+        if collect? do
+          Inbox.list(workspace_id, address,
+            limit: limit,
+            include_collected: include_collected?
+          )
+        else
+          messages
+        end
+
+      after_summary = Inbox.summary(workspace_id, address)
+
+      payload = %{
+        address: address,
+        session: session,
+        collected: collect?,
+        messages: Enum.map(messages_after, &inbox_message/1),
+        count: length(messages_after),
+        pending: after_summary.pending,
+        unread: after_summary.unread,
+        # Snapshot before collect so the caller can see what became read.
+        pending_before: before.pending,
+        unread_before: before.unread
+      }
+
+      payload =
+        if collect? do
+          Map.put(payload, :collect_results, collect_results)
+        else
+          payload
+        end
+
+      {:ok, payload}
     end
   end
 
   defp inbox_message(message) do
+    status = Map.get(message, :status) || :queued
+    unread? = Map.get(message, :unread?)
+    unread? = if is_boolean(unread?), do: unread?, else: status == :queued
+
     %{
       message_event_id: message.id,
+      message_id: message.message_id,
       from: message.from,
       body: message.body,
-      sent_at: message.sent_at
+      sent_at: message.sent_at,
+      # Honest lifecycle — never "collected" while still queued (#911).
+      status: Atom.to_string(status),
+      unread?: unread?,
+      collected_at: Map.get(message, :collected_at)
     }
     |> compact()
   end

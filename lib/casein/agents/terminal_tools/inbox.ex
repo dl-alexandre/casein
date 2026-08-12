@@ -4,10 +4,10 @@ defmodule Casein.Agents.TerminalTools.Inbox do
   use Jido.Action,
     name: "terminal_inbox",
     description:
-      "Read messages other agents left for you with terminal_say, oldest first. Defaults to your own pane's address, so an agent can simply call it with no arguments. Messages stay in the mailbox until collected: pass collect=true once you have acted on them, which is what makes 'sent but never read' a visible state rather than an assumption. Poll this when you are waiting on another agent rather than watching its pane.",
+      "Read messages other agents left for you with terminal_say, oldest first. Defaults to your own pane's address. Each message carries honest lifecycle fields (#911): status queued|collected, unread?, stable message_id. Messages stay pending/unread until collect=true — collection clears unread, not sending. Double-collect is idempotent. This is an addressed store agents collect from; it never writes into panes (no terminal_send_*). Poll when waiting on another agent rather than watching its pane.",
     category: "terminal",
     tags: ["terminal"],
-    vsn: "1.0.0",
+    vsn: "1.1.0",
     schema: [
       workspace_id: [type: :string, required: true],
       session: [type: :string],
@@ -15,6 +15,7 @@ defmodule Casein.Agents.TerminalTools.Inbox do
       address: [type: :string],
       pane: [type: :string],
       collect: [type: :boolean],
+      include_collected: [type: :boolean],
       limit: [type: :integer]
     ]
 
@@ -40,8 +41,14 @@ defmodule Casein.Agents.TerminalTools.Inbox do
         collect: %{
           type: "boolean",
           description:
-            "Mark the returned messages as read. Leave false to peek without collecting; " <>
-              "an uncollected message stays visible as one nobody acted on. Defaults to false."
+            "Mark the returned messages as collected/read. Leave false to peek: status stays " <>
+              "queued and unread?=true. Collect is what clears unread — not sending. Defaults to false."
+        },
+        include_collected: %{
+          type: "boolean",
+          description:
+            "When true, also return already-collected messages (status=collected, unread?=false). " <>
+              "Default false returns only pending/queued."
         },
         limit: %{
           type: "integer",
