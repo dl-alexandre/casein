@@ -560,6 +560,58 @@ defmodule Casein.Previews.Control do
     end
   end
 
+  @doc """
+  Open a controllable preview session for an allowlisted external origin.
+
+  The tmux-free counterpart of the pane lane: hosts that run preview as a pure
+  browser-control session (native Windows) have no pane to bind, so they cannot
+  reach an external origin through `PreviewPanes.register/1`. The origin must
+  already have passed `Casein.Previews.ExternalOrigins.validate/2`; this
+  function is the session half, not the policy half.
+
+  The session's allowed origins carry the target origin explicitly. Without it
+  the control guard would fall back to loopback-only origins and refuse every
+  navigation on the very origin the caller was allowed to open.
+  """
+  @spec open_external_session(map(), String.t(), keyword()) ::
+          {:ok, ControlSession.t()} | {:error, term()}
+  def open_external_session(workspace, url, opts \\ [])
+      when is_map(workspace) and is_binary(url) do
+    workspace = WorkspaceContext.prepare(workspace)
+    workspace_id = workspace.id || workspace[:id]
+
+    with origin when is_binary(origin) <- Url.origin_of(url),
+         surface_name <- "external:#{URI.parse(url).host}",
+         {:ok, preview} <-
+           Previews.find_or_open(workspace, %{
+             url: url,
+             title: surface_name,
+             mode: Keyword.get(opts, :mode, :tab),
+             actor_id: Keyword.get(opts, :actor_id),
+             metadata: %{
+               "surface" => surface_name,
+               "surface_source" => "agent",
+               "control_url" => url,
+               "display_url" => url,
+               "allowed_origins" => Enum.uniq(Url.allowed_origins(workspace) ++ [origin])
+             }
+           }),
+         {:ok, session} <-
+           find_or_persist_session(
+             workspace_id,
+             preview,
+             %{name: surface_name},
+             Keyword.put(opts, :control_url, url)
+           ) do
+      _ = record_observation(session, nil, "url", %{url: session.current_url || preview.url})
+      _ = broadcast_preview_opened(preview, session)
+      {:ok, session}
+    else
+      nil -> {:error, :invalid_external_preview_url}
+      {:error, _reason} = error -> error
+    end
+  end
+
   @doc "Open control session for a workspace preview record."
   @spec open_for_preview(map(), Previews.Preview.t(), keyword()) ::
           {:ok, ControlSession.t()} | {:error, term()}

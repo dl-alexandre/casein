@@ -40,7 +40,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
   def open_external_preview(workspace, params \\ %{}) do
     with {:ok, url} <- ExternalOrigins.validate(external_url_param(params), workspace) do
       if native_windows?() do
-        {:error, external_requires_pane_error(url)}
+        open_control_only_external(workspace, params, url)
       else
         open_visible_url(workspace, params, url, "external")
       end
@@ -51,14 +51,17 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
     Shared.string_param(params, :url) || Map.get(params, "url") || Map.get(params, :url)
   end
 
-  defp external_requires_pane_error(url) do
-    %{
-      error: :external_preview_requires_pane,
-      url: url,
-      message:
-        "External-origin previews need a tmux preview pane, which this host " <>
-          "(CASEIN_WINDOWS_PREVIEW_CONTROL_ONLY) does not create. No preview pane was opened."
-    }
+  # Native Windows runs preview as a pure browser-control session with no tmux
+  # pane, so the allowlisted origin is opened directly on the control runtime.
+  # The reachability preflight still runs first: a host with no pane to clean up
+  # is exactly where a silently-dead session is hardest to notice.
+  defp open_control_only_external(workspace, params, url) do
+    opts = control_only_opts(params)
+
+    with :ok <- PortProbing.preflight_preview_url(url, opts),
+         {:ok, session} <- PreviewControl.open_external_session(workspace, url, opts) do
+      control_only_payload(session, "external")
+    end
   end
 
   defp invalid_open_mode_error(mode) do
