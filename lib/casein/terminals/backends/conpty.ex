@@ -157,6 +157,138 @@ defmodule Casein.Terminals.Backends.ConPTY do
     require_windows(session, {:set_pane_role, pane_id, role})
   end
 
+  # --- Full TmuxCtl.Adapter surface (Backend #896) ---------------------------
+  # Scaffold stubs: fail closed on non-Windows; refuse as unwired on Windows.
+
+  @impl true
+  def send_command(session, cmd, opts \\ [])
+
+  def send_command(session, cmd, opts) when is_binary(cmd) and is_list(opts) do
+    require_windows(session, {:send_command, cmd, opts})
+  end
+
+  @impl true
+  def paste_text(session, text, opts \\ [])
+
+  def paste_text(session, text, opts) when is_binary(text) and is_list(opts) do
+    require_windows(session, {:paste_text, text, opts})
+  end
+
+  @impl true
+  def inject(session, text, opts \\ [])
+
+  def inject(session, text, opts) when is_binary(text) and is_list(opts) do
+    require_windows(session, {:inject, text, opts})
+  end
+
+  @impl true
+  def apply_defaults(session), do: require_windows(session, :apply_defaults)
+
+  @impl true
+  def list_sessions, do: []
+
+  @impl true
+  def list_windows, do: []
+
+  @impl true
+  def list_panes, do: []
+
+  @impl true
+  def directory_inventory, do: {:ok, %{windows: %{}, panes: %{}}}
+
+  @impl true
+  def last_window(session), do: require_windows(session, :last_window)
+
+  @impl true
+  def cycle_window(session, dir) when is_binary(dir) do
+    require_windows(session, {:cycle_window, dir})
+  end
+
+  @impl true
+  def consolidate_sessions(session, sources) when is_list(sources) do
+    require_windows(session, {:consolidate_sessions, sources})
+  end
+
+  @impl true
+  def rename_window(session, window_id, name)
+      when is_binary(window_id) and is_binary(name) do
+    require_windows(session, {:rename_window, window_id, name})
+  end
+
+  @impl true
+  def set_session_alias(session, name) when is_binary(name) do
+    require_windows(session, {:set_session_alias, name})
+  end
+
+  @impl true
+  def refresh_client(session), do: require_windows(session, :refresh_client)
+
+  @impl true
+  def navigate_pane(session, dir) when is_binary(dir) do
+    require_windows(session, {:navigate_pane, dir})
+  end
+
+  @impl true
+  def zoom_pane(session, pane_id) when is_binary(pane_id) do
+    require_windows(session, {:zoom_pane, pane_id})
+  end
+
+  @impl true
+  def swap_pane(session, pane_id, direction)
+      when is_binary(pane_id) and is_binary(direction) do
+    require_windows(session, {:swap_pane, pane_id, direction})
+  end
+
+  @impl true
+  def ensure_zoomed(session, pane_id, desired?)
+      when is_binary(pane_id) and is_boolean(desired?) do
+    require_windows(session, {:ensure_zoomed, pane_id, desired?})
+  end
+
+  @impl true
+  def kill_other_panes(session, pane_id) when is_binary(pane_id) do
+    require_windows(session, {:kill_other_panes, pane_id})
+  end
+
+  @impl true
+  def select_layout(session, layout) when is_binary(layout) do
+    require_windows(session, {:select_layout, layout})
+  end
+
+  @impl true
+  def next_layout(session), do: require_windows(session, :next_layout)
+
+  @impl true
+  def resize_amount_default, do: 5
+
+  @impl true
+  def resize_amount_max, do: 50
+
+  @impl true
+  def set_environment(session, key, value)
+      when is_binary(key) and is_binary(value) do
+    require_windows(session, {:set_environment, key, value})
+  end
+
+  @impl true
+  def set_environments(session, env) when is_map(env) do
+    require_windows(session, {:set_environments, env})
+  end
+
+  @impl true
+  def tail_lines(output, n) when is_binary(output) and is_integer(n) and n > 0 do
+    output
+    |> String.split("\n")
+    |> Enum.take(-n)
+    |> Enum.join("\n")
+  end
+
+  def tail_lines(output, _) when is_binary(output), do: output
+  def tail_lines(_, _), do: ""
+
+  @impl true
+  def server_version, do: nil
+
   @doc false
   @spec windows_host?(:os.type()) :: boolean()
   def windows_host?(type \\ :os.type())
