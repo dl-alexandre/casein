@@ -52,7 +52,9 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
 - **Landed:** PR #844 — template executors + MCP Shared + deploy `TerminalSmoke`
   + `DoneAgentWindows` default to `Backend.module/0`; Tmux backend forwards
   `send_command`/`set_environment`/`list_sessions`/`workspace_session_prefix`.
-- **Current slice (contract/%576, PR #843):** Expand Fake Backend helpers +
-  dedicated contract tests (`session_exists?/2`, `send_command`, direction
-  norms, dead-session errors, `apply_plan` for agent_pair dry-run). LiveView
-  chrome wiring and real-host Job Object multi-window soak remain follow-ups.
+- **Landed:** PR #843 — Fake Backend helpers + dedicated contract tests
+  (`session_exists?/2`, `send_command`, direction norms, dead-session errors,
+  `apply_plan` for agent_pair dry-run).
+- **Current slice:** none open on the agent side. Follow-ups remain LiveView
+  chrome multipane wiring (human D1/D2 on #462) and real-host Job Object
+  multi-window soak (NEED on #462) — not a merged-PR placeholder.
