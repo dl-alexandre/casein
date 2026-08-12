@@ -5,6 +5,24 @@ defmodule CaseinWeb.LiveDiffMeasureTest do
   alias CaseinWeb.LiveDiffMeasure.Serializer
   alias Phoenix.Socket.Message
   alias Phoenix.Socket.Reply
+  alias Phoenix.Socket.V2.JSONSerializer
+
+  # Contract: #899 is measure-only. Zero temporary_assigns fleet-wide is a
+  # FINDING not a mandate — a "helpful" temporary_assigns/stream conversion in
+  # these modules would ship optimisation without ranked wire p95 (#899 brief).
+  @measure_only_sources [
+    "lib/casein_web/live_diff_measure.ex",
+    "lib/casein_web/live_diff_measure/serializer.ex"
+  ]
+  # Code-shape only (not doc prose): bare "temporary_assigns" in @moduledoc is
+  # the prohibition text itself and must stay. Flag call-site / option shapes.
+  @forbidden_optim_patterns [
+    ~r/\btemporary_assigns\s*:/,
+    ~r/\bstream_configure\s*[\(\/]/,
+    ~r/(?<![\w.])stream\s*\(/,
+    ~r/\bstream_insert\s*[\(\/]/,
+    ~r/\bstream_delete\s*[\(\/]/
+  ]
 
   setup do
     previous = Application.get_env(:casein, :live_diff_measure)
@@ -19,6 +37,33 @@ defmodule CaseinWeb.LiveDiffMeasureTest do
     end)
 
     :ok
+  end
+
+  describe "measure-only contract (#899)" do
+    test "probe sources do not introduce temporary_assigns or stream optimisations" do
+      for path <- @measure_only_sources do
+        source = File.read!(Path.join(File.cwd!(), path))
+
+        for pattern <- @forbidden_optim_patterns do
+          refute Regex.match?(pattern, source),
+                 "#{path} matched #{inspect(pattern)} — #899 is measure-only; " <>
+                   "optimisation needs a follow-up issue with wire p95 attached " <>
+                   "(zero temporary_assigns is a finding, not a mandate)"
+        end
+      end
+    end
+
+    test "Serializer.encode! is byte-identical to stock V2 JSONSerializer" do
+      msg = %Message{
+        topic: "lv:phx-contract",
+        event: "diff",
+        payload: %{"0" => "hello", "c" => %{"1" => "x"}},
+        ref: nil,
+        join_ref: "jr"
+      }
+
+      assert Serializer.encode!(msg) == JSONSerializer.encode!(msg)
+    end
   end
 
   describe "rank_changed/2" do

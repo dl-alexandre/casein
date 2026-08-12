@@ -3,6 +3,10 @@ defmodule CaseinWeb.LiveDiffMeasure.Serializer do
   Thin `Phoenix.Socket.Serializer` wrapper that measures LiveView diff wire
   bytes (#899). Delegates encode/decode to `Phoenix.Socket.V2.JSONSerializer`;
   measurement is best-effort and never raises into the transport.
+
+  # do not change encode shape or drop V1 negotiation (#899 measure-only —
+  # wire bytes must stay byte-identical to stock V2 so this cannot be blamed
+  # for a cockpit regression; optimisations land in a follow-up issue).
   """
 
   @behaviour Phoenix.Socket.Serializer
@@ -15,6 +19,7 @@ defmodule CaseinWeb.LiveDiffMeasure.Serializer do
 
   @impl true
   def encode!(msg) do
+    # Measure after stock encode — never rewrite the iodata.
     result = JSONSerializer.encode!(msg)
     maybe_measure(msg, result)
     result

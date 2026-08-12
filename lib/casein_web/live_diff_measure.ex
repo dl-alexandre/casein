@@ -33,6 +33,11 @@ defmodule CaseinWeb.LiveDiffMeasure do
   * No stream conversion
   * No `Map.take` / `__changed__` "fixes"
   * No render-path behaviour change beyond cheap measurement
+
+  # do not add temporary_assigns/streams here (#899 is measure-only; a follow-up
+  # issue owns optimisation once wire p95 ranks the offenders — zero
+  # temporary_assigns fleet-wide is a FINDING not a mandate, and Map.take
+  # + :__changed__ does not restore tracking on assigns-dependent templates).
   """
 
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1]

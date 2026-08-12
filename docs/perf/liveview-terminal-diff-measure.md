@@ -83,10 +83,19 @@ Wire kinds to compare:
 
 ## Explicitly out of scope here
 
+# do not add temporary_assigns/streams in the probe PR (#899 measure-only;
+# follow-up owns optimisation once wire p95 ranks offenders — zero
+# temporary_assigns fleet-wide is a FINDING not a mandate).
+
 * Adding `temporary_assigns` or converting assigns → streams
-* “Fixing” change tracking via `__changed__` in `Map.take`
+* “Fixing” change tracking via `__changed__` in `Map.take` (LV disables tracking
+  for assigns-dependent dynamic parts — only explicit attrs help; already bitten)
 * Changing `terminal_panel.ex` attr surface (measurement may *justify* that later)
 * Ghostty `push_event` frame bytes (already under `casein.terminal.live_view.push_frame`)
+
+Enforced by `test/casein_web/live_diff_measure_test.exs` **"measure-only contract
+(#899)"** — probe sources must not grow `temporary_assigns` / `stream*` calls,
+and `Serializer.encode!/1` must stay byte-identical to stock V2.
 
 ## Follow-up
 
