@@ -162,4 +162,85 @@ defmodule Casein.Agents.InboxTest do
       refute inspect(receipt) =~ "sensitive"
     end
   end
+
+  # #911 — constraints in the artifact. If a later change reports collected on
+  # send, fails to clear unread on collect, or double-delivers on re-collect,
+  # these fail first (briefs die with the pane; pane writes stay disabled).
+  describe "lifecycle honesty #911" do
+    test "sent message is queued and unread until collect", %{ws: ws} do
+      to = Address.for_pane("%3")
+
+      assert {:ok, _event, :inserted} =
+               Inbox.send(%{
+                 workspace_id: ws,
+                 to: to,
+                 body: "waiting",
+                 message_id: "stable-wait"
+               })
+
+      assert [%{status: :queued, unread?: true, message_id: "stable-wait", collected_at: nil}] =
+               Inbox.list(ws, to)
+
+      assert %{pending: 1, unread: 1, collected: 0} = Inbox.summary(ws, to)
+
+      assert {:ok, %{status: :queued, unread?: true}} =
+               Inbox.get_by_message_id(ws, "stable-wait")
+    end
+
+    test "collect clears unread and marks collected — never leaves queued+collected", %{ws: ws} do
+      to = Address.for_pane("%3")
+      {:ok, event, _} = Inbox.send(%{workspace_id: ws, to: to, body: "act", message_id: "m-act"})
+
+      assert {:ok, _, :inserted} = Inbox.collect(ws, event.id, %{to: to})
+
+      assert Inbox.list(ws, to) == []
+      assert %{pending: 0, unread: 0, collected: 1} = Inbox.summary(ws, to)
+
+      assert [%{status: :collected, unread?: false, collected_at: %DateTime{}}] =
+               Inbox.list(ws, to, include_collected: true)
+
+      # Honest get_by_message_id after collect
+      assert {:ok, %{status: :collected, unread?: false}} =
+               Inbox.get_by_message_id(ws, "m-act")
+    end
+
+    test "double-collect by event id is idempotent — no second receipt", %{ws: ws} do
+      to = Address.for_pane("%3")
+
+      {:ok, event, _} =
+        Inbox.send(%{workspace_id: ws, to: to, body: "once", message_id: "once-1"})
+
+      assert {:ok, first, :inserted} = Inbox.collect(ws, event.id, %{to: to})
+      assert {:ok, second, :duplicate} = Inbox.collect(ws, event.id, %{to: to})
+      assert first.id == second.id
+      assert %{pending: 0, unread: 0, collected: 1} = Inbox.summary(ws, to)
+    end
+
+    test "double-collect by stable message_id is idempotent", %{ws: ws} do
+      to = Address.for_pane("%3")
+      message_id = "stable-collect-key"
+
+      assert {:ok, _event, :inserted} =
+               Inbox.send(%{workspace_id: ws, to: to, body: "by key", message_id: message_id})
+
+      assert {:ok, first, :inserted} = Inbox.collect(ws, message_id, %{to: to})
+      assert {:ok, second, :duplicate} = Inbox.collect(ws, message_id, %{to: to})
+      assert first.id == second.id
+
+      # Still a single collected message — not two deliveries
+      assert length(Inbox.list(ws, to, include_collected: true)) == 1
+      assert %{unread: 0, collected: 1} = Inbox.summary(ws, to)
+    end
+
+    test "send never invents collected status", %{ws: ws} do
+      to = Address.for_pane("%3")
+      Inbox.send(%{workspace_id: ws, to: to, body: "only sent", message_id: "only-sent"})
+
+      for msg <- Inbox.list(ws, to, include_collected: true) do
+        refute msg.status == :collected
+        assert msg.unread? == true
+        assert msg.status == :queued
+      end
+    end
+  end
 end

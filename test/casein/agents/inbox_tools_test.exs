@@ -107,12 +107,54 @@ defmodule Casein.Agents.InboxToolsTest do
     test "peeking leaves the message; collecting removes it", %{session: session} do
       say(session, %{"to" => "pane:%3", "body" => "act on me"})
 
-      assert {:ok, %{count: 1, collected: false}} = inbox(session, %{}, "%3")
-      # Still there: peeking is not acting.
-      assert {:ok, %{count: 1}} = inbox(session, %{}, "%3")
+      assert {:ok, %{count: 1, collected: false, pending: 1, unread: 1}} =
+               inbox(session, %{}, "%3")
 
-      assert {:ok, %{count: 1, collected: true}} = inbox(session, %{"collect" => true}, "%3")
-      assert {:ok, %{count: 0}} = inbox(session, %{}, "%3")
+      # Still there: peeking is not acting.
+      assert {:ok, %{count: 1, unread: 1}} = inbox(session, %{}, "%3")
+
+      assert {:ok, %{collected: true, pending: 0, unread: 0, unread_before: 1}} =
+               inbox(session, %{"collect" => true}, "%3")
+
+      assert {:ok, %{count: 0, pending: 0, unread: 0}} = inbox(session, %{}, "%3")
+    end
+
+    test "wire messages expose queued/unread until collect clears them", %{session: session} do
+      say(session, %{"to" => "pane:%3", "body" => "status check", "message_id" => "wire-1"})
+
+      assert {:ok, %{messages: [msg], pending: 1, unread: 1}} = inbox(session, %{}, "%3")
+      assert msg.status == "queued"
+      assert msg.unread? == true
+      assert msg.message_id == "wire-1"
+
+      assert {:ok, %{pending: 0, unread: 0, collect_results: [result]}} =
+               inbox(session, %{"collect" => true}, "%3")
+
+      assert result.outcome == :inserted
+      assert result.message_id == "wire-1"
+
+      # include_collected shows honest collected status — not queued
+      assert {:ok, %{messages: [done], pending: 0, unread: 0}} =
+               inbox(session, %{"include_collected" => true}, "%3")
+
+      assert done.status == "collected"
+      assert done.unread? == false
+    end
+
+    test "double collect via terminal_inbox is idempotent", %{session: session} do
+      say(session, %{"to" => "pane:%3", "body" => "once", "message_id" => "idem-1"})
+
+      assert {:ok, %{collect_results: [first]}} =
+               inbox(session, %{"collect" => true}, "%3")
+
+      assert first.outcome == :inserted
+
+      # Second collect with include_collected still only duplicates the receipt
+      assert {:ok, %{collect_results: [second], unread: 0}} =
+               inbox(session, %{"collect" => true, "include_collected" => true}, "%3")
+
+      assert second.outcome == :duplicate
+      assert second.message_id == first.message_id
     end
 
     test "one agent's mailbox is not another's", %{session: session} do

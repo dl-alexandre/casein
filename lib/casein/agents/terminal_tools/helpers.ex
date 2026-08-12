@@ -613,8 +613,28 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       capabilities: [:terminal_metadata],
       recovery_hints: [
         "Omit address to read the caller pane's own mailbox.",
-        "Pass collect=true only once you have acted; an uncollected message stays " <>
-          "visible as one nobody handled."
+        "Each message has status queued|collected and unread? — never treat send as read (#911).",
+        "Pass collect=true only once you have acted; that clears unread. Peek leaves pending.",
+        "Double-collect is idempotent via stable message_id — safe to retry.",
+        "Addressed store only — does not write into panes (no terminal_send_*)."
+      ],
+      examples: [
+        %{
+          arguments: %{"workspace_id" => "ws-1", "session" => "casein_ws-1_x"},
+          structured_content: %{
+            "address" => "pane:%3",
+            "pending" => 1,
+            "unread" => 1,
+            "messages" => [
+              %{
+                "message_id" => "msg-1",
+                "status" => "queued",
+                "unread?" => true,
+                "body" => "rebase before auth"
+              }
+            ]
+          }
+        }
       ]
     }
   end
