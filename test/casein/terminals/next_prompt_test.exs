@@ -55,6 +55,17 @@ defmodule Casein.Terminals.NextPromptTest do
     end
   end
 
+  describe "reports_state_edges?/1" do
+    test "OpenCode is hook-less; other runtimes report edges" do
+      refute NextPrompt.reports_state_edges?("opencode")
+      refute NextPrompt.reports_state_edges?(:opencode)
+      assert NextPrompt.reports_state_edges?("claude")
+      assert NextPrompt.reports_state_edges?("grok")
+      assert NextPrompt.reports_state_edges?("codex")
+      assert NextPrompt.reports_state_edges?(nil)
+    end
+  end
+
   describe "parse_deliver_when/1" do
     test "defaults when absent and rejects unknown values" do
       assert NextPrompt.parse_deliver_when(nil) == {:ok, :next_idle}
@@ -103,6 +114,30 @@ defmodule Casein.Terminals.NextPromptTest do
                  workspace_id: ws(),
                  deliver_when: "next_finished"
                )
+    end
+
+    test "a hook-less pane cannot park a next_prompt silently" do
+      assert {:error, :state_edges_unavailable} =
+               NextPrompt.set(@session, @pane, "slice that will never land",
+                 workspace_id: ws(),
+                 current_state: :working,
+                 runtime: "opencode"
+               )
+
+      assert NextPrompt.get(@session, @pane) == nil
+    end
+
+    test "a hook-less pane still delivers immediately when already at the target" do
+      assert {:ok, %{status: :delivered}} =
+               NextPrompt.set(@session, @pane, "you are free",
+                 workspace_id: ws(),
+                 current_state: :idle,
+                 runtime: "opencode"
+               )
+
+      assert_receive {:delivered, entry, :immediate}, 1_000
+      assert entry.text == "you are free"
+      assert NextPrompt.get(@session, @pane) == nil
     end
   end
 

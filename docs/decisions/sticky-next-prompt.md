@@ -98,3 +98,12 @@ when the bound `agent_session_id` changes (the runtime restarted, so the message
 is addressed to an agent that no longer exists), when the pane disappears from
 its session, or when `expires_at` passes (24h default). Delivering to a recycled
 pane id would drop mid-task context on a stranger.
+
+## Hook-less runtimes are refused (#912)
+
+OpenCode does not fire the hooks that produce `idle`/`done` edges. Parking a
+message there is a silent hold: `pending_next_prompt: true` while the pane
+sits idle. `terminal_set_next_prompt` refuses with `state_edges_unavailable`
+unless the pane is already in the requested state (immediate delivery). The
+remedy is `terminal_paste_agent_text`. An honest refusal beats a message that
+can never be released.

@@ -180,6 +180,31 @@ defmodule Casein.Agents.TerminalToolsNextPromptTest do
     assert error == :invalid_deliver_when or match?(%{error: :invalid_deliver_when}, error)
   end
 
+  test "an OpenCode pane cannot park a next_prompt silently", %{session: session} do
+    mark_agent_runtime("opencode")
+
+    assert {:error, error} =
+             TerminalTools.invoke("terminal_set_next_prompt", %{
+               "workspace_id" => @workspace,
+               "pane" => @agent_pane,
+               "text" => "this must not sit pending forever",
+               "deliver_when" => "next_idle"
+             })
+
+    assert error.error == :state_edges_unavailable
+    assert error.refused == true
+    assert error.runtime == "opencode"
+    assert error.remedy == "terminal_paste_agent_text"
+    assert error.message =~ "not pending"
+    assert NextPrompt.get(session, @agent_pane) == nil
+
+    assert {:ok, %{pending_next_prompt: false}} =
+             TerminalTools.invoke("terminal_get_next_prompt", %{
+               "workspace_id" => @workspace,
+               "pane" => @agent_pane
+             })
+  end
+
   test "an idle pane gets the message immediately rather than parking it", %{session: session} do
     AgentState.report(@workspace, session, @agent_pane, :idle, nil)
 
@@ -216,6 +241,19 @@ defmodule Casein.Agents.TerminalToolsNextPromptTest do
     AgentState.report(@workspace, session, @agent_pane, :done, nil)
     assert_receive {:delivered, entry, :done}, 1_000
     assert entry.text == "rebase first"
+  end
+
+  defp mark_agent_runtime(runtime) do
+    panes = FakeState.get(:fake_tmux_panes)
+    session = Tmux.session_name(@workspace, "main")
+
+    updated =
+      Enum.map(panes[session], fn
+        %{id: @agent_pane} = pane -> %{pane | current_command: runtime}
+        pane -> pane
+      end)
+
+    FakeState.put(:fake_tmux_panes, Map.put(panes, session, updated))
   end
 
   defp set_prompt(text, coalesce_key) do

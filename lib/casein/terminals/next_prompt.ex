@@ -58,6 +58,12 @@ defmodule Casein.Terminals.NextPrompt do
   has already passed. A message silently held forever because the agent went
   idle a second before the operator hit send is the failure mode this avoids.
 
+  Hook-less runtimes (OpenCode today) never emit a state edge. Parking a
+  message there is a silent hold: `pending_next_prompt: true` forever, even
+  while the pane sits idle. `set/4` refuses those panes unless the requested
+  state is already true (immediate delivery). An honest refusal beats a
+  message that cannot be released.
+
   ## Delivery is best-effort, and says so
 
   Injection goes through `Casein.Terminals.PaneSubmit`, which confirms the
@@ -77,6 +83,7 @@ defmodule Casein.Terminals.NextPrompt do
   @max_ttl_seconds 604_800
   @text_limit 8_000
   @coalesce_key_limit 120
+  @hookless_runtimes MapSet.new(["opencode"])
 
   @type deliver_when :: :next_idle | :next_blocked | :next_done
 
@@ -194,22 +201,64 @@ defmodule Casein.Terminals.NextPrompt do
   def deliverable?(_entry, _report, _now), do: false
 
   @doc """
+  Whether this runtime reports the semantic-state edges delivery waits on.
+
+  OpenCode is hook-less (#886/#893/#912): no `UserPromptSubmit` / `Stop`, so
+  `next_idle` / `next_done` never fire. Unknown runtimes default to true so a
+  missed detection does not refuse Claude/Grok/Codex.
+  """
+  @spec reports_state_edges?(term()) :: boolean()
+  def reports_state_edges?(runtime) when is_atom(runtime) and not is_nil(runtime) do
+    reports_state_edges?(Atom.to_string(runtime))
+  end
+
+  def reports_state_edges?(runtime) when is_binary(runtime) do
+    not MapSet.member?(@hookless_runtimes, String.downcase(runtime))
+  end
+
+  def reports_state_edges?(_runtime), do: true
+
+  @doc """
   Stage a sticky prompt for a pane, replacing whatever was pending for it.
 
   Options: `:workspace_id`, `:deliver_when`, `:coalesce_key`,
-  `:agent_session_id`, `:expires_at`, `:set_by`, and `:current_state` (the
+  `:agent_session_id`, `:expires_at`, `:set_by`, `:current_state` (the
   pane's already-resolved semantic state, used to decide whether the requested
-  edge has already arrived).
+  edge has already arrived), `:runtime`, and `:reports_state_edges`.
 
-  Returns `{:ok, %{status: :pending | :delivered, entry: entry, replaced: prev}}`.
+  Returns `{:ok, %{status: :pending | :delivered, entry: entry, replaced: prev}}`
+  or `{:error, :state_edges_unavailable}` when the pane cannot report the
+  edge that would release a parked message.
   """
   @spec set(String.t(), String.t(), String.t(), keyword()) ::
           {:ok, map()} | {:error, term()}
   def set(tmux_session, pane_id, text, opts \\ [])
       when is_binary(tmux_session) and is_binary(pane_id) and is_binary(text) and is_list(opts) do
     with {:ok, text} <- validate_text(text),
-         {:ok, deliver_when} <- validate_deliver_when(Keyword.get(opts, :deliver_when)) do
+         {:ok, deliver_when} <- validate_deliver_when(Keyword.get(opts, :deliver_when)),
+         :ok <- reject_undeliverable(opts, deliver_when) do
       Server.set(tmux_session, pane_id, text, Keyword.put(opts, :deliver_when, deliver_when))
+    end
+  end
+
+  defp reject_undeliverable(opts, deliver_when) do
+    reports? =
+      case Keyword.fetch(opts, :reports_state_edges) do
+        {:ok, value} -> value != false
+        :error -> reports_state_edges?(Keyword.get(opts, :runtime))
+      end
+
+    current = Keyword.get(opts, :current_state)
+
+    cond do
+      reports? ->
+        :ok
+
+      current in target_states(deliver_when) ->
+        :ok
+
+      true ->
+        {:error, :state_edges_unavailable}
     end
   end
 
