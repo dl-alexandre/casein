@@ -570,6 +570,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
           group: :this | :other,
           session_count: non_neg_integer(),
           needs_you_count: non_neg_integer(),
+          # Distinct unit from needs_you_count — never sum into Needs-you (#910).
+          unseen_quiet_windows: non_neg_integer(),
           expanded?: boolean(),
           flat_session?: boolean(),
           loading?: boolean(),
@@ -687,13 +689,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
           workspace_id: String.t(),
           workspace_label: String.t(),
           current?: boolean(),
+          # Human title first in the strip (generated ids stay secondary).
           label: String.t(),
+          # Generated / technical id — search only, not the primary line.
+          session_key: String.t() | nil,
+          branch: String.t() | nil,
           kind: atom(),
           tmux_session: String.t() | nil,
+          window_id: String.t() | nil,
           href: String.t() | nil,
           reason: Attention.reason(),
           agent_blocked_count: non_neg_integer(),
-          message: String.t() | nil
+          message: String.t() | nil,
+          # Search blob: label + workspace + branch + tmux + reason + message.
+          search_text: String.t()
         }
 
   @doc """
@@ -705,6 +714,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   workspaces with no warmed cache surface their count via the header chip
   instead. Pass `sidebar_ws_sessions` (workspace_id => [tab]) and the workspace
   summaries so each row can name its workspace.
+
+  # idle ≠ needs-you for the *Stalled* chip: Stalled ≡ AgentProgress
+  # `:running_but_not_progressing` (reason `:stalled`). Quiet/idle is a separate
+  # chip ("Quiet update") — collapsing stalled into idle/needs-you reproduced a
+  # 2h production incident (CPU looked healthy while axes produced nothing).
   """
   @spec needs_you_strip([map()], String.t(), keyword()) :: [needs_you_row()]
   def needs_you_strip(current_tabs, current_workspace_id, opts \\ [])
@@ -712,11 +726,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     sidebar_ws = Keyword.get(opts, :sidebar_ws_sessions, %{})
     summaries = Keyword.get(opts, :summaries, [])
     labels = workspace_label_index(summaries, current_workspace_id)
+    branches = workspace_branch_index(summaries)
 
     current_rows =
       current_tabs
       |> Enum.map(&Map.put(&1, :workspace_id, current_workspace_id))
-      |> Enum.map(&needs_you_row(&1, current_workspace_id, labels))
+      |> Enum.map(&needs_you_row(&1, current_workspace_id, labels, branches))
 
     other_rows =
       sidebar_ws
@@ -727,7 +742,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
         tabs
         |> List.wrap()
         |> Enum.map(&Map.put(&1, :workspace_id, workspace_id))
-        |> Enum.map(&needs_you_row(&1, current_workspace_id, labels))
+        |> Enum.map(&needs_you_row(&1, current_workspace_id, labels, branches))
       end)
 
     (current_rows ++ other_rows)
@@ -735,26 +750,193 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     |> Enum.sort_by(&{tab_reason_rank(%{attention_reason: &1.reason}), not &1.current?})
   end
 
-  defp needs_you_row(tab, current_workspace_id, labels) do
+  @doc """
+  Split count helpers so the parent header never reads as two Needs-you totals.
+
+  * `needs_you_sessions/1` — sessions classified `:needs_you` (blocked/error/
+    stalled/finished/awaiting/idle-triage).
+  * `unseen_quiet_windows/1` — unseen quiet **windows** (chrome badge only).
+
+  These are different units; never sum them into one "Needs you" number.
+  """
+  @spec needs_you_sessions([map()]) :: non_neg_integer()
+  def needs_you_sessions(tabs) when is_list(tabs) do
+    Enum.count(tabs, &(tab_attention_section(&1) == :needs_you))
+  end
+
+  def needs_you_sessions(_), do: 0
+
+  @spec count_unseen_quiet_windows([map()]) :: non_neg_integer()
+  def count_unseen_quiet_windows(tabs) when is_list(tabs) do
+    Enum.reduce(tabs, 0, fn tab, total ->
+      total + (Map.get(tab, :unseen_quiet_count) || 0)
+    end)
+  end
+
+  def count_unseen_quiet_windows(_), do: 0
+
+  # Back-compat alias used in docs/tests.
+  defdelegate unseen_quiet_windows(tabs), to: __MODULE__, as: :count_unseen_quiet_windows
+
+  # Chip catalogue (#910) — single source so LV + tests cannot drift.
+  # Stalled == AgentProgress.running_but_not_progressing (NOT idle, NOT quiet).
+  @attention_chip_labels %{
+    blocked: "Needs input",
+    awaiting_input: "Needs input",
+    errored: "Error",
+    error: "Error",
+    completed: "Finished",
+    stalled: "Stalled",
+    idle: "Quiet update"
+  }
+
+  @doc "Human chip label for an attention reason (#910 catalogue)."
+  @spec attention_chip_label(term()) :: String.t()
+  def attention_chip_label(reason) when is_atom(reason) do
+    Map.get(@attention_chip_labels, reason, "Quiet update")
+  end
+
+  def attention_chip_label(_), do: "Quiet update"
+
+  defp needs_you_row(tab, current_workspace_id, labels, branches) do
     if tab_attention_section(tab) == :needs_you do
       workspace_id = Map.get(tab, :workspace_id) || current_workspace_id
       session_id = Map.get(tab, :session_id) || tab.id
+      reason = Map.get(tab, :attention_reason, :recent)
+      message = blank_to_nil(Map.get(tab, :attention_message))
+      label = human_needs_you_label(tab)
+      branch = blank_to_nil(Map.get(tab, :branch)) || Map.get(branches, workspace_id)
+      workspace_label = Map.get(labels, workspace_id, workspace_id)
+      tmux = Map.get(tab, :tmux_session)
+      window_id = needs_you_window_id(tab)
+      session_key = blank_to_nil(session_id)
 
       %{
         id: workspace_id <> ":" <> session_id,
         session_id: session_id,
         workspace_id: workspace_id,
-        workspace_label: Map.get(labels, workspace_id, workspace_id),
+        workspace_label: workspace_label,
         current?: workspace_id == current_workspace_id,
-        label: tab.label,
+        label: label,
+        session_key: session_key,
+        branch: branch,
         kind: Map.get(tab, :kind, :shell),
-        tmux_session: Map.get(tab, :tmux_session),
+        tmux_session: tmux,
+        window_id: window_id,
         href: blank_to_nil(Map.get(tab, :href)),
-        reason: Map.get(tab, :attention_reason, :recent),
+        reason: reason,
         agent_blocked_count: Map.get(tab, :agent_blocked_count, 0),
-        message: blank_to_nil(Map.get(tab, :attention_message))
+        message: message,
+        search_text:
+          needs_you_search_text(%{
+            label: label,
+            workspace_label: workspace_label,
+            branch: branch,
+            session_key: session_key,
+            tmux_session: tmux,
+            reason: reason,
+            message: message
+          })
       }
     end
+  end
+
+  # Prefer human title (task_summary / chrome label); generated session ids last.
+  defp human_needs_you_label(tab) do
+    candidates = [
+      Map.get(tab, :task_summary),
+      Map.get(tab, :label),
+      Map.get(tab, :display_name),
+      Map.get(tab, :name),
+      Map.get(tab, :session_id),
+      Map.get(tab, :id)
+    ]
+
+    Enum.find_value(candidates, "session", fn
+      value when is_binary(value) ->
+        trimmed = String.trim(value)
+        if trimmed != "" and not generated_session_id?(trimmed), do: trimmed
+
+      _ ->
+        nil
+    end) ||
+      Enum.find_value(candidates, "session", fn
+        value when is_binary(value) ->
+          case String.trim(value) do
+            "" -> nil
+            trimmed -> trimmed
+          end
+
+        _ ->
+          nil
+      end)
+  end
+
+  # Generated attach ids (CASEIN_886_PS_…_NOOP, long hex, etc.) are secondary.
+  defp generated_session_id?(label) do
+    String.contains?(label, "CASEIN_") or
+      String.match?(label, ~r/^[0-9a-f]{8,}(-[0-9a-f]{4,})+/i) or
+      String.match?(label, ~r/_NOOP\b/) or
+      String.match?(label, ~r/^phx-/i)
+  end
+
+  defp needs_you_window_id(tab) do
+    windows = Map.get(tab, :windows) || []
+
+    reason = Map.get(tab, :attention_reason)
+
+    match? =
+      case reason do
+        :blocked -> fn w -> w.agent_state == :blocked end
+        :errored -> fn w -> w.agent_state == :errored end
+        :stalled -> fn w -> w.agent_state == :stalled end
+        :completed -> fn w -> w.agent_state == :done end
+        :awaiting_input -> fn w -> w.agent_state == :awaiting_input end
+        :idle -> fn w -> w.quiet? == true or w.unseen_quiet? == true end
+        _ -> fn _ -> true end
+      end
+
+    case Enum.find(windows, match?) || List.first(windows) do
+      %{id: id} when is_binary(id) and id != "" -> id
+      _ -> blank_to_nil(Map.get(tab, :window_id))
+    end
+  end
+
+  defp needs_you_search_text(fields) when is_map(fields) do
+    reason = Map.get(fields, :reason)
+    chip = attention_chip_label(reason)
+
+    [
+      Map.get(fields, :label),
+      Map.get(fields, :workspace_label),
+      Map.get(fields, :branch),
+      Map.get(fields, :session_key),
+      Map.get(fields, :tmux_session),
+      chip,
+      reason && Atom.to_string(reason),
+      Map.get(fields, :message)
+    ]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.join(" ")
+    |> String.downcase()
+  end
+
+  defp workspace_branch_index(summaries) do
+    Enum.reduce(summaries, %{}, fn summary, acc ->
+      case summary_id(summary) do
+        id when is_binary(id) ->
+          branch =
+            blank_to_nil(
+              Map.get(summary, :branch) || Map.get(summary, "branch") ||
+                Map.get(summary, :git_branch) || Map.get(summary, "git_branch")
+            )
+
+          if branch, do: Map.put(acc, id, branch), else: acc
+
+        _ ->
+          acc
+      end
+    end)
   end
 
   defp workspace_label_index(summaries, current_workspace_id) do
@@ -822,6 +1004,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       group: :this,
       session_count: 1,
       needs_you_count: 0,
+      unseen_quiet_windows: 0,
       expanded?: false,
       flat_session?: true,
       loading?: false,
@@ -954,8 +1137,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
         _ -> []
       end
 
-    needs_you_count =
-      Enum.count(rollup_sessions, &(tab_attention_section(&1) == :needs_you))
+    # Session count only — never add unseen quiet windows here (different unit;
+    # parent must not read as two Needs-you totals). #910
+    needs_you_count = needs_you_sessions(rollup_sessions)
+    unseen_quiet_count = count_unseen_quiet_windows(rollup_sessions)
 
     %{
       id: workspace_id,
@@ -970,6 +1155,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       group: node_group(current?, summary_owned_by_viewer?(summary, viewer)),
       session_count: session_count,
       needs_you_count: needs_you_count,
+      unseen_quiet_windows: unseen_quiet_count,
       expanded?: explicitly_expanded? and not flat_session?,
       flat_session?: flat_session?,
       loading?: loading? and sessions == [],
@@ -1443,8 +1629,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   defp attention_message(:blocked, windows),
     do: first_window_message(windows, &(&1.agent_state == :blocked))
 
+  defp attention_message(:awaiting_input, windows),
+    do: first_window_message(windows, &(&1.agent_state == :awaiting_input))
+
+  defp attention_message(:errored, windows),
+    do: first_window_message(windows, &(&1.agent_state == :errored))
+
+  defp attention_message(:stalled, windows),
+    do: first_window_message(windows, &(&1.agent_state == :stalled))
+
   defp attention_message(:completed, windows),
     do: first_window_message(windows, &(&1.agent_state == :done))
+
+  defp attention_message(:idle, windows),
+    do: first_window_message(windows, &(&1.quiet? == true or &1.unseen_quiet? == true))
 
   defp attention_message(_reason, _windows), do: nil
 

@@ -772,12 +772,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   # Pinned cross-workspace triage queue: every session that needs you, most
   # urgent first, one click from being unblocked. Hidden entirely when nothing
   # needs attention so the rail stays calm at rest.
+  #
+  # #910 row order: human title · workspace+branch · chip + 1-line message.
+  # Chip labels from SessionBarVM.attention_chip_label/1 only — idle ≠ stalled.
   defp sessions_needs_you_strip(assigns) do
     ~H"""
     <div
       :if={@rows != []}
       id={"sessions-needs-you-" <> @workspace_id}
       data-needs-you-strip
+      data-needs-you-sessions={length(@rows)}
       class="shrink-0 border-b border-status-danger/20 bg-status-danger/[0.04] px-1 py-1"
     >
       <.sessions_sidebar_section_header
@@ -810,13 +814,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     <%= if @row.current? do %>
       <a
         id={"needs-you-row-" <> dom_fragment(@row.id)}
-        href={session_href(@row.workspace_id, @row.session_id, @path_base)}
+        href={needs_you_row_href(@row, @path_base)}
+        data-picker-item
+        data-picker-label={@row.label}
+        data-picker-search={@row.search_text}
         data-needs-you-reason={@row.reason}
+        data-needs-you-window={@row.window_id}
         phx-click="attach_terminal_session"
         phx-value-session-id={@row.session_id}
         phx-value-kind={to_string(@row.kind)}
         phx-value-tmux-session={@row.tmux_session}
-        class={[sidebar_row_class(@active_id == @row.session_id), "flex-row items-center gap-1.5"]}
+        phx-value-window-id={@row.window_id}
+        class={[
+          sidebar_row_class(@active_id == @row.session_id),
+          "flex-col items-stretch gap-0.5 py-1.5"
+        ]}
         title={needs_you_row_title(@row)}
       >
         <.needs_you_row_body row={@row} badge={@badge} show_workspace?={false} />
@@ -824,9 +836,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     <% else %>
       <.link
         id={"needs-you-row-" <> dom_fragment(@row.id)}
-        navigate={needs_you_row_href(@row)}
+        navigate={needs_you_row_href(@row, @path_base)}
+        data-picker-item
+        data-picker-label={@row.label}
+        data-picker-search={@row.search_text}
         data-needs-you-reason={@row.reason}
-        class={[sidebar_row_class(false), "flex-row items-center gap-1.5"]}
+        data-needs-you-window={@row.window_id}
+        class={[sidebar_row_class(false), "flex-col items-stretch gap-0.5 py-1.5"]}
         title={needs_you_row_title(@row)}
       >
         <.needs_you_row_body row={@row} badge={@badge} show_workspace?={true} />
@@ -839,109 +855,127 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   attr :badge, :map, required: true
   attr :show_workspace?, :boolean, default: false
 
+  # Line 1: human title. Line 2: workspace + branch. Line 3: chip + message.
   defp needs_you_row_body(assigns) do
     ~H"""
-    <span class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+    <span class="flex min-w-0 items-center gap-1.5 overflow-hidden">
       <span
         class={["size-1.5 shrink-0 rounded-full", @badge.dot]}
         aria-hidden="true"
       />
-      <span class="truncate font-medium">{@row.label}</span>
-      <span
-        :if={@show_workspace?}
-        class="shrink-0 truncate font-mono text-density-badge text-base-content/45"
-      >
-        {@row.workspace_label}
-      </span>
+      <span data-picker-label class="truncate font-medium">{@row.label}</span>
     </span>
-    <span class={[
-      "shrink-0 rounded-full px-1.5 text-density-badge font-semibold",
-      @badge.class
-    ]}>
-      {@badge.text}
+    <span
+      :if={needs_you_meta_line(@row, @show_workspace?) != ""}
+      data-picker-label
+      class="min-w-0 truncate pl-3 font-mono text-density-label text-base-content/50"
+    >
+      {needs_you_meta_line(@row, @show_workspace?)}
+    </span>
+    <span class="flex min-w-0 items-center gap-1.5 overflow-hidden pl-3">
+      <span class={[
+        "shrink-0 rounded-full px-1.5 text-density-badge font-semibold",
+        @badge.class
+      ]}>
+        {@badge.text}
+      </span>
+      <span
+        :if={is_binary(@row.message) and @row.message != ""}
+        data-picker-label
+        class="min-w-0 truncate text-density-label text-base-content/60"
+      >
+        {@row.message}
+      </span>
     </span>
     """
   end
 
-  defp needs_you_row_href(%{href: href}) when is_binary(href) and href != "", do: href
+  defp needs_you_meta_line(row, show_workspace?) do
+    parts =
+      []
+      |> then(fn acc ->
+        if show_workspace? and is_binary(row.workspace_label) and row.workspace_label != "",
+          do: [row.workspace_label | acc],
+          else: acc
+      end)
+      |> then(fn acc ->
+        branch = Map.get(row, :branch)
 
-  defp needs_you_row_href(row),
-    do: cross_workspace_home_path(row.workspace_id)
+        if is_binary(branch) and branch != "" and not SessionBarVM.default_branch?(branch),
+          do: [SessionBarVM.branch_short(branch) | acc],
+          else: acc
+      end)
+      |> Enum.reverse()
 
-  defp needs_you_row_badge(%{reason: :blocked, agent_blocked_count: count}) when count > 1,
-    do: %{
-      dot: "bg-status-danger",
-      class: "bg-status-danger/15 text-status-danger-fg",
-      text: "needs input ×#{count}"
-    }
+    Enum.join(parts, " · ")
+  end
 
-  defp needs_you_row_badge(%{reason: :blocked}),
-    do: %{
-      dot: "bg-status-danger",
-      class: "bg-status-danger/15 text-status-danger-fg",
-      text: "needs input"
-    }
+  defp needs_you_row_href(%{href: href}, _path_base) when is_binary(href) and href != "", do: href
 
-  defp needs_you_row_badge(%{reason: :errored, agent_blocked_count: count}) when count > 1,
-    do: %{
-      dot: "bg-status-danger",
-      class: "bg-status-danger/15 text-status-danger-fg",
-      text: "error ×#{count}"
-    }
+  defp needs_you_row_href(row, path_base) do
+    base =
+      if row.current? do
+        session_href(row.workspace_id, row.session_id, path_base)
+      else
+        cross_workspace_home_path(row.workspace_id)
+      end
 
-  defp needs_you_row_badge(%{reason: :errored}),
-    do: %{
-      dot: "bg-status-danger",
-      class: "bg-status-danger/15 text-status-danger-fg",
-      text: "error"
-    }
+    case Map.get(row, :window_id) do
+      id when is_binary(id) and id != "" ->
+        sep = if String.contains?(base, "?"), do: "&", else: "?"
+        base <> sep <> URI.encode_query([{"window", id}])
 
-  defp needs_you_row_badge(%{reason: :stalled, agent_blocked_count: count}) when count > 1,
-    do: %{
-      dot: "bg-status-warning",
-      class: "bg-status-warning/15 text-status-warning-fg",
-      text: "stalled ×#{count}"
-    }
+      _ ->
+        base
+    end
+  end
 
-  defp needs_you_row_badge(%{reason: :stalled}),
-    do: %{
-      dot: "bg-status-warning",
-      class: "bg-status-warning/15 text-status-warning-fg",
-      text: "stalled"
-    }
+  # Chip catalogue is SessionBarVM.attention_chip_label/1 only (#910).
+  # Stalled ≡ running_but_not_progressing — never render as idle/Quiet update.
+  defp needs_you_row_badge(row) do
+    reason = Map.get(row, :reason)
+    count = Map.get(row, :agent_blocked_count, 0)
+    base = SessionBarVM.attention_chip_label(reason)
+    text = if is_integer(count) and count > 1, do: "#{base} ×#{count}", else: base
 
-  defp needs_you_row_badge(%{reason: :error}),
-    do: %{
-      dot: "bg-status-danger",
-      class: "bg-status-danger/15 text-status-danger-fg",
-      text: "error"
-    }
+    case reason do
+      r when r in [:blocked, :awaiting_input] ->
+        %{dot: "bg-status-danger", class: "bg-status-danger/15 text-status-danger-fg", text: text}
 
-  defp needs_you_row_badge(%{reason: :completed}),
-    do: %{dot: "bg-status-live", class: "bg-status-live/15 text-status-live-fg", text: "done"}
+      r when r in [:errored, :error] ->
+        %{dot: "bg-status-danger", class: "bg-status-danger/15 text-status-danger-fg", text: text}
 
-  defp needs_you_row_badge(%{reason: :idle}),
-    do: %{
-      dot: "bg-status-idle",
-      class: "bg-status-idle/15 text-status-idle-fg",
-      text: "idle"
-    }
+      :stalled ->
+        %{
+          dot: "bg-status-warning",
+          class: "bg-status-warning/15 text-status-warning-fg",
+          text: text
+        }
 
-  defp needs_you_row_badge(_row),
-    do: %{
-      dot: "bg-status-idle",
-      class: "bg-status-idle/15 text-status-idle-fg",
-      text: "idle"
-    }
+      :completed ->
+        %{dot: "bg-status-live", class: "bg-status-live/15 text-status-live-fg", text: text}
+
+      :idle ->
+        %{dot: "bg-status-idle", class: "bg-status-idle/15 text-status-idle-fg", text: text}
+
+      _ ->
+        %{dot: "bg-status-idle", class: "bg-status-idle/15 text-status-idle-fg", text: text}
+    end
+  end
 
   defp needs_you_row_title(row) do
+    chip = SessionBarVM.attention_chip_label(row.reason)
+
     base =
       case row.reason do
-        :blocked -> "Agent is blocked on input"
-        :error -> "Session hit an error"
-        :completed -> "Agent finished — review its result"
-        :idle -> "Agent window is idle — likely finished or awaiting input"
-        _ -> "Agent window is idle — likely finished or awaiting input"
+        :blocked -> "Needs input"
+        :awaiting_input -> "Needs input"
+        r when r in [:errored, :error] -> "Error"
+        :completed -> "Finished — review result"
+        # Stalled is NOT idle: process active, axes not progressing (AgentProgress).
+        :stalled -> "Stalled — running but not progressing"
+        :idle -> "Quiet update"
+        _ -> chip
       end
 
     scope = if(row.current?, do: base, else: base <> " · " <> row.workspace_label)
@@ -1298,7 +1332,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   attr :node, :map, required: true
 
   defp sessions_sidebar_workspace_labels(assigns) do
-    assigns = assign(assigns, :needs_you_count, Map.get(assigns.node, :needs_you_count, 0))
+    assigns =
+      assigns
+      |> assign(:needs_you_count, Map.get(assigns.node, :needs_you_count, 0))
+      # Separate unit from needs_you — never sum into Needs-you chip (#910).
+      |> assign(:unseen_quiet_windows, Map.get(assigns.node, :unseen_quiet_windows, 0))
 
     ~H"""
     <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
@@ -1308,11 +1346,22 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           :if={@needs_you_count > 0}
           id={"sidebar-ws-needs-you-" <> @node.dom_id}
           data-needs-you-count={@needs_you_count}
+          data-needs-you-sessions={@needs_you_count}
           class="shrink-0 rounded-full bg-status-danger/15 px-1.5 font-mono text-density-badge font-semibold text-status-danger-fg"
           title={needs_you_chip_title(@needs_you_count)}
           aria-label={needs_you_chip_title(@needs_you_count)}
         >
           {@needs_you_count}
+        </span>
+        <span
+          :if={@unseen_quiet_windows > 0}
+          id={"sidebar-ws-quiet-" <> @node.dom_id}
+          data-unseen-quiet-windows={@unseen_quiet_windows}
+          class="shrink-0 rounded-full bg-status-idle/15 px-1.5 font-mono text-density-badge font-semibold text-status-idle-fg"
+          title={unseen_quiet_chip_title(@unseen_quiet_windows)}
+          aria-label={unseen_quiet_chip_title(@unseen_quiet_windows)}
+        >
+          {@unseen_quiet_windows} quiet
         </span>
         <span
           :if={not @node.live?}
@@ -1322,6 +1371,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       </span>
       <span
         :if={@node.detail != ""}
+        data-picker-label
         class="max-w-full truncate font-mono text-density-label text-base-content/50"
       >
         {@node.detail}
@@ -2386,64 +2436,95 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     end
   end
 
+  # Chip text from SessionBarVM.attention_chip_label/1 only (#910 catalogue).
+  # Stalled stays distinct from idle/Quiet update (AgentProgress taxonomy).
   defp agent_badge_for_reason(:blocked, session) do
     count = Map.get(session, :agent_blocked_count, 0)
+    chip = SessionBarVM.attention_chip_label(:blocked)
 
     base =
       if(count > 1,
-        do: "#{count} agent windows are blocked on input",
-        else: "Agent is blocked on input"
+        do: "#{count} agent windows need input",
+        else: "Needs input"
       )
 
     %{
       reason: :blocked,
       class: "bg-error/15 text-error",
-      text: if(count > 1, do: "needs input ×#{count}", else: "needs input"),
+      text: if(count > 1, do: "#{chip} ×#{count}", else: chip),
       title: with_attention_message(base, session)
+    }
+  end
+
+  defp agent_badge_for_reason(:awaiting_input, session) do
+    chip = SessionBarVM.attention_chip_label(:awaiting_input)
+
+    %{
+      reason: :awaiting_input,
+      class: "bg-error/15 text-error",
+      text: chip,
+      title: with_attention_message("Needs input", session)
     }
   end
 
   defp agent_badge_for_reason(:errored, session) do
     count = Map.get(session, :agent_blocked_count, 0)
+    chip = SessionBarVM.attention_chip_label(:errored)
 
     %{
       reason: :errored,
       class: "bg-error/15 text-error",
-      text: if(count > 1, do: "error ×#{count}", else: "error"),
-      title: with_attention_message("Agent errored", session)
+      text: if(count > 1, do: "#{chip} ×#{count}", else: chip),
+      title: with_attention_message("Error", session)
     }
   end
 
   defp agent_badge_for_reason(:stalled, session) do
     count = Map.get(session, :agent_blocked_count, 0)
+    chip = SessionBarVM.attention_chip_label(:stalled)
 
     %{
       reason: :stalled,
       class: "bg-warning/15 text-warning",
-      text: if(count > 1, do: "stalled ×#{count}", else: "stalled"),
+      text: if(count > 1, do: "#{chip} ×#{count}", else: chip),
       title:
         with_attention_message(
-          "Agent looks busy but its worktree has been idle — may be wedged",
+          "Stalled — running but not progressing (not idle)",
           session
         )
     }
   end
 
   defp agent_badge_for_reason(:completed, session) do
+    chip = SessionBarVM.attention_chip_label(:completed)
+
     %{
       reason: :completed,
       class: "bg-info/15 text-info",
-      text: "done",
-      title: with_attention_message("Agent finished — review its result", session)
+      text: chip,
+      title: with_attention_message("Finished — review result", session)
+    }
+  end
+
+  defp agent_badge_for_reason(:idle, session) do
+    chip = SessionBarVM.attention_chip_label(:idle)
+
+    %{
+      reason: :idle,
+      class: "bg-base-content/10 text-base-content/70",
+      text: chip,
+      title: with_attention_message("Quiet update", session)
     }
   end
 
   defp agent_badge_for_reason(:error, _session) do
+    chip = SessionBarVM.attention_chip_label(:error)
+
     %{
       reason: :error,
       class: "bg-error/15 text-error",
-      text: "error",
-      title: "Session hit an error"
+      text: chip,
+      title: "Error"
     }
   end
 
@@ -2458,6 +2539,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     end
   end
 
+  # Sessions only — never include unseen quiet windows in this string (#910).
   defp needs_you_chip_title(1), do: "1 session needs you"
   defp needs_you_chip_title(count), do: "#{count} sessions need you"
+
+  defp unseen_quiet_chip_title(1), do: "1 unseen quiet agent window"
+  defp unseen_quiet_chip_title(count), do: "#{count} unseen quiet agent windows"
 end

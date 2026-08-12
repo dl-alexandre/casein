@@ -26,7 +26,17 @@ export function restoreSidebarSort(hook, col) {
 }
 
 export function itemFilterText(el) {
-  const label = el.querySelector("[data-picker-label]")?.textContent || ""
+  // #910: needs-you rows carry data-picker-search (label/workspace/branch/
+  // tmux/reason/message). Prefer that so chips + messages are filterable.
+  const search = el.getAttribute?.("data-picker-search")
+  if (search && search.trim()) return search.toLowerCase()
+
+  const labels = el.querySelectorAll("[data-picker-label]")
+  const label = labels.length
+    ? Array.from(labels)
+        .map((node) => node.textContent)
+        .join(" ")
+    : el.querySelector("[data-picker-label]")?.textContent || ""
   const index = el.querySelector(".font-mono")?.textContent || ""
   return `${index} ${label}`.toLowerCase()
 }
