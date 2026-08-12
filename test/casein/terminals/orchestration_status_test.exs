@@ -201,6 +201,55 @@ defmodule Casein.Terminals.OrchestrationStatusTest do
       assert Enum.any?(payload.blocked, &(&1.pane_id == "%w1"))
     end
 
+    test "hook-less worker with active liveness projects working, not bare unknown (#916)" do
+      board =
+        board([
+          tab("w1",
+            agent_state: nil,
+            fleet_role: :worker,
+            name: "worker-s2-alive",
+            display_name: "worker-s2-alive",
+            liveness: %{
+              state: :active,
+              quiet_for_seconds: 2,
+              last_write_at: "2026-08-12T18:00:00Z",
+              commit_count: 5
+            }
+          ),
+          tab("w2",
+            agent_state: nil,
+            fleet_role: :worker,
+            name: "worker-unscanned",
+            display_name: "worker-unscanned",
+            liveness: %{state: :unknown, reason: :eacces}
+          )
+        ])
+
+      payload =
+        OrchestrationStatus.project(board,
+          workspace_id: "ws-1",
+          session: "casein_ws-1_main",
+          now: @now
+        )
+
+      assert payload.counts["working"] == 1
+      assert payload.counts["unknown"] == 1
+      refute payload.counts["working"] == 0
+
+      by_name = Map.new(payload.rows, &{&1.name, &1})
+      alive = by_name["worker-s2-alive"]
+      assert alive
+      assert alive.bucket == "working"
+      refute Map.has_key?(alive, :unknown_reason)
+      assert alive.liveness.state == "active"
+
+      unscanned = by_name["worker-unscanned"]
+      assert unscanned
+      assert unscanned.bucket == "unknown"
+      assert unscanned.unknown_reason == "liveness_unknown:eacces"
+      refute unscanned.bucket == "idle"
+    end
+
     test "orphaned claims project list; unknown observation never looks clear" do
       claimed = [%{number: 812, title: "stale claim", priority: "p0"}]
 
