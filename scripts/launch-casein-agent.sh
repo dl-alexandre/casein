@@ -345,7 +345,7 @@ opencode_model_args() {
   opencode_arg_sets_model "$@" && return 0
   opencode_arg_uses_model_capable_command "$@" || return 0
 
-  local model="${CASEIN_OPENCODE_DEFAULT_MODEL-opencode/grok-4.5}"
+  local model="${CASEIN_OPENCODE_DEFAULT_MODEL-opencode/grok-4.6}"
 
   if [[ -n "$model" ]]; then
     printf '%s\0' --model "$model"
