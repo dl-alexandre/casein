@@ -38,6 +38,8 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     assert "orchestration_list_workers" in snapshot.allowed_tools["terminal"]
     assert "runtime_signal" in snapshot.allowed_tools["terminal"]
     assert "annotation_propose" in snapshot.allowed_tools["terminal"]
+    # worker_launch is a medium mutation — locked grants must not see it
+    refute "worker_launch" in snapshot.allowed_tools["terminal"]
     refute "terminal_send_command" in snapshot.allowed_tools["terminal"]
     refute "terminal_send_agent_command" in snapshot.allowed_tools["terminal"]
     refute "artifact_create" in snapshot.allowed_tools["artifact"]

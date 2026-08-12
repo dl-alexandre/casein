@@ -198,7 +198,8 @@ the fleet aggregate. Same kind discipline — `blocked_on` keeps report vs deriv
 distinct; external `liveness` with `state: unknown` never becomes quiet/idle;
 missing observation is omitted, not rendered as idle. Requires `workspace_id`,
 `session`, and `pane` (optional `window_id`). Liveness is on by default. No
-scrollback, no shell, no mutations. **`worker_launch` remains out of scope.**
+scrollback, no shell, no mutations. **`worker_launch` is M4-lite (below) — not
+this tool.**
 
 ```text
 worker_status { workspace_id, session, pane, window_id? }
@@ -215,7 +216,7 @@ Read-only scan list over the same `FleetBoard` projection as
 `needs_you_only`. Liveness is on by default on the topology path; unknown
 liveness never becomes idle (FleetBoard kind discipline). Requires
 `workspace_id` + `session`. No scrollback, no shell, no mutations.
-**`worker_launch`, durable graph, and verifiers remain out of scope.**
+**Durable graph and verifiers remain out of scope; spawn is `worker_launch`.**
 
 ```text
 orchestration_list_workers { workspace_id, session, fleet_role?, needs_you_only? }
@@ -225,6 +226,44 @@ orchestration_list_workers { workspace_id, session, fleet_role?, needs_you_only?
 Use `worker_status` when you need one-pane depth (`worktree_path`, full
 liveness); use this tool to answer "which of my N workers need me?" without the
 gate/orphan aggregate payload.
+
+## MCP: `worker_launch` (M4-lite visible spawn + receipt)
+
+**One call** spawns a Casein-managed worker window and returns a structured
+receipt — same property as `runtime_signal` / `mcp_self_test`: the operator (or
+orchestrator) does not need topology + N captures to learn what just launched.
+
+```text
+worker_launch {
+  workspace_id, session,
+  runtime: grok|codex|claude|opencode|agent,
+  task_slug,
+  label?, dry_run?
+}
+→ ok, visible?, hidden_subagent?: false,
+  pane_id, window_name, window_id?,
+  worktree_path?, branch?, handle_id?, label, note
+```
+
+| Property | Behaviour |
+|----------|-----------|
+| Placement | New tmux window `worker-<slug>` on the given Casein session (via `scripts/spawn-agent-worker.sh`) |
+| Isolation | Fresh git worktree (`CASEIN_AGENT_FORCE_FRESH_WORKTREE=1`) — never the orchestrator's tree |
+| Visibility | `visible?: true` only when a live pane id is returned; dry_run never claims visible |
+| Hidden subagent | **Never** — spawn failure is a hard error, no silent fallback |
+| Receipt | Single payload: pane + window + worktree/branch when observable + optional `WorkHandles` id |
+| Fail closed | Missing args, bad runtime, missing script, non-zero spawn, empty pane id, timeout |
+
+**Still out of scope for this slice** (carried in `WorkerLaunch` moduledoc +
+contract tests so a respawned worker does not re-derive them from a dead brief):
+
+- durable task graph / path contracts / verifier adapters
+- cancel·replace lifecycle beyond handle attach
+- restricted orchestrator token profile rewrite
+- hidden-subagent fallback (spawn failure is hard error)
+- dry_run claiming `visible?` / `pane_id`
+
+Leave #384 open for those milestones.
 
 ## MCP resource: `casein://fleet/summary` (#859 / #879)
 
@@ -284,6 +323,8 @@ orchestration_list_workers paths owned by #384.
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
 - `Casein.Terminals.WorkerStatus` — MCP wire projection for one pane (M2)
 - `Casein.Terminals.OrchestrationListWorkers` — compact worker-list projection (M3)
+- `Casein.Terminals.WorkerLaunch` — visible spawn + structured receipt (M4-lite)
+- `Casein.Agents.TerminalTools.WorkerLaunch` — Jido / MCP `worker_launch`
 - `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859/#879)
 - `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy presence (#859)
 - `Casein.Terminals.AgentProgress` — composite progress + running_but_not_progressing (#879)

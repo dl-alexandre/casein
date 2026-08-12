@@ -44,6 +44,7 @@ defmodule Casein.Agents.TerminalTools do
     OrchestrationListWorkers,
     OrchestrationStatus,
     WorkerStatus,
+    WorkerLaunch,
     WorkHandleCreate,
     WorkHandleGet,
     WorkHandleList,
@@ -107,6 +108,7 @@ defmodule Casein.Agents.TerminalTools do
     WorkerStatus,
     OrchestrationListWorkers,
     RuntimeSignal,
+    WorkerLaunch,
     GateReport,
     McpSelfTest
   ]
@@ -211,6 +213,8 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate orchestration_list_workers(params), to: Session
   @doc false
   defdelegate runtime_signal(params \\ %{}), to: Session
+  @doc false
+  defdelegate worker_launch(params), to: Session
   @doc false
   defdelegate gate_report(params), to: Report
   @doc false
