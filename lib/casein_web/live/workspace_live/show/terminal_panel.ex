@@ -140,6 +140,27 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                       rename_window_id={@tmux_rename_window_id}
                     />
                   <% end %>
+                  <%!-- Third picker column: live/cached/empty capture of the
+                       focused row. Header is filled client-side from the
+                       terminal:picker_preview reply so an open picker is not
+                       patched. Source is named explicitly (#951). --%>
+                  <aside
+                    data-picker-preview-column
+                    class="flex w-80 max-w-[36vw] shrink-0 flex-col overflow-hidden border-r border-base-300/70 bg-base-100"
+                    aria-label="Picker preview"
+                  >
+                    <header
+                      data-picker-preview-header
+                      hidden
+                      class="shrink-0 border-b border-base-300/70 px-2.5 py-1.5"
+                    >
+                    </header>
+                    <pre
+                      data-picker-preview
+                      hidden
+                      class="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all px-2.5 py-1.5 font-mono text-density-label leading-snug text-base-content/80"
+                    ></pre>
+                  </aside>
                 </div>
               <% end %>
               <div

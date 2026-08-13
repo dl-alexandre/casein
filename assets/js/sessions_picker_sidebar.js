@@ -3,6 +3,12 @@
 
 import {copyPickerLink} from "./picker_link_copy"
 import {
+  bindPickerPreview,
+  resetPickerPreview,
+  schedulePickerPreview,
+  unbindPickerPreview,
+} from "./picker_preview.mjs"
+import {
   applyTreePickerFilter,
   persistSidebarSort,
   restoreSidebarSort,
@@ -21,9 +27,11 @@ export const SessionsPickerSidebar = {
     this.handleEvent("sidebar:focus_sessions", () => this.focusInitial())
     this.handleEvent("sidebar:persist_sort", ({col, mode}) => persistSidebarSort(col, mode))
     restoreSidebarSort(this, "sessions")
+    bindPickerPreview(this)
   },
 
   destroyed() {
+    unbindPickerPreview(this)
     this.el.removeEventListener("keydown", this._onKeydown)
     this.el.removeEventListener("click", this._onClick, true)
     this.el.removeEventListener("casein:sessions-sidebar:focus", this._onSidebarFocus)
@@ -187,6 +195,7 @@ export const SessionsPickerSidebar = {
           : items.length - 1
         : Math.min(Math.max(index + delta, 0), items.length - 1)
     items[next].focus()
+    schedulePickerPreview(this)
   },
 
   focusInitial() {
@@ -217,6 +226,7 @@ export const SessionsPickerSidebar = {
   },
 
   _closeSidebar() {
+    resetPickerPreview(this)
     this.pushEvent("sidebar:close", {})
     window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
   },
