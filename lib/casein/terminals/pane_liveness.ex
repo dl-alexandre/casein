@@ -20,7 +20,22 @@ defmodule Casein.Terminals.PaneLiveness do
 
   Enrichment is opt-in because a worktree walk is not free. Callers that render
   on every LiveView update should pass `liveness: false` and refresh on a slower
-  cadence.
+  cadence — `refresh_async/3` + `cached/1` below are that cadence.
+
+  ## Cockpit cadence (#916 follow-up)
+
+  The cockpit never observed liveness at all: `SessionBarVM` read a `:liveness`
+  key that only the MCP topology path (`include_liveness: true`) ever attached.
+  So `FleetBoard`'s liveness-based classification — the whole point of #917 —
+  was unreachable from the drawer, and every hook-less pane bucketed `:unknown`
+  with `agent_state_absent_liveness_not_observed`.
+
+  `refresh_async/3` observes a session's agent panes on a Task, caches the
+  result per session, and broadcasts so viewers rebuild. `cached/1` is a pure
+  ETS read for the render path. A pane that cannot be observed is stored as
+  `%{state: :unknown, reason: reason}` rather than omitted: an omission decays
+  into "not observed", which is strictly less information than the reason we
+  already hold.
 
   ## Transcript evidence
 
@@ -83,6 +98,175 @@ defmodule Casein.Terminals.PaneLiveness do
   end
 
   def enrich_topology(topology, _opts), do: topology
+
+  ## Cockpit cadence — cached async observation
+
+  @cache_table :casein_pane_liveness_cockpit_cache
+  @topic "pane_liveness"
+  @default_ttl_ms 20_000
+
+  @doc "Create the cockpit snapshot table (called from application start)."
+  @spec ensure_cockpit_cache!() :: :ok
+  def ensure_cockpit_cache! do
+    case :ets.whereis(@cache_table) do
+      :undefined ->
+        :ets.new(@cache_table, [:named_table, :public, :set, read_concurrency: true])
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  @doc "PubSub topic broadcast when a cockpit liveness refresh lands."
+  @spec topic() :: String.t()
+  def topic, do: @topic
+
+  @doc "Subscribe the caller to cockpit liveness refreshes."
+  @spec subscribe() :: :ok | {:error, term()}
+  def subscribe, do: Phoenix.PubSub.subscribe(Casein.PubSub, @topic)
+
+  @doc """
+  Pure ETS read of the last landed observation for a session.
+
+  Returns `%{pane_id => %{liveness: map, worktree_path: path | nil}}`, or an
+  empty map before any refresh has landed. Never walks a worktree — safe on the
+  render path. An empty map means *not yet observed*, which `FleetBoard` renders
+  as `:unknown` with a reason, never as quiet.
+  """
+  @spec cached(String.t() | nil) :: %{optional(String.t()) => map()}
+  def cached(session) when is_binary(session) and session != "" do
+    ensure_cockpit_cache!()
+
+    case :ets.lookup(@cache_table, {:snapshot, session}) do
+      [{_, snapshot}] -> snapshot
+      _ -> %{}
+    end
+  rescue
+    ArgumentError -> %{}
+  end
+
+  def cached(_session), do: %{}
+
+  @doc """
+  Observe `panes` for `session` in the background when the last look is stale.
+
+  Returns `:started`, `:fresh` (inside `:ttl_ms`, default 20s) or `:busy` (an
+  observation is already in flight). Safe to call on every topology assign — the
+  TTL and the single-flight lock are what keep worktree walks off a render loop.
+
+  Pass only the panes worth observing (agent panes); a plain shell's cwd is not
+  an agent worktree.
+  """
+  @spec refresh_async(String.t() | nil, [map()], keyword()) :: :started | :fresh | :busy | :skip
+  def refresh_async(session, panes, opts \\ [])
+
+  def refresh_async(session, panes, opts) when is_binary(session) and is_list(panes) do
+    ensure_cockpit_cache!()
+
+    cond do
+      panes == [] -> :skip
+      not Keyword.get(opts, :force, false) and cockpit_fresh?(session, opts) -> :fresh
+      not claim_cockpit_refresh(session, opts) -> :busy
+      true -> start_cockpit_refresh(session, panes, opts)
+    end
+  end
+
+  def refresh_async(_session, _panes, _opts), do: :skip
+
+  @doc """
+  Observe now and store — the body of `refresh_async/3`, exposed for tests.
+  """
+  @spec observe_panes(String.t(), [map()], keyword()) :: %{optional(String.t()) => map()}
+  def observe_panes(session, panes, opts \\ []) when is_binary(session) and is_list(panes) do
+    snapshot =
+      Enum.reduce(panes, %{}, fn pane, acc ->
+        case PaneState.map_get(pane, :id) do
+          id when is_binary(id) and id != "" -> Map.put(acc, id, observation_entry(pane, opts))
+          _ -> acc
+        end
+      end)
+
+    store_cockpit(session, snapshot)
+    snapshot
+  end
+
+  # An unobservable pane keeps its reason. Dropping it would decay into
+  # "not observed", which says less than what we already know.
+  defp observation_entry(pane, opts) do
+    case observe_pane(pane, opts) do
+      {:ok, worktree, liveness} ->
+        %{liveness: liveness, worktree_path: worktree}
+
+      {:error, reason} ->
+        %{
+          liveness: %{state: :unknown, reason: reason},
+          worktree_path: pane_worktree(pane)
+        }
+    end
+  end
+
+  defp cockpit_fresh?(session, opts) do
+    ttl = cockpit_ttl_ms(opts)
+
+    case :ets.lookup(@cache_table, {:observed_at, session}) do
+      [{_, mono}] when is_integer(mono) ->
+        System.monotonic_time(:millisecond) - mono < ttl
+
+      _ ->
+        false
+    end
+  end
+
+  defp claim_cockpit_refresh(session, opts) do
+    now = System.monotonic_time(:millisecond)
+
+    case :ets.lookup(@cache_table, {:refreshing, session}) do
+      [{_, until}] when is_integer(until) and until > now -> false
+      _ -> :ets.insert(@cache_table, {{:refreshing, session}, now + cockpit_ttl_ms(opts)})
+    end
+  end
+
+  defp start_cockpit_refresh(session, panes, opts) do
+    observe_opts = Keyword.take(opts, [:window_seconds, :git, :now])
+
+    case Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
+           try do
+             observe_panes(session, panes, observe_opts)
+
+             Phoenix.PubSub.broadcast(
+               Casein.PubSub,
+               @topic,
+               {:pane_liveness, :refreshed, session}
+             )
+           after
+             :ets.delete(@cache_table, {:refreshing, session})
+           end
+         end) do
+      {:ok, _pid} ->
+        :started
+
+      _ ->
+        :ets.delete(@cache_table, {:refreshing, session})
+        :busy
+    end
+  end
+
+  defp store_cockpit(session, snapshot) do
+    ensure_cockpit_cache!()
+    :ets.insert(@cache_table, {{:snapshot, session}, snapshot})
+    :ets.insert(@cache_table, {{:observed_at, session}, System.monotonic_time(:millisecond)})
+    :ok
+  rescue
+    ArgumentError -> :ok
+  end
+
+  defp cockpit_ttl_ms(opts) do
+    case Keyword.get(opts, :ttl_ms, @default_ttl_ms) do
+      n when is_integer(n) and n > 0 -> n
+      _ -> @default_ttl_ms
+    end
+  end
 
   @doc """
   Worktree paths in this topology that more than one pane is sitting in, mapped

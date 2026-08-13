@@ -272,7 +272,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
                     can't classify: {unknown_reason_label(row)}
                   </span>
                   <span
-                    :if={liveness_label(row)}
+                    :if={is_nil(unknown_reason_label(row)) and liveness_label(row)}
                     class={"shrink-0 " <> liveness_class(row)}
                   >
                     {liveness_label(row)}

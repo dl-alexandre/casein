@@ -1953,7 +1953,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       Map.get(window, :ready_no_task_for_seconds) || Map.get(window, "ready_no_task_for_seconds")
 
     liveness =
-      Map.get(window, :liveness) || Map.get(window, "liveness") || pane_liveness_map(agent_pane)
+      Map.get(window, :liveness) || Map.get(window, "liveness") ||
+        pane_liveness_map(agent_pane, opts)
 
     # When topology was not FleetChrome-enriched (cockpit path), project
     # readiness from the same pure rules over available quiet clocks.
@@ -1989,7 +1990,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       liveness: liveness,
       # Join key for PR tickets: the branch itself is resolved off the render
       # path (TicketFeed), so this stays a plain topology read.
-      worktree_path: worktree_path_for(agent_pane, window)
+      worktree_path: worktree_path_for(agent_pane, window, opts)
     }
   end
 
@@ -1997,10 +1998,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   # carry `:current_path` (the pane cwd) and nothing else. Falling back to it is
   # what makes the PR branch join work in the actual drawer — without it the
   # branch key is always nil here and every PR row silently degrades to capacity.
-  defp worktree_path_for(agent_pane, window) do
+  defp worktree_path_for(agent_pane, window, opts) do
     blank_to_nil(
       PaneState.map_get(agent_pane, :worktree_path) ||
         Map.get(window, :worktree_path) || Map.get(window, "worktree_path") ||
+        cached_pane_field(opts, agent_pane, :worktree_path) ||
         PaneState.map_get(agent_pane, :current_path)
     )
   end
@@ -2036,10 +2038,26 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp issue_title_from_bindings(_opts, _pane_id), do: nil
 
-  defp pane_liveness_map(nil), do: nil
+  defp pane_liveness_map(nil, _opts), do: nil
 
-  defp pane_liveness_map(pane) when is_map(pane) do
-    Map.get(pane, :liveness) || Map.get(pane, "liveness")
+  # The MCP topology path attaches `:liveness` to the pane itself; the cockpit
+  # never does, so fall back to the session's cached observation
+  # (`PaneLiveness.refresh_async/3`). Without this the drawer feeds FleetBoard
+  # no liveness at all and every hook-less pane buckets :unknown — #917's fix
+  # unreachable from the UI it was for.
+  defp pane_liveness_map(pane, opts) when is_map(pane) do
+    Map.get(pane, :liveness) || Map.get(pane, "liveness") ||
+      cached_pane_field(opts, pane, :liveness)
+  end
+
+  defp cached_pane_field(opts, pane, key) do
+    with cache when is_map(cache) <- Keyword.get(opts, :pane_liveness),
+         id when is_binary(id) <- PaneState.map_get(pane, :id),
+         %{} = entry <- Map.get(cache, id) do
+      Map.get(entry, key)
+    else
+      _ -> nil
+    end
   end
 
   defp agent_state_age_s(opts, pane_id) when is_binary(pane_id) do

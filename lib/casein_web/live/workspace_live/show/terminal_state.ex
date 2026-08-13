@@ -13,6 +13,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   alias Casein.Codex.SessionTitles
   alias Casein.Ops.GateQueue
   alias Casein.Terminals
+  alias Casein.Terminals.PaneLiveness
   alias Casein.Terminals.TicketFeed
   alias Casein.Terminals.WindowTrash
   alias Casein.Labels
@@ -322,6 +323,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         do: Casein.Terminals.IssueBinding.for_session(tmux_session),
         else: %{}
 
+    # Cache read only — the worktree walk runs on a task below, never here.
+    pane_liveness = PaneLiveness.cached(tmux_session)
+
     tabs =
       SessionBarVM.window_tabs(
         socket.assigns.tmux_windows,
@@ -332,7 +336,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         unseen_quiet_window_ids: socket.assigns[:unseen_quiet_window_ids],
         pane_labels: socket.assigns[:pane_labels] || %{},
         codex_titles: codex_titles,
-        issue_bindings: issue_bindings
+        issue_bindings: issue_bindings,
+        pane_liveness: pane_liveness
+      )
+
+    _ =
+      PaneLiveness.refresh_async(
+        tmux_session,
+        agent_panes(socket.assigns.tmux_windows, tabs)
       )
 
     # Ticket + claimed + gate: cache only — never gh/proc on the LiveView path
@@ -355,6 +366,23 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:fleet_board, fleet_board)
     |> Sidebar.assign_windows_sidebar_tree()
   end
+
+  # Only the panes the drawer actually classifies. A plain shell's cwd is not an
+  # agent worktree, and walking it would cost a scan to learn nothing.
+  defp agent_panes(windows, tabs) when is_list(windows) and is_list(tabs) do
+    wanted =
+      tabs
+      |> Enum.map(&Map.get(&1, :agent_pane_id))
+      |> Enum.filter(&is_binary/1)
+      |> MapSet.new()
+
+    for window <- windows,
+        pane <- Map.get(window, :pane_list) || [],
+        MapSet.member?(wanted, Map.get(pane, :id)),
+        do: pane
+  end
+
+  defp agent_panes(_windows, _tabs), do: []
 
   defp tab_worktrees(tabs) when is_list(tabs) do
     tabs

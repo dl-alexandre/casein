@@ -158,6 +158,29 @@ print their `unknown_reason` (`FleetBoard.unknown_reason_string/1`, the same
 vocabulary `orchestration_status` puts on the wire). Filing could-not-classify
 as spare capacity would collapse it into quiet.
 
+### Cockpit liveness cadence
+
+#917 classifies a hook-less pane from external liveness, but the cockpit never
+supplied any: `SessionBarVM` read a `:liveness` key that only the MCP path
+(`include_liveness: true`) attaches. The fix was unreachable from the drawer, so
+every hook-less worker rendered `unknown` with
+`agent_state_absent_liveness_not_observed`.
+
+`PaneLiveness.refresh_async/3` + `cached/1` are the slower cadence the module's
+own moduledoc always prescribed:
+
+| | |
+|---|---|
+| Render path | `cached/1`, a pure ETS read. Never walks a worktree. |
+| Observation | one Task per session, single-flighted, 20s TTL, broadcasting `{:pane_liveness, :refreshed, session}` |
+| Population | only panes the drawer classifies — a plain shell's cwd is not an agent worktree |
+| Unobservable pane | stored as `%{state: :unknown, reason: reason}`, **not dropped** — an omission decays into "not observed", which says less than the reason already held |
+
+`AgentLiveness.observe/2` is a pruned worktree walk behind a 10s cache, which is
+why this cannot sit on a LiveView render. The cached entry also carries the
+worktree **toplevel**, so two panes in sibling subdirectories of one worktree
+share a branch-join key.
+
 * **Sort** — one continuous list by last ticket update. Not three status
   columns; triage survives on the needs-you badge, not on lanes.
 * **Capacity** — a pane with no ticket and no human block groups under a divider
@@ -476,6 +499,7 @@ orchestration_list_workers paths owned by #384.
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
 - `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans + gate + liveness + blocked_on + ticket join)
 - `Casein.Terminals.TicketFeed` — open issues + PRs, ETS-cached, async `gh`, branch index
+- `Casein.Terminals.PaneLiveness` — pane→worktree join, plus the cockpit's cached async liveness cadence
 - `Casein.Terminals.OrphanedClaims` — claimed-minus-bound lease projection
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
 - `Casein.Terminals.WorkerStatus` — MCP wire projection for one pane (M2)
