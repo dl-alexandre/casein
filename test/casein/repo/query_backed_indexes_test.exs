@@ -138,7 +138,7 @@ defmodule Casein.Repo.QueryBackedIndexesTest do
   defp explain_uses?(sql, params, index_name) do
     Repo.query!("SET LOCAL enable_seqscan = off")
     {:ok, %{rows: rows}} = Repo.query("EXPLAIN " <> sql, params)
-    plan = rows |> Enum.map(&hd/1) |> Enum.join("\n")
+    plan = Enum.map_join(rows, "\n", &hd/1)
     String.contains?(plan, index_name)
   end
 end
