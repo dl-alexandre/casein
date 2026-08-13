@@ -29,7 +29,16 @@ function Get-SourceRevision {
         $changes = & $git.Source -C $root status --porcelain
         if ($LASTEXITCODE -ne 0) { throw 'Could not determine whether the source tree is clean' }
         if ($changes) {
-            throw 'Refusing to package a dirty source tree. Commit the release changes or pass -AllowDirty for an explicitly non-shareable local build.'
+            # Name the paths. On a CI host nobody can open a shell on, a bare
+            # refusal is unactionable: the packaging step runs after dependency
+            # fetch and preview-runtime preparation, either of which can leave a
+            # file behind, and without the list the next move is a guess.
+            $detail = (@($changes) | ForEach-Object { "  $_" }) -join "`n"
+            throw (
+                "Refusing to package a dirty source tree. Commit the release changes " +
+                "or pass -AllowDirty for an explicitly non-shareable local build.`n" +
+                "Unexpected working-tree changes:`n$detail"
+            )
         }
     }
 
