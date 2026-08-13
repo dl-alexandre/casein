@@ -14,6 +14,7 @@ defmodule CaseinWeb.API.WorkspaceAPI do
 
   alias Casein.Files.PathSafety
   alias Casein.Terminals
+  alias Casein.Terminals.LayoutOps
   alias Casein.Terminals.WindowTrash
   alias Casein.Workspaces
 
@@ -111,36 +112,20 @@ defmodule CaseinWeb.API.WorkspaceAPI do
     end
   end
 
-  def topology_payload(workspace_id, session) do
-    topology = Terminals.tmux_topology_snapshot(session)
-
-    # Windows closed through the undoable path are still alive in tmux during
-    # their grace period, but they are gone as far as callers are concerned —
-    # including the response to the DELETE that just closed one. Filtering here
-    # keeps every API topology agreeing with what the viewer shows.
-    windows = WindowTrash.reject_pending(session, topology.windows)
-    visible_ids = MapSet.new(windows, & &1.id)
-
-    %{
-      workspace_id: workspace_id,
-      session: topology.session,
-      active_window_id: topology.active_window_id,
-      active_pane_id: topology.active_pane_id,
-      version: topology.version,
-      windows: windows,
-      panes: Enum.filter(topology.panes || [], &MapSet.member?(visible_ids, &1.window_id))
-    }
-  end
+  # Windows closed through the undoable path are still alive in tmux during
+  # their grace period, but they are gone as far as callers are concerned —
+  # including the response to the DELETE that just closed one. The filtering
+  # lives in Casein.Terminals.LayoutOps so MCP callers plan against exactly the
+  # topology the API and the viewer report.
+  defdelegate topology_payload(workspace_id, session), to: LayoutOps, as: :topology
 
   @doc """
   Re-register and refresh the topology after a mutation, then snapshot it.
   Every mutating endpoint reports the post-mutation topology this way.
   """
-  def refreshed_topology_payload(workspace_id, session) do
-    _ = Terminals.configure_tmux_topology(session, workspace_id: workspace_id)
-    _ = Terminals.refresh_tmux_topology(session)
-    topology_payload(workspace_id, session)
-  end
+  defdelegate refreshed_topology_payload(workspace_id, session),
+    to: LayoutOps,
+    as: :refreshed_topology
 
   def optional_topology_payload(conn, workspace_id) do
     case param(conn, "session") || param(conn, "tmux_session") do
@@ -205,13 +190,7 @@ defmodule CaseinWeb.API.WorkspaceAPI do
     end
   end
 
-  def workspace_root(workspace_id) do
-    case Workspaces.get_record(workspace_id) do
-      {:ok, %{host_path: root}} when is_binary(root) -> {:ok, root}
-      {:ok, _} -> {:error, :workspace_root_unavailable}
-      :error -> {:error, :workspace_root_unavailable}
-    end
-  end
+  defdelegate workspace_root(workspace_id), to: LayoutOps
 
   def workspace_root_for_export(workspace_id) do
     case workspace_root(workspace_id) do

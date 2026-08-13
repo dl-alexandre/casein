@@ -15,6 +15,7 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
   alias Casein.Audit
   alias Casein.Export
   alias Casein.Terminals
+  alias Casein.Terminals.LayoutOps
 
   # Root every action in a fresh correlation context so the tmux.template_* audit
   # events these mutations emit are traced (Casein.Signals.EntryContext is the
@@ -49,17 +50,12 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
   def export_template(conn, %{"id" => id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn),
-         topology <- Terminals.tmux_topology_snapshot(session),
-         {:ok, template} <-
-           Terminals.export_session_template(topology,
-             workspace_root: workspace_root_for_export(id),
-             name: param(conn, "name")
-           ) do
+         {:ok, snapshot} <- snapshot_layout(conn, id, session, false) do
       json(conn, %{
         workspace_id: id,
         session: session,
-        template: template,
-        yaml: Terminals.session_template_to_yaml(template)
+        template: snapshot.template,
+        yaml: snapshot.yaml
       })
     else
       :error -> not_found(conn)
@@ -71,18 +67,32 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
   def save_template(conn, %{"id" => id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn),
-         topology <- Terminals.tmux_topology_snapshot(session),
-         {:ok, template} <-
-           Terminals.export_session_template(topology,
-             workspace_root: workspace_root_for_export(id),
-             name: param(conn, "name")
-           ) do
-      save_template_response(conn, id, session, topology, template)
+         {:ok, snapshot} <- snapshot_layout(conn, id, session, not dry_run?(conn)) do
+      save_template_response(conn, id, session, snapshot)
     else
-      :error -> not_found(conn)
-      {:error, :empty_topology} -> rejected(conn, :unprocessable_entity, "empty_topology")
-      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
+      :error ->
+        not_found(conn)
+
+      {:error, :empty_topology} ->
+        rejected(conn, :unprocessable_entity, "empty_topology")
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        rejected(conn, :unprocessable_entity, changeset_error(changeset))
+
+      {:error, reason} ->
+        rejected(conn, :unprocessable_entity, reason)
     end
+  end
+
+  # One snapshot path shared with the `terminal_layout_snapshot` MCP tool.
+  defp snapshot_layout(conn, workspace_id, session, save?) do
+    LayoutOps.snapshot(workspace_id, session,
+      workspace_root: workspace_root_for_export(workspace_id),
+      name: param(conn, "name"),
+      description: param(conn, "description"),
+      tags: Map.get(conn.params, "tags"),
+      save: save?
+    )
   end
 
   def apply_template(conn, %{"id" => id, "template_id" => template_id}) do
@@ -162,14 +172,14 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
     cond do
       dry_run?(conn) and reconcile?(conn) ->
         case dry_run_template_diff(workspace_id, session, template_id) do
-          {:ok, diff, topology} ->
+          {:ok, plan} ->
             json(conn, %{
               action: "template_applied",
               dry_run: true,
               reconcile: true,
-              result: template_diff_result(diff),
-              diff: diff,
-              topology: topology
+              result: plan.result,
+              diff: plan.diff,
+              topology: plan.topology
             })
 
           {:error, :template_not_found} ->
@@ -183,7 +193,7 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
         with {:ok, result} <- execute_template_reconcile(workspace_id, session, template_id) do
           json(
             conn,
-            template_reconcile_mutation_payload(conn, workspace_id, session, template_id, result)
+            template_reconcile_mutation_payload(result)
           )
         else
           {:error, :template_not_found} ->
@@ -217,7 +227,7 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
         with {:ok, root} <- workspace_root(workspace_id),
              {:ok, result} <-
                execute_template(workspace_id, session, template_id, root) do
-          json(conn, template_mutation_payload(conn, workspace_id, session, template_id, result))
+          json(conn, template_mutation_payload(workspace_id, session, template_id, result))
         else
           {:error, :template_not_found} ->
             rejected(conn, :not_found, "template_not_found")
@@ -231,37 +241,24 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
     end
   end
 
+  # Both reconcile paths run through Casein.Terminals.LayoutOps on the
+  # `:operator` lane — the same context the `terminal_layout_apply` MCP tool
+  # calls on its stricter `:agent` lane, so the two surfaces cannot drift.
   defp dry_run_template_diff(workspace_id, session, template_id) do
-    case Terminals.get_session_template(template_id) do
-      {:ok, _built_in} ->
-        {:error, :unsupported_reconcile}
-
-      {:error, :template_not_found} ->
-        topology = topology_payload(workspace_id, session)
-
-        case Terminals.diff_saved_template(workspace_id, template_id, topology,
-               workspace_root: workspace_root_for_export(workspace_id)
-             ) do
-          {:ok, diff} -> {:ok, diff, topology}
-          {:error, _reason} = error -> error
-        end
-    end
+    LayoutOps.plan(workspace_id, session, template_id,
+      workspace_root: workspace_root_for_export(workspace_id)
+    )
   end
 
   defp execute_template_reconcile(workspace_id, session, template_id) do
-    case Terminals.get_session_template(template_id) do
-      {:ok, _built_in} ->
-        {:error, :unsupported_reconcile}
-
-      {:error, :template_not_found} ->
-        with {:ok, root} <- workspace_root(workspace_id) do
-          topology = topology_payload(workspace_id, session)
-
-          Terminals.execute_saved_template_reconcile(workspace_id, session, template_id, topology,
-            tmux: tmux_adapter(),
-            workspace_root: root
-          )
-        end
+    # Reconcilability is judged before the workspace root so a built-in id still
+    # reports unsupported_reconcile in a workspace with no host path.
+    with :ok <- LayoutOps.reconcilable(template_id),
+         {:ok, root} <- workspace_root(workspace_id) do
+      LayoutOps.apply_plan(workspace_id, session, template_id,
+        tmux: tmux_adapter(),
+        workspace_root: root
+      )
     end
   end
 
@@ -296,9 +293,9 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
   # ---------------------------------------------------------------------------
   # Payloads
 
-  defp template_mutation_payload(conn, workspace_id, session, template_id, result) do
+  defp template_mutation_payload(workspace_id, session, template_id, result) do
     topology = refreshed_topology_payload(workspace_id, session)
-    emit_tmux_template_audit(conn, workspace_id, session, template_id, result, topology)
+    LayoutOps.audit_applied(workspace_id, session, template_id, result, topology)
 
     %{
       action: "template_applied",
@@ -308,69 +305,48 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
     }
   end
 
-  defp template_reconcile_mutation_payload(conn, workspace_id, session, template_id, result) do
-    topology = refreshed_topology_payload(workspace_id, session)
-    execution = Map.put(result.execution, :plan_executed, true)
-    emit_tmux_template_audit(conn, workspace_id, session, template_id, execution, topology)
-
+  # Topology refresh and the tmux.template_applied audit both happen inside
+  # LayoutOps.apply_plan/4, so every surface that applies a layout emits the
+  # same event with the same post-mutation topology.
+  defp template_reconcile_mutation_payload(result) do
     %{
       action: "template_applied",
       dry_run: false,
       reconcile: true,
-      result: execution,
+      result: result.execution,
       diff: result.diff,
-      summary: result.diff.summary,
-      topology: topology
+      summary: result.summary,
+      topology: result.topology
     }
   end
 
-  defp save_template_response(conn, workspace_id, session, topology, template) do
-    yaml = Terminals.session_template_to_yaml(template)
-
+  defp save_template_response(conn, workspace_id, session, snapshot) do
     if dry_run?(conn) do
       json(conn, %{
         action: "template_exported",
         dry_run: true,
         workspace_id: workspace_id,
         session: session,
-        template: template,
-        yaml: yaml,
-        topology: topology_payload(workspace_id, session)
+        template: snapshot.template,
+        yaml: snapshot.yaml,
+        topology: snapshot.topology
       })
     else
-      case Terminals.save_template(%{
-             workspace_id: workspace_id,
-             name: template["name"],
-             description: param(conn, "description"),
-             body: template,
-             source_session: session,
-             schema_version: template["version"] || 2,
-             tags: Map.get(conn.params, "tags")
-           }) do
-        {:ok, saved} ->
-          saved_payload = saved_template_detail_payload(saved)
-          emit_tmux_template_exported_audit(conn, workspace_id, session, saved, topology)
+      saved_payload = saved_template_detail_payload(snapshot.saved)
 
-          conn
-          |> put_status(:created)
-          |> json(%{
-            action: "template_exported",
-            dry_run: false,
-            workspace_id: workspace_id,
-            session: session,
-            result: saved_payload,
-            saved_template: saved_payload,
-            template: template,
-            yaml: yaml,
-            topology: topology_payload(workspace_id, session)
-          })
-
-        {:error, %Ecto.Changeset{} = changeset} ->
-          rejected(conn, :unprocessable_entity, changeset_error(changeset))
-
-        {:error, reason} ->
-          rejected(conn, :unprocessable_entity, reason)
-      end
+      conn
+      |> put_status(:created)
+      |> json(%{
+        action: "template_exported",
+        dry_run: false,
+        workspace_id: workspace_id,
+        session: session,
+        result: saved_payload,
+        saved_template: saved_payload,
+        template: snapshot.template,
+        yaml: snapshot.yaml,
+        topology: snapshot.topology
+      })
     end
   end
 
@@ -516,28 +492,6 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
     |> Enum.uniq()
   end
 
-  defp template_source(%{source: source}) when is_binary(source), do: source
-  defp template_source(%{"source" => source}) when is_binary(source), do: source
-  defp template_source(_template), do: "built_in"
-
-  defp template_schema_version(%{schema_version: version}) when is_integer(version), do: version
-
-  defp template_schema_version(%{"schema_version" => version}) when is_integer(version),
-    do: version
-
-  defp template_schema_version(_template), do: 1
-
-  defp template_diff_result(diff) do
-    %{
-      template: diff.template,
-      strategy: diff.strategy,
-      step_count: length(diff.changes),
-      summary: diff.summary,
-      estimated_disruption: diff.estimated_disruption,
-      changes: diff.changes
-    }
-  end
-
   defp template_step_error(conn, reason, step, partial) do
     conn
     |> put_status(:unprocessable_entity)
@@ -551,52 +505,6 @@ defmodule CaseinWeb.API.WorkspaceTemplateController do
 
   # ---------------------------------------------------------------------------
   # Audit
-
-  defp emit_tmux_template_audit(_conn, workspace_id, session, template_id, result, topology) do
-    template = Map.get(result, :template, %{})
-
-    Audit.emit!(%{
-      action: "tmux.template_applied",
-      workspace_id: workspace_id,
-      actor_id: "api",
-      target_type: "tmux_template",
-      target_ref: template_id,
-      metadata: %{
-        session: session,
-        template_id: template_id,
-        template_source: template_source(template),
-        schema_version: template_schema_version(template),
-        step_count: result.step_count,
-        refs: result.refs,
-        reconciliation: Map.get(result, :reconciliation),
-        estimated_disruption: Map.get(result, :estimated_disruption),
-        active_window_id: topology.active_window_id,
-        active_pane_id: topology.active_pane_id,
-        topology_version: topology.version,
-        dry_run: false
-      }
-    })
-  end
-
-  defp emit_tmux_template_exported_audit(_conn, workspace_id, session, saved, topology) do
-    Audit.emit!(%{
-      action: "tmux.template_exported",
-      workspace_id: workspace_id,
-      actor_id: "api",
-      target_type: "tmux_template",
-      target_ref: saved.id,
-      metadata: %{
-        session: session,
-        template_id: saved.id,
-        template_name: saved.name,
-        schema_version: saved.schema_version,
-        active_window_id: topology.active_window_id,
-        active_pane_id: topology.active_pane_id,
-        topology_version: topology.version,
-        dry_run: false
-      }
-    })
-  end
 
   defp emit_tmux_template_deleted_audit(workspace_id, saved) do
     Audit.emit!(%{
