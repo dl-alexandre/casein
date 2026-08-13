@@ -297,6 +297,9 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "CASEIN_GIT_REVISION = $sourceRevision"
     assert script =~ "Read-DesktopReleaseMetadata"
     assert script =~ "Refusing to package a dirty source tree"
+    # The refusal runs on a CI host nobody can open a shell on, after dependency
+    # fetch and preview-runtime preparation. Without the paths it is unactionable.
+    assert script =~ "Unexpected working-tree changes"
     assert script =~ "New-DesktopArchive"
     assert script =~ "Copy-DesktopTree"
     assert script =~ "robocopy.exe"
