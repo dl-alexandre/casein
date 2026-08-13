@@ -725,21 +725,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   # instead; otherwise delegate to the same path the "preview:open" UI uses.
   def handle_event("terminal:open_web_link_preview", %{"url" => url}, socket)
       when is_binary(url) do
-    cond do
-      not Previews.http_url?(url) ->
-        {:noreply, socket}
-
-      embeddability_checker().frame_blocked_url?(url) ->
-        {:noreply,
-         socket
-         |> put_flash(
-           :info,
-           "That site blocks embedding — opened it in a new browser tab instead."
-         )
-         |> push_event("casein:open_tab", %{url: url})}
-
-      true ->
-        PreviewPaneEvents.handle_event("preview:open", %{"url" => url}, socket)
+    if Previews.http_url?(url) do
+      # HTTP embeddability probe runs in handle_continue so this event can
+      # reply first. Do not call Req here — worst case was a frozen viewer
+      # (~1.5s timeout, previously unbounded ~6s) (#923).
+      {:noreply, socket, {:continue, {:open_web_link_preview, url}}}
+    else
+      {:noreply, socket}
     end
   end
 
@@ -1387,6 +1379,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not move tmux window: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_continue({:open_web_link_preview, url}, socket) when is_binary(url) do
+    if embeddability_checker().frame_blocked_url?(url) do
+      {:noreply,
+       socket
+       |> put_flash(
+         :info,
+         "That site blocks embedding — opened it in a new browser tab instead."
+       )
+       |> push_event("casein:open_tab", %{url: url})}
+    else
+      PreviewPaneEvents.handle_event("preview:open", %{"url" => url}, socket)
     end
   end
 

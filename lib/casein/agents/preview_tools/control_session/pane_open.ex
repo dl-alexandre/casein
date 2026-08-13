@@ -754,22 +754,15 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
     end
   end
 
+  # #923: do not sleep-poll here. The old 40×50ms loop froze the caller
+  # for up to 2s. Register immediately if the async registrar has not
+  # landed — same fallback the timeout path already used.
   defp await_pane_registration(pane_id, workspace, url, opts) do
-    Enum.reduce_while(1..40, {:error, :registration_timeout}, fn _attempt, _acc ->
-      case PreviewPanes.get_by_pane(pane_id) do
-        %{} = registration ->
-          {:halt, {:ok, registration}}
-
-        nil ->
-          Process.sleep(50)
-          {:cont, {:error, :registration_timeout}}
-      end
-    end)
-    |> case do
-      {:ok, registration} ->
+    case PreviewPanes.get_by_pane(pane_id) do
+      %{} = registration ->
         {:ok, registration}
 
-      {:error, :registration_timeout} ->
+      nil ->
         tmux_session =
           Keyword.get(opts, :tmux_session) || SessionResolve.workspace_tmux_session(workspace)
 

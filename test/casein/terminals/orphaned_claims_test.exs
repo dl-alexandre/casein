@@ -60,6 +60,19 @@ defmodule Casein.Terminals.OrphanedClaimsTest do
     end
   end
 
+  describe "cached_list/1 (#923)" do
+    test "miss is unknown unscanned and does not fork gh" do
+      {us, result} =
+        :timer.tc(fn ->
+          OrphanedClaims.cached_list(repo: "no/such-#{System.unique_integer([:positive])}")
+        end)
+
+      assert result == {:error, :unscanned}
+      # Uncached `gh issue list` measured ~593ms. A miss must not fork.
+      assert us < 20_000
+    end
+  end
+
   describe "observe/1" do
     test "injectable list_claimed port" do
       snap =

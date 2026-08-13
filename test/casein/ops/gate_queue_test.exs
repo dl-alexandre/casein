@@ -94,6 +94,23 @@ defmodule Casein.Ops.GateQueueTest do
     end
   end
 
+  describe "cached/1 (#923)" do
+    test "miss returns unknown without walking /proc" do
+      {us, snap} =
+        :timer.tc(fn ->
+          GateQueue.cached(
+            lock_path: "/no/such/gate-#{System.unique_integer([:positive])}.lock",
+            proc_root: "/no/such/proc"
+          )
+        end)
+
+      assert snap.lock_state == :unknown
+      refute GateQueue.busy?(snap)
+      # Uncached observe on this host measured 222–256ms. A miss must not scan.
+      assert us < 20_000
+    end
+  end
+
   describe "observe/1 against a fixture proc tree" do
     setup do
       root = Path.join(System.tmp_dir!(), "gate-queue-test-#{System.unique_integer([:positive])}")

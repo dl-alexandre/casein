@@ -11,7 +11,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   alias Casein.Attention.Acknowledgement
   alias Casein.Attention.Delivery
   alias Casein.Codex.SessionTitles
+  alias Casein.Ops.GateQueue
   alias Casein.Terminals
+  alias Casein.Terminals.OrphanedClaims
   alias Casein.Terminals.WindowTrash
   alias Casein.Labels
   alias CaseinWeb.WorkspaceLive.Show
@@ -333,10 +335,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         issue_bindings: issue_bindings
       )
 
+    # #923: never walk /proc or fork `gh` on this LiveView path.
+    # BEFORE: GateQueue.observe uncached 222–256ms; gh issue list 593ms.
+    # AFTER: ETS peek (measured 7–18µs) + background refresh on miss.
     fleet_board =
       Casein.Terminals.FleetBoard.from_window_tabs(
         tabs,
-        list_claimed: &Casein.Terminals.OrphanedClaims.list_claimed/0,
+        list_claimed: &OrphanedClaims.cached_list/0,
+        gate_queue: GateQueue.cached(),
         tmux_session: tmux_session
       )
 

@@ -189,6 +189,25 @@ defmodule Casein.Terminals.OrphanedClaims do
   end
 
   @doc """
+  Last successful `gh` list without forking.
+
+  LiveView event/info paths must use this. A miss returns `{:error, :unscanned}`
+  (unknown, never empty-ok) and kicks a background refresh (#923).
+  Measured uncached `gh issue list`: ~593ms.
+  """
+  @spec cached_list(keyword()) :: {:ok, [claim()]} | {:error, atom()}
+  def cached_list(opts \\ []) do
+    case cache_lookup(cache_key(opts)) do
+      {:ok, claims} ->
+        {:ok, claims}
+
+      :miss ->
+        maybe_refresh(cache_key(opts), fn -> list_claimed(Keyword.put(opts, :cache, false)) end)
+        {:error, :unscanned}
+    end
+  end
+
+  @doc """
   List open `queue/claimed` issues via `gh` (host-side port).
 
   Returns `{:ok, [claim]}` or `{:error, reason}`. Never returns an empty ok on
@@ -479,6 +498,23 @@ defmodule Casein.Terminals.OrphanedClaims do
       Keyword.get(opts, :repo, @default_repo),
       Keyword.get(opts, :workspace_label, @default_workspace_label)
     }
+  end
+
+  defp maybe_refresh(key, fun) when is_function(fun, 0) do
+    ensure_cache_table()
+    now = System.monotonic_time(:millisecond)
+
+    case :ets.lookup(@cache_table, {:refreshing, key}) do
+      [{_, until}] when is_integer(until) and until > now ->
+        :ok
+
+      _ ->
+        :ets.insert(@cache_table, {{:refreshing, key}, now + 1_000})
+        _ = Task.start(fun)
+        :ok
+    end
+  rescue
+    ArgumentError -> :ok
   end
 
   defp cache_lookup(key) do

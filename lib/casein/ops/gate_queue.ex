@@ -55,6 +55,34 @@ defmodule Casein.Ops.GateQueue do
   def default_lock_path, do: @default_lock_path
 
   @doc """
+  Last successful observe without walking `/proc`.
+
+  LiveView `handle_info` / render paths must use this. A miss returns
+  `unknown/0` and kicks a background refresh — never sequential-scans
+  `/proc` on the caller (#923). Measured uncached observe: 222–256ms.
+  """
+  @spec cached(keyword()) :: snapshot() | map()
+  def cached(opts \\ []) do
+    lock_path = Keyword.get(opts, :lock_path, @default_lock_path)
+    now = Keyword.get(opts, :now) || DateTime.utc_now()
+    cached_at(lock_path, now, opts)
+  end
+
+  defp cached_at(lock_path, now, opts) when is_binary(lock_path) and lock_path != "" do
+    case cache_lookup(lock_path) do
+      {:ok, snap} -> refresh_held_for(snap, now)
+      :miss -> cached_miss(lock_path, opts)
+    end
+  end
+
+  defp cached_at(_lock_path, _now, _opts), do: unknown()
+
+  defp cached_miss(lock_path, opts) do
+    maybe_refresh({:gate, lock_path}, fn -> observe(Keyword.put(opts, :cache, false)) end)
+    unknown()
+  end
+
+  @doc """
   Observe who holds (and who waits on) the host gate lock.
 
   Options:
@@ -809,6 +837,23 @@ defmodule Casein.Ops.GateQueue do
   end
 
   defp refresh_holder(h, _), do: h
+
+  defp maybe_refresh(key, fun) when is_function(fun, 0) do
+    ensure_cache_table()
+    now = System.monotonic_time(:millisecond)
+
+    case :ets.lookup(@cache_table, {:refreshing, key}) do
+      [{_, until}] when is_integer(until) and until > now ->
+        :ok
+
+      _ ->
+        :ets.insert(@cache_table, {{:refreshing, key}, now + 1_000})
+        _ = Task.start(fun)
+        :ok
+    end
+  rescue
+    ArgumentError -> :ok
+  end
 
   defp cache_lookup(lock_path) do
     ensure_cache_table()
