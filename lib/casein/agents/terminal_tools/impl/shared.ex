@@ -57,6 +57,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   defp atom_key("workspace_id"), do: :workspace_id
   defp atom_key("session"), do: :session
   defp atom_key("pane"), do: :pane
+  defp atom_key("window_id"), do: :window_id
+  defp atom_key("handle_id"), do: :handle_id
   defp atom_key("freeze"), do: :freeze
   defp atom_key(_), do: nil
 

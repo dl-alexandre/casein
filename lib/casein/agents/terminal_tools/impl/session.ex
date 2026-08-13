@@ -16,6 +16,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.OrphanedClaims
   alias Casein.Terminals.PaneLiveness
   alias Casein.Terminals.TmuxTopology
+  alias Casein.Terminals.WorkerCancel
   alias Casein.Terminals.WorkerStatus
 
   import Casein.Agents.TerminalTools.Impl.Shared
@@ -512,6 +513,34 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
       ]
 
       Casein.Terminals.WorkerLaunch.launch(opts)
+    end
+  end
+
+  @doc """
+  Cancel a visible worker window and return a structured receipt (M4.1 #384).
+
+  Requires workspace_id, session, pane. Fail closed on missing args, non-worker
+  targets, the caller's own window, last window, or kill failure. Optional
+  dry_run classifies without killing.
+  """
+  @spec worker_cancel(map()) :: {:ok, map()} | {:error, term()}
+  def worker_cancel(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_arg(params),
+         {:ok, pane} <- string_arg(params, "pane"),
+         {:ok, topology} <- topology(params) do
+      opts = [
+        workspace_id: workspace_id,
+        session: session,
+        pane: pane,
+        window_id: string_param(params, "window_id"),
+        handle_id: string_param(params, "handle_id"),
+        caller_pane: string_param(params, "caller_pane"),
+        dry_run: truthy?(Map.get(params, "dry_run") || Map.get(params, :dry_run)),
+        topology: topology
+      ]
+
+      WorkerCancel.cancel(opts)
     end
   end
 

@@ -258,10 +258,45 @@ worker_launch {
 contract tests so a respawned worker does not re-derive them from a dead brief):
 
 - durable task graph / path contracts / verifier adapters
-- cancel·replace lifecycle beyond handle attach
+- replace lifecycle / `worker_send_contract`
 - restricted orchestrator token profile rewrite
 - hidden-subagent fallback (spawn failure is hard error)
 - dry_run claiming `visible?` / `pane_id`
+
+Teardown is `worker_cancel` (M4.1 below). Leave #384 open for the remaining milestones.
+
+## MCP: `worker_cancel` (M4.1 visible teardown + receipt)
+
+**One call** kills a Casein-managed worker window and returns a structured
+receipt — inverse of `worker_launch`. Orchestrators do not need raw
+`kill-window` / topology scrapes to retire a worker they just spawned.
+
+```text
+worker_cancel {
+  workspace_id, session, pane,
+  window_id?, handle_id?, dry_run?
+}
+→ ok, cancelled?, visible?,
+  pane_id, window_id, window_name?, handle_id?, note
+```
+
+| Property | Behaviour |
+|----------|-----------|
+| Target | Existing tmux window of the given pane (via `Backend.kill_window`) |
+| Address | **Window id `@N` only** — never a window index (tmux renumbers) |
+| Visibility | `cancelled?: true` / `visible?: false` only after kill returns `:ok` |
+| Hide-while-alive | **Never** — WindowTrash is not cancel |
+| dry_run | Classifies without killing; `cancelled?: false`, `visible?: true` |
+| Fail closed | Missing args, pane not found, not a worker, manager/operator/unlabeled, caller's own window, last window, unknown window count, invalid/`@N`-missing window id, kill failure |
+
+**Still out of scope for this slice** (carried in `WorkerCancel` moduledoc +
+contract tests so a respawned worker does not re-derive them from a dead brief):
+
+- durable task graph / path contracts / verifier adapters
+- `worker_replace` / `worker_send_contract`
+- restricted orchestrator token profile rewrite
+- dry_run claiming `cancelled?` / `visible?: false`
+- hide-while-alive (WindowTrash) as a "soft" cancel
 
 Leave #384 open for those milestones.
 
@@ -325,6 +360,8 @@ orchestration_list_workers paths owned by #384.
 - `Casein.Terminals.OrchestrationListWorkers` — compact worker-list projection (M3)
 - `Casein.Terminals.WorkerLaunch` — visible spawn + structured receipt (M4-lite)
 - `Casein.Agents.TerminalTools.WorkerLaunch` — Jido / MCP `worker_launch`
+- `Casein.Terminals.WorkerCancel` — visible teardown + structured receipt (M4.1)
+- `Casein.Agents.TerminalTools.WorkerCancel` — Jido / MCP `worker_cancel`
 - `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859/#879)
 - `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy presence (#859)
 - `Casein.Terminals.AgentProgress` — composite progress + running_but_not_progressing (#879)
