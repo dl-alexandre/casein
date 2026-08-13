@@ -18,6 +18,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.TmuxTopology
   alias Casein.Terminals.WorkerCancel
   alias Casein.Terminals.WorkerStatus
+  alias Casein.Terminals.WorktreeStatus
 
   import Casein.Agents.TerminalTools.Impl.Shared
 
@@ -419,6 +420,35 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         end)
 
       {:ok, WorkerStatus.project(topology, opts)}
+    end
+  end
+
+  @doc """
+  Read-only structured Git inspection for one worker pane (M4.2 #384).
+
+  Requires workspace_id, session, and pane. Same topology path as
+  `worker_status/1`, then joins `Git.Inspector` via `WorktreeStatus.project/2`.
+  Optional `window_id` disambiguates. No mutations.
+  """
+  @spec worktree_status(map()) :: {:ok, map()} | {:error, term()}
+  def worktree_status(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_arg(params),
+         {:ok, pane} <- string_arg(params, "pane"),
+         {:ok, topology} <- topology(params) do
+      window_id = string_param(params, "window_id")
+
+      opts =
+        [
+          workspace_id: workspace_id,
+          session: session,
+          pane: pane
+        ]
+        |> then(fn opts ->
+          if is_binary(window_id), do: Keyword.put(opts, :window_id, window_id), else: opts
+        end)
+
+      {:ok, WorktreeStatus.project(topology, opts)}
     end
   end
 

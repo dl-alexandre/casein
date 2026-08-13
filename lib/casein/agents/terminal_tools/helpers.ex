@@ -951,6 +951,42 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("worktree_status") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_metadata, :terminal_read],
+      recovery_hints: [
+        "Requires workspace_id, session, pane — fail closed when any is missing.",
+        "Joins WorkerStatus identity + Git.Inspector (same inspector as casein://fleet/summary).",
+        "git.inspect_state unknown never means clean or not-ahead; unknown_reason is required.",
+        "ahead nil (no upstream) omits commits_not_on_origin? — not a false-unpushed.",
+        "M4.2 inspection — not changed_paths / worker_replace; durable graph still out of scope."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_default",
+            "pane" => "%42"
+          },
+          structured_content: %{
+            "found?" => true,
+            "pane_id" => "%42",
+            "worktree_path" => "/tmp/casein-agent-worktrees/wt-demo",
+            "git" => %{
+              "inspect_state" => "ok",
+              "branch" => "agent/opencode/demo",
+              "head_sha" => "abc1234",
+              "ahead" => 2,
+              "commits_not_on_origin?" => true
+            }
+          }
+        }
+      ]
+    }
+  end
+
   def metadata("terminal_wait_agent_state") do
     %{
       mutation?: false,
