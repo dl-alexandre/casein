@@ -156,6 +156,71 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanelTest do
       assert html =~ "refuse next_prompt on hook-less panes"
     end
 
+    test "hook-less live worker reads working, not unknown (#916 via the WHO chip)" do
+      html =
+        ticket_board(
+          [
+            %{
+              id: "w1",
+              name: "worker-oc",
+              display_name: "worker-oc",
+              agent_state: nil,
+              fleet_role: :worker,
+              liveness: %{state: :active}
+            }
+          ],
+          [@iss]
+        )
+        |> drawer()
+
+      assert html =~ "working"
+      refute html =~ "can't classify"
+    end
+
+    test "an unclassifiable pane prints its reason and stays out of capacity" do
+      html =
+        ticket_board(
+          [
+            %{
+              id: "w1",
+              name: "worker-mystery",
+              display_name: "worker-mystery",
+              agent_state: nil,
+              fleet_role: :worker
+            }
+          ],
+          [@iss]
+        )
+        |> drawer()
+
+      assert html =~ "unknown"
+      assert html =~ "can't classify: agent_state_absent_liveness_not_observed"
+      # Could-not-classify must not be filed as spare capacity.
+      refute html =~ ~s(id="fleet-capacity")
+    end
+
+    test "wedged is its own state, not idle" do
+      html =
+        ticket_board(
+          [
+            %{
+              id: "w1",
+              name: "worker-wedged",
+              display_name: "worker-wedged",
+              agent_state: :stalled,
+              fleet_role: :worker,
+              issue: 17_070
+            }
+          ],
+          [@iss]
+        )
+        |> drawer()
+
+      assert html =~ "stalled"
+      # Slate, not amber: derived inference does not summon a human.
+      refute html =~ "text-status-warning-fg"
+    end
+
     test "a reported block is warm and lands in the live list" do
       html =
         ticket_board(

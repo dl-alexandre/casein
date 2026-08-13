@@ -103,9 +103,17 @@ row → `tmux:select_window` focuses that worker. Rebuilt whenever
 |--------|------|-----------|--------|
 | `blocked` / `errored` | report | **yes** | amber WHO chip |
 | orphaned claim | observed | **yes** | amber, parked row |
-| `stalled` / `awaiting_input` | derived | no | slate, `:idle` bucket |
-| `ready_no_task` | derived | no — **capacity** | slate, below the divider |
+| `stalled` | derived | no | slate chip reading **stalled** |
+| `awaiting_input` | derived | no | slate chip reading **awaiting** |
+| `ready_no_task` | derived | no — **capacity** | slate **ready**, below the divider |
 | quiet `idle` / `done` | derived | no | slate |
+| could not classify | absence | no | dim italic **unknown** + printed reason |
+
+`stalled` and `awaiting_input` land in the `:idle` bucket but keep their own
+chip text: idle, quiet, wedged and unknown are four different things and the
+drawer never merges them. #917 bucketed these two as `:needs_you` to keep them
+off a bare `:unknown`; that property is preserved — they are classified, just
+not a summons.
 
 Rationale: idle workers are not a human lane. A badge that counts spawned
 capacity as attention trains the operator to ignore it. Derived inference never
@@ -139,13 +147,29 @@ Branches resolve inside the refresh task via `Git.Inspector.inspect_cwd/1`
 Row shape: `[ISS|PR] #num title · WHO chip · window/role · liveness tail`. The
 ticket title is the row identity; the pane name moves to the detail line.
 
+The WHO chip is **bucket-driven, not agent_state-driven**. A hook-less OpenCode
+pane reports no `agent_state` at all and #917 classifies it from liveness;
+keying the chip off `agent_state` would print "unknown" over a worker the board
+already knows is working — #916 wearing a different hat. `agent_state` only
+refines within a bucket.
+
+`:unknown` rows stay in the **live list**, never under the capacity divider, and
+print their `unknown_reason` (`FleetBoard.unknown_reason_string/1`, the same
+vocabulary `orchestration_status` puts on the wire). Filing could-not-classify
+as spare capacity would collapse it into quiet.
+
 * **Sort** — one continuous list by last ticket update. Not three status
   columns; triage survives on the needs-you badge, not on lanes.
 * **Capacity** — a pane with no ticket and no human block groups under a divider
   at the bottom. It must not compete with `#17070`.
 * **Parked** — claimed with no live pane renders as a ticket row with no WHO, so
-  unassigned work is visible in the same list. It does not inflate `total`
-  (fleet size is agents).
+  unassigned work is visible in the same list. It does not inflate `total`.
+* **Counts are different populations, deliberately not reconciled** — `total` is
+  agent *windows* on this session (board rows); a session's raw pane count also
+  holds shells and preview panes; `fleet_role=worker` is a subset that
+  legitimately excludes SUP/MGR panes. The drawer header carries this as a
+  tooltip in the same words as the `orchestration_status` note. Do not force
+  these three into one number.
 * **Open only** — `--state open` at the port. Merged ≠ live; closed/merged are
   dropped before chrome ever sees them, so no `#1485`-style ghost can survive.
 * **Scope** — this repo. Cross-fleet aggregation stays on the LAN board.

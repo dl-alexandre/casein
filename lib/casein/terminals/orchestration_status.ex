@@ -293,20 +293,10 @@ defmodule Casein.Terminals.OrchestrationStatus do
 
   defp blocked_on_json(_), do: nil
 
-  # Bare unknown is the silent-failure class — always stringify a reason.
-  defp unknown_reason_json(nil), do: nil
-  defp unknown_reason_json(reason) when is_atom(reason), do: Atom.to_string(reason)
-  defp unknown_reason_json(reason) when is_binary(reason), do: reason
-
-  defp unknown_reason_json({:liveness_unknown, inner}) do
-    "liveness_unknown:#{atom_or_nil(inner) || "unscanned"}"
-  end
-
-  defp unknown_reason_json({:unmapped_agent_state, state}) do
-    "unmapped_agent_state:#{atom_or_nil(state) || "nil"}"
-  end
-
-  defp unknown_reason_json(other), do: inspect(other)
+  # Bare unknown is the silent-failure class — always stringify a reason. One
+  # vocabulary, shared with the cockpit drawer, so the wire and the UI cannot
+  # drift into two dialects of the same taxonomy.
+  defp unknown_reason_json(reason), do: FleetBoard.unknown_reason_string(reason)
 
   defp atom_or_nil(nil), do: nil
   defp atom_or_nil(value) when is_atom(value), do: Atom.to_string(value)
