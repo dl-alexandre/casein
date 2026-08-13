@@ -115,8 +115,16 @@ defmodule Casein.Terminals.WindowTrashTest do
   describe "restore_latest/1" do
     test "restores the most recent close, not the first", %{session: session} do
       {:ok, _} = WindowTrash.trash(session, "@1", "first")
-      # Distinct monotonic timestamps; the ordering is what is under test.
-      Process.sleep(5)
+      # Distinct millisecond stamps: t0 >= first insert; wait for t0+1.
+      t0 = System.monotonic_time(:millisecond)
+
+      Casein.Test.Eventually.await(
+        fn -> System.monotonic_time(:millisecond) > t0 end,
+        timeout_ms: 50,
+        interval_ms: 1,
+        message: "monotonic clock did not advance between trash stamps"
+      )
+
       {:ok, _} = WindowTrash.trash(session, "@2", "second")
 
       assert {:ok, "@2", "second"} = WindowTrash.restore_latest(session)

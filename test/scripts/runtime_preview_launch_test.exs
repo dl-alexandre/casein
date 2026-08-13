@@ -115,22 +115,24 @@ defmodule Scripts.RuntimePreviewLaunchTest do
     end)
   end
 
-  defp await_facts(path, launcher_out, attempts \\ 100) do
-    cond do
-      File.exists?(path) and File.read!(path) =~ "PORT=" ->
-        :ok
-
-      attempts == 0 ->
+  defp await_facts(path, launcher_out) do
+    try do
+      Casein.Test.Eventually.await(
+        fn ->
+          (File.exists?(path) and File.read!(path) =~ "PORT=") && :ok
+        end,
+        timeout_ms: 10_000,
+        interval_ms: 20,
+        message: "preview command never recorded its environment at #{path}"
+      )
+    rescue
+      ExUnit.AssertionError ->
         flunk("""
         preview command never recorded its environment at #{path}
 
         launcher output:
         #{File.read(launcher_out) |> elem(1)}
         """)
-
-      true ->
-        Process.sleep(100)
-        await_facts(path, launcher_out, attempts - 1)
     end
   end
 
