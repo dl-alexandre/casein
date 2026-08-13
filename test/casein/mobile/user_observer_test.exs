@@ -232,12 +232,14 @@ defmodule Casein.Mobile.UserObserverTest do
 
       first = UserObserver.reconcile_live_work(user_id, "ws-1", [working])
       assert [card] = first.cards
+      flush_observer(user_id)
 
       assert AttentionInbox.project_many(user_id, Casein.Origin.id(), [card])[card.id].since_viewed.count ==
                1
 
       duplicate = UserObserver.reconcile_live_work(user_id, "ws-1", [working])
       assert duplicate.version == first.version
+      flush_observer(user_id)
       assert Repo.aggregate(AttentionTransition, :count) == 1
 
       blocked =
@@ -247,6 +249,7 @@ defmodule Casein.Mobile.UserObserverTest do
 
       changed = UserObserver.reconcile_live_work(user_id, "ws-1", [blocked])
       assert [card] = changed.cards
+      flush_observer(user_id)
       attention = AttentionInbox.project_many(user_id, Casein.Origin.id(), [card])[card.id]
       assert attention.reason_code == "human_blocked"
       assert attention.since_viewed.count == 2
@@ -254,6 +257,7 @@ defmodule Casein.Mobile.UserObserverTest do
 
       cleared = UserObserver.reconcile_live_work(user_id, "ws-1", [])
       assert cleared.cards == []
+      flush_observer(user_id)
       assert Repo.aggregate(AttentionTransition, :count) == 3
 
       latest =
@@ -799,11 +803,65 @@ defmodule Casein.Mobile.UserObserverTest do
                    50
   end
 
+  test "reconcile_live_work replies before transition recording" do
+    # #932 constraint: the caller must not be held for the write path.
+    # A 200ms record delay inside handle_continue must not appear on the call.
+    previous = Application.get_env(:casein, :mobile_attention_store_enabled)
+    delay = Application.get_env(:casein, :attention_record_delay_ms)
+    Application.put_env(:casein, :mobile_attention_store_enabled, true)
+    Application.put_env(:casein, :attention_record_delay_ms, 200)
+    user_id = unique_user()
+
+    try do
+      prepare_user(user_id)
+
+      tab = %Info{
+        id: "agent-runtime-1",
+        kind: :agent,
+        workspace_id: "ws-1",
+        runner_id: "runtime-1",
+        status: :active,
+        metadata: %{
+          agent: "codex",
+          windows: [%{conversation_title: "Fix visibility", agent_state: :working}]
+        }
+      }
+
+      {micros, snapshot} =
+        :timer.tc(fn -> UserObserver.reconcile_live_work(user_id, "ws-1", [tab]) end)
+
+      assert length(snapshot.cards) == 1
+      assert micros < 150_000
+      flush_observer(user_id)
+      assert Repo.aggregate(AttentionTransition, :count) == 1
+    after
+      UserObserver.stop(user_id)
+
+      if is_nil(previous) do
+        Application.delete_env(:casein, :mobile_attention_store_enabled)
+      else
+        Application.put_env(:casein, :mobile_attention_store_enabled, previous)
+      end
+
+      if is_nil(delay) do
+        Application.delete_env(:casein, :attention_record_delay_ms)
+      else
+        Application.put_env(:casein, :attention_record_delay_ms, delay)
+      end
+    end
+  end
+
   defp prepare_user(user_id) do
     {:ok, _pid} = UserObserver.ensure_started(user_id)
     :ok = UserObserver.clear(user_id)
     :ok = UserObserver.subscribe(user_id)
     flush()
+  end
+
+  defp flush_observer(user_id) do
+    [{pid, _}] = Registry.lookup(Casein.Mobile.UserObserverRegistry, user_id)
+    _ = :sys.get_state(pid)
+    :ok
   end
 
   defp unique_user do
