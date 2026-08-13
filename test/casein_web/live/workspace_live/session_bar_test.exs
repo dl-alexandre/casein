@@ -1255,6 +1255,85 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(data-picker-parent="sidebar-window--1")
     end
 
+    test "pane indices never render in the window index's namespace" do
+      # #953. A tmux window index answers to `C-b <n>`; a pane index answers to
+      # `C-b q <n>`, and the two spaces do not line up — pane indices restart at
+      # 0 inside every window, so the column showed 0, 0, 1, 1 with one digit
+      # meaning two different things. The container's `pl-3` indent alone did
+      # not carry the distinction, so the two must differ in the markup itself.
+      windows =
+        SessionBarVM.window_tabs(
+          [
+            window(%{
+              index: 0,
+              pane_list: [
+                pane(%{id: "%1", index: 0, active: true}),
+                pane(%{id: "%2", index: 1, active: false})
+              ]
+            })
+          ],
+          "%1",
+          %{}
+        )
+
+      tree = SessionBarVM.window_tree(windows, expanded_windows: MapSet.new(["@1"]))
+
+      html =
+        render_component(&SessionBar.window_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          terminal_sid: "u-alice",
+          topology_version: 3,
+          mutations_allowed?: false,
+          rename_window_id: nil
+        )
+
+      # Attribute order inside the tag is not part of the contract, so pull the
+      # tag first and read `class` out of it separately.
+      index_el = fn kind ->
+        case Regex.run(~r/<span([^>]*data-picker-index-kind="#{kind}"[^>]*)>([^<]*)</, html) do
+          [_, attrs, text] ->
+            class =
+              case Regex.run(~r/class="([^"]*)"/, attrs) do
+                [_, class] -> class
+                _ -> nil
+              end
+
+            {class, String.trim(text)}
+
+          _ ->
+            nil
+        end
+      end
+
+      window_index = index_el.("window")
+      pane_index = index_el.("pane")
+
+      # Both spaces must declare which one they are.
+      assert window_index, "window index is not labelled as its own address space"
+      assert pane_index, "pane index is not labelled as its own address space"
+
+      {window_class, window_text} = window_index
+      {pane_class, pane_text} = pane_index
+
+      # Window index 0 and pane index 0 collide in this fixture on purpose: the
+      # same digit must not produce the same glyphs or the same styling.
+      refute window_text == pane_text,
+             "window and pane index render identically as #{inspect(window_text)}"
+
+      refute window_class == pane_class,
+             "window and pane index share one class: #{pane_class}"
+
+      # The pane number states the keystroke that actually selects it, so the
+      # digit is never mistaken for a `C-b <n>` window address.
+      assert html =~ "C-b q"
+
+      # Presentation only — the index attribute contracts JS and
+      # agent-reference consumers read must be untouched.
+      assert html =~ ~s(data-tmux-window-index="0")
+      assert html =~ ~s(data-agent-reference-window-index="0")
+    end
+
     test "single-pane windows stay flat without pane rows" do
       windows = SessionBarVM.window_tabs([window(%{pane_list: [pane("%1")]})], "%1", %{})
 

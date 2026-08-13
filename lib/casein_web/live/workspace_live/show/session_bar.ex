@@ -148,7 +148,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
 
   defp window_row_name(assigns) do
     ~H"""
-    <span :if={@show_index?} class="shrink-0 font-mono text-density-label text-base-content/45">
+    <span
+      :if={@show_index?}
+      data-picker-index-kind="window"
+      class="shrink-0 font-mono text-density-label text-base-content/45"
+      title={"Window #{@window.index} — C-b #{@window.index}"}
+    >
       {@window.index}
     </span>
     <%= if @picker_label? do %>
@@ -179,6 +184,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       :if={is_binary(@copy_url) and @copy_url != ""}
       data-copy-session-link={@copy_url}
       data-copy-link-kind="window"
+      data-picker-index-kind="window"
       role="button"
       tabindex="-1"
       class="shrink-0 cursor-copy rounded px-density-label font-mono text-density-label text-base-content/45 underline decoration-dotted decoration-base-content/25 underline-offset-2 transition-colors duration-motion-state ease-motion-state hover:bg-base-300/60 hover:text-base-content hover:decoration-base-content/60"
@@ -187,7 +193,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     >{@window.index}</span>
     <span
       :if={!(is_binary(@copy_url) and @copy_url != "")}
+      data-picker-index-kind="window"
       class="shrink-0 font-mono text-density-label text-base-content/45"
+      title={"Window #{@window.index} — C-b #{@window.index}"}
     >{@window.index}</span>
     """
   end
@@ -1830,7 +1838,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       title={@pane.title}
     >
       <span class="flex min-w-0 max-w-full items-center gap-1.5">
-        <span class="shrink-0 font-mono text-density-label text-base-content/45">{@pane.index}</span>
+        <%!-- Pane indices are a different address space from window indices and must
+             never render like them (#953). A window answers to `C-b <n>`; a pane
+             answers to `C-b q <n>`, and the two never line up — pane indices
+             restart at 0 inside every window, so a single column showed 0, 0, 1,
+             1 with one digit meaning two things. The container's `pl-3` indent
+             was already there and did not carry it, so the pane index states its
+             own keystroke and sits a tone back. Do not restore the window row's
+             class here — session_bar_test.exs "pane indices never render in the
+             window index's namespace" fails if the two converge again. --%>
+        <span
+          data-picker-index-kind="pane"
+          class="shrink-0 font-mono text-density-label text-base-content/30"
+          title={"Pane #{@pane.index} in this window — C-b q, then #{@pane.index}"}
+        >q{@pane.index}</span>
         <.picker_text value={@pane.label} class="min-w-0 truncate font-medium" />
         <span
           :if={@pane.preview?}
