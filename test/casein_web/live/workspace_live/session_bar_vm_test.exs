@@ -924,8 +924,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
     end
 
     # #910 catalogue + split counts + search. Constraints live here so a future
-    # edit cannot collapse Stalled into idle/Quiet update or sum quiet windows
-    # into Needs-you.
+    # edit cannot collapse Stalled into idle/Quiet update, paint :unknown as
+    # quiet, or sum quiet windows into Needs-you.
     test "chip catalogue keeps stalled distinct from idle and quiet" do
       assert SessionBarVM.attention_chip_label(:blocked) == "Needs input"
       assert SessionBarVM.attention_chip_label(:awaiting_input) == "Needs input"
@@ -937,6 +937,38 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
 
       refute SessionBarVM.attention_chip_label(:stalled) ==
                SessionBarVM.attention_chip_label(:idle)
+    end
+
+    test "unknown is could-not-classify, never Quiet update" do
+      # #917 made :unknown a real bucket. A chip that defaults unclassified
+      # reasons to "Quiet update" is the same lie as collapsing unscanned
+      # liveness into idle.
+      refute SessionBarVM.attention_chip_label(:unknown) == "Quiet update"
+      refute SessionBarVM.attention_chip_label(:recent) == "Quiet update"
+      refute SessionBarVM.attention_chip_label(:working) == "Quiet update"
+      refute SessionBarVM.attention_chip_label(nil) == "Quiet update"
+      refute SessionBarVM.attention_chip_label("nope") == "Quiet update"
+
+      assert SessionBarVM.attention_chip_label(:unknown) == nil
+      assert SessionBarVM.attention_chip_label(:recent) == nil
+
+      chip = SessionBarVM.attention_chip(:unknown)
+      refute chip.known?
+      assert chip.state == :unknown
+      assert chip.text == nil
+      refute chip.text == "Quiet update"
+
+      idle = SessionBarVM.attention_chip(:idle)
+      stalled = SessionBarVM.attention_chip(:stalled)
+      blocked = SessionBarVM.attention_chip(:blocked)
+
+      assert idle.known?
+      assert idle.text == "Quiet update"
+      assert stalled.text == "Stalled"
+      assert blocked.text == "Needs input"
+      refute idle.text == stalled.text
+      refute idle.text == blocked.text
+      refute chip.text == idle.text
     end
 
     test "stalled strip row carries Stalled reason, message, window deep-link fields" do

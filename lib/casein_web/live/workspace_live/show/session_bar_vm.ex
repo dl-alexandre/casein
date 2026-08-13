@@ -778,8 +778,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   # Back-compat alias used in docs/tests.
   defdelegate unseen_quiet_windows(tabs), to: __MODULE__, as: :count_unseen_quiet_windows
 
-  # Chip catalogue (#910) — single source so LV + tests cannot drift.
-  # Stalled == AgentProgress.running_but_not_progressing (NOT idle, NOT quiet).
+  # #910 catalogue. Labels exist ONLY for classified reasons.
+  # Fallback is nil — never "Quiet update". :unknown means could-not-classify
+  # (#917); AgentStateChrome.present/2 is the identity source (known?: false).
+  # idle ≠ quiet ≠ stalled ≠ needs-you. Unknown is not a synonym for quiet.
   @attention_chip_labels %{
     blocked: "Needs input",
     awaiting_input: "Needs input",
@@ -790,13 +792,49 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
     idle: "Quiet update"
   }
 
-  @doc "Human chip label for an attention reason (#910 catalogue)."
-  @spec attention_chip_label(term()) :: String.t()
-  def attention_chip_label(reason) when is_atom(reason) do
-    Map.get(@attention_chip_labels, reason, "Quiet update")
+  @doc """
+  Human chip label for a classified attention reason.
+
+  Returns nil when the reason is unclassified. `:unknown` is
+  could-not-classify — never a synonym for quiet / "Quiet update".
+  """
+  @spec attention_chip_label(term()) :: String.t() | nil
+  def attention_chip_label(reason) when is_map_key(@attention_chip_labels, reason) do
+    Map.fetch!(@attention_chip_labels, reason)
   end
 
-  def attention_chip_label(_), do: "Quiet update"
+  def attention_chip_label(_reason), do: nil
+
+  @doc """
+  Picker chip presentation. Identity comes from `AgentStateChrome.present/2`;
+  title-case copy is the #910 catalogue. Unclassified reasons have no chip.
+  """
+  @spec attention_chip(term()) :: %{
+          text: String.t() | nil,
+          class: String.t() | nil,
+          known?: boolean(),
+          state: atom()
+        }
+  def attention_chip(reason) do
+    chrome = AgentStateChrome.present(chrome_state(reason))
+    text = attention_chip_label(reason)
+
+    %{
+      text: text,
+      class: chrome.chip_class,
+      known?: chrome.known? and is_binary(text),
+      state: chrome.state
+    }
+  end
+
+  defp chrome_state(:blocked), do: :blocked
+  defp chrome_state(:awaiting_input), do: :awaiting_input
+  defp chrome_state(:errored), do: :errored
+  defp chrome_state(:error), do: :errored
+  defp chrome_state(:completed), do: :done
+  defp chrome_state(:stalled), do: :stalled
+  defp chrome_state(:idle), do: :idle
+  defp chrome_state(_), do: :unknown
 
   defp needs_you_row(tab, current_workspace_id, labels, branches) do
     if tab_attention_section(tab) == :needs_you do
