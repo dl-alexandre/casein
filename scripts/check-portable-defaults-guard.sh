@@ -14,6 +14,9 @@
 # when this script is driven against a planted temp tree). Host-ops shell and
 # AGENTS.md remain private-overlay debt. Shipped JS tooling under scripts/*
 # *is* scanned (rule 7) — absolute operator imports break fresh clones.
+# Rules 8–10: /Users/milc in lib+config, /opt/casein/deploy-build product
+# fallbacks, and hardcoded tmux -L casein in lib/ (use TmuxServer.args/0).
+# HostMode `/data/workspaces` is an on-host gate — do not scan it here.
 #
 # Exit 0 = clean. Exit 1 = violation (printed).
 
@@ -137,6 +140,44 @@ done < <(
   grep -RIn --include='*.mjs' --include='*.js' --include='*.cjs' --include='*.ts' \
     -E '/data/workspaces/|/data/casein-agent-worktrees|["'\'']/home/devbox["'\'']|["'\'']/Users/milc' \
     scripts 2>/dev/null || true
+)
+
+# --- 8. /Users/milc product fallbacks in lib/ + config/ -----------------------
+# Same class as /home/devbox: a Mac operator home must not be a product default.
+# HostMode /data/workspaces is an on-host gate (fenced) — do not add it here.
+while IFS= read -r hit; do
+  [ -z "$hit" ] && continue
+  fail "host-specific home fallback: ${hit}"
+done < <(
+  grep -RIn --include='*.ex' --include='*.exs' \
+    -E '["'\'']/Users/milc["'\'']' lib config 2>/dev/null || true
+)
+
+# --- 9. /opt/casein/deploy-build is overlay builder layout, not a product default
+# Release code may look under CASEIN_SCRIPTS / CASEIN_CHECKOUT / cwd-relative
+# scripts/. The MILC deploy-build worktree is host overlay only (#248).
+while IFS= read -r hit; do
+  [ -z "$hit" ] && continue
+  fail "deploy-build path as product default: ${hit}"
+done < <(
+  grep -RIn --include='*.ex' --include='*.exs' \
+    -E '["'\'']/opt/casein/deploy-build' lib config 2>/dev/null || true
+)
+
+# --- 10. lib/ must not hard-code tmux -L casein ------------------------------
+# Labels come from :tmux_server_label via TmuxServer.args/0. A literal
+# `-L casein` in product code ignores the configured label (and the test
+# sandbox). Comments and config :tmux_server_label assignments are fine.
+# casein_dev / casein_test suffixes are not this rule.
+while IFS= read -r hit; do
+  [ -z "$hit" ] && continue
+  fail "hardcoded tmux -L casein (use TmuxServer.args/0): ${hit}"
+done < <(
+  grep -RIn --include='*.ex' \
+    -E '["'\'']-L["'\''],[[:space:]]*["'\'']casein["'\'']|tmux -L casein([^_a-zA-Z0-9]|$)' \
+    lib 2>/dev/null \
+    | grep -v ':[[:space:]]*#' \
+    || true
 )
 
 if [ "$violations" -gt 0 ]; then

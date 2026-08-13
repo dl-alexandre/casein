@@ -410,7 +410,7 @@ defmodule Casein.Terminals.WorkerLaunch do
         System.get_env("CASEIN_CHECKOUT") &&
           Path.join(System.get_env("CASEIN_CHECKOUT"), "scripts")
       ),
-      "/opt/casein/deploy-build/scripts/spawn-agent-worker.sh",
+      # #248: no /opt/casein/deploy-build fallback — that layout is overlay-only.
       Path.expand("scripts/spawn-agent-worker.sh")
     ]
 

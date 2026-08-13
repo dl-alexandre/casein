@@ -79,6 +79,39 @@ defmodule Scripts.CheckPortableDefaultsGuardTest do
     assert output =~ "operator path in shipped script tooling"
   end
 
+  test "guard flags a planted /Users/milc product fallback in lib" do
+    assert_planted_fails(
+      """
+      defmodule Bad do
+        defp home, do: System.get_env("HOME") || "/Users/milc"
+      end
+      """,
+      "/Users/milc"
+    )
+  end
+
+  test "guard flags a planted /opt/casein/deploy-build product fallback" do
+    assert_planted_fails(
+      """
+      defmodule Bad do
+        @script "/opt/casein/deploy-build/scripts/spawn-agent-worker.sh"
+      end
+      """,
+      "deploy-build"
+    )
+  end
+
+  test "guard flags a planted hardcoded tmux -L casein in lib" do
+    assert_planted_fails(
+      """
+      defmodule Bad do
+        def args, do: ["tmux", "-L", "casein", "list-sessions"]
+      end
+      """,
+      "tmux -L casein"
+    )
+  end
+
   test "guard flags a planted /Users/milc path in scripts tooling" do
     tmp = tmp_tree!()
 
