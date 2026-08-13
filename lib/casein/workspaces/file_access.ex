@@ -157,9 +157,12 @@ defmodule Casein.Workspaces.FileAccess do
         {:error, :binary}
 
       true ->
-        with {:ok, %{version: current}} <- read_text(loc, rel),
+        # Confine BEFORE write — do not rely on the version-check read to catch
+        # `../../.ssh/authorized_keys` (#927). PathSafety.resolve needs a local
+        # filesystem for symlink walks; remote roots use expand+under only.
+        with {:ok, target} <- confined_remote_target(root, rel),
+             {:ok, %{version: current}} <- read_text(loc, rel),
              true <- current == expected_version do
-          target = Path.join(root, rel)
           # ssh joins post-`--` argv with spaces and runs through the remote
           # login shell. Pass the whole pipeline as one string so the remote
           # shell parses redirection and `$(…)` correctly.
@@ -320,6 +323,23 @@ defmodule Casein.Workspaces.FileAccess do
   defp cap_diff(bin), do: binary_part(bin, 0, 256 * 1024)
 
   ## Internals
+
+  # Pure path confinement for remote roots (no local File.lstat). Rejects
+  # `..` escapes and absolute `rel` that leave the workspace root.
+  defp confined_remote_target(root, rel) when is_binary(root) and is_binary(rel) do
+    root_abs = Path.expand(root)
+    target = Path.expand(rel, root_abs)
+    relative = Path.relative_to(target, root_abs)
+
+    if relative != target and not String.starts_with?(relative, "..") and
+         not String.contains?(relative, "\0") do
+      {:ok, target}
+    else
+      {:error, :outside_root}
+    end
+  end
+
+  defp confined_remote_target(_, _), do: {:error, :outside_root}
 
   defp shell_quote(s) when is_binary(s) do
     "'" <> String.replace(s, "'", "'\\''") <> "'"

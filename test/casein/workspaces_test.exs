@@ -64,13 +64,6 @@ defmodule Casein.WorkspacesTest do
     refute Workspaces.viewer_can_access_workspace?(ws, nil)
   end
 
-  test "viewer_owns_workspace? matches id, username, or email local part" do
-    ws = %Workspace{id: "x", name: "alice-app", user: "alice"}
-
-    assert Workspaces.viewer_owns_workspace?(ws, %{id: "alice", email: "alice@example.com"})
-    refute Workspaces.viewer_owns_workspace?(ws, %{id: "bob", email: "bob@example.com"})
-  end
-
   test "viewer_terminal_owner? is true for any authenticated peer on any workspace" do
     ws = %Workspace{id: "x", name: "alice-app", user: "alice"}
 

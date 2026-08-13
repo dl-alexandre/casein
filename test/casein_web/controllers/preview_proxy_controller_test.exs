@@ -95,24 +95,59 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
     {root, "folder:" <> Base.url_encode64(path, padding: false)}
   end
 
-  defp listen_once!(fun), do: listen_once!(0, fun)
+  # Prefer Casein's runtime-preview band (always registerable under #927) then
+  # common dev ports — never a random OS port, which registration must refuse.
+  @listen_candidates Enum.to_list(41_050..41_079) ++ [5173, 3000, 8080, 9000, 4173]
 
-  defp listen_once!(port, fun) do
+  defp listen_once!(fun), do: listen_once_candidates!(@listen_candidates, fun)
+
+  defp listen_once!(port, fun) when is_integer(port) do
     parent = self()
-    {:ok, listen} = :gen_tcp.listen(port, [:binary, packet: :raw, active: false, reuseaddr: true])
-    {:ok, {_address, bound_port}} = :inet.sockname(listen)
 
-    task =
-      Task.async(fn ->
-        {:ok, socket} = :gen_tcp.accept(listen)
-        request = read_http_request(socket)
-        send(parent, {:preview_proxy_request, request})
-        fun.(socket, request)
-        :gen_tcp.close(socket)
-      end)
+    case :gen_tcp.listen(port, [:binary, packet: :raw, active: false, reuseaddr: true]) do
+      {:ok, listen} ->
+        {:ok, {_address, bound_port}} = :inet.sockname(listen)
 
-    {listen, bound_port, task}
+        task =
+          Task.async(fn ->
+            {:ok, socket} = :gen_tcp.accept(listen)
+            request = read_http_request(socket)
+            send(parent, {:preview_proxy_request, request})
+            fun.(socket, request)
+            :gen_tcp.close(socket)
+          end)
+
+        {listen, bound_port, task}
+
+      {:error, :eaddrinuse} ->
+        flunk("port #{port} in use")
+    end
   end
+
+  defp listen_once_candidates!([port | rest], fun) do
+    parent = self()
+
+    case :gen_tcp.listen(port, [:binary, packet: :raw, active: false, reuseaddr: true]) do
+      {:ok, listen} ->
+        {:ok, {_address, bound_port}} = :inet.sockname(listen)
+
+        task =
+          Task.async(fn ->
+            {:ok, socket} = :gen_tcp.accept(listen)
+            request = read_http_request(socket)
+            send(parent, {:preview_proxy_request, request})
+            fun.(socket, request)
+            :gen_tcp.close(socket)
+          end)
+
+        {listen, bound_port, task}
+
+      {:error, :eaddrinuse} ->
+        listen_once_candidates!(rest, fun)
+    end
+  end
+
+  defp listen_once_candidates!([], _fun), do: flunk("no free registerable preview port")
 
   defp register_preview_port!(workspace_id, port) do
     pane_id = "%preview-proxy-#{System.unique_integer([:positive])}"
@@ -263,7 +298,8 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
     File.rm_rf!(root)
   end
 
-  test "forwards Authorization headers unchanged to the upstream", %{conn: conn} do
+  test "scrubs Authorization and x-auth-request-* before forwarding to upstream (#927)",
+       %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
 
     {listen, port, task} =
@@ -277,13 +313,16 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
     conn =
       conn
       |> put_req_header("x-auth-request-email", "dev@local")
+      |> put_req_header("x-auth-request-user", "dev")
       |> put_req_header("authorization", "Bearer upstream-app-token")
       |> get("/preview-proxy/#{workspace_id}/#{port}/")
 
     assert response(conn, 200) == "ok"
     assert_receive {:preview_proxy_request, request}
-    assert request =~ "authorization: Bearer upstream-app-token"
-    refute request =~ "[FILTERED]"
+    # Operator identity must not reach workspace-authored preview code.
+    refute request =~ "authorization: Bearer upstream-app-token"
+    refute request =~ "x-auth-request-email"
+    refute request =~ "x-auth-request-user"
     assert_receive {:DOWN, ^ref, :process, _pid, :normal}
 
     :gen_tcp.close(listen)

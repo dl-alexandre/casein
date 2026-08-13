@@ -143,20 +143,6 @@ defmodule Casein.Workspaces do
   def owns?(_, _), do: false
 
   @doc """
-  True when `viewer` owns `workspace`, matching manager usernames against the
-  viewer's id, username, or email (same rules as the workspace switcher).
-  """
-  @spec viewer_owns_workspace?(Workspace.t() | map(), map()) :: boolean()
-  def viewer_owns_workspace?(workspace, viewer) when is_map(viewer) do
-    owner = workspace_owner(workspace)
-
-    is_binary(owner) and owner != "" and
-      owner_matches_viewer?(String.downcase(owner), viewer)
-  end
-
-  def viewer_owns_workspace?(_, _), do: false
-
-  @doc """
   True when `viewer` may open or use a workspace in the multi-user cockpit.
 
   **Flat peer model:** any authenticated identity (has `id` / `username` /
@@ -164,6 +150,11 @@ defmodule Casein.Workspaces do
   role over peers and does not owner-gate shared surfaces (artifacts, preview
   proxy, terminals, files). The outer gate is oauth2-proxy / API token auth —
   once you're in, peers are equal. Unauthenticated or empty maps are denied.
+
+  There is intentionally **no** unused ownership predicate next to this gate
+  (#928). Owner string comparison for forward-auth email derivation remains
+  `owns?/2`; do not invent a parallel "viewer_owns" helper that is tested but
+  never called — readers will assume ownership is enforced somewhere.
   """
   @spec viewer_can_access_workspace?(Workspace.t() | map(), map()) :: boolean()
   def viewer_can_access_workspace?(_workspace, viewer) when is_map(viewer) do
@@ -225,28 +216,6 @@ defmodule Casein.Workspaces do
       get_in(metadata, [:raw, :user]) || get_in(metadata, ["raw", "user"]) ||
       get_in(metadata, [:raw, "user"])
   end
-
-  defp owner_matches_viewer?(owner, viewer) when is_binary(owner) and is_map(viewer) do
-    owner in viewer_identifiers(viewer)
-  end
-
-  defp viewer_identifiers(viewer) do
-    [
-      map_string_or_atom(viewer, :id),
-      map_string_or_atom(viewer, :username),
-      map_string_or_atom(viewer, :email)
-    ]
-    |> Enum.flat_map(&identifier_variants/1)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.uniq()
-  end
-
-  defp identifier_variants(value) when is_binary(value) do
-    value = String.downcase(value)
-    [value, value |> String.split("@") |> hd()]
-  end
-
-  defp identifier_variants(_value), do: []
 
   defp map_string_or_atom(map, key) when is_atom(key) do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))

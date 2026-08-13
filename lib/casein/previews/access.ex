@@ -14,16 +14,37 @@ defmodule Casein.Previews.Access do
       are deliberately answered the same way so the response cannot be used to
       probe which workspaces exist.
 
-    * **Port** — the port must be declared or detected for that workspace, or
-      registered by one of its preview panes. Common dev ports are not implicitly
-      trusted; without this an authorized viewer of workspace A could reach a peer
-      workspace's loopback service.
+    * **Port** — the port must be declared or detected for that workspace
+      (`workspace_owned_port?`), **or** registered by one of its preview panes
+      *and* not on the infrastructure deny-list. Registration is a deliberate
+      escape hatch for Casein-owned ephemeral servers (FileServer, runtime
+      preview bands), **not** a free SSRF widen: infra ports (SSH, Postgres,
+      Redis, …) can never be registered or proxied (#927).
   """
 
   alias Casein.PreviewPanes
   alias Casein.Previews
   alias Casein.Previews.OwnOrigin
   alias Casein.Workspaces
+
+  # Same infra denylist spirit as SocketDetector — never a browser preview target.
+  # Registration must not turn these into proxy allowlist entries (#927).
+  @denied_infra_ports MapSet.new([
+                        22,
+                        25,
+                        53,
+                        111,
+                        123,
+                        631,
+                        2049,
+                        3306,
+                        5432,
+                        5672,
+                        6379,
+                        9092,
+                        11_211,
+                        27_017
+                      ])
 
   @type workspace :: map()
 
@@ -66,9 +87,38 @@ defmodule Casein.Previews.Access do
   @doc "True when `port` is a loopback port this workspace is allowed to expose."
   @spec port_allowed?(pos_integer(), String.t(), workspace()) :: boolean()
   def port_allowed?(port, workspace_id, workspace) do
-    Previews.workspace_owned_port?(port, workspace) or
-      registered_preview_port?(workspace_id, port)
+    # Owned ports (metadata/detected) always ok. Registration is an escape hatch
+    # for Casein FileServer ephemerals and hand-picked dev servers — but never
+    # for infrastructure ports (#927).
+    (Previews.workspace_owned_port?(port, workspace) and not denied_infra_port?(port)) or
+      (registered_preview_port?(workspace_id, port) and
+         registerable_loopback_port?(port, workspace))
   end
+
+  @doc """
+  True when a loopback port may be **registered** (and later proxied).
+
+  Fail-closed on infrastructure ports (SSH/DB/cache/…). Any other in-range
+  port may be registered — that is the intentional FileServer / runtime
+  escape hatch — but registration of a denied port is refused at both
+  register and proxy time so a registration record cannot widen SSRF (#927).
+
+  Does **not** replace the #884 external-origin allowlist.
+  """
+  @spec registerable_loopback_port?(pos_integer(), workspace()) :: boolean()
+  def registerable_loopback_port?(port, _workspace)
+      when is_integer(port) and port > 0 and port < 65_536 do
+    not denied_infra_port?(port)
+  end
+
+  def registerable_loopback_port?(_, _), do: false
+
+  @doc false
+  @spec denied_infra_port?(integer()) :: boolean()
+  def denied_infra_port?(port) when is_integer(port),
+    do: MapSet.member?(@denied_infra_ports, port)
+
+  def denied_infra_port?(_), do: true
 
   defp load_authorized(viewer, workspace_id) do
     auth = viewer && Map.get(viewer, :email)
@@ -89,8 +139,16 @@ defmodule Casein.Previews.Access do
     workspace_id
     |> PreviewPanes.list_for_workspace()
     |> Enum.any?(fn registration ->
-      preview_port(registration.url) == port or preview_port(registration.display_url) == port
+      registration_names_port?(registration, port)
     end)
+  end
+
+  defp registration_names_port?(registration, port) do
+    preview_port(Map.get(registration, :url) || Map.get(registration, "url")) == port or
+      preview_port(Map.get(registration, :display_url) || Map.get(registration, "display_url")) ==
+        port or
+      preview_port(Map.get(registration, :source_url) || Map.get(registration, "source_url")) ==
+        port
   end
 
   @doc """
