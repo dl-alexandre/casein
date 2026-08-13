@@ -31,17 +31,27 @@ function mockPickerItem({index = "", label = "", parent = null, branchId = null,
       if (name === "data-picker-branch-id") return branchId
       if (name === "data-picker-sessions-id") return branchId
       if (name === "data-picker-collapsed") return this._collapsed ? "" : null
+      if (name === "data-picker-search") return this._search || null
       return null
     },
     _collapsed: false,
     querySelector(selector) {
-      if (selector === "[data-picker-label]") return {textContent: label}
+      if (selector === "[data-picker-label]") return this._labelNode
       if (selector === ".font-mono" && index !== "") return {textContent: index}
       return null
     },
     querySelectorAll(selector) {
       if (selector === "[data-picker-item]") return this._childItems || []
+      if (selector === "[data-picker-label]") return this._labelNode ? [this._labelNode] : []
       return []
+    },
+    _labelNode: {
+      textContent: label,
+      getAttribute(name) {
+        if (name === "data-picker-label") return this._full || ""
+        return null
+      },
+      _full: "",
     },
   }
 }
@@ -110,6 +120,15 @@ function mockRoot({items = [], branches = [], filterEl = null} = {}) {
 test("itemFilterText lowercases index and label", () => {
   const item = mockPickerItem({index: "2", label: "Agent"})
   assert.equal(itemFilterText(item), "2 agent")
+})
+
+test("itemFilterText matches the full id when visible text is middle-truncated", () => {
+  const full = "agent-opencode-b921-perf-lifecycle-events-20260813013053"
+  const item = mockPickerItem({index: "1", label: "agent-openc…13053"})
+  item._labelNode._full = full
+  assert.match(itemFilterText(item), /b921-perf-lifecycle-events/)
+  assert.equal(matchesPickerFilter(item, "b921-perf"), true)
+  assert.equal(matchesPickerFilter(item, "13013053"), true)
 })
 
 test("matchesPickerFilter accepts empty query", () => {
