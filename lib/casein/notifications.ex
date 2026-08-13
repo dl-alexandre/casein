@@ -237,9 +237,17 @@ defmodule Casein.Notifications do
       )
       |> Repo.update_all(set: [read_at: now])
 
-    Enum.each(open, fn notification ->
+    # One SEEN upsert per unique subject — not per notification row (#922).
+    # Do not re-introduce Enum.each(open, mark_seen) without uniq_by; 500 unread
+    # on the same card must not open 500 transactions.
+    open
+    |> Enum.map(&Acknowledgement.subject_for_notification/1)
+    |> Enum.uniq_by(fn subject ->
+      {Map.get(subject, :kind), Map.get(subject, :id), Map.get(subject, :origin_id)}
+    end)
+    |> Enum.each(fn subject ->
       _ =
-        Acknowledgement.mark_seen(user_id, Acknowledgement.subject_for_notification(notification),
+        Acknowledgement.mark_seen(user_id, subject,
           now: now,
           sync_notifications: false
         )

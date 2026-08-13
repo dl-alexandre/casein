@@ -921,6 +921,20 @@ defmodule TmuxCtl.ClientExtraTest do
     assert_receive {:tmux_runner, ["set-environment", "-t", @session, "A", "1"]}
   end
 
+  test "set_environments batches many vars into one tmux invocation (#925)" do
+    script("", 0)
+    env = Map.new(1..15, fn i -> {"K#{i}", "v#{i}"} end)
+
+    assert :ok = Client.set_environments(@session, env)
+    assert_receive {:tmux_runner, argv}
+
+    # O(1) subprocess — not O(vars). Do not reintroduce per-key set_environment
+    # forks on the mount hot path (#925).
+    assert Enum.count(argv, &(&1 == "set-environment")) == 15
+    assert Enum.count(argv, &(&1 == ";")) == 14
+    refute_receive {:tmux_runner, _}, 50
+  end
+
   test "set_environments collects failures" do
     script("err", 1)
     assert {:error, failures} = Client.set_environments(@session, %{"A" => "1"})
