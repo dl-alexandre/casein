@@ -592,6 +592,86 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
     end
   end
 
+  describe "window_tabs/4 cockpit liveness" do
+    test "cached session liveness reaches the tab so FleetBoard can classify" do
+      # The cockpit never attaches :liveness to panes — only the MCP topology
+      # path does. Without this fallback FleetBoard sees no liveness at all and
+      # every hook-less pane buckets :unknown, which is #917 unreachable from
+      # the UI it was written for.
+      [tab] =
+        SessionBarVM.window_tabs(
+          [
+            %{
+              id: "@9",
+              index: 0,
+              name: "worker-oc",
+              active: true,
+              current_command: "opencode",
+              pane_list: [
+                %{
+                  id: "%42",
+                  index: 0,
+                  role: "agent",
+                  active: true,
+                  current_command: "opencode",
+                  current_path: "/wt/oc"
+                }
+              ]
+            }
+          ],
+          nil,
+          %{},
+          pane_liveness: %{
+            "%42" => %{
+              liveness: %{state: :active, quiet_for_seconds: 4},
+              worktree_path: "/wt/oc/toplevel"
+            }
+          }
+        )
+
+      assert tab.liveness.state == :active
+      assert tab.liveness.quiet_for_seconds == 4
+      # The cached worktree root wins over the raw pane cwd, so two panes in
+      # sibling subdirs of one worktree share a branch-join key.
+      assert tab.worktree_path == "/wt/oc/toplevel"
+    end
+
+    test "a pane the cache could not observe keeps its reason on the tab" do
+      [tab] =
+        SessionBarVM.window_tabs(
+          [
+            %{
+              id: "@9",
+              index: 0,
+              name: "worker-oc",
+              active: true,
+              current_command: "opencode",
+              pane_list: [
+                %{
+                  id: "%42",
+                  index: 0,
+                  role: "agent",
+                  active: true,
+                  current_command: "opencode",
+                  current_path: "/wt/oc"
+                }
+              ]
+            }
+          ],
+          nil,
+          %{},
+          pane_liveness: %{
+            "%42" => %{liveness: %{state: :unknown, reason: :enoent}, worktree_path: nil}
+          }
+        )
+
+      assert tab.liveness.state == :unknown
+      assert tab.liveness.reason == :enoent
+      # Falls back to the pane cwd when the cache had no worktree root.
+      assert tab.worktree_path == "/wt/oc"
+    end
+  end
+
   describe "window_tabs/4 worktree join key" do
     test "falls back to the pane cwd, which is all a cockpit pane carries" do
       # Cockpit topology panes have :current_path and no :worktree_path — that
