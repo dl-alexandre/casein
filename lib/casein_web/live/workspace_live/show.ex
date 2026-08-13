@@ -2277,7 +2277,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       codex_error={@codex_error}
       codex_exec_form={@codex_exec_form}
       codex_exec_run={@codex_exec_run}
-      codex_live_delta={@codex_live_delta}
+      codex_live_chunks={@codex_live_chunks}
       codex_loaded?={@codex_loaded?}
       codex_pending_approval_count={@codex_pending_approval_count}
       codex_pending_requests={@codex_pending_requests}

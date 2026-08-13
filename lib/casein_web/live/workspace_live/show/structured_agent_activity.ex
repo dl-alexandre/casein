@@ -7,7 +7,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
   attr :threads, :list, required: true
   attr :selected_thread_id, :string, default: nil
   attr :timeline, :list, required: true
-  attr :live_delta, :string, default: ""
+  attr :live_chunks, :list, default: []
   attr :error, :string, default: nil
 
   def structured_agent_activity(assigns) do
@@ -117,20 +117,26 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
 
           <div class="max-h-80 min-h-0 flex-1 overflow-y-auto px-4 py-3">
             <div
-              :if={@selected_thread && @timeline == [] && @live_delta == ""}
+              :if={@selected_thread && @timeline == [] && @live_chunks == []}
               class="py-8 text-center text-xs text-base-content/45"
             >
               This thread has no retained lifecycle events yet.
             </div>
             <ol class="relative ml-2 border-l border-base-300 pl-5">
               <.timeline_event :for={event <- @timeline} event={event} />
-              <li :if={@live_delta != ""} class="relative pb-4">
+              <li :if={@live_chunks != []} class="relative pb-4">
                 <span class="absolute -left-[1.47rem] top-1 size-2.5 rounded-full bg-primary ring-4 ring-base-100"></span>
                 <div class="rounded-lg border border-primary/20 bg-primary/[0.04] p-3">
                   <div class="mb-1.5 flex items-center gap-2 text-density-label font-semibold uppercase tracking-wide text-primary">
                     <span class="size-1.5 animate-pulse rounded-full bg-primary"></span> Streaming
                   </div>
-                  <pre class="whitespace-pre-wrap break-words font-sans text-xs leading-5 text-base-content/80">{@live_delta}</pre>
+                  <pre
+                    id="codex-live-delta"
+                    class="whitespace-pre-wrap break-words font-sans text-xs leading-5 text-base-content/80"
+                  ><span
+                      :for={chunk <- @live_chunks}
+                      id={"codex-live-chunk-#{chunk.id}"}
+                    >{chunk.text}</span></pre>
                 </div>
               </li>
             </ol>

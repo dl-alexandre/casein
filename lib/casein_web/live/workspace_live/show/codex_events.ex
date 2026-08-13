@@ -12,6 +12,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
   @delta_flush_ms 150
   @max_live_delta_bytes 32_000
 
+  # #924: a single interpolated `codex_live_delta` string is one LiveView slot.
+  # Every 150ms flush rewrote the whole ~32KB (~213KB/s/viewer) even though only
+  # the new tail changed. Chunks keep a stable DOM id per flush so the diff
+  # engine ships the new span, not the prefix. Do not concatenate back into one
+  # assign. History `Store.timeline/3` is per-event when the History tab is
+  # open, not per-tick and not per-mount — skip it when the tab is closed.
+
   @doc "Seed Codex state shared by Notifications, History, and Run without domain reads."
   def assign_defaults(socket) do
     socket
@@ -24,7 +31,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
     |> AgentApprovalState.assign_pending_count()
     |> assign(:codex_selected_thread_id, nil)
     |> assign(:codex_timeline, [])
-    |> assign(:codex_live_delta, "")
+    |> assign(:codex_live_chunks, [])
+    |> assign(:codex_live_bytes, 0)
+    |> assign(:codex_live_seq, 0)
     |> assign(:codex_delta_buffer, [])
     |> assign(:codex_delta_timer, nil)
     |> assign(:codex_exec_form, to_form(%{"prompt" => ""}, as: :codex_exec))
@@ -56,6 +65,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
 
   @doc "Refresh the workspace projection without replaying the event ledger."
   def refresh(socket) do
+    refresh_snapshot(socket, timeline?: history_active?(socket))
+  end
+
+  defp refresh_snapshot(socket, opts) do
     snapshot = Store.workspace_snapshot(socket.assigns.workspace.id, limit: 200)
     threads = snapshot.threads
     approvals = snapshot.approvals
@@ -63,14 +76,36 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
     selected_thread_id =
       selected_thread_id(socket.assigns.codex_selected_thread_id, threads)
 
+    socket =
+      socket
+      |> assign(:codex_threads, threads)
+      |> assign(:codex_approvals, approvals)
+      |> assign(:codex_pending_requests, pending_requests(approvals))
+      |> assign(:codex_pending_approval_count, pending_count(approvals))
+      |> AgentApprovalState.assign_pending_count()
+      |> assign(:codex_selected_thread_id, selected_thread_id)
+      |> assign(:codex_error, nil)
+
+    if Keyword.get(opts, :timeline?, history_active?(socket)) do
+      assign_timeline(socket, selected_thread_id)
+    else
+      socket
+    end
+  rescue
+    error -> assign(socket, :codex_error, Exception.message(error))
+  end
+
+  defp refresh_approvals_only(socket) do
+    snapshot =
+      Store.workspace_snapshot(socket.assigns.workspace.id, limit: 200, pending_only: true)
+
+    approvals = snapshot.approvals
+
     socket
-    |> assign(:codex_threads, threads)
     |> assign(:codex_approvals, approvals)
     |> assign(:codex_pending_requests, pending_requests(approvals))
     |> assign(:codex_pending_approval_count, pending_count(approvals))
     |> AgentApprovalState.assign_pending_count()
-    |> assign(:codex_selected_thread_id, selected_thread_id)
-    |> assign_timeline(selected_thread_id)
     |> assign(:codex_error, nil)
   rescue
     error -> assign(socket, :codex_error, Exception.message(error))
@@ -84,7 +119,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
       {:noreply,
        socket
        |> assign(:codex_selected_thread_id, thread_id)
-       |> assign(:codex_live_delta, "")
+       |> clear_live_chunks()
        |> assign_timeline(thread_id)}
     else
       {:noreply, put_flash(socket, :error, "That Codex thread is no longer available.")}
@@ -151,13 +186,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
 
   def handle_info(%Event{} = event, socket) do
     socket =
-      if event.workspace_id == socket.assigns.workspace.id and
-           (history_active?(socket) or approval_event?(event)) do
-        socket
-        |> maybe_clear_completed_delta(event)
-        |> refresh()
-      else
-        socket
+      cond do
+        event.workspace_id != socket.assigns.workspace.id ->
+          socket
+
+        history_active?(socket) ->
+          socket
+          |> maybe_clear_completed_delta(event)
+          |> refresh_history(event)
+
+        approval_event?(event) ->
+          refresh_approvals_only(socket)
+
+        true ->
+          socket
       end
 
     {:noreply, socket}
@@ -166,16 +208,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
   def handle_info(:flush_codex_deltas, socket) do
     delta = socket.assigns.codex_delta_buffer |> Enum.reverse() |> IO.iodata_to_binary()
 
-    live_delta =
-      (socket.assigns.codex_live_delta <> delta)
-      |> retain_tail(@max_live_delta_bytes)
-
     {:noreply,
-     assign(socket,
-       codex_live_delta: live_delta,
-       codex_delta_buffer: [],
-       codex_delta_timer: nil
-     )}
+     socket
+     |> append_live_chunk(delta)
+     |> assign(codex_delta_buffer: [], codex_delta_timer: nil)}
   end
 
   def handle_info({:codex_exec_event, _run_id, _event}, socket), do: {:noreply, socket}
@@ -193,6 +229,22 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
 
     {:noreply, socket}
   end
+
+  defp refresh_history(socket, event) do
+    socket = refresh_snapshot(socket, timeline?: false)
+
+    if timeline_event?(event, socket.assigns.codex_selected_thread_id) do
+      assign_timeline(socket, socket.assigns.codex_selected_thread_id)
+    else
+      socket
+    end
+  end
+
+  defp timeline_event?(%Event{thread_id: thread_id}, selected)
+       when is_binary(thread_id) and is_binary(selected),
+       do: thread_id == selected
+
+  defp timeline_event?(_event, _selected), do: false
 
   defp assign_timeline(socket, nil), do: assign(socket, :codex_timeline, [])
 
@@ -267,9 +319,37 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
   defp maybe_clear_completed_delta(socket, %Event{type: type, thread_id: thread_id})
        when type in [:turn_completed, :turn_failed] do
     if thread_id == socket.assigns.codex_selected_thread_id,
-      do: assign(socket, :codex_live_delta, ""),
+      do: clear_live_chunks(socket),
       else: socket
   end
 
   defp maybe_clear_completed_delta(socket, _event), do: socket
+
+  defp clear_live_chunks(socket) do
+    assign(socket, codex_live_chunks: [], codex_live_bytes: 0)
+  end
+
+  defp append_live_chunk(socket, delta) when not is_binary(delta) or delta == "", do: socket
+
+  defp append_live_chunk(socket, delta) do
+    delta = retain_tail(delta, @max_live_delta_bytes)
+    seq = socket.assigns.codex_live_seq + 1
+    chunk = %{id: seq, text: delta}
+    chunks = socket.assigns.codex_live_chunks ++ [chunk]
+    bytes = socket.assigns.codex_live_bytes + byte_size(delta)
+    {chunks, bytes} = drop_old_chunks(chunks, bytes)
+
+    assign(socket,
+      codex_live_chunks: chunks,
+      codex_live_bytes: bytes,
+      codex_live_seq: seq
+    )
+  end
+
+  defp drop_old_chunks(chunks, bytes) when bytes <= @max_live_delta_bytes, do: {chunks, bytes}
+  defp drop_old_chunks([], _bytes), do: {[], 0}
+
+  defp drop_old_chunks([oldest | rest], bytes) do
+    drop_old_chunks(rest, bytes - byte_size(oldest.text))
+  end
 end
