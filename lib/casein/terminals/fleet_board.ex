@@ -214,7 +214,14 @@ defmodule Casein.Terminals.FleetBoard do
       row
       |> Map.put(:ticket, ticket)
       |> Map.put(:ticket_match, match)
-      |> Map.put(:capacity?, is_nil(ticket) and not row.needs_you?)
+      # `:unknown` is could-not-classify, not spare capacity. Filing it below the
+      # capacity divider would collapse it into quiet — the exact #910/#916
+      # distinction this board exists to protect — so it stays in the live list
+      # where its unknown_reason is visible.
+      |> Map.put(
+        :capacity?,
+        is_nil(ticket) and not row.needs_you? and row.bucket != :unknown
+      )
     end)
   end
 
@@ -234,6 +241,33 @@ defmodule Casein.Terminals.FleetBoard do
       ticket_feed_state: :unknown
     }
   end
+
+  @doc """
+  Render an `unknown_reason` as a stable string.
+
+  One vocabulary for every surface — `orchestration_status` puts this on the
+  wire and the cockpit drawer prints it. A bare `:unknown` with no reason is the
+  silent-failure class (#916), so this never returns an empty string.
+  """
+  @spec unknown_reason_string(term()) :: String.t() | nil
+  def unknown_reason_string(nil), do: nil
+  def unknown_reason_string(reason) when is_atom(reason), do: Atom.to_string(reason)
+  def unknown_reason_string(reason) when is_binary(reason), do: reason
+
+  def unknown_reason_string({:liveness_unknown, inner}) do
+    "liveness_unknown:#{stringify_reason(inner) || "unscanned"}"
+  end
+
+  def unknown_reason_string({:unmapped_agent_state, state}) do
+    "unmapped_agent_state:#{stringify_reason(state) || "nil"}"
+  end
+
+  def unknown_reason_string(other), do: inspect(other)
+
+  defp stringify_reason(nil), do: nil
+  defp stringify_reason(value) when is_atom(value), do: Atom.to_string(value)
+  defp stringify_reason(value) when is_binary(value), do: value
+  defp stringify_reason(_), do: nil
 
   @doc "True when the board has any needs-you row or orphaned claim."
   @spec needs_attention?(board()) :: boolean()

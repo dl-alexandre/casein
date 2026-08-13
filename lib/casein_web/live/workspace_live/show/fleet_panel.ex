@@ -111,8 +111,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
         <header class="flex items-center justify-between gap-2 border-b px-4 py-3">
           <div class="min-w-0">
             <h2 class="text-sm font-semibold tracking-tight">Fleet</h2>
-            <p class="font-mono text-density-body text-base-content/60">
-              {Map.get(@board, :total, 0)} agents · {Map.get(@board, :attention_count, 0)} need you · {@workspace.name}
+            <p
+              class="font-mono text-density-body text-base-content/60"
+              title={count_population_title()}
+            >
+              {Map.get(@board, :total, 0)} agent windows · {Map.get(@board, :attention_count, 0)} need you · {@workspace.name}
             </p>
           </div>
           <button
@@ -262,6 +265,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
                     {row.agent_state_message}
                   </span>
                   <span
+                    :if={unknown_reason_label(row)}
+                    class="truncate text-base-content/50"
+                    title="Casein could not classify this pane — this is why, not a claim that it is quiet"
+                  >
+                    can't classify: {unknown_reason_label(row)}
+                  </span>
+                  <span
                     :if={liveness_label(row)}
                     class={"shrink-0 " <> liveness_class(row)}
                   >
@@ -358,36 +368,69 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
 
   ## WHO chip — five states, one colour rule: only a reported human block is warm.
 
+  # Bucket-driven, not agent_state-driven. A hook-less OpenCode pane reports no
+  # agent_state at all; #917 classifies it from liveness, and keying this chip
+  # off agent_state would print "unknown" over a worker the board already knows
+  # is working — the #916 bug wearing a different hat.
+  #
+  # agent_state only refines *within* a bucket, and it keeps the states the
+  # taxonomy says are distinct distinct: wedged (stalled) is not idle, idle is
+  # not quiet-with-no-task (ready), and neither is unknown.
   defp who_chip_label(%{parked?: true}), do: "parked"
-  defp who_chip_label(%{agent_state: :working}), do: "working"
   defp who_chip_label(%{agent_state: :blocked}), do: "blocked"
   defp who_chip_label(%{agent_state: :errored}), do: "error"
-  defp who_chip_label(%{agent_state: :done}), do: "done"
-  defp who_chip_label(%{fleet_readiness: :ready_no_task}), do: "idle"
-  defp who_chip_label(%{agent_state: state}) when state in [:stalled, :awaiting_input], do: "idle"
-  defp who_chip_label(%{agent_state: :idle}), do: "idle"
+  defp who_chip_label(%{agent_state: :stalled}), do: "stalled"
+  defp who_chip_label(%{agent_state: :awaiting_input}), do: "awaiting"
+  defp who_chip_label(%{bucket: :needs_you}), do: "needs you"
+  defp who_chip_label(%{bucket: :working}), do: "working"
+  defp who_chip_label(%{bucket: :ready_no_task}), do: "ready"
+  defp who_chip_label(%{bucket: :idle}), do: "idle"
+  defp who_chip_label(%{bucket: :done}), do: "done"
   defp who_chip_label(_), do: "unknown"
 
   # Slate for everything quiet — ready / stalled / awaiting_input / idle / done.
   # Blue-busy is reserved for an agent that is actually working, amber for a
   # reported block. An inference never gets a warm colour.
-  defp who_chip_class(%{agent_state: :working}),
-    do: "bg-status-ok/15 text-status-ok"
-
   defp who_chip_class(%{agent_state: state}) when state in [:blocked, :errored],
     do: "bg-status-warning-soft text-status-warning-fg"
 
   defp who_chip_class(%{parked?: true}),
     do: "bg-status-warning-soft/60 text-status-warning-fg"
 
-  defp who_chip_class(%{agent_state: nil, fleet_readiness: nil}),
-    do: "bg-base-200 text-base-content/40"
+  defp who_chip_class(%{bucket: :needs_you}),
+    do: "bg-status-warning-soft text-status-warning-fg"
+
+  defp who_chip_class(%{bucket: :working}),
+    do: "bg-status-ok/15 text-status-ok"
+
+  # Could-not-classify gets its own dimmer treatment plus a printed reason, so it
+  # reads as "no signal", never as an observed quiet.
+  defp who_chip_class(%{bucket: :unknown}),
+    do: "bg-base-200 text-base-content/40 italic"
 
   defp who_chip_class(_), do: "bg-base-200 text-base-content/50"
 
   # Derived blockers stay slate; only a reported one is amber.
   defp blocked_on_class(%{blocked_on: %{kind: :report}}), do: "text-status-warning-fg"
   defp blocked_on_class(_), do: "text-base-content/50"
+
+  # Counts on fleet surfaces measure different populations on purpose and are
+  # NOT reconciled into one number: a session's raw pane count includes shells
+  # and preview panes; "agent windows" is what this board rows; `fleet_role=worker`
+  # is a subset that legitimately excludes SUP/MGR panes. Same wording as the
+  # `orchestration_status` note so the two surfaces explain themselves alike.
+  defp count_population_title do
+    "agent windows on this session (board rows). Not the session's raw pane count " <>
+      "(shells and preview panes are excluded) and not the worker count " <>
+      "(fleet_role=worker excludes SUP/MGR panes)."
+  end
+
+  # #916/#917: an unknown row must say why. Shared vocabulary with the wire.
+  defp unknown_reason_label(%{bucket: :unknown} = row) do
+    FleetBoard.unknown_reason_string(Map.get(row, :unknown_reason)) || "reason not recorded"
+  end
+
+  defp unknown_reason_label(_row), do: nil
 
   defp ticket_feed_label(board) do
     case Map.get(board, :ticket_feed_state) do

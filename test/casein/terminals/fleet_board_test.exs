@@ -548,6 +548,73 @@ defmodule Casein.Terminals.FleetBoardTest do
     end
   end
 
+  describe "unknown is not capacity (#916 discipline)" do
+    test "an unclassifiable pane stays in the live list carrying its reason" do
+      board =
+        board([tab("w1", agent_state: nil, fleet_role: :worker)],
+          ticket_feed: TicketFeed.unknown()
+        )
+
+      row = hd(board.rows)
+      assert row.bucket == :unknown
+      assert row.unknown_reason == :agent_state_absent_liveness_not_observed
+      # Filing could-not-classify under capacity would render it as quiet.
+      refute row.capacity?
+    end
+
+    test "a hook-less worker with active liveness joins its PR and is not unknown" do
+      tab =
+        tab("w1",
+          agent_state: nil,
+          fleet_role: :worker,
+          worktree_path: "/wt/pr",
+          liveness: %{state: :active}
+        )
+
+      board =
+        board([tab],
+          ticket_feed:
+            TicketFeed.project(
+              [%{"number" => 916, "headRefName" => "agent/oc/x", "__kind" => :pr}],
+              branch_by_worktree: %{"/wt/pr" => "agent/oc/x"}
+            )
+        )
+
+      row = hd(board.rows)
+      assert row.bucket == :working
+      assert is_nil(row.unknown_reason)
+      assert row.ticket.number == 916
+      assert row.ticket_match == :branch
+    end
+
+    test "derived stalled is idle, not needs_you, and never bare unknown" do
+      board = board([tab("w1", agent_state: :stalled, fleet_role: :worker)])
+      row = hd(board.rows)
+
+      assert row.bucket == :idle
+      refute row.needs_you?
+      assert is_nil(row.unknown_reason)
+      # It still says *why* it is quiet — derived, not reported.
+      assert row.blocked_on.kind == :derived
+    end
+  end
+
+  describe "unknown_reason_string/1" do
+    test "renders every shape in the taxonomy without an empty answer" do
+      assert FleetBoard.unknown_reason_string(nil) == nil
+      assert FleetBoard.unknown_reason_string(:unscanned) == "unscanned"
+
+      assert FleetBoard.unknown_reason_string({:liveness_unknown, :no_worktree}) ==
+               "liveness_unknown:no_worktree"
+
+      assert FleetBoard.unknown_reason_string({:liveness_unknown, nil}) ==
+               "liveness_unknown:unscanned"
+
+      assert FleetBoard.unknown_reason_string({:unmapped_agent_state, :weird}) ==
+               "unmapped_agent_state:weird"
+    end
+  end
+
   defp tab(id, opts) do
     defaults = %{
       id: id,
