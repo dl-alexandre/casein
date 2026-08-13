@@ -48,6 +48,7 @@ defmodule Casein.Agents.TerminalTools do
     WorkerStatus,
     WorkerLaunch,
     WorkerCancel,
+    WorktreeStatus,
     WorkHandleCreate,
     WorkHandleGet,
     WorkHandleList,
@@ -115,6 +116,7 @@ defmodule Casein.Agents.TerminalTools do
     RuntimeSignal,
     WorkerLaunch,
     WorkerCancel,
+    WorktreeStatus,
     GateReport,
     McpSelfTest
   ]
@@ -223,6 +225,8 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate worker_launch(params), to: Session
   @doc false
   defdelegate worker_cancel(params), to: Session
+  @doc false
+  defdelegate worktree_status(params), to: Session
   @doc false
   defdelegate gate_report(params), to: Report
   @doc false

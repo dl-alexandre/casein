@@ -300,6 +300,37 @@ contract tests so a respawned worker does not re-derive them from a dead brief):
 
 Leave #384 open for those milestones.
 
+## MCP: `worktree_status` (M4.2 one-call Git inspection)
+
+**One call** answers "what is this worker's tree?" by joining `WorkerStatus`
+identity with `Git.Inspector` — the same inspector `casein://fleet/summary`
+already uses. Not a second git scraper and not a second fleet classifier.
+
+```text
+worktree_status { workspace_id, session, pane, window_id? }
+→ found?, pane_id, window_id/name, worktree_path,
+  git { inspect_state, unknown_reason?, branch?, head_sha?,
+        upstream?, ahead?, behind?, detached?, commits_not_on_origin? }
+```
+
+| Property | Behaviour |
+|----------|-----------|
+| Join | `WorkerStatus.find_pane` + `Git.Inspector.inspect_cwd` |
+| `inspect_state: ok` | branch / HEAD / upstream / ahead / behind when present |
+| `inspect_state: unknown` | carries `unknown_reason`; **never** `ahead: 0` or clean |
+| `ahead: nil` | no upstream — omit `commits_not_on_origin?` (not false-unpushed) |
+| Dirty/clean | **Not this slice** — needs porcelain (`worktree_changed_paths` later) |
+
+**Still out of scope for this slice** (carried in `WorktreeStatus` moduledoc +
+contract tests so a respawned worker does not re-derive them from a dead brief):
+
+- changed_paths / diff
+- `worker_replace` / `worker_send_contract`
+- durable task graph / path contracts / verifier adapters
+- treating inspect failure as clean or not-ahead
+
+Leave #384 open for those milestones.
+
 ## MCP resource: `casein://fleet/summary` (#859 / #879)
 
 Read-only **one-call fleet picture** on Terminal MCP `resources/list` /
@@ -362,6 +393,8 @@ orchestration_list_workers paths owned by #384.
 - `Casein.Agents.TerminalTools.WorkerLaunch` — Jido / MCP `worker_launch`
 - `Casein.Terminals.WorkerCancel` — visible teardown + structured receipt (M4.1)
 - `Casein.Agents.TerminalTools.WorkerCancel` — Jido / MCP `worker_cancel`
+- `Casein.Terminals.WorktreeStatus` — one-call Git inspection (M4.2)
+- `Casein.Agents.TerminalTools.WorktreeStatus` — Jido / MCP `worktree_status`
 - `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859/#879)
 - `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy presence (#859)
 - `Casein.Terminals.AgentProgress` — composite progress + running_but_not_progressing (#879)
