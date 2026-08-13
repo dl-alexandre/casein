@@ -5,7 +5,7 @@ defmodule Casein.Runtimes.MemoryAdapter do
 
   @behaviour Casein.Runtimes
 
-  alias Casein.Runtimes.{LifecycleEvent, Runtime}
+  alias Casein.Runtimes.{LifecycleEvent, LifecycleEvents, Runtime}
 
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, %{runtimes: %{}, events: %{}}, name: __MODULE__)
@@ -26,7 +26,11 @@ defmodule Casein.Runtimes.MemoryAdapter do
   def list_runtimes(filters), do: GenServer.call(__MODULE__, {:list_runtimes, filters})
 
   @impl true
-  def events_for(runtime_id), do: GenServer.call(__MODULE__, {:events_for, runtime_id})
+  def events_for(runtime_id), do: events_page(runtime_id, []).events
+
+  @impl true
+  def events_page(runtime_id, opts \\ []),
+    do: GenServer.call(__MODULE__, {:events_page, runtime_id, opts})
 
   @impl true
   def clear, do: GenServer.call(__MODULE__, :clear)
@@ -79,13 +83,9 @@ defmodule Casein.Runtimes.MemoryAdapter do
     {:reply, runtimes, state}
   end
 
-  def handle_call({:events_for, runtime_id}, _from, state) do
-    events =
-      state.events
-      |> Map.get(runtime_id, [])
-      |> Enum.sort_by(& &1.inserted_at, {:asc, DateTime})
-
-    {:reply, events, state}
+  def handle_call({:events_page, runtime_id, opts}, _from, state) do
+    events = Map.get(state.events, runtime_id, [])
+    {:reply, LifecycleEvents.page(events, opts), state}
   end
 
   def handle_call(:clear, _from, _state) do

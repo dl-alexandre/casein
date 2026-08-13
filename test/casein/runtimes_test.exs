@@ -637,6 +637,43 @@ defmodule Casein.RuntimesTest do
              Runtimes.observe_worktree("ws-agent-unrelated", %{"worktree_path" => unrelated})
   end
 
+  test "observe_worktree skips a heartbeat event when the lifecycle fingerprint is unchanged" do
+    root = tmp_repo!("observe-heartbeat-guard")
+    worktree = Path.join(root, "agent-worktree")
+    git!(root, ["worktree", "add", "-b", "heartbeat-guard", worktree, "main"])
+    seed_workspace("ws-heartbeat-guard", root)
+
+    assert {:ok, first} =
+             Runtimes.observe_worktree("ws-heartbeat-guard", %{
+               "worktree_path" => worktree,
+               "agent" => "opencode"
+             })
+
+    assert Enum.map(Runtimes.events_for(first.id), & &1.event) == ["runtime_provisioned"]
+
+    assert {:ok, second} =
+             Runtimes.observe_worktree("ws-heartbeat-guard", %{
+               "worktree_path" => worktree,
+               "agent" => "opencode"
+             })
+
+    assert second.id == first.id
+    assert DateTime.compare(second.heartbeat_at, first.heartbeat_at) == :gt
+
+    assert Enum.map(Runtimes.events_for(second.id), & &1.event) == ["runtime_provisioned"]
+
+    assert {:ok, third} =
+             Runtimes.observe_worktree("ws-heartbeat-guard", %{
+               "worktree_path" => worktree,
+               "agent" => "codex"
+             })
+
+    assert Enum.map(Runtimes.events_for(third.id), & &1.event) == [
+             "runtime_provisioned",
+             "runtime_heartbeat"
+           ]
+  end
+
   test "observe_worktree upserts by workspace and dedicated git worktree path" do
     root = tmp_repo!("observe-upsert")
     worktree = Path.join(root, "agent-worktree")

@@ -8,6 +8,7 @@ defmodule Casein.Runtimes.EctoAdapter do
   alias Casein.Runtimes.{
     LifecycleEvent,
     LifecycleEventRow,
+    LifecycleEvents,
     Runtime,
     RuntimeRow
   }
@@ -141,18 +142,34 @@ defmodule Casein.Runtimes.EctoAdapter do
     |> Enum.map(&to_runtime/1)
   end
 
-  # NOTE (audit #5): intentionally unbounded. Replay/export need the full
-  # lifecycle history and per-runtime event counts stay small in practice
-  # (dozens, low hundreds on long-lived canaries). If this ever exceeds ~500 in
-  # prod, switch to an optional `:limit` (default unbounded) + newest-first
-  # ordering + a visible "showing latest N" banner — never a silent cap.
+  # #921: this used to be an unbounded Repo.all. Prod hit 77_552 events on one
+  # runtime (1_023 runtimes past the ~500 comment tripwire) and materialising
+  # that into the BEAM is the replay bug the comment warned about. Newest-first
+  # LIMIT, chronological return, visible banner via events_page/2 — never a
+  # silent cap, never unbounded. Indexing this table is not the fix.
   @impl true
-  def events_for(runtime_id) do
-    LifecycleEventRow
-    |> where([e], e.runtime_id == ^runtime_id)
-    |> order_by([e], asc: e.inserted_at)
-    |> Repo.all()
-    |> Enum.map(&to_event/1)
+  def events_for(runtime_id), do: events_page(runtime_id, []).events
+
+  @impl true
+  def events_page(runtime_id, opts \\ []) do
+    limit =
+      LifecycleEvents.clamp_limit(Keyword.get(opts, :limit, LifecycleEvents.default_page_limit()))
+
+    total =
+      LifecycleEventRow
+      |> where([e], e.runtime_id == ^runtime_id)
+      |> Repo.aggregate(:count)
+
+    events =
+      LifecycleEventRow
+      |> where([e], e.runtime_id == ^runtime_id)
+      |> order_by([e], desc: e.inserted_at)
+      |> limit(^limit)
+      |> Repo.all()
+      |> Enum.reverse()
+      |> Enum.map(&to_event/1)
+
+    LifecycleEvents.wrap(events, limit, total)
   end
 
   @impl true

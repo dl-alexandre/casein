@@ -16,7 +16,16 @@ defmodule Casein.Runtimes.Reaper do
 
   alias Casein.Git
   alias Casein.Runtimes
-  alias Casein.Runtimes.{PreviewKiller, PreviewServer, Runtime, WorktreeAlarm}
+
+  alias Casein.Runtimes.{
+    LifecycleRetention,
+    LifecycleSizeTripwire,
+    PreviewKiller,
+    PreviewServer,
+    Runtime,
+    WorktreeAlarm
+  }
+
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.WorkspaceRecord
 
@@ -154,13 +163,33 @@ defmodule Casein.Runtimes.Reaper do
           Runtimes.cleanup_expired(now, only_ids: only_ids)
       end
 
+    lifecycle = sweep_lifecycle_events(opts)
+
     %{
       expired: length(expired),
       reaped: length(cleaned),
       cleaned_ids: Enum.map(cleaned, & &1.id),
       skipped: Enum.reverse(skipped),
-      dry_run: dry_run?
+      dry_run: dry_run?,
+      lifecycle_retention: lifecycle.retention,
+      lifecycle_tripwire: lifecycle.tripwire
     }
+  end
+
+  # Retention is independent of worktree dry-run: deleting heartbeat rows is
+  # not destructive of agent work. The reaper dry-run flag must not stall #921.
+  defp sweep_lifecycle_events(opts) do
+    retention = LifecycleRetention.sweep_now(opts)
+    tripwire = LifecycleSizeTripwire.check_now()
+    %{retention: retention, tripwire: tripwire}
+  rescue
+    error ->
+      Logger.warning("[runtime-reaper] lifecycle event sweep failed: #{inspect(error)}")
+      %{retention: :error, tripwire: :error}
+  catch
+    :exit, reason ->
+      Logger.warning("[runtime-reaper] lifecycle event sweep exited: #{inspect(reason)}")
+      %{retention: :error, tripwire: :error}
   end
 
   defp teardown_expired_runtime(runtime_id) do

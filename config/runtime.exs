@@ -822,6 +822,24 @@ if config_env() == :prod and not release_cli? do
          :runtime_reaper_sweep_interval_ms,
          positive_integer_env.("CASEIN_RUNTIME_REAPER_SWEEP_INTERVAL_MS") || 3_600_000
 
+  # #921: heartbeat retention is independent of worktree dry-run. Default on;
+  # set CASEIN_RUNTIME_LIFECYCLE_RETENTION_DRY_RUN=1 to log-only.
+  config :casein,
+         :runtime_lifecycle_heartbeat_retention_days,
+         positive_integer_env.("CASEIN_RUNTIME_LIFECYCLE_HEARTBEAT_RETENTION_DAYS") || 7
+
+  config :casein,
+         :runtime_lifecycle_retention_dry_run,
+         System.get_env("CASEIN_RUNTIME_LIFECYCLE_RETENTION_DRY_RUN") in ~w(1 true TRUE yes YES on ON)
+
+  config :casein,
+         :runtime_lifecycle_table_row_tripwire,
+         positive_integer_env.("CASEIN_RUNTIME_LIFECYCLE_TABLE_ROW_TRIPWIRE") || 100_000
+
+  config :casein,
+         :runtime_lifecycle_per_runtime_tripwire,
+         positive_integer_env.("CASEIN_RUNTIME_LIFECYCLE_PER_RUNTIME_TRIPWIRE") || 500
+
   # Workspace reconciler — retires persisted workspace records the devbox
   # manager has stopped listing (deleted workspaces otherwise linger in the
   # sidebar forever). Only ever acts under the Manager source; see
