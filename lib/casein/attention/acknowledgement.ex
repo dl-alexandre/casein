@@ -471,70 +471,89 @@ defmodule Casein.Attention.Acknowledgement do
     end
   end
 
+  # Hot path (#922): terminal-window focus → mark_session_window_seen →
+  # mark_seen(sync_notifications: true). Do NOT load the user's full
+  # notifications table into Elixir and filter JSON metadata here — that was
+  # O(rows)×per-row Repo.update on every click. Match in SQL, open rows only,
+  # single update_all. Retention is a separate Oban decision; not this path.
   defp sync_notifications_read!(user_id, kind, subject_id, origin_id, now) do
     user_id
-    |> matching_notifications(kind, subject_id, origin_id)
-    |> Enum.each(fn
-      %Notification{read_at: nil} = n ->
-        n
-        |> Ecto.Changeset.change(%{read_at: now})
-        |> Repo.update()
+    |> matching_notifications_query(kind, subject_id, origin_id)
+    |> where([n], is_nil(n.read_at))
+    |> Repo.update_all(set: [read_at: now])
 
-      _ ->
-        :ok
-    end)
+    :ok
   end
 
   defp sync_notifications_resolved!(user_id, kind, subject_id, origin_id, now) do
     user_id
-    |> matching_notifications(kind, subject_id, origin_id)
-    |> Enum.each(fn n ->
-      changes =
-        %{}
-        |> Map.put(:resolved_at, n.resolved_at || now)
-        |> Map.put(:read_at, n.read_at || now)
-
-      n
-      |> Ecto.Changeset.change(changes)
-      |> Repo.update()
+    |> matching_notifications_query(kind, subject_id, origin_id)
+    |> where([n], is_nil(n.resolved_at) or is_nil(n.read_at))
+    |> then(fn query ->
+      from(n in query,
+        update: [
+          set: [
+            resolved_at: fragment("COALESCE(?, ?)", n.resolved_at, ^now),
+            read_at: fragment("COALESCE(?, ?)", n.read_at, ^now)
+          ]
+        ]
+      )
     end)
+    |> Repo.update_all([])
+
+    :ok
   end
 
-  defp matching_notifications(user_id, kind, subject_id, origin_id) do
-    from(n in Notification, where: n.user_id == ^user_id)
-    |> Repo.all()
-    |> Enum.filter(&notification_matches_subject?(&1, kind, subject_id, origin_id))
+  defp matching_notifications_query(user_id, kind, subject_id, origin_id) do
+    base = from(n in Notification, where: n.user_id == ^user_id)
+    restrict_to_subject(base, kind, subject_id, origin_id)
   end
 
-  defp notification_matches_subject?(n, @card, attention_key, origin_id) do
-    meta_key = metadata_string(n.metadata, "attention_key")
-    meta_origin = metadata_string(n.metadata, "origin_id")
+  defp restrict_to_subject(query, @card, attention_key, origin_id) do
     session_id = session_id_from_attention_key(attention_key)
+    # One top-level dynamic — Ecto rejects nested ^dynamic inside and/or.
+    where(query, ^card_subject_match_dynamic(attention_key, origin_id, session_id))
+  end
 
-    cond do
-      meta_key == attention_key and (is_nil(meta_origin) or meta_origin == origin_id) ->
-        true
+  defp restrict_to_subject(query, @notification, notification_id, _origin_id) do
+    where(query, [n], n.id == ^notification_id)
+  end
 
-      meta_key in [nil, ""] and is_binary(session_id) and session_id != "" and
-          n.session_id == session_id ->
-        true
+  defp restrict_to_subject(query, @session_window, subject_id, _origin_id) do
+    case Regex.run(~r/^(.+):session:([^:]+):window:/, subject_id) do
+      [_, workspace_id, session_id] ->
+        where(query, [n], n.workspace_id == ^workspace_id and n.session_id == ^session_id)
 
-      true ->
-        false
+      _ ->
+        where(query, [n], false)
     end
   end
 
-  defp notification_matches_subject?(n, @notification, notification_id, _origin_id) do
-    n.id == notification_id
-  end
-
-  defp notification_matches_subject?(n, @session_window, subject_id, _origin_id) do
-    case Regex.run(~r/^(.+):session:([^:]+):window:/, subject_id) do
-      [_, workspace_id, session_id] ->
-        n.workspace_id == workspace_id and n.session_id == session_id
-
-      _ ->
-        false
+  # Portable JSON match (Postgres jsonb + SQLite json). Both arms stay under
+  # the outer user_id filter via a single where(^dynamic).
+  defp card_subject_match_dynamic(attention_key, origin_id, session_id) do
+    if sqlite?() do
+      dynamic(
+        [n],
+        (fragment("json_extract(?, '$.attention_key') = ?", n.metadata, ^attention_key) and
+           (is_nil(fragment("json_extract(?, '$.origin_id')", n.metadata)) or
+              fragment("json_extract(?, '$.origin_id') = ''", n.metadata) or
+              fragment("json_extract(?, '$.origin_id') = ?", n.metadata, ^origin_id))) or
+          ((is_nil(fragment("json_extract(?, '$.attention_key')", n.metadata)) or
+              fragment("json_extract(?, '$.attention_key') = ''", n.metadata)) and
+             n.session_id == ^session_id and ^session_id != "")
+      )
+    else
+      dynamic(
+        [n],
+        (fragment("?->>'attention_key' = ?", n.metadata, ^attention_key) and
+           (is_nil(fragment("?->>'origin_id'", n.metadata)) or
+              fragment("?->>'origin_id' = ''", n.metadata) or
+              fragment("?->>'origin_id' = ?", n.metadata, ^origin_id))) or
+          ((is_nil(fragment("?->>'attention_key'", n.metadata)) or
+              fragment("?->>'attention_key' = ''", n.metadata)) and
+             n.session_id == ^session_id and ^session_id != "")
+      )
     end
   end
 

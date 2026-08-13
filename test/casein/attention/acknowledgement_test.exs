@@ -1,6 +1,8 @@
 defmodule Casein.Attention.AcknowledgementTest do
   use Casein.DataCase, async: false
 
+  import Ecto.Query
+
   alias Casein.Attention.Acknowledgement
   alias Casein.Mobile.{AttentionCursor, AttentionInbox, Card}
   alias Casein.Notifications
@@ -410,5 +412,120 @@ defmodule Casein.Attention.AcknowledgementTest do
       )
 
     assert MapSet.member?(keys_after, {"sid-rail", "@1"})
+  end
+
+  test "notification sync matches in SQL and stays O(1) updates under noise (#922)" do
+    # BEFORE (#922): matching_notifications loaded every row for the user and
+    # filtered metadata in Elixir, then per-row Repo.update. With N noise rows
+    # that was O(N) decode + O(matches) updates on every terminal-window click.
+    # AFTER: one update_all with SQL subject match + open-row filter.
+    noise = 80
+
+    for i <- 1..noise do
+      assert {:ok, _n, :created} =
+               Notifications.deliver(
+                 %{
+                   user_id: "dev",
+                   workspace_id: "ws-noise-#{i}",
+                   session_id: "noise-#{i}",
+                   type: "mobile_attention",
+                   severity: "info",
+                   title: "noise #{i}",
+                   metadata: %{
+                     "attention_key" => "ws-noise-#{i}:session:noise-#{i}",
+                     "origin_id" => @origin
+                   },
+                   channels: ["in_app"]
+                 },
+                 now: @now
+               )
+    end
+
+    assert {:ok, target, :created} =
+             Notifications.deliver(
+               %{
+                 user_id: "dev",
+                 workspace_id: "ws-1",
+                 session_id: "sid-hot",
+                 type: "mobile_attention",
+                 severity: "info",
+                 title: "hot path",
+                 metadata: %{
+                   "attention_key" => "ws-1:session:sid-hot",
+                   "origin_id" => @origin
+                 },
+                 channels: ["in_app"]
+               },
+               now: @now
+             )
+
+    assert is_nil(target.read_at)
+
+    parent = self()
+    handler_id = "ack-922-#{System.unique_integer([:positive])}"
+
+    :ok =
+      :telemetry.attach(
+        handler_id,
+        [:casein, :repo, :query],
+        fn _event, measurements, meta, _ ->
+          send(parent, {:repo_query, measurements, meta})
+        end,
+        nil
+      )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    {usec, {:ok, _}} =
+      :timer.tc(fn ->
+        Acknowledgement.mark_session_window_seen("dev", "ws-1", "sid-hot", "@1",
+          now: @later,
+          origin_id: @origin
+        )
+      end)
+
+    queries =
+      Stream.repeatedly(fn ->
+        receive do
+          {:repo_query, measurements, meta} -> {measurements, meta}
+        after
+          0 -> :done
+        end
+      end)
+      |> Enum.take_while(&(&1 != :done))
+
+    # No full-table SELECT of notifications for this user — only UPDATE.
+    notification_selects =
+      Enum.count(queries, fn {_m, meta} ->
+        source = meta[:source] || meta[:options][:source]
+        query = meta[:query] || ""
+
+        source in ["notifications", :notifications] and
+          is_binary(query) and String.starts_with?(String.trim(query), "SELECT")
+      end)
+
+    notification_updates =
+      Enum.count(queries, fn {_m, meta} ->
+        query = meta[:query] || ""
+
+        is_binary(query) and String.contains?(query, "UPDATE") and
+          String.contains?(query, "notifications")
+      end)
+
+    reloaded = Repo.get!(Casein.Notifications.Notification, target.id)
+    assert reloaded.read_at == @later
+
+    still_unread =
+      from(n in Casein.Notifications.Notification,
+        where: n.user_id == "dev" and is_nil(n.read_at)
+      )
+      |> Repo.aggregate(:count)
+
+    assert still_unread == noise
+    assert notification_selects == 0
+    # mark_session_window_seen syncs twice (window + card); both are update_all.
+    assert notification_updates <= 4
+    # Soft wall-clock budget — far below multi-hundred-ms full-table stall.
+    assert usec < 200_000, "sync took #{usec}µs with #{noise} noise rows"
   end
 end

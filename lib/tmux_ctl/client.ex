@@ -1572,20 +1572,55 @@ defmodule TmuxCtl.Client do
     end
   end
 
-  @doc "Set many tmux session environment variables (best-effort, continues on partial failure)."
-  def set_environments(session, env) when is_binary(session) and is_map(env) do
-    failures =
-      for {key, value} <- env,
-          is_binary(key),
-          is_binary(value),
-          result = set_environment(session, key, value),
-          result != :ok do
-        {key, result}
-      end
+  @doc """
+  Set many tmux session environment variables.
 
-    case failures do
-      [] -> :ok
-      _ -> {:error, failures}
+  Batches into **one** tmux invocation (commands chained with `;`), matching
+  `apply_defaults/1` and `session_topology/1`. Do not regress to per-variable
+  `set_environment/3` forks on the mount hot path (#925) — O(vars) subprocesses
+  + Drain calls blocked first paint for every connected viewer.
+
+  On a non-zero batched exit, re-runs per key to report which failed (best-effort).
+  """
+  def set_environments(session, env) when is_binary(session) and is_map(env) do
+    pairs =
+      for {key, value} <- env, is_binary(key), is_binary(value), do: {key, value}
+
+    case pairs do
+      [] ->
+        :ok
+
+      _ ->
+        case TmuxCtl.SharedWriteGuard.guard(fn -> set_environments_unguarded(session, pairs) end) do
+          :noop -> :ok
+          result -> result
+        end
+    end
+  end
+
+  defp set_environments_unguarded(session, pairs) do
+    batched =
+      pairs
+      |> Enum.map(fn {key, value} -> ["set-environment", "-t", session, key, value] end)
+      |> Enum.intersperse([";"])
+      |> List.flatten()
+
+    case run(batched) do
+      {_, 0} ->
+        :ok
+
+      _ ->
+        failures =
+          for {key, value} <- pairs,
+              {out, code} = run(["set-environment", "-t", session, key, value]),
+              code != 0 do
+            {key, {:error, {code, out}}}
+          end
+
+        case failures do
+          [] -> :ok
+          _ -> {:error, failures}
+        end
     end
   end
 
