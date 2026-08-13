@@ -317,12 +317,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
     test "an embeddable http(s) URL with no tmux session flashes the start-a-session hint" do
       socket = preview_socket(%{tmux_session: ""})
 
-      assert {:noreply, socket} =
+      assert {:noreply, socket, {:continue, {:open_web_link_preview, url}}} =
                TerminalEvents.handle_event(
                  "terminal:open_web_link_preview",
                  %{"url" => "https://example.com/x"},
                  socket
                )
+
+      assert url == "https://example.com/x"
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_continue({:open_web_link_preview, url}, socket)
 
       assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "tmux terminal session"
     end
@@ -331,12 +336,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
       Application.put_env(:casein, :embeddability_checker, BlockedChecker)
       socket = preview_socket(%{tmux_session: "casein_alpha_u-dev"})
 
-      assert {:noreply, socket} =
+      assert {:noreply, socket, {:continue, {:open_web_link_preview, url}}} =
                TerminalEvents.handle_event(
                  "terminal:open_web_link_preview",
                  %{"url" => "https://blocks-framing.example/x"},
                  socket
                )
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_continue({:open_web_link_preview, url}, socket)
 
       assert Phoenix.Flash.get(socket.assigns.flash, :info) =~ "new browser tab"
 

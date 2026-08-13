@@ -982,6 +982,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_event("leader_help:" <> _ = event, params, socket),
     do: LeaderHelpEvents.handle_event(event, params, socket)
 
+  def handle_continue({:open_web_link_preview, url}, socket),
+    do: TerminalEvents.handle_continue({:open_web_link_preview, url}, socket)
+
   # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
   # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
   @doc false

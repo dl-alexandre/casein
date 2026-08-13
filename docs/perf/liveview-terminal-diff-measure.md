@@ -97,6 +97,22 @@ Enforced by `test/casein_web/live_diff_measure_test.exs` **"measure-only contrac
 (#899)"** — probe sources must not grow `temporary_assigns` / `stream*` calls,
 and `Serializer.encode!/1` must stay byte-identical to stock V2.
 
+## Hot-path blocking (#923) — measured on this box 2026-08-13
+
+Reuse the same telemetry (`[:casein, :live_view, :diff_wire]` /
+`[:casein, :live_view, :changed_assigns]`) to watch `fleet_board` /
+reply_diff after this change. Blocking work itself is timed with
+`:timer.tc` against the same functions the LiveView used to call inline.
+
+| Site | BEFORE (inline on LV) | AFTER (LV path) |
+|------|----------------------:|----------------:|
+| `GateQueue.observe(cache: false)` `/proc` walk | 222–256 ms | `GateQueue.cached/0` miss/hit **18µs–5 ms** (unknown + background refresh) |
+| `OrphanedClaims.list_claimed(cache: false)` `gh issue list` | 593 ms | `cached_list/0` miss/hit **7µs–5 ms** (`{:error, :unscanned}` + background refresh) |
+| `terminal:open_web_link_preview` HTTP embed check | up to 1.5 s (`Req` timeout; audit cited ~6 s unbounded) | `handle_event` returns `handle_continue` before `Req`; probe stays off the event reply |
+| `pane_open.await_pane_registration/4` | 40×50 ms = **2000 ms** `Process.sleep` | single `get_by_pane` + immediate register (0 ms sleep) |
+
+Enforced by `test/casein_web/live/workspace_live/hot_path_blocking_test.exs`.
+
 ## Follow-up
 
 Open a perf issue titled from the **measured** top offender (e.g. “cap
