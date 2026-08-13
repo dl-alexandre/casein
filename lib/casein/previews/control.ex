@@ -491,6 +491,7 @@ defmodule Casein.Previews.Control do
   @doc "Latest observation for the most recent open control session of a preview."
   @spec latest_observation_for_preview(integer()) :: ControlObservation.t() | nil
   def latest_observation_for_preview(preview_id) do
+    # Served by preview_control_sessions(preview_id, status) (#926).
     latest_session =
       from s in ControlSession,
         where: s.preview_id == ^preview_id and s.status == :open,

@@ -67,6 +67,9 @@ defmodule Casein.Annotations do
   def list_for_workspace(workspace_id, opts \\ []) when is_binary(workspace_id) do
     limit = Keyword.get(opts, :limit, 100)
 
+    # pane_id is an optional residual filter on the mandatory workspace_id
+    # predicate (index: workspace_id, inserted_at desc). Do not add a
+    # pane_id-leading index: tmux pane ids recycle across workspaces (#926).
     Annotation
     |> where([a], a.workspace_id == ^workspace_id)
     |> filter_by(:preview_id, Keyword.get(opts, :preview_id))

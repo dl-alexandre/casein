@@ -173,6 +173,8 @@ defmodule Casein.Runtimes.EctoAdapter do
       {"workspace_id", value}, query -> where(query, [r], r.workspace_id == ^value)
       {"host_id", value}, query -> where(query, [r], r.host_id == ^value)
       {"host", value}, query -> where(query, [r], r.host_id == ^value)
+      # Status-alone is used by cleanup_expired/2 and the reaper. Served by
+      # workspace_runtimes(status); existing indexes trail status (#926).
       {"status", value}, query -> where(query, [r], r.status == ^value)
       {"repo", value}, query -> where(query, [r], r.repo == ^value)
       {"branch", value}, query -> where(query, [r], r.branch == ^value)
