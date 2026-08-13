@@ -160,8 +160,8 @@ defmodule Casein.Agents.AgentShims do
       Application.get_env(:casein, :install_agent_shims_path),
       join_scripts_env("CASEIN_SCRIPTS"),
       join_agent_scripts_path(),
-      Path.expand("scripts/install-agent-shims.sh"),
-      "/opt/casein/deploy-build/scripts/install-agent-shims.sh"
+      # #248: no /opt/casein/deploy-build fallback — that layout is overlay-only.
+      Path.expand("scripts/install-agent-shims.sh")
     ]
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
