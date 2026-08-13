@@ -65,8 +65,14 @@
   --color-base-200: oklch(96% 0.001 286.375);
   --color-base-300: oklch(92% 0.004 286.32);
   --color-base-content: oklch(21% 0.006 285.885);
-  --color-primary: oklch(70% 0.213 47.604);
-  --color-primary-content: oklch(98% 0.016 73.684);
+  /* Hue 277 (violet) matches dark primary. Warm Phoenix orange (hue 47.6)
+     sat ~27° from --casein-status-warning (hue 75) and failed #950: selection
+     chrome and attention chrome both read as amber. Floor is 60° circular
+     OKLCH hue from warning/danger — see test/casein_web/theme_hue_separation_test.exs.
+     Do not "fix" this by shifting status-warning; that token is the caution
+     language on chips, banners, dirty, stalled, and approvals. */
+  --color-primary: oklch(70% 0.213 277.117);
+  --color-primary-content: oklch(98% 0.016 272.314);
   --color-secondary: oklch(55% 0.027 264.364);
   --color-secondary-content: oklch(98% 0.002 247.839);
   --color-accent: oklch(0% 0 0);
@@ -275,7 +281,8 @@
   --casein-status-ok-soft: oklch(96.5% 0.03 163);
   --casein-status-ok-border: oklch(87% 0.07 163);
 
-  /* status-warning — caution / pending / stalled / dirty (was amber) */
+  /* status-warning — caution / pending / stalled / dirty (was amber).
+     Hue stays on the warm arc. Light --color-primary must not. #950. */
   --casein-status-warning: oklch(75% 0.15 75);
   --casein-status-warning-fg: oklch(48% 0.12 65);
   --casein-status-warning-content: oklch(25% 0.05 65);

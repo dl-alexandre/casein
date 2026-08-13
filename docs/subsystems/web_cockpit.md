@@ -194,6 +194,13 @@ Sibling #736 owns tablet-range density; this rule only says which query to ask.
   the terminal region's PTY under zoom. Browser DOM focus edits panel content
   only. Input-ownership ladder is unchanged: *global > leader > pane content*.
   Authoritative write-up: `CaseinWeb.WorkspaceLive.Show.InspectorFocus`.
+- **Light primary is not warm (#950).** Selection (`--color-primary`) and
+  attention (`--casein-status-warning`) share chip-scale chrome in the picker.
+  Circular OKLCH hue between light primary and status-warning / status-danger
+  must stay ≥ 60° (12-step categorical wheel, skip-a-step). Enforced by
+  `test/casein_web/theme_hue_separation_test.exs`. Do not retune warning to
+  make primary fit — warning is the caution language everywhere else. Do not
+  change call-site tokens; #729 already mapped them.
 
 ## See also
 
