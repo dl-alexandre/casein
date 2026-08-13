@@ -55,7 +55,7 @@ defmodule CaseinWeb.WorkspaceLive.HotPathBlockingTest do
 
   test "open_web_link_preview handle_event returns before the HTTP probe" do
     previous = Application.get_env(:casein, :embeddability_checker)
-    Application.put_env(:casein, :embeddability_checker, __MODULE__.SlowChecker)
+    Application.put_env(:casein, :embeddability_checker, __MODULE__.RaiseIfCalled)
 
     on_exit(fn ->
       if is_nil(previous),
@@ -85,7 +85,7 @@ defmodule CaseinWeb.WorkspaceLive.HotPathBlockingTest do
              result
 
     # BEFORE: embeddability HTTP sat in handle_event (up to 1.5s timeout).
-    # AFTER: event replies without waiting on the 200ms SlowChecker.
+    # AFTER: event replies without invoking the probe (RaiseIfCalled would explode).
     assert us < 50_000
 
     {total, ranked} = LiveDiffMeasure.rank_changed(socket.assigns, socket.assigns.__changed__)
@@ -94,15 +94,8 @@ defmodule CaseinWeb.WorkspaceLive.HotPathBlockingTest do
     assert is_list(ranked)
   end
 
-  defmodule SlowChecker do
-    def frame_blocked_url?(_url) do
-      Process.sleep(200)
-      false
-    end
-
-    def frame_blocked_url?(_url, _opts) do
-      Process.sleep(200)
-      false
-    end
+  defmodule RaiseIfCalled do
+    def frame_blocked_url?(_url), do: raise("embed probe must not run in handle_event")
+    def frame_blocked_url?(_url, _opts), do: raise("embed probe must not run in handle_event")
   end
 end
