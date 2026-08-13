@@ -4,6 +4,13 @@ defmodule Casein.Terminals.SessionOwner do
 
   Owns one logical session (shell/agent placeholder) and multiplexes
   backend output to all attached channel callers for that logical session.
+
+  #934 constraint: this module is the GenServer shell — one process per
+  tmux session. Callback bodies live in `SessionOwner.Recovery` and
+  `SessionOwner.PaneLifecycle`. Do not move `start_link`/`init`/`terminate`
+  process ownership into those helpers, and do not start the helpers as
+  processes. Behaviour-preserving only: file bugs rather than fixing them
+  here. Preview-pane registration is out of scope (overlap with #941).
   """
 
   use GenServer
@@ -11,9 +18,15 @@ defmodule Casein.Terminals.SessionOwner do
 
   alias Casein.Terminals.{Attachment, CommandTracker, Session.Info, SessionEvents}
   alias Casein.Terminals.Backend
-  alias Casein.Terminals.ScrollbackArchive
-  alias Casein.Terminals.SessionOwner.{Payload, ResponseClassifier, SizeMath}
-  alias Casein.Terminals.SessionRecovery
+
+  alias Casein.Terminals.SessionOwner.{
+    PaneLifecycle,
+    Payload,
+    Recovery,
+    ResponseClassifier,
+    SizeMath
+  }
+
   alias Casein.Terminals.Telemetry
   alias Casein.Terminals.Theme
 
@@ -35,11 +48,6 @@ defmodule Casein.Terminals.SessionOwner do
   # Minimum gap between resize-window tasks (coalesce still latest-wins).
   # Prevents flappy SIGWINCH storms that have crashed the tmux server.
   @tmux_resize_min_interval_ms 150
-
-  # After term_exit, attempt to re-open the shell attachment this many times
-  # before broadcasting exit and stopping the owner.
-  @backend_recover_max 5
-  @backend_recover_backoff_ms 400
 
   # Bound async tmux window_size probes on attach/drift so a wedged adapter
   # cannot leave a hung Task.Supervisor child forever. The owner mailbox is
@@ -320,101 +328,12 @@ defmodule Casein.Terminals.SessionOwner do
 
   @impl true
   def handle_call({:attach, subscriber, mode, opts}, _from, state) do
-    previous_state = state
-    reuse? = Map.has_key?(state.subscribers, subscriber)
-    previous_mode = Map.get(state.subscribers, subscriber)
-    fresh? = not reuse?
-
-    state =
-      if reuse? do
-        Logger.debug("terminal owner attach reuse",
-          subscriber: subscriber,
-          mode: mode,
-          kind: state.info.kind
-        )
-
-        :telemetry.execute([:casein, :terminals, :owner, :attach], %{count: 1}, %{
-          mode: mode,
-          reuse: true,
-          kind: state.info.kind
-        })
-
-        state
-        |> update_in([Access.key!(:subscribers)], &Map.put(&1, subscriber, mode))
-      else
-        ref = Process.monitor(subscriber)
-
-        Logger.info("terminal owner attached",
-          subscriber: subscriber,
-          mode: mode,
-          kind: state.info.kind
-        )
-
-        :telemetry.execute([:casein, :terminals, :owner, :attach], %{count: 1}, %{
-          mode: mode,
-          reuse: false,
-          kind: state.info.kind
-        })
-
-        state
-        |> update_in([Access.key!(:subscribers)], &Map.put(&1, subscriber, mode))
-        |> update_in([Access.key!(:subscriber_refs)], &Map.put(&1, ref, subscriber))
-        |> update_in([Access.key!(:subscriber_to_ref)], &Map.put(&1, subscriber, ref))
-      end
-
-    state = adjust_raw_subscribers(state, subscriber, previous_mode, mode)
-
-    state =
-      state
-      |> bind_attachment_context(:workspace_key, Keyword.get(opts, :workspace_key))
-      |> bind_attachment_context(:loc, Keyword.get(opts, :loc))
-      |> bind_attachment_context(:host_id, Keyword.get(opts, :host_id))
-
-    case ensure_attachment(state, subscriber, mode, opts) do
-      {:ok, next_state, payload} ->
-        next_state =
-          next_state
-          |> assert_tmux_window_size()
-          |> schedule_tmux_drift_check()
-
-        if next_state.applied_size do
-          {cols, rows} = next_state.applied_size
-          broadcast_owner_size(next_state.subscribers, cols, rows)
-        end
-
-        maybe_set_owner_subscriber_gauge(previous_state, next_state)
-        {:reply, {:ok, payload}, next_state}
-
-      {:error, reason} ->
-        Logger.warning("terminal owner attach error", reason: inspect(reason), mode: mode)
-
-        :telemetry.execute([:casein, :terminals, :owner, :attach_error], %{count: 1}, %{
-          reason: inspect(reason),
-          mode: mode
-        })
-
-        reply_state = if fresh?, do: prune_subscriber(state, subscriber), else: state
-        maybe_set_owner_subscriber_gauge(previous_state, reply_state)
-        {:reply, {:error, reason}, reply_state}
-    end
+    PaneLifecycle.handle_attach(state, subscriber, mode, opts)
   end
 
   @impl true
   def handle_call({:detach, subscriber}, _from, state) do
-    Logger.debug("terminal owner detach", subscriber: subscriber, kind: state.info.kind)
-
-    :telemetry.execute([:casein, :terminals, :owner, :detach], %{count: 1}, %{
-      kind: state.info.kind
-    })
-
-    next_state = prune_subscriber(state, subscriber)
-    maybe_set_owner_subscriber_gauge(state, next_state)
-
-    if should_stop?(next_state) do
-      {:stop, :normal, :ok, next_state}
-    else
-      {:reply, :ok, next_state}
-    end
+    PaneLifecycle.handle_detach(state, subscriber)
   end
 
   @impl true
@@ -516,29 +435,17 @@ defmodule Casein.Terminals.SessionOwner do
 
   @impl true
   def handle_info({:term_exit, reason}, state) do
-    handle_term_exit(state, reason)
+    Recovery.handle_term_exit(state, reason)
   end
 
   @impl true
   def handle_info({:term_exit, _ref, reason}, state) do
-    handle_term_exit(state, reason)
+    Recovery.handle_term_exit(state, reason)
   end
 
   @impl true
   def handle_info(:backend_recover, state) do
-    state = %{state | backend_recover_timer: nil}
-
-    # A concurrent raw attach may have already reopened the attachment while
-    # this timer was pending. Opening again would leak the first handle and
-    # double-count Telemetry.open_attachments.
-    if state.attachment do
-      {:noreply, %{state | backend_recover_attempts: 0}}
-    else
-      case attempt_backend_recover(state) do
-        {:stop, reason, next} -> {:stop, reason, next}
-        next -> {:noreply, next}
-      end
-    end
+    Recovery.handle_backend_recover(state)
   end
 
   @impl true
@@ -633,11 +540,7 @@ defmodule Casein.Terminals.SessionOwner do
   @impl true
   def handle_info({ref, result}, %{tmux_session_exists_probe: %{ref: ref} = probe} = state)
       when is_reference(ref) do
-    Process.demonitor(ref, [:flush])
-    _ = cancel_timer_ref(probe.timer)
-    state = %{state | tmux_session_exists_probe: nil}
-    exists? = result == true
-    {:noreply, apply_session_exists_result(state, probe.session, probe.purpose, exists?)}
+    {:noreply, Recovery.handle_session_exists_reply(state, probe, result)}
   end
 
   @impl true
@@ -645,43 +548,22 @@ defmodule Casein.Terminals.SessionOwner do
         {:DOWN, ref, :process, _pid, _reason},
         %{tmux_session_exists_probe: %{ref: ref} = probe} = state
       ) do
-    _ = cancel_timer_ref(probe.timer)
-    state = %{state | tmux_session_exists_probe: nil}
-    # Treat crash as "exists" for drift (avoid thrashing recover); recover path
-    # still proceeds with missing?=false so open_attachment can decide.
-    {:noreply, apply_session_exists_result(state, probe.session, probe.purpose, true)}
+    {:noreply, Recovery.handle_session_exists_down(state, probe)}
   end
 
   @impl true
   def handle_info(
         {:tmux_session_exists_timeout, ref},
-        %{tmux_session_exists_probe: %{ref: ref, pid: pid, session: session} = probe} = state
+        %{tmux_session_exists_probe: %{ref: ref} = probe} = state
       ) do
-    Process.demonitor(ref, [:flush])
-    Process.exit(pid, :kill)
-
-    Logger.warning(
-      "tmux session_exists? timed out session=#{session} timeout_ms=#{tmux_window_size_timeout_ms()}",
-      kind: :drift_guard
-    )
-
-    state = %{state | tmux_session_exists_probe: nil}
-    # Timeout → assume still present so we don't spuriously recover.
-    {:noreply, apply_session_exists_result(state, session, probe.purpose, true)}
+    {:noreply, Recovery.handle_session_exists_timeout(state, probe)}
   end
 
   def handle_info({:tmux_session_exists_timeout, _ref}, state), do: {:noreply, state}
 
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
-    next_state = prune_subscriber_ref(state, ref)
-    maybe_set_owner_subscriber_gauge(state, next_state)
-
-    if should_stop?(next_state) do
-      {:stop, :normal, next_state}
-    else
-      {:noreply, next_state}
-    end
+    PaneLifecycle.handle_subscriber_down(state, ref)
   end
 
   # Debounced content-event emit (see `bump_content_gen/1`). Trailing-edge:
@@ -698,7 +580,7 @@ defmodule Casein.Terminals.SessionOwner do
     state =
       state
       |> Map.put(:tmux_drift_timer, nil)
-      |> maybe_recover_missing_tmux_session()
+      |> Recovery.maybe_recover_missing_tmux_session()
       |> assert_tmux_window_size()
       |> schedule_tmux_drift_check()
 
@@ -713,7 +595,7 @@ defmodule Casein.Terminals.SessionOwner do
   @impl true
   def terminate(_reason, state) do
     _ = cancel_tmux_drift_timer(state)
-    _ = cancel_backend_recover_timer(state)
+    _ = Recovery.cancel_backend_recover_timer(state)
     Telemetry.owner_stopped(self())
 
     if state.attachment != nil do
@@ -727,308 +609,11 @@ defmodule Casein.Terminals.SessionOwner do
     :ok
   end
 
-  # Shell owners with live viewers re-open the Session attachment instead of
-  # dying — tmux -A recreates an empty session if the server wiped, and
-  # ScrollbackArchive reseeds history when available. Agent placeholders and
-  # owners with no subscribers keep the legacy broadcast+stop path.
-  defp handle_term_exit(%{info: %Info{kind: :shell}} = state, reason) do
-    if map_size(state.subscribers) > 0 do
-      Logger.warning(
-        "terminal owner backend exited; scheduling recover reason=#{inspect(reason)} kind=shell"
-      )
-
-      state =
-        state
-        |> clear_dead_attachment()
-        |> schedule_backend_recover()
-
-      {:noreply, state}
-    else
-      broadcast_exit(state.subscribers, reason)
-      {:stop, :normal, state}
-    end
-  end
-
-  defp handle_term_exit(state, reason) do
-    broadcast_exit(state.subscribers, reason)
-    {:stop, :normal, state}
-  end
-
-  defp clear_dead_attachment(%{attachment: nil} = state), do: state
-
-  defp clear_dead_attachment(state) do
-    Telemetry.owner_attachment_closed()
-    # Session is already dead; close is best-effort.
-    try do
-      Attachment.close(state.attachment)
-    catch
-      :exit, _ -> :ok
-    end
-
-    %{state | attachment: nil}
-  end
-
-  defp schedule_backend_recover(state) do
-    state = cancel_backend_recover_timer(state)
-    ref = Process.send_after(self(), :backend_recover, @backend_recover_backoff_ms)
-    %{state | backend_recover_timer: ref}
-  end
-
-  defp cancel_backend_recover_timer(%{backend_recover_timer: ref} = state)
-       when is_reference(ref) do
-    Process.cancel_timer(ref)
-    %{state | backend_recover_timer: nil}
-  end
-
-  defp cancel_backend_recover_timer(state), do: state
-
-  defp attempt_backend_recover(state) do
-    attempts = state.backend_recover_attempts + 1
-
-    if attempts > @backend_recover_max do
-      Logger.error(
-        "terminal owner backend recover exhausted attempts=#{attempts}; stopping owner"
-      )
-
-      broadcast_exit(state.subscribers, :backend_recover_failed)
-      {:stop, :normal, %{state | backend_recover_attempts: attempts}}
-    else
-      state = %{state | backend_recover_attempts: attempts}
-      session = tmux_session_for(state)
-
-      if is_binary(session) do
-        # session_exists? shells out with no timeout on the adapter — probe
-        # off-process, then continue recover when the result arrives.
-        start_session_exists_probe(state, session, {:continue_recover, attempts})
-      else
-        continue_backend_recover(state, attempts, _missing? = false)
-      end
-    end
-  end
-
-  defp continue_backend_recover(state, attempts, missing?) do
-    # Race: ensure_attachment/4 may have reopened between schedule and fire.
-    if state.attachment do
-      %{state | backend_recover_attempts: 0}
-    else
-      do_continue_backend_recover(state, attempts, missing?)
-    end
-  end
-
-  defp do_continue_backend_recover(state, attempts, missing?) do
-    session = tmux_session_for(state)
-    history_restored? = is_binary(session) and ScrollbackArchive.present?(session)
-
-    case open_attachment(state, []) do
-      {:ok, attachment} ->
-        Logger.info(
-          "terminal owner backend recovered attempt=#{attempts} session=#{session} missing=#{missing?}"
-        )
-
-        Telemetry.owner_attachment_opened()
-
-        :telemetry.execute(
-          [:casein, :terminals, :owner, :backend_recovered],
-          %{count: 1},
-          %{attempt: attempts, missing: missing?}
-        )
-
-        # Only notify when the tmux session was gone (server wipe / kill).
-        # Client-only death that reattaches an existing session stays silent.
-        if missing? do
-          SessionRecovery.notify_session_recreated(
-            tmux_session: session,
-            workspace_id: state.workspace_id,
-            sid: state.info.sid,
-            reason: :session_missing_on_recover,
-            history_restored?: history_restored?,
-            template_id: SessionRecovery.recovery_template(state.workspace_id)
-          )
-        end
-
-        s2 = %{
-          state
-          | attachment: attachment,
-            backend_recover_attempts: 0
-        }
-
-        s2 =
-          if tmux_tracks_client_colors?() do
-            report_client_colors(s2)
-          else
-            s2
-          end
-
-        # Replay retained Session buffer, then re-assert the last known
-        # viewer size so a fresh new-session is not left at bootstrap geometry.
-        s2
-        |> replay_all_raw_subscribers()
-        |> reassert_size_after_recover()
-
-      {:error, reason} ->
-        Logger.warning(
-          "terminal owner backend recover failed attempt=#{attempts} reason=#{inspect(reason)}"
-        )
-
-        state
-        |> Map.put(:backend_recover_attempts, attempts)
-        |> schedule_backend_recover()
-    end
-  end
-
-  defp reassert_size_after_recover(%{applied_size: {cols, rows}} = state)
-       when is_integer(cols) and is_integer(rows) do
-    state
-    |> maybe_resize_tmux_window(cols, rows)
-    |> then(fn s ->
-      if s.attachment do
-        _ = Attachment.resize(s.attachment, cols, rows)
-      end
-
-      s
-    end)
-    |> assert_tmux_window_size()
-  end
-
-  defp reassert_size_after_recover(state), do: assert_tmux_window_size(state)
-
-  defp replay_all_raw_subscribers(state) do
+  @doc false
+  def replay_all_raw_subscribers(state) do
     Enum.reduce(MapSet.to_list(state.raw_subscribers), state, fn pid, acc ->
       replay_to_subscriber(acc, pid)
     end)
-  end
-
-  defp tmux_session_for(%{workspace_key: key, info: %{sid: sid}})
-       when is_binary(key) and is_binary(sid),
-       do: Backend.module().session_name(key, sid)
-
-  defp tmux_session_for(_), do: nil
-
-  # Drift tick: if the tmux session vanished under us (server wipe) while the
-  # PTY client is still somehow attached, force a backend recover.
-  # session_exists? shells out with no timeout — probe off-process.
-  defp maybe_recover_missing_tmux_session(
-         %{workspace_key: key, info: %{kind: :shell, sid: sid}, attachment: att} = state
-       )
-       when is_binary(key) and is_binary(sid) and not is_nil(att) do
-    session = Backend.module().session_name(key, sid)
-    start_session_exists_probe(state, session, :recover_if_missing)
-  end
-
-  defp maybe_recover_missing_tmux_session(state), do: state
-
-  # Single-flight async session_exists? — mirrors window_size probe. `purpose`
-  # decides what to do when the result arrives (see apply_session_exists_result/4).
-  # Drift probes coalesce (skip if in flight); recover always restarts so a
-  # term_exit recover is never dropped behind a slow drift probe.
-  defp start_session_exists_probe(state, session, :recover_if_missing)
-       when is_binary(session) do
-    case state.tmux_session_exists_probe do
-      nil -> do_start_session_exists_probe(state, session, :recover_if_missing)
-      _in_flight -> state
-    end
-  end
-
-  defp start_session_exists_probe(state, session, {:continue_recover, _} = purpose)
-       when is_binary(session) do
-    state
-    |> cancel_session_exists_probe()
-    |> do_start_session_exists_probe(session, purpose)
-  end
-
-  defp do_start_session_exists_probe(state, session, purpose) do
-    backend = Backend.module()
-
-    task =
-      Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
-        session_exists?(backend, session, state.loc)
-      end)
-
-    timer =
-      Process.send_after(
-        self(),
-        {:tmux_session_exists_timeout, task.ref},
-        tmux_window_size_timeout_ms()
-      )
-
-    %{
-      state
-      | tmux_session_exists_probe: %{
-          ref: task.ref,
-          pid: task.pid,
-          session: session,
-          timer: timer,
-          purpose: purpose
-        }
-    }
-  end
-
-  defp session_exists?(backend, session, {:local, cwd})
-       when is_binary(cwd) and cwd != "" do
-    if function_exported?(backend, :session_exists?, 2) do
-      backend.session_exists?(session, cwd: cwd)
-    else
-      backend.session_exists?(session)
-    end
-  end
-
-  defp session_exists?(backend, session, _loc), do: backend.session_exists?(session)
-
-  defp cancel_session_exists_probe(
-         %{tmux_session_exists_probe: %{ref: ref, pid: pid, timer: timer}} = state
-       ) do
-    Process.demonitor(ref, [:flush])
-    Process.exit(pid, :kill)
-    _ = cancel_timer_ref(timer)
-    %{state | tmux_session_exists_probe: nil}
-  end
-
-  defp cancel_session_exists_probe(state), do: state
-
-  defp apply_session_exists_result(state, _session, :recover_if_missing, true), do: state
-
-  defp apply_session_exists_result(state, session, :recover_if_missing, false) do
-    Logger.warning("tmux session missing under live owner; recovering session=#{session}")
-
-    # Notify is deferred until successful recover (UUID + history flags
-    # accurate). Dedupe covers any race with term_exit recover.
-    state
-    |> clear_dead_attachment()
-    |> schedule_backend_recover()
-  end
-
-  defp apply_session_exists_result(state, _session, {:continue_recover, attempts}, exists?) do
-    continue_backend_recover(state, attempts, not exists?)
-  end
-
-  # Attachment context binds once per owner. A later attach without these opts
-  # (e.g. a re-join that omits :loc) or with a conflicting value must not
-  # clobber the context the live attachment was opened with.
-  defp bind_attachment_context(state, _key, nil), do: state
-
-  defp bind_attachment_context(state, key, value) do
-    case Map.fetch!(state, key) do
-      nil ->
-        Map.put(state, key, value)
-
-      ^value ->
-        state
-
-      existing ->
-        Logger.warning(
-          "terminal owner attach context conflict; keeping existing " <>
-            "#{key}=#{inspect(existing)} over #{inspect(value)}",
-          kind: state.info.kind
-        )
-
-        :telemetry.execute(
-          [:casein, :terminals, :owner, :binding_conflict],
-          %{count: 1},
-          %{key: key, kind: state.info.kind}
-        )
-
-        state
-    end
   end
 
   defp ensure_started(workspace_id, info) do
@@ -1136,7 +721,8 @@ defmodule Casein.Terminals.SessionOwner do
   # A viewer left: drop its size and active flag, then recompute. When the
   # focused (or largest fallback) viewer leaves, the size recomputes to the next
   # winner so remaining viewers regain control.
-  defp forget_subscriber_view(state, subscriber) do
+  @doc false
+  def forget_subscriber_view(state, subscriber) do
     state = %{
       state
       | subscriber_sizes: Map.delete(state.subscriber_sizes, subscriber),
@@ -1291,7 +877,8 @@ defmodule Casein.Terminals.SessionOwner do
     broadcast_owner_size(state.subscribers, cols, rows)
   end
 
-  defp broadcast_owner_size(subscribers, cols, rows) do
+  @doc false
+  def broadcast_owner_size(subscribers, cols, rows) do
     for {pid, _mode} <- subscribers do
       send(pid, {:terminal_owner_size, cols, rows})
     end
@@ -1313,8 +900,9 @@ defmodule Casein.Terminals.SessionOwner do
   # at the settled size, converging any grid that diverged during the transition.
   # `assert_tmux_window_size/1` re-asserts on attach and on a slow tick when
   # something external moved the window anyway.
-  defp maybe_resize_tmux_window(%{workspace_key: key, info: %{sid: sid}} = state, cols, rows)
-       when is_binary(key) and is_binary(sid) do
+  @doc false
+  def maybe_resize_tmux_window(%{workspace_key: key, info: %{sid: sid}} = state, cols, rows)
+      when is_binary(key) and is_binary(sid) do
     size = {cols, rows}
 
     case state.tmux_resize do
@@ -1324,7 +912,7 @@ defmodule Casein.Terminals.SessionOwner do
     end
   end
 
-  defp maybe_resize_tmux_window(state, _cols, _rows), do: state
+  def maybe_resize_tmux_window(state, _cols, _rows), do: state
 
   defp start_tmux_resize(%{workspace_key: key, info: %{sid: sid}} = state, {cols, rows} = size) do
     now = System.monotonic_time(:millisecond)
@@ -1413,10 +1001,11 @@ defmodule Casein.Terminals.SessionOwner do
 
   # Compare tmux's live window against `applied_size` and re-assert when an
   # external client (SSH attach, etc.) moved it. Cheap guard under manual mode.
-  defp assert_tmux_window_size(
-         %{workspace_key: key, info: %{sid: sid}, applied_size: size} = state
-       )
-       when is_binary(key) and is_binary(sid) and is_tuple(size) do
+  @doc false
+  def assert_tmux_window_size(
+        %{workspace_key: key, info: %{sid: sid}, applied_size: size} = state
+      )
+      when is_binary(key) and is_binary(sid) and is_tuple(size) do
     if superseded?() do
       # A newer instance owns current.sock and these tmux sessions; re-asserting
       # here would drift-fight the live owner.
@@ -1434,7 +1023,7 @@ defmodule Casein.Terminals.SessionOwner do
     end
   end
 
-  defp assert_tmux_window_size(state), do: state
+  def assert_tmux_window_size(state), do: state
 
   # After this many consecutive drift re-asserts that never stick, escalate:
   # something else is writing the window size in a loop (a stale draining
@@ -1442,7 +1031,8 @@ defmodule Casein.Terminals.SessionOwner do
   # client). One warning per streak — the per-tick info lines continue.
   @drift_fight_threshold 4
 
-  defp tmux_window_size_timeout_ms do
+  @doc false
+  def tmux_window_size_timeout_ms do
     Application.get_env(
       :casein,
       :tmux_window_size_timeout_ms,
@@ -1450,12 +1040,13 @@ defmodule Casein.Terminals.SessionOwner do
     )
   end
 
-  defp cancel_timer_ref(ref) when is_reference(ref) do
+  @doc false
+  def cancel_timer_ref(ref) when is_reference(ref) do
     Process.cancel_timer(ref)
     :ok
   end
 
-  defp cancel_timer_ref(_), do: :ok
+  def cancel_timer_ref(_), do: :ok
 
   # Kick off a non-blocking window_size probe. Result lands in
   # `handle_info({ref, result}, …)` / timeout / DOWN handlers above.
@@ -1586,14 +1177,15 @@ defmodule Casein.Terminals.SessionOwner do
 
   defp emit_size_fight_alert(_state, _size, _actual, _streak), do: :ok
 
-  defp schedule_tmux_drift_check(%{workspace_key: key, info: %{sid: sid}} = state)
-       when is_binary(key) and is_binary(sid) do
+  @doc false
+  def schedule_tmux_drift_check(%{workspace_key: key, info: %{sid: sid}} = state)
+      when is_binary(key) and is_binary(sid) do
     state = cancel_tmux_drift_timer(state)
     ref = Process.send_after(self(), :tmux_drift_check, @tmux_drift_check_interval_ms)
     %{state | tmux_drift_timer: ref}
   end
 
-  defp schedule_tmux_drift_check(state), do: state
+  def schedule_tmux_drift_check(state), do: state
 
   defp cancel_tmux_drift_timer(%{tmux_drift_timer: ref} = state) when is_reference(ref) do
     Process.cancel_timer(ref)
@@ -1757,7 +1349,8 @@ defmodule Casein.Terminals.SessionOwner do
   # `\e]11;?` queries itself. On <= 3.4 there is no such parser, so the same
   # bytes would surface as key input inside a pane — hard version-gated, and a
   # no-op until the host tmux cutover installs a >= 3.6 binary (pinned 3.7).
-  defp tmux_tracks_client_colors? do
+  @doc false
+  def tmux_tracks_client_colors? do
     case Casein.Terminals.tmux_version() do
       {_major, _minor} = version -> version >= {3, 5}
       _ -> false
@@ -1774,7 +1367,8 @@ defmodule Casein.Terminals.SessionOwner do
     end
   end
 
-  defp report_client_colors(state) do
+  @doc false
+  def report_client_colors(state) do
     {theme, state} = owner_theme(state)
 
     payload =
@@ -1788,70 +1382,8 @@ defmodule Casein.Terminals.SessionOwner do
     state
   end
 
-  # Agent sessions have no PTY backend yet (Attachment.open/2 returns
-  # :agent_backend_unavailable). Register the subscriber without opening an
-  # attachment so the session is viewable; input is a no-op until a backend
-  # lands. This mirrors how attaching to an agent worked before raw-only.
-  defp ensure_attachment(%{info: %Info{kind: :agent}} = state, _subscriber, :raw, _opts) do
-    {
-      :ok,
-      state,
-      %{
-        mode: "raw",
-        resumable: true,
-        session_id: state.info.id
-      }
-    }
-  end
-
-  defp ensure_attachment(state, subscriber, :raw, opts) do
-    state = replay_to_subscriber(state, subscriber)
-
-    if state.attachment do
-      {
-        :ok,
-        state,
-        %{
-          mode: "raw",
-          cols: state.attachment.cols,
-          rows: state.attachment.rows,
-          resumable: true,
-          session_id: state.info.id
-        }
-      }
-    else
-      with {:ok, attachment} <- open_attachment(state, opts) do
-        Telemetry.owner_attachment_opened()
-
-        # Cancel any pending term_exit recover so it cannot open a second
-        # attachment and leak the handle / Telemetry.open_attachments count.
-        s2 =
-          %{state | attachment: attachment, backend_recover_attempts: 0}
-          |> cancel_backend_recover_timer()
-
-        s2 =
-          if tmux_tracks_client_colors?() do
-            report_client_colors(s2)
-          else
-            s2
-          end
-
-        {
-          :ok,
-          s2,
-          %{
-            mode: "raw",
-            cols: attachment.cols,
-            rows: attachment.rows,
-            resumable: true,
-            session_id: state.info.id
-          }
-        }
-      end
-    end
-  end
-
-  defp open_attachment(state, opts) do
+  @doc false
+  def open_attachment(state, opts) do
     case state.info.kind do
       :shell ->
         workspace_key = state.workspace_key || Keyword.get(opts, :workspace_key)
@@ -1912,61 +1444,8 @@ defmodule Casein.Terminals.SessionOwner do
     end
   end
 
-  defp broadcast_exit(subscribers, reason) do
-    for {pid, _mode} <- subscribers do
-      send(pid, {:terminal_payload, :exit, reason})
-    end
-  end
-
-  defp prune_subscriber(state, subscriber) do
-    case Map.get(state.subscribers, subscriber) do
-      nil ->
-        state
-
-      _mode ->
-        raw_state = maybe_remove_raw_subscriber(state, subscriber)
-
-        ref = Map.get(state.subscriber_to_ref, subscriber)
-
-        if ref do
-          Process.demonitor(ref, [:flush])
-        end
-
-        raw_state
-        |> Map.put(:subscribers, Map.delete(raw_state.subscribers, subscriber))
-        |> Map.put(:subscriber_refs, Map.delete(raw_state.subscriber_refs, ref))
-        |> Map.put(:subscriber_to_ref, Map.delete(raw_state.subscriber_to_ref, subscriber))
-        |> forget_subscriber_view(subscriber)
-    end
-  end
-
-  defp prune_subscriber_ref(state, ref) do
-    case Map.get(state.subscriber_refs, ref) do
-      nil ->
-        state
-
-      subscriber ->
-        raw_state = maybe_remove_raw_subscriber(state, subscriber)
-
-        %{
-          raw_state
-          | subscribers: Map.delete(raw_state.subscribers, subscriber),
-            subscriber_refs: Map.delete(raw_state.subscriber_refs, ref),
-            subscriber_to_ref: Map.delete(raw_state.subscriber_to_ref, subscriber)
-        }
-        |> forget_subscriber_view(subscriber)
-    end
-  end
-
-  defp maybe_set_owner_subscriber_gauge(previous_state, next_state)
-       when map_size(previous_state.subscribers) != map_size(next_state.subscribers) do
-    Telemetry.set_owner_subscribers(self(), map_size(next_state.subscribers))
-    next_state
-  end
-
-  defp maybe_set_owner_subscriber_gauge(_previous_state, next_state), do: next_state
-
-  defp replay_to_subscriber(state, subscriber) do
+  @doc false
+  def replay_to_subscriber(state, subscriber) do
     data = replay_data(state)
 
     if should_replay?(state) and byte_size(data) > 0 do
@@ -2175,42 +1654,6 @@ defmodule Casein.Terminals.SessionOwner do
 
   defp should_capture_replay?(state) do
     should_replay?(state) and has_raw_subscriber?(state)
-  end
-
-  defp adjust_raw_subscribers(state, subscriber, nil, :raw),
-    do: %{state | raw_subscribers: MapSet.put(state.raw_subscribers, subscriber)}
-
-  defp adjust_raw_subscribers(state, _subscriber, nil, _mode), do: state
-
-  defp adjust_raw_subscribers(state, _subscriber, :raw, :raw), do: state
-
-  defp adjust_raw_subscribers(state, subscriber, :raw, _mode),
-    do: %{state | raw_subscribers: MapSet.delete(state.raw_subscribers, subscriber)}
-
-  defp adjust_raw_subscribers(state, subscriber, _prev, :raw),
-    do: %{state | raw_subscribers: MapSet.put(state.raw_subscribers, subscriber)}
-
-  defp adjust_raw_subscribers(state, _subscriber, _prev, _mode), do: state
-
-  defp maybe_remove_raw_subscriber(state, subscriber) do
-    %{
-      state
-      | raw_subscribers: MapSet.delete(state.raw_subscribers, subscriber),
-        raw_subscriber_last_seen: Map.delete(state.raw_subscriber_last_seen, subscriber)
-    }
-  end
-
-  # Determines whether this owner process should terminate after a detach.
-  # :shell owners are intentionally immortal (tied to tmux session lifetime via
-  # `tmux new-session -A` and reused across clients). :agent owners are
-  # ephemeral and stop once their last subscriber detaches.
-  # (Private helper; see also the public attach/detach docs in this module and
-  # in Casein.Terminals for the immortality contract.)
-  defp should_stop?(state) do
-    case state.info.kind do
-      :agent -> map_size(state.subscribers) == 0
-      _ -> false
-    end
   end
 
   defp tmux_session_name_for(key, sid)
