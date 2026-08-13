@@ -53,7 +53,50 @@ defmodule Casein.Mobile.AttentionInbox do
     if store_enabled?(), do: do_record_card(card, event_action, opts), else: {:ok, :disabled}
   end
 
+  @doc """
+  Record many card transitions with one latest-marker lookup and one insert.
+
+  #932 constraint: never Nx4 (1 latest SELECT + 1 INSERT + 2 prune DELETEs
+  per card) on the live-work write path. `meaningful_change?` is one `IN`
+  query over `mobile_attention_transitions_card_marker_index`. Prune is
+  `sweep_history/0`, not per insert. `:unknown` is not classified here —
+  this module persists fingerprints only.
+  """
+  def record_cards(entries) when is_list(entries) do
+    if store_enabled?() do
+      do_record_cards(entries)
+    else
+      Enum.map(entries, fn _ -> {:ok, :disabled} end)
+    end
+  end
+
   defp do_record_card(card, event_action, opts) do
+    attrs = prepare_attrs(card, event_action, opts)
+    latest = latest_by_card_keys([attrs])
+
+    if meaningful_change?(attrs, latest) do
+      insert_one(attrs)
+    else
+      {:ok, :unchanged}
+    end
+  end
+
+  defp do_record_cards(entries) do
+    maybe_test_delay()
+
+    prepared =
+      Enum.map(entries, fn
+        {card, action} -> prepare_attrs(card, action, [])
+        {card, action, opts} -> prepare_attrs(card, action, opts)
+      end)
+
+    latest = latest_by_card_keys(prepared)
+
+    to_insert = Enum.filter(prepared, &meaningful_change?(&1, latest))
+    insert_many(to_insert)
+  end
+
+  defp prepare_attrs(card, event_action, opts) do
     origin_id = Keyword.get(opts, :origin_id, Origin.id())
     event_id = Keyword.get(opts, :event_id)
     occurred_at = Keyword.get(opts, :occurred_at, card.updated_at || DateTime.utc_now())
@@ -61,7 +104,7 @@ defmodule Casein.Mobile.AttentionInbox do
     event_projection = event_projection(event_action, resume)
     reason_code = Keyword.get(opts, :reason_code, event_projection.reason_code)
 
-    attrs = %{
+    %{
       event_id: bounded(event_id),
       user_id: card.user_id,
       origin_id: origin_id,
@@ -74,25 +117,49 @@ defmodule Casein.Mobile.AttentionInbox do
       event_action: normalize_action(event_action),
       occurred_at: occurred_at
     }
+  end
 
-    if meaningful_change?(attrs) do
-      %AttentionTransition{}
-      |> AttentionTransition.changeset(attrs)
-      |> Repo.insert()
-      |> case do
-        {:error, %Ecto.Changeset{} = changeset} ->
-          if duplicate_event?(changeset), do: {:ok, :duplicate}, else: {:error, changeset}
+  defp insert_one(attrs) do
+    %AttentionTransition{}
+    |> AttentionTransition.changeset(attrs)
+    |> Repo.insert()
+    |> case do
+      {:error, %Ecto.Changeset{} = changeset} ->
+        if duplicate_event?(changeset), do: {:ok, :duplicate}, else: {:error, changeset}
 
-        {:ok, %AttentionTransition{} = transition} = result ->
-          prune_history(transition)
-          result
-
-        result ->
-          result
-      end
-    else
-      {:ok, :unchanged}
+      result ->
+        result
     end
+  end
+
+  defp insert_many([]), do: []
+
+  defp insert_many(attrs_list) do
+    now = DateTime.utc_now()
+
+    rows =
+      Enum.map(attrs_list, fn attrs ->
+        attrs
+        |> Map.put(:inserted_at, usec(now))
+        |> Map.update!(:occurred_at, &usec/1)
+        |> Map.take([
+          :event_id,
+          :user_id,
+          :origin_id,
+          :card_id,
+          :workspace_id,
+          :session_id,
+          :state,
+          :phase,
+          :reason_code,
+          :event_action,
+          :occurred_at,
+          :inserted_at
+        ])
+      end)
+
+    {_count, transitions} = Repo.insert_all(AttentionTransition, rows, returning: true)
+    Enum.map(transitions, &{:ok, &1})
   end
 
   @doc """
@@ -255,20 +322,69 @@ defmodule Casein.Mobile.AttentionInbox do
   def transition_payload(%AttentionTransition{} = transition), do: transition_summary(transition)
   def transition_payload(transition) when is_map(transition), do: transition_summary(transition)
 
-  defp meaningful_change?(attrs) do
-    latest =
-      Repo.one(
-        from t in AttentionTransition,
-          where:
-            t.user_id == ^attrs.user_id and t.origin_id == ^attrs.origin_id and
-              t.card_id == ^attrs.card_id,
-          order_by: [desc: t.id],
-          limit: 1
-      )
+  @doc """
+  Drop overflow history. Periodic sweeper only — never call from `record_card/3`
+  or `record_cards/1` (#932). Bounds stay `@retained_per_card` / `@retained_per_origin`.
+  """
+  def sweep_history do
+    card_limit = retained_per_card()
+    origin_limit = retained_per_origin()
 
-    is_nil(latest) or
-      {latest.state, latest.phase, latest.reason_code, latest.event_action} !=
-        {attrs.state, attrs.phase, attrs.reason_code, attrs.event_action}
+    card_deleted =
+      overflowing_cards(card_limit)
+      |> Enum.reduce(0, fn row, acc ->
+        acc + prune_card(row.user_id, row.origin_id, row.card_id, card_limit)
+      end)
+
+    origin_deleted =
+      overflowing_origins(origin_limit)
+      |> Enum.reduce(0, fn row, acc ->
+        acc + prune_origin(row.user_id, row.origin_id, origin_limit)
+      end)
+
+    card_deleted + origin_deleted
+  end
+
+  def retained_per_card do
+    Application.get_env(:casein, :attention_retained_per_card, @retained_per_card)
+  end
+
+  def retained_per_origin do
+    Application.get_env(:casein, :attention_retained_per_origin, @retained_per_origin)
+  end
+
+  defp latest_by_card_keys([]), do: %{}
+
+  defp latest_by_card_keys(attrs_list) do
+    groups = Enum.group_by(attrs_list, &{&1.user_id, &1.origin_id})
+
+    Enum.reduce(groups, %{}, fn {{user_id, origin_id}, group}, acc ->
+      card_ids = group |> Enum.map(& &1.card_id) |> Enum.uniq()
+
+      latest_ids =
+        from t in AttentionTransition,
+          where: t.user_id == ^user_id and t.origin_id == ^origin_id and t.card_id in ^card_ids,
+          group_by: t.card_id,
+          select: max(t.id)
+
+      AttentionTransition
+      |> where([t], t.id in subquery(latest_ids))
+      |> Repo.all()
+      |> Enum.reduce(acc, fn transition, inner ->
+        Map.put(inner, {transition.user_id, transition.origin_id, transition.card_id}, transition)
+      end)
+    end)
+  end
+
+  defp meaningful_change?(attrs, latest) do
+    case Map.get(latest, {attrs.user_id, attrs.origin_id, attrs.card_id}) do
+      nil ->
+        true
+
+      existing ->
+        {existing.state, existing.phase, existing.reason_code, existing.event_action} !=
+          {attrs.state, attrs.phase, attrs.reason_code, attrs.event_action}
+    end
   end
 
   defp duplicate_event?(changeset) do
@@ -278,36 +394,66 @@ defmodule Casein.Mobile.AttentionInbox do
     end)
   end
 
-  defp prune_history(transition) do
-    keep_card_ids =
+  defp overflowing_cards(limit) do
+    from(t in AttentionTransition,
+      group_by: [t.user_id, t.origin_id, t.card_id],
+      having: count(t.id) > ^limit,
+      select: %{user_id: t.user_id, origin_id: t.origin_id, card_id: t.card_id}
+    )
+    |> Repo.all()
+  end
+
+  defp overflowing_origins(limit) do
+    from(t in AttentionTransition,
+      group_by: [t.user_id, t.origin_id],
+      having: count(t.id) > ^limit,
+      select: %{user_id: t.user_id, origin_id: t.origin_id}
+    )
+    |> Repo.all()
+  end
+
+  defp prune_card(user_id, origin_id, card_id, limit) do
+    keep_ids =
       from t in AttentionTransition,
+        where: t.user_id == ^user_id and t.origin_id == ^origin_id and t.card_id == ^card_id,
+        order_by: [desc: t.id],
+        limit: ^limit,
+        select: t.id
+
+    {count, _} =
+      from(t in AttentionTransition,
         where:
-          t.user_id == ^transition.user_id and t.origin_id == ^transition.origin_id and
-            t.card_id == ^transition.card_id,
-        order_by: [desc: t.id],
-        limit: @retained_per_card,
-        select: t.id
+          t.user_id == ^user_id and t.origin_id == ^origin_id and t.card_id == ^card_id and
+            t.id not in subquery(keep_ids)
+      )
+      |> Repo.delete_all()
 
-    from(t in AttentionTransition,
-      where:
-        t.user_id == ^transition.user_id and t.origin_id == ^transition.origin_id and
-          t.card_id == ^transition.card_id and t.id not in subquery(keep_card_ids)
-    )
-    |> Repo.delete_all()
+    count
+  end
 
-    keep_origin_ids =
+  defp prune_origin(user_id, origin_id, limit) do
+    keep_ids =
       from t in AttentionTransition,
-        where: t.user_id == ^transition.user_id and t.origin_id == ^transition.origin_id,
+        where: t.user_id == ^user_id and t.origin_id == ^origin_id,
         order_by: [desc: t.id],
-        limit: @retained_per_origin,
+        limit: ^limit,
         select: t.id
 
-    from(t in AttentionTransition,
-      where:
-        t.user_id == ^transition.user_id and t.origin_id == ^transition.origin_id and
-          t.id not in subquery(keep_origin_ids)
-    )
-    |> Repo.delete_all()
+    {count, _} =
+      from(t in AttentionTransition,
+        where:
+          t.user_id == ^user_id and t.origin_id == ^origin_id and t.id not in subquery(keep_ids)
+      )
+      |> Repo.delete_all()
+
+    count
+  end
+
+  defp maybe_test_delay do
+    case Application.get_env(:casein, :attention_record_delay_ms, 0) do
+      n when is_integer(n) and n > 0 -> Process.sleep(n)
+      _ -> :ok
+    end
   end
 
   defp ranking(card, resume, latest) do
@@ -567,6 +713,12 @@ defmodule Casein.Mobile.AttentionInbox do
 
   defp empty_to_nil(0), do: nil
   defp empty_to_nil(value), do: value
+
+  defp usec(%DateTime{microsecond: {_, 6}} = value), do: value
+
+  defp usec(%DateTime{microsecond: {usec, _}} = value) do
+    %{value | microsecond: {usec, 6}}
+  end
 
   defp store_enabled? do
     Application.get_env(:casein, :mobile_attention_store_enabled, true) != false

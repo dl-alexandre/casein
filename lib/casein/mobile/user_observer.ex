@@ -261,8 +261,13 @@ defmodule Casein.Mobile.UserObserver do
   end
 
   def handle_call({:reconcile_live_work, workspace_id, tabs}, _from, state) do
-    state = reconcile_live_work_state(state, workspace_id, tabs, FeedTiming.disabled())
-    {:reply, snapshot_payload(state), state}
+    # #932: reply first. Transition writes used to be Nx4 inside this call
+    # (1 latest + 1 insert + 2 prune deletes per card) and blocked the mobile
+    # channel on the 5s default. Recording happens in handle_continue.
+    {state, pending} =
+      reconcile_live_work_state(state, workspace_id, tabs, FeedTiming.disabled())
+
+    reply_and_record(snapshot_payload(state), state, pending)
   end
 
   @impl true
@@ -312,6 +317,12 @@ defmodule Casein.Mobile.UserObserver do
   end
 
   @impl true
+  def handle_continue({:record_live_work, pending}, state) do
+    _ = AttentionInbox.record_cards(pending)
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_info({:audit_event, %Event{} = event}, state) do
     _ = maybe_deliver_alert_event(event, state.user_id)
     state = handle_audit_event(state, event)
@@ -333,12 +344,12 @@ defmodule Casein.Mobile.UserObserver do
           live_work_hydrations: Map.delete(state.live_work_hydrations, workspace_id)
       }
 
-      next_state = reconcile_live_work_state(state, workspace_id, tabs, timing)
+      {next_state, pending} = reconcile_live_work_state(state, workspace_id, tabs, timing)
 
       if was_hydrating and next_state.version == state.version,
         do: broadcast(next_state, timing)
 
-      {:noreply, next_state}
+      noreply_and_record(next_state, pending)
     else
       {:noreply, state}
     end
@@ -433,9 +444,9 @@ defmodule Casein.Mobile.UserObserver do
         | live_work_hydrations: Map.delete(state.live_work_hydrations, workspace_id)
       }
 
-      next_state = reconcile_live_work_state(state, workspace_id, tabs, timing)
+      {next_state, pending} = reconcile_live_work_state(state, workspace_id, tabs, timing)
       if next_state.version == state.version, do: broadcast(next_state, timing)
-      {:noreply, next_state}
+      noreply_and_record(next_state, pending)
     else
       {:noreply, state}
     end
@@ -676,7 +687,7 @@ defmodule Casein.Mobile.UserObserver do
       |> Map.merge(projected_by_key)
 
     if live_fingerprint(existing_live) == live_fingerprint(projected_by_key) do
-      state
+      {state, []}
     else
       next_cards =
         Enum.reduce(projected_by_key, next_cards, fn {key, card}, cards ->
@@ -689,36 +700,53 @@ defmodule Casein.Mobile.UserObserver do
           end
         end)
 
-      record_live_work_transitions(existing_live, next_cards, projected_by_key)
-
+      pending = live_work_transition_entries(existing_live, next_cards, projected_by_key)
       state = %{state | version: state.version + 1, cards: next_cards}
       broadcast(state, timing)
-      state
+      {state, pending}
     end
   end
 
-  defp record_live_work_transitions(existing_live, next_cards, projected_by_key) do
-    Enum.each(projected_by_key, fn {key, _projected_card} ->
-      card = Map.fetch!(next_cards, key)
+  defp live_work_transition_entries(existing_live, next_cards, projected_by_key) do
+    changed =
+      projected_by_key
+      |> Enum.filter(fn {key, _projected_card} ->
+        card = Map.fetch!(next_cards, key)
 
-      if live_card_fingerprint(Map.get(existing_live, key)) != live_card_fingerprint(card) do
-        _ = AttentionInbox.record_card(card, "live_work.reconciled")
-      end
-    end)
+        live_card_fingerprint(Map.get(existing_live, key)) != live_card_fingerprint(card)
+      end)
+      |> Enum.map(fn {key, _projected_card} ->
+        {Map.fetch!(next_cards, key), "live_work.reconciled"}
+      end)
 
-    existing_live
-    |> Map.drop(Map.keys(projected_by_key))
-    |> Enum.each(fn {_key, card} ->
-      resume = ResumeCard.project(card)
+    disappeared =
+      existing_live
+      |> Map.drop(Map.keys(projected_by_key))
+      |> Enum.map(fn {_key, card} ->
+        resume = ResumeCard.project(card)
 
-      _ =
-        AttentionInbox.record_card(card, "live_work.disappeared",
-          state: resume.state,
-          phase: resume.phase,
-          reason_code: "offline_resumable",
-          occurred_at: now()
-        )
-    end)
+        {card, "live_work.disappeared",
+         [
+           state: resume.state,
+           phase: resume.phase,
+           reason_code: "offline_resumable",
+           occurred_at: now()
+         ]}
+      end)
+
+    changed ++ disappeared
+  end
+
+  defp reply_and_record(reply, state, []), do: {:reply, reply, state}
+
+  defp reply_and_record(reply, state, pending) do
+    {:reply, reply, state, {:continue, {:record_live_work, pending}}}
+  end
+
+  defp noreply_and_record(state, []), do: {:noreply, state}
+
+  defp noreply_and_record(state, pending) do
+    {:noreply, state, {:continue, {:record_live_work, pending}}}
   end
 
   defp live_card_fingerprint(nil), do: nil

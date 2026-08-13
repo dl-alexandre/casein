@@ -210,6 +210,7 @@ config :casein,
   manager_req_options: [plug: {Req.Test, Casein.Integrations.Manager.Client}],
   device_link_ttl_seconds: 3_600,
   device_link_reaper_enabled: false,
+  attention_history_sweeper_enabled: false,
   runtime_reaper_enabled: false,
   runtime_reaper_dry_run: true,
   # Keep scheduled reaper tests isolated from real host agent worktrees.

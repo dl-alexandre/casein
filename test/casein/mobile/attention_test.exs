@@ -527,7 +527,9 @@ defmodule Casein.Mobile.AttentionTest do
     assert projection.completion.deploy_sha == String.duplicate("b", 40)
   end
 
-  test "transition history is bounded per origin-qualified card" do
+  test "record_card does not prune; sweep_history bounds per origin-qualified card" do
+    # #932: prune must not run on the insert path. A test that only asserted
+    # the bound after record_card would hide a regression back to Nx4.
     card =
       Card.in_progress(
         %{user_id: "dev", workspace_id: "ws-1", session_id: "run-1"},
@@ -545,12 +547,59 @@ defmodule Casein.Mobile.AttentionTest do
                )
     end
 
+    assert Repo.aggregate(AttentionTransition, :count) == 55
+    assert AttentionInbox.sweep_history() == 5
     assert Repo.aggregate(AttentionTransition, :count) == 50
 
     projection = AttentionInbox.project_many("dev", "origin-a", [card])[card.id]
     assert projection.since_viewed.count == 50
     assert projection.since_viewed.truncated?
     assert length(projection.since_viewed.changes) == 5
+  end
+
+  test "record_cards uses one latest-marker lookup and never prunes" do
+    # #932 constraint: 25 cards must not cost 100 queries (Nx4). Before this
+    # change each card paid 1 latest SELECT + 1 INSERT + 2 prune DELETEs.
+    # Batch lookup + insert_all + deferred sweep is the floor.
+    cards =
+      for number <- 1..25 do
+        Card.in_progress(
+          %{user_id: "dev", workspace_id: "ws-batch", session_id: "run-#{number}"},
+          @now
+        )
+      end
+
+    {before_lookups, before_inserts, before_deletes} =
+      count_transition_queries(fn ->
+        Enum.each(cards, fn card ->
+          assert {:ok, %AttentionTransition{}} =
+                   AttentionInbox.record_card(card, "live_work.reconciled", origin_id: "origin-a")
+        end)
+      end)
+
+    assert before_lookups == 25
+    assert before_inserts == 25
+    assert before_deletes == 0
+    assert Repo.aggregate(AttentionTransition, :count) == 25
+
+    Repo.delete_all(AttentionTransition)
+
+    entries =
+      Enum.map(cards, fn card ->
+        {card, "live_work.reconciled", [origin_id: "origin-a"]}
+      end)
+
+    {lookups, inserts, deletes} =
+      count_transition_queries(fn ->
+        results = AttentionInbox.record_cards(entries)
+        assert length(results) == 25
+        assert Enum.all?(results, &match?({:ok, %AttentionTransition{}}, &1))
+      end)
+
+    assert lookups == 1
+    assert inserts == 1
+    assert deletes == 0
+    assert Repo.aggregate(AttentionTransition, :count) == 25
   end
 
   test "late old events cannot displace the latest lifecycle fact from the bounded fold" do
@@ -605,5 +654,52 @@ defmodule Casein.Mobile.AttentionTest do
     assert transition.state == "working"
     assert transition.phase == "deploying"
     assert transition.reason_code == "deploy_started"
+  end
+
+  defp count_transition_queries(fun) do
+    parent = self()
+    handler = {__MODULE__, :transition_queries, System.unique_integer([:positive])}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:casein, :repo, :query],
+        fn _event, _measurements, metadata, pid ->
+          sql = query_sql(metadata)
+
+          if is_binary(sql) and String.contains?(sql, "mobile_attention_transitions") do
+            send(pid, {:transition_sql, sql})
+          end
+        end,
+        parent
+      )
+
+    try do
+      fun.()
+      collect_transition_sql([])
+    after
+      :telemetry.detach(handler)
+    end
+  end
+
+  defp query_sql(%{query: query}) when is_binary(query), do: query
+  defp query_sql(%{options: options}) when is_list(options), do: Keyword.get(options, :query)
+  defp query_sql(_metadata), do: nil
+
+  defp collect_transition_sql(acc) do
+    receive do
+      {:transition_sql, sql} -> collect_transition_sql([sql | acc])
+    after
+      0 -> classify_transition_sql(Enum.reverse(acc))
+    end
+  end
+
+  defp classify_transition_sql(sqls) do
+    lookups =
+      Enum.count(sqls, &(String.contains?(&1, "SELECT") and not String.contains?(&1, "DELETE")))
+
+    inserts = Enum.count(sqls, &String.contains?(&1, "INSERT"))
+    deletes = Enum.count(sqls, &String.contains?(&1, "DELETE"))
+    {lookups, inserts, deletes}
   end
 end

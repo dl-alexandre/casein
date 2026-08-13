@@ -23,6 +23,7 @@ defmodule Casein.Supervision.PlatformServices do
       {Finch, name: Casein.Push.APNS.Finch, pools: %{default: [protocols: [:http2]]}},
       Casein.Git.InspectorCache,
       Casein.DeviceLinks.Reaper,
+      Casein.Mobile.AttentionHistorySweeper,
       Casein.Agents.OrchestratorTokens.Reaper,
       Casein.Runtimes.Reaper,
       Casein.Workspaces.Reconciler,
