@@ -18,6 +18,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     only: [leader_key_button: 1, dom_fragment: 1, panel_state: 1]
 
   alias CaseinWeb.WorkspaceLive.Show.LeaderBindings
+  alias CaseinWeb.WorkspaceLive.Show.PickerLabel
   alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
   alias CaseinWeb.WorkspaceRoutes
 
@@ -151,9 +152,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       {@window.index}
     </span>
     <%= if @picker_label? do %>
-      <span data-picker-label class={@name_class}>{@window.display_name}</span>
+      <.picker_text
+        value={@window.display_name}
+        shown={Map.get(@window, :display_label)}
+        class={@name_class}
+      />
     <% else %>
-      <span class={@name_class}>{@window.display_name}</span>
+      <span class={@name_class} title={@window.display_name}>
+        {Map.get(@window, :display_label) || PickerLabel.display(@window.display_name)}
+      </span>
     <% end %>
     """
   end
@@ -686,7 +693,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           mutations_allowed?={@mutations_allowed?}
           rename_session_id={@rename_session_id}
         />
-        <.sessions_sidebar_browse_node :for={node <- browse_nodes} node={node} depth={0} />
+        <.sessions_sidebar_browse_node
+          :for={node <- PickerLabel.annotate_group(browse_nodes)}
+          node={node}
+          depth={0}
+        />
         <%!-- Reached before the first summary build lands, and whenever a
         filter matches nothing. Skeleton rows keep the rail from reading as
         broken during the git-backed workspace scan. --%>
@@ -749,7 +760,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           attention?={section == :needs_you}
         />
         <.sessions_sidebar_node
-          :for={node <- nodes}
+          :for={node <- PickerLabel.annotate_group(nodes)}
           node={node}
           workspace_id={@workspace_id}
           active_id={@active_id}
@@ -863,7 +874,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         class={["size-1.5 shrink-0 rounded-full", @badge.dot]}
         aria-hidden="true"
       />
-      <span data-picker-label class="truncate font-medium">{@row.label}</span>
+      <.picker_text value={@row.label} class="truncate font-medium" />
     </span>
     <span
       :if={needs_you_meta_line(@row, @show_workspace?) != ""}
@@ -986,6 +997,22 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     end
   end
 
+  attr :value, :string, required: true
+  attr :shown, :string, default: nil
+  attr :class, :any, default: "truncate font-medium"
+
+  # Visible text may be middle-truncated; the attribute + title stay full so
+  # type-to-filter and hover still see the untruncated identifier (#949).
+  defp picker_text(assigns) do
+    value = assigns.value || ""
+    shown = assigns.shown || PickerLabel.display(value)
+    assigns = assign(assigns, value: value, shown: shown)
+
+    ~H"""
+    <span data-picker-label={@value} class={@class} title={@value}>{@shown}</span>
+    """
+  end
+
   attr :label, :string, required: true
   attr :count, :integer, default: nil
   attr :attention?, :boolean, default: false
@@ -1062,7 +1089,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
                   attention?={section == :needs_you}
                 />
                 <.sessions_sidebar_session_row
-                  :for={session <- sessions}
+                  :for={session <- PickerLabel.annotate_group(sessions)}
                   session={session}
                   workspace_id={Map.get(session, :workspace_id, @node.workspace_id)}
                   current_workspace_id={@workspace_id}
@@ -1119,19 +1146,23 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         >
           <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
             <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
-              <span data-picker-label class="truncate font-medium">{@node.label}</span>
+              <.picker_text
+                value={@node.label}
+                shown={Map.get(@node, :display_label)}
+                class="truncate font-medium"
+              />
               <span
                 :if={not @node.live?}
                 class="size-1.5 shrink-0 rounded-full bg-base-content/25"
                 title="No live tmux sessions"
               />
             </span>
-            <span
+            <.picker_text
               :if={@node.detail != ""}
+              value={@node.detail}
+              shown={Map.get(@node, :display_detail)}
               class="max-w-full truncate font-mono text-density-label text-base-content/50"
-            >
-              {@node.detail}
-            </span>
+            />
           </span>
           <span
             :if={@node.session_count > 0}
@@ -1341,7 +1372,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     ~H"""
     <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
       <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
-        <span data-picker-label class="truncate font-medium">{@node.label}</span>
+        <.picker_text
+          value={@node.label}
+          shown={Map.get(@node, :display_label)}
+          class="truncate font-medium"
+        />
         <span
           :if={@needs_you_count > 0}
           id={"sidebar-ws-needs-you-" <> @node.dom_id}
@@ -1369,13 +1404,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           title="No live tmux sessions"
         />
       </span>
-      <span
+      <.picker_text
         :if={@node.detail != ""}
-        data-picker-label
+        value={@node.detail}
+        shown={Map.get(@node, :display_detail)}
         class="max-w-full truncate font-mono text-density-label text-base-content/50"
-      >
-        {@node.detail}
-      </span>
+      />
     </span>
     """
   end
@@ -1425,7 +1459,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
             <.icon name="hero-chevron-right" class="size-3 text-base-content/45" />
           </span>
           <span class="flex min-w-0 flex-1 flex-col items-start gap-0 overflow-hidden text-left">
-            <span data-picker-label class="truncate font-medium">{@node.label}</span>
+            <.picker_text
+              value={@node.label}
+              shown={Map.get(@node, :display_label)}
+              class="truncate font-medium"
+            />
           </span>
         </button>
         <button
@@ -1617,7 +1655,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       >
         <.icon name="hero-home" class="size-3" />
       </span>
-      <span data-picker-label class="truncate font-medium">{@session.label}</span>
+      <.picker_text
+        value={@session.label}
+        shown={Map.get(@session, :display_label)}
+        class="truncate font-medium"
+      />
       <.session_anchor_chip tab={@session} />
       <.preview_badge
         count={preview_pane_count(@session.pane_ids, @preview_panes)}
@@ -1653,12 +1695,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     across workspaces, so the cwd/branch detail is what tells two "shell" rows
     apart. Kept out of `data-picker-label` so type-to-filter still matches on
     the name only. --%>
-    <span
+    <.picker_text
       :if={session_detail(@session) != ""}
+      value={session_detail(@session)}
+      shown={Map.get(@session, :display_detail)}
       class="max-w-full truncate font-mono text-density-label text-base-content/60"
-    >
-      {session_detail(@session)}
-    </span>
+    />
     """
   end
 
@@ -1776,7 +1818,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     >
       <span class="flex min-w-0 max-w-full items-center gap-1.5">
         <span class="shrink-0 font-mono text-density-label text-base-content/45">{@pane.index}</span>
-        <span data-picker-label class="min-w-0 truncate font-medium">{@pane.label}</span>
+        <.picker_text value={@pane.label} class="min-w-0 truncate font-medium" />
         <span
           :if={@pane.preview?}
           class="inline-flex size-3.5 shrink-0 items-center justify-center rounded bg-status-live/15 text-status-live-fg ring-1 ring-status-live/30"
@@ -1933,7 +1975,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         </span>
       </div>
       <div class="min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-1 py-1.5">
-        <%= for node <- @tree do %>
+        <%= for node <- PickerLabel.annotate_group(@tree) do %>
           <%= cond do %>
             <% node.flat_window? -> %>
               <.window_sidebar_window_row
@@ -2194,8 +2236,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   end
 
   defp clamp_short_label(nil), do: "…"
-  defp clamp_short_label(word) when byte_size(word) > 9, do: String.slice(word, 0, 9) <> "…"
-  defp clamp_short_label(word), do: word
+  defp clamp_short_label(word), do: PickerLabel.display(word, max: 9)
 
   defp active_session_label(tabs, active_id, fallback_label) do
     case Enum.find(tabs, &(&1.id == active_id)) do

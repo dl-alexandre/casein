@@ -470,7 +470,10 @@ function itemFilterText(el) {
   const labels = el.querySelectorAll("[data-picker-label]")
   const text = labels.length
     ? Array.from(labels)
-        .map((node) => node.textContent)
+        .map((node) => {
+          const attr = node.getAttribute?.("data-picker-label")
+          return attr && attr.trim() ? attr : node.textContent || ""
+        })
         .join(" ")
     : el.textContent
   return text.toLowerCase()

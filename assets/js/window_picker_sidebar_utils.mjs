@@ -25,6 +25,15 @@ export function restoreSidebarSort(hook, col) {
   if (mode) hook.pushEvent("sidebar:restore_sort", {col, mode})
 }
 
+// #949: prefer the data-picker-label attribute (full id) over visible
+// textContent, which may be middle-truncated.
+function pickerLabelText(node) {
+  if (!node) return ""
+  const attr = node.getAttribute?.("data-picker-label")
+  if (attr && attr.trim()) return attr
+  return node.textContent || ""
+}
+
 export function itemFilterText(el) {
   // #910: needs-you rows carry data-picker-search (label/workspace/branch/
   // tmux/reason/message). Prefer that so chips + messages are filterable.
@@ -34,9 +43,9 @@ export function itemFilterText(el) {
   const labels = el.querySelectorAll("[data-picker-label]")
   const label = labels.length
     ? Array.from(labels)
-        .map((node) => node.textContent)
+        .map((node) => pickerLabelText(node))
         .join(" ")
-    : el.querySelector("[data-picker-label]")?.textContent || ""
+    : pickerLabelText(el.querySelector("[data-picker-label]"))
   const index = el.querySelector(".font-mono")?.textContent || ""
   return `${index} ${label}`.toLowerCase()
 }
