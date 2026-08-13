@@ -119,6 +119,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderBindings do
       desc: "jump back to your last window",
       palette_ids: ["tmux:last_window"]
     },
+    # Attention-aware jump. `a` was unbound in tmux and in Casein (checked
+    # against key_map/0 — the gate test below asserts no key is claimed twice).
+    # Cycles the FleetBoard `needs_you?` rows, the same set the fleet badge
+    # counts; see FleetBoard.needs_you_rows/1 for why a stalled-but-not-asking
+    # pane is not a target.
+    %{
+      keys: ["a"],
+      actions: ["jump-needs-you"],
+      target: :dispatch,
+      group: :sessions,
+      display: "a",
+      desc: "jump to the next pane that needs you"
+    },
     %{
       keys: [],
       actions: [],

@@ -551,6 +551,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
             data-leader-action="last-window"
             phx-click="tmux:last_window"
           ></button>
+          <%!-- C-b a. Lives here rather than on the badge so the jump keeps
+          working in focus mode, where the badge chrome is hidden. --%>
+          <button
+            type="button"
+            tabindex="-1"
+            data-leader-action="jump-needs-you"
+            phx-click="fleet:jump_needs_you"
+          ></button>
           <button
             type="button"
             tabindex="-1"
