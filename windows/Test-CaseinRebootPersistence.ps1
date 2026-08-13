@@ -1,7 +1,13 @@
 [CmdletBinding()]
 param(
     [string]$PackageRoot = (Split-Path -Parent $PSScriptRoot),
-    [Parameter(Mandatory = $true)]
+    # Deliberately NOT [Parameter(Mandatory)]. Binding-time mandatory fires before
+    # the -LibraryOnly / -SelfTestContinuation short-circuits below, so it also
+    # blocks the two non-destructive entry points — and under -NonInteractive it
+    # cannot prompt, so it fails with MissingMandatoryParameter instead. That is
+    # what took the Windows package smoke red. The destructive path is guarded
+    # further down, immediately before the install runs -- which is where the
+    # consent actually needs to hold. Keep it there, not here.
     [switch]$AcceptDestructiveCleanMachineTest,
     [ValidateSet('prepare', 'continue', 'auto')]
     [string]$Stage = 'auto',

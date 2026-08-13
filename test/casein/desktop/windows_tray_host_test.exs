@@ -161,6 +161,41 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert smoke =~ "not reboot or clean-machine evidence"
   end
 
+  test "destructive consent is enforced in the body, never at parameter binding" do
+    script =
+      File.read!(Path.expand("../../../windows/Test-CaseinRebootPersistence.ps1", __DIR__))
+
+    smoke = File.read!(@package_smoke)
+
+    # The package smoke invokes this harness non-interactively with only the
+    # non-destructive switch. A [Parameter(Mandatory)] on the consent switch
+    # binds BEFORE the -LibraryOnly / -SelfTestContinuation short-circuits, and
+    # under -NonInteractive it cannot prompt — so it aborts with
+    # MissingMandatoryParameter and takes the whole Windows package smoke red
+    # before it ever reaches the packaged preview bridge walk.
+    assert smoke =~ "-File $rebootHarness -SelfTestContinuation"
+
+    refute script =~
+             ~r/\[Parameter\(Mandatory[^\]]*\)\]\s*\r?\n\s*\[switch\]\$AcceptDestructiveCleanMachineTest/,
+           "consent switch must not be binding-time mandatory — it blocks the " <>
+             "non-destructive self-test the package smoke runs"
+
+    # The safety property still has to hold, just where it belongs: on the
+    # destructive path only, after the short-circuits.
+    assert script =~ "if (-not $AcceptDestructiveCleanMachineTest) {"
+    assert script =~ "only on a disposable clean Windows test account"
+
+    guard_at = :binary.match(script, "if (-not $AcceptDestructiveCleanMachineTest) {") |> elem(0)
+    self_test_at = :binary.match(script, "if ($SelfTestContinuation) {") |> elem(0)
+    library_only_at = :binary.match(script, "if ($LibraryOnly) { return }") |> elem(0)
+
+    assert self_test_at < guard_at,
+           "-SelfTestContinuation must return before the destructive consent guard"
+
+    assert library_only_at < guard_at,
+           "-LibraryOnly must return before the destructive consent guard"
+  end
+
   test "Trusted LAN selects a private physical interface and scopes its firewall rule" do
     script = File.read!(@trusted_lan)
     tray = File.read!(@tray_script)
