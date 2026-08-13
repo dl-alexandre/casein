@@ -89,6 +89,8 @@ defmodule Scripts.PrePushCheckTest do
     assert content =~ ~s(ensure_npm_ci assets --include=dev)
     assert content =~ ~s(ensure_npm_ci priv/scripts)
     assert content =~ "preview_bridge_file_page"
+    assert content =~ "auditing npm lockfiles (#929)"
+    assert content =~ "./scripts/npm-audit.sh"
 
     assets_at = :binary.match(content, "ensure_npm_ci assets --include=dev")
     priv_at = :binary.match(content, "ensure_npm_ci priv/scripts")

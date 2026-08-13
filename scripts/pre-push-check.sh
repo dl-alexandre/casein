@@ -127,6 +127,9 @@ run_or_skip HEEX_BOOL ./scripts/check-heex-boolean-attr-guard.sh
 log "checking portable product defaults stay host-agnostic (#248)"
 run_or_skip PORTABLE ./scripts/check-portable-defaults-guard.sh
 
+log "checking npm install paths run audit (#929)"
+run_or_skip NPM_AUDIT_GUARD ./scripts/check-npm-audit-guard.sh
+
 log "checking doc citations resolve (docs/subsystems, docs/reference)"
 run_or_skip DOC_CITATIONS ./scripts/check-doc-citations.sh
 
@@ -224,6 +227,10 @@ log "linting JS hooks"
     exit 1
   fi
 
+  # #929: --no-audit on install is for speed. Scan lockfiles separately.
+  log "auditing npm lockfiles (#929)"
+  run_or_skip NPM_AUDIT ./scripts/npm-audit.sh
+
   # Skip the (slow) `npm ci` when package-lock.json is unchanged since the last
   # successful install — a sha256 stamp inside node_modules records what was
   # installed. Benefits the local hook and the self-hosted runner, which now
@@ -279,6 +286,8 @@ export CASEIN_GATE_SKIP_FORMAT=1
 export CASEIN_GATE_SKIP_HEEX_BOOL=1
 export CASEIN_GATE_SKIP_PORTABLE=1
 export CASEIN_GATE_SKIP_DOC_CITATIONS=1
+export CASEIN_GATE_SKIP_NPM_AUDIT_GUARD=1
+export CASEIN_GATE_SKIP_NPM_AUDIT=1
 
 log "checking native plugin supply-chain signatures and committed manifest"
 (

@@ -33,6 +33,9 @@ Push-Location $scripts
 try {
     & $NpmPath ci --omit=dev --no-audit --no-fund --no-progress
     if ($LASTEXITCODE -ne 0) { throw 'npm ci failed for the preview runtime' }
+    # #929: install stays --no-audit; scan the lockfile before using the tree.
+    & $NpmPath audit --package-lock-only --audit-level=high
+    if ($LASTEXITCODE -ne 0) { throw 'npm audit failed for the preview runtime' }
 
     $env:PLAYWRIGHT_BROWSERS_PATH = $browsers
     & (Join-Path $runtime 'node.exe') (Join-Path $scripts 'node_modules\playwright\cli.js') install chromium

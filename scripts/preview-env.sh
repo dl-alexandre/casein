@@ -111,6 +111,12 @@ ensure_asset_node_deps() {
 
   log "installing assets npm dependencies"
   ( cd "$dir" && NODE_ENV=development npm ci --include=dev --no-audit --no-fund --no-progress )
+  # #929: install stays --no-audit; scan the lockfile before using the tree.
+  if [ -x "$1/scripts/npm-audit.sh" ]; then
+    bash "$1/scripts/npm-audit.sh" assets
+  else
+    ( cd "$dir" && npm audit --package-lock-only --audit-level=high )
+  fi
 }
 
 start_preview_server() {

@@ -121,6 +121,13 @@ defmodule Casein.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:boundary, "~> 0.10", runtime: false},
       {:boxart, "~> 0.3", only: [:dev, :test], runtime: false},
+      # #931: keep Oban. Tables were recreated (20260621140000) and
+      # Casein.Signals.ObanWorker exists for the first real jobs — retention
+      # sweeps for runtime_lifecycle_events, notifications, and moving
+      # AttentionInbox.prune_history/1 off the insert path. Do NOT start an
+      # empty poller (6813e690 already ripped that out). The first
+      # `use Oban.Worker` under lib/ must also add Oban to Application
+      # children; test/casein/oban_fate_test.exs enforces that pairing.
       {:oban, "~> 2.23"},
       {:hammer, "~> 7.4"},
       # Agent MCP tool actions (validated params) — standalone, no agent runtime.
@@ -167,10 +174,19 @@ defmodule Casein.MixProject do
         "esbuild casein --minify",
         "phx.digest"
       ],
-      "assets.npm": ["cmd --cd assets npm ci --no-audit --no-fund --no-progress"],
-      "preview.npm": [
-        "cmd --cd priv/scripts npm ci --omit=dev --no-audit --no-fund --no-progress"
+      # #929: --no-audit on install is for speed/determinism. The scan is
+      # scripts/npm-audit.sh (--audit-level=high). Every install path must
+      # invoke that script (or `npm audit --`); check-npm-audit-guard.sh
+      # fails the gate if a new install site skips it.
+      "assets.npm": [
+        "cmd --cd assets npm ci --no-audit --no-fund --no-progress",
+        "cmd ./scripts/npm-audit.sh assets"
       ],
+      "preview.npm": [
+        "cmd --cd priv/scripts npm ci --omit=dev --no-audit --no-fund --no-progress",
+        "cmd ./scripts/npm-audit.sh priv/scripts"
+      ],
+      "npm.audit": ["cmd ./scripts/npm-audit.sh"],
       "casein.release.lan": [
         "compile",
         "assets.npm",
@@ -203,6 +219,8 @@ defmodule Casein.MixProject do
         "cmd ./scripts/lib/gate-run-or-skip.sh FORMAT mix format --check-formatted",
         "cmd ./scripts/lib/gate-run-or-skip.sh HEEX_BOOL ./scripts/check-heex-boolean-attr-guard.sh",
         "cmd ./scripts/lib/gate-run-or-skip.sh PORTABLE ./scripts/check-portable-defaults-guard.sh",
+        "cmd ./scripts/lib/gate-run-or-skip.sh NPM_AUDIT_GUARD ./scripts/check-npm-audit-guard.sh",
+        "cmd ./scripts/lib/gate-run-or-skip.sh NPM_AUDIT ./scripts/npm-audit.sh",
         "compile --warnings-as-errors",
         "deps.unlock --check-unused",
         "deps.audit",
