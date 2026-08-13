@@ -115,6 +115,34 @@ export function computeTerminalLayout(input = {}) {
 }
 
 /**
+ * Cell size for the mobile focus crop, in the cropped element's own
+ * pre-transform pixels.
+ *
+ * The crop translates by whole grid cells, so it must be handed the rendered
+ * cell size rather than deriving one from the container box: the grid is
+ * quantized to whole cells and centered in the remainder, so `box / cols` runs
+ * slightly wide and the error compounds with the pane's column offset.
+ *
+ * `cell.w/h` are measured through getBoundingClientRect and therefore carry
+ * every ancestor scale — including the crop's own. `paintedW / layoutW` recovers
+ * exactly that factor from the element being transformed, which is more
+ * trustworthy than reading --casein-mobile-pane-scale: that variable is set at
+ * every viewport width but only takes effect inside the crop's media query, so
+ * it would divide by a scale that is not applied.
+ *
+ * @returns {{w: number, h: number}|null} null when the cell isn't measurable yet
+ */
+export function cropCellMetrics({cell, layoutW, paintedW} = {}) {
+  if (!cell || !(cell.w > 0) || !(cell.h > 0)) return null
+
+  let scale = layoutW > 0 && paintedW > 0 ? paintedW / layoutW : 1
+  // Sub-half-percent deviations are measurement noise, not a transform.
+  if (!Number.isFinite(scale) || scale <= 0 || Math.abs(scale - 1) < 0.005) scale = 1
+
+  return {w: cell.w / scale, h: cell.h / scale}
+}
+
+/**
  * Row-pinning suits a scrolling shell and actively harms a full-screen TUI.
  *
  * A shell's live content is the last written row, so holding the PTY size and

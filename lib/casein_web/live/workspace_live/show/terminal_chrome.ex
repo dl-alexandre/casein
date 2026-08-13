@@ -99,11 +99,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   def mobile_focus_layout_style(nil, _bounds), do: ""
 
   def mobile_focus_layout_style(pane, bounds) do
-    left = percentage(tmux_dimension(pane.left), bounds.width)
-    top = percentage(tmux_dimension(pane.top), bounds.height)
-    width = percentage(tmux_dimension(pane.width), bounds.width)
-    height = percentage(tmux_dimension(pane.height), bounds.height)
-
+    # Offsets travel as CELL INDICES, not percentages of the container. A
+    # percentage resolves against the surface mount's border box, but the glyph
+    # grid inside it is quantized to whole cells and then centered in the
+    # leftover slack, so the two disagree by the quantization remainder — ~0.05px
+    # per cell, which at 35 cells shaved a visible 2.3px off the focused pane's
+    # first column. The renderer owns the true cell size and publishes it as
+    # --casein-term-cell-w/h (see applyLayoutResult in ghostty_terminal.js); the
+    # crop multiplies that by these indices, so grid geometry keeps one owner.
+    # Shifting by whole cells also preserves the <pre>'s own padding, which a
+    # percentage of the container silently ate.
+    #
     # Uniform (fit) scale — never scale a terminal by different x/y factors or its
     # monospace glyphs stretch. In the normal path the active pane is tmux-zoomed
     # (see the ensure-zoom hook), so both factors are 1 and this is identity; the
@@ -116,10 +122,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       )
 
     [
-      "--casein-mobile-pane-left: #{left}%",
-      "--casein-mobile-pane-top: #{top}%",
-      "--casein-mobile-pane-width: #{width}%",
-      "--casein-mobile-pane-height: #{height}%",
+      "--casein-mobile-pane-left-cells: #{tmux_dimension(pane.left)}",
+      "--casein-mobile-pane-top-cells: #{tmux_dimension(pane.top)}",
       "--casein-mobile-pane-scale: #{scale}"
     ]
     |> Enum.join("; ")

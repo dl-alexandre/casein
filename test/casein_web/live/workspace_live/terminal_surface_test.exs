@@ -226,7 +226,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
 
       assert html =~ ~s(data-mobile-focus-layout="true")
       assert html =~ ~s(data-mobile-focus-pane-id="%0")
-      assert html =~ "--casein-mobile-pane-left: 0.0%"
+      assert html =~ "--casein-mobile-pane-left-cells: 0"
       # Active pane is full-height/half-width -> uniform (min) scale is 1.0, not a
       # 2.0 horizontal stretch.
       assert html =~ "--casein-mobile-pane-scale: 1.0"
