@@ -576,6 +576,71 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  # Layout tools are mutations, so a capability-scoped client (managed Grok)
+  # only receives them once a human unlocks agent write — read-only by default,
+  # exactly like the send tools. terminal_layout_snapshot writes a template row
+  # rather than tmux, but it is still a workspace write and is classified as one.
+  def metadata("terminal_layout_apply") do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:terminal_mutation],
+      policy_tags: [:declarative_layout, :additive_only],
+      recovery_hints: [
+        "Dry run first: call without dry_run to get the plan, then apply with plan_digest.",
+        "plan_stale means the layout moved since you planned — re-plan, do not retry blind.",
+        "unsupported_reconcile means the id is a built-in; snapshot the session and apply that.",
+        "command_blocked means the template runs a command policy forbids — nothing ran.",
+        "Cannot close windows or panes, and never moves focus. Use undo.template_id to revert."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_default",
+            "template_id" => "tpl-abc"
+          },
+          structured_content: %{
+            "ok" => true,
+            "mode" => "planned",
+            "applied?" => false,
+            "plan_digest" => "9f2c1d7a4b6e0c85",
+            "change_count" => 3,
+            "additive_only?" => true,
+            "focus_unchanged?" => true
+          }
+        }
+      ]
+    }
+  end
+
+  def metadata("terminal_layout_snapshot") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:terminal_mutation, :terminal_metadata],
+      policy_tags: [:declarative_layout],
+      recovery_hints: [
+        "Take one before any layout change — applying the snapshot back is the undo.",
+        "Does not touch tmux: no pane is opened, closed, resized, or focused.",
+        "empty_topology means the session has no windows worth exporting.",
+        "Pass dry_run true to see the export without saving it."
+      ],
+      examples: [
+        %{
+          arguments: %{"workspace_id" => "ws-1", "session" => "casein_ws-1_default"},
+          structured_content: %{
+            "ok" => true,
+            "saved?" => true,
+            "template_id" => "tpl-abc",
+            "name" => "casein_ws-1_default export",
+            "window_count" => 2
+          }
+        }
+      ]
+    }
+  end
+
   def metadata(name)
       when name in [
              "terminal_set_agent_label",
