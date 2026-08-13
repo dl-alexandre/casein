@@ -28,6 +28,7 @@ defmodule Casein.PreviewPanes do
   alias Casein.Previews
   alias Casein.Previews.Deps
   alias Casein.PreviewPanes.PreviewPaneRegistration
+  alias Casein.Previews.Access
   alias Casein.Previews.OwnOrigin
   alias Casein.Previews.Url
   alias Casein.Previews.WorkspaceContext
@@ -2237,17 +2238,44 @@ defmodule Casein.PreviewPanes do
 
   defp normalize_url(_), do: {:error, :missing_url}
 
-  # Registration/navigation accept any well-formed http(s) URL — including
-  # external sites and dynamic dev-server ports — the same way a browser tab
-  # would. The origin allowlist in Previews.trusted_url?/2 is for a narrower
-  # job: deciding whether an *already-open* control session's navigation
-  # stayed same-origin (see Origin.within_origin?), not gating what a pane
-  # may be registered/navigated to in the first place.
-  defp validate_trusted_url(_workspace, url) do
-    if Url.http_url?(url) do
-      :ok
-    else
-      {:error, :untrusted_url}
+  # Registration accepts well-formed http(s) URLs. Loopback targets must still
+  # pass Access.registerable_loopback_port?/2 so a registration cannot widen the
+  # proxy SSRF allowlist to arbitrary 127.0.0.1 ports (#927). External hosts are
+  # not a proxy allowlist concern here — ExternalOrigins is the separate
+  # fail-closed path for non-loopback preview control (#884).
+  defp validate_trusted_url(workspace, url) do
+    cond do
+      not Url.http_url?(url) ->
+        {:error, :untrusted_url}
+
+      Url.localhost_url?(url) ->
+        validate_registerable_loopback(workspace, url)
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_registerable_loopback(workspace, url) do
+    case Access.preview_port(url) do
+      port when is_integer(port) ->
+        if Access.registerable_loopback_port?(port, workspace) do
+          :ok
+        else
+          {:error,
+           %{
+             error: :port_not_allowed,
+             port: port,
+             message:
+               "Loopback port #{port} is not registerable for this workspace " <>
+                 "(not owned, not a common/runtime preview port). Registration " <>
+                 "cannot widen the preview proxy allowlist (#927)."
+           }}
+        end
+
+      _ ->
+        # Loopback URL with no explicit port (scheme default) — still http_url?.
+        :ok
     end
   end
 

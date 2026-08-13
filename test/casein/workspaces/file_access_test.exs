@@ -116,6 +116,18 @@ defmodule Casein.Workspaces.FileAccessTest do
       assert {:error, :binary} =
                FileAccess.write_text({:remote, @host, @root}, "f", <<0, 0, 0>>, "v")
     end
+
+    test "refuses path escape before version-check read or write (#927)" do
+      FakeSshRunner.set(fn _, _ -> flunk("should not ssh for outside_root path") end)
+
+      assert {:error, :outside_root} =
+               FileAccess.write_text(
+                 {:remote, @host, @root},
+                 "../../.ssh/authorized_keys",
+                 "ssh-rsa AAAA\n",
+                 "0:0:deadbeefdeadbeef"
+               )
+    end
   end
 
   describe "search/3 (remote)" do

@@ -78,4 +78,50 @@ defmodule Casein.Previews.AccessTest do
       assert Access.validate_port(nil) == {:error, :bad_port}
     end
   end
+
+  describe "registerable_loopback_port?/2" do
+    test "accepts owned metadata ports, common dev ports, and runtime bands" do
+      ws = %{id: @workspace, metadata: %{"ports" => %{"http" => 10_100}}}
+
+      assert Access.registerable_loopback_port?(10_100, ws)
+      assert Access.registerable_loopback_port?(5173, ws)
+      assert Access.registerable_loopback_port?(41_050, ws)
+      assert Access.registerable_loopback_port?(41_000, ws)
+    end
+
+    test "rejects arbitrary loopback ports that registration must not widen to" do
+      ws = %{id: @workspace, metadata: %{}}
+
+      # SSH, Postgres, Redis — not common preview ports and not owned.
+      refute Access.registerable_loopback_port?(22, ws)
+      refute Access.registerable_loopback_port?(5432, ws)
+      refute Access.registerable_loopback_port?(6379, ws)
+      refute Access.registerable_loopback_port?(9_999, ws)
+    end
+  end
+
+  describe "port_allowed?/3 — registration is not an authorization primitive (#927)" do
+    test "owned port is allowed without registration" do
+      ws = %{id: @workspace, metadata: %{"ports" => %{"http" => 4105}}}
+      assert Casein.Previews.workspace_owned_port?(4105, ws)
+    end
+
+    test "registration alone does not authorize a non-registerable port" do
+      # Widened-registration FAIL case: a registration record that names 5432
+      # must NOT make the proxy allowlist accept 5432. Access.port_allowed?/3
+      # is registered? AND registerable_loopback_port?/2.
+      ws = %{id: @workspace, metadata: %{}}
+
+      refute Access.registerable_loopback_port?(5432, ws)
+      refute Access.registerable_loopback_port?(22, ws)
+      refute Access.registerable_loopback_port?(6379, ws)
+    end
+
+    test "registration of a registerable common or runtime port still authorizes" do
+      ws = %{id: @workspace, metadata: %{}}
+
+      assert Access.registerable_loopback_port?(5173, ws)
+      assert Access.registerable_loopback_port?(41_050, ws)
+    end
+  end
 end

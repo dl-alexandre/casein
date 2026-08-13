@@ -654,13 +654,13 @@ defmodule Casein.PreviewPanesTest do
     assert {:ok, second} =
              PreviewPanes.register(%{
                "pane_id" => pane_id,
-               "url" => "http://localhost:5174/",
+               "url" => "http://localhost:41051/",
                "cwd" => path,
                "tmux_session" => session
              })
 
     assert second.preview_id != first.preview_id
-    assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:5174/"
+    assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:41051/"
   end
 
   test "share_session registers another pane against the same control session" do
@@ -997,7 +997,7 @@ defmodule Casein.PreviewPanesTest do
 
     # Two panes pointing at different ports must NOT collapse onto one preview
     # via the shared "preview-pane" surface label (regression for cross-URL
-    # reuse: opening :5174 returned the existing :5173 preview).
+    # reuse: opening :41051 returned the existing :5173 preview).
     assert {:ok, a} =
              PreviewPanes.register(%{
                "pane_id" => "%10",
@@ -1009,25 +1009,25 @@ defmodule Casein.PreviewPanesTest do
     assert {:ok, b} =
              PreviewPanes.register(%{
                "pane_id" => "%11",
-               "url" => "http://localhost:5174/",
+               "url" => "http://localhost:41051/",
                "cwd" => path,
                "tmux_session" => session
              })
 
     assert a.preview_id != b.preview_id
     assert a.url == "http://localhost:5173/"
-    assert b.url == "http://localhost:5174/"
+    assert b.url == "http://localhost:41051/"
     # Same URL in a second pane (mobile + desktop of one app) is still distinct.
     assert {:ok, c} =
              PreviewPanes.register(%{
                "pane_id" => "%10",
-               "url" => "http://localhost:5174/",
+               "url" => "http://localhost:41051/",
                "cwd" => path,
                "tmux_session" => session
              })
 
     assert c.preview_id != b.preview_id
-    assert c.url == "http://localhost:5174/"
+    assert c.url == "http://localhost:41051/"
   end
 
   test "topology update expires vanished pane ids" do

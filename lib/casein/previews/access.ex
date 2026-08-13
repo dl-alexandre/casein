@@ -14,15 +14,19 @@ defmodule Casein.Previews.Access do
       are deliberately answered the same way so the response cannot be used to
       probe which workspaces exist.
 
-    * **Port** — the port must be declared or detected for that workspace, or
-      registered by one of its preview panes. Common dev ports are not implicitly
-      trusted; without this an authorized viewer of workspace A could reach a peer
-      workspace's loopback service.
+    * **Port** — the port must be declared or detected for that workspace
+      (`workspace_owned_port?`), **or** registered by one of its preview panes
+      *and* still pass the registerable-port rules (common dev / infrastructure
+      ranges / owned). Registration alone is not an authorization primitive
+      (#927): a pane registration that points at an arbitrary loopback port must
+      not widen the proxy allowlist.
   """
 
   alias Casein.PreviewPanes
   alias Casein.Previews
+  alias Casein.Previews.EnvPorts
   alias Casein.Previews.OwnOrigin
+  alias Casein.Previews.Url
   alias Casein.Workspaces
 
   @type workspace :: map()
@@ -67,8 +71,30 @@ defmodule Casein.Previews.Access do
   @spec port_allowed?(pos_integer(), String.t(), workspace()) :: boolean()
   def port_allowed?(port, workspace_id, workspace) do
     Previews.workspace_owned_port?(port, workspace) or
-      registered_preview_port?(workspace_id, port)
+      (registered_preview_port?(workspace_id, port) and
+         registerable_loopback_port?(port, workspace))
   end
+
+  @doc """
+  True when a loopback port may be **registered** (and thus later proxied) for
+  this workspace.
+
+  Used at registration time and re-checked at proxy time so a registration
+  record cannot widen the allowlist beyond ports the workspace is allowed to
+  publish (#927). Does **not** replace the #884 external-origin allowlist —
+  that path is separate and stays fail-closed.
+  """
+  @spec registerable_loopback_port?(pos_integer(), workspace()) :: boolean()
+  def registerable_loopback_port?(port, workspace)
+      when is_integer(port) and port > 0 and port < 65_536 and is_map(workspace) do
+    # Mirror WorkspaceContext / Url.port_allowed? plus Casein's partitioned
+    # infrastructure bands (runtime-owned + preview-env allocators).
+    Url.port_allowed?(port, workspace) or
+      EnvPorts.runtime_preview_port?(port) or
+      EnvPorts.preview_env_port?(port)
+  end
+
+  def registerable_loopback_port?(_, _), do: false
 
   defp load_authorized(viewer, workspace_id) do
     auth = viewer && Map.get(viewer, :email)
@@ -89,8 +115,16 @@ defmodule Casein.Previews.Access do
     workspace_id
     |> PreviewPanes.list_for_workspace()
     |> Enum.any?(fn registration ->
-      preview_port(registration.url) == port or preview_port(registration.display_url) == port
+      registration_names_port?(registration, port)
     end)
+  end
+
+  defp registration_names_port?(registration, port) do
+    preview_port(Map.get(registration, :url) || Map.get(registration, "url")) == port or
+      preview_port(Map.get(registration, :display_url) || Map.get(registration, "display_url")) ==
+        port or
+      preview_port(Map.get(registration, :source_url) || Map.get(registration, "source_url")) ==
+        port
   end
 
   @doc """

@@ -282,10 +282,18 @@ defmodule CaseinWeb.PreviewProxyController do
     [{"accept-encoding", "identity"} | headers]
   end
 
+  # Drop hop-by-hop headers AND operator identity. The previewed app is
+  # workspace-authored code and must not receive Casein's bearer, oauth2-proxy
+  # identity headers, or similar (#927). Surfaces that need forward-auth inject
+  # their own headers via PreviewControl default_headers, not the browser's.
   defp drop_request_header?(name) do
     String.downcase(name) in ~w(
       accept-encoding connection content-length keep-alive proxy-authenticate
       proxy-authorization trailer transfer-encoding upgrade
+      authorization
+      x-auth-request-email x-auth-request-user x-auth-request-access-token
+      x-forwarded-access-token x-forwarded-email x-forwarded-user
+      x-forwarded-preferred-username
     )
   end
 
