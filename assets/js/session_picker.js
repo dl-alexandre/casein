@@ -24,6 +24,11 @@
 // display state never drift from pointer-driven toggles.
 
 import {copyPickerLink} from "./picker_link_copy"
+import {
+  previewCacheKey,
+  previewTarget,
+  renderPickerPreview,
+} from "./picker_preview.mjs"
 
 export const SessionPicker = {
   mounted() {
@@ -183,9 +188,9 @@ export const SessionPicker = {
       return
     }
 
-    const key = `${payload["tmux-session"] || ""}\x00${payload["window-id"] || ""}`
+    const key = previewCacheKey(payload)
     if (this._previewCache.has(key)) {
-      this.renderPreview(this._previewCache.get(key))
+      this.renderPreview(this._previewCache.get(key), {cached: true})
       return
     }
 
@@ -195,24 +200,19 @@ export const SessionPicker = {
 
     this._previewTimer = setTimeout(() => {
       this.pushEvent("terminal:picker_preview", payload, (reply) => {
-        const text = reply && reply.text ? reply.text : null
-        this._previewCache.set(key, text)
+        this._previewCache.set(key, reply)
         // Only render if the selection still points at this target.
         const current = this.currentItem()
-        if (current && JSON.stringify(previewTarget(current)) === JSON.stringify(payload)) {
-          this.renderPreview(text)
+        if (current && previewCacheKey(previewTarget(current) || {}) === key) {
+          this.renderPreview(reply, {cached: false})
         }
       })
     }, 200)
   },
 
-  renderPreview(text) {
-    this._previewText = text
-    const pane = this.el.querySelector("[data-picker-preview]")
-    if (!pane) return
-
-    pane.textContent = text || ""
-    pane.style.display = text ? "block" : "none"
+  renderPreview(reply, opts = {}) {
+    this._previewText = reply
+    renderPickerPreview(this.el, reply, opts)
   },
 
   handleKeydown(e) {
@@ -474,17 +474,6 @@ function itemFilterText(el) {
         .join(" ")
     : el.textContent
   return text.toLowerCase()
-}
-
-function previewTarget(el) {
-  const session = el.getAttribute("phx-value-tmux-session")
-  const windowId = el.getAttribute("phx-value-window-id")
-  const payload = {}
-
-  if (session) payload["tmux-session"] = session
-  if (windowId) payload["window-id"] = windowId
-
-  return Object.keys(payload).length > 0 ? payload : null
 }
 
 function isVisible(el) {

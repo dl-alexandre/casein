@@ -5,6 +5,12 @@
 
 import {copyPickerLink} from "./picker_link_copy"
 import {
+  bindPickerPreview,
+  resetPickerPreview,
+  schedulePickerPreview,
+  unbindPickerPreview,
+} from "./picker_preview.mjs"
+import {
   applyTreePickerFilter,
   persistSidebarSort,
   restoreSidebarSort,
@@ -22,9 +28,11 @@ export const WindowPickerSidebar = {
     this.handleEvent("sidebar:focus_windows", () => this.focusInitial())
     this.handleEvent("sidebar:persist_sort", ({col, mode}) => persistSidebarSort(col, mode))
     restoreSidebarSort(this, "windows")
+    bindPickerPreview(this)
   },
 
   destroyed() {
+    unbindPickerPreview(this)
     this.el.removeEventListener("keydown", this._onKeydown)
     this.el.removeEventListener("click", this._onClick, true)
     this.el.removeEventListener("casein:window-sidebar:focus", this._onSidebarFocus)
@@ -191,6 +199,7 @@ export const WindowPickerSidebar = {
           : items.length - 1
         : Math.min(Math.max(index + delta, 0), items.length - 1)
     items[next].focus()
+    schedulePickerPreview(this)
   },
 
   focusInitial() {
@@ -235,6 +244,7 @@ export const WindowPickerSidebar = {
   },
 
   _closeSidebar() {
+    resetPickerPreview(this)
     this.pushEvent("sidebar:close", {})
     window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
   },

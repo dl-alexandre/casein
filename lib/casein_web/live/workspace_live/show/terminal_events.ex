@@ -18,6 +18,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   alias CaseinWeb.WorkspaceLive.Show
   alias Casein.Previews
   alias CaseinWeb.WorkspaceLive.Show.FilePaneEvents
+  alias CaseinWeb.WorkspaceLive.Show.PickerPreview
   alias CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents
   alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
   alias CaseinWeb.WorkspaceLive.Show.TerminalState
@@ -59,37 +60,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
-  # choose-tree style preview for the picker dropdowns: the SessionPicker hook
-  # requests the focused entry's pane content and renders the reply client-side
-  # (assigns-free on purpose — a re-render would patch the open dropdown).
-  # Sessions are validated against the workspace tmux prefix so a viewer
-  # cannot capture panes of another workspace's sessions.
+  # choose-tree style preview for the picker rails: the client requests the
+  # focused entry's pane content and renders the reply (including the
+  # provenance header) without a LiveView patch — a re-render would snap the
+  # open picker shut. Sessions are validated against the workspace tmux prefix
+  # so a viewer cannot capture panes of another workspace's sessions.
   def handle_event("terminal:picker_preview", params, socket) do
-    session =
-      case Map.get(params, "tmux-session") do
-        s when is_binary(s) and s != "" -> s
-        _ -> socket.assigns.tmux_session
-      end
-
-    target =
-      case Map.get(params, "window-id") do
-        w when is_binary(w) and w != "" -> "#{session}:#{w}"
-        _ -> session
-      end
-
-    ws = socket.assigns.workspace
-    prefix = Terminals.tmux_workspace_session_prefix(ws.name || ws.id)
-    adapter = TerminalState.tmux_adapter()
-
-    text =
-      if is_binary(session) and String.starts_with?(session, prefix) and
-           Code.ensure_loaded?(adapter) and function_exported?(adapter, :capture_scrollback, 2) do
-        adapter.capture_scrollback(session, target: target, ansi: false, lines: 18)
-      else
-        ""
-      end
-
-    {:reply, %{text: String.trim_trailing(text)}, socket}
+    {:reply, PickerPreview.reply(socket, params), socket}
   end
 
   # Per-pane scrollback viewer: capture this pane's tmux history into a
