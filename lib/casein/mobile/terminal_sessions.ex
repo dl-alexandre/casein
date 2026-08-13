@@ -97,6 +97,9 @@ defmodule Casein.Mobile.TerminalSessions do
     end
   end
 
+  # Served by mobile_terminal_sessions(workspace_id, sid). Do not drop that
+  # index: workspace_id is trailing in every other index, so this lease-auth
+  # path sequential-scans lease history without it (#926).
   def lease_owned_sid?(workspace_id, sid) when is_binary(workspace_id) and is_binary(sid) do
     Repo.exists?(
       from s in TerminalSession,

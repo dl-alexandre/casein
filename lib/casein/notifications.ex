@@ -140,6 +140,8 @@ defmodule Casein.Notifications do
 
   @doc "Count unread, unresolved notifications for a user."
   @spec unread_count(String.t()) :: non_neg_integer()
+  # Served by notifications_user_unread_index
+  # (user_id WHERE read_at IS NULL AND resolved_at IS NULL) (#926).
   def unread_count(user_id) when is_binary(user_id) do
     Notification
     |> where([n], n.user_id == ^user_id)
