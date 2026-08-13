@@ -125,10 +125,12 @@ defmodule CaseinWeb.WorkspaceLive.InspectorRegionTest do
       })
 
     # Deliver the PubSub message into the LiveView mailbox.
-    assert_receive_after(fn ->
-      html = render(view)
-      html =~ "Agent-surfaced diff"
-    end)
+    Casein.Test.Eventually.await(
+      fn -> render(view) =~ "Agent-surfaced diff" && true end,
+      timeout_ms: 2_000,
+      interval_ms: 15,
+      message: "agent-surfaced inspector title never appeared"
+    )
 
     assert has_element?(view, "#inspector-pane-insp-from-agent")
     assert has_element?(view, "#terminal-region-#{@workspace_id}[data-inspector-open=true]")
@@ -232,19 +234,6 @@ defmodule CaseinWeb.WorkspaceLive.InspectorRegionTest do
   end
 
   defp find_ghostty_id(_), do: nil
-
-  defp assert_receive_after(fun, attempts \\ 20) do
-    if fun.() do
-      true
-    else
-      if attempts <= 0 do
-        flunk("condition not met")
-      else
-        Process.sleep(25)
-        assert_receive_after(fun, attempts - 1)
-      end
-    end
-  end
 
   defp restore_app(key, nil), do: Application.delete_env(:casein, key)
   defp restore_app(key, value), do: Application.put_env(:casein, key, value)

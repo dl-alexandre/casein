@@ -208,9 +208,17 @@ defmodule Casein.Terminals.PaneSubmitTest do
 
     test "a stale hook report from before the send does not confirm" do
       :ok = AgentState.report("ws-submit", @session, @pane, :working, "older turn", source: :hook)
-      # The store dedupes by timestamp, so wait out the resolution of utc_now/0
-      # rather than racing it: the report must be strictly older than `since`.
-      Process.sleep(5)
+      # Flush the cast so reported_at is committed, then wait until utc_now
+      # is strictly after it so confirm_submit's `since` cannot equal the stamp.
+      %{reported_at: at} = AgentState.get(@session, @pane)
+
+      Casein.Test.Eventually.await(
+        fn -> DateTime.compare(DateTime.utc_now(), at) == :gt end,
+        timeout_ms: 50,
+        interval_ms: 1,
+        message: "utc_now did not advance past the stale hook report"
+      )
+
       capture = scripted_capture(["> rebase first"])
 
       assert {:ok, %{delivery: :not_confirmed}} =

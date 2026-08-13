@@ -536,7 +536,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
     assert_receive :recheck
     assert_receive {:rpc, {:finish, :opaque_fence, ^generations, :ios, :cold}}
     assert_receive :recheck
-    refute_receive _unexpected
+    refute_extra_bridge_mail()
   end
 
   test "an unavailable readiness channel retires the fence without reading stdin" do
@@ -569,7 +569,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
     assert_receive {:rpc, {:begin, :ios, :cold}}
     assert_receive :ready_attempt
     assert_receive {:rpc, {:finish, :opaque_fence, [], :ios, :cold}}
-    refute_receive _unexpected
+    refute_extra_bridge_mail()
   end
 
   test "malformed stdin retires the fence with an invalid non-consuming finish" do
@@ -601,7 +601,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
 
     assert_receive {:rpc, {:begin, :android, :reconnect}}
     assert_receive {:rpc, {:finish, :opaque_fence, [], :android, :reconnect}}
-    refute_receive _unexpected
+    refute_extra_bridge_mail()
   end
 
   test "a target change fails closed, never fails over, and retires only the original fence" do
@@ -634,7 +634,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
 
     assert_receive {:rpc, ^target, {:begin, :ios, :origin_switch}}
     assert_receive {:rpc, ^target, {:finish, :opaque_fence, [], :ios, :origin_switch}}
-    refute_receive _unexpected
+    refute_extra_bridge_mail()
   end
 
   test "a begin failure reads no stdin and makes no follow-up call" do
@@ -656,7 +656,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
              )
 
     assert_receive {:rpc, {:begin, :ios, :cold}}
-    refute_receive _unexpected
+    refute_extra_bridge_mail()
   end
 
   test "a failed finish is never retried because its consuming result is uncertain" do
@@ -690,7 +690,7 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
     assert_receive {:rpc, {:begin, :android, :cold}}
     assert_receive :recheck
     assert_receive {:rpc, {:finish, :opaque_fence, ^generations, :android, :cold}}
-    refute_receive _unexpected
+    refute_extra_bridge_mail()
   end
 
   test "a post-finish target change fails closed without replaying finish" do
@@ -730,7 +730,20 @@ defmodule Casein.Mobile.FeedTimingSoakBridgeTest do
     assert_receive {:recheck, 0}
     assert_receive {:rpc, {:finish, :opaque_fence, ^generations, :ios, :reconnect}}
     assert_receive {:recheck, 1}
-    refute_receive _unexpected
+    refute_extra_bridge_mail()
+  end
+
+  # #935: never wildcard-refute. A stray PubSub/background message must
+  # not fail this test, and an extra protocol step must not be swallowed.
+  # Match only the soak-bridge protocol tags this test injects.
+  defp refute_extra_bridge_mail do
+    refute_receive {:rpc, _}, 0
+    refute_receive {:rpc, _, _}, 0
+    refute_receive {:ready, _}, 0
+    refute_receive :read_stdin, 0
+    refute_receive :recheck, 0
+    refute_receive :ready_attempt, 0
+    refute_receive {:recheck, _}, 0
   end
 
   defp generations(range), do: Enum.map(range, &generation/1)

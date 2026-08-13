@@ -47,19 +47,14 @@ defmodule Casein.Inspectors.RunTest do
     assert Run.viewer_present?(ws)
 
     Process.exit(pid, :kill)
-    wait_until(fn -> not Run.viewer_present?(ws) end)
+
+    Casein.Test.Eventually.await(
+      fn -> not Run.viewer_present?(ws) && true end,
+      timeout_ms: 500,
+      interval_ms: 10,
+      message: "run inspector viewer was still registered after the owner exited"
+    )
+
     refute Run.viewer_present?(ws)
-  end
-
-  defp wait_until(fun, attempts \\ 20)
-  defp wait_until(fun, 0), do: fun.()
-
-  defp wait_until(fun, n) do
-    if fun.() do
-      true
-    else
-      Process.sleep(10)
-      wait_until(fun, n - 1)
-    end
   end
 end

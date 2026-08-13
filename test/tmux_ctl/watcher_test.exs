@@ -219,7 +219,7 @@ defmodule TmuxCtl.Topology.WatcherTest do
 
     # The supervisor's transient restart brings a watcher back, but with nobody
     # registered it hands in its notice.
-    assert eventually_no_watcher?(session, 40)
+    await_unregistered(session)
   end
 
   test "resubscribing after a watcher crash restores delivery" do
@@ -257,19 +257,6 @@ defmodule TmuxCtl.Topology.WatcherTest do
     ref = Process.monitor(pid)
     assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
     refute_receive {@tag, {:session_terminated, %{session: ^session}}}, 50
-  end
-
-  defp eventually_no_watcher?(_session, 0), do: false
-
-  defp eventually_no_watcher?(session, attempts) do
-    case Registry.lookup(@registry, session) do
-      [] ->
-        true
-
-      _ ->
-        Process.sleep(25)
-        eventually_no_watcher?(session, attempts - 1)
-    end
   end
 
   defp watcher_opts(overrides \\ []) do

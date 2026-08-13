@@ -213,29 +213,21 @@ defmodule Casein.Runs.AgentLifecycleTest do
   end
 
   defp await_open do
-    Enum.find_value(1..50, fn _ ->
-      case AgentLifecycle.get(@session, @pane) do
-        nil ->
-          Process.sleep(5)
-          nil
-
-        open ->
-          open
-      end
-    end) || flunk("expected an open Run on #{@session}/#{@pane}")
+    Casein.Test.Eventually.await(
+      fn -> AgentLifecycle.get(@session, @pane) end,
+      timeout_ms: 500,
+      interval_ms: 5,
+      message: "expected an open Run on #{@session}/#{@pane}"
+    )
   end
 
   defp await_closed do
-    Enum.find_value(1..50, fn _ ->
-      case AgentLifecycle.get(@session, @pane) do
-        nil ->
-          true
-
-        _open ->
-          Process.sleep(5)
-          nil
-      end
-    end) || flunk("expected Run to close on #{@session}/#{@pane}")
+    Casein.Test.Eventually.await(
+      fn -> AgentLifecycle.get(@session, @pane) == nil && true end,
+      timeout_ms: 500,
+      interval_ms: 5,
+      message: "expected Run to close on #{@session}/#{@pane}"
+    )
   end
 
   defp flush do
