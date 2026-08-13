@@ -12,6 +12,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   alias Casein.Attention.Delivery
   alias Casein.Codex.SessionTitles
   alias Casein.Terminals
+  alias Casein.Terminals.TicketFeed
   alias Casein.Terminals.WindowTrash
   alias Casein.Labels
   alias CaseinWeb.WorkspaceLive.Show
@@ -333,10 +334,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         issue_bindings: issue_bindings
       )
 
+    # Ticket data is read from cache only — never a `gh` shell-out inside render.
+    # The refresh runs on a task, at most once per feed TTL, and broadcasts so
+    # the cockpit re-renders when it lands. Worktree paths ride along so PR head
+    # branches resolve off the render path too.
+    feed = TicketFeed.cached()
+    _ = TicketFeed.refresh_async(worktrees: tab_worktrees(tabs))
+
     fleet_board =
       Casein.Terminals.FleetBoard.from_window_tabs(
         tabs,
-        list_claimed: &Casein.Terminals.OrphanedClaims.list_claimed/0,
+        ticket_feed: feed,
+        list_claimed: fn -> TicketFeed.claimed_from(feed) end,
         tmux_session: tmux_session
       )
 
@@ -345,6 +354,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:fleet_board, fleet_board)
     |> Sidebar.assign_windows_sidebar_tree()
   end
+
+  defp tab_worktrees(tabs) when is_list(tabs) do
+    tabs
+    |> Enum.map(&Map.get(&1, :worktree_path))
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+  end
+
+  defp tab_worktrees(_tabs), do: []
 
   defp pane_session_ids(windows) when is_list(windows) do
     windows

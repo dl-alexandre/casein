@@ -302,6 +302,18 @@
   --casein-status-idle-content: oklch(98% 0.01 295);
   --casein-status-idle-soft: oklch(96.5% 0.03 295);
   --casein-status-idle-border: oklch(88% 0.07 295);
+
+  /* ticket kind — ISS (purple) vs PR (blue) on fleet rows. Kind of *work*, not
+     status: deliberately off the status ramp so a ticket chip can never be
+     misread as an agent state. Hues sit clear of status-idle (295) and
+     status-live (230). */
+  --casein-ticket-iss-fg: oklch(48% 0.16 310);
+  --casein-ticket-iss-soft: oklch(96.5% 0.03 310);
+  --casein-ticket-iss-border: oklch(87% 0.07 310);
+
+  --casein-ticket-pr-fg: oklch(48% 0.16 262);
+  --casein-ticket-pr-soft: oklch(96.5% 0.03 262);
+  --casein-ticket-pr-border: oklch(87% 0.07 262);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -335,6 +347,14 @@
     --casein-status-idle-content: oklch(18% 0.03 295);
     --casein-status-idle-soft: oklch(28% 0.04 295);
     --casein-status-idle-border: oklch(45% 0.08 295);
+
+    --casein-ticket-iss-fg: oklch(84% 0.1 310);
+    --casein-ticket-iss-soft: oklch(28% 0.05 310);
+    --casein-ticket-iss-border: oklch(45% 0.09 310);
+
+    --casein-ticket-pr-fg: oklch(84% 0.1 262);
+    --casein-ticket-pr-soft: oklch(28% 0.05 262);
+    --casein-ticket-pr-border: oklch(45% 0.09 262);
   }
 }
 
@@ -368,6 +388,14 @@
   --casein-status-idle-content: oklch(18% 0.03 295);
   --casein-status-idle-soft: oklch(28% 0.04 295);
   --casein-status-idle-border: oklch(45% 0.08 295);
+
+  --casein-ticket-iss-fg: oklch(84% 0.1 310);
+  --casein-ticket-iss-soft: oklch(28% 0.05 310);
+  --casein-ticket-iss-border: oklch(45% 0.09 310);
+
+  --casein-ticket-pr-fg: oklch(84% 0.1 262);
+  --casein-ticket-pr-soft: oklch(28% 0.05 262);
+  --casein-ticket-pr-border: oklch(45% 0.09 262);
 }
 
 @theme inline {
@@ -400,6 +428,14 @@
   --color-status-idle-content: var(--casein-status-idle-content);
   --color-status-idle-soft: var(--casein-status-idle-soft);
   --color-status-idle-border: var(--casein-status-idle-border);
+
+  --color-ticket-iss-fg: var(--casein-ticket-iss-fg);
+  --color-ticket-iss-soft: var(--casein-ticket-iss-soft);
+  --color-ticket-iss-border: var(--casein-ticket-iss-border);
+
+  --color-ticket-pr-fg: var(--casein-ticket-pr-fg);
+  --color-ticket-pr-soft: var(--casein-ticket-pr-soft);
+  --color-ticket-pr-border: var(--casein-ticket-pr-border);
 }
 /* Use the data attribute for dark mode  */
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));

@@ -155,27 +155,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
               {orphan_count_chip(@orphans)}
             </span>
           </div>
-          <ul
+          <p
             :if={OrphanedClaims.any?(@orphans)}
             id="fleet-orphaned-claim-list"
-            class="mt-1.5 space-y-1 pl-3.5"
+            class="mt-1 pl-3.5 text-base-content/60"
           >
-            <li
-              :for={orphan <- @orphans.orphans}
-              id={"fleet-orphan-" <> Integer.to_string(orphan.number)}
-              class="flex min-w-0 items-center gap-2 text-base-content/70"
-            >
-              <span class="shrink-0 font-medium text-status-warning-fg">#{orphan.number}</span>
-              <span
-                :if={orphan.priority}
-                class="shrink-0 rounded bg-base-200 px-1 py-0.5 text-density-label"
-              >
-                {orphan.priority}
-              </span>
-              <span class="min-w-0 flex-1 truncate">{orphan.title || "claimed, no live pane"}</span>
-              <span class="shrink-0 text-status-warning-fg">no pane</span>
-            </li>
-          </ul>
+            listed below as parked ticket rows
+          </p>
           <p
             :if={OrphanedClaims.unknown?(@orphans)}
             class="mt-1 pl-3.5 text-base-content/50"
@@ -197,53 +183,54 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
 
         <div class="flex-1 overflow-auto px-2 py-2 text-density-body leading-relaxed">
           <ol id="fleet-board-rows" class="space-y-1">
-            <li :for={row <- @rows}>
+            <li :for={row <- live_rows(@rows)}>
               <button
                 type="button"
                 id={"fleet-row-" <> row.window_id}
-                phx-click="tmux:select_window"
+                phx-click={not row.parked? && "tmux:select_window"}
                 phx-value-window-id={row.window_id}
                 class={[
                   "flex w-full flex-col gap-0.5 rounded border px-2.5 py-1.5 text-left transition-colors",
                   row_class(row, @active_window_id)
                 ]}
-                title={"Focus window " <> row.name}
+                title={row_title(row)}
               >
                 <div class="flex min-w-0 items-center gap-2">
-                  <span class={"inline-block h-2 w-2 shrink-0 rounded-full " <> (row.dot_class || "bg-base-content/20")}></span>
-                  <span class="min-w-0 flex-1 truncate font-medium">{row.display_name}</span>
+                  <span
+                    :if={row.ticket}
+                    class={"shrink-0 rounded border px-1 py-0.5 font-mono text-density-label " <> ticket_chip_class(row.ticket)}
+                  >
+                    {ticket_kind_label(row.ticket)} {row.ticket.number}
+                  </span>
+                  <span
+                    :if={is_nil(row.ticket)}
+                    class={"inline-block h-2 w-2 shrink-0 rounded-full " <> (row.dot_class || "bg-base-content/20")}
+                  ></span>
+                  <span class="min-w-0 flex-1 truncate font-medium">{row_title_text(row)}</span>
                   <span
                     :if={row.fleet_role}
                     class="shrink-0 rounded bg-base-200 px-1.5 py-0.5 font-mono text-density-label text-base-content/70"
                   >
                     {row.fleet_role}
                   </span>
-                  <span
-                    :if={row.chip_text}
-                    class={"shrink-0 rounded px-1.5 py-0.5 font-mono text-density-label " <> (row.chip_class || "")}
-                  >
-                    {row.chip_text}
-                  </span>
-                  <span
-                    :if={row.needs_you? and is_nil(row.chip_text)}
-                    class="shrink-0 rounded bg-status-warning/15 px-1.5 py-0.5 font-mono text-density-label text-status-warning-fg"
-                  >
-                    {attention_chip(row)}
+                  <span class={"shrink-0 rounded px-1.5 py-0.5 font-mono text-density-label " <> who_chip_class(row)}>
+                    {who_chip_label(row)}
                   </span>
                 </div>
                 <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 pl-4 font-mono text-density-label text-base-content/60">
-                  <span :if={row.issue} class="text-base-content/80">#{row.issue}</span>
-                  <span :if={row.issue_title} class="truncate">{row.issue_title}</span>
-                  <span :if={row.task_summary && is_nil(row.issue_title)} class="truncate">
+                  <span :if={row.parked?} class="text-base-content/50">no pane</span>
+                  <span :if={not row.parked?} class="shrink-0 text-base-content/80">
+                    {row.name}
+                  </span>
+                  <span :if={row.ticket && row.task_summary} class="truncate">
                     {row.task_summary}
                   </span>
-                  <span :if={row.label && is_nil(row.task_summary)} class="truncate">{row.label}</span>
-                  <span :if={row.fleet_readiness == :ready_no_task} class="text-status-warning-fg">
+                  <span :if={row.fleet_readiness == :ready_no_task} class="text-base-content/50">
                     ready, no task{ready_for_suffix(row.ready_no_task_for_seconds)}
                   </span>
                   <span
                     :if={blocked_on_label(row)}
-                    class="truncate text-status-warning-fg"
+                    class={"truncate " <> blocked_on_class(row)}
                   >
                     blocked on: {blocked_on_label(row)}
                   </span>
@@ -263,10 +250,53 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
               </button>
             </li>
           </ol>
+
+          <div
+            :if={capacity_rows(@rows) != []}
+            id="fleet-capacity"
+            class="mt-3 border-t pt-2"
+          >
+            <p class="px-1 pb-1 font-mono text-density-label text-base-content/40">
+              capacity · {length(capacity_rows(@rows))} pane(s), no ticket
+            </p>
+            <ol id="fleet-capacity-rows" class="space-y-1">
+              <li :for={row <- capacity_rows(@rows)}>
+                <button
+                  type="button"
+                  id={"fleet-row-" <> row.window_id}
+                  phx-click="tmux:select_window"
+                  phx-value-window-id={row.window_id}
+                  class={[
+                    "flex w-full items-center gap-2 rounded border border-transparent px-2.5 py-1",
+                    "text-left text-base-content/60 transition-colors hover:bg-base-200/80"
+                  ]}
+                  title={"Focus window " <> row.name}
+                >
+                  <span class={"inline-block h-1.5 w-1.5 shrink-0 rounded-full " <> (row.dot_class || "bg-base-content/20")}></span>
+                  <span class="min-w-0 flex-1 truncate">{row.display_name}</span>
+                  <span
+                    :if={row.fleet_readiness == :ready_no_task}
+                    class="shrink-0 font-mono text-density-label text-base-content/40"
+                  >
+                    ready, no task{ready_for_suffix(row.ready_no_task_for_seconds)}
+                  </span>
+                  <span
+                    :if={row.fleet_role}
+                    class="shrink-0 font-mono text-density-label text-base-content/40"
+                  >
+                    {row.fleet_role}
+                  </span>
+                  <span class={"shrink-0 rounded px-1.5 py-0.5 font-mono text-density-label " <> who_chip_class(row)}>
+                    {who_chip_label(row)}
+                  </span>
+                </button>
+              </li>
+            </ol>
+          </div>
         </div>
 
         <footer class="border-t px-3 py-2 font-mono text-density-label text-base-content/50">
-          projection · AgentState + IssueBinding + FleetChrome + OrphanedClaims + GateQueue · click focuses window
+          projection · tickets {ticket_feed_label(@board)} · AgentState + IssueBinding + TicketFeed + GateQueue
         </footer>
       </aside>
     </div>
@@ -275,6 +305,74 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
 
   defp badge_title(gate, orphans) do
     GateQueue.summary(gate) <> " · " <> OrphanedClaims.summary(orphans)
+  end
+
+  ## Ticket rows
+
+  # Live work: anything with a ticket, plus anything that needs a human. A
+  # ticketless quiet pane is capacity and belongs below the divider.
+  defp live_rows(rows) when is_list(rows), do: Enum.reject(rows, & &1.capacity?)
+  defp live_rows(_), do: []
+
+  defp capacity_rows(rows) when is_list(rows), do: Enum.filter(rows, & &1.capacity?)
+  defp capacity_rows(_), do: []
+
+  defp ticket_kind_label(%{kind: :pr}), do: "PR"
+  defp ticket_kind_label(_), do: "ISS"
+
+  defp ticket_chip_class(%{kind: :pr}),
+    do: "border-ticket-pr-border bg-ticket-pr-soft text-ticket-pr-fg"
+
+  defp ticket_chip_class(_),
+    do: "border-ticket-iss-border bg-ticket-iss-soft text-ticket-iss-fg"
+
+  # The ticket title is the work; the pane name is only where it is being done.
+  defp row_title_text(%{ticket: %{title: title}}) when is_binary(title) and title != "",
+    do: title
+
+  defp row_title_text(row), do: row.display_name
+
+  defp row_title(%{parked?: true} = row), do: "Claimed, no live pane — #{row.name}"
+  defp row_title(row), do: "Focus window " <> row.name
+
+  ## WHO chip — five states, one colour rule: only a reported human block is warm.
+
+  defp who_chip_label(%{parked?: true}), do: "parked"
+  defp who_chip_label(%{agent_state: :working}), do: "working"
+  defp who_chip_label(%{agent_state: :blocked}), do: "blocked"
+  defp who_chip_label(%{agent_state: :errored}), do: "error"
+  defp who_chip_label(%{agent_state: :done}), do: "done"
+  defp who_chip_label(%{fleet_readiness: :ready_no_task}), do: "idle"
+  defp who_chip_label(%{agent_state: state}) when state in [:stalled, :awaiting_input], do: "idle"
+  defp who_chip_label(%{agent_state: :idle}), do: "idle"
+  defp who_chip_label(_), do: "unknown"
+
+  # Slate for everything quiet — ready / stalled / awaiting_input / idle / done.
+  # Blue-busy is reserved for an agent that is actually working, amber for a
+  # reported block. An inference never gets a warm colour.
+  defp who_chip_class(%{agent_state: :working}),
+    do: "bg-status-ok/15 text-status-ok"
+
+  defp who_chip_class(%{agent_state: state}) when state in [:blocked, :errored],
+    do: "bg-status-warning-soft text-status-warning-fg"
+
+  defp who_chip_class(%{parked?: true}),
+    do: "bg-status-warning-soft/60 text-status-warning-fg"
+
+  defp who_chip_class(%{agent_state: nil, fleet_readiness: nil}),
+    do: "bg-base-200 text-base-content/40"
+
+  defp who_chip_class(_), do: "bg-base-200 text-base-content/50"
+
+  # Derived blockers stay slate; only a reported one is amber.
+  defp blocked_on_class(%{blocked_on: %{kind: :report}}), do: "text-status-warning-fg"
+  defp blocked_on_class(_), do: "text-base-content/50"
+
+  defp ticket_feed_label(board) do
+    case Map.get(board, :ticket_feed_state) do
+      :ok -> "live"
+      _ -> "unknown"
+    end
   end
 
   # attention > gate busy > claims unknown > default
@@ -394,9 +492,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
   defp count_chip_class(:working),
     do: "border-status-ok/40 bg-status-ok/10 text-status-ok"
 
-  defp count_chip_class(:ready_no_task),
-    do: "border-status-warning-border bg-status-warning-soft text-status-warning-fg"
-
+  # Capacity is slate like every other quiet bucket. Only needs_you is warm —
+  # an amber "ready 4" chip was the badge lying about idle workers in miniature.
   defp count_chip_class(_), do: "border-base-300 bg-base-200 text-base-content/70"
 
   defp bucket_label(:needs_you), do: "need you"
@@ -419,15 +516,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
         "border-base-300 hover:bg-base-200/80"
     end
   end
-
-  defp attention_chip(%{attention_reason: :ready_no_task}), do: "ready"
-  defp attention_chip(%{attention_reason: :idle}), do: "quiet"
-  defp attention_chip(%{attention_reason: :blocked}), do: "needs input"
-  defp attention_chip(%{attention_reason: :errored}), do: "error"
-  defp attention_chip(%{attention_reason: :stalled}), do: "stalled"
-  defp attention_chip(%{attention_reason: :orphaned_claim}), do: "orphaned claim"
-  defp attention_chip(%{attention_reason: reason}) when is_atom(reason), do: to_string(reason)
-  defp attention_chip(_), do: "needs you"
 
   defp ready_for_suffix(n) when is_integer(n) and n >= 60, do: " · #{div(n, 60)}m"
   defp ready_for_suffix(n) when is_integer(n) and n > 0, do: " · #{n}s"

@@ -1071,6 +1071,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   def handle_info({:grok_acp_attachments_updated, _workspace_id, _snapshots} = message, socket),
     do: {:noreply, GrokPermissionEvents.handle_info(message, socket)}
 
+  def handle_info({:ticket_feed, _stage, _key} = message, socket),
+    do: FleetEvents.handle_info(message, socket)
+
   def handle_info({:codex_event, event}, socket), do: CodexEvents.handle_info(event, socket)
 
   def handle_info(:flush_codex_deltas, socket),
