@@ -41,7 +41,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivityTest do
         threads: threads,
         selected_thread_id: "child",
         timeline: [event],
-        live_delta: "Working through the tests…",
+        live_chunks: [%{id: 1, text: "Working through the tests…"}],
         error: nil
       })
 
@@ -49,6 +49,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivityTest do
     assert html =~ "Codex lifecycle"
     assert html =~ "Turn started"
     assert html =~ "Streaming"
+    assert html =~ ~s(id="codex-live-chunk-1")
     assert html =~ "155"
     assert html =~ "130 input"
     assert html =~ "25 output"

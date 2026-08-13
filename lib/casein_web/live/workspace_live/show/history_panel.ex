@@ -40,7 +40,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
   attr :agent_threads, :list, default: []
   attr :selected_agent_thread_id, :string, default: nil
   attr :agent_timeline, :list, default: []
-  attr :agent_live_delta, :string, default: ""
+  attr :agent_live_chunks, :list, default: []
   attr :agent_activity_error, :string, default: nil
 
   def history_panel(assigns) do
@@ -93,7 +93,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
           threads={@agent_threads}
           selected_thread_id={@selected_agent_thread_id}
           timeline={@agent_timeline}
-          live_delta={@agent_live_delta}
+          live_chunks={@agent_live_chunks}
           error={@agent_activity_error}
         />
 

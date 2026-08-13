@@ -71,7 +71,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
     assert s.assigns.agent_pending_approval_count == 0
     assert s.assigns.codex_selected_thread_id == nil
     assert s.assigns.codex_timeline == []
-    assert s.assigns.codex_live_delta == ""
+    assert s.assigns.codex_live_chunks == []
+    assert s.assigns.codex_live_bytes == 0
     assert s.assigns.codex_delta_buffer == []
     assert s.assigns.codex_delta_timer == nil
     assert s.assigns.codex_exec_run == nil
@@ -98,6 +99,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
     assert {:noreply, s2} = Show.handle_info(:after_mount_agents, s)
     assert s2.assigns.codex_loaded?
     assert s2.assigns.codex_subscribed?
+    assert s2.assigns.codex_timeline == []
   end
 
   test "codex:select_thread selects a known thread and loads its timeline" do
@@ -137,7 +139,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
              CodexEvents.handle_event("codex:select_thread", %{"thread-id" => "thr-1"}, s)
 
     assert s2.assigns.codex_selected_thread_id == "thr-1"
-    assert s2.assigns.codex_live_delta == ""
+    assert s2.assigns.codex_live_chunks == []
     assert is_list(s2.assigns.codex_timeline)
     assert Enum.any?(s2.assigns.codex_timeline, &(&1.thread_id == "thr-1"))
   end
@@ -297,29 +299,72 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
              s2.assigns.codex_pending_requests
   end
 
-  test "handle_info :flush_codex_deltas concatenates the buffer into live delta" do
+  test "handle_info :flush_codex_deltas appends a new chunk without rewriting the prefix" do
+    prefix = %{id: 1, text: "pre-"}
+
     s =
       panel(%{
-        codex_live_delta: "pre-",
+        codex_live_chunks: [prefix],
+        codex_live_bytes: 4,
+        codex_live_seq: 1,
         codex_delta_buffer: ["b", "a"],
         codex_delta_timer: make_ref()
       })
 
     assert {:noreply, s2} = CodexEvents.handle_info(:flush_codex_deltas, s)
-    assert s2.assigns.codex_live_delta == "pre-ab"
+    assert [kept, added] = s2.assigns.codex_live_chunks
+    assert kept == prefix
+    assert added == %{id: 2, text: "ab"}
+    assert s2.assigns.codex_live_bytes == 6
     assert s2.assigns.codex_delta_buffer == []
     assert s2.assigns.codex_delta_timer == nil
   end
 
   test "handle_info :flush_codex_deltas retains only the last 32_000 live bytes" do
     tail = String.duplicate("x", 100)
-    # live + flush would exceed the max — only the tail should remain.
-    live = String.duplicate("y", 32_000)
-    s = panel(%{codex_live_delta: live, codex_delta_buffer: [tail]})
+    prefix = %{id: 1, text: String.duplicate("y", 32_000)}
+
+    s =
+      panel(%{
+        codex_live_chunks: [prefix],
+        codex_live_bytes: 32_000,
+        codex_live_seq: 1,
+        codex_delta_buffer: [tail]
+      })
 
     assert {:noreply, s2} = CodexEvents.handle_info(:flush_codex_deltas, s)
-    assert byte_size(s2.assigns.codex_live_delta) == 32_000
-    assert String.ends_with?(s2.assigns.codex_live_delta, tail)
+    assert s2.assigns.codex_live_bytes == 100
+    assert s2.assigns.codex_live_chunks == [%{id: 2, text: tail}]
+  end
+
+  test "flush after a full window only dirties the new chunk, not the 32KB prefix" do
+    # #924 constraint: once the window is full, a 150ms flush must not rewrite
+    # the prefix as one interpolated slot. Before: 32_000-byte string assign
+    # (~213KB/s/viewer). After: only the new tail is a new chunk id.
+    prefix_text = String.duplicate("y", 31_900)
+    prefix = %{id: 1, text: prefix_text}
+    tail = String.duplicate("x", 80)
+
+    s =
+      panel(%{
+        codex_live_chunks: [prefix],
+        codex_live_bytes: 31_900,
+        codex_live_seq: 1,
+        codex_delta_buffer: [tail]
+      })
+
+    assert {:noreply, s2} = CodexEvents.handle_info(:flush_codex_deltas, s)
+    assert [kept, added] = s2.assigns.codex_live_chunks
+    assert kept.id == 1
+    assert kept.text == prefix_text
+    assert added.id == 2
+    assert added.text == tail
+
+    prefix_bytes = byte_size(:erlang.term_to_binary(prefix_text))
+    tail_bytes = byte_size(:erlang.term_to_binary(tail))
+    assert prefix_bytes >= 31_900
+    assert tail_bytes < 200
+    assert tail_bytes * 20 < prefix_bytes
   end
 
   test "handle_info {:codex_exec_event, ...} is a pure no-op" do
@@ -355,6 +400,80 @@ defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
 
     assert s2.assigns.codex_exec_run.exit_code == 0
     assert s2.assigns.codex_exec_run.status == :exited
+  end
+
+  test "same-workspace agent events do not reload history when the tab is closed" do
+    # #924: history re-query is per-event when History is open, never per-tick
+    # and never when the consuming tab is closed. Approval events still refresh
+    # the pending badge without loading the 300-event timeline.
+    marker = [%{thread_id: "keep", title: "stale"}]
+    timeline = [%{id: "evt-keep"}]
+
+    s =
+      panel(%{
+        tab: "terminal",
+        codex_threads: marker,
+        codex_timeline: timeline,
+        codex_selected_thread_id: "keep"
+      })
+
+    ev =
+      event(:turn_completed,
+        workspace_id: s.assigns.workspace.id,
+        thread_id: "keep",
+        payload: %{}
+      )
+
+    assert {:noreply, s2} = CodexEvents.handle_info(ev, s)
+    assert s2.assigns.codex_threads == marker
+    assert s2.assigns.codex_timeline == timeline
+  end
+
+  test "non-selected-thread events do not reload the selected timeline" do
+    ws_id = "ws-codex-#{System.unique_integer([:positive])}"
+
+    :ok =
+      Store.record(
+        event(:thread_started,
+          workspace_id: ws_id,
+          thread_id: "thr-1",
+          runtime_id: "rt-a",
+          sequence: 1,
+          payload: %{title: "one"}
+        )
+      )
+
+    :ok =
+      Store.record(
+        event(:turn_started,
+          workspace_id: ws_id,
+          thread_id: "thr-1",
+          runtime_id: "rt-a",
+          sequence: 2,
+          payload: %{}
+        )
+      )
+
+    s =
+      socket(%{workspace: %{id: ws_id}, tab: "history"})
+      |> CodexEvents.assign_defaults()
+      |> assign(workspace: %{id: ws_id}, tab: "history")
+
+    assert {:noreply, loaded} = CodexEvents.handle_event("codex:refresh", %{}, s)
+    before = loaded.assigns.codex_timeline
+    assert before != []
+
+    other =
+      event(:turn_completed,
+        workspace_id: ws_id,
+        thread_id: "thr-other",
+        runtime_id: "rt-a",
+        sequence: 3,
+        payload: %{}
+      )
+
+    assert {:noreply, s2} = CodexEvents.handle_info(other, loaded)
+    assert s2.assigns.codex_timeline == before
   end
 
   test "handle_info Event for another workspace leaves projections untouched" do

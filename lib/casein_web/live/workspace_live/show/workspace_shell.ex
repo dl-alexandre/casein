@@ -66,7 +66,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :codex_error, :any, required: true
   attr :codex_exec_form, :any, required: true
   attr :codex_exec_run, :any, required: true
-  attr :codex_live_delta, :any, required: true
+  attr :codex_live_chunks, :any, required: true
   attr :codex_loaded?, :any, required: true
   attr :codex_pending_approval_count, :any, required: true
   attr :codex_pending_requests, :any, required: true
@@ -948,7 +948,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           agent_threads={@codex_threads}
           selected_agent_thread_id={@codex_selected_thread_id}
           agent_timeline={@codex_timeline}
-          agent_live_delta={@codex_live_delta}
+          agent_live_chunks={@codex_live_chunks}
           agent_activity_error={@codex_error}
         />
       </div>
