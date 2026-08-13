@@ -21,6 +21,7 @@ defmodule Casein.Runtimes do
 
   alias Casein.Runtimes.{
     LifecycleEvent,
+    LifecycleEvents,
     PreviewKiller,
     PreviewLauncher,
     PreviewServer,
@@ -51,10 +52,12 @@ defmodule Casein.Runtimes do
               optional(String.t()) => %{total: non_neg_integer(), active: non_neg_integer()}
             }
   @callback events_for(String.t()) :: [LifecycleEvent.t()]
+  @callback events_page(String.t(), keyword()) :: LifecycleEvents.page()
   @callback clear() :: :ok
   @optional_callbacks list_runtimes_by_workspace_ids: 1,
                       list_agent_worktree_runtimes: 2,
-                      count_runtimes_by_workspace_ids: 1
+                      count_runtimes_by_workspace_ids: 1,
+                      events_page: 2
 
   def list_runtimes(filters \\ %{}), do: impl().list_runtimes(normalize_filter(filters))
 
@@ -391,8 +394,37 @@ defmodule Casein.Runtimes do
 
   def discover_worktrees(_workspace_id), do: {:error, :invalid_workspace_id}
 
-  def events_for(runtime_id) when is_binary(runtime_id), do: impl().events_for(runtime_id)
-  def events_for(_), do: []
+  @doc """
+  Lifecycle events for a runtime, newest-capped.
+
+  Never unbounded: default #{LifecycleEvents.default_page_limit()}, hard max
+  #{LifecycleEvents.max_page_limit()}. Callers that display events must use
+  `events_page/2` and surface `banner` when `truncated?` — never a silent cap.
+  """
+  @spec events_for(String.t(), keyword()) :: [LifecycleEvent.t()]
+  def events_for(runtime_id, opts \\ [])
+
+  def events_for(runtime_id, opts) when is_binary(runtime_id) and is_list(opts) do
+    events_page(runtime_id, opts).events
+  end
+
+  def events_for(_, _), do: []
+
+  @spec events_page(String.t(), keyword()) :: LifecycleEvents.page()
+  def events_page(runtime_id, opts \\ [])
+
+  def events_page(runtime_id, opts) when is_binary(runtime_id) and is_list(opts) do
+    adapter = impl()
+
+    if function_exported?(adapter, :events_page, 2) do
+      adapter.events_page(runtime_id, opts)
+    else
+      LifecycleEvents.page(adapter.events_for(runtime_id), opts)
+    end
+  end
+
+  def events_page(_, _),
+    do: LifecycleEvents.wrap([], LifecycleEvents.default_page_limit(), 0)
 
   def clear, do: impl().clear()
 
@@ -732,11 +764,7 @@ defmodule Casein.Runtimes do
         if existing do
           impl().update_runtime(
             runtime,
-            event(runtime, existing.status, "runtime_heartbeat",
-              actor_id: string_value(attrs, "actor_id"),
-              runner_id: string_value(attrs, "runner_id"),
-              metadata: event_metadata
-            )
+            heartbeat_event(existing, runtime, event_metadata, attrs)
           )
         else
           impl().create_runtime(
@@ -1272,6 +1300,27 @@ defmodule Casein.Runtimes do
         )
       )
     end
+  end
+
+  # #921 write guard: runtime_heartbeat was 93% of a 6.4M-row table (92% of
+  # prod DB). Heartbeats do not change status. Skip the event when the
+  # lifecycle fingerprint is unchanged; still update heartbeat_at on the row.
+  # Do not index this away — more indexes on a write we should not perform
+  # make the defect worse (#926 owns indexes separately).
+  defp heartbeat_event(existing, runtime, event_metadata, attrs) do
+    if heartbeat_lifecycle_changed?(existing, runtime, event_metadata) do
+      event(runtime, existing.status, "runtime_heartbeat",
+        actor_id: string_value(attrs, "actor_id"),
+        runner_id: string_value(attrs, "runner_id"),
+        metadata: event_metadata
+      )
+    end
+  end
+
+  defp heartbeat_lifecycle_changed?(%Runtime{} = existing, %Runtime{} = runtime, event_metadata) do
+    existing.status != runtime.status or
+      Map.take(existing.metadata || %{}, ["agent", "branch", "git_common_dir", "worktree_path"]) !=
+        event_metadata
   end
 
   defp event(%Runtime{} = runtime, from_status, event, opts) do

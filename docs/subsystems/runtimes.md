@@ -61,7 +61,8 @@ sets `EctoAdapter`; `config/test.exs` sets `MemoryAdapter`. Both satisfy the
 5. `upsert_agent_worktree_runtime/4` creates or updates the `Runtime` with
    `isolation_mode: "worktree"` and `metadata["kind"] = "agent_worktree"`. New
    runtimes are written `requested` → then immediately transitioned to
-   `provisioned` (two events); existing ones get a `runtime_heartbeat` event.
+    `provisioned`; existing ones update `heartbeat_at` and only append a
+    `runtime_heartbeat` event when status/agent/branch/path actually changed.
 
 **Status projection.** Status lives on the `Runtime` row but is *also* derivable
 from the event stream: `StateMachine.reduce/1` folds `LifecycleEvent`s through
@@ -122,9 +123,12 @@ Processes: only `MemoryAdapter` is a long-lived process (test-only GenServer). T
   checkout is explicitly refused.
 - **`isolation_mode`** for observed worktrees is always `"worktree"`; `host_id`
   defaults to `"local"`.
-- **`events_for/1` is intentionally unbounded** (see the audit note in
-  `EctoAdapter`): replay/export need the full history, and counts stay small. Switch
-  to a `:limit` with a visible banner only past ~500, never a silent cap.
+- **`events_for/1` is bounded** (default 500, hard max 2000, newest-first). Display
+  callers must use `events_page/2` and show `banner` when `truncated?` — never a
+  silent cap, never unbounded. Heartbeat writes are skipped when nothing
+  changed; `LifecycleRetention` deletes aged heartbeats; `LifecycleSizeTripwire`
+  is the monitor the old "~500" comment never was. Do not index this table to
+  paper over write volume (#921).
 - **Status is doubly sourced** — stored on the row and reducible from events. Keep
   them consistent; transitions go through the context (which appends an event), not
   by mutating the row directly.
