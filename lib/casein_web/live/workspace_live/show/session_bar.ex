@@ -873,10 +873,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       {needs_you_meta_line(@row, @show_workspace?)}
     </span>
     <span class="flex min-w-0 items-center gap-1.5 overflow-hidden pl-3">
-      <span class={[
-        "shrink-0 rounded-full px-1.5 text-density-badge font-semibold",
-        @badge.class
-      ]}>
+      <span
+        :if={is_binary(@badge.text)}
+        class={[
+          "shrink-0 rounded-full px-1.5 text-density-badge font-semibold",
+          @badge.class
+        ]}
+      >
         {@badge.text}
       </span>
       <span
@@ -930,38 +933,47 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
     end
   end
 
-  # Chip catalogue is SessionBarVM.attention_chip_label/1 only (#910).
+  # Chip identity from AgentStateChrome.present/2 via SessionBarVM.attention_chip/1.
   # Stalled ≡ running_but_not_progressing — never render as idle/Quiet update.
+  # Unclassified (:unknown) is could-not-classify — never idle chrome.
   defp needs_you_row_badge(row) do
     reason = Map.get(row, :reason)
     count = Map.get(row, :agent_blocked_count, 0)
-    base = SessionBarVM.attention_chip_label(reason)
-    text = if is_integer(count) and count > 1, do: "#{base} ×#{count}", else: base
+    chip = SessionBarVM.attention_chip(reason)
 
-    case reason do
-      r when r in [:blocked, :awaiting_input] ->
-        %{dot: "bg-status-danger", class: "bg-status-danger/15 text-status-danger-fg", text: text}
+    text =
+      cond do
+        is_nil(chip.text) -> nil
+        is_integer(count) and count > 1 -> "#{chip.text} ×#{count}"
+        true -> chip.text
+      end
 
-      r when r in [:errored, :error] ->
-        %{dot: "bg-status-danger", class: "bg-status-danger/15 text-status-danger-fg", text: text}
-
-      :stalled ->
-        %{
-          dot: "bg-status-warning",
-          class: "bg-status-warning/15 text-status-warning-fg",
-          text: text
-        }
-
-      :completed ->
-        %{dot: "bg-status-live", class: "bg-status-live/15 text-status-live-fg", text: text}
-
-      :idle ->
-        %{dot: "bg-status-idle", class: "bg-status-idle/15 text-status-idle-fg", text: text}
-
-      _ ->
-        %{dot: "bg-status-idle", class: "bg-status-idle/15 text-status-idle-fg", text: text}
-    end
+    %{
+      dot: needs_you_badge_dot(reason),
+      class: needs_you_badge_class(reason, chip),
+      text: text
+    }
   end
+
+  defp needs_you_badge_dot(r) when r in [:blocked, :awaiting_input, :errored, :error],
+    do: "bg-status-danger"
+
+  defp needs_you_badge_dot(:stalled), do: "bg-status-warning"
+  defp needs_you_badge_dot(:completed), do: "bg-status-live"
+  defp needs_you_badge_dot(:idle), do: "bg-status-idle"
+  defp needs_you_badge_dot(_reason), do: "bg-base-content/30"
+
+  defp needs_you_badge_class(r, chip) when r in [:blocked, :awaiting_input, :errored, :error],
+    do: chip.class || "bg-status-danger/15 text-status-danger-fg"
+
+  defp needs_you_badge_class(:stalled, chip),
+    do: chip.class || "bg-status-warning/15 text-status-warning-fg"
+
+  defp needs_you_badge_class(:completed, chip),
+    do: chip.class || "bg-status-live/15 text-status-live-fg"
+
+  defp needs_you_badge_class(:idle, _chip), do: "bg-status-idle/15 text-status-idle-fg"
+  defp needs_you_badge_class(_reason, _chip), do: "bg-base-content/10 text-base-content/50"
 
   defp needs_you_row_title(row) do
     chip = SessionBarVM.attention_chip_label(row.reason)
@@ -975,7 +987,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
         # Stalled is NOT idle: process active, axes not progressing (AgentProgress).
         :stalled -> "Stalled — running but not progressing"
         :idle -> "Quiet update"
-        _ -> chip
+        # Unclassified — never Quiet update (#910 / #917).
+        _ -> chip || "Unclassified"
       end
 
     scope = if(row.current?, do: base, else: base <> " · " <> row.workspace_label)
