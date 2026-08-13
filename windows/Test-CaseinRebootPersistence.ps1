@@ -1,6 +1,11 @@
 [CmdletBinding()]
 param(
-    [string]$PackageRoot = (Split-Path -Parent $PSScriptRoot),
+    # Do not default this with Split-Path $PSScriptRoot. Windows PowerShell 5.1
+    # evaluates param defaults before $PSScriptRoot is populated, so the
+    # expression becomes Split-Path -Parent '' and the package smoke dies
+    # before -SelfTestContinuation can run. Resolve in the body, after the
+    # short-circuits, once $PSScriptRoot exists — or take it from the caller.
+    [string]$PackageRoot,
     # Deliberately NOT [Parameter(Mandatory)]. Binding-time mandatory fires before
     # the -LibraryOnly / -SelfTestContinuation short-circuits below, so it also
     # blocks the two non-destructive entry points — and under -NonInteractive it
@@ -180,6 +185,14 @@ if ($SelfTestContinuation) {
 
 if (-not $AcceptDestructiveCleanMachineTest) {
     throw 'Pass -AcceptDestructiveCleanMachineTest only on a disposable clean Windows test account. The test installs Casein and may remove its user data.'
+}
+
+if (-not $PackageRoot) {
+    if (-not $PSScriptRoot) {
+        throw 'PackageRoot is required when $PSScriptRoot is unset. Pass -PackageRoot; do not compute it as a param default under powershell.exe -File.'
+    }
+
+    $PackageRoot = Split-Path -Parent $PSScriptRoot
 }
 
 $packageRoot = [IO.Path]::GetFullPath($PackageRoot)
