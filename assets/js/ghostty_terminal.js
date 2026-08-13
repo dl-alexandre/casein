@@ -69,7 +69,7 @@ import {
 import {fileLinkAt, updateFileLinkStore} from "./terminal_file_links.mjs"
 import {pingWakeLock} from "./wake_lock"
 import {enterDismissesSoftKeyboard} from "./terminal_soft_keyboard.mjs"
-import {computeTerminalLayout} from "./terminal_layout_model.mjs"
+import {computeTerminalLayout, cropCellMetrics} from "./terminal_layout_model.mjs"
 import {
   isMobileTerminalLayout,
   latchMobileAuthority,
@@ -2200,9 +2200,36 @@ function gatherLayoutInput(hook, trigger) {
   }
 }
 
+// The mobile focus crop shifts the surface by whole grid cells, so it needs the
+// rendered cell size in the mount's own pre-transform pixels. Publishing it here
+// keeps the renderer the single owner of grid geometry — before this the crop
+// re-derived a cell width from the container box, which ignored the quantization
+// remainder and clipped the focused pane's first column.
+function publishGridCellMetrics(hook, cell) {
+  const mount = hook.el?.closest?.("[data-terminal-surface-mount]")
+  if (!mount) return
+
+  const metrics = cropCellMetrics({
+    cell,
+    layoutW: mount.offsetWidth,
+    paintedW: mount.getBoundingClientRect().width
+  })
+
+  if (!metrics) {
+    mount.style.removeProperty("--casein-term-cell-w")
+    mount.style.removeProperty("--casein-term-cell-h")
+    return
+  }
+
+  mount.style.setProperty("--casein-term-cell-w", `${metrics.w}px`)
+  mount.style.setProperty("--casein-term-cell-h", `${metrics.h}px`)
+}
+
 // Write the model's answer to the DOM. The only place that mutates layout.
-function applyLayoutResult(hook, result) {
+function applyLayoutResult(hook, result, cell) {
   if (!result || result.noop) return
+
+  publishGridCellMetrics(hook, cell)
 
   // Leaving row-pin: undo the container clip before anything else re-lays out.
   if (hook.__rowPinnedApplied && !result.clipScreen) {
@@ -2354,7 +2381,7 @@ function applyTerminalLayout(hook, trigger = "event") {
   const input = gatherLayoutInput(hook, trigger)
   if (!input) return
 
-  applyLayoutResult(hook, computeTerminalLayout(input))
+  applyLayoutResult(hook, computeTerminalLayout(input), input.cell)
 }
 
 /**

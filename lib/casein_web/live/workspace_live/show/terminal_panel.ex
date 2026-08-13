@@ -64,7 +64,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
       end)
 
     ~H"""
-    <section class="terminal-shell -mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
+    <%!-- The negative margin bleeds the terminal to the shell's edges, so it must
+         mirror workspace_shell's padding at every breakpoint (px-4 / max-sm:px-2 /
+         lg:px-6). Without the max-sm pair the shell overhangs the viewport by 8px
+         a side under 640px, and the mobile focus crop then parks the focused pane's
+         first glyph column in that off-screen strip. --%>
+    <section class="terminal-shell -mx-4 flex h-full min-h-0 flex-col max-sm:-mx-2 lg:-mx-6">
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
         <button
           :if={@agent_approval_count > 0}

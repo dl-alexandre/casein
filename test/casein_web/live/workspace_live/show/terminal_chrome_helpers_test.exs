@@ -202,20 +202,23 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
   end
 
   describe "mobile_focus_layout_style/2" do
-    test "exposes active pane percentages and a uniform scale factor as CSS variables" do
+    test "exposes the active pane offset in grid cells and a uniform scale factor" do
       style =
         TC.mobile_focus_layout_style(
           mobile_pane("%1", 1, 50, 0, 50, 20, true),
           %{width: 100, height: 40}
         )
 
-      assert style =~ "--casein-mobile-pane-left: 50.0%"
-      assert style =~ "--casein-mobile-pane-top: 0.0%"
-      assert style =~ "--casein-mobile-pane-width: 50.0%"
-      assert style =~ "--casein-mobile-pane-height: 50.0%"
+      # Cells, not percentages: the crop multiplies these by the cell size the
+      # renderer publishes, so it never re-derives one from the container box.
+      assert style =~ "--casein-mobile-pane-left-cells: 50"
+      assert style =~ "--casein-mobile-pane-top-cells: 0"
       # Equal x/y fit factors here (100/50 == 40/20) -> uniform scale 2.0.
       assert style =~ "--casein-mobile-pane-scale: 2.0"
       refute style =~ "--casein-mobile-pane-scale-x"
+      # A percentage basis would disagree with the quantized grid; keep it gone.
+      refute style =~ "--casein-mobile-pane-left:"
+      refute style =~ "--casein-mobile-pane-top:"
     end
 
     test "uses the smaller fit factor so an off-aspect pane never stretches" do

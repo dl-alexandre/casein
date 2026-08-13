@@ -1454,12 +1454,19 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
   /* When the pane is tmux-zoomed the surface already fills the window natively, so
      skip the crop-transform (it would double-scale). The rails still render — the
      focus layout stays on for a zoomed multi-pane window so you can switch panes. */
+  /* Crop by whole grid cells, using the cell size the renderer measured and
+     published. A percentage of this element's box is NOT the same distance —
+     the grid is quantized to whole cells and centered in the remainder — and
+     that mismatch clipped the focused pane's first glyph column. Until the hook
+     publishes --casein-term-cell-w/h the translate resolves to 0 and the grid
+     shows unshifted, which is a safe frame; the old percentage cropped
+     immediately and could crop wrong. */
   [data-mobile-focus-layout="true"]:not([data-window-zoomed="true"]) [data-terminal-surface-mount] {
     transform:
       scale(var(--casein-mobile-pane-scale, 1))
       translate(
-        calc(-1 * var(--casein-mobile-pane-left, 0%)),
-        calc(-1 * var(--casein-mobile-pane-top, 0%))
+        calc(-1 * var(--casein-mobile-pane-left-cells, 0) * var(--casein-term-cell-w, 0px)),
+        calc(-1 * var(--casein-mobile-pane-top-cells, 0) * var(--casein-term-cell-h, 0px))
       );
     transform-origin: top left;
     will-change: transform;
