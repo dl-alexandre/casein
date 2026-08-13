@@ -80,48 +80,46 @@ defmodule Casein.Previews.AccessTest do
   end
 
   describe "registerable_loopback_port?/2" do
-    test "accepts owned metadata ports, common dev ports, and runtime bands" do
-      ws = %{id: @workspace, metadata: %{"ports" => %{"http" => 10_100}}}
-
-      assert Access.registerable_loopback_port?(10_100, ws)
-      assert Access.registerable_loopback_port?(5173, ws)
-      assert Access.registerable_loopback_port?(41_050, ws)
-      assert Access.registerable_loopback_port?(41_000, ws)
-    end
-
-    test "rejects arbitrary loopback ports that registration must not widen to" do
+    test "accepts ordinary dev / ephemeral ports (FileServer escape hatch)" do
       ws = %{id: @workspace, metadata: %{}}
 
-      # SSH, Postgres, Redis — not common preview ports and not owned.
+      assert Access.registerable_loopback_port?(5173, ws)
+      assert Access.registerable_loopback_port?(41_050, ws)
+      assert Access.registerable_loopback_port?(21_005, ws)
+      assert Access.registerable_loopback_port?(9_999, ws)
+    end
+
+    test "rejects infrastructure ports registration must never widen to (#927)" do
+      ws = %{id: @workspace, metadata: %{}}
+
+      # FAIL case: SSH / Postgres / Redis / Mongo — registration cannot mint these.
       refute Access.registerable_loopback_port?(22, ws)
       refute Access.registerable_loopback_port?(5432, ws)
       refute Access.registerable_loopback_port?(6379, ws)
-      refute Access.registerable_loopback_port?(9_999, ws)
+      refute Access.registerable_loopback_port?(27_017, ws)
+      assert Access.denied_infra_port?(5432)
+      refute Access.denied_infra_port?(5173)
     end
   end
 
-  describe "port_allowed?/3 — registration is not an authorization primitive (#927)" do
-    test "owned port is allowed without registration" do
+  describe "port_allowed?/3 — registration is not a free SSRF widen (#927)" do
+    test "owned non-infra port is allowed without registration" do
       ws = %{id: @workspace, metadata: %{"ports" => %{"http" => 4105}}}
       assert Casein.Previews.workspace_owned_port?(4105, ws)
+      refute Access.denied_infra_port?(4105)
     end
 
-    test "registration alone does not authorize a non-registerable port" do
-      # Widened-registration FAIL case: a registration record that names 5432
-      # must NOT make the proxy allowlist accept 5432. Access.port_allowed?/3
-      # is registered? AND registerable_loopback_port?/2.
-      ws = %{id: @workspace, metadata: %{}}
-
+    test "denied infra port is never registerable even if 'owned' in metadata" do
+      # Even a malicious metadata.ports entry naming Postgres must not pass the
+      # registerable gate (Access.port_allowed? ANDs this with registration).
+      ws = %{id: @workspace, metadata: %{"ports" => %{"db" => 5432}}}
+      assert Casein.Previews.workspace_owned_port?(5432, ws)
       refute Access.registerable_loopback_port?(5432, ws)
-      refute Access.registerable_loopback_port?(22, ws)
-      refute Access.registerable_loopback_port?(6379, ws)
-    end
-
-    test "registration of a registerable common or runtime port still authorizes" do
-      ws = %{id: @workspace, metadata: %{}}
-
-      assert Access.registerable_loopback_port?(5173, ws)
-      assert Access.registerable_loopback_port?(41_050, ws)
+      assert Access.denied_infra_port?(5432)
+      # Owned + denied must not authorize: first clause of port_allowed? is
+      # owned AND not denied.
+      refute Casein.Previews.workspace_owned_port?(5432, ws) and
+               not Access.denied_infra_port?(5432)
     end
   end
 end

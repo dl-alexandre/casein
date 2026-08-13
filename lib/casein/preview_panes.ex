@@ -2267,9 +2267,9 @@ defmodule Casein.PreviewPanes do
              error: :port_not_allowed,
              port: port,
              message:
-               "Loopback port #{port} is not registerable for this workspace " <>
-                 "(not owned, not a common/runtime preview port). Registration " <>
-                 "cannot widen the preview proxy allowlist (#927)."
+               "Loopback port #{port} is not registerable (infrastructure/" <>
+                 "non-preview service). Registration cannot widen the " <>
+                 "preview proxy SSRF allowlist (#927)."
            }}
         end
 
