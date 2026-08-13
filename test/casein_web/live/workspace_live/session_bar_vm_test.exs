@@ -592,6 +592,63 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
     end
   end
 
+  describe "window_tabs/4 worktree join key" do
+    test "falls back to the pane cwd, which is all a cockpit pane carries" do
+      # Cockpit topology panes have :current_path and no :worktree_path — that
+      # enriched field only exists on the MCP path. Without this fallback the
+      # PR-branch ticket join has a nil key and every PR row degrades to
+      # capacity in the real drawer while unit tests still pass.
+      [tab] =
+        SessionBarVM.window_tabs([
+          %{
+            id: "@5",
+            index: 0,
+            name: "worker-s2",
+            active: true,
+            current_command: "opencode",
+            pane_list: [
+              %{
+                id: "%93",
+                index: 0,
+                role: "agent",
+                active: true,
+                current_command: "opencode",
+                current_path: "/data/casein-agent-worktrees/agent-opencode-s2"
+              }
+            ]
+          }
+        ])
+
+      assert tab.worktree_path == "/data/casein-agent-worktrees/agent-opencode-s2"
+    end
+
+    test "prefers an enriched worktree_path when the MCP path supplied one" do
+      [tab] =
+        SessionBarVM.window_tabs([
+          %{
+            id: "@6",
+            index: 0,
+            name: "worker-b",
+            active: true,
+            current_command: "claude",
+            pane_list: [
+              %{
+                id: "%94",
+                index: 0,
+                role: "agent",
+                active: true,
+                current_command: "claude",
+                worktree_path: "/wt/enriched",
+                current_path: "/wt/enriched/sub/dir"
+              }
+            ]
+          }
+        ])
+
+      assert tab.worktree_path == "/wt/enriched"
+    end
+  end
+
   describe "window_tabs/4 labels" do
     test "replaces UUID-shaped agent titles with the running command" do
       [tab] =

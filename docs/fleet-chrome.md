@@ -95,8 +95,72 @@ Cockpit chrome: fixed **fleet** badge (bottom-right) opens a drawer. Click a
 row → `tmux:select_window` focuses that worker. Rebuilt whenever
 `assign_tmux_window_tabs/1` runs — no second poller.
 
+### What counts as needs-you (narrowed)
+
+`needs_you?` means **a human is blocking the work**, and nothing else:
+
+| Signal | Kind | needs-you? | Chrome |
+|--------|------|-----------|--------|
+| `blocked` / `errored` | report | **yes** | amber WHO chip |
+| orphaned claim | observed | **yes** | amber, parked row |
+| `stalled` / `awaiting_input` | derived | no | slate, `:idle` bucket |
+| `ready_no_task` | derived | no — **capacity** | slate, below the divider |
+| quiet `idle` / `done` | derived | no | slate |
+
+Rationale: idle workers are not a human lane. A badge that counts spawned
+capacity as attention trains the operator to ignore it. Derived inference never
+summons anyone; only what the agent *reported* does.
+
+This is one classifier for every fleet surface — badge, drawer,
+`orchestration_status`, `orchestration_list_workers`, `worker_status` all read
+it, so the wire moved with the UI rather than forking from it. It does **not**
+rewrite `Attention.Delivery` itself, which still drives the inbox / picker /
+notification path; those surfaces keep their previous classification.
+
 This is **M5-lite** for issue #384 (operator-visible fleet surface). It is not
 orchestration MCP, durable task graphs, path contracts, or verifier adapters.
+
+## Ticket join: one row = one live ticket
+
+A pane name is not work. `Casein.Terminals.TicketFeed` is the ticket half —
+open issues **and** open PRs for this repo, ETS-cached, refreshed off the render
+path — and `FleetBoard.join_tickets/2` attaches one to each row:
+
+| Order | Key | Notes |
+|-------|-----|-------|
+| 1 | `IssueBinding` number | the claim protocol's own join |
+| 2 | `#NNNN` in label / window name | e.g. `worker: #744 item 4` |
+| 3 | **PR head branch == worktree branch** | the common case here — PR work has no binding and no number in the window name |
+
+Branches resolve inside the refresh task via `Git.Inspector.inspect_cwd/1`
+(itself TTL-cached), keyed by the worktree paths the cockpit passes in, so a
+15-window fleet costs one branch sweep per refresh, not one per render.
+
+Row shape: `[ISS|PR] #num title · WHO chip · window/role · liveness tail`. The
+ticket title is the row identity; the pane name moves to the detail line.
+
+* **Sort** — one continuous list by last ticket update. Not three status
+  columns; triage survives on the needs-you badge, not on lanes.
+* **Capacity** — a pane with no ticket and no human block groups under a divider
+  at the bottom. It must not compete with `#17070`.
+* **Parked** — claimed with no live pane renders as a ticket row with no WHO, so
+  unassigned work is visible in the same list. It does not inflate `total`
+  (fleet size is agents).
+* **Open only** — `--state open` at the port. Merged ≠ live; closed/merged are
+  dropped before chrome ever sees them, so no `#1485`-style ghost can survive.
+* **Scope** — this repo. Cross-fleet aggregation stays on the LAN board.
+
+Render-path discipline: `TicketFeed.cached/1` is a pure ETS read.
+`refresh_async/1` is the only `gh` path, single-flighted, on
+`Casein.TaskSupervisor`, broadcasting `{:ticket_feed, :refreshed, key}` so the
+cockpit rebuilds. `OrphanedClaims` now reads its claimed set from the same
+landed snapshot (`TicketFeed.claimed_from/2`) instead of running its own
+synchronous `gh` inside `assign_tmux_window_tabs/1` — that was a render-blocking
+shell-out on every 30s cache miss.
+
+Unknown discipline is unchanged: a feed that has never landed, or failed,
+leaves every row unjoined and the footer reads `tickets unknown` — never
+"no work".
 
 ## Orphaned claims (stale `queue/claimed` leases)
 
@@ -115,8 +179,10 @@ Pure projection: callers supply the claimed set (tests) or the board uses the
 tabs / `IssueBinding`. Attention reason `:orphaned_claim` sits on
 `Casein.Attention.Delivery.session_reason_urgency/1` — not a parallel ranker.
 
-Fleet drawer section `#fleet-orphaned-claims`; badge attention_count includes
-orphan count when observation succeeded. Multi-session workspace union and
+Fleet drawer section `#fleet-orphaned-claims` keeps the count banner; each
+orphan itself renders as a **parked ticket row** in the main list (ticket chip,
+no WHO) rather than a second list, so the drawer stays one continuous list.
+Badge attention_count includes orphan count when observation succeeded. Multi-session workspace union and
 auto-reclaim are out of scope for the first slice (#812).
 
 ## Gate queue (host flock depth)
@@ -384,7 +450,8 @@ orchestration_list_workers paths owned by #384.
 ## Code
 
 - `Casein.Terminals.FleetChrome` — pure per-pane projection
-- `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans + gate + liveness + blocked_on)
+- `Casein.Terminals.FleetBoard` — pure session aggregate over window tabs (+ orphans + gate + liveness + blocked_on + ticket join)
+- `Casein.Terminals.TicketFeed` — open issues + PRs, ETS-cached, async `gh`, branch index
 - `Casein.Terminals.OrphanedClaims` — claimed-minus-bound lease projection
 - `Casein.Terminals.OrchestrationStatus` — MCP wire projection over a fleet board
 - `Casein.Terminals.WorkerStatus` — MCP wire projection for one pane (M2)

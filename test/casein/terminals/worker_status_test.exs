@@ -157,7 +157,8 @@ defmodule Casein.Terminals.WorkerStatusTest do
 
       assert payload.fleet_readiness == "ready_no_task"
       assert payload.ready_no_task_for_seconds == 240
-      assert payload.needs_you? == true
+      # Capacity, not attention — the readiness clock still reports.
+      assert payload.needs_you? == false
       assert payload.blocked_on.reason == "ready_no_task"
     end
 

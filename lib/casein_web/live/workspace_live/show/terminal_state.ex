@@ -13,7 +13,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   alias Casein.Codex.SessionTitles
   alias Casein.Ops.GateQueue
   alias Casein.Terminals
-  alias Casein.Terminals.OrphanedClaims
+  alias Casein.Terminals.TicketFeed
   alias Casein.Terminals.WindowTrash
   alias Casein.Labels
   alias CaseinWeb.WorkspaceLive.Show
@@ -335,13 +335,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         issue_bindings: issue_bindings
       )
 
-    # #923: never walk /proc or fork `gh` on this LiveView path.
-    # BEFORE: GateQueue.observe uncached 222–256ms; gh issue list 593ms.
-    # AFTER: ETS peek (measured 7–18µs) + background refresh on miss.
+    # Ticket + claimed + gate: cache only — never gh/proc on the LiveView path
+    # (#923). TicketFeed.refresh_async runs off-render; GateQueue.cached is an
+    # ETS peek. Worktree paths ride along so PR head branches resolve off-path.
+    feed = TicketFeed.cached()
+    _ = TicketFeed.refresh_async(worktrees: tab_worktrees(tabs))
+
     fleet_board =
       Casein.Terminals.FleetBoard.from_window_tabs(
         tabs,
-        list_claimed: &OrphanedClaims.cached_list/0,
+        ticket_feed: feed,
+        list_claimed: fn -> TicketFeed.claimed_from(feed) end,
         gate_queue: GateQueue.cached(),
         tmux_session: tmux_session
       )
@@ -351,6 +355,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:fleet_board, fleet_board)
     |> Sidebar.assign_windows_sidebar_tree()
   end
+
+  defp tab_worktrees(tabs) when is_list(tabs) do
+    tabs
+    |> Enum.map(&Map.get(&1, :worktree_path))
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+  end
+
+  defp tab_worktrees(_tabs), do: []
 
   defp pane_session_ids(windows) when is_list(windows) do
     windows

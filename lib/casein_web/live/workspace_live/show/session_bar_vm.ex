@@ -1914,7 +1914,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       fleet_role: fleet.fleet_role,
       fleet_readiness: fleet.fleet_readiness,
       ready_no_task_for_seconds: fleet.ready_no_task_for_seconds,
-      liveness: fleet.liveness
+      liveness: fleet.liveness,
+      worktree_path: fleet.worktree_path
     }
   end
 
@@ -1985,8 +1986,23 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       fleet_role: role,
       fleet_readiness: readiness,
       ready_no_task_for_seconds: ready_for,
-      liveness: liveness
+      liveness: liveness,
+      # Join key for PR tickets: the branch itself is resolved off the render
+      # path (TicketFeed), so this stays a plain topology read.
+      worktree_path: worktree_path_for(agent_pane, window)
     }
+  end
+
+  # `:worktree_path` only exists on the MCP-enriched topology path; cockpit panes
+  # carry `:current_path` (the pane cwd) and nothing else. Falling back to it is
+  # what makes the PR branch join work in the actual drawer — without it the
+  # branch key is always nil here and every PR row silently degrades to capacity.
+  defp worktree_path_for(agent_pane, window) do
+    blank_to_nil(
+      PaneState.map_get(agent_pane, :worktree_path) ||
+        Map.get(window, :worktree_path) || Map.get(window, "worktree_path") ||
+        PaneState.map_get(agent_pane, :current_path)
+    )
   end
 
   defp issue_from_bindings(opts, pane_id) when is_binary(pane_id) do

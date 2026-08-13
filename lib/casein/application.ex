@@ -25,6 +25,7 @@ defmodule Casein.Application do
     Casein.Terminals.TemplatePreference.ensure_table!()
     Casein.Terminals.SessionRecovery.ensure_table!()
     Casein.CommandPalette.FileIndex.ensure_table!()
+    Casein.Terminals.TicketFeed.ensure_table!()
 
     # jido_signal extensions self-register only via @after_compile, which
     # never fires for precompiled deps — without this, the trace extension
