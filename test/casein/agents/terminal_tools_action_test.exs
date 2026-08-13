@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 41
+      assert length(names) == 42
 
       for expected <- [
             "terminal_list_sessions",
@@ -53,6 +53,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "orchestration_list_workers",
             "runtime_signal",
             "worker_launch",
+            "worker_cancel",
             "gate_report",
             "mcp_self_test",
             "annotation_list",
@@ -204,6 +205,30 @@ defmodule Casein.Agents.TerminalToolsActionTest do
                  "workspace_id" => "ws-1",
                  "session" => "casein_ws-1_x",
                  "task_slug" => "x"
+               })
+    end
+
+    test "worker_cancel is a medium mutation with required pane scope" do
+      tool = definition("worker_cancel")
+
+      assert tool.parameters.required == ["workspace_id", "session", "pane"]
+      assert tool.parameters.properties.pane.type == "string"
+      assert tool.metadata.mutation? == true
+      assert tool.metadata.danger_level == :medium
+      assert :terminal_mutation in tool.metadata.capabilities
+    end
+
+    test "worker_cancel fails closed without required args" do
+      assert {:error, {:missing_argument, "workspace_id"}} =
+               TerminalTools.invoke("worker_cancel", %{
+                 "session" => "casein_ws-1_x",
+                 "pane" => "%42"
+               })
+
+      assert {:error, {:missing_argument, "pane"}} =
+               TerminalTools.invoke("worker_cancel", %{
+                 "workspace_id" => "ws-1",
+                 "session" => "casein_ws-1_x"
                })
     end
 

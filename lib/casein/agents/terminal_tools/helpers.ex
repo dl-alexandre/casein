@@ -895,7 +895,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "One call returns the full receipt (pane_id, worktree_path, handle_id) — no topology scrape required.",
         "dry_run: true plans without opening a window.",
         "Never falls back to a hidden subagent; spawn failure is a hard error.",
-        "Follow with worker_status / orchestration_list_workers; durable graph still out of scope."
+        "Follow with worker_status / worker_cancel / orchestration_list_workers; durable graph still out of scope."
       ],
       examples: [
         %{
@@ -913,6 +913,38 @@ defmodule Casein.Agents.TerminalTools.Helpers do
             "window_name" => "worker-384-item",
             "worktree_path" => "/tmp/casein-agent-worktrees/wt-demo",
             "handle_id" => "wh_abc"
+          }
+        }
+      ]
+    }
+  end
+
+  def metadata("worker_cancel") do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:terminal_mutation, :terminal_metadata],
+      recovery_hints: [
+        "Requires workspace_id, session, pane — fail closed when any is missing.",
+        "Kills by window id (@N) only — tmux renumbers indices.",
+        "dry_run: true classifies without killing; cancelled? stays false.",
+        "Refuses manager/operator/unlabeled panes, the caller's own window, and the last window.",
+        "cancelled? means the window is gone, not hidden. Durable graph still out of scope."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_default",
+            "pane" => "%42"
+          },
+          structured_content: %{
+            "ok" => true,
+            "cancelled?" => true,
+            "visible?" => false,
+            "pane_id" => "%42",
+            "window_id" => "@9",
+            "window_name" => "worker-384-item"
           }
         }
       ]
