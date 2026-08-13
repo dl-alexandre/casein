@@ -171,6 +171,53 @@ defmodule Casein.Terminals.FleetBoard do
   def needs_attention?(%{attention_count: n}) when is_integer(n) and n > 0, do: true
   def needs_attention?(_), do: false
 
+  @doc """
+  The jump-target rows, in board order.
+
+  Membership is `needs_you?` — the projection of
+  `Casein.Attention.Delivery.session_classification/1` — and deliberately **not**
+  `bucket == :needs_you`. The two are not the same set: `bucket_for/4` promotes a
+  `stalled` / `blocked` / `errored` row into the `:needs_you` bucket when
+  readiness was nil, so it is surfaced rather than shown as a bare unknown, even
+  though `needs_you?` stayed false. Bucketing is how a row is *displayed*;
+  `needs_you?` is whether it is genuinely asking for you.
+
+  Using the bucket here would give the leader key a third definition of "needs
+  you" and let it land on a wedged-but-not-asking pane. #910 is explicit that two
+  totals must never disagree: `attention_count` counts `needs_you?`, the badge
+  renders that count, so the cycle has to walk the same set or the key and the
+  badge drift. A jump target that is merely stalled is the noise an operator
+  learns to ignore.
+
+  Workspace-scoped, like the badge: the board is built from this session's
+  `tmux_window_tabs`, so the cycle never crosses into another workspace.
+  """
+  @spec needs_you_rows(board()) :: [row()]
+  def needs_you_rows(%{rows: rows}) when is_list(rows), do: Enum.filter(rows, & &1.needs_you?)
+  def needs_you_rows(_board), do: []
+
+  @doc """
+  The next needs-you row after `current_window_id`, wrapping; `nil` when none.
+
+  From a window that is itself a jump target, this advances to the following one
+  and wraps at the end, so repeated presses walk the whole set. From anywhere
+  else — a quiet window, the shell, no active window — it lands on the first
+  target, which is what makes the first press answer "who needs me?".
+  """
+  @spec next_needs_you(board(), String.t() | nil) :: row() | nil
+  def next_needs_you(board, current_window_id \\ nil) do
+    case needs_you_rows(board) do
+      [] ->
+        nil
+
+      rows ->
+        case Enum.find_index(rows, &(&1.window_id == current_window_id)) do
+          nil -> List.first(rows)
+          index -> Enum.at(rows, rem(index + 1, length(rows)))
+        end
+    end
+  end
+
   ## Internals
 
   defp row_from_window_tab(tab) when is_map(tab) do

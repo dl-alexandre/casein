@@ -38,6 +38,85 @@ defmodule Casein.Terminals.FleetBoardTest do
     FleetBoard.from_window_tabs(tabs, Keyword.put_new(opts, :gate_queue, @gate_free))
   end
 
+  describe "next_needs_you/2 — the C-b a jump cycle" do
+    test "walks the needs-you rows in board order and wraps" do
+      board = jump_board()
+
+      assert %{window_id: "w-blocked"} = FleetBoard.next_needs_you(board, nil)
+      assert %{window_id: "w-errored"} = FleetBoard.next_needs_you(board, "w-blocked")
+      assert %{window_id: "w-blocked"} = FleetBoard.next_needs_you(board, "w-errored")
+    end
+
+    test "lands on the first target from a window that is not itself one" do
+      board = jump_board()
+
+      assert %{window_id: "w-blocked"} = FleetBoard.next_needs_you(board, "w-working")
+      assert %{window_id: "w-blocked"} = FleetBoard.next_needs_you(board, "w-not-on-board")
+    end
+
+    test "a stalled row that is not independently needs-you is never a target" do
+      # bucket_for/4 promotes stalled/blocked/errored into the :needs_you bucket
+      # when readiness was nil, so a row can render in the needs-you bucket while
+      # needs_you? stays false. The cycle must follow needs_you? — the set the
+      # badge counts (#910: two totals must never disagree). Switching this to
+      # `bucket == :needs_you` makes the key land on a wedged pane that is not
+      # asking for anything, and fails here.
+      board = %{
+        rows: [
+          row("w-stalled-only", needs_you?: false, bucket: :needs_you, agent_state: :stalled),
+          row("w-real", needs_you?: true, bucket: :needs_you, agent_state: :blocked)
+        ]
+      }
+
+      assert Enum.map(FleetBoard.needs_you_rows(board), & &1.window_id) == ["w-real"]
+      assert %{window_id: "w-real"} = FleetBoard.next_needs_you(board, nil)
+      assert %{window_id: "w-real"} = FleetBoard.next_needs_you(board, "w-stalled-only")
+
+      # Wrapping from the only target returns it again, never the stalled row.
+      assert %{window_id: "w-real"} = FleetBoard.next_needs_you(board, "w-real")
+    end
+
+    test "membership matches the count the badge renders" do
+      board = jump_board()
+
+      assert length(FleetBoard.needs_you_rows(board)) == board.attention_count
+    end
+
+    test "no targets is nil, not a crash or a wrong jump" do
+      quiet = board([tab("w1", agent_state: :working)])
+
+      assert FleetBoard.needs_you_rows(quiet) == []
+      assert FleetBoard.next_needs_you(quiet, nil) == nil
+      assert FleetBoard.next_needs_you(quiet, "w1") == nil
+      assert FleetBoard.next_needs_you(FleetBoard.empty(), nil) == nil
+    end
+
+    defp jump_board do
+      board([
+        tab("w-blocked", agent_state: :blocked, name: "blocked-worker"),
+        tab("w-working", agent_state: :working, name: "working-worker"),
+        tab("w-errored", agent_state: :errored, name: "errored-worker")
+      ])
+    end
+
+    defp row(window_id, opts) do
+      Map.merge(
+        %{
+          window_id: window_id,
+          pane_id: "%1",
+          name: window_id,
+          display_name: window_id,
+          needs_you?: false,
+          bucket: :unknown,
+          agent_state: nil,
+          quiet?: false,
+          active?: false
+        },
+        Map.new(opts)
+      )
+    end
+  end
+
   describe "from_window_tabs/2" do
     test "empty tabs yield empty board" do
       board = board([])

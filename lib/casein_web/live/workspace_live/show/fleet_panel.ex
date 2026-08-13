@@ -38,9 +38,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
       )
 
     ~H"""
-    <button
+    <%!-- Two targets in one pill. The "N need you" half jumps straight to the
+    next pane asking for you (same event as C-b a); the rest still opens the
+    drawer, so nothing that was reachable by clicking became unreachable. With
+    zero attention there is only the drawer button, exactly as before. --%>
+    <div
       id="fleet-badge"
-      phx-click="fleet_drawer:toggle"
       class={[
         "fixed bottom-3 right-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-density-body shadow-sm",
         badge_class(@attention, @gate_busy?, @orphan_unknown?)
@@ -48,17 +51,35 @@ defmodule CaseinWeb.WorkspaceLive.Show.FleetPanel do
       title={"Fleet board — " <> badge_title(@gate, @orphans)}
     >
       <span class={"inline-block h-1.5 w-1.5 rounded-full " <> attention_dot_class(@attention, @gate_busy?, @orphan_unknown?)}></span>
-      <%= cond do %>
-        <% @attention > 0 -> %>
-          {@attention} need you · {@total} fleet
-        <% @gate_busy? -> %>
-          fleet · {@total} · gate busy
-        <% @orphan_unknown? -> %>
-          fleet · {@total} · claims ?
-        <% true -> %>
-          fleet · {@total}
-      <% end %>
-    </button>
+      <button
+        :if={@attention > 0}
+        id="fleet-badge-jump"
+        type="button"
+        phx-click="fleet:jump_needs_you"
+        class="font-mono underline-offset-2 hover:underline"
+        title="Jump to the next pane that needs you (C-b a)"
+      >
+        {@attention} need you
+      </button>
+      <button
+        id="fleet-badge-drawer"
+        type="button"
+        phx-click="fleet_drawer:toggle"
+        class="font-mono"
+        title="Open the fleet board"
+      >
+        <%= cond do %>
+          <% @attention > 0 -> %>
+            · {@total} fleet
+          <% @gate_busy? -> %>
+            fleet · {@total} · gate busy
+          <% @orphan_unknown? -> %>
+            fleet · {@total} · claims ?
+          <% true -> %>
+            fleet · {@total}
+        <% end %>
+      </button>
+    </div>
     """
   end
 

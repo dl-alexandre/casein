@@ -163,7 +163,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     audit_drawer:close
     clipboard:toggle clipboard:close clipboard:refresh clipboard:clear
     situation_drawer:toggle situation_drawer:close
-    fleet_drawer:toggle fleet_drawer:close
+    fleet_drawer:toggle fleet_drawer:close fleet:jump_needs_you
     connect:toggle connect:close connect:load connect:mint connect:revoke
     leader_help:toggle leader_help:close
     search:run artifact:refresh artifact:serve artifact:inspect artifact:open
@@ -885,6 +885,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
   def handle_event("situation_drawer:" <> _ = event, params, socket),
     do: SituationEvents.handle_event(event, params, socket)
+
+  def handle_event("fleet:" <> _ = event, params, socket),
+    do: FleetEvents.handle_event(event, params, socket)
 
   def handle_event("fleet_drawer:" <> _ = event, params, socket),
     do: FleetEvents.handle_event(event, params, socket)

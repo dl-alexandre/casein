@@ -21,6 +21,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderBindingsTest do
                "l" => "last-window",
                "y" => "copy-link",
                "d" => "detach",
+               # #952: jump to the next needs-you pane. New key, not a rebinding
+               # — `a` was unclaimed here and in tmux's own keymap.
+               "a" => "jump-needs-you",
                "o" => "pane-next",
                "{" => "pane-swap-previous",
                "}" => "pane-swap-next",

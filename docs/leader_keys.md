@@ -116,6 +116,7 @@ All of these require the `C-b` prefix first (except where noted).
 | `$`       | rename session    | `rename-session` — opens the session dropdown, starts inline rename of the active session. Stored as the tmux user option `@casein_session_alias` (not a real `rename-session`, which would break the load-bearing `casein_<workspace>_<sid>` name). Works for any session, including the default/landing session (which renders as a normal row marked "home") |
 | `&`       | kill window       | `kill-window` — kills the active window after a confirm prompt (tmux asks y/n too) |
 | `d`       | detach            | `detach` — returns to the workspace shell |
+| `a`       | (custom)          | `jump-needs-you` — focuses the next pane that needs you, cycling the fleet badge's `needs_you?` rows in `FleetBoard` order and wrapping. Workspace-scoped, matching the badge count. A pane that is merely stalled or quiet is **not** a target (`FleetBoard.needs_you_rows/1`); with nothing asking, the key is a no-op with a quiet note |
 
 ### Panes
 
