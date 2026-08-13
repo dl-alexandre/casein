@@ -127,6 +127,7 @@ jobs:
           mix deps.get
           npm --prefix assets ci --no-audit --no-fund
           npm --prefix priv/scripts ci --omit=dev --no-audit --no-fund
+          bash scripts/npm-audit.sh
 
       - name: Test host and terminal resolution
         run: |

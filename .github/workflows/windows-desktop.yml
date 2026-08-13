@@ -56,6 +56,7 @@ jobs:
           mix deps.get
           Push-Location assets; npm ci; Pop-Location
           Push-Location priv/scripts; npm ci; Pop-Location
+          bash scripts/npm-audit.sh
 
       - name: Prepare self-contained preview runtime
         shell: pwsh

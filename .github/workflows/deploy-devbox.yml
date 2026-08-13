@@ -110,6 +110,7 @@ jobs:
         run: |
           npm ci --include=dev
           npm run lint
+          bash ../scripts/npm-audit.sh
 
       - name: Run precommit checks (compile, audit, sobelow, credo, format, test+coverage)
         run: mix precommit.ci

@@ -100,6 +100,9 @@ COPY assets assets
 COPY priv priv
 RUN cd assets && npm install --no-audit --no-fund --no-progress
 RUN cd priv/scripts && npm ci --omit=dev --no-audit --no-fund --no-progress
+# #929: install stays --no-audit; scan lockfiles before compile/deploy.
+RUN cd assets && npm audit --package-lock-only --audit-level=high
+RUN cd priv/scripts && npm audit --package-lock-only --audit-level=high
 RUN mix compile
 RUN mix assets.setup && mix assets.deploy
 
