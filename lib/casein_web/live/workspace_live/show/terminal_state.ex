@@ -13,6 +13,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   alias Casein.Codex.SessionTitles
   alias Casein.Ops.GateQueue
   alias Casein.Terminals
+  alias Casein.Terminals.OrphanedClaims
   alias Casein.Terminals.PaneLiveness
   alias Casein.Terminals.TicketFeed
   alias Casein.Terminals.WindowTrash
@@ -346,9 +347,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         agent_panes(socket.assigns.tmux_windows, tabs)
       )
 
-    # Ticket + claimed + gate: cache only — never gh/proc on the LiveView path
-    # (#923). TicketFeed.refresh_async runs off-render; GateQueue.cached is an
-    # ETS peek. Worktree paths ride along so PR head branches resolve off-path.
+    # Ticket + claimed + gate + liveness: cache only — never gh/proc on the
+    # LiveView path (#923). TicketFeed/PaneLiveness refresh_async run off-render;
+    # OrphanedClaims.cached_list + GateQueue.cached are ETS peeks. Worktree paths
+    # ride the ticket refresh so PR head branches resolve off-path too.
     feed = TicketFeed.cached()
     _ = TicketFeed.refresh_async(worktrees: tab_worktrees(tabs))
 
@@ -356,7 +358,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
       Casein.Terminals.FleetBoard.from_window_tabs(
         tabs,
         ticket_feed: feed,
-        list_claimed: fn -> TicketFeed.claimed_from(feed) end,
+        list_claimed: &OrphanedClaims.cached_list/0,
         gate_queue: GateQueue.cached(),
         tmux_session: tmux_session
       )
