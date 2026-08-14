@@ -135,11 +135,13 @@ defmodule Casein.Terminals.OrchestrationListWorkersTest do
         )
 
       assert payload.total == 3
-      assert payload.filtered_total == 2
+      # Only the reported block. The ready-no-task worker is capacity and the
+      # working one is fine, so "which of my workers need me?" answers one.
+      assert payload.filtered_total == 1
       assert payload.filters.needs_you_only == true
       assert Enum.all?(payload.workers, &(&1.needs_you? == true))
       panes = Enum.map(payload.workers, & &1.pane_id) |> Enum.sort()
-      assert panes == ["%w1", "%w3"]
+      assert panes == ["%w1"]
     end
 
     test "unknown agent state stays unknown bucket — never invented idle" do
@@ -202,7 +204,8 @@ defmodule Casein.Terminals.OrchestrationListWorkersTest do
       assert row.agent_state == "stalled"
       assert row.blocked_on.kind == "derived"
       assert row.blocked_on.reason == "stalled"
-      assert row.needs_you? == true
+      # Derived: still reported as a blocker, still not a summons.
+      assert row.needs_you? == false
     end
   end
 end

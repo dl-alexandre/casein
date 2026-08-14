@@ -3,6 +3,7 @@ defmodule Casein.Terminals.FleetBoardTest do
 
   alias Casein.Ops.GateQueue
   alias Casein.Terminals.FleetBoard
+  alias Casein.Terminals.TicketFeed
 
   @gate_free %{
     lock_state: :free,
@@ -140,7 +141,7 @@ defmodule Casein.Terminals.FleetBoardTest do
       assert hd(board.rows).bucket == :unknown
     end
 
-    test "buckets blocked/errored/stalled into needs_you with distinct reasons" do
+    test "report-kind blocked/errored are needs_you; derived stalled is not" do
       tabs = [
         tab("w1",
           agent_state: :blocked,
@@ -156,8 +157,18 @@ defmodule Casein.Terminals.FleetBoardTest do
       ]
 
       board = board(tabs)
-      assert board.attention_count == 3
-      assert board.counts.needs_you == 3
+
+      # Only what the agent REPORTED summons a human. `stalled` is derived from
+      # outside observation, so it badges slate and stays out of the lane.
+      assert board.attention_count == 2
+      assert board.counts.needs_you == 2
+
+      by_name = Map.new(board.rows, &{&1.name, &1})
+      assert by_name["blocked-worker"].needs_you?
+      assert by_name["errored-worker"].needs_you?
+      refute by_name["stalled-worker"].needs_you?
+      assert by_name["stalled-worker"].bucket == :idle
+      assert by_name["stalled-worker"].attention_reason == :stalled
 
       reasons =
         board.rows
@@ -207,7 +218,7 @@ defmodule Casein.Terminals.FleetBoardTest do
       refute hd(board.rows).needs_you?
     end
 
-    test "ready_no_task is needs_you with ready_no_task reason" do
+    test "ready_no_task is capacity, not attention" do
       tab =
         tab("w1",
           agent_state: :idle,
@@ -218,21 +229,28 @@ defmodule Casein.Terminals.FleetBoardTest do
 
       board = board([tab])
       row = hd(board.rows)
-      assert row.needs_you?
-      assert row.bucket == :needs_you
+
+      # A spawned worker with nothing to do is the operator's to fill. It is not
+      # an interrupt, and it must not inflate the needs-you badge.
+      refute row.needs_you?
+      assert row.bucket == :ready_no_task
       assert row.attention_reason == :ready_no_task
       assert row.ready_no_task_for_seconds == 240
+      assert board.attention_count == 0
+      assert row.capacity?
     end
 
-    test "quiet idle without readiness still needs you as idle" do
+    test "quiet idle is not a human lane" do
       board =
         board([
           tab("w1", agent_state: :idle, quiet?: true, fleet_role: :worker)
         ])
 
       row = hd(board.rows)
-      assert row.needs_you?
+      refute row.needs_you?
+      assert row.bucket == :idle
       assert row.attention_reason == :idle
+      assert board.attention_count == 0
     end
 
     test "unknown agent_state without liveness is never quiet/idle and carries reason (#916)" do
@@ -364,9 +382,10 @@ defmodule Casein.Terminals.FleetBoardTest do
           claimed: {:error, :gh_failed}
         )
 
-      # quiet idle still needs you; orphan side is unknown and adds 0
+      # quiet idle is not attention any more; the orphan side is unknown and
+      # adds 0 — unknown must never be rendered as a calm zero.
       assert board.orphaned_claims.observe_state == :unknown
-      assert board.attention_count == 1
+      assert board.attention_count == 0
     end
 
     test "carries gate_queue snapshot on the board" do
@@ -384,6 +403,215 @@ defmodule Casein.Terminals.FleetBoardTest do
       refute GateQueue.busy?(board.gate_queue)
       assert GateQueue.summary(board.gate_queue) == "gate unknown"
       assert board.orphaned_claims.observe_state == :unknown
+    end
+  end
+
+  describe "join_tickets/2 — one row = one live ticket" do
+    @iss %{
+      kind: :issue,
+      number: 17_070,
+      title: "wire ticket feed into fleet board",
+      url: nil,
+      updated_at: ~U[2026-08-12 22:00:00Z],
+      head_ref: nil,
+      draft?: false,
+      labels: [],
+      priority: nil,
+      repo: "dl-alexandre/casein"
+    }
+
+    @pr %{
+      kind: :pr,
+      number: 912,
+      title: "refuse next_prompt on hook-less OpenCode panes",
+      url: nil,
+      updated_at: ~U[2026-08-12 23:00:00Z],
+      head_ref: "agent/claude/next-prompt",
+      draft?: false,
+      labels: [],
+      priority: nil,
+      repo: "dl-alexandre/casein"
+    }
+
+    defp feed(tickets, branches \\ %{}) do
+      TicketFeed.project(tickets, branch_by_worktree: branches, now: ~U[2026-08-12 23:30:00Z])
+    end
+
+    test "joins by issue binding" do
+      board =
+        board([tab("w1", agent_state: :working, issue: 17_070, fleet_role: :worker)],
+          ticket_feed: feed([@iss])
+        )
+
+      row = hd(board.rows)
+      assert row.ticket.number == 17_070
+      assert row.ticket.kind == :issue
+      assert row.ticket_match == :issue_binding
+      refute row.capacity?
+    end
+
+    test "joins by #NNNN in the chrome label when there is no binding" do
+      board =
+        board([tab("w1", agent_state: :working, label: "worker: #17070 item 4")],
+          ticket_feed: feed([@iss])
+        )
+
+      assert hd(board.rows).ticket_match == :label
+    end
+
+    @tag :join
+    test "joins a PR by worktree branch — the case with no issue and no #NNNN" do
+      tab =
+        tab("w1",
+          agent_state: :working,
+          name: "worker-next-prompt",
+          fleet_role: :worker,
+          worktree_path: "/data/casein-agent-worktrees/agent-claude-next-prompt"
+        )
+
+      board =
+        board([tab],
+          ticket_feed:
+            feed([@iss, @pr], %{
+              "/data/casein-agent-worktrees/agent-claude-next-prompt" =>
+                "agent/claude/next-prompt"
+            })
+        )
+
+      row = hd(board.rows)
+      assert row.ticket.kind == :pr
+      assert row.ticket.number == 912
+      assert row.ticket_match == :branch
+      refute row.capacity?
+    end
+
+    test "a pane with no ticket is capacity, not equal to #NNNN" do
+      board =
+        board(
+          [
+            tab("w1", agent_state: :working, issue: 17_070),
+            tab("w2", agent_state: :idle, fleet_role: :worker, name: "podcast")
+          ],
+          ticket_feed: feed([@iss])
+        )
+
+      by_name = Map.new(board.rows, &{&1.name, &1})
+      refute by_name["w1"].capacity?
+      assert by_name["podcast"].capacity?
+      # Capacity sorts below live work rather than interleaving with it.
+      assert List.last(board.rows).name == "podcast"
+    end
+
+    test "sorts as one continuous list by last ticket update" do
+      tabs = [
+        tab("w-iss", agent_state: :working, issue: 17_070),
+        tab("w-pr",
+          agent_state: :working,
+          worktree_path: "/wt/pr"
+        )
+      ]
+
+      board =
+        board(tabs,
+          ticket_feed: feed([@iss, @pr], %{"/wt/pr" => "agent/claude/next-prompt"})
+        )
+
+      # PR updated 23:00 beats issue 22:00 — not a bucket rank.
+      assert Enum.map(board.rows, & &1.ticket.number) == [912, 17_070]
+    end
+
+    test "unknown feed leaves every row unjoined without claiming no work" do
+      board =
+        board([tab("w1", agent_state: :working, issue: 17_070)],
+          ticket_feed: TicketFeed.unknown()
+        )
+
+      row = hd(board.rows)
+      assert is_nil(row.ticket)
+      assert board.ticket_feed_state == :unknown
+    end
+
+    test "claimed with no live pane shows as a parked ticket row with no WHO" do
+      board =
+        board([tab("w1", agent_state: :working, issue: 17_070)],
+          ticket_feed: feed([@iss]),
+          claimed: [%{number: 690, title: "parked work", labels: ["queue/claimed"]}]
+        )
+
+      parked = Enum.find(board.rows, & &1.parked?)
+      assert parked.ticket.number == 690
+      assert parked.ticket.kind == :issue
+      assert is_nil(parked.agent_state)
+      assert parked.needs_you?
+      # Fleet size is agents; a parked ticket has none, so it must not inflate it.
+      assert board.total == 1
+    end
+  end
+
+  describe "unknown is not capacity (#916 discipline)" do
+    test "an unclassifiable pane stays in the live list carrying its reason" do
+      board =
+        board([tab("w1", agent_state: nil, fleet_role: :worker)],
+          ticket_feed: TicketFeed.unknown()
+        )
+
+      row = hd(board.rows)
+      assert row.bucket == :unknown
+      assert row.unknown_reason == :agent_state_absent_liveness_not_observed
+      # Filing could-not-classify under capacity would render it as quiet.
+      refute row.capacity?
+    end
+
+    test "a hook-less worker with active liveness joins its PR and is not unknown" do
+      tab =
+        tab("w1",
+          agent_state: nil,
+          fleet_role: :worker,
+          worktree_path: "/wt/pr",
+          liveness: %{state: :active}
+        )
+
+      board =
+        board([tab],
+          ticket_feed:
+            TicketFeed.project(
+              [%{"number" => 916, "headRefName" => "agent/oc/x", "__kind" => :pr}],
+              branch_by_worktree: %{"/wt/pr" => "agent/oc/x"}
+            )
+        )
+
+      row = hd(board.rows)
+      assert row.bucket == :working
+      assert is_nil(row.unknown_reason)
+      assert row.ticket.number == 916
+      assert row.ticket_match == :branch
+    end
+
+    test "derived stalled is idle, not needs_you, and never bare unknown" do
+      board = board([tab("w1", agent_state: :stalled, fleet_role: :worker)])
+      row = hd(board.rows)
+
+      assert row.bucket == :idle
+      refute row.needs_you?
+      assert is_nil(row.unknown_reason)
+      # It still says *why* it is quiet — derived, not reported.
+      assert row.blocked_on.kind == :derived
+    end
+  end
+
+  describe "unknown_reason_string/1" do
+    test "renders every shape in the taxonomy without an empty answer" do
+      assert FleetBoard.unknown_reason_string(nil) == nil
+      assert FleetBoard.unknown_reason_string(:unscanned) == "unscanned"
+
+      assert FleetBoard.unknown_reason_string({:liveness_unknown, :no_worktree}) ==
+               "liveness_unknown:no_worktree"
+
+      assert FleetBoard.unknown_reason_string({:liveness_unknown, nil}) ==
+               "liveness_unknown:unscanned"
+
+      assert FleetBoard.unknown_reason_string({:unmapped_agent_state, :weird}) ==
+               "unmapped_agent_state:weird"
     end
   end
 

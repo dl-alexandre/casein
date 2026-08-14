@@ -14,6 +14,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   alias Casein.Ops.GateQueue
   alias Casein.Terminals
   alias Casein.Terminals.OrphanedClaims
+  alias Casein.Terminals.PaneLiveness
+  alias Casein.Terminals.TicketFeed
   alias Casein.Terminals.WindowTrash
   alias Casein.Labels
   alias CaseinWeb.WorkspaceLive.Show
@@ -322,6 +324,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         do: Casein.Terminals.IssueBinding.for_session(tmux_session),
         else: %{}
 
+    # Cache read only — the worktree walk runs on a task below, never here.
+    pane_liveness = PaneLiveness.cached(tmux_session)
+
     tabs =
       SessionBarVM.window_tabs(
         socket.assigns.tmux_windows,
@@ -332,15 +337,27 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
         unseen_quiet_window_ids: socket.assigns[:unseen_quiet_window_ids],
         pane_labels: socket.assigns[:pane_labels] || %{},
         codex_titles: codex_titles,
-        issue_bindings: issue_bindings
+        issue_bindings: issue_bindings,
+        pane_liveness: pane_liveness
       )
 
-    # #923: never walk /proc or fork `gh` on this LiveView path.
-    # BEFORE: GateQueue.observe uncached 222–256ms; gh issue list 593ms.
-    # AFTER: ETS peek (measured 7–18µs) + background refresh on miss.
+    _ =
+      PaneLiveness.refresh_async(
+        tmux_session,
+        agent_panes(socket.assigns.tmux_windows, tabs)
+      )
+
+    # Ticket + claimed + gate + liveness: cache only — never gh/proc on the
+    # LiveView path (#923). TicketFeed/PaneLiveness refresh_async run off-render;
+    # OrphanedClaims.cached_list + GateQueue.cached are ETS peeks. Worktree paths
+    # ride the ticket refresh so PR head branches resolve off-path too.
+    feed = TicketFeed.cached()
+    _ = TicketFeed.refresh_async(worktrees: tab_worktrees(tabs))
+
     fleet_board =
       Casein.Terminals.FleetBoard.from_window_tabs(
         tabs,
+        ticket_feed: feed,
         list_claimed: &OrphanedClaims.cached_list/0,
         gate_queue: GateQueue.cached(),
         tmux_session: tmux_session
@@ -351,6 +368,32 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:fleet_board, fleet_board)
     |> Sidebar.assign_windows_sidebar_tree()
   end
+
+  # Only the panes the drawer actually classifies. A plain shell's cwd is not an
+  # agent worktree, and walking it would cost a scan to learn nothing.
+  defp agent_panes(windows, tabs) when is_list(windows) and is_list(tabs) do
+    wanted =
+      tabs
+      |> Enum.map(&Map.get(&1, :agent_pane_id))
+      |> Enum.filter(&is_binary/1)
+      |> MapSet.new()
+
+    for window <- windows,
+        pane <- Map.get(window, :pane_list) || [],
+        MapSet.member?(wanted, Map.get(pane, :id)),
+        do: pane
+  end
+
+  defp agent_panes(_windows, _tabs), do: []
+
+  defp tab_worktrees(tabs) when is_list(tabs) do
+    tabs
+    |> Enum.map(&Map.get(&1, :worktree_path))
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+  end
+
+  defp tab_worktrees(_tabs), do: []
 
   defp pane_session_ids(windows) when is_list(windows) do
     windows

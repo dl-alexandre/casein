@@ -32,10 +32,33 @@ defmodule Casein.Terminals.FleetBoard do
 
   ## Attention model
 
-  `needs_you?` on a row follows `Casein.Attention.Delivery.session_classification/1`
-  over the row's agent signal (blocked / errored / stalled / quiet-done-as-idle),
-  plus fleet `ready_no_task` (spawned idle capacity). Surfaces share that
-  salience path rather than ranking beside it (#787 / #788).
+  `needs_you?` means **a human is blocking the work**, and nothing else. Only
+  report-kind `:blocked` / `:errored` (the agent said so) and orphaned claims
+  qualify; reasons still come from
+  `Casein.Attention.Delivery.session_classification/1` so this stays one ranker,
+  not two (#787 / #788).
+
+  Deliberately *not* attention:
+
+    * `:ready_no_task` — a spawned worker with nothing to do is **capacity**.
+      Filling it is the operator's call, not an interrupt.
+    * `:stalled` / `:awaiting_input` — **derived**, never reported. They badge
+      slate and sit in `:idle`, so an inference cannot manufacture a human lane.
+    * quiet `:idle` / `:done` — quiet is quiet.
+
+  This is one classifier for every fleet surface: the cockpit badge and drawer,
+  `orchestration_status`, `orchestration_list_workers`, and `worker_status` all
+  read it. It does **not** rewrite `Attention.Delivery` itself, which still
+  drives the inbox / picker / notification path.
+
+  ## Tickets
+
+  A pane name is not work. `join_tickets/3` attaches a `Casein.Terminals.TicketFeed`
+  ticket to each row by issue binding, by `#NNNN` in the label or window name,
+  or by **PR head branch → worktree branch** — the common case on this fleet,
+  where a worker has a PR and no issue at all. Rows sort as one continuous list
+  by last ticket update; ticketless panes are leftover capacity and group below
+  the live work rather than competing with it.
   """
 
   alias Casein.Attention.Delivery
@@ -43,6 +66,7 @@ defmodule Casein.Terminals.FleetBoard do
   alias Casein.Ops.GateQueue
   alias Casein.Terminals.FleetChrome
   alias Casein.Terminals.OrphanedClaims
+  alias Casein.Terminals.TicketFeed
 
   @type bucket ::
           :needs_you | :working | :ready_no_task | :idle | :done | :unknown
@@ -86,7 +110,12 @@ defmodule Casein.Terminals.FleetBoard do
           unknown_reason: atom() | String.t() | nil,
           active?: boolean(),
           liveness: liveness_view() | nil,
-          blocked_on: blocked_on() | nil
+          blocked_on: blocked_on() | nil,
+          worktree_path: String.t() | nil,
+          ticket: TicketFeed.ticket() | nil,
+          ticket_match: :issue_binding | :label | :branch | nil,
+          capacity?: boolean(),
+          parked?: boolean()
         }
 
   @type board :: %{
@@ -124,13 +153,14 @@ defmodule Casein.Terminals.FleetBoard do
   @spec from_window_tabs([map()], keyword()) :: board()
   def from_window_tabs(tabs, opts \\ []) when is_list(tabs) do
     agent_only? = Keyword.get(opts, :agent_only, true)
+    feed = Keyword.get(opts, :ticket_feed) || TicketFeed.unknown()
 
     rows =
       tabs
       |> Enum.map(&row_from_window_tab/1)
       |> Enum.reject(&is_nil/1)
       |> Enum.filter(fn row -> not agent_only? or fleet_row?(row) end)
-      |> Enum.sort_by(&row_sort_key/1)
+      |> join_tickets(feed)
 
     counts =
       Enum.reduce(rows, empty_counts(), fn row, acc ->
@@ -141,16 +171,61 @@ defmodule Casein.Terminals.FleetBoard do
     orphan_attention = orphan_attention_count(orphaned)
     attention_count = Enum.count(rows, & &1.needs_you?) + orphan_attention
 
+    # Parked work: claimed on GitHub, no live pane. It shows as a ticket row
+    # with no WHO rather than only as a banner count, so unassigned work is
+    # visible in the same list as the work that has someone on it.
+    pane_total = length(rows)
+    rows = sort_rows(rows ++ parked_rows(orphaned, feed), opts)
+
     %{
       rows: rows,
       counts: counts,
       attention_count: attention_count,
-      total: length(rows),
+      # Fleet size is agents. Parked tickets are work without an agent, so they
+      # appear as rows but must not inflate "N fleet".
+      total: pane_total,
       empty?: rows == [],
       orphaned_claims: orphaned,
-      gate_queue: resolve_gate_queue(opts)
+      gate_queue: resolve_gate_queue(opts),
+      ticket_feed_state: Map.get(feed, :observe_state, :unknown)
     }
   end
+
+  @doc """
+  Attach tickets to rows.
+
+  Match order — first hit wins, most explicit first:
+
+    1. `IssueBinding` number already on the row (the claim protocol's own join)
+    2. `#NNNN` in the chrome label or window name
+    3. **PR head branch == the pane worktree's branch** (`branch_by_worktree`
+       on the feed). This is the case that carries this fleet: PR work has no
+       issue binding and no number in the window name.
+
+  A row that matches nothing keeps `ticket: nil` and becomes `capacity?` unless
+  it needs a human. Unknown feed → every row stays unjoined; the drawer renders
+  "tickets unknown", never "no work".
+  """
+  @spec join_tickets([row()], map()) :: [row()]
+  def join_tickets(rows, feed) when is_list(rows) and is_map(feed) do
+    Enum.map(rows, fn row ->
+      {ticket, match} = match_ticket(row, feed)
+
+      row
+      |> Map.put(:ticket, ticket)
+      |> Map.put(:ticket_match, match)
+      # `:unknown` is could-not-classify, not spare capacity. Filing it below the
+      # capacity divider would collapse it into quiet — the exact #910/#916
+      # distinction this board exists to protect — so it stays in the live list
+      # where its unknown_reason is visible.
+      |> Map.put(
+        :capacity?,
+        is_nil(ticket) and not row.needs_you? and row.bucket != :unknown
+      )
+    end)
+  end
+
+  def join_tickets(rows, _feed) when is_list(rows), do: rows
 
   @doc "Empty board for mount / no-session sockets."
   @spec empty() :: board()
@@ -162,9 +237,37 @@ defmodule Casein.Terminals.FleetBoard do
       total: 0,
       empty?: true,
       orphaned_claims: OrphanedClaims.unknown(),
-      gate_queue: GateQueue.unknown()
+      gate_queue: GateQueue.unknown(),
+      ticket_feed_state: :unknown
     }
   end
+
+  @doc """
+  Render an `unknown_reason` as a stable string.
+
+  One vocabulary for every surface — `orchestration_status` puts this on the
+  wire and the cockpit drawer prints it. A bare `:unknown` with no reason is the
+  silent-failure class (#916), so this never returns an empty string.
+  """
+  @spec unknown_reason_string(term()) :: String.t() | nil
+  def unknown_reason_string(nil), do: nil
+  def unknown_reason_string(reason) when is_atom(reason), do: Atom.to_string(reason)
+  def unknown_reason_string(reason) when is_binary(reason), do: reason
+
+  def unknown_reason_string({:liveness_unknown, inner}) do
+    "liveness_unknown:#{stringify_reason(inner) || "unscanned"}"
+  end
+
+  def unknown_reason_string({:unmapped_agent_state, state}) do
+    "unmapped_agent_state:#{stringify_reason(state) || "nil"}"
+  end
+
+  def unknown_reason_string(other), do: inspect(other)
+
+  defp stringify_reason(nil), do: nil
+  defp stringify_reason(value) when is_atom(value), do: Atom.to_string(value)
+  defp stringify_reason(value) when is_binary(value), do: value
+  defp stringify_reason(_), do: nil
 
   @doc "True when the board has any needs-you row or orphaned claim."
   @spec needs_attention?(board()) :: boolean()
@@ -283,7 +386,12 @@ defmodule Casein.Terminals.FleetBoard do
       unknown_reason: unknown_reason,
       active?: Map.get(tab, :active?) == true or Map.get(tab, :active) == true,
       liveness: liveness,
-      blocked_on: blocked_on
+      blocked_on: blocked_on,
+      worktree_path: blank_to_nil(Map.get(tab, :worktree_path) || Map.get(tab, "worktree_path")),
+      ticket: nil,
+      ticket_match: nil,
+      capacity?: false,
+      parked?: false
     }
   catch
     :skip -> nil
@@ -414,27 +522,28 @@ defmodule Casein.Terminals.FleetBoard do
   defp fleet_row?(%{quiet?: true}), do: true
   defp fleet_row?(_), do: false
 
+  # Report-kind only. Ordered so a blocked worker that is also ready-no-task is
+  # still attention — the human block is the stronger fact.
   defp needs_you_projection(agent_state, quiet?, fleet_readiness) do
     cond do
-      fleet_readiness == :ready_no_task ->
-        {true, :ready_no_task}
-
-      agent_state in [:blocked, :errored, :stalled, :awaiting_input] or
-          (quiet? and agent_state in [:done, :idle, nil]) ->
+      agent_state in [:blocked, :errored] ->
         cls =
-          %{
-            windows: [
-              %{
-                agent_state: agent_state,
-                quiet: quiet? and agent_state in [:done, :idle, nil]
-              }
-            ]
-          }
+          %{windows: [%{agent_state: agent_state, quiet: false}]}
           |> Salience.facts_from_session()
           |> Salience.compute()
           |> Delivery.session_classification()
 
         {cls.section == :needs_you, cls.reason}
+
+      fleet_readiness == :ready_no_task ->
+        {false, :ready_no_task}
+
+      # Derived, never reported: badge it, do not summon anyone.
+      agent_state in [:stalled, :awaiting_input] ->
+        {false, agent_state}
+
+      quiet? and agent_state in [:done, :idle, nil] ->
+        {false, :idle}
 
       true ->
         {false, nil}
@@ -462,12 +571,17 @@ defmodule Casein.Terminals.FleetBoard do
     {:unknown, :agent_state_absent_liveness_not_observed}
   end
 
-  # stalled/awaiting_input/blocked/errored should already be needs_you via
-  # needs_you_projection; if they land here readiness was nil and needs_you?
-  # was false — still surface them as needs_you rather than bare unknown.
-  defp bucket_for(false, state, _, _)
-       when state in [:stalled, :awaiting_input, :errored, :blocked],
-       do: {:needs_you, nil}
+  # Report-kind: the agent said a human is needed. Already needs_you via
+  # needs_you_projection; this clause keeps them off :unknown if they land here.
+  defp bucket_for(false, state, _, _) when state in [:errored, :blocked],
+    do: {:needs_you, nil}
+
+  # Derived-kind. #917 bucketed these :needs_you to avoid a bare unknown; the
+  # anti-bare-unknown property is what mattered, and :idle preserves it while
+  # honouring the rule that an inference never summons a human. They still carry
+  # `blocked_on` with kind: :derived, so the drawer can say *why* they are quiet.
+  defp bucket_for(false, state, _, _) when state in [:stalled, :awaiting_input],
+    do: {:idle, nil}
 
   defp bucket_for(false, state, _readiness, _liveness) do
     {:unknown, {:unmapped_agent_state, state}}
@@ -483,7 +597,26 @@ defmodule Casein.Terminals.FleetBoard do
 
   defp liveness_unknown_reason(_), do: :liveness_unknown
 
+  # One continuous list of live work, newest ticket update first — not three
+  # status columns. Triage survives via the needs-you badge on the row, and
+  # ticketless capacity groups below rather than interleaving with #NNNN.
+  defp sort_rows(rows, opts) do
+    case Keyword.get(opts, :sort, :continuous) do
+      :attention -> Enum.sort_by(rows, &attention_sort_key/1)
+      _ -> Enum.sort_by(rows, &row_sort_key/1)
+    end
+  end
+
   defp row_sort_key(row) do
+    {
+      if(Map.get(row, :capacity?), do: 1, else: 0),
+      -ticket_updated_unix(row),
+      priority_rank(row),
+      row.display_name
+    }
+  end
+
+  defp attention_sort_key(row) do
     {
       bucket_rank(row.bucket),
       Delivery.session_reason_urgency(row.attention_reason || :recent),
@@ -492,6 +625,120 @@ defmodule Casein.Terminals.FleetBoard do
       row.display_name
     }
   end
+
+  # No ticket, or a ticket with no timestamp, sinks within its group — a missing
+  # `updatedAt` must not read as the freshest work.
+  defp ticket_updated_unix(%{ticket: %{updated_at: %DateTime{} = dt}}), do: DateTime.to_unix(dt)
+  defp ticket_updated_unix(_), do: 0
+
+  defp priority_rank(%{ticket: %{priority: "p0"}}), do: 0
+  defp priority_rank(%{ticket: %{priority: "p1"}}), do: 1
+  defp priority_rank(%{ticket: %{priority: "p2"}}), do: 2
+  defp priority_rank(_), do: 3
+
+  ## Ticket join
+
+  defp match_ticket(row, feed) do
+    by_number = Map.get(feed, :by_number) || %{}
+
+    with nil <- match_by_number(row.issue, by_number, :issue_binding),
+         labelled = number_from_text(row.label) || number_from_text(row.name),
+         nil <- match_by_number(labelled, by_number, :label),
+         nil <- match_by_branch(row, feed) do
+      {nil, nil}
+    end
+  end
+
+  defp match_by_number(number, by_number, tag) when is_integer(number) do
+    case Map.fetch(by_number, number) do
+      {:ok, ticket} -> {ticket, tag}
+      :error -> nil
+    end
+  end
+
+  defp match_by_number(_number, _by_number, _tag), do: nil
+
+  defp match_by_branch(%{worktree_path: path}, feed) when is_binary(path) do
+    branches = Map.get(feed, :branch_by_worktree) || %{}
+    by_head_ref = Map.get(feed, :by_head_ref) || %{}
+
+    with branch when is_binary(branch) <- Map.get(branches, path),
+         {:ok, ticket} <- Map.fetch(by_head_ref, branch) do
+      {ticket, :branch}
+    else
+      _ -> nil
+    end
+  end
+
+  defp match_by_branch(_row, _feed), do: nil
+
+  # `#744` in "worker: #744 item 4" — a bare number is not a ticket reference,
+  # so the `#` is required and a trailing word boundary keeps `#74` out of `#744`.
+  defp number_from_text(text) when is_binary(text) do
+    case Regex.run(~r/#(\d+)\b/, text) do
+      [_, digits] -> String.to_integer(digits)
+      _ -> nil
+    end
+  end
+
+  defp number_from_text(_), do: nil
+
+  # Claimed on GitHub with no live pane. Rendered as a ticket row with no WHO.
+  defp parked_rows(%{observe_state: :ok, orphans: orphans}, feed) when is_list(orphans) do
+    by_number = Map.get(feed, :by_number) || %{}
+
+    Enum.map(orphans, fn orphan ->
+      ticket =
+        Map.get(by_number, orphan.number) ||
+          %{
+            kind: :issue,
+            number: orphan.number,
+            title: orphan.title,
+            url: orphan.url,
+            updated_at: nil,
+            head_ref: nil,
+            draft?: false,
+            labels: orphan.labels || [],
+            priority: orphan.priority,
+            repo: nil
+          }
+
+      %{
+        window_id: "orphan-" <> Integer.to_string(orphan.number),
+        pane_id: nil,
+        name: "##{orphan.number}",
+        display_name: ticket.title || "##{orphan.number}",
+        agent_state: nil,
+        agent_state_message: nil,
+        chip_text: nil,
+        chip_class: nil,
+        dot_class: nil,
+        label: nil,
+        issue: orphan.number,
+        issue_title: ticket.title,
+        task_summary: nil,
+        fleet_role: nil,
+        fleet_readiness: nil,
+        ready_no_task_for_seconds: nil,
+        quiet?: false,
+        unseen_quiet?: false,
+        needs_you?: true,
+        attention_reason: :orphaned_claim,
+        bucket: :needs_you,
+        unknown_reason: nil,
+        active?: false,
+        liveness: nil,
+        blocked_on: nil,
+        worktree_path: nil,
+        ticket: ticket,
+        ticket_match: nil,
+        capacity?: false,
+        parked?: true
+      }
+    end)
+  end
+
+  defp parked_rows(_orphaned, _feed), do: []
 
   defp bucket_rank(:needs_you), do: 0
   defp bucket_rank(:working), do: 1

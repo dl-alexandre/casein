@@ -41,6 +41,29 @@ defmodule CaseinWeb.WorkspaceLive.HotPathBlockingTest do
     assert state =~ "GateQueue.cached",
            "assign_tmux_window_tabs must peek GateQueue.cached, not observe/0"
 
+    # #920 drawer: ticket join + cockpit liveness also stay off the hot path.
+    # cached/1 only on render; refresh_async is the only shell/walk path.
+    assert state =~ "TicketFeed.cached",
+           "assign_tmux_window_tabs must peek TicketFeed.cached, not list_tickets/0"
+
+    assert state =~ "TicketFeed.refresh_async",
+           "ticket gh refresh must be async, never inline on assign_tmux_window_tabs"
+
+    assert state =~ "PaneLiveness.cached",
+           "assign_tmux_window_tabs must peek PaneLiveness.cached, not observe inline"
+
+    assert state =~ "PaneLiveness.refresh_async",
+           "pane liveness walk must be async, never inline on assign_tmux_window_tabs"
+
+    refute state =~ ~r/TicketFeed\.list_tickets\s*\(/,
+           "TicketFeed.list_tickets shells out — must not appear on the LV hot path"
+
+    refute state =~ ~r/OrphanedClaims\.list_claimed\s*\(/,
+           "OrphanedClaims.list_claimed may shell out — use cached_list/0 on the LV path"
+
+    refute state =~ ~r/GateQueue\.observe\s*\(/,
+           "GateQueue.observe may walk /proc — use cached/0 on the LV path"
+
     pane_open =
       File.read!(
         Path.join(

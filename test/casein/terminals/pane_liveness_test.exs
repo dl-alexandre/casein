@@ -164,6 +164,60 @@ defmodule Casein.Terminals.PaneLivenessTest do
     end
   end
 
+  describe "cockpit cadence" do
+    setup do
+      PaneLiveness.ensure_cockpit_cache!()
+      {:ok, session: "casein_test_#{System.unique_integer([:positive])}"}
+    end
+
+    test "cached/1 is empty before any refresh — absence, not quiet", %{session: session} do
+      assert PaneLiveness.cached(session) == %{}
+      assert PaneLiveness.cached(nil) == %{}
+    end
+
+    test "observe_panes stores liveness and worktree per pane", %{root: root, session: session} do
+      worktree = git_repo!(root, "live")
+      File.write!(Path.join(worktree, "new.ex"), "x")
+
+      snapshot = PaneLiveness.observe_panes(session, [pane("%1", worktree)], cache: false)
+
+      assert %{"%1" => %{liveness: liveness, worktree_path: ^worktree}} = snapshot
+      assert liveness.state == :active
+      # And it is readable from the render path without touching disk.
+      assert PaneLiveness.cached(session) == snapshot
+    end
+
+    test "an unobservable pane keeps its reason instead of being dropped", %{
+      root: root,
+      session: session
+    } do
+      plain = Path.join(root, "plain")
+      File.mkdir_p!(plain)
+
+      snapshot = PaneLiveness.observe_panes(session, [pane("%9", plain)], cache: false)
+
+      # Omitting it would decay into "not observed" downstream, which says less
+      # than the reason we already have.
+      assert %{"%9" => %{liveness: %{state: :unknown, reason: :no_worktree}}} = snapshot
+    end
+
+    test "refresh_async holds off inside the TTL and skips an empty pane list", %{
+      root: root,
+      session: session
+    } do
+      worktree = git_repo!(root, "async")
+      PaneLiveness.subscribe()
+
+      assert :skip = PaneLiveness.refresh_async(session, [])
+      assert :started = PaneLiveness.refresh_async(session, [pane("%1", worktree)])
+      assert_receive {:pane_liveness, :refreshed, ^session}, 5_000
+
+      assert %{"%1" => _} = PaneLiveness.cached(session)
+      # A burst of topology assigns must not fan out into a burst of walks.
+      assert :fresh = PaneLiveness.refresh_async(session, [pane("%1", worktree)])
+    end
+  end
+
   test "a topology without panes passes through untouched" do
     assert PaneLiveness.enrich_topology(%{windows: []}, []) == %{windows: []}
   end
