@@ -145,8 +145,7 @@ defmodule Casein.Terminals.WorktreeChangedPathsTest do
     test "caps the list and flags truncated? without dropping status_state ok" do
       body =
         1..205
-        |> Enum.map(&" M file#{&1}.ex")
-        |> Enum.join("\0")
+        |> Enum.map_join("\0", &" M file#{&1}.ex")
         |> Kernel.<>("\0")
 
       payload = project(topology([pane("%42")]), status: fn _ -> {:ok, body} end)
