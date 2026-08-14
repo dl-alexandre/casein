@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 44
+      assert length(names) == 45
 
       for expected <- [
             "terminal_list_sessions",
@@ -56,6 +56,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "worker_cancel",
             "worktree_status",
             "worktree_changed_paths",
+            "worktree_diff",
             "gate_report",
             "mcp_self_test",
             "annotation_list",
@@ -279,6 +280,31 @@ defmodule Casein.Agents.TerminalToolsActionTest do
 
       assert {:error, {:missing_argument, "pane"}} =
                TerminalTools.invoke("worktree_changed_paths", %{
+                 "workspace_id" => "ws-1",
+                 "session" => "casein_ws-1_x"
+               })
+    end
+
+    test "worktree_diff is classified read-only metadata with required pane scope" do
+      tool = definition("worktree_diff")
+
+      assert tool.parameters.required == ["workspace_id", "session", "pane"]
+      assert tool.parameters.properties.pane.type == "string"
+      assert tool.metadata.mutation? == false
+      assert tool.metadata.danger_level == :low
+      assert :terminal_metadata in tool.metadata.capabilities
+      assert :terminal_read in tool.metadata.capabilities
+    end
+
+    test "worktree_diff fails closed without required args" do
+      assert {:error, {:missing_argument, "workspace_id"}} =
+               TerminalTools.invoke("worktree_diff", %{
+                 "session" => "casein_ws-1_x",
+                 "pane" => "%42"
+               })
+
+      assert {:error, {:missing_argument, "pane"}} =
+               TerminalTools.invoke("worktree_diff", %{
                  "workspace_id" => "ws-1",
                  "session" => "casein_ws-1_x"
                })
