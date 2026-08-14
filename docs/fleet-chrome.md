@@ -444,6 +444,40 @@ contract tests so a respawned worker does not re-derive them from a dead brief):
 
 Leave #384 open for those milestones.
 
+## MCP: `worktree_changed_paths` (M4.3 one-call dirty-path list)
+
+**One call** answers "what files did this worker change?" by joining
+`WorkerStatus` identity with `git status --porcelain=v1 -z` — the same
+porcelain `AgentProgress` already samples. Not a path contract, not a diff,
+and not a LiveView hot-path read.
+
+```text
+worktree_changed_paths { workspace_id, session, pane, window_id? }
+→ found?, pane_id, window_id/name, worktree_path,
+  status_state, unknown_reason?,
+  changed_paths[{xy, path, orig_path?}]?, count?, truncated??
+```
+
+| Property | Behaviour |
+|----------|-----------|
+| Join | `WorkerStatus.find_pane` + porcelain `-z` |
+| `status_state: ok` | `changed_paths` (possibly `[]` when porcelain was empty) |
+| `status_state: unknown` | `unknown_reason`; **never** `changed_paths: []` |
+| Rename/copy | `orig_path` from the next `-z` token |
+| Cap | 200 rows; `truncated?: true` when more remain |
+| Path contracts / diff | **Not this slice** |
+
+**Still out of scope for this slice** (carried in `WorktreeChangedPaths`
+moduledoc + contract tests so a respawned worker does not re-derive them
+from a dead brief):
+
+- `worktree_diff`
+- path-contract language / forbidden-set enforcement
+- `worker_replace` / `worker_send_contract`
+- treating status failure as an empty (clean) change list
+
+Leave #384 open for those milestones.
+
 ## MCP resource: `casein://fleet/summary` (#859 / #879)
 
 Read-only **one-call fleet picture** on Terminal MCP `resources/list` /
@@ -510,6 +544,8 @@ orchestration_list_workers paths owned by #384.
 - `Casein.Agents.TerminalTools.WorkerCancel` — Jido / MCP `worker_cancel`
 - `Casein.Terminals.WorktreeStatus` — one-call Git inspection (M4.2)
 - `Casein.Agents.TerminalTools.WorktreeStatus` — Jido / MCP `worktree_status`
+- `Casein.Terminals.WorktreeChangedPaths` — one-call dirty-path list (M4.3)
+- `Casein.Agents.TerminalTools.WorktreeChangedPaths` — Jido / MCP `worktree_changed_paths`
 - `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859/#879)
 - `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy presence (#859)
 - `Casein.Terminals.AgentProgress` — composite progress + running_but_not_progressing (#879)
