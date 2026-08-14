@@ -173,7 +173,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     # under -NonInteractive it cannot prompt — so it aborts with
     # MissingMandatoryParameter and takes the whole Windows package smoke red
     # before it ever reaches the packaged preview bridge walk.
-    assert smoke =~ "-File $rebootHarness -SelfTestContinuation"
+    assert smoke =~ "-File $rebootHarness -PackageRoot $packageRoot -SelfTestContinuation"
 
     refute script =~
              ~r/\[Parameter\(Mandatory[^\]]*\)\]\s*\r?\n\s*\[switch\]\$AcceptDestructiveCleanMachineTest/,
@@ -194,6 +194,35 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
 
     assert library_only_at < guard_at,
            "-LibraryOnly must return before the destructive consent guard"
+  end
+
+  test "reboot harness does not Split-Path an empty PSScriptRoot at param bind time" do
+    script =
+      File.read!(Path.expand("../../../windows/Test-CaseinRebootPersistence.ps1", __DIR__))
+
+    smoke = File.read!(@package_smoke)
+
+    # What fed Split-Path null on the hosted smoke (run 31753850390):
+    # `powershell.exe -File` (Windows PowerShell 5.1) evaluates param defaults
+    # before $PSScriptRoot is populated. `[string]$PackageRoot = (Split-Path
+    # -Parent $PSScriptRoot)` therefore binds Split-Path to '' and dies before
+    # -SelfTestContinuation. Same class as the Mandatory consent switch: the
+    # work happens at bind time, ahead of the short-circuit that does not
+    # need PackageRoot at all.
+    refute script =~ "$PackageRoot = (Split-Path -Parent $PSScriptRoot)",
+           "PackageRoot must not be defaulted with Split-Path $PSScriptRoot — " <>
+             "that expression runs before $PSScriptRoot exists under powershell.exe -File"
+
+    assert smoke =~ "-PackageRoot $packageRoot",
+           "the smoke already knows the package root; it must pass it in " <>
+             "instead of asking the harness to invent it at bind time"
+
+    resolve_at = :binary.match(script, "Split-Path -Parent $PSScriptRoot") |> elem(0)
+    self_test_at = :binary.match(script, "if ($SelfTestContinuation) {") |> elem(0)
+
+    assert self_test_at < resolve_at,
+           "body resolution of PackageRoot from $PSScriptRoot must come after " <>
+             "the self-test short-circuit"
   end
 
   test "Trusted LAN selects a private physical interface and scopes its firewall rule" do
