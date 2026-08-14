@@ -38,6 +38,7 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     assert "orchestration_list_workers" in snapshot.allowed_tools["terminal"]
     assert "worktree_status" in snapshot.allowed_tools["terminal"]
     assert "worktree_changed_paths" in snapshot.allowed_tools["terminal"]
+    assert "worktree_diff" in snapshot.allowed_tools["terminal"]
     assert "runtime_signal" in snapshot.allowed_tools["terminal"]
     assert "annotation_propose" in snapshot.allowed_tools["terminal"]
     # worker_launch / worker_cancel are medium mutations — locked grants must not see them

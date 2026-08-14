@@ -961,7 +961,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Joins WorkerStatus identity + Git.Inspector (same inspector as casein://fleet/summary).",
         "git.inspect_state unknown never means clean or not-ahead; unknown_reason is required.",
         "ahead nil (no upstream) omits commits_not_on_origin? — not a false-unpushed.",
-        "M4.2 inspection — use worktree_changed_paths for porcelain; worker_replace still out of scope."
+        "M4.2 inspection — use worktree_changed_paths / worktree_diff; worker_replace still out of scope."
       ],
       examples: [
         %{
@@ -1013,6 +1013,37 @@ defmodule Casein.Agents.TerminalTools.Helpers do
             "count" => 1,
             "truncated?" => false,
             "changed_paths" => [%{"xy" => " M", "path" => "lib/foo.ex"}]
+          }
+        }
+      ]
+    }
+  end
+
+  def metadata("worktree_diff") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_metadata, :terminal_read],
+      recovery_hints: [
+        "Requires workspace_id, session, pane — fail closed when any is missing.",
+        "Joins WorkerStatus identity + git diff HEAD (staged+unstaged vs HEAD).",
+        "status_state unknown never emits diff: \"\" — that would look like a clean tree.",
+        "Empty string is honest only when git succeeded and the tree matches HEAD.",
+        "M4.4 inspection — not path contracts / worker_replace; durable graph still out of scope."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_default",
+            "pane" => "%42"
+          },
+          structured_content: %{
+            "found?" => true,
+            "pane_id" => "%42",
+            "status_state" => "ok",
+            "truncated?" => false,
+            "diff" => "diff --git a/lib/foo.ex b/lib/foo.ex\n+ok\n"
           }
         }
       ]

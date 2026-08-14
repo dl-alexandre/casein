@@ -50,6 +50,7 @@ defmodule Casein.Agents.TerminalTools do
     WorkerCancel,
     WorktreeStatus,
     WorktreeChangedPaths,
+    WorktreeDiff,
     WorkHandleCreate,
     WorkHandleGet,
     WorkHandleList,
@@ -119,6 +120,7 @@ defmodule Casein.Agents.TerminalTools do
     WorkerCancel,
     WorktreeStatus,
     WorktreeChangedPaths,
+    WorktreeDiff,
     GateReport,
     McpSelfTest
   ]
@@ -231,6 +233,8 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate worktree_status(params), to: Session
   @doc false
   defdelegate worktree_changed_paths(params), to: Session
+  @doc false
+  defdelegate worktree_diff(params), to: Session
   @doc false
   defdelegate gate_report(params), to: Report
   @doc false
