@@ -10,6 +10,7 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
   use Casein.DataCase, async: false
 
   alias Casein.Agents.PreviewTools
+  alias Casein.Agents.PreviewTools.BrowserControl
   alias Casein.Agents.PreviewTools.SurfaceDiscovery
   alias Casein.PreviewActivity
   alias Casein.PreviewControl.Registry
@@ -668,8 +669,9 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
 
   test "reload_iframe drops blank actor_id and reason from browser control opts" do
     :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
+    :ok = BrowserControl.register_viewer("ws-tools")
 
-    assert {:ok, %{status: "queued", action: "reload_preview_iframe", request_id: request_id}} =
+    assert {:ok, %{status: "delivered", action: "reload_preview_iframe", request_id: request_id}} =
              PreviewTools.invoke("preview_reload_iframe", @v3_workspace, %{
                "actor_id" => "",
                "reason" => ""
@@ -681,10 +683,11 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
     refute Map.has_key?(payload, "reason")
   end
 
-  test "reload_page queues a workspace page reload without optional opts" do
+  test "reload_page delivers a workspace page reload without optional opts" do
     :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
+    :ok = BrowserControl.register_viewer("ws-tools")
 
-    assert {:ok, %{status: "queued", action: "reload_page", workspace_id: "ws-tools"}} =
+    assert {:ok, %{status: "delivered", action: "reload_page", workspace_id: "ws-tools"}} =
              PreviewTools.invoke("casein_reload_page", @v3_workspace, %{})
 
     assert_receive {:browser_control, %{"action" => "reload_page", "workspace_id" => "ws-tools"}}

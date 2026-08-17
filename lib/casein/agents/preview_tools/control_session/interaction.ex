@@ -87,14 +87,28 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Interaction do
         with {:ok, observation} <- fallback_fun.() do
           {:ok,
            observation
-           |> maybe_snapshot_visible_pane(session_id, registration)
+           |> maybe_snapshot_visible_pane(session_id, registration, visible_error)
            |> enrich_observation_diff()
-           |> Map.put(:visible_effect, visible_fallback_effect(registration))
+           |> Map.put(:visible_effect, visible_fallback_effect(registration, visible_error))
            |> Map.put(:visible_error, visible_error_payload(visible_error))
            |> Map.put(:headless_warning, headless_warning(registration, params))}
         end
     end
   end
+
+  # Snapshotting a live pane is an absorbing state, so it has to be earned.
+  #
+  # The fallback replaces the pane's display URL with a `/preview-artifacts/`
+  # PNG. An image hosts no overlay hook, so it can never ack; the next action
+  # therefore falls back too and mints another PNG. A pane that drops to snapshot
+  # cannot climb back out on its own — one action is all it takes to strand it.
+  #
+  # That trade is worth making only when someone is actually watching and the
+  # hook still could not drive the pane: then a still image is better than a
+  # stale one. With no viewer connected the snapshot is seen by nobody and buys
+  # nothing, so the pane keeps its live URL and the next action tries live again.
+  defp degrade_pane_to_snapshot?(_registration, %{reason: :no_connected_viewer}), do: false
+  defp degrade_pane_to_snapshot?(_registration, _visible_error), do: true
 
   @doc false
   def compute_affected_element_ids(observation, regions)
@@ -242,12 +256,29 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Interaction do
     }
   end
 
-  defp maybe_snapshot_visible_pane(observation, session_id, nil) do
+  defp maybe_snapshot_visible_pane(observation, session_id, nil, _visible_error) do
     observation
     |> Map.put(:session_id, session_id)
   end
 
-  defp maybe_snapshot_visible_pane(observation, session_id, registration) do
+  defp maybe_snapshot_visible_pane(observation, session_id, registration, visible_error) do
+    if degrade_pane_to_snapshot?(registration, visible_error) do
+      snapshot_visible_pane(observation, session_id, registration)
+    else
+      keep_pane_live(observation, registration)
+    end
+  end
+
+  # The action still ran in the automation session; we simply decline to replace
+  # the pane with a picture of it. Deliberately narrow: the fallback itself may
+  # have changed the pane for its own good reasons (an untrusted-origin
+  # navigation legitimately becomes a snapshot), so this must not overwrite what
+  # it reported — it only skips the extra degrade.
+  defp keep_pane_live(observation, registration) do
+    Map.put_new(observation, :pane_id, registration.pane_id)
+  end
+
+  defp snapshot_visible_pane(observation, session_id, registration) do
     case PreviewControl.screenshot(session_id) do
       {:ok, screenshot} ->
         artifact_path =
@@ -279,8 +310,12 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Interaction do
     end
   end
 
-  defp visible_fallback_effect(nil), do: "headless_only"
-  defp visible_fallback_effect(_registration), do: "snapshot"
+  defp visible_fallback_effect(nil, _visible_error), do: "headless_only"
+
+  defp visible_fallback_effect(_registration, %{reason: :no_connected_viewer}),
+    do: "headless_only"
+
+  defp visible_fallback_effect(_registration, _visible_error), do: "snapshot"
 
   defp headless_warning(nil, params) do
     if Shared.truthy_param?(params, :allow_headless) do

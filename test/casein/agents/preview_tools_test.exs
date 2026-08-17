@@ -2,6 +2,7 @@ defmodule Casein.Agents.PreviewToolsTest do
   use Casein.DataCase, async: false
 
   alias Casein.Agents.PreviewTools
+  alias Casein.Agents.PreviewTools.BrowserControl
   alias Casein.PreviewActivity
   alias Casein.PreviewControl.Registry
   alias Casein.PreviewPanes
@@ -319,10 +320,13 @@ defmodule Casein.Agents.PreviewToolsTest do
 
   test "reload tools broadcast workspace browser control requests" do
     :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
+    # Mirror what a real viewer does: a connected WorkspaceLive both subscribes
+    # and registers presence, and the reported status is read off the registry.
+    :ok = BrowserControl.register_viewer("ws-tools")
 
     assert {:ok,
             %{
-              status: "queued",
+              status: "delivered",
               action: "reload_preview_iframe",
               workspace_id: "ws-tools",
               request_id: iframe_request_id
@@ -343,7 +347,7 @@ defmodule Casein.Agents.PreviewToolsTest do
 
     assert {:ok,
             %{
-              status: "queued",
+              status: "delivered",
               action: "reload_page",
               workspace_id: "ws-tools",
               request_id: page_request_id
@@ -357,6 +361,60 @@ defmodule Casein.Agents.PreviewToolsTest do
                       "request_id" => ^page_request_id,
                       "workspace_id" => "ws-tools"
                     }}
+  end
+
+  # These broadcasts have no buffer and no replay on viewer mount, so with no tab
+  # open the request is dropped by PubSub. Reporting "queued" for that sent
+  # callers chasing reloads that could never be delivered either.
+  test "reload tools report no_viewer instead of claiming queued work with nobody watching" do
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
+    refute BrowserControl.viewer_present?("ws-tools")
+
+    assert {:ok, %{status: "no_viewer", action: "reload_preview_iframe"}} =
+             PreviewTools.invoke("preview_reload_iframe", @v3_workspace, %{})
+
+    assert {:ok, %{status: "no_viewer", action: "reload_page"}} =
+             PreviewTools.invoke("casein_reload_page", @v3_workspace, %{})
+  end
+
+  # The ack can only come from a viewer's JS hook, so with no viewer the wait is
+  # guaranteed to time out. Reporting visible_action_ack_timeout there reads like
+  # the hook misbehaved; the caller needs to know a tab has to be open.
+  test "visible pane mutation reports no_connected_viewer rather than an ack timeout" do
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    refute BrowserControl.viewer_present?("ws-tools")
+
+    assert {:error, %{status: "no_viewer", reason: :no_connected_viewer, pane_id: ^pane_id}} =
+             BrowserControl.mutate_preview_pane(
+               @v3_workspace,
+               pane_id,
+               "type",
+               %{"selector" => "input", "text" => "hi"}
+             )
+  end
+
+  test "viewer presence vanishes with the process that registered it" do
+    parent = self()
+
+    task =
+      Task.async(fn ->
+        :ok = BrowserControl.register_viewer("ws-tools")
+        send(parent, :registered)
+        assert_receive :release, 1_000
+      end)
+
+    assert_receive :registered, 1_000
+    assert BrowserControl.viewer_present?("ws-tools")
+
+    send(task.pid, :release)
+    Task.await(task)
+
+    # Registry reaps a dead registration on the owner's :DOWN, which it may not
+    # have processed by the time await/1 returns.
+    wait_until(fn -> not BrowserControl.viewer_present?("ws-tools") end)
+    refute BrowserControl.viewer_present?("ws-tools")
   end
 
   test "preview_close requires a session id or pane id instead of crashing on empty input" do
@@ -1448,6 +1506,7 @@ defmodule Casein.Agents.PreviewToolsTest do
 
   test "open_app_preview verifies health and asks connected viewers to focus the pane" do
     :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
+    :ok = BrowserControl.register_viewer("ws-tools")
 
     assert {:ok,
             result = %{
@@ -1457,7 +1516,7 @@ defmodule Casein.Agents.PreviewToolsTest do
               operator_visibility: %{status: "not_confirmed"},
               user_visible: false,
               operator_focus: %{
-                status: "queued",
+                status: "delivered",
                 action: "focus_preview_pane",
                 workspace_id: "ws-tools",
                 request_id: request_id
@@ -1936,9 +1995,52 @@ defmodule Casein.Agents.PreviewToolsTest do
     assert PreviewPanes.get_by_pane(pane_id).display_url == "http://localhost:5173/settings"
   end
 
-  test "invoke click falls back to a visible snapshot when browser pane ack is unavailable" do
+  # Snapshot is an absorbing state: the pane's display URL becomes a PNG, an
+  # image hosts no overlay hook, so it can never ack, so every later action
+  # snapshots again. Degrading with nobody watching strands the pane for a
+  # picture no one sees.
+  test "invoke click leaves the pane live when no viewer is connected" do
     assert {:ok, %{pane_id: pane_id, session: session}} =
              PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    live_display_url = PreviewPanes.get_by_pane(pane_id).display_url
+    refute live_display_url =~ "/preview-artifacts/"
+    refute BrowserControl.viewer_present?("ws-tools")
+
+    assert {:ok, %{pane_id: ^pane_id, visible_effect: "headless_only"} = result} =
+             PreviewTools.invoke("preview_click", @v3_workspace, %{
+               "session_id" => session.id,
+               "selector" => ~s(a[href="/settings"])
+             })
+
+    assert result.visible_error[:reason] == "no_connected_viewer"
+
+    # The pane followed the link and is still live rather than frozen into a
+    # PNG, so the next action can try live again.
+    after_display_url = PreviewPanes.get_by_pane(pane_id).display_url
+    refute after_display_url =~ "/preview-artifacts/"
+    assert after_display_url == "http://localhost:5173/settings"
+  end
+
+  # The other half: with someone actually watching, a hook that cannot drive the
+  # pane is a real reason to show a still image rather than a stale live one.
+  test "invoke click still falls back to a snapshot when a connected viewer never acks" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    parent = self()
+
+    silent_viewer =
+      spawn(fn ->
+        Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:#{@v3_workspace.id}")
+        BrowserControl.register_viewer(@v3_workspace.id)
+        send(parent, :viewer_ready)
+        # Deliberately never acks.
+        Process.sleep(:infinity)
+      end)
+
+    assert_receive :viewer_ready, 1_000
+    assert BrowserControl.viewer_present?("ws-tools")
 
     assert {:ok,
             %{
@@ -1956,6 +2058,8 @@ defmodule Casein.Agents.PreviewToolsTest do
     assert display_url == snapshot_url
     assert display_url =~ "/preview-artifacts/"
     assert PreviewPanes.get_by_pane(pane_id).display_url == display_url
+
+    Process.exit(silent_viewer, :kill)
   end
 
   test "invoke click reports confirmed when visible preview pane acknowledges the action" do
@@ -1967,6 +2071,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     browser =
       spawn(fn ->
         Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:#{@v3_workspace.id}")
+        BrowserControl.register_viewer(@v3_workspace.id)
         send(parent, :browser_ready)
 
         receive do
@@ -2203,6 +2308,21 @@ defmodule Casein.Agents.PreviewToolsTest do
       tidewave_probed_ports: [port]
     }
   end
+
+  defp wait_until(fun, attempts \\ 50)
+
+  defp wait_until(fun, attempts) when attempts > 0 do
+    if fun.() do
+      :ok
+    else
+      receive do
+      after
+        20 -> wait_until(fun, attempts - 1)
+      end
+    end
+  end
+
+  defp wait_until(_fun, 0), do: flunk("condition not met before timeout")
 
   defp restore_env(key, value) do
     if is_nil(value),
