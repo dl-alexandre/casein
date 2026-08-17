@@ -193,6 +193,38 @@ defmodule Scripts.AgentWorktreeTest do
     assert output =~ "fake agent reached"
   end
 
+  test "launcher does not treat a benign non-casein skip as degraded" do
+    %{launcher: launcher, home: home, root: root} = launcher_fixture!()
+
+    File.write!(Path.join(root, "scripts/lib/repair-tmux-env.sh"), """
+    #!/usr/bin/env bash
+    printf 'skipped:not_casein_session\\n'
+    printf '>>> skip session (not a casein workspace session)\\n' >&2
+    exit 0
+    """)
+
+    {output, 0} =
+      System.cmd(
+        "bash",
+        [launcher, "agent"],
+        env: [
+          {"HOME", home},
+          {"PATH", system_path()},
+          {"CASEIN_API_TOKEN", "scoped-token"},
+          {"CASEIN_WORKSPACE_ID", "workspace-123"},
+          {"CASEIN_WORKSPACE_NAME", "workspace-123"},
+          {"CASEIN_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"},
+          {"CASEIN_PREVIEW_MCP_URL", "http://127.0.0.1:4000/api/preview/mcp"},
+          {"CASEIN_TMUX_SESSION", "__casein_keepalive"},
+          {"CASEIN_AGENT_SKIP_WORKTREE", "1"}
+        ],
+        stderr_to_stdout: true
+      )
+
+    refute output =~ "warn: repair-tmux-env.sh failed"
+    assert output =~ "fake agent reached"
+  end
+
   test "real agent resolver prefers user npm Codex over stale recorded system install" do
     tmp = tmp_dir!("real-agent-bin-test")
     home = Path.join(tmp, "home")
@@ -580,7 +612,7 @@ defmodule Scripts.AgentWorktreeTest do
     File.chmod!(fake_agent, 0o755)
     on_exit(fn -> File.rm_rf(tmp) end)
 
-    %{launcher: Path.join(scripts, "launch-casein-agent.sh"), home: home}
+    %{launcher: Path.join(scripts, "launch-casein-agent.sh"), home: home, root: root}
   end
 
   defp tmp_dir!(prefix) do
