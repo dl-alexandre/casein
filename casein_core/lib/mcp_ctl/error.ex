@@ -4,6 +4,20 @@ defmodule McpCtl.Error do
   """
 
   @spec format(term()) :: map()
+  # Matched structurally so this app keeps no dependency on Ecto. A failed
+  # changeset is the most common struct reason a tool can return, and the
+  # generic struct path below would bury the one thing the caller needs — which
+  # field was rejected and why — under the schema struct it carries in `:data`.
+  def format(%{__struct__: Ecto.Changeset, errors: errors}) when is_list(errors) do
+    details = changeset_details(errors)
+
+    %{
+      "error" => "validation_failed",
+      "details" => details,
+      "message" => changeset_message(details)
+    }
+  end
+
   def format(reason) when is_struct(reason) do
     reason
     |> Map.from_struct()
@@ -106,6 +120,15 @@ defmodule McpCtl.Error do
 
   defp ensure_message(map), do: Map.put_new(map, "message", "tool call failed")
 
+  # Structs are maps but not enumerable, so this clause has to precede the map
+  # one — otherwise `Map.new/2` raises Protocol.UndefinedError and a tool error
+  # that should have been a structured MCP result becomes an HTTP 500 instead,
+  # hiding the reason it was trying to report. Bounded because a struct reached
+  # here as an incidental value (an Ecto schema hanging off a changeset, say),
+  # not as the thing the caller asked about.
+  defp sanitize_value(value) when is_struct(value),
+    do: inspect(value, limit: 5, printable_limit: 256)
+
   defp sanitize_value(value) when is_map(value) do
     Map.new(value, fn {key, inner} -> {normalize_key(key), sanitize_value(inner)} end)
   end
@@ -119,6 +142,50 @@ defmodule McpCtl.Error do
   defp sanitize_value(value) when is_atom(value), do: Atom.to_string(value)
 
   defp sanitize_value(value), do: inspect(value)
+
+  # `[{field, {message, opts}}]`, where opts carries the `%{count}`-style
+  # bindings Ecto leaves uninterpolated in the raw message.
+  defp changeset_details(errors) do
+    errors
+    |> Enum.reduce(%{}, fn
+      {field, {message, opts}}, acc when is_binary(message) ->
+        Map.update(
+          acc,
+          normalize_key(field),
+          [interpolate(message, opts)],
+          &(&1 ++ [interpolate(message, opts)])
+        )
+
+      {field, message}, acc when is_binary(message) ->
+        Map.update(acc, normalize_key(field), [message], &(&1 ++ [message]))
+
+      other, acc ->
+        Map.update(acc, "base", [inspect(other)], &(&1 ++ [inspect(other)]))
+    end)
+  end
+
+  defp interpolate(message, opts) when is_list(opts) do
+    Enum.reduce(opts, message, fn {key, value}, acc ->
+      String.replace(acc, "%{#{key}}", to_string_safe(value))
+    end)
+  end
+
+  defp interpolate(message, _opts), do: message
+
+  defp to_string_safe(value) when is_binary(value), do: value
+  defp to_string_safe(value) when is_number(value) or is_atom(value), do: to_string(value)
+  defp to_string_safe(value), do: inspect(value)
+
+  defp changeset_message(details) when map_size(details) == 0, do: "validation failed"
+
+  defp changeset_message(details) do
+    summary =
+      Enum.map_join(details, "; ", fn {field, messages} ->
+        "#{field} #{Enum.join(messages, ", ")}"
+      end)
+
+    "validation failed: " <> summary
+  end
 
   defp tuple_message(:redirect_blocked, status, location),
     do: "Redirect blocked (#{status}) to #{location}"

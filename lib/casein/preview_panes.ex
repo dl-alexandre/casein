@@ -1641,13 +1641,41 @@ defmodule Casein.PreviewPanes do
   defp ensure_inside_viewport(_viewport, _x, _y), do: :ok
 
   defp embeddable_display_url?(registration, url) do
-    if same_origin_path?(url) do
-      true
-    else
-      origin = Url.origin_of(url)
-      is_binary(origin) and origin in preview_allowed_origins(registration)
+    cond do
+      same_origin_path?(url) ->
+        true
+
+      own_preview_origin?(registration, url) ->
+        true
+
+      true ->
+        origin = Url.origin_of(url)
+        is_binary(origin) and origin in preview_allowed_origins(registration)
     end
   end
+
+  # The `pv-<port>-<workspace>` host Casein mints for this workspace's own
+  # loopback ports — the address the pane is already displayed at. Refusing it
+  # as untrusted made every control-sync navigation fail with
+  # `:untrusted_preview_url`, so agent-driven typing and clicking ran in the
+  # automation browser but never reached the operator's iframe. Checked apart
+  # from the persisted allowlist so panes registered before that origin was
+  # recorded are repaired in place, with no data migration.
+  #
+  # This grants no reach beyond the pane's own workspace: the host has to parse
+  # back to *this* registration's workspace id, and the loopback port behind it
+  # is still authorized per-request by `CaseinWeb.PreviewAuthzController`.
+  defp own_preview_origin?(%{workspace_id: workspace_id}, url)
+       when is_binary(workspace_id) and is_binary(url) do
+    with %URI{host: host} when is_binary(host) <- URI.parse(url),
+         {:ok, %{workspace_id: ^workspace_id}} <- OwnOrigin.parse_host(host) do
+      true
+    else
+      _ -> false
+    end
+  end
+
+  defp own_preview_origin?(_registration, _url), do: false
 
   defp same_origin_path?(url) when is_binary(url), do: String.starts_with?(url, "/")
   defp same_origin_path?(_), do: false
@@ -1692,7 +1720,7 @@ defmodule Casein.PreviewPanes do
         "surface_source" => "preview_pane",
         "control_url" => control_url,
         "display_url" => display_url,
-        "allowed_origins" => allowed_origins(workspace, control_url, url)
+        "allowed_origins" => allowed_origins(workspace, control_url, url, display_url)
       }
     })
   end
@@ -2287,14 +2315,20 @@ defmodule Casein.PreviewPanes do
     end
   end
 
-  # Self-include both the control URL's origin and the pane's own target
-  # origin. The persisted `:url`/`display_url` isn't always the control URL —
-  # e.g. a Casein-hosted target (playback artifacts, proxy paths) keeps its
-  # own origin as the displayed/persisted URL while control_url_for/1 maps
-  # only the *control-session* URL to the loopback address.
-  defp allowed_origins(workspace, control_url, url) do
+  # Self-include the control URL's origin, the pane's own target origin, and
+  # the origin the pane is actually displayed at. The persisted
+  # `:url`/`display_url` isn't always the control URL — e.g. a Casein-hosted
+  # target (playback artifacts, proxy paths) keeps its own origin as the
+  # displayed/persisted URL while control_url_for/1 maps only the
+  # *control-session* URL to the loopback address.
+  #
+  # `display_url` matters because own-origin routing shows a loopback preview
+  # at `pv-<port>-<workspace>` rather than at `url`; omitting it left the
+  # allowlist without the one origin every later validation checks against.
+  # A path-proxy display URL has no origin and drops out here.
+  defp allowed_origins(workspace, control_url, url, display_url) do
     self_origins =
-      [control_url, url]
+      [control_url, url, display_url]
       |> Enum.map(&Url.origin_of/1)
       |> Enum.reject(&is_nil/1)
 

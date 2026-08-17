@@ -320,6 +320,121 @@ defmodule Casein.PreviewPanesTest do
     assert PreviewPanes.get_by_pane(pane_id).display_url == synced.display_url
   end
 
+  # Own-origin routing shows the pane at `pv-<port>-<workspace>`, but that
+  # origin was missing from the preview's allowlist, so the control-sync that
+  # follows agent-driven navigation and typing was refused as
+  # `:untrusted_preview_url` — the action ran in the automation browser while
+  # the operator's iframe stayed on the old page.
+  describe "own-origin preview panes" do
+    @own_origin_ws "c32613b7-c8bb-4146-b6f3-9c4fe6f2f8ad"
+
+    setup do
+      prev_own = Application.get_env(:casein, :preview_own_origin)
+
+      Application.put_env(:casein, :preview_own_origin,
+        enabled: true,
+        domain: "devbox.example.com"
+      )
+
+      Application.put_env(:casein, :preview_proxy_enabled, true)
+      Application.put_env(:casein, :preview_loopback_port, 4000)
+
+      on_exit(fn -> restore(:preview_own_origin, prev_own) end)
+
+      :ok
+    end
+
+    defp register_own_origin_pane!(session, pane_id) do
+      seed_session!(session, pane_id)
+
+      assert {:ok, registration} =
+               PreviewPanes.register(%{
+                 "pane_id" => pane_id,
+                 "url" => "http://localhost:21000/",
+                 "tmux_session" => session,
+                 "workspace" => %{
+                   id: @own_origin_ws,
+                   metadata: %{detected_ports: [21_000]}
+                 }
+               })
+
+      assert registration.display_url ==
+               "https://pv-21000-#{@own_origin_ws}.devbox.example.com/"
+
+      registration
+    end
+
+    test "register records the origin the pane is displayed at as an allowed origin" do
+      registration = register_own_origin_pane!("casein_ws_own_origin_allowlist", "%44")
+      preview = Repo.get!(Preview, registration.preview_id)
+
+      assert "https://pv-21000-#{@own_origin_ws}.devbox.example.com:443" in preview.metadata[
+               "allowed_origins"
+             ]
+    end
+
+    test "sync control navigation follows the pane's own proxy origin" do
+      registration = register_own_origin_pane!("casein_ws_own_origin_sync", "%40")
+
+      assert {:ok, synced} =
+               PreviewPanes.sync_control_navigation(
+                 registration.control_session_id,
+                 "http://localhost:21000/superadmin/mira"
+               )
+
+      assert synced.display_url ==
+               "https://pv-21000-#{@own_origin_ws}.devbox.example.com/superadmin/mira"
+
+      assert PreviewPanes.get_by_pane("%40").display_url == synced.display_url
+    end
+
+    # Panes registered before the origin was recorded carry the old allowlist.
+    # They are repaired in place rather than by a data migration, so strip the
+    # origin back out and prove the sync still succeeds.
+    test "sync control navigation trusts its own proxy origin even when the allowlist omits it" do
+      registration = register_own_origin_pane!("casein_ws_own_origin_legacy", "%41")
+
+      preview = Repo.get!(Preview, registration.preview_id)
+      pv_origin = "https://pv-21000-#{@own_origin_ws}.devbox.example.com"
+      stripped = Enum.reject(preview.metadata["allowed_origins"], &(&1 =~ "pv-21000"))
+
+      preview
+      |> Ecto.Changeset.change(metadata: Map.put(preview.metadata, "allowed_origins", stripped))
+      |> Repo.update!()
+
+      refute pv_origin in stripped
+
+      assert {:ok, synced} =
+               PreviewPanes.sync_control_navigation(
+                 registration.control_session_id,
+                 "http://localhost:21000/superadmin"
+               )
+
+      assert synced.display_url == pv_origin <> "/superadmin"
+    end
+
+    test "sync control navigation still refuses another workspace's proxy origin" do
+      registration = register_own_origin_pane!("casein_ws_own_origin_foreign", "%42")
+      other = "11111111-2222-3333-4444-555555555555"
+
+      assert {:error, :untrusted_preview_url} =
+               PreviewPanes.sync_control_navigation(
+                 registration.control_session_id,
+                 "https://pv-21000-#{other}.devbox.example.com/"
+               )
+    end
+
+    test "sync control navigation still refuses an unrelated external origin" do
+      registration = register_own_origin_pane!("casein_ws_own_origin_external", "%43")
+
+      assert {:error, :untrusted_preview_url} =
+               PreviewPanes.sync_control_navigation(
+                 registration.control_session_id,
+                 "https://example.com/news"
+               )
+    end
+  end
+
   test "register threads workspace forward-auth headers into the control session" do
     session = "casein_ws_forward_auth"
     pane_id = "%20"

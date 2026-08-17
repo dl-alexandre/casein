@@ -26,6 +26,7 @@ defmodule Casein.Previews do
     EnvRegistry,
     FileServer,
     Identity,
+    OwnOrigin,
     Preview,
     Surface,
     SurfaceResolver,
@@ -275,7 +276,7 @@ defmodule Casein.Previews do
           (preview.metadata || %{})
           |> Map.put("display_url", url)
           |> put_source_url(Keyword.get(opts, :source_url))
-          |> add_allowed_origin(persisted_url)
+          |> add_allowed_origin(persisted_url, preview.workspace_id)
 
         preview
         |> Preview.changeset(%{
@@ -295,13 +296,14 @@ defmodule Casein.Previews do
 
   defp put_source_url(metadata, _source_url), do: Map.delete(metadata, "source_url")
 
-  # Self-include only the control loopback and Casein app origins on update.
-  # Navigated target origins are already covered by registration-time
-  # allowlisting or must not expand the persisted list on every update_url.
+  # Self-include only the control loopback, the Casein app origin, and this
+  # workspace's own preview proxy origin on update. Navigated target origins are
+  # already covered by registration-time allowlisting or must not expand the
+  # persisted list on every update_url.
   @max_persisted_allowed_origins 64
 
-  defp add_allowed_origin(metadata, _url) do
-    case self_include_origins() do
+  defp add_allowed_origin(metadata, url, workspace_id) do
+    case self_include_origins() ++ own_preview_origins(url, workspace_id) do
       [] ->
         metadata
 
@@ -310,6 +312,26 @@ defmodule Casein.Previews do
         Map.put(metadata, "allowed_origins", merge_allowed_origins(existing, origins))
     end
   end
+
+  # The one navigated origin that is not a navigated *target*: the `pv-<port>-
+  # <workspace>` host Casein itself mints to display this workspace's loopback
+  # ports. Leaving it out meant the allowlist rejected the very URL the pane is
+  # displayed at, so `Preview.changeset/2` failed validation on every
+  # `update_url` for an own-origin preview. Pinning the parsed workspace id to
+  # this preview's own keeps it from widening to any other workspace's proxy
+  # host, and the port behind it is still authorized per-request by
+  # `CaseinWeb.PreviewAuthzController`.
+  defp own_preview_origins(url, workspace_id) when is_binary(url) and is_binary(workspace_id) do
+    with %URI{host: host} when is_binary(host) <- URI.parse(url),
+         {:ok, %{workspace_id: ^workspace_id}} <- OwnOrigin.parse_host(host),
+         origin when is_binary(origin) <- Url.origin_of(url) do
+      [origin]
+    else
+      _ -> []
+    end
+  end
+
+  defp own_preview_origins(_url, _workspace_id), do: []
 
   defp self_include_origins do
     port = Application.get_env(:casein, :preview_loopback_port, 4000)
@@ -326,8 +348,15 @@ defmodule Casein.Previews do
     |> Enum.uniq()
   end
 
+  # Additions lead so the cap can never silently drop them: registration-time
+  # allowlists routinely run past @max_persisted_allowed_origins (a workspace
+  # with several ports crosses it easily), and with `existing` first every
+  # addition past the cap was discarded — including the pane's own display
+  # origin, which is the entry the changeset is about to be validated against.
+  # `uniq/1` keeps the first occurrence, so re-adding an origin already present
+  # only promotes it rather than duplicating it.
   defp merge_allowed_origins(existing, additions) do
-    (existing ++ additions)
+    (additions ++ existing)
     |> Enum.uniq()
     |> Enum.take(@max_persisted_allowed_origins)
   end

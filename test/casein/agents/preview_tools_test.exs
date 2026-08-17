@@ -379,6 +379,51 @@ defmodule Casein.Agents.PreviewToolsTest do
     assert "localhost:8765" in names
   end
 
+  # With own-origin routing the pane is displayed at `pv-<port>-<workspace>`
+  # while the surface it belongs to is still listed as `localhost:<port>`.
+  # Indexing registrations by the display origin alone broke that join, so
+  # every surface reported pane_registered=false even with a live pane bound.
+  test "invoke surfaces still matches a pane displayed at its own preview origin" do
+    prev_own = Application.get_env(:casein, :preview_own_origin)
+    prev_proxy = Application.get_env(:casein, :preview_proxy_enabled)
+
+    Application.put_env(:casein, :preview_own_origin,
+      enabled: true,
+      domain: "devbox.example.com"
+    )
+
+    Application.put_env(:casein, :preview_proxy_enabled, true)
+
+    on_exit(fn ->
+      restore_env(:preview_own_origin, prev_own)
+      restore_env(:preview_proxy_enabled, prev_proxy)
+    end)
+
+    workspace_id = "c32613b7-c8bb-4146-b6f3-9c4fe6f2f8ad"
+    seed_workspace_tmux!(workspace_id)
+
+    ws = %{
+      id: workspace_id,
+      metadata: %{
+        type: :v3,
+        domain_base: "alice.devbox.example.com",
+        terminal_output: "Serving at http://localhost:21000/"
+      }
+    }
+
+    assert {:ok, %{pane_id: pane_id, registration: registration}} =
+             PreviewTools.split_preview_pane(ws, "http://localhost:21000/", [])
+
+    assert registration.display_url ==
+             "https://pv-21000-#{workspace_id}.devbox.example.com/"
+
+    assert {:ok, %{surfaces: surfaces}} = PreviewTools.invoke("preview_surfaces", ws, %{})
+
+    registered = Enum.find(surfaces, &(&1.name == "localhost:21000"))
+    assert registered.pane_id == pane_id
+    assert registered.pane_registered
+  end
+
   test "invoke surfaces reports registered pane visibility without claiming it is active" do
     ws =
       Map.update!(@v3_workspace, :metadata, fn metadata ->
