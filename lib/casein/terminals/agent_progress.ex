@@ -22,13 +22,16 @@ defmodule Casein.Terminals.AgentProgress do
       rebase/merge via `git rev-parse --git-dir` (linked worktrees have `.git`
       as a **file** — never `ls "$wt/.git"/rebase-*`)
     * rendered screen — `capture-pane` content hash; a **changing** screen is
-      positive proof of progress; frozen is not conclusive alone
+      positive proof of progress; frozen is not conclusive alone. The same
+      captured bytes feed the pure `AgentScreenStatus` fallback classifier —
+      no second tmux read.
     * agent context size + spend — scraped from the pane screen when the TUI
       prints them (e.g. `54.9K (11%)`, `$0.11`)
 
   Detached HEAD + staged files mid-rebase is **normal**, not broken.
   """
 
+  alias Casein.Terminals.AgentScreenStatus
   alias Casein.Terminals.TmuxRunner
 
   # Axes that prove agent progress on their own. process_cpu is intentionally
@@ -53,7 +56,8 @@ defmodule Casein.Terminals.AgentProgress do
           axes: map(),
           sample_age_ms: non_neg_integer() | nil,
           stalled_axis_count: non_neg_integer(),
-          advanced_axis_count: non_neg_integer()
+          advanced_axis_count: non_neg_integer(),
+          screen_status: AgentScreenStatus.status()
         }
 
   @doc "Default stall threshold in milliseconds."
@@ -130,6 +134,7 @@ defmodule Casein.Terminals.AgentProgress do
       sample_age_ms: Map.get(obs, :sample_age_ms),
       stalled_axis_count: Map.get(obs, :stalled_axis_count),
       advanced_axis_count: Map.get(obs, :advanced_axis_count),
+      screen_status: screen_status_json(Map.get(obs, :screen_status)),
       axes: axes_json(Map.get(obs, :axes) || %{})
     }
     |> reject_nil()
@@ -222,7 +227,8 @@ defmodule Casein.Terminals.AgentProgress do
           hash: :crypto.hash(:sha256, text) |> Base.encode16(case: :lower),
           context_tokens: parse_context_tokens(text),
           context_pct: parse_context_pct(text),
-          spend_usd: parse_spend_usd(text)
+          spend_usd: parse_spend_usd(text),
+          status: AgentScreenStatus.classify(text)
         }
 
       _ ->
@@ -361,7 +367,8 @@ defmodule Casein.Terminals.AgentProgress do
       axes: axes,
       sample_age_ms: age,
       stalled_axis_count: stalled,
-      advanced_axis_count: advanced
+      advanced_axis_count: advanced,
+      screen_status: get_in_sample(sample.screen, :status) || :unknown
     }
 
     if use_cache?, do: cache_store(key, sample)
@@ -575,6 +582,12 @@ defmodule Casein.Terminals.AgentProgress do
   defp atom_str(a) when is_atom(a), do: Atom.to_string(a)
   defp atom_str(a) when is_binary(a), do: a
   defp atom_str(a), do: to_string(a)
+
+  defp screen_status_json(status) when status in [:permission_prompt, :working] do
+    %{state: Atom.to_string(status), source: "screen"}
+  end
+
+  defp screen_status_json(_), do: %{state: "unknown", source: "screen"}
 
   defp reject_nil(map) when is_map(map) do
     map

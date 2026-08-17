@@ -238,6 +238,33 @@ defmodule Casein.Terminals.AgentProgressTest do
     assert obs.axes.context.value == 60_000
   end
 
+  test "classifies screen status from the same single capture sample" do
+    parent = self()
+
+    obs =
+      AgentProgress.observe(
+        base_opts(
+          now_ms: 1,
+          cache: false,
+          process: %{state: :quiet, cpu_jiffies: 1, cpu_jiffies_delta: nil},
+          screen_reader: fn session, pane ->
+            send(parent, {:screen_read, session, pane})
+            {:ok, "Permission required\n❯ Allow once\nReject"}
+          end
+        )
+      )
+
+    assert obs.screen_status == :permission_prompt
+
+    assert AgentProgress.to_json(obs).screen_status == %{
+             state: "permission_prompt",
+             source: "screen"
+           }
+
+    assert_received {:screen_read, "casein_ws_main", "%1"}
+    refute_received {:screen_read, _, _}
+  end
+
   test "to_json stringifies state and axes" do
     obs =
       AgentProgress.observe(

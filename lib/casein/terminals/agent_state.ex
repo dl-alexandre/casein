@@ -18,6 +18,13 @@ defmodule Casein.Terminals.AgentState do
       stopped reporting anything. See "Stale spinners" and "Ready or waiting"
       below.
 
+    * **Screen-inferred** — a separately tagged, weakest fallback for hook-less
+      OpenCode and Cursor panes. The screen classifier itself emits only
+      `:permission_prompt | :working | :unknown`; `resolve_screen_fallback/3`
+      may project those observations as `:blocked` / `:working` for display but
+      always returns `:screen` provenance. It never replaces a report or a
+      derived verdict, and no match remains `:unknown` (never `:idle`).
+
   ## Ready or waiting
 
   Claude's heavy-asterisk marker is ambiguous by construction: it means "ready
@@ -95,11 +102,14 @@ defmodule Casein.Terminals.AgentState do
   @stall_seconds 600
 
   @report_states [:working, :blocked, :done, :idle, :errored]
+  @screen_fallback_runtimes ~w(opencode cursor)
 
   @type state ::
           :working | :blocked | :done | :idle | :errored | :stalled | :awaiting_input | :unknown
   @type liveness :: :active | :quiet | :unknown | nil
   @type transcript :: :working | :awaiting_input | :unknown | nil
+  @type screen_status :: :permission_prompt | :working | :unknown | nil
+  @type provenance :: :report | :derived | :screen | :unknown
   @type entry :: %{
           state: state(),
           message: String.t() | nil,
@@ -122,6 +132,59 @@ defmodule Casein.Terminals.AgentState do
   @doc "The reportable semantic states, as atoms."
   @spec report_states() :: [state()]
   def report_states, do: @report_states
+
+  @doc """
+  Apply a screen observation as the third and weakest provenance.
+
+  The input must already have been resolved from reports, liveness, and
+  transcript evidence. Any known state wins unchanged. Screen evidence is
+  accepted only for runtimes without a hook path, and its separate provenance
+  prevents a permission-dialog observation from masquerading as report-only
+  `:blocked` evidence.
+  """
+  @spec resolve_screen_fallback(
+          {state(), String.t() | nil},
+          String.t() | atom() | nil,
+          screen_status()
+        ) :: {state(), String.t() | nil, provenance()}
+  def resolve_screen_fallback({state, message}, _runtime, _screen_status)
+      when state in [
+             :working,
+             :blocked,
+             :done,
+             :idle,
+             :errored,
+             :stalled,
+             :awaiting_input
+           ] do
+    {state, message, provenance_for(state)}
+  end
+
+  def resolve_screen_fallback({:unknown, _message}, runtime, screen_status) do
+    if screen_fallback_runtime?(runtime) do
+      case screen_status do
+        :permission_prompt -> {:blocked, nil, :screen}
+        :working -> {:working, nil, :screen}
+        _ -> {:unknown, nil, :unknown}
+      end
+    else
+      {:unknown, nil, :unknown}
+    end
+  end
+
+  def resolve_screen_fallback(_resolved, _runtime, _screen_status),
+    do: {:unknown, nil, :unknown}
+
+  defp screen_fallback_runtime?(runtime) when is_atom(runtime),
+    do: screen_fallback_runtime?(Atom.to_string(runtime))
+
+  defp screen_fallback_runtime?(runtime) when is_binary(runtime),
+    do: String.downcase(runtime) in @screen_fallback_runtimes
+
+  defp screen_fallback_runtime?(_runtime), do: false
+
+  defp provenance_for(state) when state in [:stalled, :awaiting_input], do: :derived
+  defp provenance_for(state) when state in @report_states, do: :report
 
   @doc """
   Seconds of worktree quiet while a pane still looks busy before resolve yields

@@ -600,6 +600,54 @@ defmodule Casein.Terminals.AgentStateTest do
     end
   end
 
+  describe "resolve_screen_fallback/3" do
+    test "screen permission evidence is tagged separately from report-only blocked" do
+      assert AgentState.resolve_screen_fallback(
+               {:unknown, nil},
+               "opencode",
+               :permission_prompt
+             ) == {:blocked, nil, :screen}
+    end
+
+    test "screen fallback is gated to runtimes without hooks" do
+      for runtime <- ~w(claude grok codex) do
+        assert AgentState.resolve_screen_fallback(
+                 {:unknown, nil},
+                 runtime,
+                 :permission_prompt
+               ) == {:unknown, nil, :unknown}
+      end
+
+      assert AgentState.resolve_screen_fallback({:unknown, nil}, "cursor", :working) ==
+               {:working, nil, :screen}
+    end
+
+    test "every existing report or derived verdict outranks screen evidence" do
+      assert AgentState.resolve_screen_fallback(
+               {:blocked, "hook report"},
+               "opencode",
+               :working
+             ) == {:blocked, "hook report", :report}
+
+      assert AgentState.resolve_screen_fallback(
+               {:awaiting_input, nil},
+               "opencode",
+               :permission_prompt
+             ) == {:awaiting_input, nil, :derived}
+
+      assert AgentState.resolve_screen_fallback(
+               {:stalled, nil},
+               "cursor",
+               :permission_prompt
+             ) == {:stalled, nil, :derived}
+    end
+
+    test "unknown screen evidence never becomes idle" do
+      assert AgentState.resolve_screen_fallback({:unknown, nil}, "opencode", :unknown) ==
+               {:unknown, nil, :unknown}
+    end
+  end
+
   describe "resolve_for_display/3" do
     test "returns unknown without a live report, so the heuristic is not mislabeled" do
       assert AgentState.resolve_for_display(nil, :ready) == {:unknown, nil}
