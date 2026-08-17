@@ -148,6 +148,9 @@ bash scripts/test-caddy-upstream.sh
 log "running hermetic shell unit tests (preview router reap/rebind)"
 bash scripts/test-preview-router-reap.sh
 
+log "running hermetic shell unit tests (preview router generated Caddyfile scheme)"
+bash scripts/test-preview-router.sh
+
 log "running hermetic shell unit tests (release extraction cleanup)"
 bash scripts/test-build-release-extraction.sh
 
@@ -176,6 +179,7 @@ if command -v shellcheck >/dev/null 2>&1; then
     scripts/test-canary-drain.sh \
     scripts/test-caddy-upstream.sh \
     scripts/test-preview-router-reap.sh \
+    scripts/test-preview-router.sh \
     scripts/test-build-release-extraction.sh \
     scripts/test-agent-shims.sh \
     scripts/test-agent-worktree-bare.sh \

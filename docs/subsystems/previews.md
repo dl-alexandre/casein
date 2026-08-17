@@ -156,6 +156,14 @@ Configured adapter: `Application.get_env(:casein, :preview_control_adapter, :mem
   for backward compatibility; new logic belongs in the `PreviewCtl` boundary.
 - **Artifact pruning is best-effort** — a screenshot capture never fails because
   cleanup of older PNGs failed.
+- **Own-origin `pv-*` router must pin `X-Forwarded-Proto: https`.**
+  `scripts/preview-router.sh` listens plaintext on `:41080` behind the
+  TLS-terminating manager Caddy. Caddy v2.11.1 `trusted_proxies` does **not**
+  make `{scheme}` become `https`, so the generated Caddyfile sets
+  `header_up X-Forwarded-Proto https` on both `forward_auth` hops and the pane
+  `reverse_proxy`, and builds the login `rd=` from `https://` rather than
+  `{scheme}`. Omitting that lets `Plug.SSL` 301 `/api/previews/authz` to itself
+  (`ERR_TOO_MANY_REDIRECTS`). Guard: `scripts/test-preview-router.sh`.
 - **Ephemeral preview envs are dual-bound (socket + loopback port).**
   `scripts/preview-env.sh` boots each env with `CASEIN_HTTP_SOCKET=<state>/sockets/<id>.sock`
   (the canonical front door — a pure function of the id, collision-free, dialed by
