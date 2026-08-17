@@ -93,10 +93,9 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
         id
         |> PreviewPanes.list_for_workspace()
         |> Enum.reduce(%{}, fn registration, acc ->
-          case registration_origin(registration) do
-            nil -> acc
-            origin -> Map.put_new(acc, origin, registration)
-          end
+          registration
+          |> registration_origins()
+          |> Enum.reduce(acc, &Map.put_new(&2, &1, registration))
         end)
 
       _ ->
@@ -108,6 +107,21 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
   def registration_origin(registration) do
     Url.origin_of(Map.get(registration, :display_url)) ||
       Url.origin_of(Map.get(registration, :url))
+  end
+
+  # Every origin a surface may be recognised by. Own-origin routing displays a
+  # loopback pane at `pv-<port>-<workspace>`, so a registration keyed only by
+  # its display origin never matched the `http://localhost:<port>` surface it
+  # actually belongs to — which is why `pane_registered` and `operator_visible`
+  # read false on every surface even with a live pane bound to one. Indexing
+  # under both origins joins them again; the display origin stays first so the
+  # existing precedence is unchanged.
+  @doc false
+  def registration_origins(registration) do
+    [Map.get(registration, :display_url), Map.get(registration, :url)]
+    |> Enum.map(&Url.origin_of/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
   end
 
   @doc false

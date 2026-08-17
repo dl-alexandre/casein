@@ -138,6 +138,69 @@ defmodule Casein.PreviewsTest do
     assert "https://casein.example.com:443" in origins
   end
 
+  # Own-origin routing displays a loopback preview at `pv-<port>-<workspace>`,
+  # but that origin was never added to the allowlist the changeset validates
+  # `:url` against — so every update_url for such a preview failed validation,
+  # which is what made preview_navigate_pane return a 500.
+  test "update_url allowlists the workspace's own preview proxy origin" do
+    ws = "c32613b7-c8bb-4146-b6f3-9c4fe6f2f8ad"
+    pv = "https://pv-21000-#{ws}.devbox.example.com"
+
+    {:ok, preview} =
+      Previews.open(%{id: ws, metadata: %{detected_ports: [21_000]}}, %{
+        url: "http://localhost:21000"
+      })
+
+    assert {:ok, %Preview{} = updated} =
+             Previews.update_url(preview.id, ws, pv <> "/superadmin")
+
+    assert updated.url == pv <> "/superadmin"
+    assert (pv <> ":443") in updated.metadata["allowed_origins"]
+  end
+
+  test "update_url does not allowlist another workspace's preview proxy origin" do
+    ws = "c32613b7-c8bb-4146-b6f3-9c4fe6f2f8ad"
+    other = "11111111-2222-3333-4444-555555555555"
+
+    {:ok, preview} =
+      Previews.open(%{id: ws, metadata: %{detected_ports: [21_000]}}, %{
+        url: "http://localhost:21000"
+      })
+
+    assert {:error, changeset} =
+             Previews.update_url(
+               preview.id,
+               ws,
+               "https://pv-21000-#{other}.devbox.example.com/"
+             )
+
+    assert {"must be an http or https URL", _} = changeset.errors[:url]
+  end
+
+  # The cap is applied after concatenation, so with `existing` first every
+  # addition past it was discarded — including the pane's own display origin on
+  # a workspace whose registration-time allowlist already ran long.
+  test "update_url keeps the origins it adds even when the allowlist is at its cap" do
+    ws = "c32613b7-c8bb-4146-b6f3-9c4fe6f2f8ad"
+    pv = "https://pv-21000-#{ws}.devbox.example.com"
+    filler = for n <- 1..80, do: "https://filler-#{n}.example.com"
+
+    {:ok, preview} =
+      Previews.open(%{id: ws, metadata: %{detected_ports: [21_000]}}, %{
+        url: "http://localhost:21000",
+        metadata: %{"allowed_origins" => filler ++ ["http://localhost:21000"]}
+      })
+
+    assert length(preview.metadata["allowed_origins"]) > 64
+
+    assert {:ok, %Preview{} = updated} =
+             Previews.update_url(preview.id, ws, pv <> "/dash")
+
+    origins = updated.metadata["allowed_origins"]
+    assert (pv <> ":443") in origins
+    assert length(origins) <= 64
+  end
+
   test "repeated update_url calls do not grow allowed_origins unboundedly" do
     Application.put_env(:casein, :preview_app_url, "https://casein.example.com")
 

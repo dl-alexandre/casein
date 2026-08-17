@@ -10,6 +10,7 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
   use Casein.DataCase, async: false
 
   alias Casein.Agents.PreviewTools
+  alias Casein.Agents.PreviewTools.SurfaceDiscovery
   alias Casein.PreviewActivity
   alias Casein.PreviewControl.Registry
   alias Casein.PreviewPanes
@@ -531,6 +532,32 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
 
   test "registration_origin returns nil when neither url is present" do
     assert PreviewTools.registration_origin(%{}) == nil
+  end
+
+  # An own-origin pane is displayed at `pv-<port>-<workspace>` while the surface
+  # it belongs to is still listed at `http://localhost:<port>`. Indexing under
+  # the display origin alone left every surface reporting pane_registered=false.
+  test "registration_origins indexes an own-origin pane under its loopback origin too" do
+    origins =
+      SurfaceDiscovery.registration_origins(%{
+        display_url:
+          "https://pv-21000-c32613b7-c8bb-4146-b6f3-9c4fe6f2f8ad.devbox.example.com/superadmin",
+        url: "http://localhost:21000/"
+      })
+
+    assert "https://pv-21000-c32613b7-c8bb-4146-b6f3-9c4fe6f2f8ad.devbox.example.com:443" in origins
+    assert "http://localhost:21000" in origins
+  end
+
+  test "registration_origins collapses a registration whose urls share an origin" do
+    assert SurfaceDiscovery.registration_origins(%{
+             display_url: "http://localhost:5173/foo",
+             url: "http://localhost:5173/bar"
+           }) == ["http://localhost:5173"]
+  end
+
+  test "registration_origins is empty when neither url is present" do
+    assert SurfaceDiscovery.registration_origins(%{}) == []
   end
 
   # ---------------------------------------------------------------------------
