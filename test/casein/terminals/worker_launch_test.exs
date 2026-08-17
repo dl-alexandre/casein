@@ -218,4 +218,85 @@ defmodule Casein.Terminals.WorkerLaunchTest do
                )
     end
   end
+
+  describe "headroom refusal is loud to MCP (#970)" do
+    @headroom_output """
+    error: spawn refused — host headroom exhausted (#863)
+           load1 40.00 exceeds nproc 32 × max_ratio 1.0
+           probe: load1=40.00 nproc=32 max_ratio=1.0 mem_available_kb=37748736 min_mem_kb=2097152
+           override: CASEIN_SPAWN_FORCE=1 bash scripts/spawn-agent-worker.sh ...
+    """
+
+    test "exit 75 with a headroom decline is spawn_headroom_exhausted, not a bare exit code" do
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_dry_run_failed,
+           exit_status: 75,
+           output: @headroom_output,
+           message: "spawn dry-run failed (exit 75)"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "opencode",
+                 task_slug: "headroom",
+                 dry_run: true,
+                 runner: runner
+               )
+
+      assert err.error == :spawn_headroom_exhausted
+      assert err.exit_status == 75
+      assert err.reason =~ "load1 40.00 exceeds nproc 32"
+      assert err.load1 == "40.00"
+      assert err.nproc == 32
+      assert err.mem_available_kb == 37_748_736
+      assert err.override == "CASEIN_SPAWN_FORCE=1"
+
+      # MCP clients render McpCtl.Error.summary/1 (= message), not `output`.
+      # A message that is only "spawn dry-run failed (exit 75)" is the defect.
+      refute err.message == "spawn dry-run failed (exit 75)"
+      assert err.message =~ "headroom exhausted"
+      assert err.message =~ "load1 40.00 exceeds nproc 32"
+      assert err.message =~ "CASEIN_SPAWN_FORCE=1"
+
+      summary = McpCtl.Error.summary(err)
+      assert summary =~ "headroom exhausted"
+      assert summary =~ "load1 40.00 exceeds nproc 32"
+
+      text = hd(McpCtl.Error.tool_result(err).content).text
+      assert text =~ "headroom exhausted"
+      assert text =~ "load1 40.00 exceeds nproc 32"
+    end
+
+    test "a headroom refusal without a reason string is a test failure, not a silent cap" do
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_dry_run_failed,
+           exit_status: 75,
+           output:
+             "error: spawn refused — host headroom exhausted (#863)\n       probe: load1=99 nproc=8 max_ratio=1.0 mem_available_kb=1000",
+           message: "spawn dry-run failed (exit 75)"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "claude",
+                 task_slug: "quiet",
+                 dry_run: true,
+                 runner: runner
+               )
+
+      assert err.error == :spawn_headroom_exhausted
+      assert is_binary(err.reason) and err.reason != ""
+      assert McpCtl.Error.summary(err) =~ "headroom"
+    end
+  end
 end

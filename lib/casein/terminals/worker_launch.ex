@@ -192,13 +192,7 @@ defmodule Casein.Terminals.WorkerLaunch do
          }}
 
       {out, code} ->
-        {:error,
-         %{
-           error: :spawn_dry_run_failed,
-           exit_status: code,
-           output: String.trim(out),
-           message: "spawn dry-run failed (exit #{code})"
-         }}
+        {:error, spawn_failure(:spawn_dry_run_failed, code, out)}
     end
   rescue
     e ->
@@ -238,13 +232,7 @@ defmodule Casein.Terminals.WorkerLaunch do
         end
 
       {:ok, {out, code}} ->
-        {:error,
-         %{
-           error: :spawn_failed,
-           exit_status: code,
-           output: String.trim(out),
-           message: "spawn-agent-worker.sh exited #{code}"
-         }}
+        {:error, spawn_failure(:spawn_failed, code, out)}
 
       nil ->
         {:error,
@@ -505,9 +493,94 @@ defmodule Casein.Terminals.WorkerLaunch do
   defp blank_to_nil(s) when is_binary(s), do: s
   defp blank_to_nil(_), do: nil
 
-  defp normalize_error(%{} = err), do: err
+  # #970: MCP clients render McpCtl.Error.summary/1, which is `message` only.
+  # The shell already prints a loud #863 decline (reason + probe + override);
+  # stuffing that only in `output` made exit 75 look like "spawn never happened"
+  # and agents self-parked on a stale-CASEIN_SCRIPTS guess. Classify here so
+  # both the real spawn path and injected runner errors stay loud.
+  defp spawn_failure(kind, code, out) when is_integer(code) do
+    classify_headroom_refusal(%{
+      error: kind,
+      exit_status: code,
+      output: String.trim(to_string(out || "")),
+      message: spawn_failure_message(kind, code)
+    })
+  end
+
+  defp spawn_failure_message(:spawn_dry_run_failed, code),
+    do: "spawn dry-run failed (exit #{code})"
+
+  defp spawn_failure_message(_kind, code), do: "spawn-agent-worker.sh exited #{code}"
+
+  defp normalize_error(%{} = err), do: classify_headroom_refusal(err)
   defp normalize_error(atom) when is_atom(atom), do: %{error: atom}
   defp normalize_error(other), do: %{error: :spawn_failed, detail: inspect(other)}
+
+  defp classify_headroom_refusal(%{exit_status: 75} = err) do
+    output = err |> Map.get(:output) |> to_string()
+
+    if headroom_refusal?(output) do
+      probe = parse_headroom_probe(output)
+      reason = parse_headroom_reason(output) || "host headroom exhausted"
+
+      message =
+        "spawn refused — host headroom exhausted: #{reason}" <>
+          probe_suffix(probe) <>
+          ". Wait for load to fall, or CASEIN_SPAWN_FORCE=1 (operator risk). " <>
+          "Not a stale CASEIN_SCRIPTS."
+
+      err
+      |> Map.merge(probe)
+      |> Map.merge(%{
+        error: :spawn_headroom_exhausted,
+        reason: reason,
+        override: "CASEIN_SPAWN_FORCE=1",
+        message: message
+      })
+    else
+      err
+    end
+  end
+
+  defp classify_headroom_refusal(err), do: err
+
+  defp headroom_refusal?(output) when is_binary(output) do
+    String.contains?(output, "headroom exhausted") or
+      (String.contains?(output, "spawn refused") and String.contains?(output, "probe:"))
+  end
+
+  defp headroom_refusal?(_), do: false
+
+  defp parse_headroom_reason(output) do
+    case Regex.run(~r/error: spawn refused[^\n]*\n\s*([^\n]+)/, output) do
+      [_, reason] -> String.trim(reason)
+      _ -> nil
+    end
+  end
+
+  defp parse_headroom_probe(output) do
+    case Regex.run(
+           ~r/probe:\s*load1=([\d.]+)\s+nproc=(\d+)\s+max_ratio=([\d.]+)\s+mem_available_kb=(\d+)/,
+           output
+         ) do
+      [probe, load1, nproc, max_ratio, mem] ->
+        %{
+          load1: load1,
+          nproc: String.to_integer(nproc),
+          max_ratio: max_ratio,
+          mem_available_kb: String.to_integer(mem),
+          probe: String.trim(probe)
+        }
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp probe_suffix(%{probe: probe}) when is_binary(probe) and probe != "",
+    do: " (#{probe})"
+
+  defp probe_suffix(_), do: ""
 
   defp reject_nils(map) do
     map
