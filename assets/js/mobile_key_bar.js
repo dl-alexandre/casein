@@ -61,6 +61,11 @@ export const MobileKeyBar = {
       e.preventDefault()
       const spec = btn.dataset.keybarKey
 
+      if (spec === "Keyboard") {
+        this._toggleKeyboard()
+        return
+      }
+
       if (spec === "Control" || spec === "Alt") {
         this._cycleModifier(spec)
         // A sticky modifier is useless without the next keystroke — bring the
@@ -559,18 +564,29 @@ export const MobileKeyBar = {
     if (input) input.focus()
   },
 
-  // Re-raise the soft keyboard for chord-starter keys (leader / ctrl / alt)
-  // tapped while it's collapsed — they need a follow-up keystroke the keyboard
-  // provides. iOS only shows the keyboard on a focus() inside a user gesture,
-  // and after dismissal the hidden input usually keeps DOM focus, so a plain
-  // focus() is a no-op; blur then focus forces it back. Runs in the click
-  // gesture. Self-contained keys (esc, tab, arrows…) deliberately don't call
-  // this — they shouldn't pop the keyboard.
+  // Re-raise the soft keyboard from the explicit keyboard control or a
+  // chord-starter key (leader / ctrl / alt) that needs a follow-up keystroke.
+  // The Ghostty hook switches inputmode to text and focuses synchronously in
+  // this click gesture. Self-contained keys (esc, tab, arrows…) deliberately
+  // don't call this — they shouldn't pop the keyboard.
   _summonKeyboard() {
     const input = this._activeInput()
     if (!input) return
     input.blur()
-    input.focus({ preventScroll: true })
+    window.dispatchEvent(
+      new CustomEvent("casein:terminal-soft-keyboard", {detail: {input, open: true}})
+    )
+  },
+
+  _toggleKeyboard() {
+    const input = this._activeInput()
+    if (!input) return
+
+    const open = input.getAttribute("inputmode") !== "text"
+    if (open) input.blur()
+    window.dispatchEvent(
+      new CustomEvent("casein:terminal-soft-keyboard", {detail: {input, open}})
+    )
   },
 
   // Keep visible inputs (palette, search, etc.) above the soft keyboard.
