@@ -71,6 +71,13 @@ import {pingWakeLock} from "./wake_lock"
 import {enterDismissesSoftKeyboard} from "./terminal_soft_keyboard.mjs"
 import {computeTerminalLayout, cropCellMetrics} from "./terminal_layout_model.mjs"
 import {
+  ConnectionEffect,
+  ConnectionEvent,
+  ConnectionPhase,
+  INITIAL_CONNECTION_PHASE,
+  transitionTerminalConnection
+} from "./terminal_connection_model.mjs"
+import {
   isMobileTerminalLayout,
   latchMobileAuthority,
   rowPinAnchorRow,
@@ -1185,7 +1192,7 @@ function pushRefresh(hook, payload) {
   }
 }
 
-function requestTerminalResync(hook, reason, opts = {}) {
+function performTerminalResync(hook, reason) {
   if (!hook?.el?.isConnected) return
   hook.__resyncReason = hook.__resyncReason || reason
   if (hook.__resyncPending) return
@@ -1193,10 +1200,9 @@ function requestTerminalResync(hook, reason, opts = {}) {
   hook.__resyncPending = true
   terminalFrameEvent(hook, "resync_requested", { reason })
 
-  const fitFirst = opts.fit !== false
   requestAnimationFrame(() => {
     if (!hook.el?.isConnected) return
-    if (fitFirst) hook.onWindowResize?.()
+    hook.onWindowResize?.()
 
     requestAnimationFrame(() => {
       if (!hook.el?.isConnected) return
@@ -1208,13 +1214,30 @@ function requestTerminalResync(hook, reason, opts = {}) {
   })
 }
 
+function dispatchTerminalConnectionEvent(hook, event) {
+  const transition = transitionTerminalConnection(
+    hook.__terminalConnectionPhase || INITIAL_CONNECTION_PHASE,
+    event
+  )
+  hook.__terminalConnectionPhase = transition.phase
+
+  for (const effect of transition.effects) {
+    if (effect.type === ConnectionEffect.REQUEST_RESYNC) {
+      performTerminalResync(hook, effect.reason)
+    }
+  }
+}
+
 function dropFrameAndResync(hook, payload, reason) {
   terminalFrameEvent(hook, "frame_dropped", {
     reason,
     frame_seq: payload?.frame_seq,
     frame_epoch: payload?.frame_epoch
   })
-  requestTerminalResync(hook, reason)
+  dispatchTerminalConnectionEvent(hook, {
+    type: ConnectionEvent.FRAME_PROTOCOL_RESYNC,
+    reason
+  })
   return null
 }
 
@@ -1408,6 +1431,10 @@ function renderPatched(hook, payload, upstreamRender) {
 
   const accepted = acceptRenderPayload(hook, payload)
   if (!accepted?.ok) return
+
+  if (hook.__terminalConnectionPhase !== ConnectionPhase.ATTACHED) {
+    dispatchTerminalConnectionEvent(hook, {type: ConnectionEvent.FRAME_ATTACHED})
+  }
 
   // Keep the link store in step with every ACCEPTED frame, even ones whose
   // paint is deferred behind an active selection — the store then converges
@@ -2556,9 +2583,9 @@ function onViewportAuthorityChanged(hook, wasActive) {
   reconcileLayout(hook, nowActive ? "became_authority" : "became_observer", {immediate: true})
 
   if (nowActive) {
-    requestTerminalResync(hook, "became_size_authority")
+    dispatchTerminalConnectionEvent(hook, {type: ConnectionEvent.SIZE_AUTHORITY_GAINED})
   } else {
-    requestTerminalResync(hook, "became_size_observer")
+    dispatchTerminalConnectionEvent(hook, {type: ConnectionEvent.SIZE_AUTHORITY_LOST})
   }
 }
 
@@ -2722,6 +2749,8 @@ const GhosttyTerminal = {
 
   mounted() {
     markTerminalPerf(this, "mount_start")
+    this.__terminalConnectionPhase = INITIAL_CONNECTION_PHASE
+    dispatchTerminalConnectionEvent(this, {type: ConnectionEvent.HOOK_MOUNTED})
     this.__selectionActive = false
     this.__pendingSelectDrag = null
     resetFrameTracking(this)
@@ -2790,7 +2819,10 @@ const GhosttyTerminal = {
       reportViewportActive(this, true)
       if (document.visibilityState !== "visible") return
       terminalFrameEvent(this, "refit_after_visibility", { reason: event?.type || "lifecycle" })
-      requestTerminalResync(this, `lifecycle:${event?.type || "unknown"}`)
+      dispatchTerminalConnectionEvent(this, {
+        type: ConnectionEvent.DOCUMENT_LIFECYCLE_RESUMED,
+        lifecycleType: event?.type || "unknown"
+      })
     }
     document.addEventListener("visibilitychange", this.__onLifecycleRefit)
     window.addEventListener("focus", this.__onLifecycleRefit)
@@ -2800,7 +2832,10 @@ const GhosttyTerminal = {
       if (!terminalRefitMatches(this, event)) return
       const reason = event?.detail?.reason || "terminal_surface_refit"
       terminalFrameEvent(this, "refit_after_visibility", { reason })
-      requestTerminalResync(this, reason)
+      dispatchTerminalConnectionEvent(this, {
+        type: ConnectionEvent.SURFACE_REFIT_REQUESTED,
+        reason
+      })
     }
     window.addEventListener("casein:terminal-refit", this.__onTerminalRefit)
 
@@ -3438,12 +3473,13 @@ const GhosttyTerminal = {
     // stays authoritative instead of decaying to the largest-viewer fallback.
     resetFrameTracking(this, true)
     reportViewportActive(this, true)
-    requestTerminalResync(this, "liveview_reconnected")
+    dispatchTerminalConnectionEvent(this, {type: ConnectionEvent.LIVEVIEW_RECONNECTED})
   },
 
   destroyed() {
     if (this.__ghosttyTerminalDestroying) return
     this.__ghosttyTerminalDestroying = true
+    dispatchTerminalConnectionEvent(this, {type: ConnectionEvent.HOOK_DESTROYED})
 
     if (this.__onTerminalTheme) {
       window.removeEventListener("casein:terminal-theme", this.__onTerminalTheme)
