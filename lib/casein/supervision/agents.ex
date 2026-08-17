@@ -18,6 +18,10 @@ defmodule Casein.Supervision.Agents do
       # one-shot inspector surface intents (diff/run). Process-linked presence.
       {Registry, keys: :duplicate, name: Casein.Inspectors.Diff.ViewerRegistry},
       {Registry, keys: :duplicate, name: Casein.Inspectors.Run.ViewerRegistry},
+      # Same shape, for browser-control actions (reload/focus/visible mutation).
+      # Those are only meaningful with a tab open, and PubSub cannot report that.
+      {Registry,
+       keys: :duplicate, name: Casein.Agents.PreviewTools.BrowserControl.ViewerRegistry},
       Casein.Codex.EventHub,
       Casein.Codex.SessionTitles,
       Casein.Codex.RuntimeSupervisor,

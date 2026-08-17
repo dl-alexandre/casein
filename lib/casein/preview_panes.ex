@@ -330,7 +330,7 @@ defmodule Casein.PreviewPanes do
                       do_show_artifact(
                         registration,
                         artifact_path,
-                        Map.get(registration, :source_url)
+                        snapshot_source_url(registration)
                       )
 
                     {:browser_rehydrate_session_done, registration, result}
@@ -350,7 +350,7 @@ defmodule Casein.PreviewPanes do
           nil,
           nil,
           fn ->
-            do_show_artifact(registration, artifact_path, Map.get(registration, :source_url))
+            do_show_artifact(registration, artifact_path, snapshot_source_url(registration))
           end,
           state
         )
@@ -1200,8 +1200,8 @@ defmodule Casein.PreviewPanes do
   end
 
   defp do_navigate(pane_id, path_or_url) do
-    with %{display_url: display_url} = registration <- get_by_pane(pane_id),
-         new_display_url <- Url.resolve_against(path_or_url, display_url),
+    with %{} = registration <- get_by_pane(pane_id),
+         new_display_url <- Url.resolve_against(path_or_url, navigation_base_url(registration)),
          :ok <- require_trusted_preview_url(new_display_url),
          control_url <- control_url_for(new_display_url) do
       case PreviewControl.navigate(
@@ -1586,7 +1586,7 @@ defmodule Casein.PreviewPanes do
   end
 
   defp ensure_snapshot_registration(%{display_url: display_url}) when is_binary(display_url) do
-    if String.contains?(display_url, "/preview-artifacts/") do
+    if artifact_url?(display_url) do
       :ok
     else
       {:error, :not_snapshot_preview}
@@ -1594,6 +1594,49 @@ defmodule Casein.PreviewPanes do
   end
 
   defp ensure_snapshot_registration(_), do: {:error, :not_snapshot_preview}
+
+  defp artifact_url?(url) when is_binary(url),
+    do: String.contains?(url, "/preview-artifacts/")
+
+  defp artifact_url?(_url), do: false
+
+  # What a relative path should be resolved against.
+  #
+  # A snapshot pane displays a `/preview-artifacts/...` path on the *Casein*
+  # origin, so resolving "/settings" against `display_url` rebuilt the URL on the
+  # cockpit origin and silently moved the pane off the app it was previewing.
+  # Nothing caught it downstream: the cockpit origin is self-included in the
+  # pane's allowed origins, so the trust check passed and it persisted as a live
+  # iframe pointing at Casein serving an app path.
+  #
+  # `source_url` is exactly the record of the real page behind a snapshot, so
+  # navigate relative to that. Panes registered before snapshots recorded one
+  # fall back to the old behaviour rather than losing navigation entirely.
+  defp navigation_base_url(registration) do
+    display_url = Map.get(registration, :display_url)
+
+    with true <- artifact_url?(display_url),
+         source_url when is_binary(source_url) and source_url != "" <-
+           Map.get(registration, :source_url) do
+      source_url
+    else
+      _ -> display_url
+    end
+  end
+
+  # The real page a snapshot is being taken of. Already-snapshot panes keep the
+  # source they recorded — overwriting it with the artifact path would erase the
+  # only pointer back to the app.
+  defp snapshot_source_url(registration) do
+    case Map.get(registration, :source_url) do
+      source_url when is_binary(source_url) and source_url != "" ->
+        source_url
+
+      _ ->
+        display_url = Map.get(registration, :display_url)
+        if artifact_url?(display_url), do: nil, else: display_url
+    end
+  end
 
   defp snapshot_click_target(registration, coords) do
     with {:ok, x} <- integer_coord(coords, "x"),

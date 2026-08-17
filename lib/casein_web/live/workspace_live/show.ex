@@ -2580,6 +2580,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         _ = BrowserControl.subscribe(workspace_id)
+        # Presence must be registered with the subscription, not separately:
+        # BrowserControl reports "no_viewer" off this registry, and a tab that
+        # subscribed without registering would be told nobody is watching it.
+        _ = BrowserControl.register_viewer(workspace_id)
       end
     end
 

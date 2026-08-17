@@ -4,8 +4,20 @@ defmodule Casein.Agents.PreviewTools.BrowserControl do
 
   The server cannot directly manipulate a human's browser tab, but it can ask
   connected workspace LiveViews to run narrow client-side actions through
-  `push_event/3`. These broadcasts are best-effort: callers get a queued status,
-  not a delivery receipt from every open tab.
+  `push_event/3`.
+
+  Every action here is viewer-gated: the only subscriber to the broadcast topic
+  is a *connected* `WorkspaceLive.Show`, and the acks come from its JS hook. With
+  no tab open there is nothing to receive the message and nothing that can ever
+  ack it. `Phoenix.PubSub.broadcast/3` returns `:ok` with zero subscribers, so
+  presence is tracked in a duplicate `Registry` instead — the same approach
+  `Casein.Inspectors.Diff` uses, and for the same reason: so a caller can tell
+  "nobody is watching" from "a viewer got it".
+
+  Statuses are `"delivered"` (a viewer was present and the broadcast went to it —
+  not an ack) and `"no_viewer"` (nothing happened, and nothing will). Never
+  queues: there is no buffer and no replay on viewer mount, so reporting queued
+  work would be a claim this module cannot honour.
   """
 
   alias Casein.Previews.Deps
@@ -14,6 +26,7 @@ defmodule Casein.Agents.PreviewTools.BrowserControl do
   @pubsub Casein.PubSub
   @topic_prefix "workspace_browser:"
   @default_action_timeout_ms 1_000
+  @viewer_registry __MODULE__.ViewerRegistry
 
   @type action :: String.t()
   @type result :: %{
@@ -30,6 +43,40 @@ defmodule Casein.Agents.PreviewTools.BrowserControl do
   end
 
   def subscribe(_), do: {:error, :workspace_id_required}
+
+  @doc """
+  Register the calling process as a connected browser-control viewer.
+
+  Process-linked via a duplicate Registry, so the registration vanishes when the
+  LiveView exits with no explicit unregister. Call this wherever `subscribe/1` is
+  called — presence and subscription must describe the same tab or the status
+  this module reports is worse than useless.
+  """
+  @spec register_viewer(String.t()) :: :ok | {:error, term()}
+  def register_viewer(workspace_id) when is_binary(workspace_id) and workspace_id != "" do
+    case Registry.register(@viewer_registry, workspace_id, true) do
+      {:ok, _pid} -> :ok
+      {:error, {:already_registered, _}} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def register_viewer(_), do: {:error, :workspace_id_required}
+
+  @doc "True when at least one workspace LiveView is registered for the workspace."
+  @spec viewer_present?(String.t()) :: boolean()
+  def viewer_present?(workspace_id) when is_binary(workspace_id) and workspace_id != "" do
+    match?([_ | _], Registry.lookup(@viewer_registry, workspace_id))
+  end
+
+  def viewer_present?(_), do: false
+
+  # A workspace id can fan out to several viewer ids (linked manager/folder
+  # workspaces), and a viewer watching any one of them will receive the
+  # broadcast, so presence is the union rather than the caller's id alone.
+  defp any_viewer_present?(workspace_ids) do
+    Enum.any?(workspace_ids, &viewer_present?/1)
+  end
 
   @doc "Ask connected Casein workspace viewers to reload the active preview iframe."
   @spec reload_preview_iframe(map(), keyword()) :: {:ok, result()} | {:error, term()}
@@ -61,6 +108,43 @@ defmodule Casein.Agents.PreviewTools.BrowserControl do
   def focus_preview_pane(_workspace, _tmux_session, _pane_id, _opts),
     do: {:error, :pane_id_required}
 
+  # The ack can only come from a viewer's JS hook. With no viewer, waiting the
+  # full timeout buys nothing and reports `visible_action_ack_timeout`, which
+  # reads like the hook misbehaved and sends callers chasing reloads that also
+  # cannot be delivered. Say what is actually wrong instead.
+  defp dispatch_visible_action(workspace_ids, workspace, pane_id, action, target, meta) do
+    if any_viewer_present?(workspace_ids) do
+      Enum.each(workspace_ids, &PreviewActivity.subscribe/1)
+
+      payload =
+        meta
+        |> Keyword.fetch!(:opts)
+        |> Keyword.put(:pane_id, pane_id)
+        |> Keyword.put(:request_id, Keyword.fetch!(meta, :request_id))
+        |> Keyword.put(:preview_action, action)
+        |> Keyword.put(:preview_target, target)
+
+      with {:ok, queued} <- broadcast_with_request_id(workspace, "preview_pane_action", payload) do
+        await_preview_action_ack(
+          workspace_ids,
+          pane_id,
+          Keyword.fetch!(meta, :request_id),
+          Keyword.fetch!(meta, :timeout),
+          queued
+        )
+      end
+    else
+      {:error,
+       %{
+         status: "no_viewer",
+         reason: :no_connected_viewer,
+         pane_id: pane_id,
+         request_id: Keyword.fetch!(meta, :request_id),
+         workspace_id: Keyword.fetch!(meta, :workspace_id)
+       }}
+    end
+  end
+
   @doc "Ask a connected Casein preview pane iframe to run a visible mutation and wait for ack."
   @spec mutate_preview_pane(map(), String.t(), String.t(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -73,19 +157,14 @@ defmodule Casein.Agents.PreviewTools.BrowserControl do
     timeout = Keyword.get(opts, :timeout_ms, @default_action_timeout_ms)
 
     if is_binary(workspace_id) and workspace_id != "" do
-      workspace_ids = Deps.impl(:workspaces).viewer_ids(workspace_id, resolve_remote?: true)
-      Enum.each(workspace_ids, &PreviewActivity.subscribe/1)
-
-      payload =
-        opts
-        |> Keyword.put(:pane_id, pane_id)
-        |> Keyword.put(:request_id, request_id)
-        |> Keyword.put(:preview_action, action)
-        |> Keyword.put(:preview_target, target)
-
-      with {:ok, queued} <- broadcast_with_request_id(workspace, "preview_pane_action", payload) do
-        await_preview_action_ack(workspace_ids, pane_id, request_id, timeout, queued)
-      end
+      workspace_id
+      |> then(&Deps.impl(:workspaces).viewer_ids(&1, resolve_remote?: true))
+      |> dispatch_visible_action(workspace, pane_id, action, target,
+        opts: opts,
+        request_id: request_id,
+        timeout: timeout,
+        workspace_id: workspace_id
+      )
     else
       {:error, :workspace_id_required}
     end
@@ -105,7 +184,9 @@ defmodule Casein.Agents.PreviewTools.BrowserControl do
       id when is_binary(id) and id != "" ->
         payload = event_payload(id, action, opts)
 
-        for viewer_id <- Deps.impl(:workspaces).viewer_ids(id, resolve_remote?: true) do
+        viewer_ids = Deps.impl(:workspaces).viewer_ids(id, resolve_remote?: true)
+
+        for viewer_id <- viewer_ids do
           :ok =
             Phoenix.PubSub.broadcast(
               @pubsub,
@@ -116,7 +197,7 @@ defmodule Casein.Agents.PreviewTools.BrowserControl do
 
         {:ok,
          %{
-           status: "queued",
+           status: if(any_viewer_present?(viewer_ids), do: "delivered", else: "no_viewer"),
            action: action,
            workspace_id: id,
            request_id: payload["request_id"]

@@ -651,6 +651,15 @@ defmodule Casein.PreviewPanesTest do
 
     assert display_url == snapshot.display_url
 
+    # A relative path from a snapshot must resolve against the real site, not
+    # against the `/preview-artifacts/` path we are serving it from. Resolving
+    # against the artifact rebuilt the URL on the Casein origin, and because that
+    # origin is self-allowlisted nothing downstream refused it — the pane
+    # silently stopped previewing the app.
+    assert {:ok, onward} = PreviewPanes.navigate(pane_id, "/packages")
+    assert onward.source_url == "https://hex.pm:443/packages"
+    refute onward.source_url =~ "preview-artifacts"
+
     # Navigating onward to an embeddable site clears the stale source URL.
     assert {:ok, framed} = PreviewPanes.navigate(pane_id, "http://localhost:5173/back")
     assert framed.source_url == nil
@@ -686,6 +695,51 @@ defmodule Casein.PreviewPanesTest do
 
     assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: display_url}}
     assert display_url == snapshot.display_url
+
+    # The page being snapshotted is recorded, so a later relative navigation has
+    # something to resolve against. Without it the pane's only remembered URL is
+    # the artifact path, and navigating moves it onto the Casein origin.
+    assert snapshot.source_url == registration.display_url
+
+    assert Repo.get!(Preview, snapshot.preview_id).metadata["source_url"] ==
+             registration.display_url
+  end
+
+  test "show_artifact keeps the original source when re-snapshotting an already-snapshot pane" do
+    {_root, path} = seed_workspace!()
+    session = "casein_ws_snapshot_resnap"
+    pane_id = "%45"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    original_display_url = registration.display_url
+
+    assert {:ok, first} =
+             PreviewPanes.show_artifact(
+               registration.control_session_id,
+               "/preview-artifacts/#{workspace_id}/1.png"
+             )
+
+    assert first.source_url == original_display_url
+
+    # Re-snapshotting must not overwrite the source with the artifact path — that
+    # would erase the only pointer back to the app being previewed.
+    assert {:ok, second} =
+             PreviewPanes.show_artifact(
+               registration.control_session_id,
+               "/preview-artifacts/#{workspace_id}/2.png"
+             )
+
+    assert second.source_url == original_display_url
+    refute second.source_url =~ "preview-artifacts"
   end
 
   test "click_snapshot forwards a coordinate click and refreshes the snapshot artifact" do
