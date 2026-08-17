@@ -64,12 +64,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
       end)
 
     ~H"""
-    <%!-- The negative margin bleeds the terminal to the shell's edges, so it must
-         mirror workspace_shell's padding at every breakpoint (px-4 / max-sm:px-2 /
-         lg:px-6). Without the max-sm pair the shell overhangs the viewport by 8px
-         a side under 640px, and the mobile focus crop then parks the focused pane's
-         first glyph column in that off-screen strip. --%>
-    <section class="terminal-shell -mx-4 flex h-full min-h-0 flex-col max-sm:-mx-2 lg:-mx-6">
+    <%!-- No horizontal bleed here. This used to carry -mx-4 / max-sm:-mx-2 /
+         lg:-mx-6 to cancel workspace_shell's padding and run the terminal to the
+         window edges, but the bleed never reached them: the only parent this
+         renders under is #terminal-region (workspace_shell.ex), which sits INSIDE
+         that padding and clips with overflow-hidden. So the margin bought nothing
+         visible and instead pushed the outermost 24px of live grid — the pre's
+         own 8px padding plus two whole glyph columns — out of the clip on each
+         side, while the fit still measured the wider bled box. Terminals ran ~6
+         columns wider than what was on screen, and every row lost its first two
+         characters — "./casein_core" painted as "casein_core". Sized to its own
+         slot the grid is fully visible, and the painted footprint is unchanged.
+
+         This also subsumes #919: with no bleed there is no breakpoint pair to get
+         wrong, so the shell can no longer overhang the viewport under 640px. --%>
+    <section class="terminal-shell flex h-full min-h-0 flex-col">
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
         <button
           :if={@agent_approval_count > 0}
