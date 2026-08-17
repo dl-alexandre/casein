@@ -336,6 +336,9 @@ MIX="${MIX[*]}" ./scripts/check-vendor-pin-guard.sh
 log "checking config-seam module-literal defaults stay out of xref cycles (#347/#348)"
 MIX="${MIX[*]}" ./scripts/check-config-seam-guard.sh
 
+log "checking preview modules reach core only through the deps seam (#982, soft canary)"
+MIX="${MIX[*]}" ./scripts/check-layering-guard.sh
+
 if [[ -x "${ROOT}/scripts/preview-env.sh" ]]; then
   preview_json="$(
     bash "${ROOT}/scripts/preview-env.sh" tidewave-latest 2>/dev/null || true
