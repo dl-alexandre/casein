@@ -188,6 +188,9 @@ run_repair_tmux_env() {
   out="$(mktemp)"
   err="$(mktemp)"
 
+  # 0 = repaired or skipped:not_casein_session (benign). Non-zero is an
+  # unmet precondition (unknown workspace / missing scoped token) or a hard
+  # failure. Do not warn on 0 — that would flag every non-casein session.
   if ! bash "${ROOT}/scripts/lib/repair-tmux-env.sh" "${args[@]}" >"$out" 2>"$err"; then
     detail="$(<"$err")"
     if [[ -s "$out" ]]; then

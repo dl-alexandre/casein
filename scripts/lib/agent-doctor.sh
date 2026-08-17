@@ -841,11 +841,33 @@ main() {
   esac
 
   if [[ -n "${TMUX:-}" ]]; then
-    if bash "${ROOT}/scripts/lib/repair-tmux-env.sh" >/dev/null 2>&1; then
-      pass "tmux session env repaired"
-    else
-      warn "tmux session env repair skipped or failed"
-    fi
+    local repair_out repair_err repair_status repair_outcome
+    repair_out="$(mktemp)"
+    repair_err="$(mktemp)"
+    set +e
+    bash "${ROOT}/scripts/lib/repair-tmux-env.sh" >"$repair_out" 2>"$repair_err"
+    repair_status=$?
+    set -e
+    repair_outcome="$(tr -d '\n' <"$repair_out")"
+    rm -f "$repair_out" "$repair_err"
+    case "$repair_outcome" in
+      repaired)
+        pass "tmux session env repaired"
+        ;;
+      skipped:not_casein_session)
+        warn "tmux session env skipped (not a casein workspace session)"
+        ;;
+      skipped:* | failed:*)
+        warn "tmux session env ${repair_outcome}"
+        ;;
+      *)
+        if [[ "$repair_status" -eq 0 ]]; then
+          pass "tmux session env repaired"
+        else
+          warn "tmux session env repair skipped or failed"
+        fi
+        ;;
+    esac
   fi
 
   echo "==> summary: ${PASS} passed, ${WARN} warnings, ${FAIL} failures"

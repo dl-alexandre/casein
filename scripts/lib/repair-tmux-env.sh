@@ -11,6 +11,22 @@
 #   bash scripts/lib/repair-tmux-env.sh                 # current tmux session
 #   bash scripts/lib/repair-tmux-env.sh <session_name>  # explicit session
 #
+# Stdout is one machine-readable outcome:
+#   repaired
+#   skipped:not_casein_session
+#   skipped:unknown_workspace
+#   skipped:no_scoped_token
+#   failed:workspace_listing
+#
+# Exit codes — do not collapse these:
+#   0  repaired, or skipped:not_casein_session (benign no-op)
+#   1  hard failure (missing token, no session, listing failed)
+#   2  skipped:unknown_workspace (actionable catalog miss)
+#   3  skipped:no_scoped_token (actionable unpaired workspace)
+#
+# A non-casein session is not an error. A casein session that should have
+# been repaired and was not, is. Launchers must warn only on non-zero.
+#
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -26,6 +42,7 @@ source "${ROOT}/scripts/lib/agent-auth-profile.sh"
 source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 
 log() { printf '>>> %s\n' "$*" >&2; }
+emit_outcome() { printf '%s\n' "$1"; }
 
 # Listing workspaces may need the global/admin token; it is never pushed into
 # a session — agent panes only receive workspace-scoped tokens, because the
@@ -37,24 +54,51 @@ fi
 
 if [[ -z "$TOKEN" ]]; then
   echo "error: CASEIN_API_TOKEN missing (export it or set ${ENV_FILE})" >&2
+  emit_outcome "failed:missing_token"
   exit 1
 fi
 
 declare -A WORKSPACE_IDS=()
-while IFS=$'\t' read -r name id; do
-  [[ -n "$name" && -n "$id" ]] || continue
-  WORKSPACE_IDS["$name"]="$id"
-done < <(
-  curl -fsS -H "authorization: Bearer ${TOKEN}" "${LOCAL_URL}/api/workspaces" 2>/dev/null |
-    python3 -c "
+WORKSPACE_IDS_LOADED=0
+
+# A 403/empty catalog is a single credential problem, not N per-session
+# "unknown workspace" skips. Fail the listing itself.
+load_workspace_ids() {
+  if [[ "${WORKSPACE_IDS_LOADED}" -eq 1 ]]; then
+    return 0
+  fi
+
+  local body parsed
+
+  if ! body="$(curl -fsS -H "authorization: Bearer ${TOKEN}" "${LOCAL_URL}/api/workspaces")"; then
+    echo "error: failed to list workspaces from ${LOCAL_URL}/api/workspaces" \
+      "(token may lack admin listing; empty catalog is not assumed)" >&2
+    emit_outcome "failed:workspace_listing"
+    return 1
+  fi
+
+  if ! parsed="$(
+    printf '%s' "$body" | python3 -c "
 import json, sys
 for ws in json.load(sys.stdin):
     name = ws.get('name') or ''
     ws_id = ws.get('id') or ''
     if name and ws_id:
         print(f\"{name}\t{ws_id}\")
-" 2>/dev/null || true
-)
+"
+  )"; then
+    echo "error: could not parse /api/workspaces response" >&2
+    emit_outcome "failed:workspace_listing"
+    return 1
+  fi
+
+  while IFS=$'\t' read -r name id; do
+    [[ -n "$name" && -n "$id" ]] || continue
+    WORKSPACE_IDS["$name"]="$id"
+  done <<<"$parsed"
+
+  WORKSPACE_IDS_LOADED=1
+}
 
 default_checkout() {
   local workspace_name="$1"
@@ -207,15 +251,19 @@ repair_session() {
 
   if [[ ! "$session" =~ ^casein_([^_]+)_ ]]; then
     log "skip ${session} (not a casein workspace session)"
+    emit_outcome "skipped:not_casein_session"
     return 0
   fi
+
+  load_workspace_ids || return 1
 
   workspace_name="${BASH_REMATCH[1]}"
   workspace_id="${WORKSPACE_IDS[$workspace_name]:-}"
 
   if [[ -z "$workspace_id" ]]; then
     log "skip ${session} (unknown workspace ${workspace_name})"
-    return 0
+    emit_outcome "skipped:unknown_workspace"
+    return 2
   fi
 
   local agent_token
@@ -224,7 +272,8 @@ repair_session() {
   if [[ -z "$agent_token" ]]; then
     log "skip ${session}: no workspace-scoped token for ${workspace_name}" \
       "(run scripts/refresh-devbox-agent-pairing.sh to mint one)"
-    return 0
+    emit_outcome "skipped:no_scoped_token"
+    return 3
   fi
 
   checkout="$(default_checkout "$workspace_name")"
@@ -291,6 +340,7 @@ PY
   refresh_live_panes "$session" "$env_sh"
 
   log "repaired ${session} (${workspace_name})"
+  emit_outcome "repaired"
 }
 
 resolve_session() {
@@ -310,6 +360,7 @@ resolve_session() {
 session="$(resolve_session "${1:-}" || true)"
 if [[ -z "$session" ]]; then
   echo "error: no tmux session to repair (pass session name or run inside tmux)" >&2
+  emit_outcome "failed:no_session"
   exit 1
 fi
 

@@ -158,8 +158,15 @@ slices; creating the worktree alone does not start an agent or alter the web UI.
    Casein. Every launch also stamps the tmux pane options `@casein_paired`
    (`1`/`0`) and `@casein_paired_reason`; topology reads them
    (`TmuxCtl.Client` `list-panes` formats → pane `paired`/`paired_reason`)
-   and the viewer badges unpaired panes in the terminal chrome — pairing
-   failures are visible in the UI, never as terminal output.
+    and the viewer badges unpaired panes in the terminal chrome — pairing
+    failures are visible in the UI, never as terminal output.
+    `scripts/lib/repair-tmux-env.sh` prints a machine-readable outcome
+    (`repaired` / `skipped:<reason>` / `failed:<reason>`) and uses distinct
+    exit codes: `0` is repaired or a benign non-casein session, `2`/`3` are
+    unmet preconditions (unknown workspace / missing scoped token), `1` is a
+    hard failure (including a 403 on `/api/workspaces`). The launcher warns
+    only on non-zero. `refresh-tmux-pane-env.sh` visits every session, then
+    exits `1` if any casein session was left unrepaired.
 
 **An agent calling a tool (request lifecycle):**
 

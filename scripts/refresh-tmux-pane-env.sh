@@ -7,6 +7,12 @@
 #   bash scripts/refresh-tmux-pane-env.sh --workspace-prefix NAME   # casein_NAME_* only
 #   bash scripts/refresh-tmux-pane-env.sh <session>                   # one session
 #
+# Visits every matching session even when one cannot be repaired. Exit 0
+# only when every session was repaired or was a benign non-casein skip.
+# A casein session that skipped (unknown workspace / missing token) or
+# failed listing makes this command exit 1 so a fleet refresh cannot
+# report "done" while leaving panes unrepaired.
+#
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,6 +25,32 @@ log() { printf '>>> %s\n' "$*"; }
 
 WORKSPACE_PREFIX=""
 SESSIONS=()
+UNREPAIRED=0
+
+# Capture repair status per session. A bare `bash "$REPAIR"` under `set -e`
+# would abort the loop on the first actionable skip (exit 2/3) and hide the
+# rest of the fleet. Continue, then fail the command if any casein session
+# that should have been repaired was not.
+run_repair() {
+  local session="$1"
+  local out err status outcome
+  out="$(mktemp)"
+  err="$(mktemp)"
+  set +e
+  bash "$REPAIR" "$session" >"$out" 2>"$err"
+  status=$?
+  set -e
+  outcome="$(tr -d '\n' <"$out")"
+  if [[ -s "$err" ]]; then
+    cat "$err" >&2
+  fi
+  rm -f "$out" "$err"
+
+  if [[ "$status" -ne 0 ]]; then
+    log "unrepaired ${session} (${outcome:-exit ${status}})"
+    UNREPAIRED=$((UNREPAIRED + 1))
+  fi
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -27,7 +59,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      sed -n '2,9p' "$0"
+      sed -n '2,14p' "$0"
       exit 0
       ;;
     *)
@@ -39,7 +71,7 @@ done
 
 if [[ ${#SESSIONS[@]} -gt 0 ]]; then
   for session in "${SESSIONS[@]}"; do
-    bash "$REPAIR" "$session"
+    run_repair "$session"
   done
 else
   pattern='^casein_'
@@ -54,8 +86,13 @@ else
   fi
 
   for session in "${sessions[@]}"; do
-    bash "$REPAIR" "$session"
+    run_repair "$session"
   done
+fi
+
+if [[ "$UNREPAIRED" -ne 0 ]]; then
+  log "done (${UNREPAIRED} session(s) unrepaired)"
+  exit 1
 fi
 
 log "done"
