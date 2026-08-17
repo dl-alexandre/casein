@@ -142,6 +142,42 @@ defmodule Casein.Terminals.FileLinkScannerTest do
                %{row: 5, path: "mix.exs", line: nil}
              ] = FileLinkScanner.scan_rows(rows)
     end
+
+    test "reconstructs a path soft-wrapped before its extension" do
+      path = "lib/casein/file_panes/link_resolver.ex"
+      rows = [{4, "lib/casein/file_panes/link_reso"}, {5, "lver.ex   "}]
+
+      assert [
+               %{row: 4, from: 0, to: 30, path: ^path, line: nil},
+               %{row: 5, from: 0, to: 6, path: ^path, line: nil}
+             ] = FileLinkScanner.scan_rows(rows)
+    end
+
+    test "does not join rows that are non-contiguous on screen" do
+      rows = [{4, "lib/casein/file_panes/link_reso"}, {7, "lver.zzz"}]
+
+      assert [] = FileLinkScanner.scan_rows(rows)
+    end
+
+    test "does not join a continuation that starts a new path" do
+      rows = [{4, "lib/casein/file_panes/link_reso"}, {5, "/new/path.ex"}]
+
+      assert [%{row: 5, path: "/new/path.ex"}] = FileLinkScanner.scan_rows(rows)
+    end
+
+    test "does not join across whitespace in a continuation row" do
+      rows = [{4, "lib/casein/file_panes/link_reso"}, {5, "lver other.ex"}]
+
+      refute Enum.any?(FileLinkScanner.scan_rows(rows), fn link ->
+               link.path == "lib/casein/file_panes/link_resolver.ex"
+             end)
+    end
+
+    test "does not join a left split pane that stops before the rightmost cell" do
+      rows = [{4, "lib/casein/file_panes/link_reso│ right"}, {5, "lver.zzz│ pane"}]
+
+      assert [] = FileLinkScanner.scan_rows(rows)
+    end
   end
 
   describe "row_text/1" do

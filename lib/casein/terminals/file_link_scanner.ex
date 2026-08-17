@@ -1,7 +1,7 @@
 defmodule Casein.Terminals.FileLinkScanner do
   @moduledoc """
-  Pure per-row scanner for workspace file-path candidates in rendered
-  terminal rows (the `ghostty:render` frame hot path).
+  Pure scanner for workspace file-path candidates in rendered terminal rows
+  (the `ghostty:render` frame hot path).
 
   Unlike `Casein.Links.Scanner` — the permissive URL/path candidate scanner
   behind the workspace open API — this scanner runs inside
@@ -28,9 +28,16 @@ defmodule Casein.Terminals.FileLinkScanner do
 
   Candidates are *plausible spans only* — no filesystem access happens here.
   Callers validate them with `Casein.FilePanes.LinkResolver`.
+
+  Ghostty's rendered cell grid does not currently expose its soft-wrap marker.
+  As with `Casein.Terminals.WebLinkScanner`, `scan_rows/1` conservatively joins
+  a path to immediately following rows only when its span reaches the
+  rightmost cell. Every resulting row segment carries the complete path, so
+  clicking any part of a wrapped path opens the same destination.
   """
 
   @max_candidates_per_row 8
+  @max_wrapped_rows 16
 
   # Mirrors Casein.Links.Scanner's allowlist (kept local: that module does not
   # export it, and the two scanners evolve independently).
@@ -72,6 +79,16 @@ defmodule Casein.Terminals.FileLinkScanner do
     (?::(\d+)(?::(\d+))?)?
   >x
 
+  # A slash path can wrap before its extension, so unlike an URL it may not
+  # produce a complete per-row match to seed reconstruction. Recognise only a
+  # plausible slash-path prefix that reaches the rightmost cell; it is never
+  # emitted unless re-scanning contiguous joined rows yields a complete path.
+  @wrapped_prefix_regex ~r<
+    (?<![\w./@+-])
+    (?:\.{0,2}/|(?:[\w.@+-]+/)+)
+    [\w.@+-]*$
+  >x
+
   @type link :: %{
           from: non_neg_integer(),
           to: non_neg_integer(),
@@ -85,11 +102,21 @@ defmodule Casein.Terminals.FileLinkScanner do
   """
   @spec scan_rows([{non_neg_integer(), String.t()}]) :: [map()]
   def scan_rows(rows) when is_list(rows) do
-    Enum.flat_map(rows, fn {index, text} ->
-      text
-      |> scan_row()
-      |> Enum.map(&Map.put(&1, :row, index))
+    rows
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {{index, text}, position} ->
+      links = scan_row(text)
+
+      segments =
+        Enum.flat_map(links, &link_segments(rows, position, index, text, &1))
+
+      if Enum.any?(links, &(&1.to == String.length(text) - 1)) do
+        segments
+      else
+        segments ++ wrapped_prefix_segments(rows, position, text)
+      end
     end)
+    |> Enum.uniq_by(&{&1.row, &1.from, &1.to})
   end
 
   @doc """
@@ -126,6 +153,113 @@ defmodule Casein.Terminals.FileLinkScanner do
   defp cell_char({char, _fg, _bg, _flags}) when is_binary(char) and char != "", do: char
   defp cell_char([char | _rest]) when is_binary(char) and char != "", do: char
   defp cell_char(_cell), do: " "
+
+  defp link_segments(rows, position, index, text, link) do
+    if link.to == String.length(text) - 1 do
+      extend_wrapped_link(rows, position, link) ||
+        [Map.put(link, :row, index)]
+    else
+      [Map.put(link, :row, index)]
+    end
+  end
+
+  defp wrapped_prefix_segments(rows, position, text) do
+    case :binary.match(text, [".", "/"]) do
+      :nomatch ->
+        []
+
+      _ ->
+        if row_filled?(text) do
+          @wrapped_prefix_regex
+          |> Regex.scan(text, return: :index)
+          |> Enum.take(1)
+          |> Enum.flat_map(fn [{start, len} | _] ->
+            prefix = %{
+              from: byte_to_col(text, start),
+              to: byte_to_col(text, start + len) - 1,
+              path: binary_part(text, start, len),
+              line: nil
+            }
+
+            extend_wrapped_link(rows, position, prefix) || []
+          end)
+        else
+          []
+        end
+    end
+  end
+
+  defp extend_wrapped_link(rows, position, link) do
+    wrapped_rows =
+      rows
+      |> Enum.drop(position)
+      |> Enum.take(@max_wrapped_rows)
+      |> take_contiguous_rows()
+
+    joined = Enum.map_join(wrapped_rows, fn {_index, text} -> text end)
+
+    with true <- safe_continuation?(wrapped_rows),
+         %{to: stop, path: path, line: line} <-
+           Enum.find(scan_row(joined), &(&1.from == link.from and &1.to > link.to)) do
+      split_link(wrapped_rows, link.from, stop, path, line)
+    else
+      _ -> nil
+    end
+  end
+
+  defp safe_continuation?([_first, {_index, continuation} | _]) do
+    continuation = String.trim_trailing(continuation)
+
+    continuation != "" and
+      not Regex.match?(~r/\s/u, continuation) and
+      not Regex.match?(~r<^(?:/|\.{1,2}/)>, continuation)
+  end
+
+  defp safe_continuation?(_rows), do: false
+
+  defp take_contiguous_rows([]), do: []
+
+  defp take_contiguous_rows([first | rest]) do
+    rest
+    |> take_contiguous_rows([first])
+    |> Enum.reverse()
+  end
+
+  defp take_contiguous_rows(
+         [{index, _text} = row | rest],
+         [{previous_index, previous_text} | _] = taken
+       )
+       when index == previous_index + 1 do
+    if row_filled?(previous_text) do
+      take_contiguous_rows(rest, [row | taken])
+    else
+      taken
+    end
+  end
+
+  defp take_contiguous_rows(_rest, taken), do: taken
+
+  defp split_link(rows, start, stop, path, line) do
+    {_offset, segments} =
+      Enum.reduce_while(rows, {0, []}, fn {row, text}, {offset, segments} ->
+        width = String.length(text)
+        row_start = max(start - offset, 0)
+        row_stop = min(stop - offset, width - 1)
+
+        if row_stop < 0 do
+          {:cont, {offset + width, segments}}
+        else
+          segment = %{row: row, from: row_start, to: row_stop, path: path, line: line}
+          next = {offset + width, [segment | segments]}
+
+          if stop < offset + width, do: {:halt, next}, else: {:cont, next}
+        end
+      end)
+
+    Enum.reverse(segments)
+  end
+
+  defp row_filled?(text), do: text != "" and not Regex.match?(~r/\s$/u, text)
 
   defp do_scan(text) do
     url_ranges = url_ranges(text)
