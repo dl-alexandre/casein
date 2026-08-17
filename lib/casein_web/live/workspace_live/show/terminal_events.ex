@@ -11,6 +11,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   import Phoenix.LiveView
 
   alias Casein.Terminals
+  alias Casein.Terminals.AgentState
+  alias Casein.Terminals.NextPrompt
+  alias Casein.Terminals.PaneProcessLiveness
+  alias Casein.Terminals.PaneState
+  alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.WindowTrash
   alias Casein.Attention.Delivery
   alias Casein.Workspaces.Scratch
@@ -34,6 +39,31 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   def handle_event("terminal:attention_surface", %{"state" => state}, socket) do
     # Normalizes focus input for Delivery.delivery_decision/1 — not classification.
     {:noreply, assign(socket, :attention_surface_state, Delivery.surface_state(state))}
+  end
+
+  def handle_event("terminal:compose_agent_message", params, socket) do
+    with true <- Application.get_env(:casein, :mobile_agent_composer, false),
+         {:ok, pane} <- composer_agent_pane(socket, params["pane_id"]),
+         {:ok, text} <- composer_text(params["text"]),
+         {:ok, action} <- composer_action(params["action"]) do
+      deliver_composed_message(socket, pane, text, action, params)
+    else
+      false ->
+        {:noreply, put_flash(socket, :error, "Mobile agent composer is disabled.")}
+
+      {:error, :agent_pane_required} ->
+        {:noreply, put_flash(socket, :error, "That pane is not an agent pane.")}
+
+      {:error, :blank_text} ->
+        {:noreply, put_flash(socket, :error, "Write a message first.")}
+
+      {:error, :text_too_long} ->
+        {:noreply,
+         put_flash(socket, :error, "Message is too large (#{NextPrompt.text_limit()} bytes max).")}
+
+      {:error, :invalid_action} ->
+        {:noreply, put_flash(socket, :error, "Choose Send or Send later.")}
+    end
   end
 
   def handle_event("tmux:refresh_windows", _params, socket) do
@@ -841,6 +871,102 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
     else
       TerminalState.deny_tmux_mutation(socket)
     end
+  end
+
+  defp composer_agent_pane(socket, pane_id) when is_binary(pane_id) do
+    pane =
+      socket.assigns[:tmux_windows]
+      |> TerminalChrome.active_tmux_window_panes()
+      |> Enum.find(&(Map.get(&1, :id) == pane_id))
+
+    if PaneState.agent_role?(pane), do: {:ok, pane}, else: {:error, :agent_pane_required}
+  end
+
+  defp composer_agent_pane(_socket, _pane_id), do: {:error, :agent_pane_required}
+
+  defp composer_text(text) when is_binary(text) do
+    cond do
+      String.trim(text) == "" -> {:error, :blank_text}
+      byte_size(text) > NextPrompt.text_limit() -> {:error, :text_too_long}
+      true -> {:ok, text}
+    end
+  end
+
+  defp composer_text(_text), do: {:error, :blank_text}
+
+  defp composer_action("send"), do: {:ok, :send}
+  defp composer_action("later"), do: {:ok, :later}
+  defp composer_action(_action), do: {:error, :invalid_action}
+
+  defp deliver_composed_message(socket, pane, text, :send, _params) do
+    case PaneSubmit.deliver(socket.assigns.tmux_session, pane.id, text,
+           workspace_id: socket.assigns.workspace.id
+         ) do
+      {:ok, result} ->
+        message =
+          if result[:submitted] == true,
+            do: "Message delivered to the agent.",
+            else: "Message sent; delivery could not be observed."
+
+        {:noreply, clear_mobile_composer(socket, pane, message)}
+
+      {:error, error} ->
+        {:noreply, put_flash(socket, :error, "Could not deliver the message: #{inspect(error)}")}
+    end
+  end
+
+  defp deliver_composed_message(socket, pane, text, :later, params) do
+    report = AgentState.get(socket.assigns.tmux_session, pane.id)
+
+    with {:ok, deliver_when} <- NextPrompt.parse_deliver_when(params["deliver_when"]),
+         {:ok, result} <-
+           NextPrompt.set(socket.assigns.tmux_session, pane.id, text,
+             workspace_id: socket.assigns.workspace.id,
+             deliver_when: deliver_when,
+             coalesce_key: "mobile-agent-composer",
+             agent_session_id: agent_session_id(report, pane),
+             expires_at: NextPrompt.expires_at(NextPrompt.default_ttl_seconds()),
+             set_by: "mobile-agent-composer",
+             current_state: current_agent_state(report, pane),
+             runtime: PaneProcessLiveness.runtime_from_command(Map.get(pane, :current_command))
+           ) do
+      message =
+        if result.status == :delivered,
+          do: "Agent was ready, so the message was delivered now.",
+          else: "Message staged for the agent (latest staged message wins)."
+
+      {:noreply, clear_mobile_composer(socket, pane, message)}
+    else
+      :error ->
+        {:noreply, put_flash(socket, :error, "Choose a valid Send later timing.")}
+
+      {:error, :state_edges_unavailable} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This agent cannot report the state change needed for Send later."
+         )}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not stage the message: #{inspect(reason)}")}
+    end
+  end
+
+  defp current_agent_state(report, pane) do
+    case report do
+      %{state: state} -> state
+      _ -> Map.get(pane, :agent_state)
+    end
+  end
+
+  defp agent_session_id(%{agent_session_id: id}, _pane) when is_binary(id) and id != "", do: id
+  defp agent_session_id(_report, pane), do: Map.get(pane, :agent_session_id)
+
+  defp clear_mobile_composer(socket, pane, message) do
+    socket
+    |> put_flash(:info, message)
+    |> push_event("mobile_agent_composer:clear", %{pane_id: pane.id})
   end
 
   @doc """

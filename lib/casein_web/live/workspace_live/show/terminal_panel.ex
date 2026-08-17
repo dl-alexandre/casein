@@ -5,6 +5,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
   import CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
   alias Casein.Workspaces
+  alias Casein.Terminals.NextPrompt
+  alias Casein.Terminals.PaneState
   alias CaseinWeb.WorkspaceLive.Show.SessionBar
   alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
 
@@ -223,7 +225,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                 <% end %>
               </div>
             </div>
-            <.mobile_key_bar {assigns} />
+            <% composer_pane = mobile_agent_composer_pane(assigns) %>
+            <%= if composer_pane do %>
+              <.mobile_agent_composer
+                workspace={@workspace}
+                pane={composer_pane}
+              />
+            <% else %>
+              <.mobile_key_bar {assigns} />
+            <% end %>
             <.mobile_nav_sheet {assigns} />
             <%!-- First-run gesture coach-marks. The hook decides (mobile + not
                  yet seen) whether to render an overlay; the element itself is
@@ -313,6 +323,103 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
   defp desktop_status_label(:connecting), do: "Starting native PowerShell…"
   defp desktop_status_label({:exited, _reason}), do: "PowerShell exited"
   defp desktop_status_label({:error, _reason}), do: "PowerShell unavailable"
+
+  attr :workspace, :map, required: true
+  attr :pane, :map, required: true
+
+  def mobile_agent_composer(assigns) do
+    assigns =
+      assigns
+      |> assign(:text_limit, NextPrompt.text_limit())
+      |> assign(:deliver_when_values, NextPrompt.deliver_when_values())
+      |> assign(:default_deliver_when, NextPrompt.default_deliver_when())
+
+    ~H"""
+    <section
+      id={"mobile-agent-composer-" <> @workspace.id}
+      phx-hook="MobileAgentComposer"
+      data-mobile-agent-composer="true"
+      data-pane-id={@pane.id}
+      data-text-limit={@text_limit}
+      class="mobile-agent-composer shrink-0 border-t border-zinc-700/90 bg-zinc-950/95 p-2 text-zinc-100 backdrop-blur-md"
+      style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom));"
+      aria-label="Message agent"
+    >
+      <form phx-submit="terminal:compose_agent_message" class="space-y-2">
+        <input type="hidden" name="pane_id" value={@pane.id} />
+        <textarea
+          id={"mobile-agent-composer-text-" <> @workspace.id}
+          name="text"
+          maxlength={@text_limit}
+          rows="3"
+          autocomplete="on"
+          autocapitalize="sentences"
+          enterkeyhint="enter"
+          spellcheck="true"
+          placeholder="Message the agent…"
+          class="block max-h-44 min-h-20 w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-base leading-6 text-zinc-100 shadow-inner outline-none placeholder:text-zinc-500 focus:border-primary focus:ring-1 focus:ring-primary"
+        ></textarea>
+        <div class="flex items-center gap-2">
+          <button
+            type="submit"
+            name="action"
+            value="send"
+            phx-disable-with="Sending…"
+            class="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-primary px-3 text-sm font-semibold text-primary-content active:opacity-80"
+          >
+            Send
+          </button>
+          <label class="sr-only" for={"mobile-agent-deliver-when-" <> @workspace.id}>
+            Send later timing
+          </label>
+          <select
+            id={"mobile-agent-deliver-when-" <> @workspace.id}
+            name="deliver_when"
+            class="min-h-11 rounded-lg border border-zinc-700 bg-zinc-900 px-2 text-sm text-zinc-200"
+          >
+            <option
+              :for={value <- @deliver_when_values}
+              value={value}
+              selected={value == @default_deliver_when}
+            >
+              {deliver_when_label(value)}
+            </option>
+          </select>
+          <button
+            type="submit"
+            name="action"
+            value="later"
+            phx-disable-with="Staging…"
+            class="inline-flex min-h-11 items-center justify-center rounded-lg border border-zinc-600 bg-zinc-800 px-3 text-sm font-semibold text-zinc-100 active:bg-zinc-700"
+          >
+            Send later
+          </button>
+        </div>
+        <p class="text-xs text-zinc-500">
+          Compose here; tap the transcript for live terminal keys.
+        </p>
+      </form>
+    </section>
+    """
+  end
+
+  def mobile_agent_composer_pane(assigns) do
+    if Application.get_env(:casein, :mobile_agent_composer, false) and
+         not assigns[:desktop_terminal?] do
+      panes = active_tmux_window_panes(assigns[:tmux_windows] || [])
+      highlighted = assigns[:ui_highlight_pane_id]
+
+      pane =
+        Enum.find(panes, &(is_binary(highlighted) and Map.get(&1, :id) == highlighted)) ||
+          Enum.find(panes, &Map.get(&1, :active))
+
+      if PaneState.agent_role?(pane), do: pane
+    end
+  end
+
+  defp deliver_when_label(:next_idle), do: "when free"
+  defp deliver_when_label(:next_done), do: "when done"
+  defp deliver_when_label(:next_blocked), do: "when blocked"
 
   def mobile_key_bar(assigns) do
     ~H"""

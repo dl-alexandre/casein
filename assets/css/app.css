@@ -1438,10 +1438,18 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
   display: none;
 }
 
+.mobile-agent-composer {
+  display: none;
+}
+
 /* Touch chrome affordances — not a layout switch. */
 @media (pointer: coarse), (max-width: 639px) {
   .mobile-key-bar {
     display: flex;
+  }
+
+  .mobile-agent-composer {
+    display: block;
   }
 
   .mobile-nav-sheet {
@@ -1613,6 +1621,10 @@ section[data-pane-role="agent"][data-agent-reference-drop-active] {
   display: flex;
 }
 
+:root[data-chrome-narrow] .mobile-agent-composer {
+  display: block;
+}
+
 :root[data-chrome-narrow] .mobile-nav-sheet {
   display: block;
 }
@@ -1667,6 +1679,9 @@ html[data-cockpit-layout="compact"] .preview-session-badge {
 html[data-cockpit-layout="compact"] .mobile-key-bar {
   display: flex;
 }
+html[data-cockpit-layout="compact"] .mobile-agent-composer {
+  display: block;
+}
 html[data-cockpit-layout="compact"] .mobile-nav-sheet {
   display: block;
 }
@@ -1703,7 +1718,8 @@ html[data-cockpit-layout="desktop"] .preview-session-badge:not([data-mismatch="t
 :root[data-chrome-narrow][data-cockpit-layout="desktop"] .workspace-main-header [id^="window-dropdown-"] {
   display: flex !important;
 }
-:root[data-chrome-narrow][data-cockpit-layout="desktop"] .mobile-key-bar {
+:root[data-chrome-narrow][data-cockpit-layout="desktop"] .mobile-key-bar,
+:root[data-chrome-narrow][data-cockpit-layout="desktop"] .mobile-agent-composer {
   display: none;
 }
 

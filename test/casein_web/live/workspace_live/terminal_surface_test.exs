@@ -1,9 +1,60 @@
 defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
-  use CaseinWeb.ConnCase, async: true
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest, only: [render_component: 2]
 
   alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceLive.Show.TerminalPanel
+
+  describe "mobile agent composer" do
+    setup do
+      previous = Application.get_env(:casein, :mobile_agent_composer)
+
+      on_exit(fn ->
+        if is_nil(previous),
+          do: Application.delete_env(:casein, :mobile_agent_composer),
+          else: Application.put_env(:casein, :mobile_agent_composer, previous)
+      end)
+
+      :ok
+    end
+
+    test "is absent by default and never selected for a shell pane" do
+      agent = Map.put(pane("%1"), :role, "agent")
+      shell = Map.put(pane("%2"), :role, nil)
+
+      refute TerminalPanel.mobile_agent_composer_pane(composer_assigns(agent))
+
+      Application.put_env(:casein, :mobile_agent_composer, true)
+      refute TerminalPanel.mobile_agent_composer_pane(composer_assigns(shell))
+    end
+
+    test "selects only the highlighted role-tagged agent pane when enabled" do
+      Application.put_env(:casein, :mobile_agent_composer, true)
+      agent = Map.put(pane("%1"), :role, "agent")
+
+      assert %{id: "%1"} =
+               TerminalPanel.mobile_agent_composer_pane(composer_assigns(agent))
+    end
+
+    test "renders a native textarea with the NextPrompt limit and delivery choices" do
+      html =
+        render_component(&TerminalPanel.mobile_agent_composer/1,
+          workspace: %{id: "ws-alpha"},
+          pane: %{id: "%1", role: "agent"}
+        )
+
+      assert html =~ ~s(<textarea)
+      assert html =~ ~s(maxlength="#{Casein.Terminals.NextPrompt.text_limit()}")
+      assert html =~ ~s(autocomplete="on")
+      assert html =~ ~s(value="send")
+      assert html =~ ~s(value="later")
+
+      for deliver_when <- Casein.Terminals.NextPrompt.deliver_when_values() do
+        assert html =~ ~s(value="#{deliver_when}")
+      end
+    end
+  end
 
   describe "terminal_surface_pane_id/4" do
     test "keeps the sticky operator pane when a preview pane becomes tmux-active" do
@@ -371,6 +422,14 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
       window_id: "@0",
       current_path: "/work/casein",
       current_command: "bash"
+    }
+  end
+
+  defp composer_assigns(pane) do
+    %{
+      desktop_terminal?: false,
+      tmux_windows: [%{id: "@0", active: true, pane_list: [pane]}],
+      ui_highlight_pane_id: pane.id
     }
   end
 end
