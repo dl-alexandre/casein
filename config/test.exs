@@ -30,6 +30,10 @@ end
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
+# Every per-run test resource is keyed by System.pid(). MIX_TEST_PARTITION remains
+# a CI sharding suffix in resource names; it is never the run-isolation key.
+test_run_suffix = "#{System.get_env("MIX_TEST_PARTITION")}_#{System.pid()}"
+
 sqlite_repo? =
   System.get_env("CASEIN_REPO_ADAPTER", "postgres")
   |> String.downcase()
@@ -40,7 +44,7 @@ if sqlite_repo? do
     database:
       System.get_env("DATABASE_PATH") ||
         Path.expand(
-          "../casein_test#{System.get_env("MIX_TEST_PARTITION")}.sqlite3",
+          "../casein_test#{test_run_suffix}.sqlite3",
           System.tmp_dir!()
         ),
     pool: Ecto.Adapters.SQL.Sandbox,
@@ -52,7 +56,7 @@ else
     username: "postgres",
     password: "postgres",
     hostname: "localhost",
-    database: "casein_test#{System.get_env("MIX_TEST_PARTITION")}",
+    database: "casein_test#{test_run_suffix}",
     pool: Ecto.Adapters.SQL.Sandbox,
     # Capped: this devbox runs many agents' test suites concurrently against one
     # postgres; schedulers × 2 per BEAM (32+ on this box) exhausts max_connections
@@ -164,7 +168,7 @@ config :casein,
        :workspace_tokens_store,
        Path.join(
          System.tmp_dir!(),
-         "casein-test-workspace-tokens-#{System.get_env("MIX_TEST_PARTITION") || "0"}.json"
+         "casein-test-workspace-tokens-#{test_run_suffix}.json"
        )
 
 # In test we don't send emails
