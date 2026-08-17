@@ -12,6 +12,8 @@ defmodule Casein.Terminals.FleetSummary do
   * `progress` — `AgentProgress` composite (#879): context/spend/worktree/screen
     deltas plus CPU. Emits distinct `running_but_not_progressing` when the
     process is active but ≥2 independent axes are stalled.
+  * `agent_state_provenance` — `report`, `derived`, or the weakest `screen`
+    fallback. Screen inference is gated to hook-less OpenCode/Cursor panes.
 
   Pure projection over existing session/topology enrichment plus process and
   progress sampling. No mutation verbs.
@@ -261,6 +263,16 @@ defmodule Casein.Terminals.FleetSummary do
     progress =
       observe_progress(session_name, pane_id, worktree, proc, opts)
 
+    {agent_state, agent_state_message, agent_state_provenance} =
+      AgentState.resolve_screen_fallback(
+        {
+          normalize_agent_state(PaneState.map_get(pane, :agent_state)),
+          PaneState.map_get(pane, :agent_state_message)
+        },
+        runtime,
+        Map.get(progress, :screen_status)
+      )
+
     %{
       pane_id: pane_id,
       window_id: PaneState.map_get(pane, :window_id) || Map.get(window || %{}, :id),
@@ -270,8 +282,9 @@ defmodule Casein.Terminals.FleetSummary do
       current_command:
         Map.get(proc, :current_command) || PaneState.map_get(pane, :current_command),
       runtime: runtime,
-      agent_state: stringify(PaneState.map_get(pane, :agent_state)),
-      agent_state_message: PaneState.map_get(pane, :agent_state_message),
+      agent_state: known_state(agent_state),
+      agent_state_message: agent_state_message,
+      agent_state_provenance: known_provenance(agent_state_provenance),
       label: PaneState.map_get(pane, :label),
       issue: PaneState.map_get(pane, :issue),
       issue_title: PaneState.map_get(pane, :issue_title),
@@ -306,6 +319,40 @@ defmodule Casein.Terminals.FleetSummary do
   end
 
   defp observe_progress(_, _, _, _, _), do: %{state: :unknown, reason: :no_pane, axes: %{}}
+
+  defp normalize_agent_state(state)
+       when state in [
+              :working,
+              :blocked,
+              :done,
+              :idle,
+              :errored,
+              :stalled,
+              :awaiting_input,
+              :unknown
+            ],
+       do: state
+
+  defp normalize_agent_state(state) when is_binary(state) do
+    case state do
+      "working" -> :working
+      "blocked" -> :blocked
+      "done" -> :done
+      "idle" -> :idle
+      "errored" -> :errored
+      "stalled" -> :stalled
+      "awaiting_input" -> :awaiting_input
+      _ -> :unknown
+    end
+  end
+
+  defp normalize_agent_state(_state), do: :unknown
+
+  defp known_state(:unknown), do: nil
+  defp known_state(state), do: stringify(state)
+
+  defp known_provenance(:unknown), do: nil
+  defp known_provenance(provenance), do: stringify(provenance)
 
   defp liveness_json(%{state: state} = proc) do
     %{

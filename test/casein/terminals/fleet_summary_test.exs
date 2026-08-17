@@ -104,7 +104,9 @@ defmodule Casein.Terminals.FleetSummaryTest do
         ],
         progress_opts: [
           now_ms: 2_000,
-          screen_reader: fn _, _ -> {:ok, "frame"} end,
+          screen_reader: fn _, _ ->
+            {:ok, "Permission required\n❯ Allow once\n  Reject"}
+          end,
           git_reader: fn _ -> %{available?: false} end
         ]
       )
@@ -121,6 +123,8 @@ defmodule Casein.Terminals.FleetSummaryTest do
     [pane] = session.panes
     assert pane.pane_id == "%1"
     assert pane.runtime == "opencode"
+    assert pane.agent_state == "blocked"
+    assert pane.agent_state_provenance == "screen"
     assert pane.liveness.source == "process_cpu"
     assert pane.liveness.state == "active"
     assert pane.liveness.cpu_jiffies_delta == 70
