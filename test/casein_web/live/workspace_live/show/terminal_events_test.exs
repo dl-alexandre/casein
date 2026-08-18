@@ -2,7 +2,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
   use Casein.TestCase, async: false
 
   alias Casein.Workspace
+  alias Casein.Terminals.AgentState
+  alias Casein.Terminals.NextPrompt
   alias CaseinWeb.WorkspaceLive.Show.TerminalEvents
+  alias TmuxCtl.Test.FakeState
 
   defmodule EmptyHistoryTmux do
     def capture_scrollback(_session, _opts), do: ""
@@ -94,6 +97,164 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
                TerminalEvents.handle_event("terminal:send_agent_text", %{"text" => big}, socket)
 
       assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "too large"
+    end
+  end
+
+  describe "terminal:compose_agent_message" do
+    setup do
+      previous_flag = Application.get_env(:casein, :mobile_agent_composer)
+      previous_adapter = Application.get_env(:casein, :tmux_adapter)
+      previous_pid = FakeState.get(:fake_tmux_test_pid)
+
+      Application.put_env(:casein, :mobile_agent_composer, true)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      FakeState.put(:fake_tmux_test_pid, self())
+
+      on_exit(fn ->
+        NextPrompt.clear("casein_ws_agent", "%7")
+        restore_env(:casein, :mobile_agent_composer, previous_flag)
+        restore_env(:casein, :tmux_adapter, previous_adapter)
+        FakeState.restore(:fake_tmux_test_pid, previous_pid)
+      end)
+
+      :ok
+    end
+
+    test "flag off refuses the event without touching the pane" do
+      Application.put_env(:casein, :mobile_agent_composer, false)
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:compose_agent_message",
+                 %{"pane_id" => "%7", "text" => "hello", "action" => "send"},
+                 composer_socket()
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "disabled"
+      refute_received {:fake_tmux_paste_text, _, _, _, _}
+    end
+
+    test "a shell pane is refused server-side" do
+      socket = composer_socket(%{role: nil})
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:compose_agent_message",
+                 %{"pane_id" => "%7", "text" => "hello", "action" => "send"},
+                 socket
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "not an agent pane"
+      refute_received {:fake_tmux_paste_text, _, _, _, _}
+    end
+
+    test "Send routes through confirmed PaneSubmit delivery" do
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:compose_agent_message",
+                 %{"pane_id" => "%7", "text" => "ship the focused fix", "action" => "send"},
+                 composer_socket()
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :info) =~ "Message"
+      assert_received {:fake_tmux_paste_text, "casein_ws_agent", "%7", text, opts}
+      assert text =~ "ship the focused fix"
+      refute Keyword.get(opts, :submit)
+      assert_received {:fake_tmux_keys, "casein_ws_agent", "%7", "Enter", _}
+    end
+
+    test "Send later uses the existing coalescing slot and selected edge" do
+      :ok =
+        AgentState.report(
+          "ws-1",
+          "casein_ws_agent",
+          "%7",
+          :working,
+          nil,
+          agent_session_id: "agent-session-7"
+        )
+
+      _ = AgentState.get("casein_ws_agent", "%7")
+
+      params = %{
+        "pane_id" => "%7",
+        "text" => "rebase before pushing",
+        "action" => "later",
+        "deliver_when" => "next_done"
+      }
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:compose_agent_message",
+                 params,
+                 composer_socket()
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :info) =~ "latest staged message wins"
+      entry = NextPrompt.get("casein_ws_agent", "%7")
+      assert entry.text == "rebase before pushing"
+      assert entry.deliver_when == :next_done
+      assert entry.coalesce_key == "mobile-agent-composer"
+      assert entry.agent_session_id == "agent-session-7"
+    end
+
+    test "Send later preserves NextPrompt's refusal for a hook-less runtime" do
+      params = %{
+        "pane_id" => "%7",
+        "text" => "wait for the next edge",
+        "action" => "later",
+        "deliver_when" => "next_done"
+      }
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:compose_agent_message",
+                 params,
+                 composer_socket(%{current_command: "opencode", agent_state: :working})
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "cannot report the state change"
+      refute NextPrompt.get("casein_ws_agent", "%7")
+    end
+
+    test "the composer's server limit is exactly NextPrompt.text_limit/0 bytes" do
+      too_large = String.duplicate("é", div(NextPrompt.text_limit(), 2) + 1)
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:compose_agent_message",
+                 %{"pane_id" => "%7", "text" => too_large, "action" => "send"},
+                 composer_socket()
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) =~
+               "#{NextPrompt.text_limit()} bytes max"
+
+      refute_received {:fake_tmux_paste_text, _, _, _, _}
+    end
+
+    defp composer_socket(pane_overrides \\ %{}) do
+      pane =
+        Map.merge(
+          %{
+            id: "%7",
+            role: "agent",
+            active: true,
+            agent_state: :working,
+            agent_session_id: "agent-session-7"
+          },
+          pane_overrides
+        )
+
+      %Phoenix.LiveView.Socket{
+        assigns: %{
+          __changed__: %{},
+          flash: %{},
+          tmux_session: "casein_ws_agent",
+          workspace: %Workspace{id: "ws-1", name: "alpha"},
+          tmux_windows: [%{id: "@0", active: true, pane_list: [pane]}]
+        }
+      }
     end
   end
 

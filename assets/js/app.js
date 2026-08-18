@@ -34,6 +34,7 @@ import {
   storedFontSize
 } from "./terminal_font_size.mjs"
 import {MobileKeyBar} from "./mobile_key_bar"
+import {MobileAgentComposer} from "./mobile_agent_composer.mjs"
 import {ChromeWidth} from "./chrome_width"
 import {installCockpitLayout} from "./cockpit_layout.mjs"
 import {WorkspaceLeader} from "./workspace_leader"
@@ -292,7 +293,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   reconnectAfterMs: jitteredBackoff([50, 150, 350, 750, 1500, 3000], 5000),
   rejoinAfterMs: jitteredBackoff([400, 900, 1800], 5000),
   params: {_csrf_token: csrfToken, tab_id: caseinTabId()},
-  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, CockpitLayoutOverride, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ShareText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow, FlashBridge},
+  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, MobileAgentComposer, ChromeWidth, CockpitLayoutOverride, WorkspaceLeader, GestureCoach, WebPush, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ShareText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow, FlashBridge},
 })
 
 installPickerLinkCopy()

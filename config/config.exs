@@ -34,6 +34,9 @@ config :casein, CaseinWeb.Plugs.McpTicketRateLimit,
   limit: 30
 
 config :casein,
+  # Phase-1 mobile compose-first surface for role-tagged agent panes. Shell
+  # panes retain the existing grid/key-bar interaction path.
+  mobile_agent_composer: false,
   # Event-driven tmux topology (Slices 1/2). Default OFF — polling path
   # unchanged. Dev flips ON in config/dev.exs (Slice 3); canary/prod via
   # CASEIN_TMUX_EVENTS after soak on flap/refresh telemetry (see

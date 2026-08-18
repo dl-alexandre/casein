@@ -113,6 +113,12 @@ config :casein, :workspace_digest, truthy_env?.("CASEIN_WORKSPACE_DIGEST")
 # Off by default: the digest cold-builds per call and no server is started.
 config :casein, :situation_server, truthy_env?.("CASEIN_SITUATION_SERVER")
 
+# Native mobile composition for role-tagged agent panes. Default off while the
+# phase-1 handset prototype is judged; shell panes never use this surface.
+config :casein,
+       :mobile_agent_composer,
+       truthy_env?.("CASEIN_MOBILE_AGENT_COMPOSER")
+
 # When on, Casein.Ops.PgProbe polls the box's Postgres servers (host 5432 +
 # release 15432 by default) for connection saturation and leak-shaped
 # application_names (wf_*, casein-<uuid>), emitting ops.pg_saturation_*
