@@ -70,17 +70,24 @@ defmodule CaseinWeb.PreviewProxyController do
       end
     else
       :forbidden ->
-        conn |> put_status(403) |> text("Forbidden")
+        deny_proxy(conn, 403, Access.deny_payload(:forbidden))
 
       {:error, :bad_port} ->
-        conn |> put_status(400) |> text("Invalid port")
+        deny_proxy(conn, 400, Access.deny_payload(:bad_port))
 
       {:error, :port_not_allowed} ->
-        conn |> put_status(403) |> text("Port not allowed for this workspace")
+        deny_proxy(conn, 403, Access.deny_payload(:port_not_allowed))
 
       _ ->
         conn |> put_status(404) |> text("Not found")
     end
+  end
+
+  defp deny_proxy(conn, status, %{reason: reason, message: message}) do
+    conn
+    |> put_resp_header("x-casein-deny-reason", Atom.to_string(reason))
+    |> put_status(status)
+    |> text(message)
   end
 
   # Host is fixed; only the path/query come from the request, so the request

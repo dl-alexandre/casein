@@ -61,10 +61,14 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
      `CASEIN_PREVIEW_EXTERNAL_ORIGINS`; see
      [`docs/preview-external-origins.md`](preview-external-origins.md).
 
-   `preview_open` splits the active tmux window and runs `casein-preview <url>`
-   in the new pane. The response includes `pane_id` plus the usual `session_id`.
-   The older `preview_open_app`, `preview_open_localhost`, `preview_open_here`,
-   and `preview_open_current_workspace` tools remain as deprecated aliases.
+    `preview_open` splits the active tmux window and runs `casein-preview <url>`
+    in the new pane. Success means a Casein preview pane was bound — a shell
+    pane is refused (`non_preview_pane`) rather than returned as a pane id.
+    `force_new_pane: true` always splits or fails; it never returns
+    `reused: true`. Port authorization denials are `:forbidden` vs
+    `:port_not_allowed` (`X-Casein-Deny-Reason` on HTTP). The older
+    `preview_open_app`, `preview_open_localhost`, `preview_open_here`,
+    and `preview_open_current_workspace` tools remain as deprecated aliases.
 4. In worktree sessions, use the session-scoped Preview MCP URL supplied by
    the launcher/status payload. That URL injects both the workspace and
    `tmux_session`, so open tools split beside the agent's session instead of

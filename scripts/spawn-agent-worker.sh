@@ -650,6 +650,13 @@ if [[ -z "$PANE_ID" ]]; then
   exit 1
 fi
 
+# Keep the pane after the launch command exits so spawn_worker_pane_tail can
+# still read the launcher's stderr. Without remain-on-exit, tmux reaps the
+# dead pane before KEEP_FAILED_WINDOW can preserve it (#990).
+casein_tmux set-option -w -t "$PANE_ID" remain-on-exit on 2>/dev/null ||
+  casein_tmux set-window-option -t "$PANE_ID" remain-on-exit on 2>/dev/null ||
+  true
+
 if ! spawn_worker_probe_pane "$PANE_ID"; then
   echo "error: worker pane ${PANE_ID} died immediately after launch" >&2
   echo "hint: the launch command failed inside the pane — common causes are a" \

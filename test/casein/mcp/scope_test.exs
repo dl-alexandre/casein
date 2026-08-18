@@ -101,6 +101,31 @@ defmodule Casein.MCP.ScopeTest do
     assert error.error == :workspace_scope_mismatch
     assert error.scoped_workspace_id == "ws-scope"
     assert error.requested_workspace_id == "ws-other"
+    assert error.lane == "allow_cross_workspace"
+  end
+
+  test "allow_cross_workspace opens the read-only lane on a pre-scoped endpoint" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call(
+               "terminal_list_sessions",
+               %{"workspace_id" => "ws-other", "allow_cross_workspace" => true},
+               surface: :terminal,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert scope.workspace_id == "ws-other"
+    assert scope.args["cross_workspace"] == true
+    assert scope.resolved_from.workspace == :cross_workspace_lane
+  end
+
+  test "allow_cross_workspace does not open mutating tools" do
+    assert {:error, %{error: :workspace_scope_mismatch}} =
+             Scope.resolve_tool_call(
+               "terminal_send_command",
+               %{"workspace_id" => "ws-other", "allow_cross_workspace" => true},
+               surface: :terminal,
+               default_workspace_id: "ws-scope"
+             )
   end
 
   test "accepts linked folder workspace ids inside a pre-scoped endpoint" do

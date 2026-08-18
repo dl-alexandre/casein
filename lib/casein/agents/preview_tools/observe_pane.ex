@@ -10,7 +10,8 @@ defmodule Casein.Agents.PreviewTools.ObservePane do
     schema: [
       workspace_id: [type: :string, required: true],
       pane_id: [type: :string, required: true],
-      limit: [type: :integer]
+      limit: [type: :integer],
+      allow_cross_workspace: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction

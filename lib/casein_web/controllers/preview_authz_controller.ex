@@ -27,8 +27,26 @@ defmodule CaseinWeb.PreviewAuthzController do
          {:ok, _workspace} <- Access.authorize(conn.assigns[:current_user], workspace_id, port) do
       send_resp(conn, 204, "")
     else
-      _ -> send_resp(conn, 403, "")
+      :forbidden ->
+        deny(conn, :forbidden)
+
+      {:error, :port_not_allowed} ->
+        deny(conn, :port_not_allowed)
+
+      {:error, :bad_port} ->
+        deny(conn, :bad_port)
+
+      _ ->
+        deny(conn, :forbidden)
     end
+  end
+
+  # The router only reads the status. Agents and operators need the token, so
+  # put it on a header without adding a body the router would ignore.
+  defp deny(conn, reason) do
+    conn
+    |> put_resp_header("x-casein-deny-reason", Atom.to_string(reason))
+    |> send_resp(403, "")
   end
 
   # The router preserves the browser's Host; `x-forwarded-host` is honoured first

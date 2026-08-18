@@ -13,7 +13,8 @@ defmodule Casein.Agents.TerminalTools.Capture do
       session: [type: :string, required: true],
       pane: [type: :string],
       lines: [type: :integer],
-      ansi: [type: :boolean]
+      ansi: [type: :boolean],
+      allow_cross_workspace: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction

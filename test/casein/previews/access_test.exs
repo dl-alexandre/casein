@@ -122,4 +122,32 @@ defmodule Casein.Previews.AccessTest do
                not Access.denied_infra_port?(5432)
     end
   end
+
+  describe "authorization_description/0 — MCP prose is derived from the predicate" do
+    test "names both denial tokens and has no time component" do
+      text = Access.authorization_description()
+      assert text =~ ":forbidden"
+      assert text =~ ":port_not_allowed"
+      refute text =~ "few minutes after every deploy"
+      refute text =~ "recently started"
+      refute text =~ "boot_at"
+    end
+
+    test "port_allowed?/3 source has no time component" do
+      src = File.read!("lib/casein/previews/access.ex")
+      [_before, rest] = String.split(src, "def port_allowed?", parts: 2)
+      [predicate | _] = String.split(rest, "\n  def ", parts: 2)
+      refute predicate =~ ~r/deploy|grace|DateTime|monotonic|System\.os_time/
+    end
+
+    test "deny_payload/1 keeps :forbidden distinct from :port_not_allowed" do
+      forbidden = Access.deny_payload(:forbidden)
+      port = Access.deny_payload(:port_not_allowed)
+
+      assert forbidden.reason == :forbidden
+      assert port.reason == :port_not_allowed
+      assert forbidden.error == :forbidden
+      assert port.error == :port_not_allowed
+    end
+  end
 end

@@ -187,8 +187,8 @@ defmodule McpCtl.Params do
       type: "boolean",
       description:
         "Explicitly split a new tmux preview pane after the target URL passes the " <>
-          "reachability preflight. Avoid this for normal retries; failed preflight opens " <>
-          "no pane."
+          "reachability preflight. Never returns reused:true — splits or fails. " <>
+          "Avoid this for normal retries; failed preflight opens no pane."
     }
   end
 
@@ -247,15 +247,31 @@ defmodule McpCtl.Params do
   end
 
   @spec terminal_workspace_props() :: map()
+  @spec allow_cross_workspace() :: map()
+  def allow_cross_workspace do
+    %{
+      type: "boolean",
+      description:
+        "Opt into the audited read-only cross-workspace lane. Required to observe " <>
+          "another workspace from a pre-scoped MCP endpoint. Mutating tools still refuse."
+    }
+  end
+
   def terminal_workspace_props do
-    %{workspace_id: Schema.workspace_id_param(:terminal)}
+    %{
+      workspace_id: Schema.workspace_id_param(:terminal),
+      allow_cross_workspace: allow_cross_workspace()
+    }
   end
 
   @spec preview_workspace_props(keyword()) :: map()
   def preview_workspace_props(opts \\ []) do
     include_path? = Keyword.get(opts, :include_path, true)
 
-    props = %{workspace_id: Schema.workspace_id_param(:preview)}
+    props = %{
+      workspace_id: Schema.workspace_id_param(:preview),
+      allow_cross_workspace: allow_cross_workspace()
+    }
 
     if include_path? do
       Map.put(props, :workspace_path, Schema.workspace_path_param())

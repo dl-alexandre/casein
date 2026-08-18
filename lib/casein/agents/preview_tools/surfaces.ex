@@ -13,7 +13,8 @@ defmodule Casein.Agents.PreviewTools.Surfaces do
       tmux_session: [type: :string],
       runtime_id: [type: :string],
       port: [type: {:or, [:integer, :string]}],
-      runtime_required: [type: :boolean]
+      runtime_required: [type: :boolean],
+      allow_cross_workspace: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction

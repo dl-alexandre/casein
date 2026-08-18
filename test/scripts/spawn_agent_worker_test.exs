@@ -427,6 +427,20 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
   # Sometimes you want the wreckage. Keeping it renames the window so it does not
   # read as a worker waiting for a briefing.
+  test "sets remain-on-exit so a dead pane still has launcher stderr" do
+    ctx = preflight_fixture!("remain-on-exit", ~s({"agent_write":{"write_enabled":true}}))
+
+    {out, 1} =
+      spawn_worker(ctx, "codex", [
+        {"FAKE_PANE_STATE", "dead"},
+        {"FAKE_AGENT_STATE", "shell"},
+        {"CASEIN_SPAWN_PROBE_SECONDS", "0"}
+      ])
+
+    assert tmux_calls(ctx) =~ "set-option"
+    assert out =~ "launch-casein-agent.sh: No such file or directory"
+  end
+
   test "CASEIN_SPAWN_KEEP_FAILED_WINDOW marks the window failed instead of closing it" do
     ctx = preflight_fixture!("shell-keep", ~s({"agent_write":{"write_enabled":true}}))
 
@@ -515,7 +529,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
         ;;
       new-window) printf '%%99\\n' ;;
       display-message) printf '424242\\n' ;;
-      kill-window | rename-window)
+      kill-window | rename-window | set-option | set-window-option)
         [[ -n "${FAKE_TMUX_LOG:-}" ]] && printf '%s %s\\n' "$1" "${*: -1}" >>"$FAKE_TMUX_LOG"
         ;;
       capture-pane)

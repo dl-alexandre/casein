@@ -1,6 +1,7 @@
 defmodule CaseinWeb.API.MCPWorkspaceScope do
   @moduledoc false
 
+  alias Casein.MCP.Scope, as: MCPScope
   alias Casein.Workspaces.Aliases, as: WorkspaceAliases
 
   @doc "Return a non-empty default workspace id from MCP handler opts."
@@ -55,10 +56,15 @@ defmodule CaseinWeb.API.MCPWorkspaceScope do
         {:ok, params}
 
       requested ->
-        if workspaces_compatible?(workspace_id, requested) do
-          {:ok, params}
-        else
-          {:error, workspace_scope_mismatch(workspace_id, requested)}
+        cond do
+          workspaces_compatible?(workspace_id, requested) ->
+            {:ok, params}
+
+          MCPScope.allow_cross_workspace?(Map.get(params, "name"), args) ->
+            {:ok, params}
+
+          true ->
+            {:error, workspace_scope_mismatch(workspace_id, requested)}
         end
     end
   end
@@ -98,7 +104,11 @@ defmodule CaseinWeb.API.MCPWorkspaceScope do
         "This MCP endpoint is pre-scoped to workspace_id #{inspect(scoped_workspace_id)}. " <>
           "Omit workspace_id on tool calls (it is injected automatically), or use an MCP URL " <>
           "scoped to #{inspect(requested_workspace_id)}. " <>
-          "Cannot access #{inspect(requested_workspace_id)} from this endpoint."
+          "Cannot access #{inspect(requested_workspace_id)} from this endpoint. " <>
+          "Read-only peek: pass allow_cross_workspace: true on preview_surfaces, " <>
+          "preview_observe_pane, terminal_list_sessions, terminal_topology, or " <>
+          "terminal_capture — that lane is audited.",
+      lane: "allow_cross_workspace"
     }
   end
 

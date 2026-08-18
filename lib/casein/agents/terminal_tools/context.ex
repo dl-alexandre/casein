@@ -11,7 +11,8 @@ defmodule Casein.Agents.TerminalTools.Context do
     schema: [
       workspace_id: [type: :string],
       session: [type: :string],
-      caller_pane: [type: :string]
+      caller_pane: [type: :string],
+      allow_cross_workspace: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction
