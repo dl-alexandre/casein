@@ -2,8 +2,9 @@
 //
 // On a phone the keyboard covers over half the grid, so the moment you submit a
 // line — a shell command, an agent prompt — is exactly when you want those rows
-// back. Blurring the hidden input is what dismisses it; a tap on the terminal
-// re-raises it.
+// back. Blurring the hidden input is what dismisses it. On coarse pointers,
+// ordinary terminal taps retain focus without re-raising the OS keyboard; the
+// dedicated keyboard control raises it deliberately.
 //
 // Kept pure because the interesting part is the exclusion list, and a jsdom
 // test can never exercise it through a real event: `dispatchEvent` forces

@@ -69,6 +69,7 @@ import {
 import {fileLinkAt, updateFileLinkStore} from "./terminal_file_links.mjs"
 import {pingWakeLock} from "./wake_lock"
 import {enterDismissesSoftKeyboard} from "./terminal_soft_keyboard.mjs"
+import {COARSE_POINTER_QUERY, terminalInputMode} from "./terminal_input_mode.mjs"
 import {computeTerminalLayout, cropCellMetrics} from "./terminal_layout_model.mjs"
 import {
   ConnectionEffect,
@@ -329,10 +330,11 @@ function renderCellsRLE(pre, rows) {
 // vendor's onCopy bails when there's no *custom* selection, so native copy
 // proceeds untouched. Desktop (fine pointer) keeps the custom selection — no
 // regression there.
-const TOUCH_DEVICE =
+const COARSE_POINTER_MEDIA =
   typeof window !== "undefined" &&
   typeof window.matchMedia === "function" &&
-  window.matchMedia("(pointer: coarse)").matches
+  window.matchMedia(COARSE_POINTER_QUERY)
+const TOUCH_DEVICE = COARSE_POINTER_MEDIA?.matches === true
 
 const LONGPRESS_MS = 400
 
@@ -2791,6 +2793,43 @@ const GhosttyTerminal = {
     }
 
     GhosttyTerminalVendor.mounted.call(this)
+
+    // Terminal focus and OS-keyboard ownership are separate on touch devices:
+    // pane activation and long-press selection may focus this textarea without
+    // summoning the keyboard. Only an explicit keyboard request temporarily
+    // switches it back to text input. The media query listener keeps the
+    // attribute correct when the active pointer changes mid-session.
+    this.__softKeyboardRequested = false
+    this.__syncTerminalInputMode = () => {
+      this.input?.setAttribute(
+        "inputmode",
+        terminalInputMode({
+          coarsePointer: COARSE_POINTER_MEDIA?.matches === true,
+          keyboardRequested: this.__softKeyboardRequested
+        })
+      )
+    }
+    this.__onCoarsePointerChange = () => {
+      this.__softKeyboardRequested = false
+      this.__syncTerminalInputMode()
+    }
+    this.__onSoftKeyboardRequest = (event) => {
+      if (event.detail?.input !== this.input) return
+
+      this.__softKeyboardRequested = event.detail?.open === true
+      this.__syncTerminalInputMode()
+
+      if (this.__softKeyboardRequested) this.input?.focus({preventScroll: true})
+      else if (document.activeElement === this.input) this.input.blur()
+    }
+    if (COARSE_POINTER_MEDIA?.addEventListener) {
+      COARSE_POINTER_MEDIA.addEventListener("change", this.__onCoarsePointerChange)
+    } else {
+      COARSE_POINTER_MEDIA?.addListener?.(this.__onCoarsePointerChange)
+    }
+    window.addEventListener("casein:terminal-soft-keyboard", this.__onSoftKeyboardRequest)
+    this.__syncTerminalInputMode()
+
     installScaleFitLayout(this)
     installTerminalDisplayZoom(this)
     markTerminalPerf(this, "mount_end")
@@ -2859,7 +2898,13 @@ const GhosttyTerminal = {
     // handler meant an unchanged-authority keyboard toggle never reached the
     // layout on its own, leaving row-pin engagement to depend on the keybar's
     // inset commit changing CSS padding and that reaching the ResizeObserver.
-    this.__onKeyboardToggle = () => reconcileLayout(this, "keyboard_toggle", {immediate: true})
+    this.__onKeyboardToggle = (event) => {
+      if (event.detail?.open === false && this.__softKeyboardRequested) {
+        this.__softKeyboardRequested = false
+        this.__syncTerminalInputMode()
+      }
+      reconcileLayout(this, "keyboard_toggle", {immediate: true})
+    }
     window.addEventListener("casein:keyboard-open-changed", this.__onKeyboardToggle)
     document.addEventListener("focusin", this.__onViewportActive)
     document.addEventListener("focusout", this.__onViewportActive)
@@ -3360,14 +3405,17 @@ const GhosttyTerminal = {
 
       // Submitting a line — a shell command, an agent prompt — is the moment
       // you want to *read*, and on a phone the soft keyboard eats over half the
-      // grid. So a plain Enter dismisses it; a tap on the terminal brings it
-      // back. Which keystrokes qualify (and which are the key bar's own
-      // synthesis, or a composer newline) is terminal_soft_keyboard.mjs. The
-      // blur is deferred a tick so the vendor's keydown handler still sees a
-      // focused input when it forwards the key.
+      // grid. So a plain Enter dismisses it; the explicit keyboard control
+      // brings it back while an ordinary terminal tap only restores focus.
+      // Which keystrokes qualify (and which are the key bar's own synthesis,
+      // or a composer newline) is terminal_soft_keyboard.mjs. The blur is
+      // deferred a tick so the vendor's keydown handler still sees a focused
+      // input when it forwards the key.
       this.__onEnterDismissKeyboard = (e) => {
         if (!enterDismissesSoftKeyboard(e)) return
         setTimeout(() => {
+          this.__softKeyboardRequested = false
+          this.__syncTerminalInputMode()
           if (this.input && document.activeElement === this.input) {
             this.input.blur()
             hud("enter → keyboard dismissed")
@@ -3480,6 +3528,16 @@ const GhosttyTerminal = {
     if (this.__ghosttyTerminalDestroying) return
     this.__ghosttyTerminalDestroying = true
     dispatchTerminalConnectionEvent(this, {type: ConnectionEvent.HOOK_DESTROYED})
+
+    if (COARSE_POINTER_MEDIA?.removeEventListener) {
+      COARSE_POINTER_MEDIA.removeEventListener("change", this.__onCoarsePointerChange)
+    } else {
+      COARSE_POINTER_MEDIA?.removeListener?.(this.__onCoarsePointerChange)
+    }
+    window.removeEventListener("casein:terminal-soft-keyboard", this.__onSoftKeyboardRequest)
+    this.__onCoarsePointerChange = null
+    this.__onSoftKeyboardRequest = null
+    this.__syncTerminalInputMode = null
 
     if (this.__onTerminalTheme) {
       window.removeEventListener("casein:terminal-theme", this.__onTerminalTheme)

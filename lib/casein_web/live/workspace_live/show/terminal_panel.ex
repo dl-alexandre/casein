@@ -461,6 +461,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           </span>
           <.icon name="hero-chevron-up" class="size-3 shrink-0 text-zinc-500" />
         </button>
+        <button
+          type="button"
+          data-keybar-key="Keyboard"
+          class={mobile_key_class()}
+          aria-label="Show or hide keyboard"
+          title="Show or hide keyboard"
+        >
+          kbd
+        </button>
         <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
         <div
           id={"mobile-key-bar-keys-" <> @workspace.id}

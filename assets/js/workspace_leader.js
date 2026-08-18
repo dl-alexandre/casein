@@ -876,15 +876,21 @@ export const WorkspaceLeader = {
     }
   },
 
-  // Two-finger tap → raise the soft keyboard, or dismiss it if a terminal
-  // input already holds focus.
+  // Two-finger tap is the gesture equivalent of the key bar's keyboard toggle.
   _toggleSoftKeyboard() {
     const active = document.activeElement
-    if (active && active.tagName === "TEXTAREA") {
-      active.blur()
-    } else {
-      window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
-    }
+    const input = active?.matches?.('[data-ghostty-input="true"]')
+      ? active
+      : document.querySelector(
+          '[data-pane-active="true"] [data-ghostty-input="true"], [data-ghostty-input="true"]'
+        )
+    if (!input) return
+
+    const open = input.getAttribute("inputmode") !== "text"
+    if (open) input.blur()
+    window.dispatchEvent(
+      new CustomEvent("casein:terminal-soft-keyboard", {detail: {input, open}})
+    )
   },
 
   // --- Interactive window-swipe affordance ------------------------------------
