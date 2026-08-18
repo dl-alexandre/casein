@@ -41,6 +41,35 @@ defmodule Casein.Terminals.TmuxScope do
 
   def session_in_workspace?(_session, _workspace), do: false
 
+  @doc """
+  True when two session names refer to the same workspace session under
+  different allowed prefixes (workspace id vs workspace name).
+
+  `casein_alpha_u-dev` and `casein_ws-1_u-dev` are equivalent for workspace
+  `{id: "ws-1", name: "alpha"}`. Different sids are never equivalent.
+  """
+  @spec equivalent_session?(term(), term(), term()) :: boolean()
+  def equivalent_session?(left, right, workspace)
+      when is_binary(left) and is_binary(right) do
+    left == right or
+      match?(
+        {sid, sid} when is_binary(sid),
+        {session_sid(left, workspace), session_sid(right, workspace)}
+      )
+  end
+
+  def equivalent_session?(_left, _right, _workspace), do: false
+
+  defp session_sid(session, workspace) do
+    workspace
+    |> workspace_session_prefixes()
+    |> Enum.find_value(fn prefix ->
+      if TmuxPolicy.session_in_namespace?(session, prefix) do
+        String.replace_prefix(session, prefix, "")
+      end
+    end)
+  end
+
   defp workspace_candidates(workspace_id) do
     case State.get(workspace_id) do
       {:ok, record} -> [workspace_id, Map.get(record, :name), Map.get(record, :external_id)]

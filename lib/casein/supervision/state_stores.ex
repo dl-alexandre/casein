@@ -30,7 +30,6 @@ defmodule Casein.Supervision.StateStores do
       Casein.Push.Dispatcher,
       Casein.Push.Registry,
       Casein.Workspaces.State.MemoryAdapter,
-      Casein.Workspaces.AgentWriteUnlockExpirer,
       Casein.Runtimes.MemoryAdapter
     ]
 
