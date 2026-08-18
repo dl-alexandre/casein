@@ -34,7 +34,17 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Close do
   defp do_close_pane(pane_id, tmux_session) do
     case PreviewPanes.get_by_pane(pane_id) do
       %{control_session_id: session_id, tmux_session: registered_tmux_session} = registration ->
-        kill_result = Shared.kill_preview_pane(registered_tmux_session || tmux_session, pane_id)
+        # A registration can name a pane Casein does not own — a plain shell it
+        # bound before casein#1001 was fixed. Killing that pane would settle a
+        # disagreement about whose pane it is by destroying the operator's shell,
+        # so release the binding and leave tmux alone.
+        kill_result =
+          if Shared.pane_kind(registration) == "non_preview_shell" do
+            :skipped_non_preview_pane
+          else
+            Shared.kill_preview_pane(registered_tmux_session || tmux_session, pane_id)
+          end
+
         deregister_result = PreviewPanes.deregister(pane_id)
 
         {:ok,
@@ -83,6 +93,14 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Close do
   end
 
   defp close_result_payload(:ok), do: %{status: "ok"}
+
+  defp close_result_payload(:skipped_non_preview_pane),
+    do: %{
+      status: "skipped",
+      reason: "non_preview_pane",
+      message: "Pane is not a Casein preview pane; the binding was released without killing it."
+    }
+
   defp close_result_payload({:ok, value}), do: %{status: "ok", value: inspect(value)}
 
   defp close_result_payload({:error, reason}),
