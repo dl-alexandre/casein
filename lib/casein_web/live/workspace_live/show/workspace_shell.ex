@@ -39,7 +39,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
 
   import CaseinWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import CaseinWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
-  import CaseinWeb.WorkspaceLive.Show.AgentWriteBanner, only: [agent_write_locked_banner: 1]
 
   alias Casein.Cockpit.Geometry
   alias CaseinWeb.NotificationsDrawer
@@ -53,7 +52,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :active_session_kind, :any, required: true
   attr :active_window_pane_count, :any, required: true
   attr :agent_pending_approval_count, :any, required: true
-  attr :agent_write_unlock, :any, required: true
   attr :artifact_projects, :any, required: true
   attr :artifact_projects_error, :any, required: true
   attr :artifact_projects_loaded?, :any, required: true
@@ -502,11 +500,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
         </div>
       <% end %>
 
-      <.agent_write_locked_banner
-        workspace={@workspace}
-        agent_write_unlock={@agent_write_unlock}
-      />
-
       <%!-- Central leader-key dispatch targets. WorkspaceLeader routes every
             C-b second key to a click on [data-leader-action=...], so each
             action lives on exactly one element here (docs/leader_keys.md) —
@@ -843,7 +836,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
                 host_loc={@host_loc}
                 active_run={@active_run}
                 review_commands={@review_commands}
-                agent_write_unlock={@agent_write_unlock}
                 run_ledger={@run_ledger}
                 run_ledger_loaded?={@run_ledger_loaded?}
                 run_ledger_error={@run_ledger_error}
@@ -907,7 +899,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           host_loc={@host_loc}
           active_run={@active_run}
           review_commands={@review_commands}
-          agent_write_unlock={@agent_write_unlock}
           run_ledger={@run_ledger}
           run_ledger_loaded?={@run_ledger_loaded?}
           run_ledger_error={@run_ledger_error}
@@ -1117,7 +1108,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :host_loc, :any, required: true
   attr :active_run, :any, required: true
   attr :review_commands, :any, required: true
-  attr :agent_write_unlock, :any, required: true
   attr :run_ledger, :any, required: true
   attr :run_ledger_loaded?, :any, required: true
   attr :run_ledger_error, :any, required: true
@@ -1208,7 +1198,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
                 host_loc={@host_loc}
                 active_run={@active_run}
                 review_commands={@review_commands}
-                agent_write_unlock={@agent_write_unlock}
                 run_ledger={@run_ledger}
                 run_ledger_loaded?={@run_ledger_loaded?}
                 run_ledger_error={@run_ledger_error}

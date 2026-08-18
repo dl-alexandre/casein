@@ -148,7 +148,20 @@ spawn_host_headroom_check() {
     return 0
   fi
 
-  # LOUD decline — never a silent no-op.
+  # LOUD decline — never a silent no-op. The phrase "headroom exhausted" is
+  # reserved for the refusal path (#996): FORCE must not emit it, because
+  # callers grep that string and will treat a successful override as a refuse.
+  if [[ "${force}" == "1" ]]; then
+    cat >&2 <<EOF
+warn: host headroom below threshold; proceeding under CASEIN_SPAWN_FORCE
+      ${reason}
+      probe: ${SPAWN_HOST_HEADROOM_LAST}
+      operator accepts thrash risk; this is not a silent no-op
+      tune: CASEIN_SPAWN_MAX_LOAD_RATIO  CASEIN_SPAWN_MIN_MEM_AVAILABLE_KB
+EOF
+    return 0
+  fi
+
   cat >&2 <<EOF
 error: spawn refused — host headroom exhausted (#863)
        ${reason}
@@ -158,14 +171,6 @@ error: spawn refused — host headroom exhausted (#863)
        override: CASEIN_SPAWN_FORCE=1 bash scripts/spawn-agent-worker.sh ...  # operator accepts thrash risk
        tune:     CASEIN_SPAWN_MAX_LOAD_RATIO  CASEIN_SPAWN_MIN_MEM_AVAILABLE_KB
 EOF
-
-  if [[ "${force}" == "1" ]]; then
-    cat >&2 <<EOF
-warn: CASEIN_SPAWN_FORCE=1 — spawning anyway despite exhausted headroom
-      operator accepts thrash risk; this is not a silent no-op
-EOF
-    return 0
-  fi
-
+  printf 'refused:headroom\n'
   return 75
 }

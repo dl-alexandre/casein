@@ -303,9 +303,8 @@ ledger.
 `Agents.Run` itself never gained a write path. A completed run's own
 proposal only ever reaches the working tree through the *separate*,
 policy-gated `Casein.Proposals.AutoApply` watcher — and only when the
-workspace has an explicit, time-boxed, human-granted unlock
-(`Workspaces.grant_agent_write_unlock/3`) and a deployment-wide kill switch
-is on. Absent that unlock, a human reviews and applies the proposal manually
+workspace is known-isolated and a deployment-wide kill switch is on.
+Otherwise a human reviews and applies the proposal manually
 (`Casein.ProposalApply`, the Proposals tab — reached via the command
 palette per §9.5, not always-visible chrome) — the default, and the only
 path when auto-apply is off.

@@ -230,8 +230,7 @@ New sources should document any additional keys they populate.
 | MCP terminal tool call | Casein | Bearer auth + `casein_`-prefixed session guard | `Audit.Event` + activity feed |
 | MCP preview tool call | Casein | Bearer auth + scoped preview session | `Audit.Event` + activity feed |
 | Apply proposal | Casein | `Policy.can_apply_proposal?/1` (operator + `:manual` mode) via `Casein.ProposalApply` | `Audit.Event` (`apply_proposal` decision + `proposal.applied` mutation) |
-| Enable agent write (auto-apply) | Casein | `Policy.can_enable_agent_write?/1` (`:manual` mode + active `Workspaces.grant_agent_write_unlock/3` unlock) via `Casein.Proposals.AutoApply` | `Audit.Event` (`proposals.auto_apply_authorize`/`proposals.auto_applied`) + `run.approval_granted` ledger event |
-| Grant/revoke agent write unlock | Casein | `Policy.can_grant_agent_write_unlock?/1` (operator + `:manual` mode) / `Policy.can_revoke_agent_write_unlock?/1` (operator only, no mode gate — the kill switch) | `Audit.Event` (`workspace.agent_write_unlock_granted`/`_revoked`/`_expired`) |
+| Enable agent write (auto-apply) | Casein | `Policy.can_enable_agent_write?/1` (known isolation; deny shared_stage/unsafe/unknown) via `Casein.Proposals.AutoApply` | `Audit.Event` (`proposals.auto_apply_authorize`/`proposals.auto_applied`) + `run.approval_granted` ledger event |
 | Set workspace mode | Casein | `Policy.can_set_workspace_mode?/1` (operator/owner; not config-pinned) | `Audit.Event` |
 | Read workspace status | Casein | Auth | `WorkspaceRecord` snapshot |
 | Read audit log | Casein | Auth | `Audit.Event` |

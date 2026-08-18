@@ -1,10 +1,10 @@
 defmodule Casein.Scripts.GrokLockedMcpNoticeTest do
   @moduledoc """
-  A managed Grok worker launched without an agent-write unlock must SAY what is
-  and is not available to it.
+  A managed Grok worker launched without a write-capable MCP grant must SAY
+  what is and is not available to it.
 
-  History: the launcher used to select Grok's `read-only` bwrap base whenever the
-  unlock was absent. That conflated two unrelated risks — writing an isolated
+  History: the launcher used to select Grok's `read-only` bwrap base whenever
+  write was unavailable. That conflated two unrelated risks — writing an isolated
   worktree versus driving the operator's live panes — and it was severe and
   silent: the worktree and its git metadata were write-denied, child network was
   blocked, and BEAM could not start (`Failed to write to erl_child_setup: 1`), so
@@ -12,8 +12,8 @@ defmodule Casein.Scripts.GrokLockedMcpNoticeTest do
   sessions diagnosed it locally and one concluded Grok's OAuth had expired when
   the credential was in fact healthy.
 
-  The base is now always `strict`; the unlock governs the MCP grant only. These
-  assertions cover both halves: that the sandbox no longer keys off the unlock,
+  The base is now always `strict`; DB isolation governs the MCP grant only. These
+  assertions cover both halves: that the sandbox no longer keys off write_enabled,
   and that a locked launch stays legible about the grant it did get.
   """
   use ExUnit.Case, async: true
@@ -25,7 +25,7 @@ defmodule Casein.Scripts.GrokLockedMcpNoticeTest do
     %{source: File.read!(@script)}
   end
 
-  test "the bwrap base never keys off the write unlock", %{source: source} do
+  test "the bwrap base never keys off write_enabled", %{source: source} do
     refute source =~ ~s(sandbox_base="read-only"),
            """
            The read-only base is what made a locked worker useless: no worktree
@@ -42,7 +42,7 @@ defmodule Casein.Scripts.GrokLockedMcpNoticeTest do
     [branch, _] = String.split(branch, "profile=", parts: 2)
 
     refute branch =~ "sandbox_base=",
-           "the sandbox base must be selected before, and independently of, the unlock check"
+           "the sandbox base must be selected before, and independently of, the write check"
   end
 
   test "a locked launch announces the grant it actually got", %{source: source} do
@@ -73,7 +73,7 @@ defmodule Casein.Scripts.GrokLockedMcpNoticeTest do
            "REQUIRE_WRITE must run before announce so orchestrators never reach a locked prompt"
   end
 
-  test "the notice forbids sandbox-base bypass of the unlock", %{source: source} do
+  test "the notice forbids sandbox-base bypass of the isolation gate", %{source: source} do
     notice = notice_body(source)
 
     assert notice =~ "CASEIN_GROK_SANDBOX_BASE",
@@ -110,8 +110,11 @@ defmodule Casein.Scripts.GrokLockedMcpNoticeTest do
     assert notice =~ "terminal_send_command",
            "name the missing tool so it is greppable"
 
-    assert notice =~ "agent-write unlock",
+    assert notice =~ "isolation",
            "the notice must name the cause; a symptom-only message sends people looking locally"
+
+    refute notice =~ "Unlock 30"
+    refute notice =~ "agent-write unlock"
   end
 
   test "the notice says delegation still works while locked", %{source: source} do
@@ -120,15 +123,15 @@ defmodule Casein.Scripts.GrokLockedMcpNoticeTest do
     assert notice =~ "terminal_report_agent_state",
            """
            Reporting tools survive a locked grant, so delegation is viable without
-           an unlock. Omitting this is what made operators grant write reflexively.
+           pane mutations. Omitting this is what made operators chase a write grant.
            """
   end
 
-  test "the notice tells the reader who can lift the restriction", %{source: source} do
+  test "the notice tells the reader how to lift the restriction", %{source: source} do
     notice = notice_body(source)
 
-    assert notice =~ ~r/operator/i, "the notice should say who can fix it"
-    assert notice =~ ~r/relaunch/i, "granting alone does not re-issue a live capability"
+    assert notice =~ ~r/isolation/i, "the notice should say what to fix"
+    assert notice =~ ~r/relaunch/i, "changing isolation does not re-issue a live capability"
   end
 
   test "the notice goes to stderr so it survives stdout capture", %{source: source} do

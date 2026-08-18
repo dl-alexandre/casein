@@ -187,8 +187,6 @@ Paths outside the run ledger still produce general audit actions:
 | agent MCP tool actions | Mutating terminal/preview/artifact MCP calls | agent | session / preview / artifact |
 | `proposal.applied` | Human applied a proposal diff via the Proposals tab (`Casein.ProposalApply`) | operator | `proposal` |
 | `proposal.apply_blocked` / `proposal.apply_failed` | Proposal apply refused (too large/invalid/conflict) or `git apply` failed | operator | `proposal` |
-| `workspace.agent_write_unlock_granted` / `_revoked` | Agent-write unlock granted or revoked | operator | `workspace` |
-| `workspace.agent_write_unlock_expired` | Passive expiry sweep revoked a stale unlock | `Casein.Workspaces.AgentWriteUnlockExpirer` | `workspace` |
 | `proposals.auto_apply_authorize` | Policy decision for a review-agent run's own auto-apply attempt | `"agent:review"` | `run` |
 | `proposals.auto_applied` / `proposals.auto_apply_failed` / `proposals.auto_apply_skipped` | Outcome of a review-agent run's auto-apply attempt (`Casein.Proposals.AutoApply`) | `"agent:review"` | `proposal` / `run` |
 

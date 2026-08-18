@@ -372,8 +372,8 @@ defmodule Casein.Agents.PreviewToolsMoreTest do
   # ensure_server_here — runtime lookup precedes the launcher gate
   # ---------------------------------------------------------------------------
 
-  test "ensure_server_here with a blank tmux_session reports missing_tmux_session" do
-    assert {:error, %{error: :missing_tmux_session}} =
+  test "ensure_server_here with a blank tmux_session resolves the workspace session like siblings" do
+    assert {:error, %{error: :runtime_surface_not_found, tmux_session: "casein_ws-tools_default"}} =
              PreviewTools.invoke("preview_ensure_server_here", @v3_workspace, %{
                "tmux_session" => ""
              })

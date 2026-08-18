@@ -44,7 +44,7 @@ defmodule Casein.Agents.PreviewTools.EnsureServerHere do
   alias McpCtl.Tool
 
   @impl Casein.Agents.ToolAction
-  def parameters, do: Tool.object(Helpers.open_props(), [:workspace_id, :tmux_session])
+  def parameters, do: Tool.object(Helpers.open_props(), [:workspace_id])
 
   @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_ensure_server_here")

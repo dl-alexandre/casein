@@ -57,8 +57,21 @@ defmodule Scripts.SpawnHostHeadroomTest do
 
     {out, status} = run_check(tmp, [{"CASEIN_SPAWN_FORCE", "1"}])
     assert status == 0, out
-    assert out =~ "spawn refused"
-    assert out =~ "CASEIN_SPAWN_FORCE=1 — spawning anyway"
+    assert out =~ "host headroom below threshold"
+    assert out =~ "proceeding under CASEIN_SPAWN_FORCE"
+    refute out =~ "headroom exhausted"
+    refute out =~ "spawn refused"
+    refute out =~ "refused:headroom"
+  end
+
+  test "refusal prints a machine-readable refused:headroom token" do
+    tmp = tmp!()
+    write_probe!(tmp, load1: "40.00", nproc: 32, mem_kb: 40_000_000)
+
+    {out, status} = run_check(tmp, [])
+    assert status == 75, out
+    assert out =~ "headroom exhausted"
+    assert out =~ ~r/^refused:headroom$/m
   end
 
   test "max load ratio is configurable" do
@@ -121,6 +134,7 @@ defmodule Scripts.SpawnHostHeadroomTest do
 
     assert status == 75, out
     assert out =~ "spawn refused"
+    assert out =~ ~r/^refused:headroom$/m
     refute out =~ ~r/^launch=/m
   end
 

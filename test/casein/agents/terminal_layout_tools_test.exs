@@ -52,7 +52,7 @@ defmodule Casein.Agents.TerminalLayoutToolsTest do
       end
     end
 
-    test "capability clients stay read-only until agent write is unlocked" do
+    test "capability clients stay read-only until agent write is enabled" do
       locked = allowed_terminal_tools(false)
       unlocked = allowed_terminal_tools(true)
 

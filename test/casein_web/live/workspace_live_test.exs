@@ -2946,48 +2946,6 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     assert has_element?(view, "iframe[data-src='http://localhost:4000']")
   end
 
-  test "agent write unlock grant and revoke round-trip through the run tab", %{conn: conn} do
-    workspace_root = Path.join(System.tmp_dir!(), "casein-agent-write-unlock")
-    workspace_path = Path.join(workspace_root, "ws-1")
-    File.mkdir_p!(workspace_path)
-
-    prev_root = Application.get_env(:casein, :workspaces_root)
-    Application.put_env(:casein, :workspaces_root, workspace_root)
-    {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
-
-    on_exit(fn ->
-      File.rm_rf(workspace_root)
-      restore(:workspaces_root, prev_root)
-    end)
-
-    Req.Test.stub(Casein.Integrations.Manager.Client, fn
-      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
-        workspace_payload(conn, workspace_path)
-
-      conn ->
-        conn
-        |> Plug.Conn.put_resp_content_type("application/json")
-        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
-    end)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    await_mount_hydration(view)
-    render_click(view, "switch_tab", %{"tab" => "run"})
-
-    assert Casein.Workspaces.agent_write_unlock_for("ws-1") == :inactive
-
-    html = render_submit(view, "workspace:grant_agent_write_unlock", %{"minutes" => "30"})
-    assert html =~ "Agent write unlocked for 30 min."
-    assert has_element?(view, "#agent-write-unlock-revoke")
-
-    assert {:active, _until, _by} = Casein.Workspaces.agent_write_unlock_for("ws-1")
-
-    html = render_click(view, "workspace:revoke_agent_write_unlock", %{})
-    assert html =~ "Revoked."
-    refute has_element?(view, "#agent-write-unlock-revoke")
-    assert Casein.Workspaces.agent_write_unlock_for("ws-1") == :inactive
-  end
-
   defp workspace_index_payload(name) do
     %{
       "id" => name,

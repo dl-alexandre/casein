@@ -12,9 +12,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspacePolicyEvents do
   alias Casein.Policy.Decision
   alias CaseinWeb.WorkspaceLive.Show
 
-  @agent_write_unlock_min_minutes 5
-  @agent_write_unlock_max_minutes 240
-
   def handle_event("workspace:start", _params, socket) do
     case Workspaces.start(socket.assigns.workspace.id, current_user_email(socket)) do
       {:ok, _} ->
@@ -92,63 +89,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspacePolicyEvents do
     end
   end
 
-  def handle_event("workspace:grant_agent_write_unlock", %{"minutes" => minutes_str}, socket) do
-    minutes = clamp_unlock_minutes(minutes_str)
-
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_grant_agent_write_unlock?(policy_ctx(socket)) end, %{
-        action: "workspace.agent_write_unlock_grant_attempt",
-        target_type: "workspace",
-        target_ref: socket.assigns.workspace.id,
-        metadata: %{"requested_minutes" => minutes}
-      })
-
-    if Decision.allow?(decision) do
-      ws_id = socket.assigns.workspace.id
-      granter = current_actor_id(socket)
-      until = DateTime.add(DateTime.utc_now(), minutes * 60, :second)
-      # The `workspace.agent_write_unlock_granted` audit event is emitted by
-      # Workspaces.grant_agent_write_unlock/3 itself, so every caller — this
-      # handler, a release console, any future path — is traceable. Do not
-      # re-emit it here.
-      {:ok, _} = Workspaces.grant_agent_write_unlock(ws_id, until, granter)
-
-      {:noreply,
-       socket
-       |> Show.assign_agent_write_unlock(ws_id)
-       |> put_flash(:info, "Agent write unlocked for #{minutes} min.")}
-    else
-      {:noreply, put_flash(socket, :error, agent_write_unlock_denied_message(decision))}
-    end
-  end
-
-  def handle_event("workspace:revoke_agent_write_unlock", _params, socket) do
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_revoke_agent_write_unlock?(policy_ctx(socket)) end, %{
-        action: "workspace.agent_write_unlock_revoke_attempt",
-        target_type: "workspace",
-        target_ref: socket.assigns.workspace.id
-      })
-
-    if Decision.allow?(decision) do
-      ws_id = socket.assigns.workspace.id
-      {:ok, _} = Workspaces.revoke_agent_write_unlock(ws_id)
-
-      _ =
-        Audit.emit!(%{
-          action: "workspace.agent_write_unlock_revoked",
-          workspace_id: ws_id,
-          actor_id: current_actor_id(socket),
-          target_type: "workspace",
-          target_ref: ws_id
-        })
-
-      {:noreply, socket |> Show.assign_agent_write_unlock(ws_id) |> put_flash(:info, "Revoked.")}
-    else
-      {:noreply, put_flash(socket, :error, "Not allowed to revoke.")}
-    end
-  end
-
   defp current_user_email(socket), do: socket.assigns.current_user[:email]
 
   defp refresh_workspace_assign(socket) do
@@ -183,25 +123,4 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspacePolicyEvents do
     do: "Cannot change mode: #{reason |> Atom.to_string() |> String.replace("_", " ")}"
 
   defp mode_change_denied_message(_), do: "Cannot change workspace mode."
-
-  defp agent_write_unlock_denied_message(%Decision{reason: :config_override}),
-    do: "Workspace mode is pinned by configuration."
-
-  defp agent_write_unlock_denied_message(%Decision{reason: :forbidden}),
-    do: "Only the workspace owner can grant agent write."
-
-  defp agent_write_unlock_denied_message(%Decision{reason: :requires_manual_mode}),
-    do: "Agent write unlock requires manual mode."
-
-  defp agent_write_unlock_denied_message(%Decision{reason: reason}) when not is_nil(reason),
-    do: "Cannot unlock agent write: #{reason |> Atom.to_string() |> String.replace("_", " ")}"
-
-  defp agent_write_unlock_denied_message(_), do: "Cannot unlock agent write."
-
-  defp clamp_unlock_minutes(minutes_str) do
-    case Integer.parse(to_string(minutes_str)) do
-      {n, _} -> n |> max(@agent_write_unlock_min_minutes) |> min(@agent_write_unlock_max_minutes)
-      :error -> @agent_write_unlock_min_minutes
-    end
-  end
 end

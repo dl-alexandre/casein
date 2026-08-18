@@ -1450,6 +1450,58 @@ defmodule Casein.Agents.PreviewToolsTest do
              })
   end
 
+  test "preview_ensure_server_here accepts a workspace-name alias of the stored session" do
+    previous = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:casein, :runtime_preview_launcher_enabled),
+        else: Application.put_env(:casein, :runtime_preview_launcher_enabled, previous)
+    end)
+
+    {:ok, _} =
+      Casein.Workspaces.State.sync(%Casein.Workspace{
+        id: @v3_workspace.id,
+        name: "tools",
+        path: "/tmp/ws-tools",
+        status: :running
+      })
+
+    stored = Tmux.session_name(@v3_workspace.id, "u-dev")
+    requested = Tmux.session_name("tools", "u-dev")
+    seed_runtime_surface!(@v3_workspace.id, stored, runtime_id: "rt-alias", port: 4103)
+
+    assert {:ok, %{runtime_id: "rt-alias", tmux_session: ^requested}} =
+             PreviewTools.invoke("preview_ensure_server_here", @v3_workspace, %{
+               "tmux_session" => requested
+             })
+  end
+
+  test "preview_ensure_server_here accepts the terminal session key as tmux_session" do
+    previous = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:casein, :runtime_preview_launcher_enabled),
+        else: Application.put_env(:casein, :runtime_preview_launcher_enabled, previous)
+    end)
+
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+
+    seed_runtime_surface!(@v3_workspace.id, worktree_session,
+      runtime_id: "rt-session",
+      port: 4104
+    )
+
+    assert {:ok, %{runtime_id: "rt-session"}} =
+             PreviewTools.invoke("preview_ensure_server_here", @v3_workspace, %{
+               "session" => worktree_session
+             })
+  end
+
   test "preview_open_here repairs an existing preview pane in the wrong window" do
     prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
     worktree_session = "#{prefix}wt-agent"

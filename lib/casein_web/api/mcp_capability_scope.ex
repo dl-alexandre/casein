@@ -79,7 +79,7 @@ defmodule CaseinWeb.API.MCPCapabilityScope do
     end
   end
 
-  # Raw send tools may target any pane in the bound session when write unlock
+  # Raw send tools may target any pane in the bound session when write is
   # is active (so an agent can drive a verify/bash pane). All other terminal
   # tools stay pinned to the claimed agent pane.
   @session_any_pane_tools ~w(terminal_send_command terminal_send_keys)

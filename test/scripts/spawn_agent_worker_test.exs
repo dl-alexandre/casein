@@ -271,16 +271,16 @@ defmodule Scripts.SpawnAgentWorkerTest do
     refute out =~ "source #{env_a}"
   end
 
-  # The unlock no longer selects the bwrap base — that is always "strict" — so a
+  # Isolation no longer selects the bwrap base — that is always "strict" — so a
   # worker spawned into a locked workspace still writes its worktree, runs mix,
   # and commits. Only pane control is withheld. Refusing the spawn (as this did
   # while the two were coupled) would now block a worker that works, so the
   # preflight must advise and proceed.
-  test "spawns a Grok worker while the agent-write unlock is locked, with an advisory" do
+  test "spawns a Grok worker while the MCP grant is locked, with an advisory" do
     ctx =
       preflight_fixture!(
         "locked",
-        ~s({"agent_write":{"write_enabled":false,"unlock_status":"expired"}})
+        ~s({"agent_write":{"write_enabled":false}})
       )
 
     {out, status} = spawn_dry_run(ctx, "grok", [])
@@ -291,36 +291,20 @@ defmodule Scripts.SpawnAgentWorkerTest do
     # The window must actually be opened — the whole point of not refusing.
     assert out =~ "window=worker-"
 
-    assert out =~ "LOCKED MCP grant (expired)"
+    assert out =~ "LOCKED MCP grant (blocked)"
     # Say what still works, or the advisory reads as "this worker is broken".
     assert out =~ "CAN write its worktree, run mix, and commit"
     assert out =~ "CANNOT drive"
+    assert out =~ "shared_stage, unsafe, or unknown"
+    refute out =~ "grant agent write"
+    refute out =~ "Unlock 30"
   end
 
-  # write_enabled can be false while the unlock is live — the workspace may not
-  # be in manual mode, or its DB isolation may be shared_stage/unsafe. Telling
-  # the operator to re-grant there sends them down a dead end.
-  test "does not blame the unlock when a live unlock is overridden by workspace policy" do
+  test "spawns a Grok worker when the workspace reports write enabled" do
     ctx =
       preflight_fixture!(
-        "policy",
-        ~s({"agent_write":{"write_enabled":false,"unlock_status":"active"}})
-      )
-
-    {out, status} = spawn_dry_run(ctx, "grok", [])
-
-    assert status == 0
-    assert out =~ "LOCKED MCP grant (blocked-by-workspace-policy)"
-    assert out =~ "The unlock itself is active"
-    assert out =~ "shared_stage/unsafe"
-    refute out =~ "grant agent write for the workspace in the Casein UI"
-  end
-
-  test "spawns a Grok worker when the workspace reports an active unlock" do
-    ctx =
-      preflight_fixture!(
-        "unlocked",
-        ~s({"agent_write":{"write_enabled":true,"unlock_status":"active"}})
+        "enabled",
+        ~s({"agent_write":{"write_enabled":true}})
       )
 
     {out, 0} = spawn_dry_run(ctx, "grok", [])
@@ -355,7 +339,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     {out, 0} = spawn_dry_run(ctx, "grok", [])
 
-    assert out =~ "could not confirm this workspace's agent-write unlock"
+    assert out =~ "could not confirm this workspace's agent-write state"
     assert out =~ "window=worker-iso"
   end
 

@@ -115,7 +115,7 @@ runtime `PreviewControl.Registry` by `session_id`. Actions delegate to
 | `preview_open_current_workspace` | Open the pre-scoped workspace app preview; auto-navigate viewer on loopback | (workspace-scoped; no `workspace_id` arg) | `open_app_preview/2` |
 | `preview_open_app` | Open the workspace app (or named `surface`) preview in a control session | `workspace_id`\*, `surface`, storage/header opts | `open_app_preview/2` |
 | `preview_open_here` | Open the app surface beside the calling agent session | `workspace_id`\*, `tmux_session`\*, `surface` | `open_app_here/2` |
-| `preview_ensure_server_here` | Ensure the runtime-owned preview server for the calling worktree session | `workspace_id`\*, `tmux_session`\* | `ensure_server_here/2` |
+| `preview_ensure_server_here` | Ensure the runtime-owned preview server for the calling worktree session | `workspace_id`\*, `tmux_session` | `ensure_server_here/2` |
 | `preview_open_localhost` | Open a localhost preview on an allowed `port` | `workspace_id`\*, `port`\*, `path` | `open_localhost_preview/2` |
 | `preview_navigate` | Navigate within the allowed preview origin | `session_id`\*, `path`\* | `navigate/1` |
 | `preview_navigate_pane` | Navigate an embedded pane by tmux `pane_id` + broadcast | `pane_id`\*, `path`\* | `navigate_pane/1` |

@@ -2,8 +2,7 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
   @moduledoc """
   Workspace DB isolation gates the managed Grok *MCP grant*
   (`terminal_send_*`), frozen at leader start. The bwrap base is always strict
-  (#605). Surfaces that report the gate and legacy unlock state must stay
-  accurate.
+  (#605). Surfaces that report the gate must stay accurate.
 
   These tests pin `terminal_context` and the workspace status API that
   spawn/launch preflight against.
@@ -14,7 +13,6 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
   alias Casein.Export
   alias Casein.Terminals.Tmux
   alias Casein.Workspace
-  alias Casein.Workspaces
   alias Casein.Workspaces.DbIsolation
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.MemoryAdapter
@@ -54,7 +52,7 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
     {:ok, session: session}
   end
 
-  test "terminal_context reports the lock and tells orchestrators to fail fast" do
+  test "terminal_context reports isolation lock and tells orchestrators to fail fast" do
     persist_isolation(:unknown)
 
     assert {:ok, %{agent_write: agent_write}} =
@@ -62,65 +60,39 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
 
     refute agent_write.write_enabled
     refute agent_write.orchestrator_ready
-    assert agent_write.unlock_status == "inactive"
+    refute Map.has_key?(agent_write, :unlock_status)
     refute Map.has_key?(agent_write, :unlock_until)
 
-    # Post-#605: sandbox is strict; MCP grant is what is locked. Orchestrators
-    # must stop once, not poll for unlock (#593).
-    assert agent_write.fail_fast =~ "blocked: need agent-write unlock"
+    assert agent_write.fail_fast =~ "blocked: workspace isolation"
     assert agent_write.note =~ "strict sandbox"
     assert agent_write.note =~ "terminal_send_command"
-    assert agent_write.note =~ "re-granting does not free"
     assert agent_write.note =~ "ORCHESTRATOR FAIL-FAST"
-    assert agent_write.note =~ "Do not schedule 15–30m unlock poll loops"
-    assert agent_write.note =~ "codex"
+    assert agent_write.note =~ "shared_stage, unsafe, or unknown"
+    refute agent_write.note =~ "agent-write unlock"
+    refute agent_write.note =~ "Unlock 30 min"
     refute agent_write.note =~ "READ-ONLY sandbox"
-    refute agent_write.note =~ "BEAM cannot start"
   end
 
-  # write_enabled can be false while the unlock is live when DB isolation is
-  # shared_stage/unsafe. Pointing at the unlock there sends the operator down a
-  # dead end.
-  test "terminal_context does not blame the unlock when workspace policy is the blocker" do
-    until = DateTime.add(DateTime.utc_now(), 300, :second)
-    assert {:ok, _} = Workspaces.grant_agent_write_unlock(@workspace_id, until, "operator")
+  test "terminal_context reports write enabled for known-isolated workspaces" do
+    assert {:ok, %{agent_write: agent_write}} =
+             TerminalTools.invoke("terminal_context", %{"workspace_id" => @workspace_id})
+
+    assert agent_write.write_enabled
+    assert agent_write.orchestrator_ready
+    refute Map.has_key?(agent_write, :note)
+    refute Map.has_key?(agent_write, :fail_fast)
+    refute Map.has_key?(agent_write, :unlock_status)
+  end
+
+  test "terminal_context names isolation as the blocker for shared_stage" do
     persist_isolation(:shared_stage)
 
     assert {:ok, %{agent_write: agent_write}} =
              TerminalTools.invoke("terminal_context", %{"workspace_id" => @workspace_id})
 
     refute agent_write.write_enabled
-    assert agent_write.unlock_status == "active"
-    assert agent_write.note =~ "The unlock itself is active"
-    assert agent_write.note =~ "shared_stage/unsafe"
-    refute agent_write.note =~ "An operator must re-grant"
-  end
-
-  test "terminal_context reports an active unlock with its deadline and no warning" do
-    until = DateTime.add(DateTime.utc_now(), 300, :second)
-    assert {:ok, _} = Workspaces.grant_agent_write_unlock(@workspace_id, until, "operator")
-
-    assert {:ok, %{agent_write: agent_write}} =
-             TerminalTools.invoke("terminal_context", %{"workspace_id" => @workspace_id})
-
-    assert agent_write.write_enabled
-    assert agent_write.orchestrator_ready
-    assert agent_write.unlock_status == "active"
-    assert agent_write.unlock_until == DateTime.to_iso8601(until)
-    refute Map.has_key?(agent_write, :note)
-    refute Map.has_key?(agent_write, :fail_fast)
-  end
-
-  test "terminal_context reports a lapsed unlock without disabling isolated write" do
-    until = DateTime.add(DateTime.utc_now(), -5, :second)
-    assert {:ok, _} = Workspaces.grant_agent_write_unlock(@workspace_id, until, "operator")
-
-    assert {:ok, %{agent_write: agent_write}} =
-             TerminalTools.invoke("terminal_context", %{"workspace_id" => @workspace_id})
-
-    assert agent_write.write_enabled
-    assert agent_write.orchestrator_ready
-    assert agent_write.unlock_status == "expired"
+    assert agent_write.note =~ "shared_stage, unsafe, or unknown"
+    refute agent_write.note =~ "Unlock 30 min"
   end
 
   test "terminal_context omits agent_write when the call is not workspace-scoped" do
@@ -130,20 +102,19 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
     refute Map.has_key?(payload, :agent_write)
   end
 
-  # spawn/launch preflight the status API for the MCP grant (not the sandbox base).
   test "workspace status API publishes the same write state the MCP grant is chosen from" do
     persist_isolation(:unknown)
 
     assert {:ok, %{agent_write: locked}} = Export.status(@workspace_id)
     refute locked.write_enabled
-    assert locked.unlock_status == "inactive"
+    refute Map.has_key?(locked, :unlock_status)
 
     persist_isolation(:local)
 
-    assert {:ok, %{agent_write: unlocked}} = Export.status(@workspace_id)
-    assert unlocked.write_enabled
-    assert unlocked.unlock_status == "inactive"
-    assert is_nil(unlocked.unlock_until)
+    assert {:ok, %{agent_write: enabled}} = Export.status(@workspace_id)
+    assert enabled.write_enabled
+    refute Map.has_key?(enabled, :unlock_status)
+    refute Map.has_key?(enabled, :unlock_until)
   end
 
   defp session_name, do: Tmux.session_name(@workspace_id, "u-dev")

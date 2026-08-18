@@ -172,7 +172,7 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert text =~ "CASEIN_GROK_BUNDLE_DIR"
     assert text =~ "CASEIN_GROK_SANDBOX_PROFILE"
     # The bwrap base is deliberately unconditional — see
-    # Casein.Scripts.GrokLockedMcpNoticeTest. The write unlock gates the MCP
+    # Casein.Scripts.GrokLockedMcpNoticeTest. Isolation gates the MCP
     # grant only, so "read-only" must not reappear as a sandbox base here.
     assert text =~ ~S(sandbox_base="strict")
     refute text =~ ~S(sandbox_base="read-only")
