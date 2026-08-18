@@ -82,7 +82,7 @@ defmodule Casein.MixProject do
       # Phoenix.LiveDashboard.Router` inside its `if compile_env(:dev_routes)`
       # block in every env (Elixir compiles both `if` branches), so the dep must
       # be present at compile time in prod too.
-      {:phoenix_live_dashboard, "~> 0.8.7"},
+      {:phoenix_live_dashboard, "~> 0.9.0"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       # Pinned by immutable commit ref (not a tag) so a force-pushed tag can't
