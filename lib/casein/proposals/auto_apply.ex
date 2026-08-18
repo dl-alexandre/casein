@@ -92,7 +92,12 @@ defmodule Casein.Proposals.AutoApply do
   def maybe_auto_apply(_workspace_id, _root, _run_ctx), do: :ok
 
   defp authorize_and_apply(workspace_id, root, run_ctx) do
-    ctx = %{workspace_id: workspace_id, actor_type: :agent}
+    ctx = %{
+      workspace_id: workspace_id,
+      actor_type: :agent,
+      db_isolation: db_isolation(workspace_id)
+    }
+
     decision = Policy.can_enable_agent_write?(ctx)
 
     _ =
@@ -111,6 +116,15 @@ defmodule Casein.Proposals.AutoApply do
     if Decision.allow?(decision), do: apply_flow(workspace_id, root, run_ctx)
 
     :ok
+  end
+
+  defp db_isolation(workspace_id) do
+    case Workspaces.get_record(workspace_id) do
+      {:ok, %{db_isolation: "shared_stage"}} -> :shared_stage
+      {:ok, %{db_isolation: "unsafe"}} -> :unsafe
+      {:ok, %{db_isolation: isolation}} when isolation in ["ephemeral", "local"] -> :isolated
+      _ -> nil
+    end
   end
 
   defp apply_flow(workspace_id, root, run_ctx) do
