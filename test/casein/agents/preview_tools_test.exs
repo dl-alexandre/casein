@@ -672,6 +672,37 @@ defmodule Casein.Agents.PreviewToolsTest do
     assert_receive {:fake_tmux_kill_pane, ^tmux_session, ^pane_id}
   end
 
+  test "preview_close releases a shell-bound preview without killing the operator's pane" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    panes = FakeState.get(:fake_tmux_panes) || %{}
+
+    FakeState.put(
+      :fake_tmux_panes,
+      Map.update(panes, tmux_session, [], fn session_panes ->
+        Enum.map(session_panes, fn
+          %{id: ^pane_id} = pane -> Map.put(pane, :current_command, "bash")
+          pane -> pane
+        end)
+      end)
+    )
+
+    assert {:ok,
+            %{
+              pane_id: ^pane_id,
+              status: :closed,
+              tmux_kill: %{status: "skipped", reason: "non_preview_pane"},
+              deregister: %{status: "ok"}
+            }} =
+             PreviewTools.invoke("preview_close", @v3_workspace, %{"pane_id" => pane_id})
+
+    refute PreviewPanes.get_by_pane(pane_id)
+    refute_received {:fake_tmux_kill_pane, ^tmux_session, ^pane_id}
+  end
+
   test "preview_close can remove an unregistered stale tmux pane when tmux_session is provided" do
     tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
 
@@ -1162,7 +1193,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     assert_receive {:fake_tmux_split_pane, ^tmux_session, _, "h", ^new_pane_id}
   end
 
-  test "reusing a registered shell pane fails instead of returning a pane id" do
+  test "a registered shell pane is released and replaced, never reused and never killed" do
     tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
 
     assert {:ok, %{pane_id: pane_id}} =
@@ -1183,11 +1214,31 @@ defmodule Casein.Agents.PreviewToolsTest do
       end)
     )
 
-    assert {:error, %{error: :non_preview_pane, pane_id: ^pane_id}} =
+    assert {:ok, %{pane_id: new_pane_id} = payload} =
              PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
                "actor_id" => "agent-1",
                "port" => 10_100
              })
+
+    refute Map.get(payload, :reused)
+    assert new_pane_id != pane_id
+    assert %{pane_id: ^pane_id} = Map.get(payload, :released_non_preview_binding)
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, _, "h", ^new_pane_id}
+
+    # The shell belongs to the operator: the binding is dropped, the pane is not.
+    refute_received {:fake_tmux_kill_pane, ^tmux_session, ^pane_id}
+    refute PreviewPanes.get_by_pane(pane_id)
+
+    # And the release is durable, so the next open no longer sees the binding.
+    assert {:ok, %{pane_id: third_pane_id} = third} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "port" => 10_100
+             })
+
+    assert third_pane_id == new_pane_id
+    assert Map.get(third, :reused)
+    refute Map.get(third, :released_non_preview_binding)
   end
 
   test "open_app_preview honors explicit tmux session when an origin is open elsewhere" do

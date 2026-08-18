@@ -112,6 +112,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
         )
         |> Visibility.put_user_visibility(operator_visibility)
         |> maybe_put_reused(result)
+        |> maybe_put_released_non_preview_binding(result)
         |> maybe_put_duplicate_cleanup(duplicate_cleanup)
         |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
         |> Navigation.maybe_put_self_preview_snapshot(result)
@@ -170,6 +171,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
           |> Map.put(:placement, PreviewTmuxTopology.placement_payload(result.registration))
           |> Visibility.put_user_visibility(operator_visibility)
           |> maybe_put_reused(result)
+          |> maybe_put_released_non_preview_binding(result)
           |> maybe_put_repaired_placement(result)
           |> maybe_put_duplicate_cleanup(duplicate_cleanup)
           |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
@@ -218,6 +220,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
         )
         |> Visibility.put_user_visibility(operator_visibility)
         |> maybe_put_reused(result)
+        |> maybe_put_released_non_preview_binding(result)
         |> maybe_put_duplicate_cleanup(duplicate_cleanup)
         |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
         |> Shared.put_preview_next("preview_observe_live", %{session_id: result.session.id})
@@ -316,9 +319,12 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
     else
       case existing_preview_pane_for_url(workspace, url, opts) do
         {:ok, result} ->
-          with :ok <- PortProbing.preflight_preview_url(url, opts),
-               :ok <- reject_non_preview_binding(result) do
-            {:ok, Map.put(result, :reused, true)}
+          with :ok <- PortProbing.preflight_preview_url(url, opts) do
+            if preview_capable_result?(result) do
+              {:ok, Map.put(result, :reused, true)}
+            else
+              release_non_preview_binding(workspace, url, opts, result)
+            end
           end
 
         {:misplaced, registration, mismatch} ->
@@ -340,26 +346,45 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
     end
   end
 
-  defp reject_non_preview_binding(result) do
-    if preview_capable_result?(result) do
-      :ok
-    else
-      {:error,
-       %{
-         error: :non_preview_pane,
-         pane_id: Map.get(result, :pane_id),
-         message:
-           "Open bound a non-preview pane and cannot become operator-visible. " <>
-             "No pane id is returned as success."
-       }}
+  # A registration whose pane is a plain shell can never render for the operator,
+  # and it outlives both a close of the `previews` row and a process restart: the
+  # registry rehydrates open `preview_pane_registrations` on demand, so every
+  # later open is handed the same dead binding back by id. Release it and split a
+  # real preview pane. `PreviewPanes.deregister/1` closes the registration, the
+  # control session and the preview row without touching tmux, so the operator's
+  # shell keeps running — the recovery that was missing from casein#1001.
+  defp release_non_preview_binding(workspace, url, opts, result) do
+    pane_id = Map.get(result, :pane_id)
+
+    case PreviewPanes.deregister(pane_id) do
+      released when released in [:ok, {:error, :not_found}] ->
+        with {:ok, split} <-
+               split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true)) do
+          {:ok, Map.put(split, :released_non_preview_binding, %{pane_id: pane_id})}
+        end
+
+      other ->
+        {:error, non_preview_pane_error(pane_id, other)}
     end
   end
 
-  defp preview_capable_result?(%{registration: registration}) do
-    Shared.pane_kind(registration) != "non_preview_shell"
+  defp non_preview_pane_error(pane_id, release_error) do
+    %{
+      error: :non_preview_pane,
+      pane_id: pane_id,
+      release_error: Shared.health_error(release_error),
+      message:
+        "Open bound a non-preview pane, and the stale binding could not be released. " <>
+          "No pane id is returned as success."
+    }
   end
 
-  defp preview_capable_result?(_), do: true
+  defp preview_capable_result?(result) do
+    result
+    |> Map.get(:registration)
+    |> Shared.pane_kind()
+    |> Kernel.!=("non_preview_shell")
+  end
 
   defp ensure_shared_preview_source(workspace, url, opts) do
     source =
@@ -700,6 +725,11 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
 
   defp maybe_put_reused(payload, %{reused: true}), do: Map.put(payload, :reused, true)
   defp maybe_put_reused(payload, _), do: payload
+
+  defp maybe_put_released_non_preview_binding(payload, %{released_non_preview_binding: released}),
+    do: Map.put(payload, :released_non_preview_binding, released)
+
+  defp maybe_put_released_non_preview_binding(payload, _), do: payload
 
   defp put_shared_registration(payload, %{shared: true} = registration) do
     payload
