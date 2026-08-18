@@ -4,8 +4,6 @@ defmodule Casein.PolicyTest do
   alias Casein.Policy.{Decision, WorkspaceMode}
   alias Casein.Agents.Capability
 
-  alias Casein.Workspaces
-
   setup do
     prev_default = Application.get_env(:casein, :default_workspace_mode)
     prev_overrides = Application.get_env(:casein, :workspace_modes)
@@ -102,7 +100,7 @@ defmodule Casein.PolicyTest do
              Policy.can_enable_agent_write?(%{workspace_id: "ws-shared"})
   end
 
-  test "can_enable_agent_write? allows isolated workspace without manual mode or unlock" do
+  test "can_enable_agent_write? allows isolated workspace without manual mode" do
     Application.put_env(:casein, :workspace_modes, %{"ws-review" => :review})
 
     assert %Decision{verdict: :allow} =
@@ -112,88 +110,31 @@ defmodule Casein.PolicyTest do
              })
   end
 
-  test "can_enable_agent_write? allows known-isolated workspace without an active unlock" do
-    Application.put_env(:casein, :workspace_modes, %{"ws-unlocked" => :manual})
+  test "can_enable_agent_write? allows known-isolated workspace" do
+    Application.put_env(:casein, :workspace_modes, %{"ws-isolated" => :manual})
 
     assert %Decision{verdict: :allow} =
              Policy.can_enable_agent_write?(%{
-               workspace_id: "ws-unlocked",
+               workspace_id: "ws-isolated",
                db_isolation: :isolated
              })
   end
 
-  test "can_enable_agent_write? ignores an expired unlock for isolated workspace" do
-    Application.put_env(:casein, :workspace_modes, %{"ws-expired" => :manual})
-    past = DateTime.add(DateTime.utc_now(), -60, :second)
-    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-expired", past, "alice")
-
-    assert %Decision{verdict: :allow} =
-             Policy.can_enable_agent_write?(%{
-               workspace_id: "ws-expired",
-               db_isolation: :local
-             })
-  end
-
-  test "can_enable_agent_write? denies :shared_stage_guarded even with an active unlock" do
-    Application.put_env(:casein, :workspace_modes, %{"ws-shared-unlocked" => :manual})
-
-    until = DateTime.add(DateTime.utc_now(), 3600, :second)
-    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-shared-unlocked", until, "alice")
+  test "can_enable_agent_write? denies :shared_stage_guarded" do
+    Application.put_env(:casein, :workspace_modes, %{"ws-shared" => :manual})
 
     assert %Decision{verdict: :deny, reason: :shared_stage_guarded} =
              Policy.can_enable_agent_write?(%{
-               workspace_id: "ws-shared-unlocked",
+               workspace_id: "ws-shared",
                db_isolation: :shared_stage
              })
   end
 
-  test "can_enable_agent_write? denies :unsafe_db even with an active unlock" do
+  test "can_enable_agent_write? denies :unsafe_db" do
     Application.put_env(:casein, :workspace_modes, %{"ws-unsafe" => :manual})
-    until = DateTime.add(DateTime.utc_now(), 3600, :second)
-    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-unsafe", until, "alice")
 
     assert %Decision{verdict: :deny, reason: :unsafe_db} =
              Policy.can_enable_agent_write?(%{workspace_id: "ws-unsafe", db_isolation: :unsafe})
-  end
-
-  test "can_grant_agent_write_unlock? requires operator + :manual mode" do
-    Application.put_env(:casein, :workspace_modes, %{
-      "ws-manual" => :manual,
-      "ws-review" => :review
-    })
-
-    assert %Decision{verdict: :deny, reason: :forbidden} =
-             Policy.can_grant_agent_write_unlock?(%{workspace_id: "ws-manual"})
-
-    assert %Decision{verdict: :deny, reason: :requires_manual_mode} =
-             Policy.can_grant_agent_write_unlock?(%{
-               workspace_id: "ws-review",
-               workspace_user: "alice",
-               actor_username: "alice"
-             })
-
-    assert %Decision{verdict: :allow} =
-             Policy.can_grant_agent_write_unlock?(%{
-               workspace_id: "ws-manual",
-               workspace_user: "alice",
-               actor_username: "alice"
-             })
-  end
-
-  test "can_revoke_agent_write_unlock? is the kill switch: operator-only, no mode/isolation gate" do
-    Application.put_env(:casein, :workspace_modes, %{"ws-review" => :review})
-
-    assert %Decision{verdict: :deny, reason: :forbidden} =
-             Policy.can_revoke_agent_write_unlock?(%{workspace_id: "ws-review"})
-
-    # Non-manual mode and shared_stage_guarded/db isolation never block revoke.
-    assert %Decision{verdict: :allow} =
-             Policy.can_revoke_agent_write_unlock?(%{
-               workspace_id: "ws-review",
-               workspace_user: "alice",
-               actor_username: "alice",
-               db_isolation: :unsafe
-             })
   end
 
   test "can_run_command? allows allowlisted ids for any authenticated peer" do

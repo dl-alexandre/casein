@@ -59,7 +59,7 @@ compile-time-fixed argv.
 | `Casein.Agents.MCPUrls` | `lib/casein/agents/mcp_urls.ex` | Build terminal/preview/artifact MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
 | `Casein.Agents.MCPMaterializer` | `lib/casein/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
 | `Casein.Agents.AgentCapabilityToken` / `AgentCapabilityTokens` | `lib/casein/agents/agent_capability_token.ex`, `lib/casein/agents/agent_capability_tokens.ex` | Hash-at-rest, expiring managed-Grok bearer claims and replacement/revocation lifecycle. |
-| `Casein.Agents.GrokCapabilityPolicy` | `lib/casein/agents/grok_capability_policy.ex` | Computes exact direct-tool grants and intersects them with live workspace mode/write-unlock policy on every request. |
+| `Casein.Agents.GrokCapabilityPolicy` | `lib/casein/agents/grok_capability_policy.ex` | Computes exact direct-tool grants and intersects them with live workspace isolation policy on every request. |
 | `Casein.Agents.PaneEnv` | `lib/casein/agents/pane_env.ex` | Build the `CASEIN_*` env map and push it into a tmux session; materializes configs as a side effect. |
 | `Casein.Agents.AuthProfile` | `lib/casein/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.casein/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login — except owners registered in `agent-auth/owners`, whose profiles apply even before sign-in (opt-in fail-closed). |
 | `Casein.Agents.TidewaveMCP` | `lib/casein/agents/tidewave_mcp.ex` | Resolve an optional Tidewave MCP URL (env → self-hosted → workspace metadata → preview registry) + server key. |
@@ -199,17 +199,17 @@ verification, capability exchange, and sandbox installation all fail closed for
 managed Grok launches.
 
 The token's direct-tool map is a frozen ceiling (the full write-capable set
-issued at mint) and is intersected with current workspace policy on every MCP
-request. Locked/manual operation exposes reads and metadata reporting only. An
-active, time-boxed write unlock expands the live grant to supported mutations,
+issued at mint) and is intersected with current workspace isolation on every MCP
+request. Shared-stage, unsafe, or unknown isolation exposes reads and metadata
+reporting only. Known isolation expands the live grant to supported mutations,
 including raw `terminal_send_command` / `terminal_send_keys` for any pane in the
 bound tmux session, so an agent can drive a verify or bash pane. Agent-pane
 shortcuts (`terminal_send_agent_*`) stay pinned to the claimed agent pane.
-Revoking the unlock removes MCP mutations immediately without re-minting.
+Changing isolation takes effect on the next tools/list without re-minting.
 
-The unlock governs the **MCP grant only**. Every managed leader extends Grok's
+Isolation governs the **MCP grant only**. Every managed leader extends Grok's
 `strict` profile with explicit credential denies, whether or not write is
-unlocked. A worker's isolation comes from running in its own fresh
+enabled. A worker's filesystem isolation comes from running in its own fresh
 `agent/<runtime>/<slug>-<stamp>` worktree branched off the primary checkout, not
 from denying it write — so a locked worker can still write that worktree, run
 `mix`, and commit, while remaining unable to drive the operator's live panes.
@@ -223,14 +223,14 @@ read-only profile also blocks child network and breaks BEAM startup
 (`Failed to write to erl_child_setup: 1`), so `mix` silently would not run.
 
 The MCP grant and the sandbox no longer move together: the sandbox base is
-constant, and only the grant tracks policy. The grant is still read once, when
-the leader starts, and stays frozen for the pane's life, so a later unlock does
-**not** give a running pane terminal control — only a relaunch does. That freeze
-is the remaining sharp edge, and three surfaces make it discoverable instead of
-leaving it to be rediscovered by failure: the workspace status API and
+constant, and only the grant tracks isolation. The grant is still read once, when
+the leader starts, and stays frozen for the pane's life, so a later isolation
+change does **not** give a running pane terminal control — only a relaunch does.
+That freeze is the remaining sharp edge, and three surfaces make it discoverable
+instead of leaving it to be rediscovered by failure: the workspace status API and
 `terminal_context` both report an `agent_write` block (`write_enabled`,
-`orchestrator_ready`, `fail_fast`, `unlock_status`, `unlock_until`, plus a
-remedy note when blocked), and `scripts/spawn-agent-worker.sh` preflights it.
+`orchestrator_ready`, `fail_fast`, plus a remedy note when blocked), and
+`scripts/spawn-agent-worker.sh` preflights it.
 
 **Token rotation / live rebind (#864):** `POST /api/workspaces/:id/api-token/rotate`
 (via `Casein.Agents.WorkspaceTokens.rotate_for/1` + `PaneEnv.rebind_workspace/2`)
@@ -250,10 +250,8 @@ worktree, runs `mix`, and commits, so refusing to open the window would block a
 worker that works. Orchestrators that need pane control launch with
 `CASEIN_AGENT_REQUIRE_WRITE=1` so a locked grant refuses up front (exit 3)
 instead of a healthy-looking session that cannot `terminal_send_*`. See
-`docs/agent-write-preflight.md`. Note that `write_enabled` can be false while
-the unlock is *active*, when the workspace is not in manual mode or its DB
-isolation is `shared_stage`/`unsafe`; re-granting does not help there, so the
-surfaces say so explicitly.
+`docs/agent-write-preflight.md`. `write_enabled` is false only when isolation
+is `shared_stage`, `unsafe`, or unknown.
 
 `search_tools` and `invoke_tool` are intentionally absent, so cross-server
 routing cannot bypass the exact grant. Streamable HTTP session ids are also bound

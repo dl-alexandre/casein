@@ -763,9 +763,8 @@ if config_env() == :prod and not release_cli? do
          positive_integer_env.("CASEIN_MCP_MAX_BODY_BYTES")
 
   # Deployment-wide kill switch for auto-applying a review-agent run's own
-  # proposal (Casein.Proposals.AutoApply). Off by default — even a workspace
-  # with an active per-workspace unlock (Workspaces.grant_agent_write_unlock/3)
-  # auto-applies nothing until an operator explicitly opts the whole
+  # proposal (Casein.Proposals.AutoApply). Off by default — even a known-isolated
+  # workspace auto-applies nothing until an operator explicitly opts the whole
   # deployment in here.
   config :casein,
          Casein.Proposals.AutoApply,

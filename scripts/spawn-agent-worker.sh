@@ -96,11 +96,11 @@ spawn_worker_window_name() {
 }
 
 # Report what MCP grant a Grok worker will launch with. The grant is read once,
-# when the leader starts, and is then frozen for the pane's life, so re-granting
-# the unlock later does not free a running pane — only a relaunch does. That
+# when the leader starts, and is then frozen for the pane's life, so resolving
+# isolation later does not free a running pane — only a relaunch does. That
 # freeze is the part worth announcing up front.
 #
-# This preflight used to refuse the spawn outright, because a locked unlock also
+# This preflight used to refuse the spawn outright, because a locked grant also
 # selected a read-only bwrap base that left the pane unable to write its
 # worktree, resolve DNS, or start the BEAM. The base is now always "strict" and
 # the two are decoupled, so a locked worker still writes, runs mix, and commits;
@@ -142,13 +142,7 @@ except Exception:
 agent_write = data.get("agent_write")
 if not isinstance(agent_write, dict) or "write_enabled" not in agent_write:
     print("unknown"); raise SystemExit(0)
-if agent_write["write_enabled"]:
-    print("unlocked"); raise SystemExit(0)
-# write_enabled can be false with a live unlock: the workspace may not be in
-# manual mode, or its DB isolation may be shared_stage/unsafe. Do not call that
-# an expired unlock — the operator would re-grant and get nowhere.
-status = agent_write.get("unlock_status")
-print(status if status in ("inactive", "expired") else "blocked-by-workspace-policy")
+print("enabled" if agent_write["write_enabled"] else "blocked")
 ' 2>/dev/null)" || {
     printf 'unknown\n'
     return 0
@@ -162,16 +156,16 @@ spawn_worker_preflight_grok_write() {
   state="$(spawn_worker_grok_write_state)"
 
   case "$state" in
-    unlocked)
+    enabled)
       return 0
       ;;
     unknown)
-      warn_degraded "could not confirm this workspace's agent-write unlock; the worker will still write its worktree and run mix, but if it cannot drive panes, grant agent write and relaunch it"
+      warn_degraded "could not confirm this workspace's agent-write state; the worker will still write its worktree and run mix, but if it cannot drive panes, resolve isolation and relaunch it"
       return 0
       ;;
   esac
 
-  # A locked unlock no longer produces a read-only sandbox — the bwrap base is
+  # A locked grant no longer produces a read-only sandbox — the bwrap base is
   # always "strict" and the worker can write its worktree, run mix, and commit.
   # Only the MCP grant is withheld, so spawning is still worth doing; refusing
   # here would block a worker that works.
@@ -180,20 +174,10 @@ warn: spawning a Grok worker with a LOCKED MCP grant (${state}).
 warn:   The worker CAN write its worktree, run mix, and commit. It CANNOT drive
 warn:   live tmux panes (terminal_send_command / terminal_send_keys); reporting
 warn:   tools still work, so unattended delegation is fine.
+warn:   Cause: workspace DB isolation is shared_stage, unsafe, or unknown.
+warn:   To get pane control, resolve isolation, then spawn again — the grant is
+warn:   read at launch and frozen for the pane.
 EOF
-
-  if [[ "$state" == "blocked-by-workspace-policy" ]]; then
-    cat >&2 <<'EOF'
-warn:   The unlock itself is active — the block is elsewhere: the workspace is not
-warn:   in manual mode, or its DB isolation is shared_stage/unsafe. Re-granting the
-warn:   unlock will not help; resolve that first if you need pane control.
-EOF
-  else
-    cat >&2 <<'EOF'
-warn:   To get pane control, grant agent write for the workspace in the Casein UI,
-warn:   then spawn again — the grant is read at launch and frozen for the pane.
-EOF
-  fi
 
   return 0
 }
@@ -688,4 +672,5 @@ if ((READY_STATUS != 0)); then
   exit 1
 fi
 
+printf 'spawned %s\n' "$PANE_ID"
 printf '%s\n' "$PANE_ID"

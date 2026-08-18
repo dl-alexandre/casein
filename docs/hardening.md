@@ -27,13 +27,11 @@ onto the same Casein deployment.
   requires workspace operator + `:manual` mode (`Policy.can_apply_proposal?/1`,
   `Casein.ProposalApply`).
 - Autonomous agent write (a review-agent run self-applying its own proposal
-  with no per-change human click) is the reviewed unlock flow: requires
-  `:manual` mode plus an explicit, time-boxed, human-granted unlock
-  (`Workspaces.grant_agent_write_unlock/3`), gated again by a deployment-wide
+  with no per-change human click) requires known workspace isolation
+  (`Policy.can_enable_agent_write?/1`), gated again by a deployment-wide
   kill switch (`Casein.Proposals.AutoApply`, off by default) and a content
-  veto (diffs touching `test/` are never auto-applied). Revoking the unlock
-  (`Policy.can_revoke_agent_write_unlock?/1`) has no mode/isolation gate —
-  it must always be reachable.
+  veto (diffs touching `test/` are never auto-applied). There is no
+  time-boxed write unlock.
 
 ## Deploy Safety
 

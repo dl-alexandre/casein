@@ -69,24 +69,23 @@ Modes (assuming a workspace operator/owner; a non-operator is always denied
 
 | Mode | `can_apply_proposal?` | `can_enable_agent_write?` |
 |---|---|---|
-| `:manual` | Allow | Allow, only with an active `Workspaces.grant_agent_write_unlock/3` unlock — else deny `:agent_write_locked` |
-| `:review` | Deny (`:requires_manual_mode`) | Deny (`:requires_manual_mode`) |
-| `:agent_write_locked` | Deny (`:requires_manual_mode`) | Deny (`:requires_manual_mode`) |
-| `:shared_stage_guarded` | Deny (`:requires_manual_mode`) | Deny (`:shared_stage_guarded`) |
+| `:manual` | Allow | Allow when isolation is known (`:ephemeral` / `:local` / `:isolated`); else deny `:agent_write_locked` |
+| `:review` | Deny (`:requires_manual_mode`) | Allow when isolation is known |
+| `:agent_write_locked` | Deny (`:requires_manual_mode`) | Allow when isolation is known |
+| `:shared_stage_guarded` | Deny (`:shared_stage_guarded`) | Deny (`:shared_stage_guarded`) |
 
 DB isolation (`:shared_stage`, `:unsafe`) forces `:shared_stage_guarded`/
-`:unsafe_db` denials for both checks, unconditionally — checked before mode
-or unlock state, and never overridable by an active unlock.
+`:unsafe_db` denials for both checks, unconditionally — checked before mode.
+Unknown isolation denies `can_enable_agent_write?` fail-safe.
 
 `can_apply_proposal?/1` is the write path for `Casein.ProposalApply`
 (a human reviewing and applying a proposal diff, gated by workspace
-operator + `:manual` mode). `can_enable_agent_write?/1` is the *separate*,
-stricter gate for `Casein.Proposals.AutoApply` — a server-spawned
-review-agent run self-applying its own proposal with no per-change human
-click, requiring `:manual` mode **and** a currently-active, human-granted,
-time-boxed unlock. A deployment-wide config kill switch
+operator + `:manual` mode). `can_enable_agent_write?/1` is the *separate*
+gate for `Casein.Proposals.AutoApply` — a server-spawned review-agent run
+self-applying its own proposal with no per-change human click, requiring
+known isolation. A deployment-wide config kill switch
 (`Casein.Proposals.AutoApply` `enabled:`, default `false`) additionally
-gates the latter regardless of any per-workspace unlock.
+gates the latter.
 
 ## Audit event lifecycle
 

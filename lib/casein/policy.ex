@@ -11,9 +11,9 @@ defmodule Casein.Policy do
   M10 contract:
     * `apply_proposal?` is real logic as of the `ProposalApply` write path —
       operator + `:manual` mode + not isolation-blocked (see below).
-    * `enable_agent_write?` permits known-isolated workspaces without requiring
-      mode or unlock state. `:shared_stage_guarded`/`:unsafe_db` are checked
-      first and unconditionally, and unknown isolation remains denied.
+    * `enable_agent_write?` permits known-isolated workspaces.
+      `:shared_stage_guarded`/`:unsafe_db` are checked first and
+      unconditionally, and unknown isolation remains denied.
     * Other actions delegate to the existing allowlists they already used.
   """
 
@@ -99,9 +99,8 @@ defmodule Casein.Policy do
   Whether a server-spawned review-agent run may self-apply its own proposal
   with no per-change human click (`Casein.Proposals.AutoApply`).
 
-  `:shared_stage_guarded`/`:unsafe_db` are absolute and never overridable by an
-  active unlock. Known-isolated workspaces are allowed without requiring mode
-  or unlock state; unknown isolation is denied fail-safe.
+  `:shared_stage_guarded`/`:unsafe_db` are absolute. Known-isolated workspaces
+  are allowed; unknown isolation is denied fail-safe.
   """
   def can_enable_agent_write?(ctx) do
     case detect_block(ctx) do
@@ -115,44 +114,6 @@ defmodule Casein.Policy do
     if Map.get(ctx, :db_isolation) in [:ephemeral, :local, :isolated],
       do: allow(:enable_agent_write, ctx),
       else: deny(:enable_agent_write, ctx, :agent_write_locked)
-  end
-
-  @doc """
-  Human-in-the-loop grant of a workspace-scoped, time-boxed agent-write
-  unlock. Same operator/mode/isolation gate as `can_apply_proposal?/1` —
-  granting the unlock is itself as sensitive as applying a proposal.
-  """
-  def can_grant_agent_write_unlock?(ctx) do
-    cond do
-      Map.get(ctx, :workspace_mode_source) == :config ->
-        deny(:grant_agent_write_unlock, ctx, :config_override)
-
-      not workspace_operator?(ctx) ->
-        deny(:grant_agent_write_unlock, ctx, :forbidden)
-
-      mode(ctx) != :manual ->
-        deny(:grant_agent_write_unlock, ctx, :requires_manual_mode)
-
-      detect_block(ctx) == :shared_stage_guarded ->
-        deny(:grant_agent_write_unlock, ctx, :shared_stage_guarded)
-
-      detect_block(ctx) == :unsafe_db ->
-        deny(:grant_agent_write_unlock, ctx, :unsafe_db)
-
-      true ->
-        allow(:grant_agent_write_unlock, ctx)
-    end
-  end
-
-  @doc """
-  The kill switch. Deliberately has no mode/isolation gate — an operator must
-  always be able to revoke, regardless of what state made the unlock active
-  in the first place.
-  """
-  def can_revoke_agent_write_unlock?(ctx) do
-    if workspace_operator?(ctx),
-      do: allow(:revoke_agent_write_unlock, ctx),
-      else: deny(:revoke_agent_write_unlock, ctx, :forbidden)
   end
 
   @doc """

@@ -6,7 +6,7 @@ defmodule Casein.Proposals.AutoApplyTest do
   # test/casein/proposal_apply_test.exs.
   use ExUnit.Case, async: false
 
-  alias Casein.{Audit, Workspaces}
+  alias Casein.Audit
   alias Casein.Proposals.AutoApply
   alias Casein.Workspaces.DbIsolation
   alias Casein.Workspaces.State
@@ -54,21 +54,18 @@ defmodule Casein.Proposals.AutoApplyTest do
 
   defp enable!, do: Application.put_env(:casein, AutoApply, enabled: true)
 
-  defp unlock!(root) do
+  defp isolate!(root) do
     {:ok, _} =
       State.persist_isolation(root, %DbIsolation{
         isolation: :local,
         source: :default,
         detected_at: DateTime.utc_now()
       })
-
-    Workspaces.grant_agent_write_unlock(root, DateTime.add(DateTime.utc_now(), 3600), "alice")
   end
 
-  # Everything this module is actually asserting about, newest last. Granting an
-  # agent-write unlock is audited in its own right (Workspaces.State), so tests
-  # here must scope to auto-apply's own decisions rather than assume they are
-  # the only writer to the workspace's audit log.
+  # Everything this module is actually asserting about, newest last. Isolation
+  # persistence is not itself an auto-apply audit, so tests here must scope to
+  # auto-apply's own decisions.
   defp auto_apply_events(root) do
     root
     |> Audit.recent_for(10)
@@ -117,22 +114,20 @@ defmodule Casein.Proposals.AutoApplyTest do
 
   test "non-succeeded or non-proposal runs are a silent no-op", %{root: root} do
     enable!()
-    unlock!(root)
+    isolate!(root)
 
     assert :ok = AutoApply.maybe_auto_apply(root, root, run_ctx("r1", %{status: :failed}))
 
     assert :ok =
              AutoApply.maybe_auto_apply(root, root, run_ctx("r2", %{output_kind: :diagnostic}))
 
-    # Scoped to this module's own events: `unlock!/1` grants an agent-write
-    # unlock, and granting is itself audited, so the workspace's recent audit
-    # list is legitimately non-empty here. What "silent no-op" means is that
-    # auto-apply recorded nothing.
+    # Isolation persistence is not an auto-apply audit. What "silent no-op"
+    # means is that auto-apply recorded nothing.
     assert auto_apply_events(root) == []
   end
 
   test "disabled kill switch skips and audits, touches no files", %{root: root} do
-    unlock!(root)
+    isolate!(root)
     write_proposal(root, "r1", edit(root, "a.txt", 2, "line 2 EDITED"))
 
     assert :ok = AutoApply.maybe_auto_apply(root, root, run_ctx("r1"))
@@ -143,7 +138,7 @@ defmodule Casein.Proposals.AutoApplyTest do
     assert event.reason == :auto_apply_disabled
   end
 
-  test "no active unlock denies via Policy and audits the authorize decision", %{root: root} do
+  test "unknown isolation denies via Policy and audits the authorize decision", %{root: root} do
     enable!()
     write_proposal(root, "r1", edit(root, "a.txt", 2, "line 2 EDITED"))
 
@@ -160,7 +155,7 @@ defmodule Casein.Proposals.AutoApplyTest do
 
   test "missing proposal file skips with :invalid_proposal", %{root: root} do
     enable!()
-    unlock!(root)
+    isolate!(root)
 
     assert :ok = AutoApply.maybe_auto_apply(root, root, run_ctx("no-such-run"))
 
@@ -171,7 +166,7 @@ defmodule Casein.Proposals.AutoApplyTest do
 
   test "non-clean risk skips without applying", %{root: root} do
     enable!()
-    unlock!(root)
+    isolate!(root)
     write_proposal(root, "r1", edit(root, "a.txt", 2, "line 2 EDITED"))
     # Dirty working tree overlapping the same hunk -> :conflict risk.
     File.write!(
@@ -189,7 +184,7 @@ defmodule Casein.Proposals.AutoApplyTest do
 
   test "a diff touching test/ is always skipped, even though risk is clean", %{root: root} do
     enable!()
-    unlock!(root)
+    isolate!(root)
     File.mkdir_p!(Path.join(root, "test"))
     File.write!(Path.join(root, "test/foo_test.exs"), "defmodule FooTest do\nend\n")
     git!(root, ["add", "test/foo_test.exs"])
@@ -206,11 +201,11 @@ defmodule Casein.Proposals.AutoApplyTest do
     refute File.read!(Path.join(root, "test/foo_test.exs")) =~ "tampered"
   end
 
-  test "a clean proposal from an unlocked workspace auto-applies and records both events", %{
+  test "a clean proposal from an isolated workspace auto-applies and records both events", %{
     root: root
   } do
     enable!()
-    unlock!(root)
+    isolate!(root)
     write_proposal(root, "r1", edit(root, "a.txt", 2, "line 2 EDITED"))
 
     assert :ok = AutoApply.maybe_auto_apply(root, root, run_ctx("r1"))
@@ -220,7 +215,7 @@ defmodule Casein.Proposals.AutoApplyTest do
     applied = Enum.find(events, &(&1.action == "proposals.auto_applied"))
     assert applied.decision == :allow
     assert applied.metadata["risk"] == "clean"
-    assert applied.metadata["unlock_granted_by"] == "alice"
+    assert applied.metadata["applied_by"] == "agent:review"
 
     approval = Enum.find(events, &(&1.action == "run.approval_granted"))
     assert approval.metadata["auto"] in [true, "true"]
@@ -230,7 +225,7 @@ defmodule Casein.Proposals.AutoApplyTest do
     root: root
   } do
     enable!()
-    unlock!(root)
+    isolate!(root)
     diff = edit(root, "a.txt", 2, "line 2 EDITED")
 
     # Corrupt the context so `git apply --check` rejects it outright (still :clean risk vs an untouched tree).

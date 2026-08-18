@@ -22,7 +22,6 @@ defmodule Casein.Policy.Decision do
           | :requires_manual_mode
           | :forbidden
           | :config_override
-          | :agent_write_unlock_expired
 
   @type t :: %__MODULE__{
           action: atom(),

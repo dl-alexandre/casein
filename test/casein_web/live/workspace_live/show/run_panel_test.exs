@@ -22,8 +22,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       selected_run_can_retry: false,
       selected_run_artifacts: [],
       codex_exec_form: nil,
-      codex_exec_run: nil,
-      agent_write_unlock: %{status: :inactive, until: nil, by: nil, capability_bound: false}
+      codex_exec_run: nil
     }
   end
 
@@ -45,53 +44,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
       selected_run_artifacts={@selected_run_artifacts}
       codex_exec_form={@codex_exec_form}
       codex_exec_run={@codex_exec_run}
-      agent_write_unlock={@agent_write_unlock}
     />
     """)
   end
 
-  describe "run_panel/1 agent write unlock" do
-    test "hides the section when no capability-scoped agent is bound" do
+  describe "run_panel/1 does not expose agent write unlock" do
+    test "omits the removed grant and revoke controls" do
       html = render_panel([])
 
       refute html =~ ~s(id="agent-write-unlock")
       refute html =~ "Agent write unlock"
       refute html =~ "workspace:grant_agent_write_unlock"
-    end
-
-    test "offers the grant form once a capability-scoped agent is bound" do
-      html =
-        render_panel(
-          agent_write_unlock: %{
-            status: :inactive,
-            until: nil,
-            by: nil,
-            capability_bound: true
-          }
-        )
-
-      assert html =~ ~s(id="agent-write-unlock")
-      assert html =~ ~s(phx-submit="workspace:grant_agent_write_unlock")
-      assert html =~ ~s(id="agent-write-unlock-minutes")
-    end
-
-    # The kill switch cannot depend on the binding: a capability can lapse (12h
-    # TTL, or a revoked bearer) while the unlock it was granted for is still
-    # live, and an operator must always be able to revoke.
-    test "keeps revoke reachable while an unlock is active but nothing is bound" do
-      html =
-        render_panel(
-          agent_write_unlock: %{
-            status: :active,
-            until: ~U[2026-08-11 12:00:00Z],
-            by: "operator",
-            capability_bound: false
-          }
-        )
-
-      assert html =~ ~s(id="agent-write-unlock-revoke")
-      assert html =~ ~s(phx-click="workspace:revoke_agent_write_unlock")
-      assert html =~ "operator"
+      refute html =~ "workspace:revoke_agent_write_unlock"
     end
   end
 

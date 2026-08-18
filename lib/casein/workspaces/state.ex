@@ -120,129 +120,6 @@ defmodule Casein.Workspaces.State do
 
   defp mode_topic(external_id), do: "workspace_mode:" <> external_id
 
-  @doc """
-  Grants a time-boxed, explicit, revocable unlock allowing a server-spawned
-  review-agent run to self-apply its own proposal without a per-change human
-  click (`Casein.Proposals.AutoApply`). Never permanent — always has an
-  expiry — and always attributable to the human who granted it.
-
-  The audit event is emitted **here**, not in the caller. It used to live in the
-  LiveView handler, which meant every other caller granted silently: two grants
-  observed on 2026-08-03 both came from an out-of-band console call, and only
-  one of them bothered to hand-write its own audit row (the other left the
-  workspace unlocked for three hours with no trace). A control whose whole point
-  is being time-boxed and attributable cannot depend on each caller
-  remembering to say so.
-  """
-  @spec grant_agent_write_unlock(String.t(), DateTime.t(), String.t()) ::
-          {:ok, WorkspaceRecord.t()} | {:error, term()}
-  def grant_agent_write_unlock(external_id, %DateTime{} = until, granted_by)
-      when is_binary(external_id) and is_binary(granted_by) do
-    now = DateTime.utc_now()
-
-    case impl().upsert(%{
-           existing_or_new(external_id)
-           | agent_write_unlocked_until: until,
-             agent_write_unlocked_by: granted_by,
-             agent_write_unlock_granted_at: now,
-             last_seen_at: now
-         }) do
-      {:ok, _record} = ok ->
-        audit_agent_write_unlock_granted(external_id, until, granted_by, now)
-        broadcast_agent_write_unlock_changed(external_id, until, granted_by)
-        ok
-
-      other ->
-        other
-    end
-  end
-
-  defp audit_agent_write_unlock_granted(external_id, until, granted_by, now) do
-    _ =
-      Casein.Audit.emit!(%{
-        action: "workspace.agent_write_unlock_granted",
-        workspace_id: external_id,
-        actor_id: granted_by,
-        target_type: "workspace",
-        target_ref: external_id,
-        metadata: %{
-          "until" => DateTime.to_iso8601(until),
-          # Rounded, not floored: the caller computed `until` from its own
-          # `utc_now()` a few microseconds before ours, so a requested 30 min
-          # floors to 29 and misreports what the operator actually granted.
-          "minutes" => round(DateTime.diff(until, now, :second) / 60)
-        }
-      })
-
-    :ok
-  end
-
-  @doc "The kill switch — clears the unlock immediately, effective for the next completed run."
-  @spec revoke_agent_write_unlock(String.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
-  def revoke_agent_write_unlock(external_id) when is_binary(external_id) do
-    case impl().upsert(%{
-           existing_or_new(external_id)
-           | agent_write_unlocked_until: nil,
-             agent_write_unlocked_by: nil
-         }) do
-      {:ok, _record} = ok ->
-        broadcast_agent_write_unlock_changed(external_id, nil, nil)
-        ok
-
-      other ->
-        other
-    end
-  end
-
-  @doc """
-  Live-reads whether an agent-write unlock is currently in effect. Always
-  reads through to the adapter (never cached) — the whole point of a
-  revocable unlock is that revoke takes effect immediately.
-  """
-  @spec agent_write_unlock_for(String.t()) ::
-          {:active, DateTime.t(), String.t()} | :inactive | :expired
-  def agent_write_unlock_for(external_id) when is_binary(external_id) do
-    case impl().get(external_id) do
-      {:ok, %WorkspaceRecord{agent_write_unlocked_until: nil}} ->
-        :inactive
-
-      {:ok, %WorkspaceRecord{agent_write_unlocked_until: until, agent_write_unlocked_by: by}} ->
-        if DateTime.compare(until, DateTime.utc_now()) == :gt,
-          do: {:active, until, by},
-          else: :expired
-
-      :error ->
-        :inactive
-    end
-  end
-
-  @doc """
-  Subscribes the caller to agent-write-unlock changes for the given
-  workspace. Delivers `{:agent_write_unlock_changed, external_id, until, by}`
-  after each grant, revoke (until/by both `nil`), or passive expiry.
-  """
-  @spec subscribe_agent_write_unlock_changes(String.t()) :: :ok | {:error, term()}
-  def subscribe_agent_write_unlock_changes(external_id) when is_binary(external_id) do
-    Phoenix.PubSub.subscribe(Casein.PubSub, agent_write_unlock_topic(external_id))
-  end
-
-  defp existing_or_new(external_id) do
-    case impl().get(external_id) do
-      {:ok, existing} -> existing
-      :error -> %WorkspaceRecord{external_id: external_id, name: external_id}
-    end
-  end
-
-  defp broadcast_agent_write_unlock_changed(external_id, until, by) do
-    Phoenix.PubSub.broadcast(
-      Casein.PubSub,
-      agent_write_unlock_topic(external_id),
-      {:agent_write_unlock_changed, external_id, until, by}
-    )
-  end
-
-  defp agent_write_unlock_topic(external_id), do: "workspace_agent_write_unlock:" <> external_id
-
   def get(external_id), do: impl().get(external_id)
   def list, do: impl().list()
 
@@ -270,7 +147,7 @@ defmodule Casein.Workspaces.State do
   Marks a record as no longer vouched for by the workspace source.
 
   Deliberately not a delete: the record carries IDE-owned state (mode, DB
-  isolation history, agent-write grants) that outlives the workspace and is
+  isolation history) that outlives the workspace and is
   wanted again if it is recreated under the same id. Callers must have
   established that absence from the source is authoritative — see
   `Casein.Workspaces.Reconciler`.
@@ -278,6 +155,13 @@ defmodule Casein.Workspaces.State do
   @spec retire(String.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
   def retire(external_id) when is_binary(external_id) do
     impl().upsert(%{existing_or_new(external_id) | status: WorkspaceRecord.stale_status()})
+  end
+
+  defp existing_or_new(external_id) do
+    case impl().get(external_id) do
+      {:ok, existing} -> existing
+      :error -> %WorkspaceRecord{external_id: external_id, name: external_id}
+    end
   end
 
   @doc """

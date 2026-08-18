@@ -13,6 +13,7 @@ defmodule Casein.MCP.Scope do
   """
 
   alias Casein.PreviewControl
+  alias Casein.Terminals.TmuxScope
   alias Casein.Workspaces
   alias Casein.Workspaces.Aliases, as: WorkspaceAliases
 
@@ -140,7 +141,13 @@ defmodule Casein.MCP.Scope do
     with {:ok, args, workspace_origin} <-
            resolve_workspace_args(tool_name, args, default_workspace_id),
          {:ok, args, tmux_origin} <-
-           resolve_tmux_session_args(tool_name, args, default_tmux_session, surface),
+           resolve_tmux_session_args(
+             tool_name,
+             args,
+             default_tmux_session,
+             default_workspace_id,
+             surface
+           ),
          {:ok, args, caller_pane_origin} <-
            resolve_caller_pane_args(tool_name, args, default_caller_pane, surface),
          {:ok, workspace, workspace_id, workspace_origin} <-
@@ -191,17 +198,50 @@ defmodule Casein.MCP.Scope do
     end
   end
 
-  defp resolve_tmux_session_args(tool_name, args, default_tmux_session, :preview)
+  defp resolve_tmux_session_args(
+         tool_name,
+         args,
+         default_tmux_session,
+         default_workspace_id,
+         :preview
+       )
        when tool_name in @preview_default_tmux_session_tools and is_binary(default_tmux_session) do
     case tmux_session(args) do
-      nil -> {:ok, Map.put(args, "tmux_session", default_tmux_session), :pre_scoped}
-      ^default_tmux_session -> {:ok, args, :args}
-      requested -> {:error, tmux_session_scope_mismatch(default_tmux_session, requested)}
+      nil ->
+        {:ok, Map.put(args, "tmux_session", default_tmux_session), :pre_scoped}
+
+      ^default_tmux_session ->
+        {:ok, args, :args}
+
+      requested ->
+        if equivalent_scoped_session?(
+             default_tmux_session,
+             requested,
+             args,
+             default_workspace_id
+           ) do
+          {:ok, args, :args}
+        else
+          {:error, tmux_session_scope_mismatch(default_tmux_session, requested)}
+        end
     end
   end
 
-  defp resolve_tmux_session_args(_tool_name, args, _default_tmux_session, _surface) do
+  defp resolve_tmux_session_args(
+         _tool_name,
+         args,
+         _default_tmux_session,
+         _default_workspace_id,
+         _surface
+       ) do
     {:ok, args, tmux_session_arg_origin(args)}
+  end
+
+  defp equivalent_scoped_session?(scoped, requested, args, default_workspace_id) do
+    case workspace_id(args) || default_workspace_id do
+      id when is_binary(id) -> TmuxScope.equivalent_session?(scoped, requested, id)
+      _ -> false
+    end
   end
 
   # Caller-pane anchoring is a hint, not a security boundary: an explicit

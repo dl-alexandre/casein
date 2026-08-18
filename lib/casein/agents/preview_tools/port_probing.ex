@@ -2,15 +2,19 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
   @moduledoc false
 
   alias Casein.Agents.PreviewTools.{ControlSession, WorkspaceResolution}
+  alias Casein.Agents.PreviewTools.ControlSession.SessionResolve
   alias Casein.Previews.Deps
   alias Casein.Previews.WorkspaceContext
   # Struct-only leaf (not in the runtime SCC).
   alias Casein.Runtimes.Runtime
+  alias Casein.Terminals.TmuxScope
+
+  @inactive_runtime_statuses ~w(cleaned expired)
 
   @doc "Ensure the runtime-owned preview server for the scoped agent session."
   @spec ensure_server_here(map(), map()) :: {:ok, map()} | {:error, term()}
   def ensure_server_here(workspace, params \\ %{}) do
-    with session when is_binary(session) <- string_param(params, :tmux_session),
+    with session when is_binary(session) <- resolve_tmux_session(workspace, params),
          {:ok, %Runtime{} = runtime} <- runtime_for_tmux_session(workspace, session),
          %{} = preview_server <- Deps.impl(:runtimes).runtime_preview_server(runtime),
          :ok <- Deps.impl(:runtimes).ensure_preview_server_started(runtime) do
@@ -138,15 +142,25 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
   defp preview_preflight_reason(%{reason: reason}), do: reason
   defp preview_preflight_reason(reason), do: inspect(reason)
 
+  defp resolve_tmux_session(workspace, params) do
+    case string_param(params, :tmux_session) || string_param(params, :session) do
+      session when is_binary(session) -> session
+      _ -> SessionResolve.workspace_tmux_session(workspace)
+    end
+  end
+
   defp runtime_for_tmux_session(workspace, tmux_session) do
     workspace_id = workspace_id(workspace)
 
-    %{"workspace_id" => workspace_id}
-    |> Deps.impl(:runtimes).list_runtimes()
-    |> Enum.find(fn %Runtime{} = runtime ->
-      runtime.tmux_session_id == tmux_session and runtime.status not in ["cleaned", "expired"]
-    end)
-    |> case do
+    candidates =
+      %{"workspace_id" => workspace_id}
+      |> Deps.impl(:runtimes).list_runtimes()
+      |> Enum.reject(fn
+        %Runtime{status: status} -> status in @inactive_runtime_statuses
+        _ -> true
+      end)
+
+    case pick_runtime(candidates, tmux_session, workspace) do
       %Runtime{} = runtime ->
         {:ok, runtime}
 
@@ -157,8 +171,40 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
            tmux_session: tmux_session,
            workspace_id: workspace_id,
            message:
-             "No runtime preview server is registered for this tmux_session. Report the worktree runtime before opening a runtime preview."
+             "No runtime preview server is registered for this tmux_session. " <>
+               "Pass the same session sibling preview tools accept " <>
+               "(terminal_list_sessions name, or the workspace id/name alias of that session). " <>
+               "Report the worktree runtime before opening a runtime preview if none is registered."
          }}
+    end
+  end
+
+  defp pick_runtime(candidates, tmux_session, workspace) do
+    scope = runtime_scope(workspace)
+
+    cond do
+      runtime = Enum.find(candidates, &(&1.tmux_session_id == tmux_session)) ->
+        runtime
+
+      runtime =
+          Enum.find(
+            candidates,
+            &TmuxScope.equivalent_session?(&1.tmux_session_id, tmux_session, scope)
+          ) ->
+        runtime
+
+      match?([_one], candidates) ->
+        hd(candidates)
+
+      true ->
+        nil
+    end
+  end
+
+  defp runtime_scope(workspace) do
+    case workspace_id(workspace) do
+      id when is_binary(id) -> id
+      _ -> workspace
     end
   end
 

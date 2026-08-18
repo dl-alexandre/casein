@@ -16,6 +16,7 @@ defmodule Casein.Previews.SurfaceResolver do
   alias Casein.Previews.Url
   # Struct-only leaf (not in the runtime SCC).
   alias Casein.Runtimes.Runtime
+  alias Casein.Terminals.TmuxScope
 
   @v3_surface_order ~w(app http tidewave api milc-platform-server opencode)
   @port_aliases %{"http" => "app", "milc-platform-server" => "app"}
@@ -278,7 +279,8 @@ defmodule Casein.Previews.SurfaceResolver do
         |> Enum.reject(&(&1.status in @inactive_runtime_statuses))
         |> Enum.filter(fn %Runtime{} = runtime ->
           is_binary(runtime_id) or is_nil(tmux_session) or
-            runtime.tmux_session_id == tmux_session
+            runtime.tmux_session_id == tmux_session or
+            TmuxScope.equivalent_session?(runtime.tmux_session_id, tmux_session, id)
         end)
 
       _ ->

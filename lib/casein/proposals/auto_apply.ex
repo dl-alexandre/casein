@@ -168,22 +168,18 @@ defmodule Casein.Proposals.AutoApply do
   defp select_proposal(_root, _run_ctx), do: {:error, :no_run_id}
 
   # Casein.ProposalApply.apply/4 gates on Policy.can_apply_proposal?/1, which
-  # requires workspace_operator?/1 (workspace_user == actor_username, or an
-  # admin/operator role). An autonomous run has no identity of its own to
-  # offer there — it authorizes via the *separate* can_enable_agent_write?/1
-  # check already performed in authorize_and_apply/3. Rather than spoofing an
-  # operator role, attribute the call to the human who actually granted the
-  # unlock: they are the accountable party, and workspace_user/actor_username
-  # matching satisfies the ownership check honestly instead of by exception.
+  # requires an authenticated operator. An autonomous run has no human identity
+  # of its own; it already passed can_enable_agent_write?/1 (known isolation).
+  # Attribute the apply to the review-agent actor so workspace_role/1 sees an
+  # authenticated operator without inventing a grantor.
   defp do_apply(workspace_id, root, proposal, run_ctx) do
-    granter = unlock_granter(workspace_id)
+    actor = "agent:review:" <> to_string(Map.get(run_ctx, :run_id))
 
     actor_ctx = %{
       workspace_id: workspace_id,
       actor_type: :agent,
-      actor_id: "agent:review:" <> to_string(Map.get(run_ctx, :run_id)),
-      workspace_user: granter,
-      actor_username: granter
+      actor_id: actor,
+      actor_username: actor
     }
 
     case Casein.ProposalApply.apply(root, proposal.rel_path, actor_ctx) do
@@ -193,13 +189,6 @@ defmodule Casein.Proposals.AutoApply do
 
       {:error, reason} ->
         emit_failed(workspace_id, run_ctx, proposal, reason)
-    end
-  end
-
-  defp unlock_granter(workspace_id) do
-    case Workspaces.agent_write_unlock_for(workspace_id) do
-      {:active, _until, by} -> by
-      _ -> nil
     end
   end
 
@@ -215,7 +204,7 @@ defmodule Casein.Proposals.AutoApply do
         "run_id" => Map.get(run_ctx, :run_id),
         "files_count" => length(result.applied_files),
         "risk" => Atom.to_string(result.risk),
-        "unlock_granted_by" => unlock_granter(workspace_id)
+        "applied_by" => "agent:review"
       }
     })
   end

@@ -10,7 +10,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
   When the workspace is known-isolated, raw `terminal_send_command` /
   `terminal_send_keys` are granted for the bound tmux session (any pane).
   When isolation is shared, unsafe, or unknown, only reads and low-danger
-  reporting tools remain.
+  reporting tools remain. There is no time-boxed write unlock.
   """
 
   alias Casein.Agents.{ArtifactTools, PreviewTools, TerminalTools}
@@ -40,7 +40,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
   @doc """
   Full write-capable tool ceiling stored on newly issued capabilities.
 
-  Always includes mutation tools so a later human write unlock can expand the
+  Always includes mutation tools so a later isolation change can expand the
   live grant without re-minting the bearer.
   """
   @spec tool_ceiling() :: tool_map()
@@ -127,32 +127,13 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
 
   `write_enabled` is whether a managed Grok pane launched **now** would receive
   MCP mutation tools (`terminal_send_command` / `terminal_send_keys`). The bwrap
-  sandbox base is always `strict` (see #605) — the unlock no longer selects
-  read-only. Surfaces that report this (workspace status API, `terminal_context`)
-  must agree with the capability grant `launch-casein-agent.sh` freezes at
-  leader start. `unlock_status` is reported alongside it because the two can
-  diverge: a live unlock still yields `write_enabled: false` when the workspace
-  is not in manual mode or its DB isolation is `shared_stage`/`unsafe`, and
-  telling an operator to re-grant in that case sends them down a dead end.
+  sandbox base is always `strict` (see #605). Surfaces that report this
+  (workspace status API, `terminal_context`) must agree with the capability
+  grant `launch-casein-agent.sh` freezes at leader start.
   """
-  @spec agent_write_summary(String.t()) :: %{
-          write_enabled: boolean(),
-          unlock_status: String.t(),
-          unlock_until: String.t() | nil
-        }
+  @spec agent_write_summary(String.t()) :: %{write_enabled: boolean()}
   def agent_write_summary(workspace_id) when is_binary(workspace_id) do
-    {status, until} =
-      case Workspaces.agent_write_unlock_for(workspace_id) do
-        {:active, until, _by} -> {"active", until}
-        :expired -> {"expired", nil}
-        :inactive -> {"inactive", nil}
-      end
-
-    %{
-      write_enabled: write_unlocked?(workspace_id),
-      unlock_status: status,
-      unlock_until: until && DateTime.to_iso8601(until)
-    }
+    %{write_enabled: write_unlocked?(workspace_id)}
   end
 
   defp allowed_tools(write_enabled) do

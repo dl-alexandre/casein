@@ -30,7 +30,7 @@ defmodule Casein.PolicyIsolationTest do
              Policy.can_enable_agent_write?(%{workspace_id: "w", db_isolation: :unsafe})
   end
 
-  test "ephemeral isolation allows agent write without manual mode or unlock" do
+  test "ephemeral isolation allows agent write without manual mode" do
     Application.put_env(:casein, :workspace_modes, %{"w" => :review})
 
     assert %Decision{verdict: :allow} =

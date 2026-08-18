@@ -45,7 +45,7 @@ another workspace, MCP surface, or managed-agent capability receives the same
 Workspace and global bearers retain their existing authority. Managed Grok uses
 an expiring `grokcap_*` bearer instead: it advertises only its exact direct-tool
 grant, is bound to one workspace/private leader/tmux session/agent pane, and is
-intersected with current workspace mode and write-unlock policy on every request.
+intersected with current workspace mode and isolation policy on every request.
 It cannot call `search_tools` or `invoke_tool`, use a different MCP endpoint, or
 reuse another bearer's streamable session id. All terminal tools still touch only
 Casein-managed tmux sessions (`casein_*` prefix), never unrelated sessions.

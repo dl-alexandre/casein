@@ -41,11 +41,11 @@ Runtimes:
 
 Environment (selected):
   CASEIN_AGENT_REQUIRE_WRITE=1
-            Orchestrator preset for grok: refuse launch (exit 3) when the
-            workspace agent-write unlock does not grant MCP mutations. Use for
-            multi-agent managers that need terminal_send_*. Workers must omit
-            this — spawn-agent-worker.sh leaves it unset so locked implementers
-            still write under the strict sandbox.
+            Orchestrator preset for grok: refuse launch (exit 3) when workspace
+            isolation does not grant MCP mutations. Use for multi-agent
+            managers that need terminal_send_*. Workers must omit this —
+            spawn-agent-worker.sh leaves it unset so locked implementers still
+            write under the strict sandbox.
 EOF
 }
 
@@ -786,9 +786,9 @@ grok_reset_managed_home() {
   [[ "$(realpath -m "$reset_home")" == "$(realpath -m "$GROK_HOME")" ]]
 }
 
-# The workspace agent-write unlock gates the *MCP* grant: whether this worker may
-# drive the operator's live tmux panes (terminal_send_command / send_keys). It
-# used to also pick the bwrap base, which conflated two unrelated risks. A worker
+# Workspace DB isolation gates the *MCP* grant: whether this worker may drive
+# the operator's live tmux panes (terminal_send_command / send_keys). It used
+# to also pick the bwrap base, which conflated two unrelated risks. A worker
 # always runs in its own fresh agent/<runtime>/<slug>-<stamp> worktree branched
 # off the primary checkout — that isolation is the safety story — so denying it
 # filesystem write, child network, and BEAM made it useless without making the
@@ -815,12 +815,12 @@ warning:   It CANNOT drive your live tmux panes: the issued capability omits
 warning:   terminal_send_command / terminal_send_keys. Reporting tools
 warning:   (terminal_report_agent_state, terminal_report_worktree,
 warning:   terminal_request_clarification) still work, so delegation is fine.
-warning:   Cause: this workspace's agent-write unlock is expired or absent.
-warning:   Fix, only if you need pane control: have an operator grant agent write
-warning:   for the workspace, then relaunch.
+warning:   Cause: workspace DB isolation is shared_stage, unsafe, or unknown.
+warning:   Fix, only if you need pane control: resolve isolation, then relaunch.
 warning:   Do NOT set CASEIN_GROK_SANDBOX_BASE=workspace to bypass — that
-warning:   defeats the lock. Orchestrators that need pane control should launch
-warning:   with CASEIN_AGENT_REQUIRE_WRITE=1 so a locked grant refuses up front.
+warning:   defeats the isolation gate. Orchestrators that need pane control
+warning:   should launch with CASEIN_AGENT_REQUIRE_WRITE=1 so a locked grant
+warning:   refuses up front.
 EOF
 }
 
@@ -833,10 +833,9 @@ grok_refuse_locked_orchestrator() {
   cat >&2 <<EOF
 error: refusing managed Grok launch — CASEIN_AGENT_REQUIRE_WRITE=1 and MCP grant is LOCKED (capability ${capability_id}).
 error:   Orchestrator intent needs terminal_send_command / terminal_send_keys.
-error:   The workspace agent-write unlock is expired, inactive, or overridden by
-error:   workspace policy (not manual / shared_stage / unsafe).
-error:   Fix: grant agent write in the Casein UI (Unlock 30 min), then relaunch.
-error:   Do NOT set CASEIN_GROK_SANDBOX_BASE to override the lock.
+error:   Workspace DB isolation is shared_stage, unsafe, or unknown.
+error:   Fix: resolve isolation, then relaunch.
+error:   Do NOT set CASEIN_GROK_SANDBOX_BASE to override the isolation gate.
 error:   For implementer work that does not need pane control, omit
 error:   CASEIN_AGENT_REQUIRE_WRITE (workers still write their worktree under strict).
 EOF
@@ -1059,7 +1058,7 @@ grok_configure_capability() {
   fi
 
   # Always "strict": the worker's isolation comes from its own fresh worktree,
-  # not from denying it write. The unlock governs the MCP grant only.
+  # not from denying it write. DB isolation governs the MCP grant only.
   sandbox_base="strict"
   if [[ "$write_enabled" != "true" ]]; then
     if [[ "${CASEIN_AGENT_REQUIRE_WRITE:-0}" == "1" ]]; then

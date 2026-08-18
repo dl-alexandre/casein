@@ -466,8 +466,8 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
   # ensure_server_here gating
   # ---------------------------------------------------------------------------
 
-  test "ensure_server_here requires a tmux_session" do
-    assert {:error, %{error: :missing_tmux_session}} =
+  test "ensure_server_here resolves an omitted tmux_session like sibling preview tools" do
+    assert {:error, %{error: :runtime_surface_not_found, tmux_session: "casein_ws-tools_default"}} =
              PreviewTools.invoke("preview_ensure_server_here", @v3_workspace, %{})
   end
 

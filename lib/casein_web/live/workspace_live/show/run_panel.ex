@@ -11,10 +11,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
   attr :host_loc, :any, required: true
   attr :active_run, :any, default: nil
   attr :review_commands, :list, default: []
-
-  attr :agent_write_unlock, :any,
-    default: %{status: :inactive, until: nil, by: nil, capability_bound: false}
-
   attr :run_ledger, :list, required: true
   attr :run_ledger_loaded?, :boolean, default: true
   attr :run_ledger_error, :string, default: nil
@@ -167,55 +163,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
               </div>
             </div>
           <% end %>
-
-          <%!-- Only capability-scoped runtimes (managed Grok) are bound by this unlock,
-               so the grant form is offered only while one is bound. An ACTIVE unlock
-               always renders regardless: `Revoke now` is the kill switch and must stay
-               reachable even after the capability it was granted for has lapsed.
-               Cost of hiding the form: an operator can no longer grant *before*
-               launching, and the MCP grant is frozen at leader start — so unlocking a
-               live locked pane still requires relaunching it. --%>
-          <div
-            :if={@agent_write_unlock.status == :active or @agent_write_unlock.capability_bound}
-            id="agent-write-unlock"
-            class="border-t pt-3 mt-3"
-          >
-            <h3 class="mb-2 text-xs font-medium text-zinc-700">Agent write unlock</h3>
-            <%= if @agent_write_unlock.status == :active do %>
-              <div class="flex flex-wrap items-center gap-2 rounded border border-status-warning-border bg-status-warning-soft px-2 py-1.5 text-xs">
-                <span>
-                  Unlocked until {Calendar.strftime(@agent_write_unlock.until, "%H:%M")} by {@agent_write_unlock.by}
-                </span>
-                <button
-                  id="agent-write-unlock-revoke"
-                  phx-click="workspace:revoke_agent_write_unlock"
-                  class="ml-auto rounded border border-status-danger px-2 py-0.5 text-status-danger-fg hover:bg-status-danger-soft"
-                >
-                  Revoke now
-                </button>
-              </div>
-            <% else %>
-              <form
-                phx-submit="workspace:grant_agent_write_unlock"
-                class="flex items-center gap-2 text-xs"
-              >
-                <label for="agent-write-unlock-minutes">Unlock for</label>
-                <select
-                  id="agent-write-unlock-minutes"
-                  name="minutes"
-                  class="rounded border px-1 py-0.5"
-                >
-                  <option value="15">15 min</option>
-                  <option value="30" selected>30 min</option>
-                  <option value="60">60 min</option>
-                  <option value="120">120 min</option>
-                </select>
-                <button type="submit" class="rounded border px-3 py-1 hover:bg-zinc-50">
-                  Unlock agent write
-                </button>
-              </form>
-            <% end %>
-          </div>
 
           <div
             id="run-ledger"
