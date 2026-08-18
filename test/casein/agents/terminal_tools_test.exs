@@ -238,13 +238,16 @@ defmodule Casein.Agents.TerminalToolsTest do
     assert {:ok, %{session: ^session, pane: "%2"}} =
              TerminalTools.invoke("terminal_agent_pane", %{"workspace_id" => "alpha"})
 
-    assert {:ok, %{target: "%2", status: "sent"}} =
+    assert {:ok, %{target: "%2", status: "sent", write_id: write_id, receipt: receipt}} =
              TerminalTools.invoke("terminal_send_agent_command", %{
                "workspace_id" => "alpha",
                "command" => "mix test",
                "confirm" => false
              })
 
+    assert is_binary(write_id)
+    assert receipt.write_id == write_id
+    assert receipt.pane_id == "%2"
     assert_receive {:fake_tmux_send_command, ^session, "%2", "mix test", _opts}
   end
 

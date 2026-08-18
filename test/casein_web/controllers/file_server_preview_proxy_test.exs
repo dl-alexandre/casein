@@ -92,7 +92,7 @@ defmodule CaseinWeb.FileServerPreviewProxyTest do
     denied =
       auth_get(conn, "/preview-proxy/#{workspace.id}/#{port}/shot.png")
 
-    assert response(denied, 403) =~ "Port not allowed"
+    assert response(denied, 403) =~ "nothing is published on that port"
 
     # (b) registration admits the port (same escape hatch open_link_in_preview uses)
     pane_id = "%fs-proxy-#{System.unique_integer([:positive])}"

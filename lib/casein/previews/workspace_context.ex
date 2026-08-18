@@ -7,7 +7,7 @@ defmodule Casein.Previews.WorkspaceContext do
   see ad-hoc dev servers started in tmux panes.
   """
 
-  alias Casein.Previews.{SocketDetector, TerminalOutput, TidewaveProbe, Url}
+  alias Casein.Previews.{Access, SocketDetector, TerminalOutput, TidewaveProbe, Url}
 
   @doc """
   Enrich a workspace with terminal output and detected localhost ports.
@@ -113,12 +113,12 @@ defmodule Casein.Previews.WorkspaceContext do
       :ok
     else
       {:error,
-       %{
-         error: :port_not_allowed,
+       Access.deny_payload(:port_not_allowed)
+       |> Map.merge(%{
          port: port,
          allowed_ports: allowed_ports(workspace),
          message: "Port #{port} is not allowed for preview control"
-       }}
+       })}
     end
   end
 

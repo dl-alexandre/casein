@@ -47,6 +47,43 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Shared do
     |> Enum.any?(&(Map.get(&1, :id) == pane_id))
   end
 
+  def pane_kind(registration) when is_map(registration) do
+    command = pane_current_command(registration)
+
+    cond do
+      preview_process?(command) -> "preview"
+      shell_process?(command) -> "non_preview_shell"
+      is_binary(command) -> "other"
+      true -> "unknown"
+    end
+  end
+
+  def pane_kind(_), do: "unknown"
+
+  def pane_current_command(%{tmux_session: session, pane_id: pane_id})
+      when is_binary(session) and is_binary(pane_id) do
+    session
+    |> terminals().list_session_panes()
+    |> Enum.find_value(fn pane ->
+      id = Map.get(pane, :id) || Map.get(pane, "id")
+      if id == pane_id, do: Map.get(pane, :current_command) || Map.get(pane, "current_command")
+    end)
+  end
+
+  def pane_current_command(_), do: nil
+
+  def preview_process?(command) when is_binary(command),
+    do: String.contains?(command, "casein-preview")
+
+  def preview_process?(_), do: false
+
+  def shell_process?(command) when is_binary(command) do
+    base = command |> Path.basename() |> String.downcase()
+    base in ["bash", "sh", "zsh", "fish", "dash"]
+  end
+
+  def shell_process?(_), do: false
+
   def preview_api_token do
     System.get_env("CASEIN_API_TOKEN") ||
       Application.get_env(:casein, :casein_api_token)

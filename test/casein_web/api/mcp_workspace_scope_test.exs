@@ -69,6 +69,26 @@ defmodule CaseinWeb.API.MCPWorkspaceScopeTest do
     assert error.requested_workspace_id == @other
     assert error.message =~ @scoped
     assert error.message =~ @other
+    assert error.lane == "allow_cross_workspace"
+  end
+
+  test "scoped_call_params/2 allows an explicit read-only cross-workspace lane" do
+    params = %{
+      "name" => "preview_surfaces",
+      "arguments" => %{"workspace_id" => @other, "allow_cross_workspace" => true}
+    }
+
+    assert {:ok, ^params} = Scope.scoped_call_params(params, @scoped)
+  end
+
+  test "scoped_call_params/2 still rejects mutating cross-workspace overrides" do
+    params = %{
+      "name" => "preview_open",
+      "arguments" => %{"workspace_id" => @other, "allow_cross_workspace" => true}
+    }
+
+    assert {:error, %{error: :workspace_scope_mismatch}} =
+             Scope.scoped_call_params(params, @scoped)
   end
 
   test "workspaces_compatible?/2 matches identical or linked ids" do

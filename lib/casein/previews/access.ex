@@ -48,6 +48,13 @@ defmodule Casein.Previews.Access do
 
   @type workspace :: map()
 
+  @authorization_description "A hand-picked port is authorized only when it is declared for the workspace " <>
+                               "(ports.http / metadata / detected) or registered by a live preview pane, and " <>
+                               "is never an infrastructure port. Authorization is static — there is no " <>
+                               "post-deploy grace window. Denials are :forbidden (not your workspace, " <>
+                               "indistinguishable from no such workspace) or :port_not_allowed (yours, " <>
+                               "nothing published there)."
+
   @doc """
   Authorize `viewer` to reach `port` on `workspace_id`'s loopback interface.
 
@@ -70,6 +77,52 @@ defmodule Casein.Previews.Access do
   end
 
   def authorize(_viewer, _workspace_id, _port), do: :forbidden
+
+  @doc """
+  Predicate-derived port-authorization sentence for MCP instructions.
+
+  Keep this next to `port_allowed?/3`. Instruction text that restates the
+  predicate by hand will drift; tests assert MCP instructions include this
+  string verbatim.
+  """
+  @spec authorization_description() :: String.t()
+  def authorization_description, do: @authorization_description
+
+  @doc "Structured denial callers can branch on without reading prose."
+  @spec deny_payload(
+          :forbidden
+          | {:error, :bad_port | :port_not_allowed}
+          | :bad_port
+          | :port_not_allowed
+        ) ::
+          map()
+  def deny_payload(:forbidden) do
+    %{
+      error: :forbidden,
+      reason: :forbidden,
+      message:
+        "Not your workspace (indistinguishable from no such workspace). " <>
+          "This is an auth problem, not a missing preview registration."
+    }
+  end
+
+  def deny_payload({:error, :port_not_allowed}), do: deny_payload(:port_not_allowed)
+  def deny_payload({:error, :bad_port}), do: deny_payload(:bad_port)
+
+  def deny_payload(:port_not_allowed) do
+    %{
+      error: :port_not_allowed,
+      reason: :port_not_allowed,
+      message:
+        "Your workspace, but nothing is published on that port. " <>
+          "Declare ports.http, start the server with preview_ensure_server_here, " <>
+          "or register a live preview pane."
+    }
+  end
+
+  def deny_payload(:bad_port) do
+    %{error: :bad_port, reason: :bad_port, message: "Port is missing or out of range."}
+  end
 
   @doc "Parse and range-check a port supplied as a string or integer."
   @spec validate_port(term()) :: {:ok, pos_integer()} | {:error, :bad_port}

@@ -13,7 +13,8 @@ defmodule Casein.Agents.TerminalTools.Topology do
       session: [type: :string, required: true],
       caller_pane: [type: :string],
       include_liveness: [type: :boolean],
-      include_transcript: [type: :boolean]
+      include_transcript: [type: :boolean],
+      allow_cross_workspace: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction

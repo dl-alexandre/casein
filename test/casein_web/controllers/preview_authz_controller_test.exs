@@ -118,7 +118,9 @@ defmodule CaseinWeb.PreviewAuthzControllerTest do
     register_preview_port!(@workspace, 21_005)
     {:ok, host} = OwnOrigin.host(@workspace, 4003)
 
-    assert conn |> authz(host) |> response(403) == ""
+    denied = authz(conn, host)
+    assert response(denied, 403) == ""
+    assert get_resp_header(denied, "x-casein-deny-reason") == ["port_not_allowed"]
   end
 
   test "denies an unauthenticated request", %{conn: conn} do

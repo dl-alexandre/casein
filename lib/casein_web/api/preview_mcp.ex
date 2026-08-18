@@ -48,10 +48,9 @@ defmodule CaseinWeb.API.PreviewMCP do
         "To put YOUR OWN dev server behind a preview, start it with " <>
         "preview_ensure_server_here rather than launching `PORT=<n> mix phx.server` " <>
         "yourself: that allocates a runtime-owned port and records it against the " <>
-        "workspace, so the preview keeps working across a Casein restart. A " <>
-        "hand-picked port is only authorized while its pane registration is live, " <>
-        "and is refused for a few minutes after every deploy. If you must choose a " <>
-        "port, use the workspace's declared ports.http. " <>
+        "workspace, so the preview keeps working across a Casein restart. " <>
+        Casein.Previews.Access.authorization_description() <>
+        " If you must choose a port, use the workspace's declared ports.http. " <>
         "Call preview_surfaces " <>
         "to list named surfaces (manager URLs, host loopback Casein, and " <>
         "terminal-detected localhost ports), then preview_open_here, preview_open_app, or " <>
@@ -69,6 +68,7 @@ defmodule CaseinWeb.API.PreviewMCP do
         "navigated_to on success or navigation_failed when open succeeded but " <>
         "viewer navigation was blocked. Opening a session also activates that preview in " <>
         "connected Casein workspace viewers when the URL is embeddable. " <>
+        "An open that cannot bind a Casein preview pane fails instead of returning a pane id. " <>
         "Do not claim a preview is visible merely because a server or tmux pane exists; " <>
         "preview_surfaces and preview_observe_pane report operator_visible/browser_loaded, " <>
         "and operator_visible=false means the user cannot see it yet. " <>

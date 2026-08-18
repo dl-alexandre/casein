@@ -2,6 +2,7 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
   @moduledoc false
 
   alias Casein.Agents.PreviewTools.{ControlSession, WorkspaceResolution}
+  alias Casein.Agents.PreviewTools.ControlSession.Shared, as: PreviewShared
   alias Casein.PreviewActivity
   alias Casein.PreviewPanes
   alias Casein.Previews
@@ -290,8 +291,9 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
   defp surface_payload(%Surface{} = surface, active_by_origin, params, liveness) do
     registration = Map.get(active_by_origin, Url.origin_of(surface.url))
     pane_id = registration && registration.pane_id
-    visibility = surface_visibility(registration)
-    operator_visible = visibility.browser_loaded == true
+    pane_kind = PreviewShared.pane_kind(registration)
+    visibility = surface_visibility(registration, pane_kind)
+    operator_visible = visibility.browser_loaded == true and pane_kind != "non_preview_shell"
     liveness_status = surface_liveness_status(surface, liveness)
 
     %{
@@ -308,6 +310,7 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
       server_active: liveness_status != "dead",
       server_status: surface_server_status(surface, params, liveness_status),
       pane_registered: pane_id != nil,
+      pane_kind: pane_kind,
       operator_visible: operator_visible,
       browser_loaded: visibility.browser_loaded,
       browser_loaded_at: visibility.browser_loaded_at,
@@ -318,10 +321,22 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
     }
   end
 
-  defp surface_visibility(nil),
+  defp surface_visibility(nil, _pane_kind),
     do: ControlSession.preview_visibility_from_activity_for_surface([])
 
-  defp surface_visibility(%{} = registration) do
+  defp surface_visibility(%{} = registration, "non_preview_shell") do
+    visibility = surface_visibility(registration, "preview")
+
+    visibility
+    |> Map.put(:operator_visible_state, "non_preview_pane")
+    |> Map.put(:browser_loaded, false)
+    |> Map.put(:diagnostic, %{
+      reason: "non_preview_pane",
+      next_action: "close_or_deregister_the_shell_binding_and_reopen"
+    })
+  end
+
+  defp surface_visibility(%{} = registration, _pane_kind) do
     registration.workspace_id
     |> PreviewActivity.recent_pane(registration.pane_id, 20)
     |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})

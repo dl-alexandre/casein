@@ -309,29 +309,57 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
   end
 
   defp open_owned_or_reused_preview_pane(workspace, url, opts) do
-    case existing_preview_pane_for_url(workspace, url, opts) do
-      {:ok, result} ->
-        with :ok <- PortProbing.preflight_preview_url(url, opts) do
-          {:ok, Map.put(result, :reused, true)}
-        end
+    if Keyword.get(opts, :force_new_pane) == true do
+      with :ok <- PortProbing.preflight_preview_url(url, opts) do
+        split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
+      end
+    else
+      case existing_preview_pane_for_url(workspace, url, opts) do
+        {:ok, result} ->
+          with :ok <- PortProbing.preflight_preview_url(url, opts),
+               :ok <- reject_non_preview_binding(result) do
+            {:ok, Map.put(result, :reused, true)}
+          end
 
-      {:misplaced, registration, mismatch} ->
-        with :ok <- PortProbing.preflight_preview_url(url, opts),
-             :ok <- PreviewTmuxTopology.repair_misplaced_preview_pane(registration),
-             {:ok, result} <-
-               split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true)) do
-          {:ok,
-           result
-           |> Map.put(:repaired_placement, true)
-           |> Map.put(:placement_mismatch, mismatch)}
-        end
+        {:misplaced, registration, mismatch} ->
+          with :ok <- PortProbing.preflight_preview_url(url, opts),
+               :ok <- PreviewTmuxTopology.repair_misplaced_preview_pane(registration),
+               {:ok, result} <-
+                 split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true)) do
+            {:ok,
+             result
+             |> Map.put(:repaired_placement, true)
+             |> Map.put(:placement_mismatch, mismatch)}
+          end
 
-      _ ->
-        with :ok <- PortProbing.preflight_preview_url(url, opts) do
-          split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
-        end
+        _ ->
+          with :ok <- PortProbing.preflight_preview_url(url, opts) do
+            split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
+          end
+      end
     end
   end
+
+  defp reject_non_preview_binding(result) do
+    if preview_capable_result?(result) do
+      :ok
+    else
+      {:error,
+       %{
+         error: :non_preview_pane,
+         pane_id: Map.get(result, :pane_id),
+         message:
+           "Open bound a non-preview pane and cannot become operator-visible. " <>
+             "No pane id is returned as success."
+       }}
+    end
+  end
+
+  defp preview_capable_result?(%{registration: registration}) do
+    Shared.pane_kind(registration) != "non_preview_shell"
+  end
+
+  defp preview_capable_result?(_), do: true
 
   defp ensure_shared_preview_source(workspace, url, opts) do
     source =
@@ -559,9 +587,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.PaneOpen do
     command = Map.get(pane, :current_command) || Map.get(pane, "current_command")
     active = Map.get(pane, :active) || Map.get(pane, "active")
 
-    (command in ["bash", "sh", "zsh"] ||
-       (is_binary(command) and String.contains?(command, "casein-preview"))) and
-      active in [false, "0", 0, nil]
+    Shared.preview_process?(command) and active in [false, "0", 0, nil]
   end
 
   defp preview_registered_url(scrollback) when is_binary(scrollback) do

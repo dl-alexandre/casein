@@ -9,6 +9,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
   alias Casein.Previews
   alias Casein.Runs.AgentLifecycle
   alias Casein.Terminals.PaneSubmit
+  alias Casein.Terminals.PaneWriteReceipt
   alias Casein.Terminals.SharedWorktreeGuard
   alias Casein.Workspaces
 
@@ -27,8 +28,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
         # return `{out, code}`. Accept both so pinning `:tmux_adapter` to
         # Backends.Tmux (normalized) or legacy Client does not CaseClauseError.
         case tmux().send_keys(target, keys) do
-          :ok -> {:ok, raw_sent_payload(session, target, implicit?, params)}
-          {_out, 0} -> {:ok, raw_sent_payload(session, target, implicit?, params)}
+          :ok -> {:ok, raw_sent_payload(session, target, implicit?, params, keys)}
+          {_out, 0} -> {:ok, raw_sent_payload(session, target, implicit?, params, keys)}
           {:error, reason} -> {:error, reason}
           {out, _code} -> {:error, String.trim(out)}
         end
@@ -67,7 +68,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
   # (no agent_pair), so without confirmation `status: "sent"` was the double-
   # Enter folklore. Default confirm:true; pass false for TUI menus / y/n.
   defp confirm_raw_sent(session, target, implicit?, params) do
-    payload = raw_sent_payload(session, target, implicit?, params)
+    written = Map.get(params, "command") || Map.get(params, :command)
+    payload = raw_sent_payload(session, target, implicit?, params, written)
     confirm? = Map.get(params, "confirm") != false and Map.get(params, :confirm) != false
 
     case PaneSubmit.confirm_submit(session, target,
@@ -317,10 +319,11 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
     end
   end
 
-  defp raw_sent_payload(session, target, implicit?, params) do
+  defp raw_sent_payload(session, target, implicit?, params, written) do
     payload =
       %{session: session, target: target, status: "sent"}
       |> put_next("terminal_capture", capture_next_args(session, target, params))
+      |> PaneWriteReceipt.attach(session, target, written)
 
     if implicit? do
       Map.merge(payload, %{

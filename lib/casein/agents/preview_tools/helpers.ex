@@ -156,7 +156,8 @@ defmodule Casein.Agents.PreviewTools.Helpers do
   def workspace_schema_fields do
     [
       workspace_id: [type: :string],
-      workspace_path: [type: :string]
+      workspace_path: [type: :string],
+      allow_cross_workspace: [type: :boolean]
     ]
   end
 

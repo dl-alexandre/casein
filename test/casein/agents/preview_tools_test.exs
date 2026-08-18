@@ -1047,7 +1047,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     assert length(duplicate_panes) <= 1
   end
 
-  test "open_app_preview does not duplicate an existing pane when force_new_pane is set" do
+  test "open_app_preview splits a new pane when force_new_pane is set" do
     tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
 
     assert {:ok, %{pane_id: first_pane_id, session_id: first_session_id}} =
@@ -1056,15 +1056,16 @@ defmodule Casein.Agents.PreviewToolsTest do
     assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^first_pane_id}
     assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
 
-    assert {:ok, %{pane_id: second_pane_id, session_id: second_session_id, reused: true}} =
+    assert {:ok, %{pane_id: second_pane_id, session_id: second_session_id} = payload} =
              PreviewTools.invoke("preview_open_app", @v3_workspace, %{
                "actor_id" => "agent-1",
                "force_new_pane" => true
              })
 
-    assert second_pane_id == first_pane_id
-    assert second_session_id == first_session_id
-    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+    refute Map.get(payload, :reused)
+    assert second_pane_id != first_pane_id
+    assert second_session_id != first_session_id
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, _, "h", ^second_pane_id}
   end
 
   test "open_app_preview recovers a registered pane whose control session is closed" do
@@ -1111,18 +1112,19 @@ defmodule Casein.Agents.PreviewToolsTest do
       """
     })
 
-    assert {:ok, %{pane_id: ^pane_id, reused: true}} =
+    assert {:ok, %{pane_id: new_pane_id} = payload} =
              PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
                "actor_id" => "agent-1",
                "port" => 10_100,
                "force_new_pane" => true
              })
 
-    assert PreviewPanes.get_by_pane(pane_id)
-    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+    refute Map.get(payload, :reused)
+    assert new_pane_id != pane_id
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, _, "h", ^new_pane_id}
   end
 
-  test "open_localhost_preview reuses a single survived preview holder with empty scrollback" do
+  test "open_localhost_preview does not bind a leftover shell pane" do
     tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
 
     assert {:ok, %{pane_id: pane_id}} =
@@ -1137,15 +1139,55 @@ defmodule Casein.Agents.PreviewToolsTest do
     PreviewPanes.clear()
     FakeState.put(:fake_tmux_scrollback, %{{tmux_session, pane_id} => ""})
 
-    assert {:ok, %{pane_id: ^pane_id, reused: true}} =
+    panes = FakeState.get(:fake_tmux_panes) || %{}
+
+    FakeState.put(
+      :fake_tmux_panes,
+      Map.update(panes, tmux_session, [], fn session_panes ->
+        Enum.map(session_panes, fn
+          %{id: ^pane_id} = pane -> Map.put(pane, :current_command, "bash")
+          pane -> pane
+        end)
+      end)
+    )
+
+    assert {:ok, %{pane_id: new_pane_id} = payload} =
              PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
                "actor_id" => "agent-1",
-               "port" => 10_100,
-               "force_new_pane" => true
+               "port" => 10_100
              })
 
-    assert PreviewPanes.get_by_pane(pane_id)
-    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+    refute Map.get(payload, :reused)
+    assert new_pane_id != pane_id
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, _, "h", ^new_pane_id}
+  end
+
+  test "reusing a registered shell pane fails instead of returning a pane id" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "port" => 10_100
+             })
+
+    panes = FakeState.get(:fake_tmux_panes) || %{}
+
+    FakeState.put(
+      :fake_tmux_panes,
+      Map.update(panes, tmux_session, [], fn session_panes ->
+        Enum.map(session_panes, fn
+          %{id: ^pane_id} = pane -> Map.put(pane, :current_command, "bash")
+          pane -> pane
+        end)
+      end)
+    )
+
+    assert {:error, %{error: :non_preview_pane, pane_id: ^pane_id}} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "port" => 10_100
+             })
   end
 
   test "open_app_preview honors explicit tmux session when an origin is open elsewhere" do

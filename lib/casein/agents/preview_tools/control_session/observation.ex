@@ -36,7 +36,12 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Observation do
 
       latest_activity = PreviewActivity.latest_pane(registration.workspace_id, pane_id)
       recent_activity = PreviewActivity.recent_pane(registration.workspace_id, pane_id, limit)
-      visibility = Visibility.preview_visibility_from_activity(recent_activity)
+      pane_kind = Shared.pane_kind(registration)
+
+      visibility =
+        recent_activity
+        |> Visibility.preview_visibility_from_activity()
+        |> maybe_mark_non_preview_visibility(pane_kind)
 
       {:ok,
        %{
@@ -53,8 +58,10 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Observation do
          tmux: tmux_presence(registration),
          placement: PreviewTmuxTopology.placement_payload(registration),
          snapshot_mode: Shared.preview_mode(registration) == "snapshot",
+         pane_kind: pane_kind,
          visibility: visibility,
          browser_loaded: visibility.browser_loaded,
+         operator_visible: visibility.browser_loaded == true and pane_kind != "non_preview_shell",
          browser_loaded_at: visibility.browser_loaded_at,
          operator_visible_state: visibility.operator_visible_state,
          latest_screenshot: Shared.observation_payload(latest_screenshot),
@@ -67,6 +74,18 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Observation do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp maybe_mark_non_preview_visibility(visibility, "non_preview_shell") do
+    visibility
+    |> Map.put(:operator_visible_state, "non_preview_pane")
+    |> Map.put(:browser_loaded, false)
+    |> Map.put(:diagnostic, %{
+      reason: "non_preview_pane",
+      next_action: "close_or_deregister_the_shell_binding_and_reopen"
+    })
+  end
+
+  defp maybe_mark_non_preview_visibility(visibility, _), do: visibility
 
   @doc "Observe the current preview page."
   @spec observe(map() | integer()) :: {:ok, map()} | {:error, term()}

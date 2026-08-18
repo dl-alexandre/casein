@@ -16,6 +16,39 @@ defmodule Casein.MCP.Scope do
   alias Casein.Workspaces
   alias Casein.Workspaces.Aliases, as: WorkspaceAliases
 
+  @cross_workspace_read_tools MapSet.new(~w(
+    preview_surfaces
+    preview_observe_pane
+    preview_observe
+    preview_observe_live
+    preview_resolve_workspace
+    preview_report_errors
+    terminal_list_sessions
+    terminal_topology
+    terminal_capture
+    terminal_context
+    terminal_inbox
+  ))
+
+  @doc "Read-only tools that may opt into the audited cross-workspace lane."
+  @spec cross_workspace_read_tool?(String.t()) :: boolean()
+  def cross_workspace_read_tool?(name) when is_binary(name),
+    do: MapSet.member?(@cross_workspace_read_tools, name)
+
+  def cross_workspace_read_tool?(_), do: false
+
+  @doc "True when a read-only tool explicitly opted into the cross-workspace lane."
+  @spec allow_cross_workspace?(String.t(), map()) :: boolean()
+  def allow_cross_workspace?(tool_name, args) when is_map(args) do
+    cross_workspace_read_tool?(tool_name) and
+      truthy?(Map.get(args, "allow_cross_workspace") || Map.get(args, :allow_cross_workspace))
+  end
+
+  def allow_cross_workspace?(_tool_name, _args), do: false
+
+  defp truthy?(value) when value in [true, "true", "1", "yes"], do: true
+  defp truthy?(_), do: false
+
   @preview_workspace_tools ~w(
     preview_resolve_workspace
     preview_surfaces
@@ -104,14 +137,16 @@ defmodule Casein.MCP.Scope do
     default_tmux_session = non_empty(Keyword.get(opts, :default_tmux_session))
     default_caller_pane = non_empty(Keyword.get(opts, :default_caller_pane))
 
-    with {:ok, args, workspace_origin} <- resolve_workspace_args(args, default_workspace_id),
+    with {:ok, args, workspace_origin} <-
+           resolve_workspace_args(tool_name, args, default_workspace_id),
          {:ok, args, tmux_origin} <-
            resolve_tmux_session_args(tool_name, args, default_tmux_session, surface),
          {:ok, args, caller_pane_origin} <-
            resolve_caller_pane_args(tool_name, args, default_caller_pane, surface),
          {:ok, workspace, workspace_id, workspace_origin} <-
            resolve_workspace(tool_name, args, surface, workspace_origin),
-         :ok <- enforce_workspace_scope(default_workspace_id, workspace_id),
+         :ok <-
+           enforce_workspace_scope(default_workspace_id, workspace_id, workspace_origin),
          :ok <- enforce_required_workspace(tool_name, surface, workspace_id, opts),
          :ok <- enforce_required_tmux_session(args, opts) do
       {:ok,
@@ -132,9 +167,9 @@ defmodule Casein.MCP.Scope do
 
   def resolve_tool_call(_tool_name, _args, _opts), do: {:error, :invalid_tool_arguments}
 
-  defp resolve_workspace_args(args, nil), do: {:ok, args, workspace_arg_origin(args)}
+  defp resolve_workspace_args(_tool_name, args, nil), do: {:ok, args, workspace_arg_origin(args)}
 
-  defp resolve_workspace_args(args, default_workspace_id) do
+  defp resolve_workspace_args(tool_name, args, default_workspace_id) do
     case workspace_id(args) do
       nil ->
         {:ok, Map.put(args, "workspace_id", default_workspace_id), :pre_scoped}
@@ -143,10 +178,15 @@ defmodule Casein.MCP.Scope do
         {:ok, args, :args}
 
       requested ->
-        if WorkspaceAliases.linked?(default_workspace_id, requested) do
-          {:ok, args, :args}
-        else
-          {:error, workspace_scope_mismatch(default_workspace_id, requested)}
+        cond do
+          WorkspaceAliases.linked?(default_workspace_id, requested) ->
+            {:ok, args, :args}
+
+          allow_cross_workspace?(tool_name, args) ->
+            {:ok, Map.put(args, "cross_workspace", true), :cross_workspace_lane}
+
+          true ->
+            {:error, workspace_scope_mismatch(default_workspace_id, requested)}
         end
     end
   end
@@ -235,10 +275,13 @@ defmodule Casein.MCP.Scope do
     end
   end
 
-  defp enforce_workspace_scope(nil, _workspace_id), do: :ok
-  defp enforce_workspace_scope(_default_workspace_id, nil), do: :ok
+  defp enforce_workspace_scope(nil, _workspace_id, _origin), do: :ok
+  defp enforce_workspace_scope(_default_workspace_id, nil, _origin), do: :ok
 
-  defp enforce_workspace_scope(default_workspace_id, workspace_id) do
+  defp enforce_workspace_scope(_default_workspace_id, _workspace_id, :cross_workspace_lane),
+    do: :ok
+
+  defp enforce_workspace_scope(default_workspace_id, workspace_id, _origin) do
     if WorkspaceAliases.linked?(default_workspace_id, workspace_id) do
       :ok
     else
@@ -339,7 +382,11 @@ defmodule Casein.MCP.Scope do
         "This MCP endpoint is pre-scoped to workspace_id #{inspect(scoped_workspace_id)}. " <>
           "Omit workspace_id on tool calls (it is injected automatically), or use an MCP URL " <>
           "scoped to #{inspect(requested_workspace_id)}. " <>
-          "Cannot access #{inspect(requested_workspace_id)} from this endpoint."
+          "Cannot access #{inspect(requested_workspace_id)} from this endpoint. " <>
+          "Read-only peek: pass allow_cross_workspace: true on preview_surfaces, " <>
+          "preview_observe_pane, terminal_list_sessions, terminal_topology, or " <>
+          "terminal_capture — that lane is audited.",
+      lane: "allow_cross_workspace"
     }
   end
 

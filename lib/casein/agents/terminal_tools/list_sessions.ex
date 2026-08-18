@@ -10,7 +10,8 @@ defmodule Casein.Agents.TerminalTools.ListSessions do
     vsn: "1.0.0",
     schema: [
       workspace_id: [type: :string],
-      contains: [type: :string]
+      contains: [type: :string],
+      allow_cross_workspace: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction

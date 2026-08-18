@@ -289,6 +289,9 @@ defmodule CaseinWeb.API.PreviewMCPTest do
     assert result.capabilities.tools
     assert result.instructions =~ "preview_record_start"
     assert result.instructions =~ "preview_playback_open"
+    assert result.instructions =~ Casein.Previews.Access.authorization_description()
+    refute result.instructions =~ "few minutes after every deploy"
+    assert result.instructions =~ "fails instead of returning a pane id"
   end
 
   test "tools/list exposes the narrow preview tools with inputSchema" do

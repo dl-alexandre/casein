@@ -247,7 +247,8 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
       |> put_req_header("x-auth-request-email", "dev@local")
       |> get("/preview-proxy/#{workspace_id}/4000/")
 
-    assert response(rejected_conn, 403) == "Port not allowed for this workspace"
+    assert response(rejected_conn, 403) =~ "nothing is published on that port"
+    assert get_resp_header(rejected_conn, "x-casein-deny-reason") == ["port_not_allowed"]
 
     {listen, port, task} =
       listen_once!(fn socket, _request ->

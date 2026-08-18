@@ -12,6 +12,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   alias Casein.Terminals.NextPrompt
   alias Casein.Terminals.PaneProcessLiveness
   alias Casein.Terminals.PaneSubmit
+  alias Casein.Terminals.PaneWriteReceipt
   alias Casein.Terminals.TmuxTopology
   alias Casein.Terminals.WorkHandles
 
@@ -1186,6 +1187,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   end
 
   defp sent_payload(session, target, next_tool, params) do
+    written =
+      string_param(params, "command") || string_param(params, "text") ||
+        string_param(params, "keys")
+
     %{session: session, target: target, status: "sent", safe_to_mutate: true}
     |> put_next(
       next_tool,
@@ -1196,5 +1201,6 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
         ansi: false
       })
     )
+    |> PaneWriteReceipt.attach(session, target, written)
   end
 end
