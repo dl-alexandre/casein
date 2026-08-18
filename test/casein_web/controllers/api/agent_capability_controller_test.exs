@@ -3,7 +3,7 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
 
   alias Casein.Agents.{AgentCapabilityToken, AgentCapabilityTokens}
   alias Casein.Repo
-  alias Casein.Workspaces
+  alias Casein.Workspaces.{DbIsolation, State}
 
   @workspace_id "grok-cap-ws"
   @workspace_token "grok-cap-workspace-token"
@@ -156,12 +156,11 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
     assert rejected.status == 401
   end
 
-  test "the same bearer loses mutation tools immediately when write unlock is revoked", %{
+  test "the same bearer loses mutation tools immediately when isolation becomes unknown", %{
     conn: conn,
     tmux_session: session
   } do
-    until = DateTime.add(DateTime.utc_now(), 300, :second)
-    assert {:ok, _} = Workspaces.grant_agent_write_unlock(@workspace_id, until, "operator")
+    persist_isolation(:ephemeral)
     token = issue(conn, @workspace_token, session)["token"]
     path = mcp_path(session)
 
@@ -172,11 +171,11 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
 
     before_names = get_in(before, ["result", "tools"]) |> Enum.map(& &1["name"])
     assert "terminal_send_agent_command" in before_names
-    # Write unlock grants raw send for same-session pane targeting.
+    # Known isolation grants raw send for same-session pane targeting.
     assert "terminal_send_command" in before_names
     assert "terminal_send_keys" in before_names
 
-    assert {:ok, _} = Workspaces.revoke_agent_write_unlock(@workspace_id)
+    persist_isolation(:unknown)
 
     after_revoke =
       build_conn()
@@ -201,6 +200,15 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
       |> json_response(200)
 
     assert get_in(denied, ["error", "data", "reason"]) == "capability_tool_forbidden"
+  end
+
+  defp persist_isolation(isolation) do
+    assert {:ok, _} =
+             State.persist_isolation(@workspace_id, %DbIsolation{
+               isolation: isolation,
+               source: :default,
+               detected_at: DateTime.utc_now()
+             })
   end
 
   test "streamable MCP session ids are bound to capability and surface", %{

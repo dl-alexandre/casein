@@ -87,9 +87,12 @@ defmodule Casein.PolicyTest do
              Policy.can_apply_proposal?(Map.put(ctx, :db_isolation, :shared_stage))
   end
 
-  test "can_enable_agent_write? denies with :agent_write_locked by default" do
+  test "can_enable_agent_write? denies when db isolation is nil or unknown" do
     assert %Decision{verdict: :deny, reason: :agent_write_locked} =
              Policy.can_enable_agent_write?(%{workspace_id: "x"})
+
+    assert %Decision{verdict: :deny, reason: :agent_write_locked} =
+             Policy.can_enable_agent_write?(%{workspace_id: "x", db_isolation: :unknown})
   end
 
   test "can_enable_agent_write? denies with :shared_stage_guarded for that mode" do
@@ -99,43 +102,49 @@ defmodule Casein.PolicyTest do
              Policy.can_enable_agent_write?(%{workspace_id: "ws-shared"})
   end
 
-  test "can_enable_agent_write? requires :manual mode even with an active unlock" do
+  test "can_enable_agent_write? allows isolated workspace without manual mode or unlock" do
     Application.put_env(:casein, :workspace_modes, %{"ws-review" => :review})
-    until = DateTime.add(DateTime.utc_now(), 3600, :second)
-    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-review", until, "alice")
-
-    assert %Decision{verdict: :deny, reason: :requires_manual_mode} =
-             Policy.can_enable_agent_write?(%{workspace_id: "ws-review"})
-  end
-
-  test "can_enable_agent_write? allows in :manual mode with an active unlock" do
-    Application.put_env(:casein, :workspace_modes, %{"ws-unlocked" => :manual})
-    until = DateTime.add(DateTime.utc_now(), 3600, :second)
-    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-unlocked", until, "alice")
 
     assert %Decision{verdict: :allow} =
-             Policy.can_enable_agent_write?(%{workspace_id: "ws-unlocked"})
+             Policy.can_enable_agent_write?(%{
+               workspace_id: "ws-review",
+               db_isolation: :ephemeral
+             })
   end
 
-  test "can_enable_agent_write? denies :agent_write_unlock_expired for a past unlock" do
+  test "can_enable_agent_write? allows known-isolated workspace without an active unlock" do
+    Application.put_env(:casein, :workspace_modes, %{"ws-unlocked" => :manual})
+
+    assert %Decision{verdict: :allow} =
+             Policy.can_enable_agent_write?(%{
+               workspace_id: "ws-unlocked",
+               db_isolation: :isolated
+             })
+  end
+
+  test "can_enable_agent_write? ignores an expired unlock for isolated workspace" do
     Application.put_env(:casein, :workspace_modes, %{"ws-expired" => :manual})
     past = DateTime.add(DateTime.utc_now(), -60, :second)
     {:ok, _} = Workspaces.grant_agent_write_unlock("ws-expired", past, "alice")
 
-    assert %Decision{verdict: :deny, reason: :agent_write_unlock_expired} =
-             Policy.can_enable_agent_write?(%{workspace_id: "ws-expired"})
+    assert %Decision{verdict: :allow} =
+             Policy.can_enable_agent_write?(%{
+               workspace_id: "ws-expired",
+               db_isolation: :local
+             })
   end
 
   test "can_enable_agent_write? denies :shared_stage_guarded even with an active unlock" do
-    Application.put_env(:casein, :workspace_modes, %{
-      "ws-shared-unlocked" => :shared_stage_guarded
-    })
+    Application.put_env(:casein, :workspace_modes, %{"ws-shared-unlocked" => :manual})
 
     until = DateTime.add(DateTime.utc_now(), 3600, :second)
     {:ok, _} = Workspaces.grant_agent_write_unlock("ws-shared-unlocked", until, "alice")
 
     assert %Decision{verdict: :deny, reason: :shared_stage_guarded} =
-             Policy.can_enable_agent_write?(%{workspace_id: "ws-shared-unlocked"})
+             Policy.can_enable_agent_write?(%{
+               workspace_id: "ws-shared-unlocked",
+               db_isolation: :shared_stage
+             })
   end
 
   test "can_enable_agent_write? denies :unsafe_db even with an active unlock" do

@@ -4,13 +4,13 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
 
   A token's issued tool map is a **ceiling** (always the full write-capable
   set, minus meta-tools). Every request intersects that ceiling with the
-  workspace's current mode, DB-isolation state, and time-boxed agent write
-  unlock, so revoking an unlock takes effect without waiting for expiry and
+  workspace's current DB-isolation state, so isolation changes take effect
   without re-issuing the capability.
 
-  When write unlock is active, raw `terminal_send_command` /
+  When the workspace is known-isolated, raw `terminal_send_command` /
   `terminal_send_keys` are granted for the bound tmux session (any pane).
-  When locked, only reads and low-danger reporting tools remain.
+  When isolation is shared, unsafe, or unknown, only reads and low-danger
+  reporting tools remain.
   """
 
   alias Casein.Agents.{ArtifactTools, PreviewTools, TerminalTools}
@@ -74,7 +74,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
       when is_binary(workspace_id) and is_map(issued) do
     current = snapshot(workspace_id)
 
-    # Filter the *current* unlock-aware set to names present in the issued ceiling.
+    # Filter the current isolation-aware set to names present in the issued ceiling.
     effective =
       Map.new(current.allowed_tools, fn {surface, current_names} ->
         issued_names = Map.get(issued, surface, [])
@@ -197,7 +197,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
     case Workspaces.get_record(workspace_id) do
       {:ok, %{db_isolation: "shared_stage"}} -> :shared_stage
       {:ok, %{db_isolation: "unsafe"}} -> :unsafe
-      {:ok, %{db_isolation: isolation}} when is_binary(isolation) -> :isolated
+      {:ok, %{db_isolation: isolation}} when isolation in ["ephemeral", "local"] -> :isolated
       _ -> nil
     end
   end

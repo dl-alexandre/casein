@@ -8,6 +8,8 @@ defmodule Casein.Proposals.AutoApplyTest do
 
   alias Casein.{Audit, Workspaces}
   alias Casein.Proposals.AutoApply
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Workspaces.State
   alias Casein.Workspaces.State.MemoryAdapter
 
   @proposal_dir ".opencode/proposals"
@@ -52,8 +54,16 @@ defmodule Casein.Proposals.AutoApplyTest do
 
   defp enable!, do: Application.put_env(:casein, AutoApply, enabled: true)
 
-  defp unlock!(root),
-    do: Workspaces.grant_agent_write_unlock(root, DateTime.add(DateTime.utc_now(), 3600), "alice")
+  defp unlock!(root) do
+    {:ok, _} =
+      State.persist_isolation(root, %DbIsolation{
+        isolation: :local,
+        source: :default,
+        detected_at: DateTime.utc_now()
+      })
+
+    Workspaces.grant_agent_write_unlock(root, DateTime.add(DateTime.utc_now(), 3600), "alice")
+  end
 
   # Everything this module is actually asserting about, newest last. Granting an
   # agent-write unlock is audited in its own right (Workspaces.State), so tests

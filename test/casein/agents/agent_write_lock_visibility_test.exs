@@ -1,9 +1,9 @@
 defmodule Casein.Agents.AgentWriteLockVisibilityTest do
   @moduledoc """
-  The workspace agent-write unlock gates the managed Grok *MCP grant*
+  Workspace DB isolation gates the managed Grok *MCP grant*
   (`terminal_send_*`), frozen at leader start. The bwrap base is always strict
-  (#605). Surfaces that report the lock must stay accurate so orchestrators
-  fail fast (#593) instead of polling for an unlock.
+  (#605). Surfaces that report the gate and legacy unlock state must stay
+  accurate.
 
   These tests pin `terminal_context` and the workspace status API that
   spawn/launch preflight against.
@@ -55,6 +55,8 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
   end
 
   test "terminal_context reports the lock and tells orchestrators to fail fast" do
+    persist_isolation(:unknown)
+
     assert {:ok, %{agent_write: agent_write}} =
              TerminalTools.invoke("terminal_context", %{"workspace_id" => @workspace_id})
 
@@ -76,13 +78,13 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
     refute agent_write.note =~ "BEAM cannot start"
   end
 
-  # write_enabled can be false while the unlock is live — the workspace may not
-  # be in manual mode, or its DB isolation may be shared_stage/unsafe. Pointing
-  # at the unlock there sends the operator down a dead end.
+  # write_enabled can be false while the unlock is live when DB isolation is
+  # shared_stage/unsafe. Pointing at the unlock there sends the operator down a
+  # dead end.
   test "terminal_context does not blame the unlock when workspace policy is the blocker" do
     until = DateTime.add(DateTime.utc_now(), 300, :second)
     assert {:ok, _} = Workspaces.grant_agent_write_unlock(@workspace_id, until, "operator")
-    assert {:ok, _} = State.set_mode(@workspace_id, :review)
+    persist_isolation(:shared_stage)
 
     assert {:ok, %{agent_write: agent_write}} =
              TerminalTools.invoke("terminal_context", %{"workspace_id" => @workspace_id})
@@ -109,14 +111,15 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
     refute Map.has_key?(agent_write, :fail_fast)
   end
 
-  test "terminal_context distinguishes a lapsed unlock from one never granted" do
+  test "terminal_context reports a lapsed unlock without disabling isolated write" do
     until = DateTime.add(DateTime.utc_now(), -5, :second)
     assert {:ok, _} = Workspaces.grant_agent_write_unlock(@workspace_id, until, "operator")
 
     assert {:ok, %{agent_write: agent_write}} =
              TerminalTools.invoke("terminal_context", %{"workspace_id" => @workspace_id})
 
-    refute agent_write.write_enabled
+    assert agent_write.write_enabled
+    assert agent_write.orchestrator_ready
     assert agent_write.unlock_status == "expired"
   end
 
@@ -129,20 +132,31 @@ defmodule Casein.Agents.AgentWriteLockVisibilityTest do
 
   # spawn/launch preflight the status API for the MCP grant (not the sandbox base).
   test "workspace status API publishes the same write state the MCP grant is chosen from" do
+    persist_isolation(:unknown)
+
     assert {:ok, %{agent_write: locked}} = Export.status(@workspace_id)
     refute locked.write_enabled
     assert locked.unlock_status == "inactive"
 
-    until = DateTime.add(DateTime.utc_now(), 300, :second)
-    assert {:ok, _} = Workspaces.grant_agent_write_unlock(@workspace_id, until, "operator")
+    persist_isolation(:local)
 
     assert {:ok, %{agent_write: unlocked}} = Export.status(@workspace_id)
     assert unlocked.write_enabled
-    assert unlocked.unlock_status == "active"
-    assert unlocked.unlock_until == DateTime.to_iso8601(until)
+    assert unlocked.unlock_status == "inactive"
+    assert is_nil(unlocked.unlock_until)
   end
 
   defp session_name, do: Tmux.session_name(@workspace_id, "u-dev")
+
+  defp persist_isolation(isolation) do
+    assert {:ok, _} =
+             State.persist_isolation(@workspace_id, %DbIsolation{
+               isolation: isolation,
+               source: :env_file,
+               summary: Atom.to_string(isolation),
+               detected_at: DateTime.utc_now()
+             })
+  end
 
   defp seed_workspace(id, path) do
     {:ok, _} =

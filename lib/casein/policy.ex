@@ -11,11 +11,9 @@ defmodule Casein.Policy do
   M10 contract:
     * `apply_proposal?` is real logic as of the `ProposalApply` write path —
       operator + `:manual` mode + not isolation-blocked (see below).
-    * `enable_agent_write?` is real logic as of the reviewed unlock flow —
-      `:manual` mode + an active, explicit, time-boxed, human-granted unlock
-      (`Workspaces.grant_agent_write_unlock/3`) + not isolation-blocked.
-      `:shared_stage_guarded`/`:unsafe_db` are checked first and
-      unconditionally — no unlock state can override them.
+    * `enable_agent_write?` permits known-isolated workspaces without requiring
+      mode or unlock state. `:shared_stage_guarded`/`:unsafe_db` are checked
+      first and unconditionally, and unknown isolation remains denied.
     * Other actions delegate to the existing allowlists they already used.
   """
 
@@ -101,10 +99,9 @@ defmodule Casein.Policy do
   Whether a server-spawned review-agent run may self-apply its own proposal
   with no per-change human click (`Casein.Proposals.AutoApply`).
 
-  `:shared_stage_guarded`/`:unsafe_db` are absolute — checked before mode or
-  unlock state, and never overridable by an active unlock. Otherwise requires
-  `:manual` mode (same fail-safe precedent as raw terminal and proposal
-  apply) plus a currently-active, explicit, human-granted unlock.
+  `:shared_stage_guarded`/`:unsafe_db` are absolute and never overridable by an
+  active unlock. Known-isolated workspaces are allowed without requiring mode
+  or unlock state; unknown isolation is denied fail-safe.
   """
   def can_enable_agent_write?(ctx) do
     case detect_block(ctx) do
@@ -115,17 +112,9 @@ defmodule Casein.Policy do
   end
 
   defp can_enable_agent_write_when_unblocked?(ctx) do
-    cond do
-      mode(ctx) != :manual ->
-        deny(:enable_agent_write, ctx, :requires_manual_mode)
-
-      true ->
-        case State.agent_write_unlock_for(Map.get(ctx, :workspace_id)) do
-          {:active, _until, _by} -> allow(:enable_agent_write, ctx)
-          :expired -> deny(:enable_agent_write, ctx, :agent_write_unlock_expired)
-          :inactive -> deny(:enable_agent_write, ctx, :agent_write_locked)
-        end
-    end
+    if Map.get(ctx, :db_isolation) in [:ephemeral, :local, :isolated],
+      do: allow(:enable_agent_write, ctx),
+      else: deny(:enable_agent_write, ctx, :agent_write_locked)
   end
 
   @doc """

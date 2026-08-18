@@ -3,11 +3,13 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
 
   alias Casein.Agents.GrokCapabilityPolicy
   alias Casein.Workspaces
+  alias Casein.Workspaces.DbIsolation
 
   @workspace_id "grok-policy-ws"
 
   setup do
     insert(:workspace_record, external_id: @workspace_id, name: @workspace_id, mode: "manual")
+    assert {:ok, _record} = persist_isolation(:unknown)
     assert {:ok, _record} = Workspaces.revoke_agent_write_unlock(@workspace_id)
     :ok
   end
@@ -49,9 +51,8 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     refute "artifact_create" in snapshot.allowed_tools["artifact"]
   end
 
-  test "write unlock grants mutations including raw send; revoke removes them" do
-    until = DateTime.add(DateTime.utc_now(), 300, :second)
-    assert {:ok, _record} = Workspaces.grant_agent_write_unlock(@workspace_id, until, "operator")
+  test "known isolation grants mutations including raw send; unknown isolation removes them" do
+    assert {:ok, _record} = persist_isolation(:ephemeral)
 
     issued = GrokCapabilityPolicy.snapshot(@workspace_id)
     assert issued.write_enabled
@@ -60,9 +61,9 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     assert "terminal_send_keys" in issued.allowed_tools["terminal"]
     assert "artifact_create" in issued.allowed_tools["artifact"]
 
-    # Ceiling was issued with full write set; after revoke, effective shrinks.
+    # Ceiling was issued with full write set; unknown isolation fails closed.
     ceiling = GrokCapabilityPolicy.tool_ceiling()
-    assert {:ok, _record} = Workspaces.revoke_agent_write_unlock(@workspace_id)
+    assert {:ok, _record} = persist_isolation(:unknown)
 
     claims = %{workspace_id: @workspace_id, allowed_tools: ceiling}
     assert {:ok, effective, current} = GrokCapabilityPolicy.effective_tools(claims)
@@ -73,19 +74,25 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     assert "terminal_list_sessions" in effective["terminal"]
   end
 
-  test "unlock after issue expands effective tools without re-minting" do
+  test "known isolation after issue expands effective tools without re-minting" do
     ceiling = GrokCapabilityPolicy.tool_ceiling()
     claims = %{workspace_id: @workspace_id, allowed_tools: ceiling}
 
     assert {:ok, locked, _} = GrokCapabilityPolicy.effective_tools(claims)
     refute "terminal_send_command" in locked["terminal"]
 
-    until = DateTime.add(DateTime.utc_now(), 300, :second)
-    assert {:ok, _} = Workspaces.grant_agent_write_unlock(@workspace_id, until, "operator")
+    assert {:ok, _} = persist_isolation(:local)
 
     assert {:ok, unlocked, current} = GrokCapabilityPolicy.effective_tools(claims)
     assert current.write_enabled
     assert "terminal_send_command" in unlocked["terminal"]
     assert "terminal_send_agent_command" in unlocked["terminal"]
+  end
+
+  defp persist_isolation(isolation) do
+    Workspaces.State.persist_isolation(
+      @workspace_id,
+      %DbIsolation{isolation: isolation, source: :default, detected_at: DateTime.utc_now()}
+    )
   end
 end
