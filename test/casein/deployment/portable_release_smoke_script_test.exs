@@ -37,6 +37,12 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     refute text =~ "HOME=/app"
   end
 
+  test "release builder includes the agent runtime sources" do
+    text = File.read!(@dockerfile)
+
+    assert text =~ "COPY scripts scripts"
+  end
+
   test "devbox activation uses the renamed release entrypoint and socket cleaner" do
     text = File.read!(@deploy_script)
     caddy_helper = File.read!(@caddy_helper)

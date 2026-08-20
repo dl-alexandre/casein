@@ -113,6 +113,10 @@ COPY rel rel
 # tree as a final assemble step. Without them, `mix release` aborts here.
 COPY README.md README.md
 COPY docs docs
+# `mix.exs` copies the checkout-independent agent runtime from this tree into
+# the release. Keep it in the builder context; only the selected runtime files
+# are copied into the final release image.
+COPY scripts scripts
 
 RUN mix release casein
 
