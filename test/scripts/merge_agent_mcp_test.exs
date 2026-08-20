@@ -79,6 +79,62 @@ defmodule Scripts.MergeAgentMcpTest do
     refute Jason.encode!(data) =~ "2026-07-28"
   end
 
+  test "merge-opencode preserves project config and replaces stale Casein servers" do
+    root = Path.join(System.tmp_dir!(), "merge-opencode-#{System.unique_integer([:positive])}")
+    generated = Path.join(root, "staging/opencode.json")
+    target = Path.join(root, "checkout/.opencode/opencode.json")
+    File.mkdir_p!(Path.dirname(generated))
+    File.mkdir_p!(Path.dirname(target))
+    on_exit(fn -> File.rm_rf(root) end)
+
+    File.write!(
+      generated,
+      Jason.encode!(%{
+        "$schema" => "https://opencode.ai/config.json",
+        "mcp" => %{
+          "casein-terminal-new-workspace" => %{
+            "type" => "remote",
+            "url" => "http://casein.test/terminal?workspace_id=ws-new"
+          },
+          "casein-preview-new-workspace" => %{
+            "type" => "remote",
+            "url" => "http://casein.test/preview?workspace_id=ws-new"
+          },
+          "casein-artifact-new-workspace" => %{
+            "type" => "remote",
+            "url" => "http://casein.test/artifact?workspace_id=ws-new"
+          }
+        }
+      })
+    )
+
+    File.write!(
+      target,
+      Jason.encode!(%{
+        "$schema" => "https://opencode.ai/config.json",
+        "model" => "provider/project-model",
+        "mcp" => %{
+          "local-tool" => %{"type" => "local", "command" => ["mix", "test"]},
+          "casein-terminal-old-workspace" => %{
+            "type" => "remote",
+            "url" => "http://casein.test/terminal?workspace_id=ws-old"
+          }
+        }
+      })
+    )
+
+    assert {_, 0} =
+             System.cmd("python3", [@script, "merge-opencode", generated, target],
+               stderr_to_stdout: true
+             )
+
+    data = target |> File.read!() |> Jason.decode!()
+    assert data["model"] == "provider/project-model"
+    assert data["mcp"]["local-tool"]["command"] == ["mix", "test"]
+    assert data["mcp"]["casein-terminal-new-workspace"]["url"] =~ "ws-new"
+    refute Map.has_key?(data["mcp"], "casein-terminal-old-workspace")
+  end
+
   defp write_config(body) do
     tmp = Path.join(System.tmp_dir!(), "merge-grok-#{System.unique_integer([:positive])}")
     config = Path.join([tmp, "home", ".grok", "config.toml"])

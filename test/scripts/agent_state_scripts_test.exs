@@ -11,6 +11,8 @@ defmodule Scripts.AgentStateScriptsTest do
 
   @state_script Path.expand("../../scripts/casein-agent-state.sh", __DIR__)
   @codex_script Path.expand("../../scripts/casein-codex-notify.sh", __DIR__)
+  @priv_state_script Path.expand("../../priv/scripts/casein-agent-state.sh", __DIR__)
+  @priv_codex_script Path.expand("../../priv/scripts/casein-codex-notify.sh", __DIR__)
   @grok_hook Path.expand(
                "../../scripts/agent-hooks/grok-casein-agent-state.json",
                __DIR__
@@ -21,6 +23,11 @@ defmodule Scripts.AgentStateScriptsTest do
   test "scripts have valid shell syntax" do
     assert {_, 0} = System.cmd("bash", ["-n", @state_script])
     assert {_, 0} = System.cmd("bash", ["-n", @codex_script])
+  end
+
+  test "release hook copies stay in parity with the source hooks" do
+    assert File.read!(@priv_state_script) == File.read!(@state_script)
+    assert File.read!(@priv_codex_script) == File.read!(@codex_script)
   end
 
   test "grok hook file wires every lifecycle event to the env-guarded state script" do

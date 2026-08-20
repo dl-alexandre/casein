@@ -305,6 +305,27 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert text =~ ~S(shell_environment_policy.exclude)
   end
 
+  test "Codex detects caller-owned notify and lifecycle hook settings" do
+    assert codex_arg_detector("codex_arg_sets_notify", ["-c", "notify=[\"custom\"]"])
+    assert codex_arg_detector("codex_arg_sets_notify", ["--config=notify=[\"custom\"]"])
+    refute codex_arg_detector("codex_arg_sets_notify", ["--model", "custom"])
+
+    assert codex_arg_detector("codex_arg_sets_hooks", ["-c", "hooks.SessionStart=[]"])
+    assert codex_arg_detector("codex_arg_sets_hooks", ["--config=features.hooks=[]"])
+    refute codex_arg_detector("codex_arg_sets_hooks", ["--sandbox", "workspace-write"])
+
+    text = File.read!(@script)
+    assert text =~ "caller supplied a notify=... setting"
+    assert text =~ "caller supplied Codex hook settings"
+  end
+
+  test "OpenCode launch merges Casein MCP without discarding project config" do
+    text = File.read!(@script)
+
+    assert text =~ "merge-agent-mcp.py\" merge-opencode"
+    assert text =~ "preserves\n# unrelated project/user MCP entries"
+  end
+
   test "codex preserves the operator model across isolated owner auth profiles" do
     text = File.read!(@script)
 
@@ -334,6 +355,25 @@ defmodule Scripts.LaunchCaseinAgentTest do
 
     {out, 0} = System.cmd("bash", ["-c", script])
     String.split(out, <<0>>, trim: true)
+  end
+
+  defp codex_arg_detector(function, argv) do
+    text = File.read!(@script)
+    definition = extract_function!(text, function)
+    quoted_argv = Enum.map_join(argv, " ", &"'#{&1}'")
+
+    script = """
+    set -euo pipefail
+    #{definition}
+    if #{function} #{quoted_argv}; then
+      echo yes
+    else
+      echo no
+    fi
+    """
+
+    {out, 0} = System.cmd("bash", ["-c", script])
+    String.trim(out) == "yes"
   end
 
   defp extract_function!(text, name) do

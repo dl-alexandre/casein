@@ -85,21 +85,28 @@ cannot hide an approval that requires operator attention.
 
 ## Security profiles
 
-The paired launcher resolves the effective mode from the workspace status API
-at launch (falling back to the staged mode only when unavailable), then uses
-these defaults unless the operator supplies explicit Codex execution policy
-arguments:
+Paired Codex terminals are operator-owned raw terminals, so the launcher defaults
+to the interactive Full Access policy. An explicit Codex execution policy always
+wins. Set `CASEIN_CODEX_DEFAULT_YOLO=0` to use the workspace status API at launch
+(falling back to the staged mode only when unavailable) and these defaults:
 
 | Workspace mode | Sandbox | Approval policy |
 | --- | --- | --- |
+| paired launch (default) | unrestricted | bypassed |
 | `review`, `observe`, `locked` | `read-only` | `never` |
-| `manual` (default) | `workspace-write` | `on-request` |
-| explicit `CASEIN_CODEX_DEFAULT_YOLO=1` | unrestricted | bypassed |
+| `manual` (status fallback) | `workspace-write` | `on-request` |
 
 `shell_environment_policy.exclude` removes `CASEIN_API_TOKEN`,
 `CASEIN_ADMIN_API_TOKEN`, and `CASEIN_WORKSPACE_API_TOKENS` from commands run
 inside repositories. The Codex process keeps the workspace token so its MCP
 client can authenticate.
+
+The launcher injects Casein's lifecycle hook table and completion `notify`
+handler unless the caller supplies a matching `hooks.*` or `notify=` setting.
+Caller-owned settings remain authoritative; the launcher warns that the
+corresponding Casein reporting path was not installed. Set
+`CASEIN_AGENT_STATE_HOOKS=0` when disabling Casein state reporting is
+intentional.
 
 ## MCP annotations
 

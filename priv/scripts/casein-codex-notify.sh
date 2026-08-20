@@ -1,68 +1,95 @@
 #!/usr/bin/env bash
-# casein-codex-notify.sh — Codex `notify` hook that reports turn completion to
-# Casein's terminal MCP endpoint.
-#
-# Injected by the Casein launcher as a per-launch config override
-# (`-c notify=["…/casein-codex-notify.sh"]`). Codex invokes the program with a
-# JSON payload as the last argument; the only documented type is
-# "agent-turn-complete", which maps to the semantic state `done` with the
-# turn's last assistant message attached. Codex has no turn-start notify event;
-# the `working` edge comes from Casein itself when terminal_send_agent_command
-# dispatches into the pane.
-#
-# Fire-and-forget like casein-agent-state.sh: missing environment, unmapped
-# payloads, and network failures all exit 0 so Codex is never blocked.
+# Codex lifecycle/notify receiver. Command hooks send JSON on stdin; the legacy
+# notify program sends JSON as its final argv value. Both paths post to Casein's
+# authenticated, workspace-scoped Codex event endpoint and never block Codex.
 
 set -u
-
 trap 'exit 0' ERR
 
 TOKEN="${CASEIN_API_TOKEN:-}"
 WORKSPACE_ID="${CASEIN_WORKSPACE_ID:-}"
-MCP_URL="${CASEIN_TERMINAL_MCP_URL:-}"
 PANE="${TMUX_PANE:-}"
+TMUX_SESSION="${CASEIN_TMUX_SESSION:-}"
+TRANSPORT="hook"
 
-[[ -n "$TOKEN" && -n "$WORKSPACE_ID" && -n "$MCP_URL" && -n "$PANE" ]] || exit 0
+[[ -n "$TOKEN" && -n "$WORKSPACE_ID" ]] || exit 0
 
-# Codex passes the notification JSON as the final argv entry.
-[[ $# -ge 1 ]] || exit 0
-NOTIFICATION="${!#}"
+if [[ $# -ge 1 ]]; then
+  PAYLOAD="${!#}"
+  TRANSPORT="notify"
+else
+  PAYLOAD="$(cat 2>/dev/null || true)"
+fi
 
-arguments="$(
-  CODEX_NOTIFICATION="$NOTIFICATION" \
-    CASEIN_WORKSPACE_ID="$WORKSPACE_ID" \
-    AGENT_PANE="$PANE" \
+[[ -n "$PAYLOAD" ]] || exit 0
+
+# Codex's native thread title can be absent early in a conversation. Give tmux
+# a deterministic task-oriented fallback as soon as the first prompt arrives.
+if [[ "$TRANSPORT" == "hook" && -n "$PANE" && "$PANE" =~ ^%[0-9]+$ ]]; then
+  TITLE="$(
+    CODEX_HOOK_PAYLOAD="$PAYLOAD" python3 - <<'PY' 2>/dev/null || true
+import json, os, re
+try:
+    event = json.loads(os.environ.get("CODEX_HOOK_PAYLOAD") or "{}")
+except Exception:
+    event = {}
+if event.get("hook_event_name") == "UserPromptSubmit":
+    prompt = event.get("prompt") or event.get("user_prompt") or event.get("message") or ""
+    prompt = re.sub(r"\s+", " ", str(prompt)).strip()
+    if prompt:
+        print(prompt[:80])
+PY
+  )"
+  if [[ -n "$TITLE" ]] && command -v tmux >/dev/null 2>&1; then
+    tmux select-pane -t "$PANE" -T "$TITLE" >/dev/null 2>&1 || true
+  fi
+fi
+
+HOOK_URL="${CASEIN_CODEX_HOOK_URL:-}"
+if [[ -z "$HOOK_URL" && -n "${CASEIN_API_BASE_URL:-}" ]]; then
+  HOOK_URL="${CASEIN_API_BASE_URL%/}/api/workspaces/${WORKSPACE_ID}/codex/hooks"
+fi
+if [[ -z "$HOOK_URL" && -n "${CASEIN_TERMINAL_MCP_URL:-}" ]]; then
+  API_BASE="${CASEIN_TERMINAL_MCP_URL%%/api/terminals/mcp*}"
+  HOOK_URL="${API_BASE}/api/workspaces/${WORKSPACE_ID}/codex/hooks"
+fi
+[[ -n "$HOOK_URL" ]] || exit 0
+
+BODY="$(
+  CODEX_HOOK_PAYLOAD="$PAYLOAD" \
+    CODEX_HOOK_TRANSPORT="$TRANSPORT" \
+    CODEX_HOOK_PANE="$PANE" \
+    CODEX_HOOK_TMUX_SESSION="$TMUX_SESSION" \
     python3 - <<'PY' 2>/dev/null || true
 import json, os
 
 try:
-    data = json.loads(os.environ.get("CODEX_NOTIFICATION") or "{}")
+    event = json.loads(os.environ.get("CODEX_HOOK_PAYLOAD") or "{}")
 except Exception:
-    data = {}
-
-if data.get("type") != "agent-turn-complete":
     raise SystemExit(0)
 
-args = {
-    "workspace_id": os.environ["CASEIN_WORKSPACE_ID"],
-    "state": "done",
-    "pane": os.environ["AGENT_PANE"],
-    "source": "hook",
+if not isinstance(event, dict):
+    raise SystemExit(0)
+
+body = {
+    "event": event,
+    "transport": os.environ.get("CODEX_HOOK_TRANSPORT") or "hook",
 }
-message = " ".join(str(data.get("last-assistant-message") or "").split())[:200]
-if message:
-    args["message"] = message
-print(json.dumps(args))
+pane = os.environ.get("CODEX_HOOK_PANE")
+tmux_session = os.environ.get("CODEX_HOOK_TMUX_SESSION")
+if pane:
+    body["pane"] = pane
+if tmux_session:
+    body["tmux_session"] = tmux_session
+print(json.dumps(body, separators=(",", ":")))
 PY
 )"
 
-[[ -n "$arguments" ]] || exit 0
+[[ -n "$BODY" ]] || exit 0
 
-body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"terminal_report_agent_state\",\"arguments\":${arguments}}}"
-
-curl --max-time 3 -sS -o /dev/null -X POST "$MCP_URL" \
+curl --max-time 3 -sS -o /dev/null -X POST "$HOOK_URL" \
   -H "authorization: Bearer ${TOKEN}" \
   -H "content-type: application/json" \
-  -d "$body" 2>/dev/null || true
+  -d "$BODY" 2>/dev/null || true
 
 exit 0
