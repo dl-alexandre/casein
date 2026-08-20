@@ -128,15 +128,20 @@ slices; creating the worktree alone does not start an agent or alter the web UI.
 4. Launching a shimmed agent binary in that pane picks up the materialized config
    + env, so MCP injection is automatic. Claude reads the staged `.mcp.json`,
    managed Grok receives the immutable bundle through leader ACP metadata,
-   OpenCode reads project
-   `.opencode/opencode.json`, and Codex receives Casein MCP through launch-time
-   `-c mcp_servers...` overrides. Codex defaults are workspace-mode aware:
-   review/observe/locked use `read-only + never`, while manual workspaces use
-   `workspace-write + on-request`. Unrestricted mode is an explicit opt-in via
-   `CASEIN_CODEX_DEFAULT_YOLO=1`; bearer credentials are excluded from Codex's
-   repo-command environment while remaining available to the MCP client.
-   The default is sandboxed `workspace-write + on-request`; unrestricted mode
-   is never enabled implicitly.
+   OpenCode reads project `.opencode/opencode.json`, and Codex receives Casein
+   MCP through launch-time `-c mcp_servers...` overrides. OpenCode injection
+   replaces only `casein-*` servers and preserves the product's other MCP
+   entries and top-level settings. The generated `.mcp.json`,
+   `.opencode/opencode.json`, `.opencode/skills/`, and `.cursor/mcp.json` files
+   are launch artifacts and must stay ignored in product repositories.
+
+   Paired Codex terminals default to the interactive Full Access policy because
+   they are operator-owned raw terminals. An explicit Codex execution policy
+   still wins, and `CASEIN_CODEX_DEFAULT_YOLO=0` opts back into workspace-mode
+   defaults: review/observe/locked use `read-only + never`, while manual
+   workspaces use `workspace-write + on-request`. Bearer credentials are
+   excluded from Codex's repo-command environment while remaining available to
+   the MCP client.
    Claude still defaults to `--dangerously-skip-permissions` unless the operator
    passes an explicit permission option or sets `CASEIN_CLAUDE_DEFAULT_YOLO=0`.
    Palette id `clauded` maps to bare `claude`

@@ -303,8 +303,9 @@ sync_project_mcp_config() {
       if [[ -f "${staging}/opencode.json" ]]; then
         validate_opencode_mcp_config "${staging}/opencode.json" || return 1
         mkdir -p "${checkout}/.opencode"
-        cp "${staging}/opencode.json" "${checkout}/.opencode/opencode.json"
-        chmod 600 "${checkout}/.opencode/opencode.json"
+        python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" merge-opencode \
+          "${staging}/opencode.json" "${checkout}/.opencode/opencode.json" || return 1
+        validate_opencode_mcp_config "${checkout}/.opencode/opencode.json" || return 1
       fi
       ;;
   esac
@@ -314,8 +315,9 @@ sync_project_mcp_config() {
 # authority for the process. Refuse to copy a stale staging file: a config can
 # have a plausible Casein server name while its URL still points at another
 # workspace. This check is intentionally limited to the required Casein
-# servers plus the optional workspace-scoped Tidewave server; other
-# project/user MCP entries are left alone.
+# servers plus the optional workspace-scoped Tidewave server. The launcher
+# merges the validated Casein entries into the project config and preserves
+# unrelated project/user MCP entries.
 validate_opencode_mcp_config() {
   local config="$1"
 
@@ -1341,7 +1343,7 @@ codex_arg_sets_notify() {
   local arg
   for arg in "$@"; do
     case "$arg" in
-      notify=*)
+      notify=* | --config=notify=* | -c=notify=* | -cnotify=*)
         return 0
         ;;
     esac
@@ -1354,6 +1356,8 @@ codex_state_notify_args() {
   [[ "${CASEIN_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
 
   if codex_arg_sets_notify "$@"; then
+    warn_degraded_step "Codex notify integration" \
+      "caller supplied a notify=... setting; Casein did not override it. Set CASEIN_AGENT_STATE_HOOKS=0 to silence this warning."
     return 0
   fi
 
@@ -1370,7 +1374,10 @@ codex_arg_sets_hooks() {
   local arg
   for arg in "$@"; do
     case "$arg" in
-      hooks.* | features.hooks=* | features.codex_hooks=*)
+      hooks.* | features.hooks=* | features.codex_hooks=* \
+        | --config=hooks.* | --config=features.hooks=* | --config=features.codex_hooks=* \
+        | -c=hooks.* | -c=features.hooks=* | -c=features.codex_hooks=* \
+        | -chooks.* | -cfeatures.hooks=* | -cfeatures.codex_hooks=*)
         return 0
         ;;
     esac
@@ -1380,7 +1387,11 @@ codex_arg_sets_hooks() {
 
 codex_state_hook_args() {
   [[ "${CASEIN_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
-  codex_arg_sets_hooks "$@" && return 0
+  if codex_arg_sets_hooks "$@"; then
+    warn_degraded_step "Codex lifecycle hooks" \
+      "caller supplied Codex hook settings; Casein did not override them. Set CASEIN_AGENT_STATE_HOOKS=0 to silence this warning."
+    return 0
+  fi
 
   local script quoted event config
   script="${CASEIN_AGENT_MCP_HOME:-${CASEIN_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"

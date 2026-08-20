@@ -188,6 +188,53 @@ def remove_casein_mcp_json(path: Path) -> None:
         path.write_text(json.dumps(data, indent=2) + "\n")
 
 
+def _read_json_object(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read {path}: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+
+    return data
+
+
+def merge_opencode_config(generated_path: Path, target_path: Path) -> None:
+    """Replace Casein's OpenCode servers without replacing project config."""
+    generated = _read_json_object(generated_path)
+    generated_mcp = generated.get("mcp")
+    if not isinstance(generated_mcp, dict):
+        raise ValueError(f"{generated_path} must contain an object-valued mcp key")
+
+    existing = _read_json_object(target_path) if target_path.exists() else {}
+    existing_mcp = existing.get("mcp")
+    if existing_mcp is None:
+        existing_mcp = {}
+    elif not isinstance(existing_mcp, dict):
+        raise ValueError(f"{target_path} must contain an object-valued mcp key")
+
+    merged = dict(existing)
+    merged_mcp = {
+        key: value for key, value in existing_mcp.items() if not key.startswith("casein-")
+    }
+    merged_mcp.update(generated_mcp)
+    merged["mcp"] = merged_mcp
+
+    if "$schema" not in merged and "$schema" in generated:
+        merged["$schema"] = generated["$schema"]
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target_path.with_name(f".{target_path.name}.casein-{os.getpid()}.tmp")
+    try:
+        temporary.write_text(json.dumps(merged, indent=2) + "\n")
+        temporary.chmod(0o600)
+        os.replace(temporary, target_path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
 def cleanup_grok_project_cache(home: Path) -> None:
     projects = home / ".grok" / "projects"
     if not projects.is_dir():
@@ -279,6 +326,20 @@ if __name__ == "__main__":
         write_claude_mcp_json(
             Path(sys.argv[2]), sys.argv[3], sys.argv[4], artifact_url, active_workspace, tidewave
         )
+        raise SystemExit(0)
+
+    if len(sys.argv) >= 2 and sys.argv[1] == "merge-opencode":
+        if len(sys.argv) != 4:
+            print(
+                "usage: merge-agent-mcp.py merge-opencode <generated_path> <target_path>",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        try:
+            merge_opencode_config(Path(sys.argv[2]), Path(sys.argv[3]))
+        except ValueError as exc:
+            print(f"error: refusing to merge OpenCode config: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
         raise SystemExit(0)
 
     if len(sys.argv) >= 2 and sys.argv[1] == "write-grok-mcp":
