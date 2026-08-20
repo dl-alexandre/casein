@@ -414,9 +414,14 @@ defmodule Casein.MixProject do
       |> Path.wildcard()
       |> List.first()
 
-    if is_nil(destination) do
-      Mix.raise("release is missing the casein priv/scripts directory")
-    end
+    destination =
+      destination ||
+        case release.path |> Path.join("lib/casein-*") |> Path.wildcard() do
+          [app_path | _] -> Path.join(app_path, "priv/scripts")
+          [] -> Mix.raise("release is missing the casein application directory")
+        end
+
+    File.mkdir_p!(destination)
 
     top_level = [
       "launch-casein-agent.sh",
