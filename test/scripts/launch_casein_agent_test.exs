@@ -138,6 +138,84 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert_bound_query(preview_url, current)
   end
 
+  test "managed startup uses the current session workspace over inherited MCP env" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "agent-env-current-workspace-#{System.unique_integer([:positive])}"
+      )
+
+    fake_bin = Path.join(tmp, "bin")
+    staging = Path.join([tmp, ".casein", "agent-mcp", "dalexandre-integration"])
+    File.mkdir_p!(fake_bin)
+    File.mkdir_p!(staging)
+
+    File.write!(Path.join(staging, "env.sh"), """
+    export CASEIN_API_TOKEN='integration-token'
+    export CASEIN_WORKSPACE_NAME='dalexandre-integration'
+    export CASEIN_WORKSPACE_ID='37a50042-54ca-4a6b-9f89-aa21ae5bf623'
+    export CASEIN_TERMINAL_MCP_URL='http://127.0.0.1:4000/api/terminals/mcp?workspace_id=37a50042-54ca-4a6b-9f89-aa21ae5bf623'
+    export CASEIN_PREVIEW_MCP_URL='http://127.0.0.1:4000/api/preview/mcp?workspace_id=37a50042-54ca-4a6b-9f89-aa21ae5bf623'
+    export CASEIN_ARTIFACT_MCP_URL='http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=37a50042-54ca-4a6b-9f89-aa21ae5bf623'
+    export CASEIN_AGENT_MCP_HOME='#{staging}'
+    """)
+
+    fake_tmux = Path.join(fake_bin, "tmux")
+
+    File.write!(fake_tmux, """
+    #!/usr/bin/env bash
+    if [[ "${1:-}" == "display-message" ]]; then
+      case "${@: -1}" in
+        *session_name*) printf '%s\\n' "${FAKE_TMUX_SESSION:?}" ;;
+        *session_id*) printf '$7\\n' ;;
+        *) exit 64 ;;
+      esac
+      exit 0
+    fi
+    if [[ "${1:-}" == "show-environment" ]]; then
+      exit 0
+    fi
+    exit 64
+    """)
+
+    File.chmod!(fake_tmux, 0o755)
+    on_exit(fn -> File.rm_rf(tmp) end)
+
+    {output, 0} =
+      System.cmd(
+        "bash",
+        [
+          "-c",
+          """
+          set -euo pipefail
+          source "#{Path.expand("../../scripts/lib/agent-env.sh", __DIR__)}"
+          agent_env_resolve
+          printf '%s\\n%s\\n%s\\n' "$CASEIN_WORKSPACE_NAME" "$CASEIN_WORKSPACE_ID" "$CASEIN_TERMINAL_MCP_URL"
+          """
+        ],
+        env: [
+          {"HOME", tmp},
+          {"PATH", "#{fake_bin}:#{System.get_env("PATH")}"},
+          {"TMUX", "/tmp/fake-casein,1,0"},
+          {"TMUX_PANE", "%42"},
+          {"FAKE_TMUX_SESSION", "casein_dalexandre-integration_wt-123"},
+          {"CASEIN_API_TOKEN", "stale-devide-token"},
+          {"CASEIN_WORKSPACE_NAME", "dalexandre-devide"},
+          {"CASEIN_WORKSPACE_ID", "e7c18b93-688b-4bb0-904d-ac93d61e9372"},
+          {"CASEIN_TERMINAL_MCP_URL",
+           "http://127.0.0.1:4000/api/terminals/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372"},
+          {"CASEIN_PREVIEW_MCP_URL",
+           "http://127.0.0.1:4000/api/preview/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372"}
+        ]
+      )
+
+    assert [name, id, terminal_url] = String.split(output, "\n", trim: true)
+    assert name == "dalexandre-integration"
+    assert id == "37a50042-54ca-4a6b-9f89-aa21ae5bf623"
+    assert URI.parse(terminal_url).query =~ "workspace_id=37a50042-54ca-4a6b-9f89-aa21ae5bf623"
+    refute terminal_url =~ "e7c18b93-688b-4bb0-904d-ac93d61e9372"
+  end
+
   test "Grok launches install the session bootstrap and Codex launches inject notify" do
     text = File.read!(@script)
 

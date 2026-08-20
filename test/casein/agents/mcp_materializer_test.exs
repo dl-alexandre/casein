@@ -85,6 +85,17 @@ defmodule Casein.Agents.MCPMaterializerTest do
     refute opencode =~ "io.modelcontextprotocol/protocolVersion"
     refute opencode =~ "2026-07-28"
 
+    opencode_mcp = Jason.decode!(opencode)["mcp"]
+
+    assert Map.keys(opencode_mcp) |> Enum.sort() ==
+             ["casein-artifact-test-ws", "casein-preview-test-ws", "casein-terminal-test-ws"]
+
+    for key <- Map.keys(opencode_mcp) do
+      assert URI.parse(opencode_mcp[key]["url"]).query =~ "workspace_id=ws-abc"
+    end
+
+    refute Map.has_key?(opencode_mcp, "casein-terminal-dalexandre-devide")
+
     grok_mcp_json = File.read!(Path.join(staging, "grok/.mcp.json"))
     assert grok_mcp_json =~ "casein-terminal-test-ws"
     assert grok_mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"

@@ -1,7 +1,8 @@
 defmodule Casein.Terminals.WorkerLaunchTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Casein.Terminals.WorkerLaunch
+  alias Casein.Terminals.WorkHandles
 
   @ws "ws-launch-1"
   @session "casein_ws-launch-1_main"
@@ -52,6 +53,65 @@ defmodule Casein.Terminals.WorkerLaunchTest do
                )
 
       assert_received {:ran, "opencode", "hello-world", @session, true}
+    end
+
+    test "default runner resolves a configured runtime tree before stale scripts env" do
+      tmp =
+        Path.join(
+          System.tmp_dir!(),
+          "worker-launch-runtime-#{System.unique_integer([:positive])}"
+        )
+
+      scripts = Path.join(tmp, "scripts")
+      checkout = Path.join(tmp, "checkout")
+      File.mkdir_p!(scripts)
+      File.mkdir_p!(checkout)
+
+      script = Path.join(scripts, "spawn-agent-worker.sh")
+
+      File.write!(script, """
+      #!/usr/bin/env bash
+      printf 'workspace=%s\\nsession=%s\\ncheckout=%s\\n' \\
+        "${CASEIN_WORKSPACE_ID:-}" "${CASEIN_TMUX_SESSION:-}" "${CASEIN_CHECKOUT:-}"
+      """)
+
+      previous =
+        for key <- [
+              "CASEIN_SPAWN_WORKER_SCRIPT",
+              "CASEIN_SCRIPTS_ROOT",
+              "CASEIN_SCRIPTS",
+              "CASEIN_CHECKOUT"
+            ],
+            into: %{} do
+          {key, System.get_env(key)}
+        end
+
+      on_exit(fn ->
+        restore_env(previous, "CASEIN_SPAWN_WORKER_SCRIPT")
+        restore_env(previous, "CASEIN_SCRIPTS_ROOT")
+        restore_env(previous, "CASEIN_SCRIPTS")
+        restore_env(previous, "CASEIN_CHECKOUT")
+        File.rm_rf(tmp)
+      end)
+
+      System.delete_env("CASEIN_SPAWN_WORKER_SCRIPT")
+      System.put_env("CASEIN_SCRIPTS_ROOT", scripts)
+      System.put_env("CASEIN_SCRIPTS", Path.join(tmp, "missing-scripts"))
+      System.put_env("CASEIN_CHECKOUT", checkout)
+
+      assert {:ok, plan} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "opencode",
+                 task_slug: "runtime-resolution",
+                 dry_run: true
+               )
+
+      assert plan.plan.script == script
+      assert plan.plan.plan_text =~ "workspace=#{@ws}"
+      assert plan.plan.plan_text =~ "session=#{@session}"
+      assert plan.plan.plan_text =~ "checkout=#{checkout}"
     end
   end
 
@@ -146,6 +206,82 @@ defmodule Casein.Terminals.WorkerLaunchTest do
       assert plan.visible? == false
       refute Map.has_key?(plan, :pane_id)
     end
+  end
+
+  test "managed OpenCode dry-run and launch keep workspace, session, git facts, and ledger identity" do
+    integration_workspace = "37a50042-54ca-4a6b-9f89-aa21ae5bf623"
+    integration_session = "casein_dalexandre-integration_coordinator"
+
+    WorkHandles.clear_all()
+    on_exit(fn -> WorkHandles.clear_all() end)
+
+    dry_runner = fn runtime, slug, session, opts ->
+      assert runtime == "opencode"
+      assert slug == "integration-worker"
+      assert session == integration_session
+      assert opts[:dry_run]
+      {:ok, %{dry_run: true, window_name: "worker-#{slug}"}}
+    end
+
+    assert {:ok, dry_plan} =
+             WorkerLaunch.launch(
+               workspace_id: integration_workspace,
+               session: integration_session,
+               runtime: "opencode",
+               task_slug: "integration-worker",
+               dry_run: true,
+               runner: dry_runner
+             )
+
+    assert dry_plan.workspace_id == integration_workspace
+    assert dry_plan.session == integration_session
+    assert dry_plan.visible? == false
+    refute Map.has_key?(dry_plan, :pane_id)
+
+    runner = fn runtime, slug, session, _opts ->
+      assert runtime == "opencode"
+      assert slug == "integration-worker"
+      assert session == integration_session
+      {:ok, %{pane_id: "%77", window_name: "worker-#{slug}"}}
+    end
+
+    observe = fn session, pane_id ->
+      assert session == integration_session
+      assert pane_id == "%77"
+
+      %{
+        window_id: "@77",
+        worktree_path: "/tmp/casein-agent-worktrees/dalexandre-integration/integration-worker",
+        branch: "agent/opencode/integration-worker-20260820"
+      }
+    end
+
+    assert {:ok, receipt} =
+             WorkerLaunch.launch(
+               workspace_id: integration_workspace,
+               session: integration_session,
+               runtime: "opencode",
+               task_slug: "integration-worker",
+               runner: runner,
+               observe: observe
+             )
+
+    assert receipt.workspace_id == integration_workspace
+    assert receipt.session == integration_session
+    assert receipt.runtime == "opencode"
+
+    assert receipt.worktree_path ==
+             "/tmp/casein-agent-worktrees/dalexandre-integration/integration-worker"
+
+    assert receipt.branch == "agent/opencode/integration-worker-20260820"
+    assert is_binary(receipt.handle_id)
+
+    assert {:ok, handle} = WorkHandles.get(receipt.handle_id)
+    assert handle.workspace_id == integration_workspace
+    assert handle.session == integration_session
+    assert handle.pane_id == "%77"
+    assert handle.label == "worker: integration-worker"
+    assert handle.status.state == "working"
   end
 
   # Constraints in the artifact (not only the brief). If a later slice "helpfully"
@@ -297,6 +433,13 @@ defmodule Casein.Terminals.WorkerLaunchTest do
       assert err.error == :spawn_headroom_exhausted
       assert is_binary(err.reason) and err.reason != ""
       assert McpCtl.Error.summary(err) =~ "headroom"
+    end
+  end
+
+  defp restore_env(previous, key) do
+    case Map.fetch!(previous, key) do
+      nil -> System.delete_env(key)
+      value -> System.put_env(key, value)
     end
   end
 end

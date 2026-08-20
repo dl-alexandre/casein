@@ -128,6 +128,40 @@ defmodule Casein.MCP.ScopeTest do
              )
   end
 
+  test "worker_launch inherits the coordinator workspace but rejects foreign overrides" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call(
+               "worker_launch",
+               %{
+                 "session" => "casein_ws-scope_agent",
+                 "runtime" => "opencode",
+                 "task_slug" => "worker"
+               },
+               surface: :terminal,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert scope.args["workspace_id"] == "ws-scope"
+    assert scope.resolved_from.workspace == :pre_scoped
+
+    assert {:error, error} =
+             Scope.resolve_tool_call(
+               "worker_launch",
+               %{
+                 "workspace_id" => "ws-other",
+                 "session" => "casein_ws-other_agent",
+                 "runtime" => "opencode",
+                 "task_slug" => "worker"
+               },
+               surface: :terminal,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert error.error == :workspace_scope_mismatch
+    assert error.scoped_workspace_id == "ws-scope"
+    assert error.requested_workspace_id == "ws-other"
+  end
+
   test "accepts linked folder workspace ids inside a pre-scoped endpoint" do
     root = tmp_root!("scope-linked")
     workspace = Path.join(root, "demo")

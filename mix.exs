@@ -31,6 +31,7 @@ defmodule Casein.MixProject do
             &ensure_static_assets/1,
             &assert_no_case_colliding_modules/1,
             :assemble,
+            &copy_agent_runtime_scripts/1,
             &install_operator_cli/1,
             &prune_duplicate_exec_ports/1,
             &write_release_metadata/1,
@@ -397,6 +398,72 @@ defmodule Casein.MixProject do
     # End-user docs ship with the installer once its public content contract is
     # established; until then the reviewed root README is the only release doc.
     File.rm_rf!(Path.join(release.path, "docs"))
+    release
+  end
+
+  # Worker launches are API calls made by the release process, so they cannot
+  # assume the operator's Casein checkout (or its `scripts/` directory) is
+  # present under the release root. Ship the small, checkout-independent agent
+  # runtime next to the release's existing priv scripts. The scripts retain
+  # their normal ROOT/scripts layout there, which also keeps product checkout
+  # worktrees free of Casein infrastructure files.
+  defp copy_agent_runtime_scripts(release) do
+    destination =
+      release.path
+      |> Path.join("lib/casein-*/priv/scripts")
+      |> Path.wildcard()
+      |> List.first()
+
+    if is_nil(destination) do
+      Mix.raise("release is missing the casein priv/scripts directory")
+    end
+
+    top_level = [
+      "launch-casein-agent.sh",
+      "spawn-agent-worker.sh",
+      "materialize-agent-mcp.sh",
+      "casein-curl.sh",
+      "casein-agent-state.sh",
+      "casein-codex-notify.sh"
+    ]
+
+    lib_files = [
+      "agent-auth-profile.sh",
+      "agent-env.sh",
+      "agent-skills.sh",
+      "agent-worktree.sh",
+      "grok-capability-bundle.py",
+      "grok-leader-runtime.py",
+      "grok-managed-home.py",
+      "grok-sandbox-profile.py",
+      "merge-agent-mcp.py",
+      "real-agent-bin.sh",
+      "repair-tmux-env.sh",
+      "sidechat.sh",
+      "spawn-host-headroom.sh",
+      "tmux-label.sh",
+      "workspace-scoped-token.sh"
+    ]
+
+    Enum.each(top_level, fn name ->
+      source = Path.join([__DIR__, "scripts", name])
+      target = Path.join(destination, name)
+      File.cp!(source, target)
+      if String.ends_with?(name, ".sh"), do: File.chmod!(target, 0o755)
+    end)
+
+    lib_destination = Path.join(destination, "lib")
+    File.mkdir_p!(lib_destination)
+
+    Enum.each(lib_files, fn name ->
+      source = Path.join([__DIR__, "scripts", "lib", name])
+      target = Path.join(lib_destination, name)
+      File.cp!(source, target)
+      if String.ends_with?(name, ".sh"), do: File.chmod!(target, 0o755)
+    end)
+
+    hooks_source = Path.join([__DIR__, "scripts", "agent-hooks"])
+    File.cp_r!(hooks_source, Path.join(destination, "agent-hooks"))
     release
   end
 end

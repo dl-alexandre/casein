@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Shared Casein agent env resolution — sourced by casein CLI and launch scripts.
-# Resolution order (first match wins):
+# A managed Casein tmux session is authoritative when one is present. This is
+# deliberately ahead of inherited process variables: a coordinator can be
+# launched from a shell that previously paired another workspace, but the
+# session name is the identity of the pane that will actually run the agent.
+# Outside a managed session the normal resolution order is:
 #   1. CASEIN_API_TOKEN + CASEIN_WORKSPACE_ID already exported
 #   2. CASEIN_AGENT_ENV_FILE (explicit env.sh path)
 #   3. Walk up from cwd for .devbox-agent.env
@@ -200,13 +204,21 @@ agent_env_parse_workspace_name() {
   return 1
 }
 
+agent_env_unset_workspace_vars() {
+  unset CASEIN_API_TOKEN CASEIN_WORKSPACE_ID CASEIN_WORKSPACE_NAME \
+    CASEIN_TMUX_SESSION CASEIN_API_BASE_URL CASEIN_TERMINAL_MCP_URL \
+    CASEIN_PREVIEW_MCP_URL CASEIN_ARTIFACT_MCP_URL CASEIN_TIDEWAVE_MCP_URL \
+    CASEIN_PREVIEW_ENV_ID CASEIN_CHECKOUT CASEIN_AGENT_MCP_HOME CASEIN_SCRIPTS \
+    CASEIN_AGENT_ENV_FILE CASEIN_URL CASEIN_CODEX_HOOK_URL 2>/dev/null || true
+}
+
 agent_env_staging_env_file() {
   local workspace_name="$1"
   printf '%s\n' "${HOME}/.casein/agent-mcp/${workspace_name}/env.sh"
 }
 
 agent_env_load_tmux_session_env() {
-  local session_id
+  local force="${1:-0}" session_id
   session_id="$(agent_env_tmux_session_id)" || return 1
   [[ -n "$session_id" ]] || return 1
 
@@ -216,7 +228,7 @@ agent_env_load_tmux_session_env() {
     value="${line#*=}"
     case "$key" in
       CASEIN_API_TOKEN|CASEIN_WORKSPACE_ID|CASEIN_WORKSPACE_NAME|CASEIN_TMUX_SESSION|CASEIN_API_BASE_URL|CASEIN_TERMINAL_MCP_URL|CASEIN_PREVIEW_MCP_URL|CASEIN_ARTIFACT_MCP_URL|CASEIN_TIDEWAVE_MCP_URL|CASEIN_PREVIEW_ENV_ID|CASEIN_CHECKOUT|CASEIN_AGENT_MCP_HOME|CASEIN_SCRIPTS|CASEIN_AGENT_ENV_FILE|CASEIN_TERMINAL_SCHEME|CASEIN_TERMINAL_PRESET|COLORFGBG|CLAUDE_CONFIG_DIR|CODEX_HOME|PATH)
-        if [[ -z "${!key:-}" ]]; then
+        if [[ "$force" == "1" || -z "${!key:-}" ]]; then
           export "${key}=${value}"
         fi
         ;;
@@ -224,6 +236,40 @@ agent_env_load_tmux_session_env() {
   done < <(tmux show-environment -t "$session_id" 2>/dev/null || true)
 
   [[ -n "${CASEIN_API_TOKEN:-}" && -n "${CASEIN_WORKSPACE_ID:-}" ]]
+}
+
+# Rebind a process to the workspace that owns its current managed tmux
+# session. The old resolver stopped at inherited CASEIN_API_TOKEN plus
+# CASEIN_WORKSPACE_ID, which made an integration pane launched from a devide
+# shell keep devide's MCP URLs and server namespace. Load the per-workspace
+# staging file first; a complete tmux session environment is the safe fallback
+# when staging has not been materialized yet.
+agent_env_bind_current_workspace() {
+  local session_name workspace_name env_file staged_name
+
+  session_name="$(agent_env_tmux_session_name)" || return 1
+  [[ "$session_name" == casein_* ]] || return 2
+
+  workspace_name="$(agent_env_parse_workspace_name "$session_name")" || return 1
+  env_file="$(agent_env_staging_env_file "$workspace_name")"
+
+  agent_env_unset_workspace_vars
+
+  if [[ -r "$env_file" ]]; then
+    agent_env_load_file "$env_file"
+  elif ! agent_env_load_tmux_session_env 1; then
+    return 1
+  fi
+
+  staged_name="${CASEIN_WORKSPACE_NAME:-}"
+  if [[ -n "$staged_name" && "$staged_name" != "$workspace_name" ]]; then
+    echo "error: current tmux session '${session_name}' is paired to '${workspace_name}', but its agent env says '${staged_name}'" >&2
+    return 1
+  fi
+
+  [[ -n "${CASEIN_API_TOKEN:-}" && -n "${CASEIN_WORKSPACE_ID:-}" ]] || return 1
+  export CASEIN_WORKSPACE_NAME="$workspace_name"
+  export CASEIN_TMUX_SESSION="$session_name"
 }
 
 agent_env_load_staged_env() {
@@ -333,6 +379,21 @@ agent_env_resolve() {
   # everything the launch spawns — tmux state hooks, repair-tmux-env.sh, and
   # the agent CLI itself all shell out to a bare `tmux`.
   agent_env_ensure_tmux_socket || true
+
+  # The current managed session is the coordinator's caller context. Do this
+  # before every other source, including an already-exported token/id pair, so
+  # an agent cannot inherit another workspace's MCP endpoint/tool namespace.
+  if [[ -n "${TMUX:-}" ]]; then
+    local current_session=""
+    current_session="$(agent_env_tmux_session_name 2>/dev/null || true)"
+    if [[ "$current_session" == casein_* ]]; then
+      if ! agent_env_bind_current_workspace; then
+        echo "error: could not bind Casein agent env to current session '${current_session}'" >&2
+        return 1
+      fi
+      return 0
+    fi
+  fi
 
   if [[ -n "${CASEIN_API_TOKEN:-}" ]] && [[ -n "${CASEIN_WORKSPACE_ID:-}" ]]; then
     return 0

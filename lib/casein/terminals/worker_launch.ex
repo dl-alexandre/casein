@@ -393,6 +393,12 @@ defmodule Casein.Terminals.WorkerLaunch do
   defp resolve_spawn_script do
     candidates = [
       System.get_env("CASEIN_SPAWN_WORKER_SCRIPT"),
+      # The service release may not have a checkout-level `scripts/` tree.
+      # CASEIN_SCRIPTS_ROOT is the host/runtime overlay seam used by the
+      # deploy, while the application priv path is the portable release
+      # fallback populated by the release step.
+      scripts_join(System.get_env("CASEIN_SCRIPTS_ROOT")),
+      application_scripts_join(),
       scripts_join(System.get_env("CASEIN_SCRIPTS")),
       scripts_join(
         System.get_env("CASEIN_CHECKOUT") &&
@@ -409,6 +415,14 @@ defmodule Casein.Terminals.WorkerLaunch do
   defp scripts_join(nil), do: nil
   defp scripts_join(""), do: nil
   defp scripts_join(root), do: Path.join(root, "spawn-agent-worker.sh")
+
+  defp application_scripts_join do
+    if Code.ensure_loaded?(Application) do
+      Application.app_dir(:casein, "priv/scripts/spawn-agent-worker.sh")
+    end
+  rescue
+    _ -> nil
+  end
 
   defp binary_and_regular?(path) when is_binary(path), do: File.regular?(path)
   defp binary_and_regular?(_), do: false

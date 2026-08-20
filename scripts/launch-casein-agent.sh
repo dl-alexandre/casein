@@ -99,7 +99,17 @@ grok_tmux_bind_hint() {
 # branches a fresh worktree rather than adopting it.
 agent_env_bind_current_checkout
 
-if [[ "$RUNTIME" == "grok" ]]; then
+current_session="$(agent_env_tmux_session_name 2>/dev/null || true)"
+if [[ "$current_session" == casein_* ]]; then
+  # Every managed runtime must get URLs rebound to the pane that is actually
+  # starting it. Previously this ran only for Grok, leaving OpenCode with a
+  # stale server key/URL bundle when its shell had been inherited from another
+  # workspace.
+  if ! agent_env_bind_current_tmux_session; then
+    echo "error: managed ${RUNTIME} launch requires a valid current Casein tmux scope" >&2
+    exit 1
+  fi
+elif [[ "$RUNTIME" == "grok" ]]; then
   if ! agent_env_bind_current_tmux_session; then
     echo "error: managed Grok launch requires an exact current tmux session" >&2
     grok_tmux_bind_hint
@@ -152,6 +162,10 @@ run_materialize_export() {
         rm -f "$out" "$err"
         echo "error: managed Grok requires valid materialized capability exports" >&2
         return 1
+      elif [[ "$RUNTIME" == "opencode" ]]; then
+        rm -f "$out" "$err"
+        echo "error: managed OpenCode requires valid materialized MCP exports" >&2
+        return 1
       else
         warn_degraded_step "materialize-agent-mcp.sh --export eval" \
           "materializer emitted shell exports that could not be evaluated; stdout redacted because it may contain tokens"
@@ -165,6 +179,11 @@ run_materialize_export() {
     if [[ "$RUNTIME" == "grok" ]]; then
       rm -f "$out" "$err"
       echo "error: managed Grok capability materialization failed" >&2
+      printf '%s\n' "${detail:0:1200}" >&2
+      return 1
+    elif [[ "$RUNTIME" == "opencode" ]]; then
+      rm -f "$out" "$err"
+      echo "error: managed OpenCode MCP materialization failed" >&2
       printf '%s\n' "${detail:0:1200}" >&2
       return 1
     else
@@ -282,12 +301,76 @@ sync_project_mcp_config() {
       ;;
     opencode)
       if [[ -f "${staging}/opencode.json" ]]; then
+        validate_opencode_mcp_config "${staging}/opencode.json" || return 1
         mkdir -p "${checkout}/.opencode"
         cp "${staging}/opencode.json" "${checkout}/.opencode/opencode.json"
         chmod 600 "${checkout}/.opencode/opencode.json"
       fi
       ;;
   esac
+}
+
+# OpenCode has no per-launch MCP override, so its project config is the final
+# authority for the process. Refuse to copy a stale staging file: a config can
+# have a plausible Casein server name while its URL still points at another
+# workspace. This check is intentionally limited to the required Casein
+# servers plus the optional workspace-scoped Tidewave server; other
+# project/user MCP entries are left alone.
+validate_opencode_mcp_config() {
+  local config="$1"
+
+  CASEIN_WORKSPACE_ID="${CASEIN_WORKSPACE_ID:-}" \
+    CASEIN_WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-}" \
+    python3 - "$config" <<'PY'
+import json
+import os
+import re
+import sys
+from urllib.parse import parse_qs, urlsplit
+
+path = sys.argv[1]
+workspace_id = os.environ.get("CASEIN_WORKSPACE_ID", "")
+workspace_name = os.environ.get("CASEIN_WORKSPACE_NAME", "")
+slug = re.sub(r"[^a-zA-Z0-9]+", "-", workspace_name).strip("-").lower() or "workspace"
+expected = {
+    f"casein-terminal-{slug}",
+    f"casein-preview-{slug}",
+    f"casein-artifact-{slug}",
+}
+allowed = expected | {f"casein-tidewave-{slug}"}
+
+def fail(message):
+    print(f"error: refusing stale OpenCode MCP config: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+if not workspace_id or not workspace_name:
+    fail("CASEIN_WORKSPACE_ID/CASEIN_WORKSPACE_NAME is incomplete")
+
+try:
+    with open(path, encoding="utf-8") as handle:
+        mcp = json.load(handle).get("mcp")
+except (OSError, ValueError, AttributeError) as exc:
+    fail(f"could not read {path}: {exc}")
+
+if not isinstance(mcp, dict):
+    fail("the mcp object is missing")
+
+casein_keys = {key for key in mcp if key.startswith("casein-")}
+foreign = sorted(casein_keys - allowed)
+missing = sorted(expected - set(mcp))
+if missing:
+    fail("missing workspace servers: " + ", ".join(missing))
+if foreign:
+    fail("foreign workspace servers: " + ", ".join(foreign))
+
+for key in sorted(casein_keys):
+    url = mcp[key].get("url") if isinstance(mcp[key], dict) else None
+    if not isinstance(url, str):
+        fail(f"{key} has no URL")
+    query = parse_qs(urlsplit(url).query)
+    if query.get("workspace_id") != [workspace_id]:
+        fail(f"{key} is not scoped to the caller workspace")
+PY
 }
 
 # Stage Casein-infra skills for OpenCode. OpenCode also auto-loads
