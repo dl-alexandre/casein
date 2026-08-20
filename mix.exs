@@ -453,6 +453,7 @@ defmodule Casein.MixProject do
     Enum.each(top_level, fn name ->
       source = Path.join([__DIR__, "scripts", name])
       target = Path.join(destination, name)
+      File.mkdir_p!(Path.dirname(target))
       File.cp!(source, target)
       if String.ends_with?(name, ".sh"), do: File.chmod!(target, 0o755)
     end)
@@ -463,6 +464,7 @@ defmodule Casein.MixProject do
     Enum.each(lib_files, fn name ->
       source = Path.join([__DIR__, "scripts", "lib", name])
       target = Path.join(lib_destination, name)
+      File.mkdir_p!(Path.dirname(target))
       File.cp!(source, target)
       if String.ends_with?(name, ".sh"), do: File.chmod!(target, 0o755)
     end)
