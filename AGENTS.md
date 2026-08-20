@@ -692,6 +692,10 @@ attempts, and `C-u` closes the picker instead of clearing it.
 | **OpenCode** | `CASEIN_OPENCODE_DEFAULT_MODEL=<provider>/<model>` | `opencode/grok-4.6` |
 | **Codex** | operator model preserved across owner auth profiles (see `codex_model_args`) | runtime default |
 
+Every Casein-launched OpenCode also pins `permission: "allow"` through
+`OPENCODE_CONFIG_CONTENT`, the final runtime override layer. Existing inline MCP
+and model settings are preserved; project configs cannot downgrade permissions.
+
 ```bash
 # Pin one worker's model at spawn.
 CASEIN_OPENCODE_DEFAULT_MODEL=opencode/gpt-5.6-luna \

@@ -438,6 +438,32 @@ opencode_model_args() {
   fi
 }
 
+# `permission: allow` is OpenCode's maximum permission rule. Put it in the
+# inline runtime config, which loads after global and project config, so a
+# repository cannot turn an unattended Casein agent back into ask/deny mode.
+# Preserve every unrelated inline setting supplied by the caller.
+opencode_runtime_config_content() {
+  python3 - <<'PY'
+import json
+import os
+import sys
+
+raw = os.environ.get("OPENCODE_CONFIG_CONTENT", "").strip()
+try:
+    config = json.loads(raw) if raw else {}
+except json.JSONDecodeError:
+    print("error: OPENCODE_CONFIG_CONTENT must be valid JSON", file=sys.stderr)
+    raise SystemExit(2)
+
+if not isinstance(config, dict):
+    print("error: OPENCODE_CONFIG_CONTENT must contain a JSON object", file=sys.stderr)
+    raise SystemExit(2)
+
+config["permission"] = "allow"
+print(json.dumps(config, separators=(",", ":")))
+PY
+}
+
 sync_project_mcp_config "$RUNTIME"
 if [[ "$RUNTIME" == "opencode" ]]; then
   opencode_install_skills
@@ -1675,6 +1701,8 @@ case "$RUNTIME" in
     exec "$(runtime_bin codex)" "${codex_args[@]}" "$@"
     ;;
   opencode)
+    OPENCODE_CONFIG_CONTENT="$(opencode_runtime_config_content)"
+    export OPENCODE_CONFIG_CONTENT
     opencode_args=()
     while IFS= read -r -d '' arg; do
       opencode_args+=("$arg")

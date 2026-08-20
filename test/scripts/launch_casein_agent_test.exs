@@ -342,6 +342,24 @@ defmodule Scripts.LaunchCaseinAgentTest do
     "#{name}() {\n#{body}\n}"
   end
 
+  defp opencode_runtime_config_content(existing) do
+    text = File.read!(@script)
+    function = extract_function!(text, "opencode_runtime_config_content")
+
+    script = """
+    set -euo pipefail
+    #{function}
+    opencode_runtime_config_content
+    """
+
+    env = [
+      {"OPENCODE_CONFIG_CONTENT", if(existing, do: Jason.encode!(existing), else: nil)}
+    ]
+
+    {out, 0} = System.cmd("bash", ["-c", script], env: env)
+    Jason.decode!(out)
+  end
+
   test "opencode launches pin a default model, since the host-global one is shared" do
     # Default TUI invocation — the one delegation uses.
     assert opencode_model_args([]) == ["--model", "opencode/grok-4.6"]
@@ -367,6 +385,26 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert opencode_model_args(["models"]) == []
     assert opencode_model_args(["serve"]) == []
     assert opencode_model_args(["export"]) == []
+  end
+
+  test "opencode launches pin full permissions in final inline config" do
+    assert opencode_runtime_config_content(nil) == %{"permission" => "allow"}
+
+    existing = %{
+      "model" => "opencode/grok-4.6",
+      "permission" => %{"bash" => "deny"},
+      "mcp" => %{"tidewave" => %{"enabled" => false}}
+    }
+
+    assert opencode_runtime_config_content(existing) == %{
+             "model" => "opencode/grok-4.6",
+             "permission" => "allow",
+             "mcp" => %{"tidewave" => %{"enabled" => false}}
+           }
+
+    text = File.read!(@script)
+    assert text =~ ~S|OPENCODE_CONFIG_CONTENT="$(opencode_runtime_config_content)"|
+    assert text =~ "export OPENCODE_CONFIG_CONTENT"
   end
 
   test "managed Codex tabs prefer the thread title while allowing an explicit override" do

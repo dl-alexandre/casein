@@ -79,7 +79,7 @@ config:
 | Runtime | Model source |
 |---|---|
 | **codex** | `CASEIN_CODEX_DEFAULT_MODEL`, else the `model` key in `~/.codex/config.toml` |
-| **opencode** | `CASEIN_OPENCODE_DEFAULT_MODEL`, default `opencode/grok-4.5` |
+| **opencode** | `CASEIN_OPENCODE_DEFAULT_MODEL`, default `opencode/grok-4.6` |
 | **claude**, **grok** | the runtime's own config; Casein sets nothing |
 
 Both vars yield to an explicit `--model`/`-m` on the launch command, and setting
@@ -87,6 +87,11 @@ either to the empty string opts out so the host-global config wins. Note that
 opencode's own config (`~/.config/opencode`) is **box-global** — editing it
 changes every opencode session on the machine, Casein-launched or not, which is
 why the default is injected per launch rather than written there.
+
+Casein-launched OpenCode also pins the maximum OpenCode permission rule,
+`permission: "allow"`, in its inline runtime config while preserving unrelated
+inline settings. A project-local config therefore cannot reintroduce prompts or
+denials for a delegated OpenCode worker.
 
 There is no reliable quota signal to route on, and you should not invent one:
 
