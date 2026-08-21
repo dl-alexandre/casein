@@ -14,6 +14,8 @@ source "${ROOT}/scripts/lib/agent-worktree.sh"
 source "${ROOT}/scripts/lib/real-agent-bin.sh"
 # shellcheck source=lib/agent-auth-profile.sh
 source "${ROOT}/scripts/lib/agent-auth-profile.sh"
+# shellcheck source=lib/agent-identity.sh
+source "${ROOT}/scripts/lib/agent-identity.sh"
 # shellcheck source=lib/sidechat.sh
 source "${ROOT}/scripts/lib/sidechat.sh"
 # shellcheck source=lib/agent-skills.sh
@@ -231,10 +233,14 @@ run_repair_tmux_env
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
 # Never redirect agent homes to MCP staging. Preserve only explicit Casein
-# owner auth profiles under ~/.casein/agent-auth: signed-in profiles, plus
-# empty profiles of registered owners (those fail closed — the provider CLI
-# runs its own sign-in inside the profile instead of using the host global
-# login). Anything else falls back to the host global provider auth.
+# auth profiles under ~/.casein/agent-auth: signed-in profiles, plus empty
+# profiles of registered owners (those fail closed — the provider CLI runs its
+# own sign-in inside the profile instead of using the host global login).
+# Anything else falls back to the host global provider auth.
+#
+# The principal is CASEIN_ACTOR (the viewer Casein stamped into the pane env)
+# when present, else the workspace owner — see agent_auth_principal in
+# scripts/lib/agent-auth-profile.sh and lib/casein/identity.ex.
 enforce_owner_auth() {
   local runtime="$1"
   local key current dir
@@ -264,9 +270,16 @@ enforce_owner_auth() {
   fi
 }
 
+
 unset GROK_HOME OPENCODE_CONFIG
 enforce_owner_auth codex
 enforce_owner_auth claude
+# gh is in this tree for the same reason as the providers: without it, every
+# agent's `gh` call fell through to the host-global ~/.config/gh, which holds
+# several accounts behind one active `user:` key. Agents opened PRs and
+# commented on issues as whoever had logged in there last.
+enforce_owner_auth gh
+announce_agent_identity
 
 sync_project_mcp_config() {
   local runtime="$1"

@@ -19,13 +19,13 @@ defmodule Casein.Agents.MCPMaterializer do
 
   alias Casein.Agents.{
     AgentShims,
-    AuthProfile,
     GrokCapabilityBundle,
     MCPUrls,
     TidewaveMCP,
     WorkspaceTokens
   }
 
+  alias Casein.Identity
   alias Casein.Workspaces
 
   # Spec key for 2026-07-28 per-request declare. Kept here so the opt-in hook
@@ -536,7 +536,7 @@ defmodule Casein.Agents.MCPMaterializer do
     export CASEIN_ARTIFACT_MCP_URL=#{quote_env_sh(urls.artifact)}
     #{tmux_session_env_export(tmux_session)}
     #{tidewave_env_export(urls)}
-    #{auth_profile_env_exports(workspace)}
+    #{auth_profile_env_exports(workspace, opts)}
     export CASEIN_CHECKOUT=#{quote_env_sh(checkout)}
     export CASEIN_AGENT_MCP_HOME=#{quote_env_sh(staging)}
     export CASEIN_GROK_BUNDLE_DIR=#{quote_env_sh(bundle.dir)}
@@ -651,9 +651,20 @@ defmodule Casein.Agents.MCPMaterializer do
     "'" <> String.replace(value, "'", "'\\''") <> "'"
   end
 
-  defp auth_profile_env_exports(workspace) do
-    workspace
-    |> AuthProfile.env_for_workspace()
+  # env.sh is what a pane sources, so it must name the same principal the
+  # launcher and the server do — including CASEIN_ACTOR itself, which the shell
+  # side reads back rather than re-deriving.
+  #
+  # `env: false`: the principal comes from the caller or the workspace, never
+  # from the release's own environment.
+  defp auth_profile_env_exports(workspace, opts) do
+    [
+      viewer: Keyword.get(opts, :viewer),
+      principal: Keyword.get(opts, :principal),
+      workspace: workspace,
+      env: false
+    ]
+    |> Identity.env()
     |> Enum.map_join("\n", fn {key, value} ->
       "export #{key}=#{quote_env_sh(sanitize_token(value))}"
     end)

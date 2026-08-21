@@ -8,16 +8,24 @@ defmodule Casein.UAT.Git.System do
   > fake `Git` and this module is verified by the live self-heal step (open in the
   > plan). Note the repo-local push auth caveat: `git push` must not inherit an
   > ambient `GH_TOKEN` (see the git-push token-shadow lesson) — hence `env -u`.
+
+  Identity comes from `Casein.Identity`. Self-heal runs with no viewer behind
+  it, so it normally resolves the *declared* service identity rather than a
+  person. Before that, `gh pr create` here inherited whatever the host-global
+  `gh` config had selected — so an automated proposal opened a PR under an
+  arbitrary engineer's account.
   """
 
   @behaviour Casein.UAT.Git
+
+  alias Casein.Identity
 
   @impl true
   def propose(%{branch: branch, files: files, title: title, body: body}) do
     with {:ok, branch} <- safe_branch(branch),
          :ok <- run_git(["checkout", "-B", branch]),
          :ok <- write_and_stage(files),
-         :ok <- run_git(["commit", "-m", title]),
+         :ok <- run_git(Identity.git_config_args(identity()) ++ ["commit", "-m", title]),
          :ok <- push(branch) do
       open_pr(title, body)
     end
@@ -48,12 +56,18 @@ defmodule Casein.UAT.Git.System do
 
   defp open_pr(title, body) do
     case System.cmd("gh", ["pr", "create", "--title", title, "--body", body],
+           env: Identity.gh_env([]),
            stderr_to_stdout: true
          ) do
       {out, 0} -> {:ok, String.trim(out)}
       {out, code} -> {:error, {:gh_pr_failed, code, out}}
     end
   end
+
+  # No viewer reaches this path, and `env: false` keeps it from picking up a
+  # `CASEIN_ACTOR` the release happened to be started with — self-heal must not
+  # commit or open PRs under a person who merely launched the server.
+  defp identity, do: [env: false]
 
   defp run_git(args) do
     case System.cmd("git", args, stderr_to_stdout: true) do

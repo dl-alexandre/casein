@@ -18,6 +18,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias Casein.Agents.PreviewTools.BrowserControl
   alias Casein.Audit
   alias Casein.Cockpit.Inspectors
+  alias Casein.Identity
   alias Casein.Cockpit.Tabs
   alias Casein.CommandPalette.Actions
   alias Casein.Labels
@@ -266,6 +267,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         # exist (nil = anonymous LAN viewer, authorized via
         # PanelGate.path_access_pre_authorized?).
         |> assign_new(:current_user, fn -> nil end)
+        # Computed once at mount, never per render: the shell re-renders on
+        # every LiveView update and this reads the auth-profile tree from disk.
+        |> assign(:identity, Identity.report(viewer: user, workspace: ws, env: false))
         |> assign(:path_route, mount_workspace.path_route)
         |> assign(:workspace_route, mount_workspace.workspace_route)
         |> assign(:workspace_start_error, nil)
@@ -2388,6 +2392,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       workspace_mode_source={@workspace_mode_source}
       workspace_route={@workspace_route}
       workspace_start_error={@workspace_start_error}
+      identity={@identity}
     >
       <:header_back_nav>
         <.workspace_breadcrumbs workspace_route={@workspace_route} />
@@ -3825,12 +3830,21 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     %{
       id: workspace.id,
       name: workspace.name || workspace.id,
+      # Carried so the identity fallback can use the manager's authoritative
+      # owner instead of parsing the workspace name (`AuthProfile.owner_key/1`).
+      user: Map.get(workspace, :user),
       path: workspace_cwd(socket)
     }
   end
 
   defp ensure_pane_agent_env(socket, tmux_session) when is_binary(tmux_session) do
-    PaneEnv.ensure_for_session(tmux_session, pane_env_workspace(socket))
+    # The viewer — not the workspace owner — is the principal agents launch as
+    # (`Casein.Identity`). tmux session environment is per-session, so this
+    # stamps the identity newly created panes inherit; panes already running
+    # keep the principal they started with.
+    PaneEnv.ensure_for_session(tmux_session, pane_env_workspace(socket),
+      viewer: socket.assigns[:current_user]
+    )
   end
 
   defp terminal_loc(socket, cwd) do
