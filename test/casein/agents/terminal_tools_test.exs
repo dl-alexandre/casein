@@ -74,6 +74,64 @@ defmodule Casein.Agents.TerminalToolsTest do
              })
   end
 
+  test "persisted workspace identity keeps list, topology, and capture in one scope" do
+    workspace_id = "ws-persisted"
+    session = Tmux.session_name("stable-name", "main")
+
+    # The suite's manager stub returns 404 for this id. A previously observed,
+    # persisted UUID/name mapping must still scope every terminal read alike.
+    assert {:ok, _record} =
+             State.sync(%Workspace{
+               id: workspace_id,
+               name: "stable-name",
+               path: "/workspace",
+               status: :running
+             })
+
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: "/workspace"
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{"%1" => "ready\n"})
+
+    assert {:ok, %{sessions: sessions}} =
+             TerminalTools.list_sessions(%{"workspace_id" => workspace_id})
+
+    assert Enum.map(sessions, & &1.session) == [session]
+
+    assert {:ok, %{panes: [%{id: "%1"}]}} =
+             TerminalTools.invoke("terminal_topology", %{
+               "workspace_id" => workspace_id,
+               "session" => session
+             })
+
+    assert {:ok, %{target: "%1", output: "ready\n"}} =
+             TerminalTools.invoke("terminal_capture", %{
+               "workspace_id" => workspace_id,
+               "session" => session,
+               "pane" => "%1"
+             })
+  end
+
   test "definitions include workspace_id on every tool" do
     for tool <- TerminalTools.definitions() do
       assert Map.has_key?(tool.parameters.properties, :workspace_id)

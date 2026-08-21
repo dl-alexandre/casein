@@ -5,8 +5,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   alias Casein.Terminals
   alias Casein.Terminals.Backend
   alias Casein.Terminals.TmuxPolicy
+  alias Casein.Terminals.TmuxScope
   alias Casein.Terminals.TmuxTopology
-  alias Casein.Workspaces
   alias Casein.Workspaces.Scratch
 
   @session_prefix "casein_"
@@ -190,20 +190,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
     end
   end
 
-  defp workspace_session_prefixes(id) do
-    prefixes = [workspace_session_prefix(id)]
-
-    case Workspaces.get(id) do
-      {:ok, ws} ->
-        for candidate <- [ws.name, ws.id], is_binary(candidate), candidate != "" do
-          workspace_session_prefix(candidate)
-        end
-        |> Enum.uniq()
-
-      _ ->
-        prefixes
-    end
-  end
+  defp workspace_session_prefixes(id), do: TmuxScope.workspace_session_prefixes(id)
 
   defp workspace_session_prefix(name) when is_binary(name) do
     backend = Backend.module()
