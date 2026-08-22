@@ -21,6 +21,7 @@ defmodule CaseinWeb.API.TerminalMCP do
   @behaviour CaseinWeb.API.MCPEnvelope
 
   alias Casein.Agents.{MCPAudit, MCPError, MCPTasks, TerminalTools}
+  alias Casein.HostHealth
   alias Casein.MCP.Scope
   alias Casein.Terminals.FleetSummary
   alias CaseinWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
@@ -28,6 +29,8 @@ defmodule CaseinWeb.API.TerminalMCP do
 
   @server_name "Casein Terminal MCP Server"
   @fleet_summary_uri FleetSummary.resource_uri()
+  @host_health_uri HostHealth.resource_uri()
+  @host_health_tool HostHealth.tool_name()
 
   # One wait leg self-limits at 55s; this only has to outlast that plus the tool's
   # own setup, and exists so a wedged leg cannot hang a task forever.
@@ -65,7 +68,10 @@ defmodule CaseinWeb.API.TerminalMCP do
         "and pass explicit pane ids on capture/send calls. " <>
         "For a one-shot fleet picture (sessions, panes, runtime, worktree, branch, " <>
         "commits-not-on-origin, process/CPU liveness) read the MCP resource " <>
-        "casein://fleet/summary — do not topology + N capture scrapes.",
+        "casein://fleet/summary — do not topology + N capture scrapes. " <>
+        "For host watchdog health (state, freshness, bounded metrics, recent " <>
+        "alerts) read casein://host/health or call host_health — missing or " <>
+        "stale snapshots are unknown, never healthy.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )
   end
@@ -81,7 +87,7 @@ defmodule CaseinWeb.API.TerminalMCP do
   # Fleet summary is a concrete JSON resource (not an MCP App). Pane capture and
   # the candidate_sessions picker remain tool-shaped for now.
   def list_resources(_opts) do
-    [FleetSummary.resource_descriptor()]
+    [FleetSummary.resource_descriptor(), HostHealth.resource_descriptor()]
   end
 
   @impl true
@@ -101,6 +107,19 @@ defmodule CaseinWeb.API.TerminalMCP do
      ]}
   end
 
+  def read_resource(@host_health_uri, _opts) do
+    payload = HostHealth.snapshot()
+
+    {:ok,
+     [
+       %{
+         uri: @host_health_uri,
+         mimeType: "application/json",
+         text: HostHealth.to_json(payload)
+       }
+     ]}
+  end
+
   def read_resource(_uri, _opts), do: {:error, :not_found}
 
   @impl true
@@ -113,7 +132,7 @@ defmodule CaseinWeb.API.TerminalMCP do
   @doc "MCP tool specifications, mapped from TerminalTools definitions."
   @spec tool_specs() :: [map()]
   def tool_specs do
-    Enum.map(TerminalTools.definitions(), &Tool.mcp_spec/1)
+    Enum.map(TerminalTools.definitions() ++ [HostHealth.tool_definition()], &Tool.mcp_spec/1)
   end
 
   @impl true
@@ -136,6 +155,10 @@ defmodule CaseinWeb.API.TerminalMCP do
     else
       invoke_tool_call(id, "terminal_wait_agent_state", params, opts)
     end
+  end
+
+  def call_tool(id, %{"name" => @host_health_tool} = params, opts) do
+    invoke_host_health(id, params, opts)
   end
 
   def call_tool(id, %{"name" => name} = params, opts),
@@ -171,6 +194,20 @@ defmodule CaseinWeb.API.TerminalMCP do
   end
 
   defp wait_deadline, do: System.monotonic_time(:millisecond) + MCPTasks.ttl_ms()
+
+  defp invoke_host_health(id, params, opts) do
+    default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
+    args = Map.get(params, "arguments", %{}) || %{}
+    audit_opts = [actor: Keyword.get(opts, :actor), workspace_id: default_workspace_id]
+    payload = HostHealth.snapshot()
+
+    _ = MCPAudit.record_terminal(@host_health_tool, args, {:ok, payload}, audit_opts)
+
+    MCPEnvelope.result(id, %{
+      content: [MCPEnvelope.text(payload)],
+      structuredContent: MCPEnvelope.jsonable(payload)
+    })
+  end
 
   defp invoke_tool_call(id, name, params, opts) do
     default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)

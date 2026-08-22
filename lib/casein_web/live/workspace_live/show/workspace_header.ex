@@ -5,10 +5,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
 
   import CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
+  alias Casein.HostHealth
+
   attr :desktop_terminal?, :boolean, default: false
   attr :notif_unread_count, :integer, default: 0
   attr :agent_approval_count, :integer, default: 0
   attr :desktop_downloads, :list, default: []
+  attr :host_health, :any, default: nil
 
   attr :active_window_pane_count, :any, required: true
   attr :host_loc, :any, required: true
@@ -62,6 +65,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
             {@workspace.branch}
           </span>
         </div>
+
+        <.host_health_menu workspace_id={@workspace.id} health={@host_health} />
 
         <button
           :if={not @desktop_terminal? and workspace_startable?(@workspace, @workspace_start_error)}
@@ -368,6 +373,130 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
     </details>
     """
   end
+
+  attr :workspace_id, :string, required: true
+  attr :health, :any, default: nil
+
+  defp host_health_menu(assigns) do
+    health = assigns.health || HostHealth.snapshot()
+    assigns = assign(assigns, :health, health)
+
+    ~H"""
+    <details id={"host-health-" <> @workspace_id} class="group/host-health">
+      <summary
+        id={"host-health-summary-" <> @workspace_id}
+        class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-1.5 text-left text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+        title="Host watchdog health"
+        aria-label={"Host health " <> HostHealth.state_label(@health.state)}
+      >
+        <span class="flex min-w-0 items-center gap-2">
+          <span>Host health</span>
+          <span class={[
+            "inline-flex items-center gap-1 rounded px-1 py-density-label font-semibold",
+            host_health_state_class(@health.state)
+          ]}>
+            <span class={["inline-block size-1.5 rounded-full", host_health_dot_class(@health.state)]}></span>
+            {HostHealth.state_label(@health.state)}
+          </span>
+        </span>
+        <span class="shrink-0 font-mono text-density-label text-base-content/50">
+          {host_health_age(@health)}
+        </span>
+      </summary>
+
+      <div id={"host-health-detail-" <> @workspace_id} class="space-y-1 px-3 pb-2 text-density-body">
+        <div class="font-mono text-base-content/70">
+          {@health.host}
+          <span :if={@health.reason} class="ml-1 text-base-content/50">
+            · {@health.reason}
+          </span>
+        </div>
+
+        <div :if={@health.metrics} class="font-mono text-base-content/70">
+          load1 {host_health_load(@health.metrics)} · cpu {host_health_cpu(@health.metrics)} idle · {HostHealth.mem_label(
+            @health.metrics.mem_available_kb
+          )} avail
+        </div>
+
+        <div :if={@health.metrics} class="font-mono text-base-content/50">
+          swap {host_health_swap(@health.metrics)} · opencode {host_health_count(
+            @health.metrics.opencode_processes
+          )} · beam {host_health_count(@health.metrics.beam_processes)}
+        </div>
+
+        <div class={["font-mono", host_health_state_class(@health.alert && @health.state)]}>
+          alert {host_health_alert_signal(@health)} · {host_health_alert_at(@health)}
+        </div>
+
+        <div :if={@health.alerts != []} class="space-y-0.5 pt-1">
+          <div
+            :for={alert <- Enum.take(Enum.reverse(@health.alerts), 5)}
+            class="font-mono text-base-content/60"
+          >
+            {host_health_alert_row(alert)}
+          </div>
+        </div>
+
+        <button
+          id={"host-health-refresh-" <> @workspace_id}
+          type="button"
+          phx-click="host_health:refresh"
+          class="mt-1 block w-full rounded border border-base-300 px-2 py-1 text-left text-density-label hover:bg-base-200"
+        >
+          Refresh
+        </button>
+      </div>
+    </details>
+    """
+  end
+
+  defp host_health_state_class("healthy"), do: "text-status-ok-fg"
+  defp host_health_state_class("warning"), do: "text-status-warning-fg"
+  defp host_health_state_class("pressure"), do: "bg-status-warning/15 text-status-warning-fg"
+  defp host_health_state_class("stuck"), do: "bg-status-danger/15 text-status-danger-fg"
+  defp host_health_state_class(_), do: "text-base-content/50"
+
+  defp host_health_dot_class("healthy"), do: "bg-status-ok"
+  defp host_health_dot_class("warning"), do: "bg-status-warning"
+  defp host_health_dot_class("pressure"), do: "bg-status-warning"
+  defp host_health_dot_class("stuck"), do: "bg-status-danger"
+  defp host_health_dot_class(_), do: "bg-base-content/35"
+
+  defp host_health_age(%{fresh?: false, sample_age_seconds: age}),
+    do: "stale " <> HostHealth.age_label(age)
+
+  defp host_health_age(%{sample_age_seconds: age}), do: HostHealth.age_label(age)
+  defp host_health_age(_), do: HostHealth.age_label(nil)
+
+  defp host_health_load(%{load1: load}) when is_number(load),
+    do: :erlang.float_to_binary(load / 1, decimals: 2)
+
+  defp host_health_load(_), do: "—"
+
+  defp host_health_cpu(%{cpu_idle_pct: cpu}) when is_integer(cpu), do: "#{cpu}%"
+  defp host_health_cpu(_), do: "—"
+
+  defp host_health_swap(%{swap_used_kb: kb}) when is_integer(kb) and kb > 0,
+    do: HostHealth.mem_label(kb)
+
+  defp host_health_swap(_), do: "0"
+
+  defp host_health_count(n) when is_integer(n), do: Integer.to_string(n)
+  defp host_health_count(_), do: "—"
+
+  defp host_health_alert_signal(%{alert: %{signal: signal}}) when is_binary(signal), do: signal
+  defp host_health_alert_signal(_), do: "none"
+
+  defp host_health_alert_at(%{alert: %{at: at}}) when is_binary(at), do: at
+  defp host_health_alert_at(%{sampled_at: at}) when is_binary(at), do: at
+  defp host_health_alert_at(_), do: "—"
+
+  defp host_health_alert_row(%{timestamp: ts, signal: signal} = alert) do
+    message = Map.get(alert, :message) || Map.get(alert, "message") || signal
+    "#{ts} #{signal} #{message}"
+  end
+
+  defp host_health_alert_row(_), do: ""
 
   # Menu rows that carry a binding show it: a shortcut discoverable only by
   # hovering for a `title` tooltip is a shortcut nobody learns, and the panel

@@ -31,7 +31,7 @@ defmodule Casein.Agents.TerminalMCPCapability do
   end
 
   defp tool_names do
-    TerminalTools.definitions()
+    (TerminalTools.definitions() ++ [Casein.HostHealth.tool_definition()])
     |> Enum.map(& &1.name)
   end
 end

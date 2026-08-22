@@ -144,6 +144,45 @@ defmodule CaseinWeb.API.MCPResourcesTest do
     end
   end
 
+  describe "terminal host health resource" do
+    test "resources/list publishes casein://host/health" do
+      assert {:reply, %{result: result}} =
+               MCPEnvelope.handle(modern("resources/list"), TerminalMCP, [])
+
+      assert Enum.any?(result.resources, fn r ->
+               r.uri == "casein://host/health" and r.mimeType == "application/json"
+             end)
+    end
+
+    test "resources/read and host_health tool share one unknown snapshot when missing" do
+      assert {:reply, %{result: result}} =
+               MCPEnvelope.handle(
+                 modern("resources/read", %{"uri" => "casein://host/health"}),
+                 TerminalMCP,
+                 []
+               )
+
+      assert [%{uri: "casein://host/health", mimeType: "application/json", text: text}] =
+               result.contents
+
+      decoded = Jason.decode!(text)
+      assert decoded["uri"] == "casein://host/health"
+      assert decoded["state"] == "unknown"
+      assert decoded["reason"] == "unavailable"
+
+      assert {:reply, %{result: tool}} =
+               MCPEnvelope.handle(
+                 modern("tools/call", %{"name" => "host_health", "arguments" => %{}}),
+                 TerminalMCP,
+                 []
+               )
+
+      assert tool.structuredContent["state"] == decoded["state"]
+      assert tool.structuredContent["reason"] == decoded["reason"]
+      assert tool.structuredContent["sampled_at"] == decoded["sampled_at"]
+    end
+  end
+
   test "legacy clients get no cache hints on resources/list" do
     legacy = %{"jsonrpc" => "2.0", "id" => 1, "method" => "resources/list"}
 

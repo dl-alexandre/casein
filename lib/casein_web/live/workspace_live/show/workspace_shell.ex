@@ -85,6 +85,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :deploy_failure, :any, required: true
   attr :deploy_in_progress, :any, required: true
   attr :desktop_downloads, :any, default: []
+  attr :host_health, :any, default: nil
   attr :desktop_terminal?, :any, required: true
   attr :desktop_terminal_pty, :any, required: true
   attr :desktop_terminal_refresh, :any, required: true
@@ -389,6 +390,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
               active_window_pane_count={@active_window_pane_count}
               desktop_downloads={@desktop_downloads}
               desktop_terminal?={@desktop_terminal?}
+              host_health={@host_health}
               host_loc={@host_loc}
               notif_unread_count={@notif_unread_count}
               tab={@tab}

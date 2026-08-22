@@ -54,6 +54,7 @@ compile-time-fixed argv.
 | `Casein.Agents.PreviewTools` | `lib/casein/agents/preview_tools.ex` | MCP tool definitions + dispatch for preview control (open/observe/click/type/screenshot/navigate/reload). |
 | `Casein.Agents.ArtifactTools` | `lib/casein/agents/artifact_tools.ex` | MCP tool definitions + dispatch for artifact projects (create/update/list/get/serve/snapshot). |
 | `Casein.Agents.AnnotationTools` | `lib/casein/agents/annotation_tools.ex` | Annotation tools (`annotation_list`, `annotation_propose`) appended to the terminal tool set. |
+| `Casein.HostHealth` | `lib/casein/host_health.ex` | Shared host-watchdog normalizer for the menu and Terminal MCP (`host_health` / `casein://host/health`). Missing or stale snapshots are `unknown`, never healthy. |
 | `Casein.Agents.PreviewTools.BrowserControl` | `lib/casein/agents/preview_tools/browser_control.ex` | Best-effort `push_event` broadcasts to connected workspace LiveViews (reload iframe / reload page). |
 | `Casein.Agents.TerminalOutputFormat` | `lib/casein/agents/terminal_output_format.ex` | Normalize tmux scrollback (strip ANSI by default) for token-cheap agent output. |
 | `Casein.Agents.MCPUrls` | `lib/casein/agents/mcp_urls.ex` | Build terminal/preview/artifact MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |

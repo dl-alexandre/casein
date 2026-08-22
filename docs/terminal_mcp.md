@@ -547,6 +547,23 @@ curl -sS -X POST "$CASEIN_URL/api/terminals/mcp" \
   }'
 ```
 
+## Host health
+
+The same normalized watchdog snapshot the workspace ⋯ menu shows is also a
+read-only MCP resource and tool:
+
+```text
+resources/read { uri: "casein://host/health" }
+tools/call    { name: "host_health" }
+```
+
+States are `healthy`, `warning`, `pressure`, `stuck`, and `unknown`. A missing
+or stale snapshot is `unknown` with an actionable `reason` — never silently
+healthy. Alerts are bounded and stripped of prompts, source paths, and secrets.
+Paths are configured with `CASEIN_HOST_WATCHDOG_STATUS_PATH` /
+`CASEIN_HOST_WATCHDOG_ALERTS_PATH` (defaults under `/var/lib/casein/host-watchdog/`).
+There is no kill, cancel, or scale verb.
+
 ## Notes
 
 `terminal_send_keys` and `terminal_send_command` inject input into a live

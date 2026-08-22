@@ -59,6 +59,45 @@ config :casein,
        :desktop_terminal_backend,
        Casein.Desktop.TerminalBackend.default(:os.type())
 
+host_health_overrides =
+  []
+  |> then(fn acc ->
+    case System.get_env("CASEIN_HOST_WATCHDOG_STATUS_PATH") do
+      path when is_binary(path) and path != "" -> Keyword.put(acc, :status_path, path)
+      _ -> acc
+    end
+  end)
+  |> then(fn acc ->
+    case System.get_env("CASEIN_HOST_WATCHDOG_ALERTS_PATH") do
+      path when is_binary(path) and path != "" -> Keyword.put(acc, :alerts_path, path)
+      _ -> acc
+    end
+  end)
+  |> then(fn acc ->
+    case System.get_env("CASEIN_HOST_WATCHDOG_STALE_SECONDS") do
+      raw when is_binary(raw) and raw != "" ->
+        case Integer.parse(raw) do
+          {n, ""} when n > 0 -> Keyword.put(acc, :stale_after_seconds, n)
+          _ -> acc
+        end
+
+      _ ->
+        acc
+    end
+  end)
+  |> then(fn acc ->
+    case System.get_env("CASEIN_HOST_WATCHDOG_HOST") do
+      host when is_binary(host) and host != "" -> Keyword.put(acc, :host, host)
+      _ -> acc
+    end
+  end)
+
+if host_health_overrides != [] do
+  config :casein,
+         :host_health,
+         Keyword.merge(Application.get_env(:casein, :host_health, []), host_health_overrides)
+end
+
 # SECURITY: allow a :global orchestrator token to make MCP `tools/call`
 # requests box-wide. Default off — tool execution normally requires a
 # workspace-scoped token so a leaked global token can't become box-wide RCE

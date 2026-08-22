@@ -47,6 +47,8 @@ per-domain `handle_event` / render logic is delegated to ~20
 | `CaseinWeb.WorkspaceLive.Show.TemplatePanels` | `live/workspace_live/show/template_panels.ex` | Session-template preview modal + library drawer render. |
 | `CaseinWeb.WorkspaceLive.Show.AuditDrawer` | `live/workspace_live/show/audit_drawer.ex` | Audit/activity drawer render (streamed events). |
 | `CaseinWeb.WorkspaceLive.Show.LogsPanel` | `live/workspace_live/show/logs_panel.ex` | Service-log tail panel render. |
+| `CaseinWeb.WorkspaceLive.Show.WorkspaceHeader` | `live/workspace_live/show/workspace_header.ex` | Header overflow menu, including the compact host-health row (#1019). |
+| `CaseinWeb.WorkspaceLive.Show.HostHealthEvents` | `live/workspace_live/show/host_health_events.ex` | On-demand `host_health:refresh` — no high-rate poller. |
 | `CaseinWeb.WorkspaceLive.Show.UI` | `live/workspace_live/show/ui.ex` | Tiny presentation helpers (`tab_class`, `render_path`, `dom_fragment`). |
 | `CaseinWeb.CoreComponents` | `components/core_components.ex` | Phoenix core UI components (tables, forms, inputs; Tailwind + daisyUI). |
 | `CaseinWeb.GhosttyTerminalComponent` | `components/ghostty_terminal_component.ex` | LiveComponent wrapping `Ghostty.LiveTerminal.Component`; handles `key`/`text`/`mouse`/`ready`/`resize`/`focus`, pushes row-diff render frames. |

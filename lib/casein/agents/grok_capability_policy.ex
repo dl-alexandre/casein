@@ -160,7 +160,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
 
   defp definitions do
     for {surface, tools} <- [
-          {"terminal", TerminalTools.definitions()},
+          {"terminal", TerminalTools.definitions() ++ [Casein.HostHealth.tool_definition()]},
           {"preview", PreviewTools.definitions()},
           {"artifact", ArtifactTools.definitions()}
         ],

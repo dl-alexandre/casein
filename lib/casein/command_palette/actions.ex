@@ -312,6 +312,15 @@ defmodule Casein.CommandPalette.Actions do
         label: "Refresh DB isolation",
         payload: %{event: "isolation:refresh", params: %{}}
       },
+      %Item{
+        id: "action:host_health:refresh",
+        kind: :action,
+        category: :view,
+        label: "Refresh host health",
+        detail: "Re-read the host watchdog snapshot",
+        keywords: ~w(host health watchdog load pressure stuck),
+        payload: %{event: "host_health:refresh", params: %{}}
+      },
       # Ghostty grid captures — audit-logged, read-only, flash-only when no
       # live terminal is attached.
       %Item{
@@ -369,6 +378,7 @@ defmodule Casein.CommandPalette.Actions do
       "run:start",
       "tree:refresh",
       "isolation:refresh",
+      "host_health:refresh",
       "annotation:open",
       "tree:open_in_pane",
       "diff:open_in_pane",

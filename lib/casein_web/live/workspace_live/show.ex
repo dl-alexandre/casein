@@ -49,6 +49,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   alias CaseinWeb.WorkspaceLive.Show.FileOperations
   alias CaseinWeb.WorkspaceLive.Show.FilePaneEvents
   alias CaseinWeb.WorkspaceLive.Show.HistoryEvents
+  alias CaseinWeb.WorkspaceLive.Show.HostHealthEvents
   alias CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents
   alias CaseinWeb.WorkspaceLive.Show.InspectorEvents
   alias CaseinWeb.WorkspaceLive.Show.LeaderHelpEvents
@@ -129,7 +130,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   @palette_events MapSet.to_list(Actions.allowed_events())
 
   @direct_events ~w(
-    refresh
+    refresh host_health:refresh
     codex:refresh codex:select_thread codex:start_exec codex:cancel_exec
     workspace:start workspace:stop workspace:set_mode
     tmux:apply_previewed_template
@@ -262,6 +263,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         |> assign(:page_title, ws.name)
         |> assign(:workspace, ws)
         |> assign(:desktop_downloads, Casein.DesktopDownloads.available_platforms())
+        |> HostHealthEvents.assign_snapshot()
         # Panel components take current_user as an attr, so it must always
         # exist (nil = anonymous LAN viewer, authorized via
         # PanelGate.path_access_pre_authorized?).
@@ -832,6 +834,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
   def handle_event("isolation:refresh", _, socket),
     do: {:noreply, refresh_isolation(socket, audit: true)}
+
+  def handle_event("host_health:refresh" = event, params, socket),
+    do: HostHealthEvents.handle_event(event, params, socket)
 
   # Clicking a "quiet agent" OS notification deeplinks straight to that agent's
   # conversation: patch the view to its session/window so handle_params restores
@@ -2251,6 +2256,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
       deploy_failure={@deploy_failure}
       deploy_in_progress={@deploy_in_progress}
       desktop_downloads={@desktop_downloads}
+      host_health={@host_health}
       desktop_terminal?={@desktop_terminal?}
       desktop_terminal_pty={@desktop_terminal_pty}
       desktop_terminal_refresh={@desktop_terminal_refresh}

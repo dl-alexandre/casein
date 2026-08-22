@@ -267,6 +267,19 @@ config :casein, :preview_own_origin,
   enabled: false,
   domain: nil
 
+# Host watchdog consumer (#1019). Paths are configurable so additional
+# Casein-managed hosts can point at their own snapshot later. Menu and MCP
+# share Casein.HostHealth.snapshot/1 — never treat a missing sample as healthy.
+config :casein, :host_health,
+  status_path: "/var/lib/casein/host-watchdog/status.json",
+  alerts_path: "/var/lib/casein/host-watchdog/alerts.jsonl",
+  stale_after_seconds: 900,
+  alert_limit: 8,
+  host: nil,
+  pressure: [load1: 32, runnable: 32, cpu_idle_pct: 20],
+  warning: [load1: 24, runnable: 24, cpu_idle_pct: 30],
+  stuck_d_state_streak: 2
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
