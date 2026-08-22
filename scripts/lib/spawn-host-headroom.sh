@@ -159,6 +159,7 @@ warn: host headroom below threshold; proceeding under CASEIN_SPAWN_FORCE
       operator accepts thrash risk; this is not a silent no-op
       tune: CASEIN_SPAWN_MAX_LOAD_RATIO  CASEIN_SPAWN_MIN_MEM_AVAILABLE_KB
 EOF
+    printf 'warn:headroom_forced\n'
     return 0
   fi
 

@@ -287,6 +287,8 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     assert status == 0
     refute out =~ "refusing to spawn"
+    refute out =~ "refused:agent_write"
+    refute out =~ "headroom exhausted"
 
     # The window must actually be opened — the whole point of not refusing.
     assert out =~ "window=worker-"
@@ -296,6 +298,8 @@ defmodule Scripts.SpawnAgentWorkerTest do
     assert out =~ "CAN write its worktree, run mix, and commit"
     assert out =~ "CANNOT drive"
     assert out =~ "shared_stage, unsafe, or unknown"
+    assert out =~ ~r/^warn:agent_write_locked$/m
+    refute out =~ ~r/^warn:agent_write_unknown$/m
     refute out =~ "grant agent write"
     refute out =~ "Unlock 30"
   end
@@ -311,6 +315,8 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     assert out =~ "window=worker-iso"
     refute out =~ "refusing to spawn"
+    refute out =~ ~r/^warn:agent_write_locked$/m
+    refute out =~ ~r/^warn:agent_write_unknown$/m
   end
 
   test "CASEIN_SPAWN_SKIP_WRITE_PREFLIGHT suppresses the locked-grant advisory" do
@@ -320,6 +326,8 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     assert out =~ "window=worker-iso"
     refute out =~ "refusing to spawn"
+    refute out =~ ~r/^warn:agent_write_locked$/m
+    refute out =~ "LOCKED MCP grant"
   end
 
   # codex is not gated by the workspace unlock, so the preflight must not touch it.
@@ -330,6 +338,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     assert out =~ "window=worker-iso"
     refute out =~ "refusing to spawn"
+    refute out =~ ~r/^warn:agent_write_locked$/m
   end
 
   # A degraded control plane must not make spawning impossible — the launcher's
@@ -341,6 +350,9 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     assert out =~ "could not confirm this workspace's agent-write state"
     assert out =~ "window=worker-iso"
+    assert out =~ ~r/^warn:agent_write_unknown$/m
+    refute out =~ ~r/^warn:agent_write_locked$/m
+    refute out =~ "refused:agent_write"
   end
 
   # `tmux new-window -P` returns a pane id before the launch command has proven

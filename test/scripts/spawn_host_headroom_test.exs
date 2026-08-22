@@ -59,6 +59,7 @@ defmodule Scripts.SpawnHostHeadroomTest do
     assert status == 0, out
     assert out =~ "host headroom below threshold"
     assert out =~ "proceeding under CASEIN_SPAWN_FORCE"
+    assert out =~ ~r/^warn:headroom_forced$/m
     refute out =~ "headroom exhausted"
     refute out =~ "spawn refused"
     refute out =~ "refused:headroom"

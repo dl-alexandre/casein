@@ -161,6 +161,7 @@ spawn_worker_preflight_grok_write() {
       ;;
     unknown)
       warn_degraded "could not confirm this workspace's agent-write state; the worker will still write its worktree and run mix, but if it cannot drive panes, resolve isolation and relaunch it"
+      printf 'warn:agent_write_unknown\n'
       return 0
       ;;
   esac
@@ -179,6 +180,7 @@ warn:   To get pane control, resolve isolation, then spawn again — the grant i
 warn:   read at launch and frozen for the pane.
 EOF
 
+  printf 'warn:agent_write_locked\n'
   return 0
 }
 
