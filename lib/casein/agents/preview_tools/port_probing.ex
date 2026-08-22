@@ -143,10 +143,7 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
   defp preview_preflight_reason(reason), do: inspect(reason)
 
   defp resolve_tmux_session(workspace, params) do
-    case string_param(params, :tmux_session) || string_param(params, :session) do
-      session when is_binary(session) -> session
-      _ -> SessionResolve.workspace_tmux_session(workspace)
-    end
+    SessionResolve.requested_tmux_session(workspace, params)
   end
 
   defp runtime_for_tmux_session(workspace, tmux_session) do
@@ -180,7 +177,7 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
   end
 
   defp pick_runtime(candidates, tmux_session, workspace) do
-    scope = runtime_scope(workspace)
+    scope = SessionResolve.session_equivalence_scope(workspace)
 
     cond do
       runtime = Enum.find(candidates, &(&1.tmux_session_id == tmux_session)) ->
@@ -198,13 +195,6 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
 
       true ->
         nil
-    end
-  end
-
-  defp runtime_scope(workspace) do
-    case workspace_id(workspace) do
-      id when is_binary(id) -> id
-      _ -> workspace
     end
   end
 
@@ -227,13 +217,6 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
 
   defp workspace_id(workspace),
     do: Map.get(workspace, :id) || Map.get(workspace, "id")
-
-  defp string_param(params, key) do
-    case Map.get(params, Atom.to_string(key)) || Map.get(params, key) do
-      value when is_binary(value) and value != "" -> value
-      _ -> nil
-    end
-  end
 
   defp parse_port(port) when is_integer(port), do: {:ok, port}
 

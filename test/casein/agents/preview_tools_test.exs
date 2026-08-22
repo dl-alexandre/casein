@@ -1502,6 +1502,44 @@ defmodule Casein.Agents.PreviewToolsTest do
              })
   end
 
+  test "preview_ensure_server_here matches a name-prefix session from the workspace map" do
+    previous = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:casein, :runtime_preview_launcher_enabled),
+        else: Application.put_env(:casein, :runtime_preview_launcher_enabled, previous)
+    end)
+
+    workspace = %{id: "ws-named-only", name: "named-only"}
+    stored = Tmux.session_name(workspace.id, "u-dev")
+    requested = Tmux.session_name(workspace.name, "u-dev")
+    seed_runtime_surface!(workspace.id, stored, runtime_id: "rt-named", port: 4105)
+
+    assert {:ok, %{runtime_id: "rt-named", tmux_session: ^requested}} =
+             PreviewTools.invoke("preview_ensure_server_here", workspace, %{
+               "tmux_session" => requested
+             })
+  end
+
+  test "preview_ensure_server_here starts the runtime when tmux_session is omitted" do
+    previous = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:casein, :runtime_preview_launcher_enabled),
+        else: Application.put_env(:casein, :runtime_preview_launcher_enabled, previous)
+    end)
+
+    default = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+    seed_runtime_surface!(@v3_workspace.id, default, runtime_id: "rt-default", port: 4106)
+
+    assert {:ok, %{runtime_id: "rt-default", tmux_session: ^default}} =
+             PreviewTools.invoke("preview_ensure_server_here", @v3_workspace, %{})
+  end
+
   test "preview_open_here repairs an existing preview pane in the wrong window" do
     prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
     worktree_session = "#{prefix}wt-agent"

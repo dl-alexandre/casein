@@ -233,12 +233,25 @@ defmodule Casein.Agents.PreviewTools.Helpers do
     }
   end
 
+  def metadata("preview_ensure_server_here") do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:preview_control],
+      policy_tags: [:opens_preview_surface],
+      recovery_hints: [
+        "Pass tmux_session from terminal_list_sessions, or omit it on a session-scoped Preview MCP URL.",
+        "Workspace id and name prefixes of that session are accepted, same as preview_open and preview_surfaces.",
+        "If no runtime is registered for the session, report the worktree instead of launching a hand-picked PORT."
+      ]
+    }
+  end
+
   def metadata(name)
       when name in [
              "preview_open",
              "preview_open_current_workspace",
              "preview_open_here",
-             "preview_ensure_server_here",
              "preview_open_app",
              "preview_open_localhost"
            ] do

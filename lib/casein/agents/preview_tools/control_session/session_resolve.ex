@@ -227,4 +227,40 @@ defmodule Casein.Agents.PreviewTools.ControlSession.SessionResolve do
       true -> workspace_tmux_session(workspace)
     end
   end
+
+  @doc """
+  Session string sibling preview tools accept: explicit `tmux_session` or
+  `session`, otherwise the same omitted-session pick as `preview_open*`.
+  """
+  def requested_tmux_session(workspace, params) when is_map(params) do
+    case Shared.string_param(params, :tmux_session) || Shared.string_param(params, :session) do
+      session when is_binary(session) -> session
+      _ -> workspace_tmux_session(workspace)
+    end
+  end
+
+  @doc """
+  Scope for `TmuxScope.equivalent_session?/3` that keeps the workspace name
+  when the caller already has it, so id-prefix and name-prefix session
+  strings match without a State lookup.
+  """
+  def session_equivalence_scope(workspace) do
+    id = Shared.workspace_id(workspace)
+    name = workspace_name(workspace)
+
+    cond do
+      is_binary(id) and is_binary(name) -> %{id: id, name: name}
+      is_binary(id) -> id
+      true -> workspace
+    end
+  end
+
+  defp workspace_name(workspace) when is_map(workspace) do
+    case Map.get(workspace, :name) || Map.get(workspace, "name") do
+      name when is_binary(name) and name != "" -> name
+      _ -> nil
+    end
+  end
+
+  defp workspace_name(_), do: nil
 end

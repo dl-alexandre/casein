@@ -420,6 +420,14 @@ defmodule Casein.Agents.PreviewToolsMoreTest do
     end
   end
 
+  test "preview_ensure_server_here describes sibling tmux_session forms" do
+    tool = Enum.find(PreviewTools.definitions(), &(&1.name == "preview_ensure_server_here"))
+
+    assert tool.description =~ "same tmux_session forms as preview_open"
+    assert tool.description =~ "terminal_list_sessions"
+    assert tool.metadata.recovery_hints |> Enum.any?(&(&1 =~ "hand-picked PORT"))
+  end
+
   test "preview_clear_storage is the only storage_mutation tool and is high danger" do
     by_name = Map.new(PreviewTools.definitions(), &{&1.name, &1})
 

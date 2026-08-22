@@ -4,7 +4,11 @@ defmodule Casein.Agents.PreviewTools.EnsureServerHere do
   use Jido.Action,
     name: "preview_ensure_server_here",
     description:
-      "Ensure the runtime-owned preview server for this scoped agent session is starting or running.",
+      "Ensure the runtime-owned preview server for this scoped agent session is starting or running. " <>
+        "Accepts the same tmux_session forms as preview_open and preview_surfaces: omit it on a " <>
+        "session-scoped Preview MCP URL, or pass a terminal_list_sessions name (workspace id or " <>
+        "name prefix). Do not fall back to a hand-picked PORT if this tool fails — report the " <>
+        "worktree runtime or pass the session sibling tools accept.",
     category: "preview",
     tags: ["preview"],
     vsn: "1.0.0",
