@@ -72,6 +72,7 @@ compile-time-fixed argv.
 | `Casein.Agents.JidoPod` | `lib/casein/agents/jido_pod.ex` | Headless workspace coordinator (#1014): admit/queue/cancel bounded workers that call typed Code actions. Feature-flagged vs legacy OpenCode. No tmux pane. |
 | `Casein.Agents.JidoActions` | `lib/casein/agents/jido_actions.ex` | Typed worker action catalog (#1015): one validated action per capability, trusted context, distinct deny/human/timeout/cancel/stale/provider results. Behind the same Jido feature flag. |
 | `Casein.Agents.JidoLifecycle` | `lib/casein/agents/jido_lifecycle.ex` | Headless lifecycle projection (#1016): stable redacted envelope into AgentEvents/activity/audit/inbox; replayable worker snapshot shared with OpenCode. |
+| `Casein.Agents.JidoSkills` | `lib/casein/agents/jido_skills.ex` | Skill registry/loader, runtime selector, parity matrix, and OpenCode fallback (#1017). No pane required. |
 | `Casein.Desktop.AgentLauncher` | `lib/casein/desktop/agent_launcher.ex` | Native Windows runtime allowlist plus token-free executable/version/auth diagnostics. |
 | `Casein.Desktop.AgentWorktree` | `lib/casein/desktop/agent_worktree.ex` | Native Windows isolated worktree creation with validated product-derived paths and argv-only Git execution. |
 | `Casein.Desktop.NativeAgentLaunch` | `lib/casein/desktop/native_agent_launch.ex` | Provides one prepare/start transaction across isolated worktree creation, provider MCP materialization, topology-validated ConPTY pane input, runtime reporting, and explicit clean-only finish cleanup. |
@@ -448,5 +449,7 @@ available. The list is surfaced through agent UI and `GET
   backpressure, and the OpenCode feature flag.
 - [`../jido_lifecycle.md`](../jido_lifecycle.md) — event envelope, replayable
   worker snapshot, human resume, and OpenCode read-model parity.
+- [`../jido_skills.md`](../jido_skills.md) — skill registry, parity matrix,
+  runtime selector, and OpenCode fallback.
 - [`../glossary.md`](../glossary.md) — term constraints (workspace, session,
   capability).

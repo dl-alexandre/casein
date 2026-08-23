@@ -17,9 +17,9 @@ workspace-keyed OTP coordinator and short-lived child workers.
   Code tools; the catalog adds distinct results, human-input, and handoff.
 - **Projection:** `Casein.Agents.JidoLifecycle` (#1016) consumes pod
   transitions without changing this admit/cancel/resume contract.
-- **Not in this slice:** skill parity and
-  OpenCode fallback rollout (#1017). `git_status` / `git_diff` / `task_wait` /
-  `task_cancel` remain `not_yet_supported` on the typed catalog.
+- **Skills / fallback:** `Casein.Agents.JidoSkills` (#1017) selects Jido vs
+  OpenCode and records fallback reasons. `git_status` / `git_diff` /
+  `task_wait` / `task_cancel` remain `not_yet_supported` on the typed catalog.
 
 ## Runtime selection
 

@@ -121,6 +121,12 @@ config :casein,
 
 config :casein, :jido_headless, truthy_env?.("CASEIN_JIDO_HEADLESS")
 
+if model = System.get_env("CASEIN_JIDO_DEFAULT_MODEL") do
+  if String.trim(model) != "" do
+    config :casein, :jido_default_model, String.trim(model)
+  end
+end
+
 if workspaces = System.get_env("CASEIN_JIDO_HEADLESS_WORKSPACES") do
   config :casein,
          :jido_headless_workspaces,

@@ -41,3 +41,5 @@ code, command/keys, and tool I/O are dropped before persist and notification.
 | `JidoLifecycle.answer/2` | Human resolve + `JidoPod.resume/2` |
 
 Resume token: `jido:<workspace_id>:<attempt_id>`.
+
+Skills and OpenCode fallback live in [`jido_skills.md`](jido_skills.md).

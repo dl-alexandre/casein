@@ -39,6 +39,8 @@ config :casein,
   mobile_agent_composer: false,
   jido_headless: false,
   jido_headless_workspaces: %{},
+  jido_default_model: "opencode/grok-4.6",
+  jido_default_provider: "opencode",
   jido_pod: [
     max_running_per_workspace: 2,
     max_queued_per_workspace: 4,

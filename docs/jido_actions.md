@@ -16,7 +16,9 @@ between a headless Jido worker and Casein-owned capabilities.
   `Casein.Agents.JidoActions.Compatibility`.
 - **Projection:** `Casein.Agents.JidoLifecycle` (#1016) consumes action
   results without changing this catalog or result atoms.
-- **Not in this slice:** skill parity ([#1017](https://github.com/dl-alexandre/casein/issues/1017)).
+- **Skills:** `Casein.Agents.JidoSkills` (#1017) maps `SKILL.md` onto this
+  catalog. Unsupported names fail closed; they do not change these result
+  atoms.
 
 Raw terminal keystrokes and pane scrapes are not actions. Cross-workspace
 paths and unscoped credentials are denied.
