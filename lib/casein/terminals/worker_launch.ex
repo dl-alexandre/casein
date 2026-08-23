@@ -549,6 +549,7 @@ defmodule Casein.Terminals.WorkerLaunch do
         error: :spawn_headroom_exhausted,
         reason: reason,
         override: "CASEIN_SPAWN_FORCE=1",
+        token: "refused:headroom",
         message: message
       })
     else
@@ -558,9 +559,17 @@ defmodule Casein.Terminals.WorkerLaunch do
 
   defp classify_headroom_refusal(err), do: err
 
+  # #996: prefer the stdout token. "headroom exhausted" used to appear on both
+  # the refuse path and CASEIN_SPAWN_FORCE proceed; a FORCE success is exit 0
+  # and emits proceed:headroom-force, so never treat that as a refusal.
   defp headroom_refusal?(output) when is_binary(output) do
-    String.contains?(output, "headroom exhausted") or
-      (String.contains?(output, "spawn refused") and String.contains?(output, "probe:"))
+    cond do
+      String.contains?(output, "proceed:headroom-force") -> false
+      String.contains?(output, "refused:headroom") -> true
+      String.contains?(output, "headroom exhausted") -> true
+      String.contains?(output, "spawn refused") and String.contains?(output, "probe:") -> true
+      true -> false
+    end
   end
 
   defp headroom_refusal?(_), do: false
