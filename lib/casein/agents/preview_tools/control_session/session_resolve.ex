@@ -9,7 +9,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.SessionResolve do
 
   def split_opts(params, workspace) do
     tmux_session =
-      Shared.string_param(params, :tmux_session) ||
+      requested_tmux_session(params) ||
         resolve_tmux_session(workspace, Map.new(params))
 
     Shared.tool_opts(params, workspace)
@@ -57,8 +57,21 @@ defmodule Casein.Agents.PreviewTools.ControlSession.SessionResolve do
     |> pick_workspace_session(Shared.workspace_id(workspace))
   end
 
+  @doc """
+  Explicit session from preview-tool args.
+
+  Accepts `tmux_session` (preview wire name) or `session` (terminal-tool
+  alias) so sibling preview tools and `preview_ensure_server_here` resolve
+  the same caller-supplied string.
+  """
+  def requested_tmux_session(params) when is_map(params) do
+    Shared.string_param(params, :tmux_session) || Shared.string_param(params, :session)
+  end
+
+  def requested_tmux_session(_params), do: nil
+
   def ensure_unambiguous_tmux_session(workspace, params) do
-    if Shared.string_param(params, :tmux_session) do
+    if requested_tmux_session(params) do
       :ok
     else
       case workspace_matching_sessions(workspace) do
