@@ -689,7 +689,7 @@ attempts, and `C-u` closes the picker instead of clearing it.
 
 | Runtime | Launch-time override | Default when unset |
 |---------|---------------------|--------------------|
-| **OpenCode** | `CASEIN_OPENCODE_DEFAULT_MODEL=<provider>/<model>` | `opencode/gpt-5.6-luna` |
+| **OpenCode** | `CASEIN_OPENCODE_DEFAULT_MODEL=<provider>/<model>` | `opencode/grok-4.6` |
 | **Codex** | operator model preserved across owner auth profiles (see `codex_model_args`) | runtime default |
 
 Every Casein-launched OpenCode also pins `permission: "allow"` through

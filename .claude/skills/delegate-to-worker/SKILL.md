@@ -79,7 +79,7 @@ config:
 | Runtime | Model source |
 |---|---|
 | **codex** | `CASEIN_CODEX_DEFAULT_MODEL`, else the `model` key in `~/.codex/config.toml` |
-| **opencode** | `CASEIN_OPENCODE_DEFAULT_MODEL`, default `opencode/gpt-5.6-luna` |
+| **opencode** | `CASEIN_OPENCODE_DEFAULT_MODEL`, default `opencode/grok-4.6` |
 | **claude**, **grok** | the runtime's own config; Casein sets nothing |
 
 Both vars yield to an explicit `--model`/`-m` on the launch command, and setting
