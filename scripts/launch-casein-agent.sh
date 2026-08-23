@@ -883,6 +883,8 @@ grok_prepare_managed_home() {
   fi
 
   export GROK_HOME="$managed_home"
+  # Same constraint as --no-subagents: Grok-spawned subagents cannot receive a
+  # grokcap_* grant under the private-leader model.
   export GROK_SUBAGENTS=0
   grok_trust_worktree_mise_config
   unset CASEIN_GROK_XAI_API_KEY
@@ -1654,6 +1656,10 @@ case "$RUNTIME" in
       flock -u "$grok_launch_fd"
       exec {grok_launch_fd}>&-
     fi
+    # --no-subagents: this launcher mints one grokcap_* per private leader+pane
+    # with the workspace bearer, then strips that bearer. grokcap_* cannot call
+    # the issuer, and a remint for the same leader_id revokes the parent grant.
+    # A Grok-spawned subagent therefore has no grant of its own.
     exec "$grok_bin" --sandbox "$CASEIN_GROK_SANDBOX_PROFILE" \
       --permission-mode "$CASEIN_GROK_PERMISSION_MODE" \
       --leader-socket "$grok_socket" --no-subagents "${grok_user_args[@]}"
