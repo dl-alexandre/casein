@@ -28,7 +28,8 @@ defmodule Casein.Supervision.Agents do
       Casein.Agents.MCPSessions,
       {Task.Supervisor, name: Casein.Agents.MCPTaskSupervisor},
       Casein.Agents.MCPTasks,
-      Casein.Agents.Activity
+      Casein.Agents.Activity,
+      Casein.Agents.JidoPod.Supervisor
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

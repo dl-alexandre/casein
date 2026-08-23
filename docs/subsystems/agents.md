@@ -69,6 +69,7 @@ compile-time-fixed argv.
 | `Casein.Agents.Activity` | `lib/casein/agents/activity.ex` | Live operator feed. It remains a transient PubSub/cache projection and hydrates its reads from durable `AgentEvents`. |
 | `Casein.Agents.ReviewCommand` | `lib/casein/agents/review_command.ex` | Allowlisted review-mode command; argv fixed at compile time, gated on detected capabilities. |
 | `Casein.Agents.Run` | `lib/casein/agents/run.ex` | One in-flight review-mode run per workspace (supervised, linger, hard timeout). |
+| `Casein.Agents.JidoPod` | `lib/casein/agents/jido_pod.ex` | Headless workspace coordinator (#1014): admit/queue/cancel bounded workers that call typed Code actions. Feature-flagged vs legacy OpenCode. No tmux pane. |
 | `Casein.Desktop.AgentLauncher` | `lib/casein/desktop/agent_launcher.ex` | Native Windows runtime allowlist plus token-free executable/version/auth diagnostics. |
 | `Casein.Desktop.AgentWorktree` | `lib/casein/desktop/agent_worktree.ex` | Native Windows isolated worktree creation with validated product-derived paths and argv-only Git execution. |
 | `Casein.Desktop.NativeAgentLaunch` | `lib/casein/desktop/native_agent_launch.ex` | Provides one prepare/start transaction across isolated worktree creation, provider MCP materialization, topology-validated ConPTY pane input, runtime reporting, and explicit clean-only finish cleanup. |
@@ -438,5 +439,7 @@ available. The list is surfaced through agent UI and `GET
   pane lifecycle.
 - [`../architecture.md`](../architecture.md) — system-level first principles
   (FP-10: agent MCP tool calls leave reviewable evidence).
+- [`../jido_pod.md`](../jido_pod.md) — headless Jido workspace pod, lifecycle,
+  backpressure, and the OpenCode feature flag.
 - [`../glossary.md`](../glossary.md) — term constraints (workspace, session,
   capability).

@@ -26,7 +26,8 @@ defmodule Casein.Agents.Activity do
             | :agent_state
             | :transcript
             | :worktree
-            | :agent_event,
+            | :agent_event
+            | :jido_pod,
           tool: String.t(),
           summary: String.t(),
           metadata: map(),
