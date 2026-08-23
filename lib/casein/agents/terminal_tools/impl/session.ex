@@ -23,6 +23,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.WorktreeDiff
   alias Casein.Terminals.WorktreeStatus
   alias Casein.Terminals.HostCapacity
+  alias Casein.Terminals.HostHealth
 
   import Casein.Agents.TerminalTools.Impl.Shared
 
@@ -70,6 +71,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   @doc "Return the shared live host-capacity probe for worker-wave scheduling."
   @spec host_capacity(map()) :: {:ok, map()}
   def host_capacity(_params \\ %{}), do: {:ok, HostCapacity.snapshot()}
+
+  @doc "Return the shared host-watchdog snapshot used by the Host health menu."
+  @spec host_health(map()) :: {:ok, map()}
+  def host_health(_params \\ %{}), do: {:ok, HostHealth.snapshot()}
 
   @doc "Return a self-routing terminal context for agent planning."
   @spec context(map()) :: {:ok, map()} | {:error, term()}

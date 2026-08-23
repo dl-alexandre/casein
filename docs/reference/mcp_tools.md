@@ -75,6 +75,7 @@ is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 |------|------|--------------------------|-----------------|
 | `terminal_list_sessions` | List live Casein tmux sessions (name, attached, activity) | `workspace_id`, `contains` | `list_sessions/1` |
 | `terminal_host_capacity` | Read host load, CPU count, available memory, and healthy/constrained/unknown capacity status | `workspace_id` | `host_capacity/1` |
+| `terminal_host_health` | Read the host watchdog snapshot (same normalized state as the Host health menu row) | `workspace_id` | `host_health/1` |
 | `terminal_context` | Recommended session, agent pane safety, and exact next tool/arguments | `workspace_id`, `session` | `context/1` |
 | `terminal_topology` | Windows/panes with geometry, running command, active marker | `session`\* , `workspace_id` | `topology/1` |
 | `terminal_capture` | Capture a pane's scrollback (defaults active pane, full history) | `session`\*, `pane`, `lines`, `ansi` | `capture/1` |
