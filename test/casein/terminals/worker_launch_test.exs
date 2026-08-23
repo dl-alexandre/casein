@@ -1,6 +1,7 @@
 defmodule Casein.Terminals.WorkerLaunchTest do
   use ExUnit.Case, async: false
 
+  alias Casein.Terminals.AgentState
   alias Casein.Terminals.WorkerLaunch
   alias Casein.Terminals.WorkHandles
 
@@ -116,6 +117,139 @@ defmodule Casein.Terminals.WorkerLaunchTest do
   end
 
   describe "launch/1 receipt" do
+    test "launch records the full worker association before delivering the first prompt" do
+      WorkHandles.clear_all()
+      AgentState.clear()
+
+      on_exit(fn ->
+        WorkHandles.clear_all()
+        AgentState.clear()
+      end)
+
+      runner = fn _runtime, slug, _session, _opts ->
+        {:ok, %{pane_id: "%42", window_name: "worker-#{slug}"}}
+      end
+
+      observe = fn _session, _pane ->
+        %{
+          window_id: "@9",
+          window_name: "worker-session-reliability",
+          worktree_path: "/tmp/casein-agent-worktrees/session-reliability",
+          branch: "agent/opencode/session-reliability"
+        }
+      end
+
+      set_label = fn workspace_id, session, pane, label, opts ->
+        send(self(), {:label, workspace_id, session, pane, label, opts})
+        :ok
+      end
+
+      deliver_prompt = fn session, pane, prompt, opts ->
+        # The handle must already be inspectable before any prompt bytes move.
+        assert [%{pane_id: ^pane, session: ^session}] = WorkHandles.list(@ws)
+        send(self(), {:prompt, session, pane, prompt, opts})
+
+        {:ok,
+         %{
+           delivery: :delivered,
+           submitted: true,
+           confirmation: :hook,
+           enter_presses: 1
+         }}
+      end
+
+      assert {:ok, receipt} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "opencode",
+                 task_slug: "session-reliability",
+                 label: "worker: session reliability",
+                 initial_prompt: "Implement the scoped discovery fix.",
+                 runner: runner,
+                 observe: observe,
+                 set_label: set_label,
+                 deliver_prompt: deliver_prompt
+               )
+
+      assert receipt.prompt_delivery == %{
+               status: "delivered",
+               delivery: "delivered",
+               submitted: true,
+               confirmation: "hook",
+               enter_presses: 1
+             }
+
+      assert_received {:label, @ws, @session, "%42", "worker: session reliability", opts}
+      assert opts[:freeze] == true
+      assert opts[:tool] == "worker_launch"
+
+      assert_received {:prompt, @session, "%42", "Implement the scoped discovery fix.", _opts}
+
+      assert {:ok, handle} = WorkHandles.get(receipt.handle_id)
+      assert handle.runtime == "opencode"
+      assert handle.task_slug == "session-reliability"
+      assert handle.worktree_path == "/tmp/casein-agent-worktrees/session-reliability"
+      assert handle.branch == "agent/opencode/session-reliability"
+      assert handle.window_id == "@9"
+      assert handle.window_name == "worker-session-reliability"
+
+      topology =
+        WorkHandles.enrich_topology(
+          %{panes: [%{id: "%42", window_id: "@9"}], windows: []},
+          @ws,
+          @session
+        )
+
+      assert topology.work_handles_observe_state == "ok"
+      assert [%{handle_id: handle_id}] = topology.work_handles
+      assert handle_id == receipt.handle_id
+      assert [%{work_handle: %{handle_id: ^handle_id, runtime: "opencode"}}] = topology.panes
+    end
+
+    test "an unconfirmed initial prompt fails loudly but keeps the worker receipt inspectable" do
+      WorkHandles.clear_all()
+      AgentState.clear()
+
+      on_exit(fn ->
+        WorkHandles.clear_all()
+        AgentState.clear()
+      end)
+
+      runner = fn _, slug, _, _ ->
+        {:ok, %{pane_id: "%43", window_name: "worker-#{slug}"}}
+      end
+
+      deliver_prompt = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :submit_not_confirmed,
+           delivery: :not_confirmed,
+           submitted: false,
+           confirmation: :unconfirmed
+         }}
+      end
+
+      assert {:error, error} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "codex",
+                 task_slug: "prompt-failed",
+                 initial_prompt: "Do the work",
+                 runner: runner,
+                 observe: fn _, _ -> %{} end,
+                 set_label: fn _, _, _, _, _ -> :ok end,
+                 deliver_prompt: deliver_prompt
+               )
+
+      assert error.error == :initial_prompt_delivery_failed
+      assert error.worker.pane_id == "%43"
+      assert error.worker.prompt_delivery.status == "failed"
+      assert is_binary(error.worker.handle_id)
+      assert {:ok, %{status: %{state: "blocked"}}} = WorkHandles.get(error.worker.handle_id)
+    end
+
     test "live spawn returns visible receipt with handle optional" do
       runner = fn _rt, slug, _sess, _opts ->
         {:ok, %{pane_id: "%42", window_name: "worker-#{slug}"}}
@@ -154,7 +288,7 @@ defmodule Casein.Terminals.WorkerLaunchTest do
       assert receipt.branch == "agent/opencode/demo-stamp"
       assert receipt.label == "worker: #384"
       assert receipt.runtime == "opencode"
-      assert receipt.note =~ "M4-lite"
+      assert receipt.note =~ "Visible worker_launch receipt"
       refute Map.has_key?(receipt, :handle_id)
     end
 
@@ -281,7 +415,7 @@ defmodule Casein.Terminals.WorkerLaunchTest do
     assert handle.session == integration_session
     assert handle.pane_id == "%77"
     assert handle.label == "worker: integration-worker"
-    assert handle.status.state == "working"
+    assert handle.status.state == "awaiting_input"
   end
 
   # Constraints in the artifact (not only the brief). If a later slice "helpfully"
