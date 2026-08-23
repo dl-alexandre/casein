@@ -398,6 +398,17 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("terminal_host_capacity") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: [
+        "Use this probe before assigning a worker wave; unknown capacity is not spare capacity."
+      ]
+    }
+  end
+
   def metadata(name)
       when name in [
              "terminal_send_agent_keys",

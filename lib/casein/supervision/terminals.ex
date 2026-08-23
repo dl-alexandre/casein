@@ -19,6 +19,10 @@ defmodule Casein.Supervision.Terminals do
       {DynamicSupervisor, name: Casein.Terminals.Supervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: Casein.Terminals.TopologyRegistry},
       {DynamicSupervisor, name: Casein.Terminals.TopologySupervisor, strategy: :one_for_one},
+      # Keeps pane-keyed agent state, issue bindings, sticky prompts, work
+      # handles, and open runs aligned with live tmux topology even when no
+      # cockpit or MCP caller is currently watching a session.
+      Casein.Terminals.ControlPlane,
       # Flag-gated control-mode listener; child_spec returns :ignore when off.
       # Placed after HostServerAnchor.ensure!() above so attach-session never
       # races the server-spawn cwd claim.

@@ -142,6 +142,11 @@ targeting so operator keystrokes do not collide with agent MCP writes.
      → terminal_capture_agent(lines: 100, ansi: false, workspace_id)
    ```
 
+For coordinators assigning worker waves, call `terminal_host_capacity` first.
+It reports the same live load and memory facts used by the host-side scheduling
+policy. Treat `status: "unknown"` as unavailable capacity, not as permission to
+spawn more workers; use `status: "constrained"` to wait or reduce the wave.
+
 4. Prefer the `*_agent_*` shortcut tools. They refuse to mutate when the
    dedicated agent pane cannot be identified, instead of falling back to the
    operator's focused pane. Lower-level `terminal_send_command` still requires

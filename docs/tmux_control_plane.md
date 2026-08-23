@@ -12,6 +12,7 @@ LiveView / API / Agents
         │
         ▼
 Casein.Terminals.TmuxTopology   (PubSub tag, audit on terminate)
+Casein.Terminals.ControlPlane    (periodic live-topology reconciliation)
 Casein.Terminals.Tmux           (policy + adapter facade)
 Casein.Terminals.TmuxPolicy     (session naming)
 Casein.Terminals.TmuxRunner     (container argv wrapping)
@@ -29,6 +30,22 @@ tmux server (host or container)
 `TmuxCtl` is in-repo only: no Casein/Audit/WorkspaceSource references.
 Tests swap `Application.get_env(:casein, :tmux_adapter)` for
 `TmuxCtl.Test.FakeAdapter` (aliased as `Casein.Test.FakeTmuxAdapter`).
+
+### Background reconciliation and liveness
+
+`Casein.Terminals.ControlPlane` runs independently of LiveView and MCP
+watchers (30 seconds by default). It inventories managed `casein_` sessions,
+resolves their current pane ids, and prunes pane-keyed agent state, issue
+bindings, labels, sticky prompts, work handles, and open lifecycle runs that
+refer to panes no longer present. A topology session-termination callback uses
+the same cleanup boundary immediately.
+
+The reconciler exposes its last pass through `terminal_list_sessions` and
+`terminal_context` as `control_plane`. A failed tmux inventory is reported as a
+degraded probe and does not become an empty inventory: live in-memory state is
+preserved until Casein can observe the terminal server again. The interval is
+configurable with `:control_plane_reconcile_ms`; set it to `nil` in tests or to
+disable the timer in a controlled embedding.
 
 `Casein.Terminals.backend/0` is the product-level selection boundary. It reads
 `:terminal_backend`, then uses the historical `:tmux_adapter` key as a migration

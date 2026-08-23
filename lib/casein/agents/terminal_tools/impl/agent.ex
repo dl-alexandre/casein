@@ -211,6 +211,11 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       confirm_opts =
         opts
         |> Keyword.put(:confirm, true)
+        # Agent orchestration needs a hard delivery boundary. Returning
+        # `status: sent` while the text is still sitting in a TUI composer is
+        # the silent-loss failure this tool is meant to prevent. Callers that
+        # only need a keystroke can still opt out with `confirm: false`.
+        |> Keyword.put_new(:strict, true)
         |> Keyword.put_new(:paste_bytes, 0)
 
       case PaneSubmit.confirm_submit(session, pane_id, confirm_opts) do

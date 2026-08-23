@@ -59,7 +59,9 @@ defmodule Casein.Terminals.Tmux do
   defdelegate set_pane_role(session, pane_id, role), to: TmuxCtl.Client
   defdelegate list_windows(), to: TmuxCtl.Client
   defdelegate list_sessions(), to: TmuxCtl.Client
+  defdelegate list_sessions_result(), to: TmuxCtl.Client
   defdelegate list_panes(), to: TmuxCtl.Client
+  defdelegate list_session_panes_result(session), to: TmuxCtl.Client
   defdelegate kill_window(session, window_id), to: TmuxCtl.Client
 
   @doc """

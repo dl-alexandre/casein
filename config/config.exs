@@ -43,6 +43,11 @@ config :casein,
   # TmuxEventsFlapWatch moduledoc).
   tmux_events: false,
   tmux_topology_reconcile_ms: 10_000,
+  # Control-plane reconciliation is independent of UI/MCP watchers, so stale
+  # pane state is pruned even when nobody has the workspace open.
+  control_plane_reconcile_ms: 30_000,
+  host_capacity_max_load_ratio: 1.0,
+  host_capacity_min_mem_available_kb: 2_097_152,
   # SessionDirectory reconcile while event mode is healthy (5s: quieter than the
   # old 2s poll, but keeps quiet-agent / needs_you attention flips tighter than
   # the design doc's 10s option — open question §8.1).
