@@ -15,7 +15,9 @@ workspace-keyed OTP coordinator and short-lived child workers.
 - **Typed catalog:** `Casein.Agents.JidoActions` (#1015) is the worker-facing
   action surface. This pod still calls `JidoPod.CodeActions` for the four
   Code tools; the catalog adds distinct results, human-input, and handoff.
-- **Not in this slice:** cockpit event projection (#1016), skill parity and
+- **Projection:** `Casein.Agents.JidoLifecycle` (#1016) consumes pod
+  transitions without changing this admit/cancel/resume contract.
+- **Not in this slice:** skill parity and
   OpenCode fallback rollout (#1017). `git_status` / `git_diff` / `task_wait` /
   `task_cancel` remain `not_yet_supported` on the typed catalog.
 

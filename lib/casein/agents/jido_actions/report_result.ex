@@ -1,5 +1,5 @@
 defmodule Casein.Agents.JidoActions.ReportResult do
-  @moduledoc "Typed result handoff. Does not project cockpit state (#1016)."
+  @moduledoc "Typed result handoff. Projected by `Casein.Agents.JidoLifecycle`."
 
   use Jido.Action,
     name: "report_result",

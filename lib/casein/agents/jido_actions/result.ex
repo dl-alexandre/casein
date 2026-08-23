@@ -6,7 +6,7 @@ defmodule Casein.Agents.JidoActions.Result do
   `stale_attempt`, `provider_failure`, `not_yet_supported`, `invalid`.
   """
 
-  alias Casein.Agents.{Activity, AgentEvents}
+  alias Casein.Agents.{Activity, AgentEvents, JidoLifecycle}
   alias Casein.Audit
 
   @kinds ~w(ok denied blocked_on_human timeout cancelled stale_attempt provider_failure not_yet_supported invalid)a
@@ -146,6 +146,7 @@ defmodule Casein.Agents.JidoActions.Result do
       record_activity(name, workspace_id, kind, status, ctx, payload)
       record_event(name, workspace_id, status, ctx)
       record_audit(name, workspace_id, kind, ctx)
+      JidoLifecycle.ingest_action(name, payload, ctx)
     end
 
     :ok

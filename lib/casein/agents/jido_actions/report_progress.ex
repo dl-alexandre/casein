@@ -1,5 +1,5 @@
 defmodule Casein.Agents.JidoActions.ReportProgress do
-  @moduledoc "Typed progress handoff. Does not project cockpit state (#1016)."
+  @moduledoc "Typed progress handoff. Projected by `Casein.Agents.JidoLifecycle`."
 
   use Jido.Action,
     name: "report_progress",

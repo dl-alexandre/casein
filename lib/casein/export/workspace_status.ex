@@ -11,7 +11,7 @@ defmodule Casein.Export.WorkspaceStatus do
     * Proposal diffs are NOT included; only metadata + analysis risk.
   """
 
-  alias Casein.Agents.{GrokCapabilityPolicy, MCPUrls, TidewaveMCP}
+  alias Casein.Agents.{GrokCapabilityPolicy, JidoLifecycle, MCPUrls, TidewaveMCP}
   alias Casein.Previews
   alias Casein.Audit
   alias Casein.Deployment.{Health, Registry}
@@ -60,6 +60,7 @@ defmodule Casein.Export.WorkspaceStatus do
             runtimes: runtime_summary(external_id),
             agent_sessions: agent_sessions(session_summary),
             agent_layout: agent_layout(session_summary),
+            headless_workers: headless_workers(external_id),
             active_run: active_run_summary(external_id),
             recent_runs: recent_runs(external_id),
             recent_proposals: recent_proposals(record),
@@ -520,4 +521,30 @@ defmodule Casein.Export.WorkspaceStatus do
   defp stringify(nil), do: nil
   defp stringify(value) when is_atom(value), do: Atom.to_string(value)
   defp stringify(value), do: value
+
+  defp headless_workers(workspace_id) do
+    workspace_id
+    |> JidoLifecycle.list()
+    |> Enum.map(fn snapshot ->
+      %{
+        workspace_id: snapshot.workspace_id,
+        task_id: snapshot.task_id,
+        attempt_id: snapshot.attempt_id,
+        worker_id: snapshot.worker_id,
+        worktree_path: snapshot.worktree_path,
+        runtime: snapshot.runtime,
+        headless: snapshot.headless,
+        state: snapshot.state,
+        last_progress: snapshot.last_progress,
+        blocker: snapshot.blocker,
+        result: snapshot.result,
+        evidence: snapshot.evidence,
+        resume_token: snapshot.resume_token,
+        sequence: snapshot.sequence,
+        updated_at: snapshot.updated_at
+      }
+    end)
+  rescue
+    _ -> []
+  end
 end

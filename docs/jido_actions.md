@@ -14,8 +14,9 @@ between a headless Jido worker and Casein-owned capabilities.
 - **OpenCode / MCP** stays on `POST /api/code/mcp` and Terminal MCP while the
   Jido path is behind `CASEIN_JIDO_HEADLESS`. See
   `Casein.Agents.JidoActions.Compatibility`.
-- **Not in this slice:** cockpit projection ([#1016](https://github.com/dl-alexandre/casein/issues/1016)),
-  skill parity ([#1017](https://github.com/dl-alexandre/casein/issues/1017)).
+- **Projection:** `Casein.Agents.JidoLifecycle` (#1016) consumes action
+  results without changing this catalog or result atoms.
+- **Not in this slice:** skill parity ([#1017](https://github.com/dl-alexandre/casein/issues/1017)).
 
 Raw terminal keystrokes and pane scrapes are not actions. Cross-workspace
 paths and unscoped credentials are denied.

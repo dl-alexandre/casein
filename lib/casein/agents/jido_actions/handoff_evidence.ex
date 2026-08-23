@@ -1,5 +1,5 @@
 defmodule Casein.Agents.JidoActions.HandoffEvidence do
-  @moduledoc "Typed evidence handoff. Does not project cockpit state (#1016)."
+  @moduledoc "Typed evidence handoff. Projected by `Casein.Agents.JidoLifecycle`."
 
   use Jido.Action,
     name: "handoff_evidence",

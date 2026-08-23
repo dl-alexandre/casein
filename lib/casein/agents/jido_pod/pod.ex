@@ -9,6 +9,7 @@ defmodule Casein.Agents.JidoPod.Pod do
   use GenServer, restart: :transient
 
   alias Casein.Agents.Activity
+  alias Casein.Agents.JidoLifecycle
   alias Casein.Agents.JidoPod.{Attempt, Fleet, Metrics, Worker}
   alias Phoenix.PubSub
 
@@ -565,6 +566,7 @@ defmodule Casein.Agents.JidoPod.Pod do
       {:jido_attempt, Attempt.public(attempt)}
     )
 
+    _ = JidoLifecycle.ingest_attempt(Attempt.public(attempt))
     :ok
   end
 
