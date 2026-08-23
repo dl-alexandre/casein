@@ -22,6 +22,7 @@ defmodule Casein.Agents.Activity do
             :terminal_mcp
             | :preview_mcp
             | :artifact_mcp
+            | :code_mcp
             | :grok_acp
             | :agent_state
             | :transcript

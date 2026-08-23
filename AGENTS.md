@@ -481,6 +481,7 @@ split, the mobile authority flap, and the iPad scroll fix (`1e8f4ef0`).
 |---------|-----|------|
 | Terminal MCP | `https://casein.devbox.milcgroup.com/api/terminals/mcp` | Bearer `CASEIN_API_TOKEN` |
 | Preview MCP | `https://casein.devbox.milcgroup.com/api/preview/mcp` | Bearer `CASEIN_API_TOKEN` |
+| Code MCP | `https://casein.devbox.milcgroup.com/api/code/mcp` | Bearer `CASEIN_API_TOKEN` |
 
 Same-host agents may use `http://127.0.0.1:4000/api/...` instead. Read `docs/terminal_mcp.md` and `docs/preview_mcp.md` before changing MCP behavior.
 

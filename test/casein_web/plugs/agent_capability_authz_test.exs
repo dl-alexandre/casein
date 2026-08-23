@@ -16,7 +16,8 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthzTest do
     allowed_tools: %{
       "terminal" => ["terminal_list_sessions"],
       "preview" => ["preview_surfaces"],
-      "artifact" => ["artifact_list"]
+      "artifact" => ["artifact_list"],
+      "code" => ["code_read"]
     }
   }
 
@@ -34,7 +35,7 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthzTest do
   defp assert_allowed(conn) do
     refute conn.halted
     refute conn.status == 403
-    assert conn.assigns[:api_agent_capability_surface] in ~w(terminal preview artifact)
+    assert conn.assigns[:api_agent_capability_surface] in ~w(terminal preview artifact code)
     assert is_map(conn.assigns[:api_agent_capability_tools])
     assert is_map(conn.assigns[:api_agent_capability_policy])
   end
@@ -141,10 +142,10 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthzTest do
   end
 
   describe "surface confinement" do
-    test "allows terminal, preview, and artifact MCP paths" do
-      for path <- ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"] do
+    test "allows terminal, preview, artifact, and code MCP paths" do
+      for path <- ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp", "/api/code/mcp"] do
         query =
-          if path == "/api/artifacts/mcp" do
+          if path in ["/api/artifacts/mcp", "/api/code/mcp"] do
             %{"workspace_id" => @workspace_id}
           else
             %{"workspace_id" => @workspace_id, "tmux_session" => @tmux_session}

@@ -16,6 +16,7 @@ defmodule Casein.Agents.LocalAdapterTest do
     assert kinds == [
              :artifact_mcp,
              :browser_artifacts,
+             :code_mcp,
              :fff,
              :opencode,
              :preview_mcp,
@@ -37,6 +38,13 @@ defmodule Casein.Agents.LocalAdapterTest do
     assert "artifact_create" in artifact_mcp.details.tools
     assert "artifact_update" in artifact_mcp.details.tools
 
+    code_mcp = Enum.find(caps, &(&1.kind == :code_mcp))
+    assert code_mcp.status == :detected
+    assert code_mcp.source == :casein
+    assert code_mcp.url =~ "/api/code/mcp"
+    assert "code_read" in code_mcp.details.tools
+    assert "code_exec" in code_mcp.details.tools
+
     terminal_mcp = Enum.find(caps, &(&1.kind == :terminal_mcp))
     assert terminal_mcp.status == :detected
     assert terminal_mcp.source == :casein
@@ -47,7 +55,7 @@ defmodule Casein.Agents.LocalAdapterTest do
     # The Casein-hosted MCP capabilities are always detected; everything else
     # is filesystem/manager driven and missing on a bare workspace.
     assert caps
-           |> Enum.reject(&(&1.kind in [:artifact_mcp, :preview_mcp, :terminal_mcp]))
+            |> Enum.reject(&(&1.kind in [:artifact_mcp, :code_mcp, :preview_mcp, :terminal_mcp]))
            |> Enum.all?(&(&1.status == :missing))
   end
 

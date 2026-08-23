@@ -25,7 +25,7 @@ defmodule CaseinWeb.API.MCPProtectedResource do
 
   @well_known "/.well-known/oauth-protected-resource"
 
-  @mcp_paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"]
+  @mcp_paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp", "/api/code/mcp"]
 
   @doc "The MCP endpoint paths this metadata describes."
   @spec mcp_paths() :: [String.t()]
