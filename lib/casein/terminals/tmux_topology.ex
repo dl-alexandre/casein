@@ -8,6 +8,7 @@ defmodule Casein.Terminals.TmuxTopology do
   """
 
   alias Casein.Audit
+  alias Casein.Terminals.ControlPlane
   alias Casein.Terminals.PaneState
   alias TmuxCtl.Topology
   alias TmuxCtl.Topology.Watcher
@@ -140,7 +141,10 @@ defmodule Casein.Terminals.TmuxTopology do
   end
 
   defp session_terminated_callback do
-    fn state, reason -> emit_session_terminated_audit(state, reason) end
+    fn state, reason ->
+      ControlPlane.reconcile_session(state.session, [])
+      emit_session_terminated_audit(state, reason)
+    end
   end
 
   defp tmux_adapter do

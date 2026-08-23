@@ -74,7 +74,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
 
     case PaneSubmit.confirm_submit(session, target,
            confirm: confirm?,
-           enter_already_sent: true
+           enter_already_sent: true,
+           strict: true
          ) do
       {:ok, confirmation} ->
         {:ok, Map.merge(payload, stringify_confirmation(confirmation))}

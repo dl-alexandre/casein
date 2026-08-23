@@ -260,6 +260,28 @@ defmodule Casein.Terminals.Backends.Tmux do
   @impl true
   def list_sessions, do: adapter().list_sessions()
 
+  @doc "Return the session inventory without collapsing tmux command failures."
+  def list_sessions_result do
+    mod = adapter()
+
+    if function_exported?(mod, :list_sessions_result, 0) do
+      mod.list_sessions_result()
+    else
+      {:ok, mod.list_sessions()}
+    end
+  end
+
+  @doc "Return one pane inventory without collapsing tmux command failures."
+  def list_session_panes_result(session) when is_binary(session) do
+    mod = adapter()
+
+    if function_exported?(mod, :list_session_panes_result, 1) do
+      mod.list_session_panes_result(session)
+    else
+      {:ok, mod.list_session_panes(session)}
+    end
+  end
+
   @impl true
   def list_windows, do: adapter().list_windows()
 

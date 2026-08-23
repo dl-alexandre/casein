@@ -105,6 +105,9 @@ config :casein,
 config :casein, :tmux_server_label, "casein_test"
 # Never spawn the host tmux keepalive anchor during the test suite.
 config :casein, :tmux_host_anchor, false
+# The control-plane reconciler has focused unit tests; keep the application
+# boot in the suite from scanning the shared fake tmux server on a timer.
+config :casein, :control_plane_reconcile_ms, nil
 
 # Keep test scrollback spill out of the real ~/.casein/tmux-scrollback.
 # ScrollbackArchive defaults to $HOME/.casein/tmux-scrollback, which is the

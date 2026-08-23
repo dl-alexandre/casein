@@ -1289,12 +1289,13 @@ defmodule Casein.Agents.TerminalToolsTest do
       session = agent_pair_session!()
       Casein.Terminals.AgentState.clear()
 
-      # Frozen screen → confirm retries once then reports not_confirmed (not a hard error).
+      # Frozen screen → confirm retries once and fails the tool call; a sent
+      # status must never be mistaken for a delivered prompt.
       TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
         {session, "%2"} => "> idle composer"
       })
 
-      assert {:ok, result} =
+      assert {:error, result} =
                TerminalTools.invoke("terminal_send_command", %{
                  "workspace_id" => "alpha",
                  "session" => session,
@@ -1302,7 +1303,6 @@ defmodule Casein.Agents.TerminalToolsTest do
                  "command" => "echo brief"
                })
 
-      assert result.status == "sent"
       assert result.submitted == false
       assert result.delivery == "not_confirmed"
       assert result.enter_presses == 2

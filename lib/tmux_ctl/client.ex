@@ -194,14 +194,31 @@ defmodule TmuxCtl.Client do
   """
   @spec list_session_panes(String.t()) :: [map()]
   def list_session_panes(session) when is_binary(session) do
+    case list_session_panes_result(session) do
+      {:ok, panes} -> panes
+      {:error, _reason} -> []
+    end
+  end
+
+  @doc """
+  List panes with an explicit command result for control-plane liveness checks.
+
+  The legacy list function intentionally collapses tmux errors to `[]` for
+  callers that treat an absent session as an empty topology. Reconciliation
+  must distinguish that from a successful empty inventory so a tmux outage
+  cannot prune live in-memory state.
+  """
+  @spec list_session_panes_result(String.t()) :: {:ok, [map()]} | {:error, term()}
+  def list_session_panes_result(session) when is_binary(session) do
     case run(["list-panes", "-s", "-t", session, "-F", @topology_pane_fmt]) do
       {out, 0} ->
-        out
-        |> String.split("\n", trim: true)
-        |> Enum.flat_map(&parse_topology_pane_line/1)
+        {:ok,
+         out
+         |> String.split("\n", trim: true)
+         |> Enum.flat_map(&parse_topology_pane_line/1)}
 
-      _ ->
-        []
+      {out, code} ->
+        {:error, {:tmux_command_failed, code, String.trim(out)}}
     end
   end
 
@@ -1353,14 +1370,27 @@ defmodule TmuxCtl.Client do
   """
   @spec list_sessions() :: [map()]
   def list_sessions do
+    case list_sessions_result() do
+      {:ok, sessions} -> sessions
+      {:error, _reason} -> []
+    end
+  end
+
+  @doc """
+  List sessions with an explicit command result for control-plane liveness
+  checks. The legacy list function keeps its empty-list compatibility contract.
+  """
+  @spec list_sessions_result() :: {:ok, [map()]} | {:error, term()}
+  def list_sessions_result do
     case run(["list-sessions", "-F", @list_sessions_fmt]) do
       {out, 0} ->
-        out
-        |> String.split("\n", trim: true)
-        |> Enum.flat_map(&parse_session_line/1)
+        {:ok,
+         out
+         |> String.split("\n", trim: true)
+         |> Enum.flat_map(&parse_session_line/1)}
 
-      _ ->
-        []
+      {out, code} ->
+        {:error, {:tmux_command_failed, code, String.trim(out)}}
     end
   end
 

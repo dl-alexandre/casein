@@ -65,7 +65,9 @@ defmodule CaseinWeb.API.TerminalMCP do
         "and pass explicit pane ids on capture/send calls. " <>
         "For a one-shot fleet picture (sessions, panes, runtime, worktree, branch, " <>
         "commits-not-on-origin, process/CPU liveness) read the MCP resource " <>
-        "casein://fleet/summary — do not topology + N capture scrapes.",
+        "casein://fleet/summary — do not topology + N capture scrapes. " <>
+        "Before assigning a worker wave, call terminal_host_capacity; an unknown " <>
+        "capacity probe is not spare capacity.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )
   end

@@ -9,6 +9,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.AgentState
   alias Casein.Terminals.FleetBoard
   alias Casein.Terminals.FleetChrome
+  alias Casein.Terminals.ControlPlane
   alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
   alias Casein.Terminals.OrchestrationListWorkers
@@ -21,6 +22,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.WorktreeChangedPaths
   alias Casein.Terminals.WorktreeDiff
   alias Casein.Terminals.WorktreeStatus
+  alias Casein.Terminals.HostCapacity
 
   import Casein.Agents.TerminalTools.Impl.Shared
 
@@ -55,10 +57,19 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
       |> filter_contains(contains)
 
     {:ok,
-     %{sessions: sessions, workspace_id: workspace_id(params)}
+     %{
+       sessions: sessions,
+       workspace_id: workspace_id(params),
+       control_plane: ControlPlane.status(),
+       host_capacity: HostCapacity.snapshot()
+     }
      |> put_session_guidance(params, sessions)
      |> compact()}
   end
+
+  @doc "Return the shared live host-capacity probe for worker-wave scheduling."
+  @spec host_capacity(map()) :: {:ok, map()}
+  def host_capacity(_params \\ %{}), do: {:ok, HostCapacity.snapshot()}
 
   @doc "Return a self-routing terminal context for agent planning."
   @spec context(map()) :: {:ok, map()} | {:error, term()}
@@ -74,7 +85,9 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
             workspace_id: workspace_id(params),
             sessions: Enum.map(sessions, &session_candidate/1),
             recommended_session: session,
-            topology: snapshot
+            topology: snapshot,
+            control_plane: ControlPlane.status(),
+            host_capacity: HostCapacity.snapshot()
           }
           |> put_caller_anchor(snapshot, params)
           |> put_agent_pane_guidance(session, params)
