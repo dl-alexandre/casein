@@ -12,9 +12,12 @@ workspace-keyed OTP coordinator and short-lived child workers.
 - **Workers** call typed Casein Code actions (`code_read`, `code_search`,
   `code_apply_patch`, `code_exec`) from [#1013](https://github.com/dl-alexandre/casein/issues/1013).
   They do not open a shell, walk the filesystem, or require a tmux pane.
-- **Not in this slice:** typed adapter catalog (#1015), cockpit event
-  projection (#1016), skill parity and OpenCode fallback rollout (#1017),
-  `git_status` / `git_diff` / `task_wait` / `task_cancel`.
+- **Typed catalog:** `Casein.Agents.JidoActions` (#1015) is the worker-facing
+  action surface. This pod still calls `JidoPod.CodeActions` for the four
+  Code tools; the catalog adds distinct results, human-input, and handoff.
+- **Not in this slice:** cockpit event projection (#1016), skill parity and
+  OpenCode fallback rollout (#1017). `git_status` / `git_diff` / `task_wait` /
+  `task_cancel` remain `not_yet_supported` on the typed catalog.
 
 ## Runtime selection
 
