@@ -79,6 +79,24 @@ defmodule Casein.Agents.MCPUrlsTest do
     assert MCPUrls.base_url() == "https://preview.example.test"
   end
 
+  test "client_mcp_json names servers and pins workspace_id" do
+    System.put_env("CASEIN_AGENT_MCP_BASE_URL", "http://127.0.0.1:4000")
+
+    json =
+      MCPUrls.client_mcp_json(%{id: "ws-1", name: "Demo Workspace"}, "tok-1",
+        base_url: "https://casein.example.test"
+      )
+
+    decoded = Jason.decode!(json)
+    servers = decoded["mcpServers"]
+
+    assert servers["casein-terminal-demo-workspace"]["url"] ==
+             "https://casein.example.test/api/terminals/mcp?workspace_id=ws-1"
+
+    assert servers["casein-preview-demo-workspace"]["headers"]["Authorization"] == "Bearer tok-1"
+    assert servers["casein-artifact-demo-workspace"]["url"] =~ "workspace_id=ws-1"
+  end
+
   test "ticket URLs keep the short-lived credential on its bound endpoint" do
     System.put_env("CASEIN_AGENT_MCP_BASE_URL", "http://127.0.0.1:4000")
 

@@ -91,7 +91,16 @@ defmodule CaseinWeb.API.TerminalMCP do
     workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
 
     payload =
-      FleetSummary.build(workspace_id: workspace_id)
+      cond do
+        is_binary(workspace_id) ->
+          FleetSummary.build(workspace_id: workspace_id)
+
+        Application.get_env(:casein, :allow_global_mcp_tool_calls, false) ->
+          FleetSummary.build([])
+
+        true ->
+          FleetSummary.build(workspace_id: nil, sessions: [])
+      end
 
     {:ok,
      [

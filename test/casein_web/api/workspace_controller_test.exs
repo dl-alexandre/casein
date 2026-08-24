@@ -209,6 +209,52 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
     assert is_list(body["recent_audit"])
   end
 
+  test "POST /api/workspaces/:id/api-token/rotate mints a new scoped bearer", %{conn: conn} do
+    prev_store = Application.get_env(:casein, :workspace_tokens_store)
+    prev_retired = Application.get_env(:casein, :workspace_api_tokens_retired)
+    store = Path.join(System.tmp_dir!(), "ws-tokens-#{System.unique_integer([:positive])}.json")
+
+    home =
+      Path.join(System.tmp_dir!(), "casein-rotate-home-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(home)
+    prev_home = System.get_env("HOME")
+
+    Application.put_env(:casein, :workspace_api_tokens, %{"old-ws-token" => "ws-1"})
+    Application.put_env(:casein, :workspace_api_tokens_retired, %{})
+    Application.put_env(:casein, :workspace_tokens_store, store)
+    System.put_env("HOME", home)
+
+    on_exit(fn ->
+      if prev_store,
+        do: Application.put_env(:casein, :workspace_tokens_store, prev_store),
+        else: Application.delete_env(:casein, :workspace_tokens_store)
+
+      if prev_retired,
+        do: Application.put_env(:casein, :workspace_api_tokens_retired, prev_retired),
+        else: Application.delete_env(:casein, :workspace_api_tokens_retired)
+
+      if prev_home, do: System.put_env("HOME", prev_home), else: System.delete_env("HOME")
+      File.rm(store)
+      File.rm_rf(home)
+    end)
+
+    seed_workspace(root: Path.join(home, "ws"))
+    File.mkdir_p!(Path.join(home, "ws"))
+
+    body =
+      conn
+      |> authed("old-ws-token")
+      |> post("/api/workspaces/ws-1/api-token/rotate")
+      |> json_response(200)
+
+    assert body["workspace_id"] == "ws-1"
+    assert is_binary(body["token"]) and body["token"] != "old-ws-token"
+    assert is_binary(body["note"])
+    assert Casein.Agents.WorkspaceTokens.stale_grant?("old-ws-token")
+    assert Casein.Agents.WorkspaceTokens.token_for("ws-1") == body["token"]
+  end
+
   test "/api/workspaces/:id/topology returns tmux topology for an explicit session", %{conn: conn} do
     seed_workspace()
 

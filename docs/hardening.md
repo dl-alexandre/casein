@@ -73,7 +73,11 @@ export CASEIN_WORKSPACE_API_TOKENS='{"token-for-workspace-a":"workspace-a"}'
 The value is a JSON object mapping bearer token to one workspace id or a list of
 workspace ids. A workspace-scoped token may omit `workspace_id` on MCP calls; the
 server injects the token's workspace. Explicitly passing a different workspace is
-rejected before tool dispatch.
+rejected before tool dispatch. External Connect issuance uses this same
+workspace-scoped credential plus pre-scoped MCP URLs (`?workspace_id=`).
+Unscoped listing is refused (`workspace_scope_required`). Rotate with
+`POST /api/workspaces/:id/api-token/rotate`; in-flight `grokcap_*` agents see
+`stale_grant` until relaunch (`grant_lifecycle: frozen_at_launch`).
 
 ## Audit Command
 

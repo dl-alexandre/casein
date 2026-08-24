@@ -64,6 +64,22 @@ receives `403 workspace_scoped_token_required` before the tool handler runs, so
 it cannot list sessions, capture scrollback, or inject terminal input through
 MCP. Prefer always scoping in production and dogfood setups.
 
+External clients should receive the same pre-scoped URLs as in-workspace agents
+(`?workspace_id=<uuid>` and `casein-terminal-<workspace>` server keys). A
+workspace-scoped token cannot enumerate or mutate sessions outside its
+workspace; `recommended_session` is chosen only from that filtered set.
+`allow_cross_workspace` is the only opt-in read-only exception. Omitting
+`workspace_id` on an unscoped URL returns `workspace_scope_required` rather
+than listing the host.
+
+**Token rotation.** `POST /api/workspaces/:id/api-token/rotate` mints a new
+workspace bearer, retires the previous value (`401 stale_grant` if still
+presented), rewrites materialized MCP configs, and `tmux set-environment`s
+matching sessions. Shell-backed agents re-export `CASEIN_API_TOKEN` on the next
+prompt. Managed Grok `grokcap_*` is `grant_lifecycle: frozen_at_launch` and
+must be relaunched. `terminal_context.agent_write` advertises `grant_lifecycle`
+and `token_rebind`.
+
 ## Command Policy
 
 `terminal_send_command` / `terminal_send_agent_command` run arbitrary shell, so

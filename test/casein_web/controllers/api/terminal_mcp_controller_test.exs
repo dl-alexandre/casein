@@ -177,13 +177,9 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     refute conn.resp_body =~ "workspace_scoped_token_required"
   end
 
-  test "self-serve orchestrator token CAN call tools with allow_global_mcp_tool_calls off",
+  test "orchestrator token cannot list sessions without a workspace scope",
        %{conn: conn} do
-    # Default posture: global tool-calls are OFF. A minted orchestrator token is
-    # non-global, so it is NOT rejected — no CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS
-    # needed. This is the safe, revocable path.
     refute Application.get_env(:casein, :allow_global_mcp_tool_calls, false)
-    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
     {:ok, raw, _record} =
       Casein.Agents.OrchestratorTokens.create_for_subject(%{
@@ -206,7 +202,108 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
       )
 
     assert conn.status == 200
-    refute conn.resp_body =~ "workspace_scoped_token_required"
+
+    assert %{
+             "result" => %{
+               "structuredContent" => %{"error" => "workspace_scope_required"}
+             }
+           } = json_response(conn, 200)
+  end
+
+  test "workspace-scoped token lists only its workspace and never recommends a foreign session",
+       %{conn: conn} do
+    Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "casein_ws-scoped_mine" => [
+        %{id: "@1", index: 0, name: "mine", active: true, panes: 1, activity: 1}
+      ],
+      "casein_other_engineer" => [
+        %{id: "@2", index: 0, name: "theirs", active: true, panes: 1, activity: 9_999}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_session_meta, %{
+      "casein_ws-scoped_mine" => %{attached: false, activity: 1},
+      "casein_other_engineer" => %{attached: true, activity: 9_999}
+    })
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{name: "terminal_list_sessions", arguments: %{}}
+        },
+        "ws-token"
+      )
+
+    assert %{
+             "result" => %{
+               "structuredContent" => content
+             }
+           } = json_response(conn, 200)
+
+    names = Enum.map(content["sessions"] || [], & &1["session"])
+    assert "casein_ws-scoped_mine" in names
+    refute "casein_other_engineer" in names
+    assert content["recommended_session"] == "casein_ws-scoped_mine"
+    refute content["recommended_session"] == "casein_other_engineer"
+  end
+
+  test "workspace-scoped token refuses mutating a pane outside its workspace",
+       %{conn: conn} do
+    Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "casein_other_engineer" => [
+        %{id: "@2", index: 0, name: "theirs", active: true, panes: 1, activity: 1}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      "casein_other_engineer" => [
+        %{
+          id: "%9",
+          window_id: "@2",
+          index: 0,
+          active: true,
+          current_command: "bash",
+          current_path: "/other"
+        }
+      ]
+    })
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "terminal_send_command",
+            arguments: %{
+              session: "casein_other_engineer",
+              command: "echo leak"
+            }
+          }
+        },
+        "ws-token"
+      )
+
+    assert %{
+             "result" => %{
+               "structuredContent" => %{"error" => error}
+             }
+           } = json_response(conn, 200)
+
+    assert error in ["workspace_mismatch", "workspace_scope_mismatch"]
+    refute conn.resp_body =~ "echo leak"
   end
 
   test "global token cannot call Terminal MCP command tools", %{conn: conn} do

@@ -31,6 +31,12 @@ defmodule Casein.MCP.Scope do
     terminal_inbox
   ))
 
+  @unscoped_ok_terminal_tools MapSet.new(~w(
+    terminal_host_capacity
+    runtime_signal
+    mcp_self_test
+  ))
+
   @doc "Read-only tools that may opt into the audited cross-workspace lane."
   @spec cross_workspace_read_tool?(String.t()) :: boolean()
   def cross_workspace_read_tool?(name) when is_binary(name),
@@ -307,12 +313,33 @@ defmodule Casein.MCP.Scope do
     end
   end
 
+  defp enforce_required_workspace(tool_name, :terminal, workspace_id, opts) do
+    require_workspace? =
+      Keyword.get(opts, :require_workspace?, terminal_requires_workspace?(tool_name))
+
+    cond do
+      not require_workspace? -> :ok
+      is_binary(workspace_id) -> :ok
+      allow_unscoped_box_wide?() -> :ok
+      true -> {:error, workspace_scope_required()}
+    end
+  end
+
   defp enforce_required_workspace(_tool_name, _surface, workspace_id, opts) do
     if Keyword.get(opts, :require_workspace?, false) and is_nil(workspace_id) do
       {:error, missing_workspace_id_error()}
     else
       :ok
     end
+  end
+
+  defp terminal_requires_workspace?(name) when is_binary(name),
+    do: not MapSet.member?(@unscoped_ok_terminal_tools, name)
+
+  defp terminal_requires_workspace?(_), do: true
+
+  defp allow_unscoped_box_wide? do
+    Application.get_env(:casein, :allow_global_mcp_tool_calls, false) in [true, "true", "1", 1]
   end
 
   defp enforce_workspace_scope(nil, _workspace_id, _origin), do: :ok
@@ -410,6 +437,18 @@ defmodule Casein.MCP.Scope do
       message:
         "Pass workspace_id or workspace_path. Generated Casein MCP URLs inject workspace_id automatically.",
       folder_id_format: "folder:<base64url-absolute-path>"
+    }
+  end
+
+  defp workspace_scope_required do
+    %{
+      error: :workspace_scope_required,
+      message:
+        "Unscoped session enumeration is not allowed. Use a workspace-scoped token or a " <>
+          "pre-scoped MCP URL (?workspace_id=). A workspace-scoped credential cannot list " <>
+          "or mutate sessions outside its workspace. Read-only peek: pass " <>
+          "allow_cross_workspace: true on a scoped token.",
+      lane: "allow_cross_workspace"
     }
   end
 

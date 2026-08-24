@@ -364,6 +364,26 @@ defmodule Casein.MCP.ScopeTest do
     assert scope.resolved_from.caller_pane == nil
   end
 
+  test "unscoped terminal listing is refused without a workspace" do
+    assert {:error, error} =
+             Scope.resolve_tool_call("terminal_list_sessions", %{}, surface: :terminal)
+
+    assert error.error == :workspace_scope_required
+    assert error.lane == "allow_cross_workspace"
+  end
+
+  test "unscoped terminal listing is allowed when global tool calls are enabled" do
+    prev = Application.get_env(:casein, :allow_global_mcp_tool_calls)
+    Application.put_env(:casein, :allow_global_mcp_tool_calls, true)
+
+    on_exit(fn -> restore_env(:allow_global_mcp_tool_calls, prev) end)
+
+    assert {:ok, scope} =
+             Scope.resolve_tool_call("terminal_list_sessions", %{}, surface: :terminal)
+
+    assert scope.workspace_id == nil
+  end
+
   defp mentions_workspace_id?(%{parameters: params}) when is_map(params) do
     properties = Map.get(params, :properties) || Map.get(params, "properties") || %{}
     required = Map.get(params, :required) || Map.get(params, "required") || []

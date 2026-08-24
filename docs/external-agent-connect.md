@@ -48,28 +48,32 @@ Both doors work today (verified 2026-07-14).
 Orthogonal to which door you use, the `.mcp.json` comes in two shapes. The difference is
 whether `workspace_id` is baked into the URL.
 
-| | **Pinned** (one workspace) | **Durable** (workspace-agnostic) |
+| | **Pinned** (one workspace) — **default** | **Durable** (workspace-agnostic) |
 |---|---|---|
 | URL | `…/api/terminals/mcp?workspace_id=<uuid>` | `…/api/terminals/mcp` (no query) |
 | Workspace selected | by the URL, fixed | per tool call (`workspace_id` in `arguments`) |
-| New workspace | re-materialize a fresh config | **just target it — no re-wiring** |
-| Abandon a stale one | config points at a dead workspace | **stop passing its id; nothing to tear down** |
-| Token required | workspace-scoped **or** global | **global** (traverse) — see caveat |
+| New workspace | re-materialize a fresh config | only with a **global** token + `CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS=1` |
+| Token required | workspace-scoped | **global** (traverse) — see caveat |
+| Unscoped `list_sessions` / fleet | returns only this workspace | refused (`workspace_scope_required`) unless global tool-calls are enabled |
 
-**Use durable when** you hop between / spin up / abandon workspaces and don't want to
-regenerate MCP config each time. The endpoint resolves `workspace_id` per-call
-(`Casein.MCP.Scope`), so one wiring outlives any individual workspace.
+**Use pinned for every external client.** The cockpit Connect drawer issues this
+shape: workspace-named servers (`casein-terminal-<workspace>`) and
+`?workspace_id=` on every URL, plus a workspace-scoped bearer. Omitting
+`workspace_id` still injects the token's workspace. `recommended_session` is
+chosen only from that set. `allow_cross_workspace` is the only opt-in
+read-only peek at another workspace.
 
-> **Token caveat.** A durable/workspaceless config needs a token that can reach more than
-> one workspace — i.e. the **global** orchestrator token (root-grade). That's fine over
-> **Door 1 (SSH)**, where your SSH access already gates it. Do **not** put the global token
-> on **Door 2 (public)** — there, keep using a pinned, workspace-scoped token. (A
-> multi-workspace *set* token is the middle path, but adding a workspace to a set is not yet
-> a runtime action — it needs an env edit + restart today.)
+> **Token caveat.** A durable/workspaceless config needs the **global** token
+> **and** `CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS=1`. That's fine over **Door 1
+> (SSH)** for a trusted operator. Do **not** put the global token on **Door 2
+> (public)**. Unscoped listing is otherwise refused so a leaked workspace token
+> cannot enumerate other engineers' sessions.
 
-### Durable `.mcp.json` (Door 1 / global token)
+### Durable `.mcp.json` (Door 1 / global token only)
 
-Same for either door — just swap the host. Note: **no `?workspace_id`** in any URL.
+Same for either door — just swap the host. Note: **no `?workspace_id`** in any
+URL. This shape lists the host only when `CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS=1`.
+External Connect issuance does **not** emit this shape.
 
 ```json
 {
@@ -92,7 +96,8 @@ Same for either door — just swap the host. Note: **no `?workspace_id`** in any
 
 ### Working durably: list live workspaces, then target per-call
 
-With no workspace pinned, **discover first, then confine each call**:
+Only with a **global** token and `CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS=1`. Otherwise
+`terminal_list_sessions` with no `workspace_id` returns `workspace_scope_required`.
 
 ```text
 1. terminal_list_sessions            (no workspace_id) → every live casein_* session, box-wide
@@ -100,9 +105,9 @@ With no workspace pinned, **discover first, then confine each call**:
 3. <any tool> with "workspace_id":"<uuid>" in arguments → confined to that workspace
 ```
 
-- **Enumerate what's live / abandonable:** `terminal_list_sessions` with no `workspace_id`
-  returns sessions across all workspaces with `last activity` — stale ones are the
-  low-activity / no-attached-client rows. That's your "what can I abandon?" view.
+- **Enumerate what's live / abandonable:** with the global-tool-calls flag on,
+  `terminal_list_sessions` with no `workspace_id` returns sessions across all
+  workspaces with `last activity`. A workspace-scoped token never sees that view.
 - **Abandon a stale workspace:** simply stop targeting its id. The durable config needs no
   change. Reclaiming the underlying worktree/tmux is a separate concern handled by the
   reaper / `cleanup-agent-worktrees.sh`; it does not require touching this config.
@@ -176,8 +181,15 @@ Save as `casein-remote.mcp.json`, replace the token placeholder, keep it gitigno
 }
 ```
 
-Launch: `claude --mcp-config casein-remote.mcp.json`. Drop `?workspace_id=…` on all three
-URLs to traverse the whole box (global token only).
+Launch: `claude --mcp-config casein-remote.mcp.json`. Do **not** drop
+`?workspace_id=…` unless you are using the global token with
+`CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS=1`.
+
+**Rotate** the workspace bearer with
+`POST /api/workspaces/<uuid>/api-token/rotate`. Shell-backed panes re-export
+`CASEIN_API_TOKEN` from tmux env. Managed Grok `grokcap_*` is
+`grant_lifecycle: frozen_at_launch` and returns `401 stale_grant` until
+relaunch.
 
 ---
 
@@ -233,8 +245,8 @@ Save as `casein-remote-door2.mcp.json`, replace the token placeholder, keep it g
 }
 ```
 
-Launch: `claude --mcp-config casein-remote-door2.mcp.json`. Drop `?workspace_id=…` to
-traverse the whole box (global token only). For a **claude.ai custom connector**, add each
+Launch: `claude --mcp-config casein-remote-door2.mcp.json`. Keep `?workspace_id=…`
+and a workspace-scoped token. For a **claude.ai custom connector**, add each
 URL with an `Authorization: Bearer …` header once the door is open.
 
 ---

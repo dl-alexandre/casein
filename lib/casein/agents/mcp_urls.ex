@@ -24,25 +24,65 @@ defmodule Casein.Agents.MCPUrls do
     |> Origin.canonicalize_known_base_url()
   end
 
-  def preview_url(workspace_id \\ nil, opts \\ []),
-    do:
-      base_url()
-      |> endpoint_url("/api/preview/mcp")
-      |> with_query_param("workspace_id", workspace_id)
-      |> with_query_param("tmux_session", Keyword.get(opts, :tmux_session))
+  def preview_url(workspace_id \\ nil, opts \\ []) do
+    url_base(opts)
+    |> endpoint_url("/api/preview/mcp")
+    |> with_query_param("workspace_id", workspace_id)
+    |> with_query_param("tmux_session", Keyword.get(opts, :tmux_session))
+  end
 
-  def terminal_url(workspace_id \\ nil, opts \\ []),
-    do:
-      base_url()
-      |> endpoint_url("/api/terminals/mcp")
-      |> with_query_param("workspace_id", workspace_id)
-      |> with_query_param("tmux_session", Keyword.get(opts, :tmux_session))
+  def terminal_url(workspace_id \\ nil, opts \\ []) do
+    url_base(opts)
+    |> endpoint_url("/api/terminals/mcp")
+    |> with_query_param("workspace_id", workspace_id)
+    |> with_query_param("tmux_session", Keyword.get(opts, :tmux_session))
+  end
 
-  def artifact_url(workspace_id \\ nil),
-    do:
-      base_url()
-      |> endpoint_url("/api/artifacts/mcp")
-      |> with_query_param("workspace_id", workspace_id)
+  def artifact_url(workspace_id \\ nil, opts \\ []) do
+    url_base(opts)
+    |> endpoint_url("/api/artifacts/mcp")
+    |> with_query_param("workspace_id", workspace_id)
+  end
+
+  @doc """
+  OpenCode/Claude server keys matching in-workspace materialization
+  (`casein-terminal-<workspace-slug>`).
+  """
+  def server_keys(workspace) when is_map(workspace) do
+    slug =
+      workspace
+      |> workspace_name()
+      |> String.replace(~r/[^a-zA-Z0-9]+/, "-")
+      |> String.trim("-")
+      |> String.downcase()
+
+    slug = if slug == "", do: "workspace", else: slug
+    {"casein-terminal-#{slug}", "casein-preview-#{slug}", "casein-artifact-#{slug}"}
+  end
+
+  def server_keys(name) when is_binary(name), do: server_keys(%{name: name})
+
+  @doc """
+  Ready-to-paste `.mcp.json` for an external client: workspace-named servers
+  and `?workspace_id=` on every URL.
+  """
+  def client_mcp_json(workspace, token, opts \\ []) when is_binary(token) do
+    id = workspace_id(workspace)
+    url_opts = url_opts(opts)
+    {terminal_key, preview_key, artifact_key} = server_keys(workspace)
+    auth = %{"Authorization" => "Bearer " <> token}
+
+    Jason.encode!(
+      %{
+        "mcpServers" => %{
+          terminal_key => %{"url" => terminal_url(id, url_opts), "headers" => auth},
+          preview_key => %{"url" => preview_url(id, url_opts), "headers" => auth},
+          artifact_key => %{"url" => artifact_url(id, url_opts), "headers" => auth}
+        }
+      },
+      pretty: true
+    )
+  end
 
   @doc "Build an MCP URL carrying a short-lived ticket for its bound surface."
   def ticket_url(surface, workspace_id, tmux_session, ticket)
@@ -60,6 +100,30 @@ defmodule Casein.Agents.MCPUrls do
   @doc "Canonicalizes only recognized retired managed origins."
   def canonicalize_known_base_url(base_url) when is_binary(base_url),
     do: Origin.canonicalize_known_base_url(base_url)
+
+  defp url_base(opts) do
+    case Keyword.get(opts, :base_url) do
+      base when is_binary(base) and base != "" -> Origin.canonicalize_known_base_url(base)
+      _ -> base_url()
+    end
+  end
+
+  defp url_opts(opts) do
+    case Keyword.get(opts, :base_url) do
+      base when is_binary(base) and base != "" -> [base_url: base]
+      _ -> []
+    end
+  end
+
+  defp workspace_id(workspace) when is_map(workspace) do
+    Map.get(workspace, :id) || Map.get(workspace, "id")
+  end
+
+  defp workspace_name(workspace) when is_map(workspace) do
+    Map.get(workspace, :name) || Map.get(workspace, "name") ||
+      Map.get(workspace, :id) || Map.get(workspace, "id") ||
+      "workspace"
+  end
 
   defp endpoint_url(base_url, path), do: String.trim_trailing(base_url, "/") <> path
 
