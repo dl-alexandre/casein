@@ -252,6 +252,8 @@ defmodule Casein.Terminals.HostHealth do
     end
   end
 
+  # Path is operator config / env / hardcoded watchdog file, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_sample(opts) do
     cond do
       Keyword.has_key?(opts, :status) ->
@@ -280,6 +282,8 @@ defmodule Casein.Terminals.HostHealth do
 
   defp decode_status_raw(_), do: {nil, :malformed}
 
+  # Path is operator config / env / hardcoded watchdog file, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_alerts(opts, max_alerts) do
     cond do
       Keyword.has_key?(opts, :alerts) ->
