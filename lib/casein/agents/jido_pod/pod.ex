@@ -634,6 +634,8 @@ defmodule Casein.Agents.JidoPod.Pod do
   end
 
   defp publish(%Attempt{} = attempt) do
+    public_attempt = Attempt.public(attempt)
+
     _ =
       Activity.record(%{
         workspace_id: attempt.workspace_id,
@@ -645,7 +647,7 @@ defmodule Casein.Agents.JidoPod.Pod do
           attempt_id: attempt.id,
           worktree_path: attempt.worktree_path,
           state: attempt.state,
-          reason: attempt.reason,
+          reason: public_attempt.reason,
           headless: true
         },
         status:
@@ -655,10 +657,10 @@ defmodule Casein.Agents.JidoPod.Pod do
     PubSub.broadcast(
       Casein.PubSub,
       topic(attempt.workspace_id),
-      {:jido_attempt, Attempt.public(attempt)}
+      {:jido_attempt, public_attempt}
     )
 
-    _ = JidoLifecycle.ingest_attempt(Attempt.public(attempt))
+    _ = JidoLifecycle.ingest_attempt(public_attempt)
     :ok
   end
 
