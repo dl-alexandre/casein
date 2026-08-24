@@ -338,10 +338,13 @@ defmodule Casein.Export.WorkspaceStatus do
   defp capability_url(%{kind: :artifact_mcp}, workspace_id),
     do: MCPUrls.artifact_url(workspace_id)
 
+  defp capability_url(%{kind: :code_mcp}, workspace_id),
+    do: MCPUrls.code_url(workspace_id)
+
   defp capability_url(capability, _workspace_id), do: capability.url
 
   defp capability_details(%{kind: kind, details: details}, workspace_id)
-       when kind in [:preview_mcp, :terminal_mcp, :artifact_mcp] do
+       when kind in [:preview_mcp, :terminal_mcp, :artifact_mcp, :code_mcp] do
     (details || %{})
     |> Map.put(:workspace_id, workspace_id)
     |> Map.put(:pre_scoped, true)
