@@ -108,6 +108,8 @@ defmodule Casein.Agents.CodeTools.ApplyPatch do
     end)
   end
 
+  # tmp is Path.join(System.tmp_dir!(), unique integer), not user input.
+  # sobelow_skip ["Traversal.FileModule"]
   defp apply_patch(assignment, params, changes) do
     tmp =
       Path.join(System.tmp_dir!(), "casein-code-patch-#{System.unique_integer([:positive])}.diff")
