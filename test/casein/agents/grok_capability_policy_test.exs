@@ -37,6 +37,7 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     assert "orchestration_status" in snapshot.allowed_tools["terminal"]
     assert "worker_status" in snapshot.allowed_tools["terminal"]
     assert "orchestration_list_workers" in snapshot.allowed_tools["terminal"]
+    assert "terminal_issue_holders" in snapshot.allowed_tools["terminal"]
     assert "worktree_status" in snapshot.allowed_tools["terminal"]
     assert "worktree_changed_paths" in snapshot.allowed_tools["terminal"]
     assert "worktree_diff" in snapshot.allowed_tools["terminal"]

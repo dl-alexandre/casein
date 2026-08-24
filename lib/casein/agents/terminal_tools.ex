@@ -30,6 +30,7 @@ defmodule Casein.Agents.TerminalTools do
     AgentPane,
     AgentTranscript,
     BindIssue,
+    IssueHolders,
     Capture,
     CaptureAgent,
     ClearNextPrompt,
@@ -106,6 +107,7 @@ defmodule Casein.Agents.TerminalTools do
     LayoutApply,
     SetAgentLabel,
     BindIssue,
+    IssueHolders,
     WorkHandleCreate,
     WorkHandleGet,
     WorkHandleList,
@@ -205,6 +207,8 @@ defmodule Casein.Agents.TerminalTools do
   @doc false
   defdelegate set_agent_label(params), to: Agent
   defdelegate bind_issue(params), to: Agent
+  @doc false
+  defdelegate issue_holders(params), to: Agent
   @doc false
   defdelegate work_handle_create(params), to: Agent
   @doc false

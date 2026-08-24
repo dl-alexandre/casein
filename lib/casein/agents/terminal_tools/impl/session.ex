@@ -611,7 +611,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         runtime: runtime,
         task_slug: task_slug,
         label: string_param(params, "label"),
-        dry_run: truthy?(Map.get(params, "dry_run") || Map.get(params, :dry_run))
+        dry_run: truthy?(Map.get(params, "dry_run") || Map.get(params, :dry_run)),
+        issue: Map.get(params, "issue") || Map.get(params, :issue),
+        allow_duplicate:
+          truthy?(Map.get(params, "allow_duplicate") || Map.get(params, :allow_duplicate))
       ]
 
       Casein.Terminals.WorkerLaunch.launch(opts)

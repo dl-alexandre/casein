@@ -595,7 +595,13 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
         value ->
           case IssueBinding.bind(workspace_id, session, pane.id, value,
                  url: Map.get(params, "url") || Map.get(params, :url),
-                 title: Map.get(params, "title") || Map.get(params, :title)
+                 title: Map.get(params, "title") || Map.get(params, :title),
+                 window_id: Map.get(pane, :window_id) || Map.get(pane, "window_id"),
+                 allow_duplicate:
+                   truthy?(
+                     Map.get(params, "allow_duplicate") || Map.get(params, :allow_duplicate)
+                   ),
+                 check_live: true
                ) do
             {:ok, entry} ->
               {:ok,
@@ -609,6 +615,9 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
 
             {:error, :invalid_issue} ->
               {:error, {:invalid_issue, value}}
+
+            {:error, %{error: :issue_already_bound} = refusal} ->
+              {:error, refusal}
           end
       end
     end
@@ -645,6 +654,40 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       {:error, :unknown_handle} -> {:error, :unknown_handle}
       other -> other
     end
+  end
+
+  @doc "Read-only workspace-scoped holders of a GitHub issue."
+  @spec issue_holders(map()) :: {:ok, map()} | {:error, term()}
+  def issue_holders(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         raw = Map.get(params, "issue") || Map.get(params, :issue),
+         {:ok, issue} <- issue_arg(raw) do
+      holders = IssueBinding.holders(workspace_id, issue, check_live: true)
+
+      {:ok,
+       %{
+         workspace_id: workspace_id,
+         issue: issue,
+         holders: Enum.map(holders, &holder_payload/1),
+         count: length(holders)
+       }}
+    end
+  end
+
+  defp issue_arg(raw) do
+    case IssueBinding.normalize_issue(raw) do
+      nil -> {:error, {:invalid_issue, raw}}
+      number -> {:ok, number}
+    end
+  end
+
+  defp holder_payload(holder) do
+    %{
+      pane_id: holder.pane_id,
+      window_id: holder.window_id,
+      session: holder.session,
+      issue: holder.issue
+    }
   end
 
   @doc "List durable work handles for a workspace."

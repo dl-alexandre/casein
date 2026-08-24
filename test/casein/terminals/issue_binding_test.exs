@@ -68,7 +68,7 @@ defmodule Casein.Terminals.IssueBindingTest do
   describe "inverse lookup" do
     test "answers who is on an issue, across sessions" do
       {:ok, _} = IssueBinding.bind(@ws, @session, "%1", 678)
-      {:ok, _} = IssueBinding.bind(@ws, "casein_beta_u-dev", "%9", 678)
+      {:ok, _} = IssueBinding.bind(@ws, "casein_beta_u-dev", "%9", 678, allow_duplicate: true)
       {:ok, _} = IssueBinding.bind(@ws, @session, "%2", 680)
 
       # This is the check that distinguishes an abandoned queue/claimed label
@@ -80,6 +80,72 @@ defmodule Casein.Terminals.IssueBindingTest do
 
       assert IssueBinding.panes_for_issue(680) == [{@session, "%2"}]
       assert IssueBinding.panes_for_issue(999) == []
+    end
+  end
+
+  describe "duplicate-work guard" do
+    test "refuses a second live binder and names the holder" do
+      {:ok, _} = IssueBinding.bind(@ws, @session, "%1", 678, window_id: "@1")
+
+      assert {:error,
+              %{
+                error: :issue_already_bound,
+                pane_id: "%1",
+                window_id: "@1",
+                issue: 678
+              }} = IssueBinding.bind(@ws, @session, "%2", 678)
+
+      assert IssueBinding.get(@session, "%2") == nil
+      assert %{issue: 678} = IssueBinding.get(@session, "%1")
+    end
+
+    test "allow_duplicate records both holders" do
+      {:ok, _} = IssueBinding.bind(@ws, @session, "%1", 678, window_id: "@1")
+
+      assert {:ok, _} =
+               IssueBinding.bind(@ws, @session, "%2", 678, allow_duplicate: true, window_id: "@2")
+
+      assert IssueBinding.panes_for_issue(678) == [{@session, "%1"}, {@session, "%2"}]
+
+      assert [
+               %{pane_id: "%1", window_id: "@1", issue: 678},
+               %{pane_id: "%2", window_id: "@2", issue: 678}
+             ] = IssueBinding.holders(@ws, 678)
+    end
+
+    test "the current holder can rebind the same issue" do
+      {:ok, _} = IssueBinding.bind(@ws, @session, "%1", 678)
+      assert {:ok, entry} = IssueBinding.bind(@ws, @session, "%1", 678, url: "http://x/678")
+      assert entry.url == "http://x/678"
+    end
+
+    test "the same issue number in another workspace is not a conflict" do
+      {:ok, _} = IssueBinding.bind(@ws, @session, "%1", 678)
+
+      assert {:ok, _} = IssueBinding.bind("ws-other", "casein_other_u-dev", "%9", 678)
+      assert IssueBinding.holders(@ws, 678) |> Enum.map(& &1.pane_id) == ["%1"]
+      assert IssueBinding.holders("ws-other", 678) |> Enum.map(& &1.pane_id) == ["%9"]
+    end
+
+    test "after a dead pane is pruned, the issue can be rebound" do
+      {:ok, _} = IssueBinding.bind(@ws, @session, "%1", 678)
+      IssueBinding.prune_session(@session, [])
+      _ = IssueBinding.get(@session, "%1")
+
+      assert {:ok, _} = IssueBinding.bind(@ws, @session, "%2", 678)
+      assert %{issue: 678} = IssueBinding.get(@session, "%2")
+    end
+
+    test "a confirmed-dead holder does not block re-dispatch" do
+      {:ok, _} = IssueBinding.bind(@ws, @session, "%1", 678, window_id: "@1")
+
+      live? = fn _session, pane_id -> pane_id != "%1" end
+
+      assert {:ok, _} =
+               IssueBinding.bind(@ws, @session, "%2", 678, check_live: true, live?: live?)
+
+      assert IssueBinding.get(@session, "%1") == nil
+      assert %{issue: 678} = IssueBinding.get(@session, "%2")
     end
   end
 

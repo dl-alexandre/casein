@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.WorkerLaunch do
   use Jido.Action,
     name: "worker_launch",
     description:
-      "Launch a visible Casein worker window (M4-lite #384): spawns via spawn-agent-worker.sh into an isolated worktree, never a hidden subagent, and returns one structured receipt (pane_id, window_name, worktree_path, branch, handle_id). Requires workspace_id, session, runtime (grok|codex|claude|opencode|agent), and task_slug. Optional label, dry_run. No durable task graph / path contracts / verifiers.",
+      "Launch a visible Casein worker window (M4-lite #384): spawns via spawn-agent-worker.sh into an isolated worktree, never a hidden subagent, and returns one structured receipt (pane_id, window_name, worktree_path, branch, handle_id). Requires workspace_id, session, runtime (grok|codex|claude|opencode|agent), and task_slug. Optional label, dry_run, issue (same live-holder check as terminal_bind_issue), allow_duplicate. No durable task graph / path contracts / verifiers.",
     category: "terminal",
     tags: ["terminal", "orchestration"],
     vsn: "1.0.0",
@@ -15,6 +15,8 @@ defmodule Casein.Agents.TerminalTools.WorkerLaunch do
       task_slug: [type: :string, required: true],
       label: [type: :string],
       dry_run: [type: :boolean],
+      issue: [type: :string],
+      allow_duplicate: [type: :boolean],
       caller_pane: [type: :string]
     ]
 
@@ -48,7 +50,13 @@ defmodule Casein.Agents.TerminalTools.WorkerLaunch do
             type: "boolean",
             description:
               "When true, print the spawn plan only — no window is opened and no pane_id is returned."
-          }
+          },
+          issue: %{
+            type: "string",
+            description:
+              "Optional GitHub issue to bind on the new worker (678, \"#678\", or a full URL). Applies the same live-holder check as terminal_bind_issue before spawn."
+          },
+          allow_duplicate: Helpers.allow_duplicate_param()
         }),
         ["workspace_id", "session", "runtime", "task_slug"]
       )
