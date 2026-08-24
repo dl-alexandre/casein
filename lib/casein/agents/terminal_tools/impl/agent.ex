@@ -141,8 +141,9 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   marker — fleet orchestrators targeting a known worker pane.
 
   On `submit: true`, Enter is **not** folded into the paste. The paste lands
-  first; `PaneSubmit` then settles, presses Enter, and re-presses once if the
-  agent did not consume it. Folding Enter into `paste-buffer` is the OpenCode
+  first; `PaneSubmit` then settles, presses Enter once, and confirms via hook,
+  transcript, or screen. Unconfirmed submits return `submit_not_confirmed`
+  instead of retrying Enter. Folding Enter into `paste-buffer` is the OpenCode
   double-Enter race: the TUI is still draining the buffer when the keystroke
   arrives and treats it as a newline mid-composer rather than a submit.
   """
@@ -154,7 +155,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       submit? = truthy?(Map.get(params, "submit") || Map.get(params, :submit))
 
       # Always paste without Enter. Submit ownership stays in PaneSubmit so the
-      # settle + retry contract is identical for agent_pair and explicit panes.
+      # settle + confirm contract is identical for agent_pair and explicit panes.
       case tmux().paste_text(session, text, target: pane.id, submit: false) do
         :ok ->
           if submit? do
@@ -195,10 +196,11 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   end
 
   # tmux accepting an Enter is not the agent consuming it. `PaneSubmit` watches
-  # the pane afterwards and re-presses once if nothing happened, so the tool's
-  # `status: "sent"` stops meaning "we wrote bytes at a pty" and starts meaning
-  # "the agent took the input". Callers that genuinely only want the keystroke
-  # (a TUI menu, a y/n prompt) pass `confirm: false`.
+  # hook / transcript / screen afterwards and returns submit_not_confirmed when
+  # none of them fire, so the tool's `status: "sent"` stops meaning "we wrote
+  # bytes at a pty" and starts meaning "the agent took the input". Callers that
+  # genuinely only want the keystroke (a TUI menu, a y/n prompt) pass
+  # `confirm: false`.
   #
   # When paste deferred Enter (`enter_already_sent: false`) and the caller opts
   # out of confirmation, still press Enter once — otherwise `submit: true` +
@@ -208,6 +210,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
     payload = sent_payload(session, pane_id, "terminal_capture_agent", params)
 
     if confirm? do
+      written =
+        string_param(params, "command") || string_param(params, "text") ||
+          string_param(params, "keys")
+
       confirm_opts =
         opts
         |> Keyword.put(:confirm, true)
@@ -217,10 +223,14 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
         # only need a keystroke can still opt out with `confirm: false`.
         |> Keyword.put_new(:strict, true)
         |> Keyword.put_new(:paste_bytes, 0)
+        |> Keyword.put_new(:written, written)
 
       case PaneSubmit.confirm_submit(session, pane_id, confirm_opts) do
         {:ok, confirmation} ->
-          {:ok, Map.merge(payload, stringify_confirmation(confirmation))}
+          {:ok,
+           payload
+           |> Map.merge(stringify_confirmation(confirmation))
+           |> PaneWriteReceipt.promote_observed(confirmation.delivery)}
 
         {:error, error} ->
           {:error, Map.merge(payload, stringify_confirmation(error))}

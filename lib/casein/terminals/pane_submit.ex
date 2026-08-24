@@ -21,31 +21,35 @@ defmodule Casein.Terminals.PaneSubmit do
 
   ## What counts as confirmation
 
-  Two independent signals, in priority order:
+  Three independent signals, in priority order:
 
     * **`:hook`** — a fresh `AgentState` report of `:working` sourced from an
       installed runtime hook. Claude/Grok fire `UserPromptSubmit` the instant a
       prompt is accepted, so this is a direct statement from the runtime that it
       took the input. Authoritative when available.
 
+    * **`:transcript`** — the pane's reported CLI transcript grew after Enter.
+      This is the runtime's own session log, not a screen heuristic, and is
+      what hook-less-but-logged runtimes (and Claude/Grok when the hook is
+      late) can prove consumption with. Absence of a transcript is not a
+      failure; the next signal still runs.
+
     * **`:screen`** — the pane's captured tail changed. At delivery time the
       pane is quiescent by construction (we only inject on `idle`/`done`/
       `blocked`), so a static screen after Enter means the keypress did nothing.
-      Weaker than the hook signal, but runtime-agnostic.
+      Weaker than hook/transcript, but runtime-agnostic.
 
   When the capture comes back blank both times — no tmux capture available, a
-  stubbed adapter, a dead pane — neither signal can be evaluated and the result
-  is `:unavailable`. That is reported honestly rather than being rounded up to
-  success or down to failure.
+  stubbed adapter, a dead pane — and no hook/transcript signal landed, the
+  result is `:unavailable`. That is reported honestly rather than being rounded
+  up to success or down to failure.
 
-  Unconfirmed submits get **one** extra Enter (`max_enter_presses`, default 2)
-  before the call gives up: the recurring cause is a race, and a second press
-  after the buffer has drained resolves it. A second Enter on a TUI that already
-  submitted lands on an empty composer and is a no-op **when confirmation is
-  honest** — but a false-negative confirmation that retries Enter against a
-  TUI that *did* accept the first press can interrupt the new turn (OpenCode
-  "esc interrupt"). Retries therefore wait an extra settle (`retry_settle_ms`)
-  and confirmation also accepts busy-footer signals (see below).
+  Unconfirmed submits do **not** auto-retry Enter (`max_enter_presses`, default
+  1). A second Enter against a TUI that already accepted the first press can
+  submit a placeholder, a partial line, or interrupt the new turn (OpenCode
+  "esc interrupt"). The call returns `submit_not_confirmed` and the caller
+  decides whether to resend. Callers that still want the old one-retry race
+  can pass `max_enter_presses: 2` explicitly.
 
   ## OpenCode / hook-less TUIs (#886)
 
@@ -70,14 +74,14 @@ defmodule Casein.Terminals.PaneSubmit do
   `Casein.Terminals.NextPrompt`, whose whole contract is "this message reached
   the agent", and which can retry on the pane's next edge.
 
-  The pre-existing send tools default to `strict: false`: they still get the
-  retry and now report `submitted: false` with a warning, but an unconfirmed
-  result does not become a failed tool call. The confirmation signals are
-  heuristics over a screen we do not control, and turning every false negative
-  into a hard error would break working orchestration to fix a silent one.
-  Callers that need the guarantee ask for it.
+  The send/paste tools pass `strict: true`: an unconfirmed submit is a tool
+  error (`submit_not_confirmed`), not `status: "sent"`. Callers that only need
+  the keystroke pass `confirm: false`. The confirmation signals are still
+  heuristics, but a silent "sent" while text sits in a composer is worse than
+  a false negative the caller can retry.
   """
 
+  alias Casein.Agents.Transcripts
   alias Casein.Terminals.AgentPromptSender
   alias Casein.Terminals.AgentState
 
@@ -88,7 +92,7 @@ defmodule Casein.Terminals.PaneSubmit do
   @default_retry_settle_ms 400
   @default_poll_ms 100
   @default_attempt_timeout_ms 1_200
-  @default_max_enter_presses 2
+  @default_max_enter_presses 1
   @default_capture_lines 40
   # Large pastes need longer drain time before Enter means "submit".
   @settle_bytes_per_ms 8
@@ -101,7 +105,7 @@ defmodule Casein.Terminals.PaneSubmit do
     "esc to interrupt",
     "ctrl+c to stop"
   ]
-  @type confirmation :: :hook | :screen | :unavailable | :unconfirmed
+  @type confirmation :: :hook | :transcript | :screen | :unavailable | :unconfirmed
 
   @type delivery :: :delivered | :not_confirmed | :uncertain | :skipped
 
@@ -156,6 +160,7 @@ defmodule Casein.Terminals.PaneSubmit do
           opts
           |> Keyword.put_new(:strict, true)
           |> Keyword.put_new(:paste_bytes, byte_size(text))
+          |> Keyword.put_new(:written, text)
 
         case confirm_submit(session, pane, confirm_opts) do
           {:ok, confirmation} -> {:ok, Map.merge(result, confirmation)}
@@ -200,10 +205,12 @@ defmodule Casein.Terminals.PaneSubmit do
     settle(settle_ms(opts))
     baseline = capture.()
     since = DateTime.utc_now()
+    transcript_baseline = transcript_baseline(session, pane, opts)
 
     attempt(session, pane, %{
       capture: capture,
       baseline: baseline,
+      transcript_baseline: transcript_baseline,
       since: since,
       opts: opts,
       presses: if(already_sent?, do: 1, else: 0),
@@ -229,6 +236,15 @@ defmodule Casein.Terminals.PaneSubmit do
       :hook ->
         {:ok,
          %{submitted: true, delivery: :delivered, confirmation: :hook, enter_presses: ctx.presses}}
+
+      :transcript ->
+        {:ok,
+         %{
+           submitted: true,
+           delivery: :delivered,
+           confirmation: :transcript,
+           enter_presses: ctx.presses
+         }}
 
       :screen ->
         {:ok,
@@ -269,10 +285,10 @@ defmodule Casein.Terminals.PaneSubmit do
        enter_presses: ctx.presses,
        message:
          "Text was written to the pane but the agent never acknowledged the submit after " <>
-           "#{ctx.presses} Enter press(es): the pane's screen did not change and no runtime " <>
-           "hook reported a new turn. The text may be sitting unsent in the agent's input " <>
-           "box. Capture the pane (terminal_capture_agent) to check before resending, and " <>
-           "use terminal_set_next_prompt when the agent is mid-turn."
+           "#{ctx.presses} Enter press(es): no runtime hook, transcript advance, or screen " <>
+           "change was observed. Enter was not retried. The text may be sitting unsent in " <>
+           "the agent's input box. Capture the pane (terminal_capture_agent) to check " <>
+           "before resending, and use terminal_set_next_prompt when the agent is mid-turn."
      }}
   end
 
@@ -290,6 +306,9 @@ defmodule Casein.Terminals.PaneSubmit do
     cond do
       hook_confirmed?(session, pane, ctx.since) ->
         :hook
+
+      transcript_confirmed?(session, pane, ctx) ->
+        :transcript
 
       # Busy footer / spinner means the TUI accepted a turn even when the
       # pasted text is still visible in the transcript (OpenCode #886).
@@ -309,6 +328,64 @@ defmodule Casein.Terminals.PaneSubmit do
         do_poll(session, pane, ctx, deadline, poll_ms)
     end
   end
+
+  defp transcript_confirmed?(_session, _pane, ctx) do
+    case Keyword.get(ctx.opts, :transcript) do
+      fun when is_function(fun, 0) ->
+        case fun.() do
+          true -> true
+          :transcript -> true
+          _ -> false
+        end
+
+      _ ->
+        transcript_advanced?(ctx.transcript_baseline)
+    end
+  end
+
+  defp transcript_baseline(session, pane, opts) do
+    if is_function(Keyword.get(opts, :transcript), 0) do
+      nil
+    else
+      path = Keyword.get(opts, :transcript_path) || reported_transcript_path(session, pane)
+      transcript_stat(path)
+    end
+  end
+
+  defp reported_transcript_path(session, pane) do
+    case AgentState.get(session, pane) do
+      %{transcript_path: path} when is_binary(path) and path != "" -> path
+      _ -> nil
+    end
+  end
+
+  defp transcript_advanced?(%{path: path, size: size, mtime: mtime}) do
+    case transcript_stat(path) do
+      %{size: new_size, mtime: new_mtime} when new_size > size or new_mtime > mtime ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  defp transcript_advanced?(_baseline), do: false
+
+  # path is Transcripts.allowed_path?/1 gated before any stat.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp transcript_stat(path) when is_binary(path) and path != "" do
+    if Transcripts.allowed_path?(path) do
+      case File.stat(path, time: :posix) do
+        {:ok, %File.Stat{type: :regular, size: size, mtime: mtime}} ->
+          %{path: path, size: size, mtime: mtime}
+
+        _ ->
+          nil
+      end
+    end
+  end
+
+  defp transcript_stat(_path), do: nil
 
   # `UserPromptSubmit` is the runtime saying "I accepted a prompt". Only
   # hook-sourced reports count: the `:dispatch` report Casein writes for its own

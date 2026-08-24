@@ -55,15 +55,14 @@ default reads as "when the agent stops working" and covers `idle` **or** `done`.
 `tmux send-keys … Enter` returns success once tmux writes to the pty. Whether
 the TUI consumed the keypress is a separate question, and the answer is often
 no — a draining paste buffer swallows the Enter, or the TUI is in a mode where
-Enter means nothing. `PaneSubmit` watches for either a hook-sourced `working`
-report (the runtime saying it accepted a prompt) or a changed pane capture, and
-re-presses Enter once before giving up.
+Enter means nothing. `PaneSubmit` watches for a hook-sourced `working` report,
+a transcript advance, or a changed pane capture, and does **not** re-press
+Enter when none of them fire — that is `submit_not_confirmed`.
 
 The staged-prompt path treats an unconfirmed submit as a failure and retries on
-the pane's next qualifying edge. The pre-existing send tools report
-`delivery: "not_confirmed"` but do not fail: the signals are heuristics over a
-screen Casein does not control, and turning every false negative into a failed
-tool call would break working orchestration to fix a silent one.
+the pane's next qualifying edge. The send/paste tools are also strict: an
+unconfirmed submit is a tool error, not `status: "sent"`. Pass `confirm: false`
+when the keystroke itself is the point.
 
 ## Three channels, three jobs
 
