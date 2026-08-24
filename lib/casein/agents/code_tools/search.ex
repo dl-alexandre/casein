@@ -237,6 +237,25 @@ defmodule Casein.Agents.CodeTools.Search do
     end
   end
 
+  defp safe_regular_file?(worktree, abs) do
+    case validated_read_path(worktree, abs) do
+      {:ok, safe_abs} -> File.regular?(safe_abs)
+      :error -> false
+    end
+  end
+
+  defp validated_read_path(worktree, abs) do
+    rel = Path.relative_to(abs, worktree)
+
+    case PathSafety.resolve(worktree, rel) do
+      {:ok, safe_abs} ->
+        if safe_abs == Path.expand(abs), do: {:ok, safe_abs}, else: :error
+
+      {:error, _reason} ->
+        :error
+    end
+  end
+
   defp glob_match?(_rel, nil), do: true
 
   defp glob_match?(rel, glob) do
@@ -258,27 +277,7 @@ defmodule Casein.Agents.CodeTools.Search do
     _ -> false
   end
 
-  defp safe_regular_file?(worktree, abs) do
-    case validated_read_path(worktree, abs) do
-      {:ok, safe_abs} -> File.regular?(safe_abs)
-      :error -> false
-    end
-  end
-
-  defp validated_read_path(worktree, abs) do
-    rel = Path.relative_to(abs, worktree)
-
-    case PathSafety.resolve(worktree, rel) do
-      {:ok, safe_abs} ->
-        if safe_abs == Path.expand(abs), do: {:ok, safe_abs}, else: :error
-
-      {:error, _reason} ->
-        :error
-    end
-  end
-
-  # The candidate is revalidated through PathSafety's worktree and symlink
-  # guards immediately before this read.
+  # abs is a Path.wildcard result under a worktree-confined root.
   # sobelow_skip ["Traversal.FileModule"]
   defp file_matches(worktree, abs, query, remaining) when remaining > 0 do
     with {:ok, safe_abs} <- validated_read_path(worktree, abs),
