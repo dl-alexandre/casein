@@ -92,6 +92,8 @@ defmodule Casein.Agents.JidoActions.Result do
   defp kind_for(:invalid_argument, _reason), do: :invalid
   defp kind_for(:missing_argument, _reason), do: :invalid
   defp kind_for(:missing_workspace_id, _reason), do: :invalid
+  defp kind_for(:verification_failed, _reason), do: :invalid
+  defp kind_for(:execution_failed, _reason), do: :invalid
   defp kind_for(error, _reason) when error in @denied_errors, do: :denied
   defp kind_for(_error, %{result: kind}) when kind in @kinds, do: kind
   defp kind_for(_error, _reason), do: :denied
@@ -103,17 +105,19 @@ defmodule Casein.Agents.JidoActions.Result do
   end
 
   defp error(result_kind, error, payload, ctx) do
-    stamp(
-      %{
-        result: result_kind,
-        error: error,
-        retryable: result_kind in [:timeout, :provider_failure],
-        awaiting_human: result_kind == :blocked_on_human,
-        status: if(result_kind == :blocked_on_human, do: :awaiting_human)
-      },
-      payload,
-      ctx
-    )
+    base = %{
+      result: result_kind,
+      error: error,
+      retryable: result_kind in [:timeout, :provider_failure],
+      awaiting_human: result_kind == :blocked_on_human
+    }
+
+    base =
+      if result_kind == :blocked_on_human,
+        do: Map.put(base, :status, :awaiting_human),
+        else: base
+
+    stamp(base, payload, ctx)
   end
 
   defp stamp(base, payload, ctx) do

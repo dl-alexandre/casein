@@ -17,7 +17,16 @@ defmodule Casein.Agents.JidoActions.Runner do
       |> Enum.reject(fn {_k, v} -> is_nil(v) or v == "" end)
       |> Map.new()
 
-    code_invoke().(name, args, %{actor: Map.get(ctx, :principal)})
+    case code_invoke().(name, args, %{actor: Map.get(ctx, :principal)}) do
+      {:ok, %{status: "failed"} = payload} ->
+        {:error, Map.put(payload, :error, :verification_failed)}
+
+      {:ok, %{status: "error"} = payload} ->
+        {:error, Map.put(payload, :error, :execution_failed)}
+
+      other ->
+        other
+    end
   end
 
   @spec unsupported(String.t(), map()) :: {:error, map()}

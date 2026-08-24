@@ -210,6 +210,13 @@ defmodule Casein.Agents.JidoActionsTest do
     assert {:error, %{result: :provider_failure, error: :provider_unavailable, retryable: true}} =
              JidoActions.invoke("code_read", %{path: "README.md"}, ctx)
 
+    Application.put_env(:casein, :jido_actions_code_invoke, fn _name, _args, _ctx ->
+      {:ok, %{status: "failed", exit_code: 1, output: "verification failed"}}
+    end)
+
+    assert {:error, %{result: :invalid, error: :verification_failed, status: "failed"}} =
+             JidoActions.invoke("code_exec", %{command_id: "test"}, ctx)
+
     {:ok, done} = JidoPod.admit(%{workspace_id: @workspace_id, runtime: :jido, actions: []})
     assert {:ok, %{state: :completed}} = JidoPod.await(@workspace_id, done.attempt_id)
 
