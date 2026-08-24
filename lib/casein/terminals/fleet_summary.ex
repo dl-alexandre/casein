@@ -39,6 +39,8 @@ defmodule Casein.Terminals.FleetSummary do
           uri: String.t(),
           workspace_id: String.t() | nil,
           generated_at: String.t(),
+          incomplete: boolean(),
+          incomplete_reason: String.t() | nil,
           session_count: non_neg_integer(),
           pane_count: non_neg_integer(),
           sessions: [map()],
@@ -76,23 +78,35 @@ defmodule Casein.Terminals.FleetSummary do
     * `:process_liveness_opts` — forwarded to `PaneProcessLiveness.observe_session/2`
     * `:progress_opts` — forwarded to `AgentProgress.observe/1` (plus per-pane keys)
     * `:git` — set `false` to skip branch/ahead inspection
+    * `:budget_ms` — stop after this many ms and return `incomplete: true`
+    * `:progress` — set `false` to skip `AgentProgress.observe/1`
   """
   @spec build(keyword()) :: payload()
   def build(opts \\ []) do
     workspace_id = Keyword.get(opts, :workspace_id)
     now = Keyword.get(opts, :now) || DateTime.utc_now()
+    deadline = build_deadline(opts)
 
-    sessions =
+    {sessions, incomplete, reason} =
       opts
       |> session_metas()
-      |> Enum.map(&summarize_session(&1, opts))
+      |> Enum.reduce_while({[], false, nil}, fn meta, {acc, _inc, _reason} ->
+        if past_deadline?(deadline) do
+          {:halt, {acc, true, "refresh_budget_exceeded"}}
+        else
+          {:cont, {[summarize_session(meta, opts) | acc], false, nil}}
+        end
+      end)
 
+    sessions = Enum.reverse(sessions)
     panes = Enum.flat_map(sessions, & &1.panes)
 
     %{
       uri: @resource_uri,
       workspace_id: workspace_id,
       generated_at: DateTime.to_iso8601(now),
+      incomplete: incomplete,
+      incomplete_reason: reason,
       session_count: length(sessions),
       pane_count: length(panes),
       sessions: sessions,
@@ -100,8 +114,25 @@ defmodule Casein.Terminals.FleetSummary do
         "Read-only fleet summary (#859/#879). liveness=process/CPU presence " <>
           "(necessary-not-sufficient). progress=composite " <>
           "(context/spend/worktree/screen/CPU) with distinct " <>
-          "running_but_not_progressing. branch/ahead via Git.Inspector. No mutations."
+          "running_but_not_progressing. branch/ahead via Git.Inspector. " <>
+          "incomplete=true is a partial scan, not an empty fleet. No mutations."
     }
+  end
+
+  defp build_deadline(opts) do
+    case Keyword.get(opts, :budget_ms) do
+      ms when is_integer(ms) and ms >= 0 ->
+        System.monotonic_time(:millisecond) + ms
+
+      _ ->
+        nil
+    end
+  end
+
+  defp past_deadline?(nil), do: false
+
+  defp past_deadline?(deadline) do
+    System.monotonic_time(:millisecond) >= deadline
   end
 
   # `:sessions` lets unit tests inject metas without Workspaces/Manager I/O.
@@ -308,12 +339,16 @@ defmodule Casein.Terminals.FleetSummary do
 
   defp observe_progress(session, pane_id, worktree, proc, opts)
        when is_binary(session) and is_binary(pane_id) do
-    progress_opts(opts)
-    |> Keyword.put(:session, session)
-    |> Keyword.put(:pane_id, pane_id)
-    |> Keyword.put(:worktree_path, worktree)
-    |> Keyword.put(:process, proc)
-    |> AgentProgress.observe()
+    if Keyword.get(opts, :progress, true) == false do
+      %{state: :unknown, reason: :skipped, axes: %{}}
+    else
+      progress_opts(opts)
+      |> Keyword.put(:session, session)
+      |> Keyword.put(:pane_id, pane_id)
+      |> Keyword.put(:worktree_path, worktree)
+      |> Keyword.put(:process, proc)
+      |> AgentProgress.observe()
+    end
   rescue
     _ -> %{state: :unknown, reason: :observe_failed, axes: %{}}
   end

@@ -65,6 +65,8 @@ defmodule Casein.Terminals.OrchestrationListWorkersTest do
       assert payload.workspace_id == "ws-1"
       assert payload.session == "casein_ws-1_main"
       assert payload.generated_at == DateTime.to_iso8601(@now)
+      assert payload.incomplete == false
+      assert payload.needs_you_observe_state == "ok"
       assert payload.total == 2
       assert payload.filtered_total == 2
       assert payload.filters.needs_you_only == false

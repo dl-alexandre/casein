@@ -21,6 +21,8 @@ defmodule Casein.Terminals.OrchestrationStatus do
           workspace_id: String.t(),
           session: String.t(),
           generated_at: String.t(),
+          incomplete: boolean(),
+          incomplete_reason: String.t() | nil,
           total: non_neg_integer(),
           attention_count: non_neg_integer(),
           counts: map(),
@@ -39,18 +41,23 @@ defmodule Casein.Terminals.OrchestrationStatus do
     * `:workspace_id` / `:session` — required identity on the payload
     * `:now` — `DateTime` for `generated_at` (default utc_now)
     * `:gate_identity` — optional PR/run/branch/pid for `gate_queue.my_position`
+    * `:incomplete` / `:incomplete_reason` — snapshot miss or partial refresh
   """
   @spec project(FleetBoard.board(), keyword()) :: payload()
   def project(board, opts \\ []) when is_map(board) do
     workspace_id = Keyword.fetch!(opts, :workspace_id)
     session = Keyword.fetch!(opts, :session)
     now = Keyword.get(opts, :now) || DateTime.utc_now()
+    incomplete? = Keyword.get(opts, :incomplete) == true
+    incomplete_reason = Keyword.get(opts, :incomplete_reason)
     rows = Enum.map(Map.get(board, :rows) || [], &row_json/1)
 
     %{
       workspace_id: workspace_id,
       session: session,
       generated_at: DateTime.to_iso8601(now),
+      incomplete: incomplete?,
+      incomplete_reason: incomplete_reason,
       total: Map.get(board, :total, 0),
       attention_count: Map.get(board, :attention_count, 0),
       counts: counts_json(Map.get(board, :counts) || %{}),

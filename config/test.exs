@@ -109,6 +109,11 @@ config :casein, :tmux_host_anchor, false
 # boot in the suite from scanning the shared fake tmux server on a timer.
 config :casein, :control_plane_reconcile_ms, nil
 
+config :casein, :fleet_snapshot,
+  interval_ms: 3_600_000,
+  budget_ms: 4_000,
+  refresh_on_start: false
+
 # Keep test scrollback spill out of the real ~/.casein/tmux-scrollback.
 # ScrollbackArchive defaults to $HOME/.casein/tmux-scrollback, which is the
 # archive the *production* server reseeds from after a crash (see

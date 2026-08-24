@@ -22,6 +22,7 @@ defmodule CaseinWeb.API.TerminalMCP do
 
   alias Casein.Agents.{MCPAudit, MCPError, MCPTasks, TerminalTools}
   alias Casein.MCP.Scope
+  alias Casein.Terminals.FleetSnapshot
   alias Casein.Terminals.FleetSummary
   alias CaseinWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
   alias McpCtl.Tool
@@ -89,9 +90,7 @@ defmodule CaseinWeb.API.TerminalMCP do
   @impl true
   def read_resource(@fleet_summary_uri, opts) do
     workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
-
-    payload =
-      FleetSummary.build(workspace_id: workspace_id)
+    payload = FleetSnapshot.fleet_summary(workspace_id)
 
     {:ok,
      [
