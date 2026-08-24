@@ -94,7 +94,7 @@ defmodule Casein.Workspaces.IdentityTest.HangingSource do
 
   @impl true
   def get(_id, _auth \\ nil) do
-    Process.sleep(30_000)
+    Process.sleep(:infinity)
     {:error, :timeout}
   end
 
