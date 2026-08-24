@@ -295,20 +295,22 @@ staged before that marker existed are reached by name through
 A skill directory with neither the marker nor a retired name was not staged by
 Casein and is never touched.
 
-Cross-repository worker spawning must use Casein's host helper, not a launcher
-path under the product checkout:
+Cross-repository worker spawning must use the `worker_launch` MCP tool, not a
+launcher path under the product checkout and not `$CASEIN_SCRIPTS` (that env
+points at the product repo, which does not carry `spawn-agent-worker.sh`). Do
+not `find` the helper — a stale Casein checkout is worse than a clean failure.
 
-```bash
-bash /data/workspaces/dalexandre/casein/scripts/spawn-agent-worker.sh \
-  grok <task-slug> <casein-session>
+```text
+worker_launch { workspace_id, session, runtime, task_slug, label?, dry_run? }
+→ pane_id, window_name, worktree_path, branch, handle_id
 ```
 
-The helper resolves the product's primary checkout, sources its materialized
-workspace environment inside the fresh tmux window, pins the requested session,
-and invokes Casein's own `launch-casein-agent.sh`. This preserves workspace MCP
+`worker_launch` resolves the installed Casein helper, sources the workspace
+environment inside the fresh tmux window, pins the requested session, and
+invokes Casein's own `launch-casein-agent.sh`. This preserves workspace MCP
 pairing and stale-socket repair while forcing the worker into an isolated
 product worktree; product repositories do not need to vendor Casein launch
-scripts.
+scripts. See the `delegate-to-worker` skill.
 
 OpenCode MCP is injected as project `.opencode/opencode.json` from the workspace
 staging tree whenever the launch is paired (`CASEIN_WORKSPACE_ID` +
