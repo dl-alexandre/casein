@@ -11,6 +11,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
   alias Casein.Terminals.PaneProcessLiveness
+  alias Casein.Terminals.PaneState
   alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.PaneWriteReceipt
   alias Casein.Terminals.TmuxTopology
@@ -294,6 +295,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
          {:ok, recipient} <- string_arg(params, "to"),
          {:ok, body} <- string_arg(params, "body"),
          {:ok, address} <- resolve_address(recipient, session),
+         {:ok, address} <- confirm_live_recipient(address),
          {:ok, event, status} <-
            Inbox.send(%{
              workspace_id: workspace_id,
@@ -327,67 +329,39 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   """
   @spec inbox(map()) :: {:ok, map()} | {:error, term()}
   def inbox(params) do
-    with {:ok, workspace_id} <- workspace_id_arg(params),
-         {:ok, session} <- session_or_default_arg(params),
-         {:ok, address} <- inbox_address(params, session) do
+    with {:ok, workspace_id} <- workspace_id_arg(params) do
+      if truthy?(Map.get(params, "orphaned") || Map.get(params, :orphaned)) do
+        orphaned_inbox(workspace_id, params)
+      else
+        read_inbox(workspace_id, params)
+      end
+    end
+  end
+
+  defp read_inbox(workspace_id, params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, address, addresses} <- inbox_addresses(params, session, workspace_id) do
       limit = integer_param(params, "limit", 50)
 
       include_collected? =
         truthy?(Map.get(params, "include_collected") || Map.get(params, :include_collected))
 
       collect? = truthy?(Map.get(params, "collect") || Map.get(params, :collect))
-      before = Inbox.summary(workspace_id, address)
-
-      messages =
-        Inbox.list(workspace_id, address,
-          limit: limit,
-          include_collected: include_collected?
-        )
+      before = Inbox.summary(workspace_id, addresses)
+      list_opts = [limit: limit, include_collected: include_collected?]
+      messages = Inbox.list(workspace_id, addresses, list_opts)
 
       collect_results =
-        if collect? do
-          Enum.map(messages, fn message ->
-            # Prefer stable message_id so double-collect is idempotent across
-            # retries that only retained the send-side id (#911 / #872 pattern).
-            ref = message.message_id || message.id
+        if collect?, do: collect_inbox(workspace_id, messages, session, params), else: []
 
-            case Inbox.collect(workspace_id, ref, %{
-                   to: address,
-                   tmux_session_id: session,
-                   pane_id: caller_pane(params)
-                 }) do
-              {:ok, _receipt, outcome} ->
-                %{message_id: message.message_id, message_event_id: message.id, outcome: outcome}
-
-              {:error, reason} ->
-                %{
-                  message_id: message.message_id,
-                  message_event_id: message.id,
-                  outcome: :error,
-                  error: reason
-                }
-            end
-          end)
-        else
-          []
-        end
-
-      # After collect, re-list so wire status reflects cleared unread — never
-      # report collected:true while messages still show unread?/queued.
       messages_after =
-        if collect? do
-          Inbox.list(workspace_id, address,
-            limit: limit,
-            include_collected: include_collected?
-          )
-        else
-          messages
-        end
+        if collect?, do: Inbox.list(workspace_id, addresses, list_opts), else: messages
 
-      after_summary = Inbox.summary(workspace_id, address)
+      after_summary = Inbox.summary(workspace_id, addresses)
 
       payload = %{
         address: address,
+        addresses: addresses,
         session: session,
         collected: collect?,
         messages: Enum.map(messages_after, &inbox_message/1),
@@ -410,6 +384,41 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
     end
   end
 
+  defp collect_inbox(workspace_id, messages, session, params) do
+    Enum.map(messages, fn message ->
+      ref = message.message_id || message.id
+
+      case Inbox.collect(workspace_id, ref, %{
+             to: message.to,
+             tmux_session_id: session,
+             pane_id: caller_pane(params)
+           }) do
+        {:ok, _receipt, outcome} ->
+          %{message_id: message.message_id, message_event_id: message.id, outcome: outcome}
+
+        {:error, reason} ->
+          %{
+            message_id: message.message_id,
+            message_event_id: message.id,
+            outcome: :error,
+            error: reason
+          }
+      end
+    end)
+  end
+
+  defp orphaned_inbox(workspace_id, params) do
+    live_panes = live_pane_ids(params)
+    mailboxes = Inbox.orphaned(workspace_id, live_panes)
+
+    {:ok,
+     %{
+       orphaned: true,
+       mailboxes: mailboxes,
+       count: length(mailboxes)
+     }}
+  end
+
   defp inbox_message(message) do
     status = Map.get(message, :status) || :queued
     unread? = Map.get(message, :unread?)
@@ -430,20 +439,54 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   end
 
   # An explicit address wins; otherwise an agent reading "my mail" means the
-  # pane it is running in.
-  defp inbox_address(params, session) do
+  # pane it is running in plus any work handle attached there, so a respawn
+  # that reattaches the handle still sees queued role mail.
+  defp inbox_addresses(params, session, workspace_id) do
     cond do
       is_binary(string_param(params, "address")) ->
-        resolve_address(string_param(params, "address"), session)
+        with {:ok, address} <- resolve_inbox_address(string_param(params, "address"), session) do
+          {:ok, address, [address]}
+        end
 
       is_binary(string_param(params, "pane")) ->
-        {:ok, Address.for_pane(string_param(params, "pane"))}
+        {primary, addresses} =
+          role_inbox_addresses(workspace_id, string_param(params, "pane"))
+
+        {:ok, primary, addresses}
 
       is_binary(caller_pane(params)) ->
-        {:ok, Address.for_pane(caller_pane(params))}
+        {primary, addresses} = role_inbox_addresses(workspace_id, caller_pane(params))
+        {:ok, primary, addresses}
 
       true ->
         {:error, :no_inbox_address}
+    end
+  end
+
+  defp role_inbox_addresses(workspace_id, pane) do
+    handle_addrs =
+      workspace_id
+      |> WorkHandles.list_for_pane(pane)
+      |> Enum.map(&Address.for_handle(&1.handle_id))
+
+    pane_addr = Address.for_pane(pane)
+    {List.first(handle_addrs) || pane_addr, handle_addrs ++ [pane_addr]}
+  end
+
+  # Inbox may still read an orphaned canonical address. Say may not write one.
+  defp resolve_inbox_address(value, session) do
+    case resolve_address(value, session) do
+      {:ok, address} ->
+        {:ok, address}
+
+      {:error, :unknown_recipient} ->
+        case Address.validate(String.trim(value)) do
+          {:ok, address} -> {:ok, address}
+          {:error, _} -> {:error, :unknown_recipient}
+        end
+
+      other ->
+        other
     end
   end
 
@@ -475,6 +518,44 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp confirm_live_recipient(address) do
+    case Address.handle_id(address) do
+      nil ->
+        {:ok, address}
+
+      handle_id ->
+        case WorkHandles.get(handle_id) do
+          {:ok, _handle} ->
+            {:ok, address}
+
+          {:error, :unknown_handle} ->
+            {:error,
+             %{
+               error: :unknown_recipient,
+               recipient: address,
+               note: "No work handle with that id. Create one with terminal_work_handle_create."
+             }}
+        end
+    end
+  end
+
+  defp live_pane_ids(params) do
+    params
+    |> sessions_for()
+    |> Enum.flat_map(&session_pane_ids/1)
+    |> Enum.uniq()
+  end
+
+  defp session_pane_ids(%{session: session}) do
+    topology = TmuxTopology.snapshot(session, tmux: tmux())
+    panes = Map.get(topology, :panes) || Map.get(topology, "panes") || []
+
+    for pane <- panes,
+        id = PaneState.map_get(pane, :id),
+        is_binary(id) and id != "",
+        do: id
   end
 
   defp integer_param(params, key, default) do

@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.Say do
   use Jido.Action,
     name: "terminal_say",
     description:
-      "Leave a message for another agent at an address instead of typing into its pane. Prefer this over terminal_send_agent_command for agent-to-agent messages: keystrokes race whatever the recipient's TUI is drawing, land silently in the wrong pane, and cannot tell you whether the message was ever read. The recipient collects with terminal_inbox when it is ready. `to` accepts a canonical address (pane:%3, worktree:/abs/path), an exact pane id, or a window name — a name matching more than one agent window is refused with its candidates rather than delivered to a guess. Pass a stable message_id so a retry coalesces instead of sending twice.",
+      "Leave a message for another agent at an address instead of typing into its pane. Prefer this over terminal_send_agent_command for agent-to-agent messages: keystrokes race whatever the recipient's TUI is drawing, land silently in the wrong pane, and cannot tell you whether the message was ever read. The recipient collects with terminal_inbox when it is ready. `to` accepts a canonical address (handle:<id> for a durable role that survives pane respawn, pane:%3, worktree:/abs/path), an exact pane id, or a window name — a name matching more than one agent window is refused with its candidates rather than delivered to a guess. A pane: address whose pane does not exist is refused. Pass a stable message_id so a retry coalesces instead of sending twice.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",
@@ -34,8 +34,9 @@ defmodule Casein.Agents.TerminalTools.Say do
           minLength: 1,
           maxLength: 512,
           description:
-            "Recipient: a canonical address (pane:%3 or worktree:/abs/path), an exact pane " <>
-              "id, or a window name. Ambiguous names are refused, not resolved."
+            "Recipient: a canonical address (handle:<id>, pane:%3, or worktree:/abs/path), " <>
+              "an exact pane id, or a window name. Prefer handle: for long-lived roles. " <>
+              "Ambiguous names and dead pane: addresses are refused, not delivered."
         },
         body: %{
           type: "string",

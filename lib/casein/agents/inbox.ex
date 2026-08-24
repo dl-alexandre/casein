@@ -150,13 +150,16 @@ defmodule Casein.Agents.Inbox do
 
   Options: `:limit` (default #{@default_limit}), `:include_collected`.
   """
-  @spec list(String.t(), String.t(), keyword()) :: [message()]
+  @spec list(String.t(), String.t() | [String.t()], keyword()) :: [message()]
   def list(workspace_id, address, opts \\ [])
-      when is_binary(workspace_id) and is_binary(address) do
+
+  def list(workspace_id, addresses, opts)
+      when is_binary(workspace_id) and is_list(addresses) do
     limit = Keyword.get(opts, :limit, @default_limit)
     include_collected? = Keyword.get(opts, :include_collected, false) == true
+    wanted = MapSet.new(Enum.filter(addresses, &is_binary/1))
 
-    {messages, collected_at} = mailbox_events(workspace_id, address)
+    {messages, collected_at} = mailbox_events(workspace_id, wanted)
 
     messages
     |> reject_collected_ids(collected_at, include_collected?)
@@ -165,30 +168,81 @@ defmodule Casein.Agents.Inbox do
     |> Enum.map(&to_message(&1, collected_at))
   end
 
+  def list(workspace_id, address, opts)
+      when is_binary(workspace_id) and is_binary(address) do
+    list(workspace_id, [address], opts)
+  end
+
   @doc """
   Mailbox summary for one address: pending/unread counts never invent "read".
 
   `pending` / `unread` count **queued** messages only. `collected` counts
   receipts. Sending does not decrement pending — only `collect/3` does.
   """
-  @spec summary(String.t(), String.t()) :: %{
-          address: String.t(),
-          pending: non_neg_integer(),
-          unread: non_neg_integer(),
-          collected: non_neg_integer()
-        }
-  def summary(workspace_id, address)
-      when is_binary(workspace_id) and is_binary(address) do
-    {messages, collected_at} = mailbox_events(workspace_id, address)
+  @spec summary(String.t(), String.t() | [String.t()]) :: map()
+  def summary(workspace_id, addresses)
+      when is_binary(workspace_id) and is_list(addresses) do
+    wanted = MapSet.new(Enum.filter(addresses, &is_binary/1))
+    {messages, collected_at} = mailbox_events(workspace_id, wanted)
     pending = Enum.count(messages, fn ev -> not Map.has_key?(collected_at, ev.id) end)
 
     %{
-      address: address,
+      address: List.first(addresses),
+      addresses: addresses,
       pending: pending,
-      # unread tracks pending — collection clears both; send never clears either.
       unread: pending,
-      collected: map_size(collected_at)
+      collected: collected_count(messages, collected_at)
     }
+  end
+
+  def summary(workspace_id, address)
+      when is_binary(workspace_id) and is_binary(address) do
+    summary(workspace_id, [address])
+    |> Map.put(:address, address)
+    |> Map.delete(:addresses)
+  end
+
+  @doc """
+  Mailboxes whose `pane:` address is not among `live_pane_ids`.
+
+  A queue nothing is listening to is a reportable condition. Handle and
+  worktree addresses are not pane-bound and are omitted.
+  """
+  @spec orphaned(String.t(), [String.t()]) :: [map()]
+  def orphaned(workspace_id, live_pane_ids)
+      when is_binary(workspace_id) and is_list(live_pane_ids) do
+    live = MapSet.new(live_pane_ids)
+
+    workspace_id
+    |> mailboxes()
+    |> Enum.filter(fn mailbox ->
+      case Address.pane_id(mailbox.address) do
+        nil -> false
+        pane_id -> not MapSet.member?(live, pane_id)
+      end
+    end)
+    |> Enum.map(&Map.put(&1, :orphaned, true))
+  end
+
+  @doc "One summary row per address that has ever received mail in this workspace."
+  @spec mailboxes(String.t()) :: [map()]
+  def mailboxes(workspace_id) when is_binary(workspace_id) do
+    {messages, collected_at} = mailbox_events(workspace_id, :all)
+
+    messages
+    |> Enum.group_by(&payload_field(&1, "to"))
+    |> Enum.reject(fn {address, _} -> not is_binary(address) end)
+    |> Enum.map(fn {address, events} ->
+      pending = Enum.count(events, fn ev -> not Map.has_key?(collected_at, ev.id) end)
+
+      %{
+        address: address,
+        pending: pending,
+        unread: pending,
+        collected: collected_count(events, collected_at)
+      }
+    end)
+    |> Enum.sort_by(& &1.address)
   end
 
   @doc """
@@ -259,7 +313,7 @@ defmodule Casein.Agents.Inbox do
 
   ## Internals
 
-  defp mailbox_events(workspace_id, address) do
+  defp mailbox_events(workspace_id, filter) do
     events = AgentEvents.list_by_event_types(workspace_id, [@message_type, @collected_type])
 
     collected_at =
@@ -270,11 +324,22 @@ defmodule Casein.Agents.Inbox do
       end)
 
     messages =
-      events
-      |> Enum.filter(&(&1.event_type == @message_type))
-      |> Enum.filter(&(payload_field(&1, "to") == address))
+      Enum.filter(events, fn ev ->
+        ev.event_type == @message_type and message_in_filter?(ev, filter)
+      end)
 
     {messages, collected_at}
+  end
+
+  defp message_in_filter?(_event, :all), do: true
+
+  defp message_in_filter?(event, %MapSet{} = wanted) do
+    MapSet.member?(wanted, payload_field(event, "to"))
+  end
+
+  defp collected_count(messages, collected_at) do
+    messages
+    |> Enum.count(&Map.has_key?(collected_at, &1.id))
   end
 
   defp reject_collected_ids(events, _collected_at, true), do: events

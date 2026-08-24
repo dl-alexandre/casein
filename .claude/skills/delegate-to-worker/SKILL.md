@@ -212,7 +212,9 @@ where it is durable, size-checked, and *visibly uncollected* until the worker
 actually reads it.
 
 `terminal_say` refuses an ambiguous recipient rather than delivering to a guess,
-so pass `pane:<id>` when two windows share a name.
+so pass `pane:<id>` when two windows share a name. For a long-lived role
+(coordinator / factory manager) address `handle:<id>` from
+`terminal_work_handle_create` — a pane: mailbox is orphaned on respawn.
 
 ### Follow-ups to a running worker
 
