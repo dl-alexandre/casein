@@ -1,9 +1,9 @@
 defmodule Casein.Agents.TerminalTools.Impl.Session do
   @moduledoc false
 
-  alias Casein.Agents.AuthProfile
   alias Casein.Agents.GrokCapabilityPolicy
   alias Casein.Agents.TerminalOutputFormat
+  alias Casein.Identity
   alias Casein.Labels
   alias Casein.Operator.SituationServer
   alias Casein.Terminals.AgentState
@@ -23,6 +23,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.WorktreeDiff
   alias Casein.Terminals.WorktreeStatus
   alias Casein.Terminals.HostCapacity
+  alias Casein.Workspaces
 
   import Casein.Agents.TerminalTools.Impl.Shared
 
@@ -171,16 +172,22 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
     )
   end
 
-  # Transcripts live under the *workspace owner's* auth profile. Resolving it
-  # here rather than sweeping `profiles/` is what keeps one owner's sessions
-  # invisible to another's agents on a shared box.
+  # Transcripts live under a *person's* auth profile. Resolving one here rather
+  # than sweeping `profiles/` is what keeps one person's sessions invisible to
+  # another's agents on a shared box.
+  #
+  # The workspace has to be looked up first. This used to hand the raw
+  # workspace **id** to the profile resolver, which parsed it as a name and
+  # reduced the UUID to its first hex group — so every call resolved a profile
+  # dir like `profiles/e7c18b93/claude` that cannot exist, and transcript
+  # enrichment silently returned nothing. `Casein.Identity` refuses UUIDs
+  # outright now, but the fix is to resolve the workspace and take its owner.
   defp claude_home(params) do
-    case workspace_id(params) do
-      workspace when is_binary(workspace) and workspace != "" ->
-        AuthProfile.active_profile_dir(workspace, :claude)
-
-      _ ->
-        nil
+    with id when is_binary(id) and id != "" <- workspace_id(params),
+         {:ok, workspace} <- Workspaces.get(id) do
+      Identity.config_dir([workspace: workspace, env: false], :claude)
+    else
+      _ -> nil
     end
   end
 

@@ -195,6 +195,31 @@ check_bad_redirects() {
 
   check_provider_home CLAUDE_CONFIG_DIR claude
   check_provider_home CODEX_HOME codex
+  # gh is a provider home for the same reason the others are: without it, a
+  # pane's GitHub identity is whatever the host-global config happens to hold.
+  check_provider_home GH_CONFIG_DIR gh
+  check_agent_identity
+}
+
+# Report the principal this pane acts as, and whether anything disagrees.
+check_agent_identity() {
+  local workspace="${CASEIN_WORKSPACE_NAME:-}"
+  local resolved=""
+
+  resolved="$(agent_auth_principal "$workspace" 2>/dev/null || true)"
+
+  if [[ -z "$resolved" ]]; then
+    warn "no principal resolves for this pane — every runtime uses its host global login"
+    return
+  fi
+
+  if [[ -z "${CASEIN_ACTOR:-}" ]]; then
+    warn "CASEIN_ACTOR unset — identity fell back to the workspace owner (${resolved}); relaunch from Casein to bind the viewer"
+  elif [[ "${CASEIN_ACTOR}" != "$resolved" ]]; then
+    fail "CASEIN_ACTOR=${CASEIN_ACTOR} but this pane resolves ${resolved} — shell and server disagree about who this agent is"
+  else
+    pass "acting as ${resolved}"
+  fi
 }
 
 check_provider_home() {
@@ -736,6 +761,17 @@ check_auth_files() {
 
   local claude_auth="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/.credentials.json"
   [[ -f "$claude_auth" ]] && pass "claude credentials present" || warn "claude credentials missing (${claude_auth})"
+
+  local gh_auth="${GH_CONFIG_DIR:-${HOME}/.config/gh}/hosts.yml"
+  if [[ ! -f "$gh_auth" ]]; then
+    warn "gh hosts.yml missing (${gh_auth}) — run casein agent auth signin gh"
+  elif [[ -z "${GH_CONFIG_DIR:-}" ]]; then
+    # The host-global config can hold several accounts and acts as whichever
+    # `user:` was set last, so "logged in" there says nothing about *who*.
+    warn "gh uses the host global config (${gh_auth}) — this pane acts as whichever account that config last selected"
+  else
+    pass "gh credentials present (${gh_auth})"
+  fi
 }
 
 check_codex_capabilities() {
