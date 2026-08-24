@@ -55,7 +55,7 @@ defmodule Casein.Agents.LocalAdapterTest do
     # The Casein-hosted MCP capabilities are always detected; everything else
     # is filesystem/manager driven and missing on a bare workspace.
     assert caps
-            |> Enum.reject(&(&1.kind in [:artifact_mcp, :code_mcp, :preview_mcp, :terminal_mcp]))
+           |> Enum.reject(&(&1.kind in [:artifact_mcp, :code_mcp, :preview_mcp, :terminal_mcp]))
            |> Enum.all?(&(&1.status == :missing))
   end
 
