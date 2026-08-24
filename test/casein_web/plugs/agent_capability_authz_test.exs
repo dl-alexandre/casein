@@ -143,7 +143,12 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthzTest do
 
   describe "surface confinement" do
     test "allows terminal, preview, artifact, and code MCP paths" do
-      for path <- ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp", "/api/code/mcp"] do
+      for path <- [
+            "/api/terminals/mcp",
+            "/api/preview/mcp",
+            "/api/artifacts/mcp",
+            "/api/code/mcp"
+          ] do
         query =
           if path in ["/api/artifacts/mcp", "/api/code/mcp"] do
             %{"workspace_id" => @workspace_id}

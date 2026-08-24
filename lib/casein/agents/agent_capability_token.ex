@@ -16,7 +16,7 @@ defmodule Casein.Agents.AgentCapabilityToken do
   @pane_id ~r/\A%[0-9]+\z/
   @digest ~r/\A[0-9a-f]{64}\z/
   @tool_name ~r/\A[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}\z/
-  @surfaces ~w(terminal preview artifact)
+  @surfaces ~w(terminal preview artifact code)
   @workspace_modes ~w(manual review agent_write_locked shared_stage_guarded)
   @max_tools_per_surface 128
   @max_total_tools 256
@@ -92,7 +92,7 @@ defmodule Casein.Agents.AgentCapabilityToken do
       add_error(
         changeset,
         :allowed_tools,
-        "must grant exact tool names on terminal, preview, or artifact surfaces within size limits"
+        "must grant exact tool names on terminal, preview, artifact, or code surfaces within size limits"
       )
     end
   end

@@ -20,7 +20,6 @@ defmodule Casein.Agents.JidoBudgetsTest do
     Application.put_env(:casein, :jido_headless, true)
     Application.put_env(:casein, :jido_headless_workspaces, %{})
     Application.put_env(:casein, :jido_code_actions, fn _name, args, _ctx -> {:ok, args} end)
-    Application.delete_env(:casein, :jido_budget_sampler)
     Metrics.reset()
     Fleet.reset()
     JidoBudgets.reset()
@@ -172,7 +171,13 @@ defmodule Casein.Agents.JidoBudgetsTest do
     ws = "ws-lease-#{id()}"
     JidoBudgets.acquire_lease(ws, "stale-attempt")
     put_limits(default_attempt_deadline_ms: 1, max_leaked_leases: 0)
-    Process.sleep(5)
+
+    assert Eventually.await(
+             fn -> JidoBudgets.snapshot().ledger.leaked_leases >= 1 end,
+             timeout_ms: 1_000,
+             interval_ms: 1,
+             message: "lease did not become stale"
+           )
 
     assert {:error, :lease_leak} = JidoPod.admit(%{workspace_id: ws, actions: []})
     assert JidoBudgets.snapshot().ledger.leaked_leases >= 1

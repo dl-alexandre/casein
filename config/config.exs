@@ -33,6 +33,10 @@ config :casein, CaseinWeb.Plugs.McpTicketRateLimit,
   scale_ms: 60_000,
   limit: 30
 
+# Casein resolves the existing OpenCode Zen credential at call time. Do not let
+# ReqLLM discover or retain a second provider credential from project dotenvs.
+config :req_llm, load_dotenv: false
+
 config :casein,
   # Phase-1 mobile compose-first surface for role-tagged agent panes. Shell
   # panes retain the existing grid/key-bar interaction path.
@@ -41,6 +45,8 @@ config :casein,
   jido_headless_workspaces: %{},
   jido_default_model: "opencode/grok-4.6",
   jido_default_provider: "opencode",
+  jido_provider_adapter: Casein.Agents.JidoProvider.OpenCodeZen,
+  jido_auth_resolver: Casein.Agents.JidoProvider.OpenCodeAuth,
   jido_pod: [
     max_running_per_workspace: 2,
     max_queued_per_workspace: 4,
