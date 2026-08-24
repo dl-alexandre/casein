@@ -13,7 +13,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
   reporting tools remain. There is no time-boxed write unlock.
   """
 
-  alias Casein.Agents.{ArtifactTools, PreviewTools, TerminalTools}
+  alias Casein.Agents.{ArtifactTools, CodeTools, PreviewTools, TerminalTools}
   alias Casein.Policy
   alias Casein.Policy.Decision
   alias Casein.Workspaces
@@ -162,7 +162,8 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
     for {surface, tools} <- [
           {"terminal", TerminalTools.definitions()},
           {"preview", PreviewTools.definitions()},
-          {"artifact", ArtifactTools.definitions()}
+          {"artifact", ArtifactTools.definitions()},
+          {"code", CodeTools.definitions()}
         ],
         tool <- tools do
       {surface, tool}

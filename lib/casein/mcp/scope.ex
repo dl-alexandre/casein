@@ -111,7 +111,7 @@ defmodule Casein.MCP.Scope do
   @spec terminal_caller_pane_tool_names() :: [String.t()]
   def terminal_caller_pane_tool_names, do: @terminal_caller_pane_tools
 
-  @type surface :: :preview | :terminal | :artifact
+  @type surface :: :preview | :terminal | :artifact | :code
 
   @type resolved_from :: %{
           workspace: :args | :pre_scoped | :path | :registry | nil,

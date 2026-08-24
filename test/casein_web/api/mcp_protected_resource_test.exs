@@ -9,7 +9,7 @@ defmodule CaseinWeb.API.MCPProtectedResourceTest do
 
   use CaseinWeb.ConnCase, async: false
 
-  @paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"]
+  @paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp", "/api/code/mcp"]
   @issuer "https://idp.example.com"
 
   setup do

@@ -175,18 +175,21 @@ slices; creating the worktree alone does not start an agent or alter the web UI.
 
 **An agent calling a tool (request lifecycle):**
 
-1. Agent POSTs JSON-RPC to `/api/terminals/mcp`, `/api/preview/mcp`, or
-   `/api/artifacts/mcp` (bearer auth). The thin `*MCPController` hands the
-   decoded message to `CaseinWeb.API.TerminalMCP.handle/2` /
-   `PreviewMCP.handle/2` / `ArtifactMCP.handle/2`.
+1. Agent POSTs JSON-RPC to `/api/terminals/mcp`, `/api/preview/mcp`,
+   `/api/artifacts/mcp`, or `/api/code/mcp` (bearer auth). The thin
+   `*MCPController` hands the decoded message to
+   `CaseinWeb.API.TerminalMCP.handle/2` / `PreviewMCP.handle/2` /
+   `ArtifactMCP.handle/2` / `CodeMCP.handle/2`.
 2. The web handler resolves/scopes `workspace_id` (pre-scoped from the URL query
    param when present), then dispatches `tools/call` to
-   `TerminalTools.invoke/2`, `PreviewTools.invoke/3`, or `ArtifactTools.invoke/2`.
+   `TerminalTools.invoke/2`, `PreviewTools.invoke/3`, `ArtifactTools.invoke/2`,
+   or `CodeTools.invoke/3`.
 3. The tool handler validates scope (terminal: `casein_` prefix +
-   `workspace_matches?`; preview: `ensure_pane_workspace_scope`), performs the
-   tmux/preview operation, and returns `{:ok, map}` or `{:error, reason}`.
+   `workspace_matches?`; preview: `ensure_pane_workspace_scope`; code:
+   assigned `worktree_path` + PathSafety), performs the
+   tmux/preview/worktree operation, and returns `{:ok, map}` or `{:error, reason}`.
 4. Result is recorded via `MCPAudit.record_terminal/3` /
-   `record_preview/4` / `record_artifact/4` (→ metadata-only `mcp.completed`
+   `record_preview/4` / `record_artifact/4` / `record_code/5` (→ metadata-only `mcp.completed`
    `AgentEvent` + `Activity` feed; `Audit.emit!` for successful mutating tools;
    label proposals), and errors are shaped by `MCPError` into MCP
    `structuredContent`.

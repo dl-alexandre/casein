@@ -189,6 +189,16 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
     assert "artifact_create" in artifact_mcp["details"]["tools"]
     assert "artifact_update" in artifact_mcp["details"]["tools"]
 
+    code_mcp =
+      Enum.find(body["agent_capabilities"], &(&1["kind"] == "code_mcp"))
+
+    assert code_mcp["status"] == "detected"
+    assert code_mcp["url"] == "http://127.0.0.1:4000/api/code/mcp?workspace_id=ws-1"
+    assert code_mcp["details"]["workspace_id"] == "ws-1"
+    assert code_mcp["details"]["pre_scoped"] == true
+    assert "code_read" in code_mcp["details"]["tools"]
+    assert "code_apply_patch" in code_mcp["details"]["tools"]
+
     terminal_mcp =
       Enum.find(body["agent_capabilities"], &(&1["kind"] == "terminal_mcp"))
 
