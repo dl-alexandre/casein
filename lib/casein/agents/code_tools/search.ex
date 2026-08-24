@@ -247,6 +247,8 @@ defmodule Casein.Agents.CodeTools.Search do
     _ -> false
   end
 
+  # abs is a Path.wildcard result under a worktree-confined root.
+  # sobelow_skip ["Traversal.FileModule"]
   defp file_matches(worktree, abs, query, remaining) when remaining > 0 do
     case File.read(abs) do
       {:ok, content} when byte_size(content) <= 256 * 1024 ->
