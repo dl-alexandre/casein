@@ -37,6 +37,16 @@ config :casein,
   # Phase-1 mobile compose-first surface for role-tagged agent panes. Shell
   # panes retain the existing grid/key-bar interaction path.
   mobile_agent_composer: false,
+  jido_headless: false,
+  jido_headless_workspaces: %{},
+  jido_pod: [
+    max_running_per_workspace: 2,
+    max_queued_per_workspace: 4,
+    max_running_fleet: 8,
+    default_attempt_deadline_ms: 60_000,
+    default_action_timeout_ms: 5_000,
+    max_retries: 1
+  ],
   # Event-driven tmux topology (Slices 1/2). Default OFF — polling path
   # unchanged. Dev flips ON in config/dev.exs (Slice 3); canary/prod via
   # CASEIN_TMUX_EVENTS after soak on flap/refresh telemetry (see

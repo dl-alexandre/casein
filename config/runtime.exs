@@ -119,6 +119,16 @@ config :casein,
        :mobile_agent_composer,
        truthy_env?.("CASEIN_MOBILE_AGENT_COMPOSER")
 
+config :casein, :jido_headless, truthy_env?.("CASEIN_JIDO_HEADLESS")
+
+if workspaces = System.get_env("CASEIN_JIDO_HEADLESS_WORKSPACES") do
+  config :casein,
+         :jido_headless_workspaces,
+         workspaces
+         |> String.split(",", trim: true)
+         |> Map.new(&{String.trim(&1), true})
+end
+
 # When on, Casein.Ops.PgProbe polls the box's Postgres servers (host 5432 +
 # release 15432 by default) for connection saturation and leak-shaped
 # application_names (wf_*, casein-<uuid>), emitting ops.pg_saturation_*
