@@ -14,7 +14,7 @@ defmodule Casein.Agents.McpTickets do
   alias Casein.Repo
 
   @ticket_bytes 32
-  @surfaces ~w(terminal preview artifact)
+  @surfaces ~w(terminal preview artifact code)
 
   @type result :: %{
           ticket: String.t(),

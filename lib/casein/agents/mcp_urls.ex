@@ -1,6 +1,6 @@
 defmodule Casein.Agents.MCPUrls do
   @moduledoc """
-  Builds Casein terminal/preview/artifact MCP endpoint URLs from app config or env,
+  Builds Casein terminal/preview/artifact/code MCP endpoint URLs from app config or env,
   optionally pre-scoping a `workspace_id` query param onto them.
   """
 
@@ -44,14 +44,21 @@ defmodule Casein.Agents.MCPUrls do
       |> endpoint_url("/api/artifacts/mcp")
       |> with_query_param("workspace_id", workspace_id)
 
+  def code_url(workspace_id \\ nil),
+    do:
+      base_url()
+      |> endpoint_url("/api/code/mcp")
+      |> with_query_param("workspace_id", workspace_id)
+
   @doc "Build an MCP URL carrying a short-lived ticket for its bound surface."
   def ticket_url(surface, workspace_id, tmux_session, ticket)
-      when surface in ~w(terminal preview artifact) and is_binary(ticket) do
+      when surface in ~w(terminal preview artifact code) and is_binary(ticket) do
     url =
       case surface do
         "terminal" -> terminal_url(workspace_id, tmux_session: tmux_session)
         "preview" -> preview_url(workspace_id, tmux_session: tmux_session)
         "artifact" -> artifact_url(workspace_id)
+        "code" -> code_url(workspace_id)
       end
 
     with_query_param(url, "ticket", ticket)

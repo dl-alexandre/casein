@@ -1,7 +1,7 @@
 defmodule CaseinWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :casein
 
-  @mcp_paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"]
+  @mcp_paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp", "/api/code/mcp"]
   @mcp_error_version "mcp-streamable-http-v1"
   @default_mcp_max_body_bytes 1_000_000
 

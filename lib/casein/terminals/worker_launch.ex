@@ -37,7 +37,10 @@ defmodule Casein.Terminals.WorkerLaunch do
   * **Do not widen Backend/Fake adapter surface from this lane** — #896/#901 own that.
   """
 
+  alias Casein.Labels
+  alias Casein.Terminals.AgentState
   alias Casein.Terminals.Backend
+  alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.WorkHandles
 
   @runtimes ~w(grok codex claude opencode agent)
@@ -59,6 +62,8 @@ defmodule Casein.Terminals.WorkerLaunch do
           optional(:branch) => String.t(),
           optional(:handle_id) => String.t(),
           optional(:label) => String.t(),
+          optional(:label_status) => String.t() | map(),
+          optional(:prompt_delivery) => map(),
           optional(:note) => String.t()
         }
 
@@ -74,6 +79,9 @@ defmodule Casein.Terminals.WorkerLaunch do
     * `:runner` — `(runtime, slug, session, opts -> {:ok, map()} | {:error, term()})` for tests
     * `:observe` — `(session, pane_id -> map())` pane facts after spawn (tests)
     * `:attach_handle` — when true (default), mint/attach a `WorkHandles` id
+    * `:initial_prompt` — optional first brief, submitted with confirmation
+    * `:deliver_prompt` — injectable prompt delivery function for tests
+    * `:set_label` — injectable pane-label function for tests
     * `:scripts_root` / `:spawn_script` — override script location
   """
   @spec launch(keyword()) :: {:ok, receipt() | map()} | {:error, map()}
@@ -130,13 +138,17 @@ defmodule Casein.Terminals.WorkerLaunch do
               visible?: true,
               hidden_subagent?: false,
               note:
-                "M4-lite worker_launch receipt. Worker is a Casein tmux window (worker-<slug>). " <>
-                  "No hidden subagent. Durable task graph / path contracts / verifiers remain out of scope."
+                "Visible worker_launch receipt. Worker is a Casein tmux window (worker-<slug>), " <>
+                  "with an inspectable work handle and explicit initial-prompt delivery receipt. " <>
+                  "No hidden subagent. Task graphs / path contracts / verifiers remain out of scope."
             }
-            |> maybe_attach_handle(workspace_id, session, pane_id, label, opts)
             |> reject_nils()
 
-          {:ok, receipt}
+          with {:ok, receipt} <-
+                 maybe_attach_handle(receipt, workspace_id, session, pane_id, label, opts) do
+            receipt = put_label_status(receipt, workspace_id, session, pane_id, label, opts)
+            maybe_deliver_initial_prompt(receipt, opts)
+          end
 
         {:ok, other} ->
           {:error,
@@ -351,21 +363,40 @@ defmodule Casein.Terminals.WorkerLaunch do
 
   defp maybe_attach_handle(receipt, workspace_id, session, pane_id, label, opts) do
     if Keyword.get(opts, :attach_handle, true) do
-      case safe_handle_create(workspace_id, session, pane_id, label) do
-        {:ok, handle_id} -> Map.put(receipt, :handle_id, handle_id)
-        _ -> receipt
+      case safe_handle_create(workspace_id, session, pane_id, label, receipt, opts) do
+        {:ok, handle_id} ->
+          {:ok, Map.put(receipt, :handle_id, handle_id)}
+
+        {:error, reason} ->
+          {:error,
+           %{
+             error: :work_handle_attach_failed,
+             reason: reason,
+             worker: receipt,
+             message:
+               "Worker opened, but its durable association could not be recorded. " <>
+                 "Inspect the returned worker receipt before retrying."
+           }}
       end
     else
-      receipt
+      {:ok, receipt}
     end
   end
 
-  defp safe_handle_create(workspace_id, session, pane_id, label) do
+  defp safe_handle_create(workspace_id, session, pane_id, label, receipt, opts) do
+    initial_prompt = initial_prompt(opts)
+
     case WorkHandles.create(workspace_id,
            session: session,
            pane_id: pane_id,
            label: label,
-           recorded_status: "working",
+           runtime: receipt.runtime,
+           task_slug: receipt.task_slug,
+           worktree_path: Map.get(receipt, :worktree_path),
+           branch: Map.get(receipt, :branch),
+           window_id: Map.get(receipt, :window_id),
+           window_name: Map.get(receipt, :window_name),
+           recorded_status: if(initial_prompt, do: "working", else: "awaiting_input"),
            message: "launched via worker_launch"
          ) do
       {:ok, %{handle_id: id}} -> {:ok, id}
@@ -374,6 +405,133 @@ defmodule Casein.Terminals.WorkerLaunch do
   catch
     :exit, _ -> {:error, :work_handles_unavailable}
   end
+
+  defp put_label_status(receipt, workspace_id, session, pane_id, label, opts) do
+    set_label = Keyword.get(opts, :set_label, &default_set_label/5)
+
+    status =
+      case set_label.(workspace_id, session, pane_id, label,
+             freeze: true,
+             tool: "worker_launch"
+           ) do
+        :ok -> "set"
+        {:error, reason} -> %{status: "failed", reason: inspect(reason)}
+        other -> %{status: "failed", reason: inspect(other)}
+      end
+
+    Map.put(receipt, :label_status, status)
+  catch
+    :exit, reason ->
+      Map.put(receipt, :label_status, %{status: "unavailable", reason: inspect(reason)})
+  end
+
+  defp default_set_label(workspace_id, session, pane_id, label, opts) do
+    Labels.set_agent_label(workspace_id, session, pane_id, label, opts)
+  end
+
+  defp maybe_deliver_initial_prompt(receipt, opts) do
+    case initial_prompt(opts) do
+      nil ->
+        {:ok,
+         Map.put(receipt, :prompt_delivery, %{
+           status: "not_requested",
+           submitted: false
+         })}
+
+      prompt ->
+        deliver = Keyword.get(opts, :deliver_prompt, &PaneSubmit.deliver/4)
+
+        delivery_opts = [
+          workspace_id: receipt.workspace_id,
+          name_session: false,
+          name_window: false,
+          name_pane: false,
+          confirm: true,
+          strict: true
+        ]
+
+        case deliver.(receipt.session, receipt.pane_id, prompt, delivery_opts) do
+          {:ok, result} -> finish_prompt_delivery(receipt, result)
+          {:error, error} -> prompt_delivery_error(receipt, error)
+          other -> prompt_delivery_error(receipt, %{reason: inspect(other)})
+        end
+    end
+  end
+
+  defp finish_prompt_delivery(receipt, result) when is_map(result) do
+    summary = prompt_delivery_summary(result)
+
+    if summary.status == "delivered" and summary.submitted == true do
+      {:ok, Map.put(receipt, :prompt_delivery, summary)}
+    else
+      prompt_delivery_error(receipt, summary)
+    end
+  end
+
+  defp prompt_delivery_error(receipt, error) do
+    summary = prompt_delivery_summary(error)
+    _ = mark_prompt_failure(receipt)
+
+    {:error,
+     %{
+       error: :initial_prompt_delivery_failed,
+       worker: Map.put(receipt, :prompt_delivery, summary),
+       prompt_delivery: summary,
+       message:
+         "Worker opened and remains inspectable, but the initial prompt was not confirmed. " <>
+           "Capture the returned pane before retrying so the brief is not duplicated."
+     }}
+  end
+
+  defp prompt_delivery_summary(result) when is_map(result) do
+    delivery = atom_string(Map.get(result, :delivery) || Map.get(result, "delivery"))
+    submitted = Map.get(result, :submitted) || Map.get(result, "submitted") || false
+
+    %{
+      status: if(delivery == "delivered" and submitted == true, do: "delivered", else: "failed"),
+      delivery: delivery || "unknown",
+      submitted: submitted,
+      confirmation:
+        atom_string(Map.get(result, :confirmation) || Map.get(result, "confirmation")),
+      enter_presses: Map.get(result, :enter_presses) || Map.get(result, "enter_presses"),
+      error: atom_string(Map.get(result, :error) || Map.get(result, "error")),
+      message: Map.get(result, :message) || Map.get(result, "message")
+    }
+    |> reject_nils()
+  end
+
+  defp prompt_delivery_summary(other),
+    do: %{status: "failed", delivery: "unknown", submitted: false, reason: inspect(other)}
+
+  defp mark_prompt_failure(%{handle_id: handle_id} = receipt) when is_binary(handle_id) do
+    _ = WorkHandles.record_status(handle_id, "blocked", "initial prompt delivery failed")
+
+    AgentState.report(
+      receipt.workspace_id,
+      receipt.session,
+      receipt.pane_id,
+      :blocked,
+      "initial prompt delivery failed",
+      source: :dispatch,
+      tool: "worker_launch"
+    )
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp mark_prompt_failure(_receipt), do: :ok
+
+  defp initial_prompt(opts) do
+    case Keyword.get(opts, :initial_prompt) do
+      prompt when is_binary(prompt) -> if(String.trim(prompt) == "", do: nil, else: prompt)
+      _ -> nil
+    end
+  end
+
+  defp atom_string(nil), do: nil
+  defp atom_string(value) when is_atom(value), do: Atom.to_string(value)
+  defp atom_string(value) when is_binary(value), do: value
+  defp atom_string(value), do: inspect(value)
 
   ## Paths / env
 
@@ -549,6 +707,7 @@ defmodule Casein.Terminals.WorkerLaunch do
         error: :spawn_headroom_exhausted,
         reason: reason,
         override: "CASEIN_SPAWN_FORCE=1",
+        token: "refused:headroom",
         message: message
       })
     else
@@ -558,9 +717,17 @@ defmodule Casein.Terminals.WorkerLaunch do
 
   defp classify_headroom_refusal(err), do: err
 
+  # #996: prefer the stdout token. "headroom exhausted" used to appear on both
+  # the refuse path and CASEIN_SPAWN_FORCE proceed; a FORCE success is exit 0
+  # and emits proceed:headroom-force, so never treat that as a refusal.
   defp headroom_refusal?(output) when is_binary(output) do
-    String.contains?(output, "headroom exhausted") or
-      (String.contains?(output, "spawn refused") and String.contains?(output, "probe:"))
+    cond do
+      String.contains?(output, "proceed:headroom-force") -> false
+      String.contains?(output, "refused:headroom") -> true
+      String.contains?(output, "headroom exhausted") -> true
+      String.contains?(output, "spawn refused") and String.contains?(output, "probe:") -> true
+      true -> false
+    end
   end
 
   defp headroom_refusal?(_), do: false

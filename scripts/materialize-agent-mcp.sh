@@ -182,11 +182,16 @@ enabled = true
   printf -v TIDEWAVE_ENV_EXPORT 'export CASEIN_TIDEWAVE_MCP_URL=%q' "${CASEIN_TIDEWAVE_MCP_URL}"
 fi
 
+# gh is exported alongside the providers: an agent whose Claude home is
+# per-person but whose `gh` falls through to the host-global config pushes and
+# comments as whoever logged in there last.
 AUTH_PROFILE_EXPORTS=""
 if [[ -f "${ROOT}/scripts/lib/agent-auth-profile.sh" ]]; then
   AUTH_PROFILE_EXPORTS="$(
-    bash "${ROOT}/scripts/lib/agent-auth-profile.sh" "${CASEIN_WORKSPACE_NAME}" claude
-    bash "${ROOT}/scripts/lib/agent-auth-profile.sh" "${CASEIN_WORKSPACE_NAME}" codex
+    for _auth_runtime in claude codex gh; do
+      bash "${ROOT}/scripts/lib/agent-auth-profile.sh" \
+        "${CASEIN_WORKSPACE_NAME}" "${_auth_runtime}"
+    done
   )"
 fi
 

@@ -50,6 +50,7 @@ defmodule CaseinWeb.API.TerminalMCP do
   def instructions(opts) do
     MCPWorkspaceScope.scoped_instructions(
       "tmux control tools for Casein sessions. Pass workspace_id when the endpoint is not pre-scoped. " <>
+        terminal_session_scope_instruction(opts) <>
         "Start with terminal_context when unsure; it returns recommended next_tool " <>
         "and next_arguments. Otherwise call terminal_list_sessions to discover a " <>
         "session name, then terminal_topology to inspect windows/panes. Apply the agent_pair " <>
@@ -74,6 +75,17 @@ defmodule CaseinWeb.API.TerminalMCP do
         "unknown/stale is never healthy.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )
+  end
+
+  defp terminal_session_scope_instruction(opts) do
+    case Keyword.get(opts, :default_tmux_session) do
+      session when is_binary(session) and session != "" ->
+        "This endpoint is pinned to tmux session #{session}; omit session in tool calls so " <>
+          "the exact target is injected. "
+
+      _ ->
+        ""
+    end
   end
 
   @impl true
@@ -201,6 +213,7 @@ defmodule CaseinWeb.API.TerminalMCP do
         case Scope.resolve_tool_call(name, args,
                surface: :terminal,
                default_workspace_id: default_workspace_id,
+               default_tmux_session: Keyword.get(opts, :default_tmux_session),
                default_caller_pane: Keyword.get(opts, :default_caller_pane)
              ) do
           {:ok, scope} ->

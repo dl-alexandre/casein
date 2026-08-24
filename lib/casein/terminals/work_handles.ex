@@ -42,6 +42,12 @@ defmodule Casein.Terminals.WorkHandles do
           session: String.t() | nil,
           pane_id: String.t() | nil,
           label: String.t() | nil,
+          runtime: String.t() | nil,
+          task_slug: String.t() | nil,
+          worktree_path: String.t() | nil,
+          branch: String.t() | nil,
+          window_id: String.t() | nil,
+          window_name: String.t() | nil,
           recorded_status: String.t() | nil,
           message: String.t() | nil,
           created_at: DateTime.t(),
@@ -113,6 +119,47 @@ defmodule Casein.Terminals.WorkHandles do
     |> Enum.sort_by(& &1.handle_id)
   end
 
+  @doc "Join inspectable work-handle identity onto an enriched tmux topology."
+  @spec enrich_topology(map(), String.t() | nil, String.t()) :: map()
+  def enrich_topology(%{panes: panes} = topology, workspace_id, session)
+      when is_list(panes) and is_binary(workspace_id) and is_binary(session) do
+    handles =
+      workspace_id
+      |> list()
+      |> Enum.filter(&(&1.session == session))
+
+    by_pane = Enum.group_by(handles, & &1.pane_id)
+
+    topology
+    |> Map.put(:work_handles, handles)
+    |> Map.put(:work_handles_observe_state, "ok")
+    |> Map.put(
+      :panes,
+      Enum.map(panes, fn pane ->
+        pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+        pane_handles = Map.get(by_pane, pane_id, [])
+
+        case Enum.max_by(pane_handles, & &1.updated_at, fn -> nil end) do
+          nil ->
+            pane
+
+          handle ->
+            pane
+            |> Map.put(:work_handle, handle)
+            |> Map.put(:work_handles, pane_handles)
+            |> maybe_put_handle_label(handle)
+        end
+      end)
+    )
+  catch
+    :exit, _ ->
+      topology
+      |> Map.put(:work_handles, [])
+      |> Map.put(:work_handles_observe_state, "unavailable")
+  end
+
+  def enrich_topology(topology, _workspace_id, _session), do: topology
+
   @doc """
   Record status on the handle itself.
 
@@ -167,6 +214,12 @@ defmodule Casein.Terminals.WorkHandles do
       session: session,
       pane_id: pane_id,
       label: blank_to_nil(Keyword.get(opts, :label)),
+      runtime: blank_to_nil(Keyword.get(opts, :runtime)),
+      task_slug: blank_to_nil(Keyword.get(opts, :task_slug)),
+      worktree_path: blank_to_nil(Keyword.get(opts, :worktree_path)),
+      branch: blank_to_nil(Keyword.get(opts, :branch)),
+      window_id: blank_to_nil(Keyword.get(opts, :window_id)),
+      window_name: blank_to_nil(Keyword.get(opts, :window_name)),
       recorded_status:
         normalize_status(Keyword.get(opts, :recorded_status) || Keyword.get(opts, :status)),
       message: truncate_message(Keyword.get(opts, :message)),
@@ -300,6 +353,12 @@ defmodule Casein.Terminals.WorkHandles do
       handle_id: handle.handle_id,
       workspace_id: handle.workspace_id,
       label: handle.label,
+      runtime: handle.runtime,
+      task_slug: handle.task_slug,
+      worktree_path: handle.worktree_path,
+      branch: handle.branch,
+      window_id: handle.window_id,
+      window_name: handle.window_name,
       session: handle.session,
       pane_id: handle.pane_id,
       pane: pane,
@@ -378,6 +437,16 @@ defmodule Casein.Terminals.WorkHandles do
 
   defp iso_or_nil(nil), do: nil
   defp iso_or_nil(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+
+  defp maybe_put_handle_label(pane, %{label: label}) when is_binary(label) and label != "" do
+    if Map.get(pane, :label) || Map.get(pane, "label") do
+      pane
+    else
+      Map.put(pane, :label, label)
+    end
+  end
+
+  defp maybe_put_handle_label(pane, _handle), do: pane
 
   defp broadcast(workspace_id, handle) when is_binary(workspace_id) do
     PubSub.broadcast(

@@ -50,9 +50,14 @@ Environment: same as launch-casein-agent.sh (resolve via .devbox-agent.env or tm
   CASEIN_SPAWN_KEEP_FAILED_WINDOW   1 keeps a failed window (renamed failed-*) instead of closing it
   CASEIN_SPAWN_DRY_RUN              1 prints the resolved launch plan without opening a window
   CASEIN_SPAWN_SKIP_WRITE_PREFLIGHT 1 skips the Grok locked-MCP-grant advisory
-  CASEIN_SPAWN_FORCE                1 spawn despite exhausted headroom (loud warn; operator risk)
+  CASEIN_SPAWN_FORCE                1 spawn despite headroom below threshold (loud warn; operator risk)
   CASEIN_SPAWN_MAX_LOAD_RATIO       refuse when load1 > nproc × ratio (default 1.0)
   CASEIN_SPAWN_MIN_MEM_AVAILABLE_KB refuse when MemAvailable below this KiB (default 2097152 = 2 GiB)
+
+Stdout tokens (branch on these, not prose):
+  spawned <pane_id>          success (also prints a bare pane id for older callers)
+  refused:headroom           exit 75 — gate closed
+  proceed:headroom-force     CASEIN_SPAWN_FORCE overrode a closed gate, then continues
 EOF
 }
 

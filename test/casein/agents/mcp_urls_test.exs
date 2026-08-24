@@ -47,6 +47,9 @@ defmodule Casein.Agents.MCPUrlsTest do
 
     assert MCPUrls.artifact_url("ws-1") ==
              "https://casein.devbox.milcgroup.com/api/artifacts/mcp?workspace_id=ws-1"
+
+    assert MCPUrls.code_url("ws-1") ==
+             "https://casein.devbox.milcgroup.com/api/code/mcp?workspace_id=ws-1"
   end
 
   test "managed runtime pins generated service URLs above a stale workspace preview origin" do
@@ -87,6 +90,9 @@ defmodule Casein.Agents.MCPUrlsTest do
 
     assert MCPUrls.ticket_url("artifact", "ws-1", nil, "mcptkt_raw") ==
              "http://127.0.0.1:4000/api/artifacts/mcp?ticket=mcptkt_raw&workspace_id=ws-1"
+
+    assert MCPUrls.ticket_url("code", "ws-1", nil, "mcptkt_raw") ==
+             "http://127.0.0.1:4000/api/code/mcp?ticket=mcptkt_raw&workspace_id=ws-1"
   end
 
   defp restore_app(key, nil), do: Application.delete_env(:casein, key)

@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-> The complete catalog of MCP (Model Context Protocol) tools an external coding agent can call against Casein: terminal control, preview control, artifact projects, workspace annotations, and the resolved-but-external Tidewave bridge.
+> The complete catalog of MCP (Model Context Protocol) tools an external coding agent can call against Casein: terminal control, preview control, artifact projects, worktree-scoped code tools, workspace annotations, and the resolved-but-external Tidewave bridge.
 
 This is a flat reference catalog. For narrative flow, scoping rules, and smoke
 tests see [`../terminal_mcp.md`](../terminal_mcp.md) and
@@ -25,12 +25,15 @@ the same bearer-token gate (`CaseinWeb.Plugs.ApiAuth`).
 | `CaseinWeb.API.TerminalMCP` | `lib/casein_web/api/terminal_mcp.ex` | Pure JSON-RPC handler for the terminal surface; `initialize`/`tools/list`/`tools/call`/`ping` dispatch |
 | `CaseinWeb.API.PreviewMCP` | `lib/casein_web/api/preview_mcp.ex` | Pure JSON-RPC handler for the preview surface; resolves/validates workspace per call |
 | `CaseinWeb.API.ArtifactMCP` | `lib/casein_web/api/artifact_mcp.ex` | Pure JSON-RPC handler for the artifact-project surface; returns Preview MCP handoff args |
+| `CaseinWeb.API.CodeMCP` | `lib/casein_web/api/code_mcp.ex` | Pure JSON-RPC handler for worktree-scoped code read/search/patch/exec |
 | `CaseinWeb.API.TerminalMCPController` | `lib/casein_web/controllers/api/terminal_mcp_controller.ex` | HTTP transport for terminal MCP; maps handler outcomes to status codes |
 | `CaseinWeb.API.PreviewMCPController` | `lib/casein_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for preview MCP |
 | `CaseinWeb.API.ArtifactMCPController` | `lib/casein_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for artifact MCP |
+| `CaseinWeb.API.CodeMCPController` | `lib/casein_web/controllers/api/code_mcp_controller.ex` | HTTP transport for code MCP |
 | `Casein.Agents.TerminalTools` | `lib/casein/agents/terminal_tools.ex` | Tool definitions + `invoke/2` for all `terminal_*` tools |
 | `Casein.Agents.PreviewTools` | `lib/casein/agents/preview_tools.ex` | Tool definitions + `invoke/3` for all `preview_*` / `casein_reload_page` tools |
 | `Casein.Agents.ArtifactTools` | `lib/casein/agents/artifact_tools.ex` | Tool definitions + `invoke/2` for all `artifact_*` tools |
+| `Casein.Agents.CodeTools` | `lib/casein/agents/code_tools.ex` | Tool definitions + `invoke/3` for `code_read` / `code_search` / `code_apply_patch` / `code_exec` |
 | `Casein.Agents.AnnotationTools` | `lib/casein/agents/annotation_tools.ex` | `annotation_*` tools (folded into the terminal surface) |
 | `CaseinWeb.API.MCPWorkspaceScope` | `lib/casein_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection / mismatch enforcement / schema-`required` rewriting |
 | `Casein.Agents.MCPAudit` | `lib/casein/agents/mcp_audit.ex` | Records activity feed + `Audit.emit!` for mutating tools |
@@ -56,6 +59,9 @@ the same bearer-token gate (`CaseinWeb.Plugs.ApiAuth`).
 | Artifact MCP | `POST /api/artifacts/mcp` | bearer | `ArtifactMCP` → `ArtifactTools` |
 | Artifact MCP stream | `GET /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
 | Artifact MCP session end | `DELETE /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
+| Code MCP | `POST /api/code/mcp` | bearer | `CodeMCP` → `CodeTools` |
+| Code MCP stream | `GET /api/code/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
+| Code MCP session end | `DELETE /api/code/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
 | Preview pane register | `POST /api/preview/panes`, `DELETE /api/preview/panes/:id` | bearer | `PreviewPaneController` — used by the `casein-preview` CLI, not an MCP tool |
 | Tidewave (dev only) | external `…/tidewave/mcp` | per-server | NOT served by Casein; URL resolved by `TidewaveMCP` |
 
@@ -170,6 +176,18 @@ Destination paths are normalized by `ArtifactProjects` and cannot escape the
 artifact worktree or target `.git`. Publish all HTML dependencies through
 `artifact_create`/`artifact_update`; direct worktree copies are intentionally
 absent from the durable generated-file allowlist.
+
+## Tool catalog — Code MCP (`POST /api/code/mcp`)
+
+Implemented in `Casein.Agents.CodeTools`. Narrative, limits, and errors:
+[`../code_mcp.md`](../code_mcp.md). Terminal MCP is unchanged.
+
+| Tool | Does | Key params (required\*) | Backend |
+|------|------|--------------------------|---------|
+| `code_read` | Bounded file/range read | `workspace_id`\*, `worktree_path`\*, `path`\*, `start_line`, `end_line`, `max_bytes` | `Files.read_text/2` + PathSafety |
+| `code_search` | Bounded text search | `workspace_id`\*, `worktree_path`\*, `query`\*, `path`, `glob`, `max_matches` | `rg` or a capped walk |
+| `code_apply_patch` | Validated unified-diff apply | `workspace_id`\*, `worktree_path`\*, `patch`\*, `idempotency_key` | `UnifiedDiff` + `GitAdapter` |
+| `code_exec` | Allowlisted verifier | `workspace_id`\*, `worktree_path`\*, `command_id`\*, `extra_args`, `cwd`, `timeout_ms` | `Policy.can_run_command?/1` + `Commands` |
 
 ## Tool catalog — Tidewave (dev only, external)
 
