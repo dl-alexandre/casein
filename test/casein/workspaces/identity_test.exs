@@ -93,9 +93,8 @@ defmodule Casein.Workspaces.IdentityTest.HangingSource do
   @behaviour Casein.WorkspaceSource
 
   @impl true
-  def get(_id, _auth \\ nil) do
-    Process.sleep(:infinity)
-    {:error, :timeout}
+  def get(id, _auth \\ nil) do
+    raise "WorkspaceSource.get/2 must not be called from Identity (id=#{inspect(id)})"
   end
 
   @impl true
