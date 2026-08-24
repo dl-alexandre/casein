@@ -23,11 +23,13 @@ defmodule CaseinWeb.API.TerminalMCP do
   alias Casein.Agents.{MCPAudit, MCPError, MCPTasks, TerminalTools}
   alias Casein.MCP.Scope
   alias Casein.Terminals.FleetSummary
+  alias Casein.Terminals.HostHealth
   alias CaseinWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
   alias McpCtl.Tool
 
   @server_name "Casein Terminal MCP Server"
   @fleet_summary_uri FleetSummary.resource_uri()
+  @host_health_uri HostHealth.resource_uri()
 
   # One wait leg self-limits at 55s; this only has to outlast that plus the tool's
   # own setup, and exists so a wedged leg cannot hang a task forever.
@@ -68,7 +70,9 @@ defmodule CaseinWeb.API.TerminalMCP do
         "commits-not-on-origin, process/CPU liveness) read the MCP resource " <>
         "casein://fleet/summary — do not topology + N capture scrapes. " <>
         "Before assigning a worker wave, call terminal_host_capacity; an unknown " <>
-        "capacity probe is not spare capacity.",
+        "capacity probe is not spare capacity. Host watchdog health (same snapshot " <>
+        "as the Host health menu row) is terminal_host_health or casein://host/health; " <>
+        "unknown/stale is never healthy.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )
   end
@@ -95,7 +99,7 @@ defmodule CaseinWeb.API.TerminalMCP do
   # Fleet summary is a concrete JSON resource (not an MCP App). Pane capture and
   # the candidate_sessions picker remain tool-shaped for now.
   def list_resources(_opts) do
-    [FleetSummary.resource_descriptor()]
+    [FleetSummary.resource_descriptor(), HostHealth.resource_descriptor()]
   end
 
   @impl true
@@ -111,6 +115,19 @@ defmodule CaseinWeb.API.TerminalMCP do
          uri: @fleet_summary_uri,
          mimeType: "application/json",
          text: FleetSummary.to_json(payload)
+       }
+     ]}
+  end
+
+  def read_resource(@host_health_uri, _opts) do
+    payload = HostHealth.snapshot()
+
+    {:ok,
+     [
+       %{
+         uri: @host_health_uri,
+         mimeType: "application/json",
+         text: HostHealth.to_json(payload)
        }
      ]}
   end

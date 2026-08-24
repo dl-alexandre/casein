@@ -409,6 +409,17 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("terminal_host_health") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: [
+        "Unknown or stale host health is not a healthy host. Read reason and latest_alert_at."
+      ]
+    }
+  end
+
   def metadata(name)
       when name in [
              "terminal_send_agent_keys",
