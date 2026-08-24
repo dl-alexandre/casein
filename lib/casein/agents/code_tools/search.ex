@@ -69,11 +69,7 @@ defmodule Casein.Agents.CodeTools.Search do
       {matches, match_truncated?} =
         search(assignment.worktree_path, search_rel, params.query, glob, limit)
 
-      encoded = Jason.encode!(matches)
-      {_ignored, byte_truncated?} = Helpers.truncate_bytes(encoded, max_bytes)
-
-      matches =
-        if byte_truncated?, do: Enum.take(matches, max(div(length(matches), 2), 1)), else: matches
+      {matches, byte_truncated?} = fit_matches(matches, max_bytes)
 
       {:ok,
        assignment
@@ -117,6 +113,21 @@ defmodule Casein.Agents.CodeTools.Search do
   end
 
   defp normalize_glob(_), do: {:error, %{error: :invalid_glob}}
+
+  defp fit_matches(matches, max_bytes) do
+    {kept, truncated?} =
+      Enum.reduce_while(matches, {[], false}, fn match, {kept, _truncated?} ->
+        candidate = Enum.reverse([match | kept])
+
+        if byte_size(Jason.encode!(candidate)) <= max_bytes do
+          {:cont, {[match | kept], false}}
+        else
+          {:halt, {kept, true}}
+        end
+      end)
+
+    {Enum.reverse(kept), truncated? or length(kept) < length(matches)}
+  end
 
   defp search(worktree, rel, query, glob, limit) do
     case System.find_executable("rg") do

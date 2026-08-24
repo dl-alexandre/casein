@@ -244,7 +244,7 @@ defmodule Casein.Agents.CodeTools.Helpers do
       same_path?(path, checkout) ->
         {:ok, path}
 
-      assigned_worktree?(record, checkout, path) ->
+      assigned_worktree?(record, path) ->
         {:ok, path}
 
       true ->
@@ -257,8 +257,11 @@ defmodule Casein.Agents.CodeTools.Helpers do
     end
   end
 
-  defp assigned_worktree?(record, checkout, path) do
-    under_root?(path, checkout) or registered_worktree?(record.external_id, path)
+  defp assigned_worktree?(record, path) do
+    # The workspace checkout itself is authorized by `authorize_worktree/3`.
+    # A directory merely nested below it is not a Git worktree assignment and
+    # must not become an implicit write boundary.
+    registered_worktree?(record.external_id, path)
   end
 
   defp registered_worktree?(workspace_id, path) do
@@ -277,11 +280,6 @@ defmodule Casein.Agents.CodeTools.Helpers do
       :absolute -> Path.expand(requested)
       _ -> Path.expand(requested, checkout)
     end
-  end
-
-  defp under_root?(path, root) do
-    rel = Path.relative_to(canonicalize(path), canonicalize(root))
-    rel != canonicalize(path) and not String.starts_with?(rel, "..")
   end
 
   defp same_path?(a, b), do: canonicalize(a) == canonicalize(b)
