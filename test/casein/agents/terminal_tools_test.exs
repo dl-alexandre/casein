@@ -193,7 +193,8 @@ defmodule Casein.Agents.TerminalToolsTest do
       timed_ms(fn ->
         TerminalTools.invoke("terminal_topology", %{
           "workspace_id" => workspace_id,
-          "session" => session
+          "session" => session,
+          "include_transcript" => true
         })
       end)
 

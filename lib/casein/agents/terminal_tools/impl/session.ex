@@ -25,7 +25,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.WorktreeStatus
   alias Casein.Terminals.HostCapacity
   alias Casein.Terminals.HostHealth
-  alias Casein.Workspaces
+  alias Casein.Workspaces.Identity, as: WorkspaceIdentity
 
   import Casein.Agents.TerminalTools.Impl.Shared
 
@@ -184,10 +184,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   # have to shell out to `tmux list-panes` to learn where a window is working.
   # The liveness *walk* is the part that costs, so it stays opt-in.
   defp put_liveness(snapshot, params) do
+    transcript? = truthy?(Map.get(params, :include_transcript))
+
     PaneLiveness.enrich_topology(snapshot,
       liveness: truthy?(Map.get(params, :include_liveness)),
-      transcript: truthy?(Map.get(params, :include_transcript)),
-      claude_home: claude_home(params)
+      transcript: transcript?,
+      claude_home: if(transcript?, do: claude_home(params))
     )
   end
 
@@ -200,10 +202,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   # reduced the UUID to its first hex group — so every call resolved a profile
   # dir like `profiles/e7c18b93/claude` that cannot exist, and transcript
   # enrichment silently returned nothing. `Casein.Identity` refuses UUIDs
-  # outright now, but the fix is to resolve the workspace and take its owner.
+  # outright now. Resolve from local State only — never Workspaces.get/1
+  # (manager HTTP).
   defp claude_home(params) do
     with id when is_binary(id) and id != "" <- workspace_id(params),
-         {:ok, workspace} <- Workspaces.get(id) do
+         {:ok, resolved} <- WorkspaceIdentity.resolve(id) do
+      workspace = %{id: resolved.id, name: resolved.name || resolved.id}
       Identity.config_dir([workspace: workspace, env: false], :claude)
     else
       _ -> nil
