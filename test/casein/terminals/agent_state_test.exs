@@ -91,6 +91,50 @@ defmodule Casein.Terminals.AgentStateTest do
       assert AgentState.get("casein_alpha_u-dev", "%3").transcript_path == path
     end
 
+    test "a later report without transcript_path keeps the last known path" do
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+      path = "/home/devbox/.claude/projects/test/session.jsonl"
+
+      :ok =
+        AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, nil,
+          source: :hook,
+          transcript_path: path,
+          agent_session_id: "sess-1"
+        )
+
+      :ok =
+        AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, "still going",
+          source: :hook,
+          agent_session_id: "sess-1"
+        )
+
+      entry = AgentState.get("casein_alpha_u-dev", "%3")
+      assert entry.transcript_path == path
+      assert entry.agent_session_id == "sess-1"
+    end
+
+    test "a new agent_session_id drops the previous transcript_path" do
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+      path = "/home/devbox/.claude/projects/test/session.jsonl"
+
+      :ok =
+        AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, nil,
+          source: :hook,
+          transcript_path: path,
+          agent_session_id: "sess-old"
+        )
+
+      :ok =
+        AgentState.report(ws, "casein_alpha_u-dev", "%3", :working, nil,
+          source: :hook,
+          agent_session_id: "sess-new"
+        )
+
+      entry = AgentState.get("casein_alpha_u-dev", "%3")
+      assert entry.transcript_path == nil
+      assert entry.agent_session_id == "sess-new"
+    end
+
     test "stores an agent runtime session id from hook reports" do
       ws = "ws-state-#{System.unique_integer([:positive])}"
 
@@ -670,7 +714,8 @@ defmodule Casein.Terminals.AgentStateTest do
 
       :ok =
         AgentState.report(ws, "casein_alpha_u-dev", "%3", :blocked, "needs input",
-          agent_session_id: "grok-session-123"
+          agent_session_id: "grok-session-123",
+          transcript_path: "/home/devbox/.claude/projects/test/session.jsonl"
         )
 
       topology = %{
@@ -695,7 +740,9 @@ defmodule Casein.Terminals.AgentStateTest do
       assert agent_pane.agent_state == :blocked
       assert agent_pane.agent_state_message == "needs input"
       assert agent_pane.agent_session_id == "grok-session-123"
+      assert agent_pane.transcript_path == "/home/devbox/.claude/projects/test/session.jsonl"
       refute Map.has_key?(other_pane, :agent_state)
+      refute Map.has_key?(other_pane, :transcript_path)
 
       assert hd(enriched.windows).agent_state == :blocked
       assert hd(enriched.windows).agent_session_id == "grok-session-123"

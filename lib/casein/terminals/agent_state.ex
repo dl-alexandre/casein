@@ -448,6 +448,7 @@ defmodule Casein.Terminals.AgentState do
         window
         |> put_state(resolved)
         |> put_agent_session_id(entry, resolved)
+        |> put_transcript_path(entry, resolved)
       end)
 
     %{topology | panes: panes, windows: windows}
@@ -465,6 +466,7 @@ defmodule Casein.Terminals.AgentState do
     pane
     |> put_state(resolved)
     |> put_agent_session_id(entry, resolved)
+    |> put_transcript_path(entry, resolved)
   end
 
   defp enrich_pane(pane, _reports, _now), do: pane
@@ -493,6 +495,16 @@ defmodule Casein.Terminals.AgentState do
        do: Map.put(map, :agent_session_id, agent_session_id)
 
   defp put_agent_session_id(map, _entry, _resolved), do: map
+
+  defp put_transcript_path(
+         map,
+         %{transcript_path: transcript_path},
+         {state, _message}
+       )
+       when is_binary(transcript_path) and transcript_path != "" and state != :unknown,
+       do: Map.put(map, :transcript_path, transcript_path)
+
+  defp put_transcript_path(map, _entry, _resolved), do: map
 
   # `PaneLiveness` attaches `:liveness` only when a worktree was actually
   # observed. Anything else — absent, unknown, unreadable — must stay nil so

@@ -1205,15 +1205,123 @@ defmodule Casein.Agents.TerminalToolsTest do
       assert result.total_on_branch >= 1
     end
 
-    test "returns no_transcript when the pane has no pointer" do
+    test "returns no_transcript with a machine-readable reason when the pane has no pointer" do
       session = agent_pair_session!()
       Casein.Terminals.AgentState.clear()
 
-      assert {:error, :no_transcript} =
+      assert {:error, %{error: :no_transcript, reason: :no_hook}} =
                TerminalTools.invoke("terminal_agent_transcript", %{
                  "workspace_id" => "alpha",
                  "session" => session
                })
+    end
+
+    test "re-resolves from agent_session_id after the cached path is gone" do
+      session = agent_pair_session!()
+      Casein.Terminals.AgentState.clear()
+      {path, session_id} = write_claude_session_fixture!("/workspace")
+      stale = path <> ".gone"
+
+      :ok =
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :working, nil,
+          transcript_path: stale,
+          agent_session_id: session_id
+        )
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_agent_transcript", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "tail" => 5
+               })
+
+      assert result.transcript_path == path
+      assert result.entries != []
+    end
+
+    test "keeps resolving after a later report omits transcript_path" do
+      session = agent_pair_session!()
+      Casein.Terminals.AgentState.clear()
+      path = write_claude_fixture!()
+
+      :ok =
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :working, nil,
+          transcript_path: path,
+          agent_session_id: "sess-keep"
+        )
+
+      :ok =
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :working, "still going",
+          agent_session_id: "sess-keep"
+        )
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_agent_transcript", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+
+      assert result.transcript_path == path
+    end
+
+    test "returns path_missing when the session file is not on disk" do
+      session = agent_pair_session!()
+      Casein.Terminals.AgentState.clear()
+
+      :ok =
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :working, nil,
+          agent_session_id: "missing-session-id"
+        )
+
+      assert {:error, %{error: :no_transcript, reason: :path_missing}} =
+               TerminalTools.invoke("terminal_agent_transcript", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+    end
+
+    test "returns unsupported_runtime for hook-less panes" do
+      session = Tmux.session_name("alpha", "wait")
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [agent_pane_at("%2", "@1", "/workspace")]
+      })
+
+      Casein.Terminals.AgentState.clear()
+
+      assert {:error, %{error: :no_transcript, reason: :unsupported_runtime}} =
+               TerminalTools.invoke("terminal_agent_transcript", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "pane" => "%2"
+               })
+    end
+
+    test "exposes transcript_path on terminal_topology" do
+      session = agent_pair_session!()
+      Casein.Terminals.AgentState.clear()
+      path = write_claude_fixture!()
+
+      :ok =
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :working, nil,
+          transcript_path: path,
+          agent_session_id: "topo-session"
+        )
+
+      assert {:ok, topology} =
+               TerminalTools.invoke("terminal_topology", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+
+      by_id = Map.new(topology.panes, &{&1.id, &1})
+      assert by_id["%2"].transcript_path == path
+      refute Map.has_key?(by_id["%1"], :transcript_path)
     end
   end
 
@@ -1671,6 +1779,43 @@ defmodule Casein.Agents.TerminalToolsTest do
 
     File.write!(path, Enum.join(lines, "\n") <> "\n")
     path
+  end
+
+  defp write_claude_session_fixture!(cwd, assistant_suffix \\ "hello") do
+    session_id = "sess-#{System.unique_integer([:positive])}"
+    home = tmp_dir!("transcript-home")
+    System.put_env("HOME", home)
+
+    path =
+      Path.join([
+        home,
+        ".claude",
+        "projects",
+        Casein.Agents.Transcripts.Discovery.project_slug(cwd),
+        session_id <> ".jsonl"
+      ])
+
+    File.mkdir_p!(Path.dirname(path))
+
+    lines = [
+      Jason.encode!(%{
+        "uuid" => "u1",
+        "parentUuid" => nil,
+        "type" => "user",
+        "timestamp" => "2026-07-06T10:00:00.000Z",
+        "message" => %{"role" => "user", "content" => "hello"}
+      }),
+      Jason.encode!(%{
+        "uuid" => "a1",
+        "parentUuid" => "u1",
+        "type" => "assistant",
+        "timestamp" => "2026-07-06T10:00:01.000Z",
+        "message" => %{"role" => "assistant", "content" => assistant_suffix}
+      })
+    ]
+
+    File.write!(path, Enum.join(lines, "\n") <> "\n")
+    {path, session_id}
   end
 
   describe "terminal_bind_issue" do
