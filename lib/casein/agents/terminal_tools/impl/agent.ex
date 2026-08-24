@@ -323,6 +323,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
 
   #911 lifecycle: each message carries `status` (`queued`|`collected`),
   `unread?`, and stable `message_id`. Collect clears unread — peek does not.
+  `collect: true` returns those same messages with bodies in `messages`.
   This is an addressed store; it never writes into panes.
   """
   @spec inbox(map()) :: {:ok, map()} | {:error, term()}
@@ -344,44 +345,22 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
           include_collected: include_collected?
         )
 
-      collect_results =
-        if collect? do
-          Enum.map(messages, fn message ->
-            # Prefer stable message_id so double-collect is idempotent across
-            # retries that only retained the send-side id (#911 / #872 pattern).
-            ref = message.message_id || message.id
-
-            case Inbox.collect(workspace_id, ref, %{
-                   to: address,
-                   tmux_session_id: session,
-                   pane_id: caller_pane(params)
-                 }) do
-              {:ok, _receipt, outcome} ->
-                %{message_id: message.message_id, message_event_id: message.id, outcome: outcome}
-
-              {:error, reason} ->
-                %{
-                  message_id: message.message_id,
-                  message_event_id: message.id,
-                  outcome: :error,
-                  error: reason
-                }
-            end
-          end)
-        else
-          []
-        end
-
-      # After collect, re-list so wire status reflects cleared unread — never
-      # report collected:true while messages still show unread?/queued.
-      messages_after =
-        if collect? do
-          Inbox.list(workspace_id, address,
-            limit: limit,
-            include_collected: include_collected?
-          )
+      # A collect retry with nothing pending still needs the already-collected
+      # payloads so double-collect stays idempotent and still returns bodies.
+      messages =
+        if collect? and messages == [] and not include_collected? do
+          Inbox.list(workspace_id, address, limit: limit, include_collected: true)
         else
           messages
+        end
+
+      {collect_results, messages_after} =
+        if collect? do
+          messages
+          |> Enum.map(&collect_inbox_message(workspace_id, address, session, params, &1))
+          |> Enum.unzip()
+        else
+          {[], messages}
         end
 
       after_summary = Inbox.summary(workspace_id, address)
@@ -409,6 +388,41 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       {:ok, payload}
     end
   end
+
+  defp collect_inbox_message(workspace_id, address, session, params, message) do
+    # Prefer stable message_id so double-collect is idempotent across
+    # retries that only retained the send-side id (#911 / #872 pattern).
+    ref = message.message_id || message.id
+
+    case Inbox.collect(workspace_id, ref, %{
+           to: address,
+           tmux_session_id: session,
+           pane_id: caller_pane(params)
+         }) do
+      {:ok, receipt, outcome} ->
+        {%{message_id: message.message_id, message_event_id: message.id, outcome: outcome},
+         mark_inbox_collected(message, receipt, outcome)}
+
+      {:error, reason} ->
+        {%{
+           message_id: message.message_id,
+           message_event_id: message.id,
+           outcome: :error,
+           error: reason
+         }, message}
+    end
+  end
+
+  defp mark_inbox_collected(message, receipt, outcome) when outcome in [:inserted, :duplicate] do
+    %{
+      message
+      | status: :collected,
+        unread?: false,
+        collected_at: message.collected_at || receipt.occurred_at || receipt.inserted_at
+    }
+  end
+
+  defp mark_inbox_collected(message, _receipt, _outcome), do: message
 
   defp inbox_message(message) do
     status = Map.get(message, :status) || :queued

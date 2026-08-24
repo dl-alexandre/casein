@@ -692,8 +692,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       recovery_hints: [
         "Omit address to read the caller pane's own mailbox.",
         "Each message has status queued|collected and unread? — never treat send as read (#911).",
-        "Pass collect=true only once you have acted; that clears unread. Peek leaves pending.",
-        "Double-collect is idempotent via stable message_id — safe to retry.",
+        "Pass collect=true only once you have acted; that clears unread and returns those messages with bodies.",
+        "Double-collect is idempotent via stable message_id — safe to retry, and still returns bodies.",
         "Addressed store only — does not write into panes (no terminal_send_*)."
       ],
       examples: [
@@ -708,6 +708,30 @@ defmodule Casein.Agents.TerminalTools.Helpers do
                 "message_id" => "msg-1",
                 "status" => "queued",
                 "unread?" => true,
+                "body" => "rebase before auth"
+              }
+            ]
+          }
+        },
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_x",
+            "collect" => true
+          },
+          structured_content: %{
+            "address" => "pane:%3",
+            "collected" => true,
+            "count" => 1,
+            "pending" => 0,
+            "unread" => 0,
+            "pending_before" => 1,
+            "unread_before" => 1,
+            "messages" => [
+              %{
+                "message_id" => "msg-1",
+                "status" => "collected",
+                "unread?" => false,
                 "body" => "rebase before auth"
               }
             ]
