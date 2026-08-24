@@ -9,6 +9,7 @@ defmodule Casein.Agents.JidoPod.Pod do
   use GenServer, restart: :transient
 
   alias Casein.Agents.Activity
+  alias Casein.Agents.JidoBudgets
   alias Casein.Agents.JidoLifecycle
   alias Casein.Agents.JidoPod.{Attempt, Fleet, Metrics, Worker}
   alias Phoenix.PubSub
@@ -75,27 +76,45 @@ defmodule Casein.Agents.JidoPod.Pod do
   end
 
   def handle_call({:admit, attrs}, _from, state) do
+    started_at = System.monotonic_time(:millisecond)
     attempt = build_attempt(state.workspace_id, attrs)
     state = put_attempt(state, attempt)
     Metrics.inc(:admitted)
     publish(attempt)
 
-    cond do
-      can_start?(state) ->
-        case start_attempt(state, attempt.id) do
-          {:ok, state, started} -> {:reply, {:ok, Attempt.public(started)}, state}
-          {:error, state, reason} -> queue_or_reject(state, attempt, reason)
+    case JidoBudgets.precheck_from(state.workspace_id, pod_usage(state)) do
+      {:reject, reason} ->
+        state = maybe_pressure_drain(state, reason)
+        reject_admit(state, attempt, reason, started_at)
+
+      {:queue, reason} ->
+        JidoBudgets.record_admission(System.monotonic_time(:millisecond) - started_at)
+        queue_or_reject(state, attempt, reason)
+
+      :ok ->
+        JidoBudgets.record_admission(System.monotonic_time(:millisecond) - started_at)
+
+        cond do
+          can_start?(state) ->
+            case start_attempt(state, attempt.id) do
+              {:ok, state, started} ->
+                JidoBudgets.record(state.workspace_id, :admit, :ok, %{
+                  running: running_count(state)
+                })
+
+                {:reply, {:ok, Attempt.public(started)}, state}
+
+              {:error, state, reason} ->
+                queue_or_reject(state, attempt, reason)
+            end
+
+          queue_len(state) < max_queued() ->
+            {state, queued} = enqueue(state, attempt.id)
+            {:reply, {:ok, Attempt.public(queued)}, state}
+
+          true ->
+            reject_admit(state, attempt, :queue_full, started_at)
         end
-
-      queue_len(state) < max_queued() ->
-        {state, queued} = enqueue(state, attempt.id)
-        {:reply, {:ok, Attempt.public(queued)}, state}
-
-      true ->
-        state = drop_attempt(state, attempt.id)
-        Metrics.inc(:rejected)
-        Metrics.emit(:admit, %{queue_depth: queue_len(state)}, %{result: :rejected})
-        {:reply, {:error, :backpressure}, state}
     end
   end
 
@@ -206,6 +225,9 @@ defmodule Casein.Agents.JidoPod.Pod do
   def terminate(_reason, state) do
     Enum.each(state.attempts, fn {_id, attempt} ->
       if attempt.lease?, do: Fleet.release(state.workspace_id)
+      JidoBudgets.release_provider(attempt.id)
+      JidoBudgets.release_lease(attempt.id)
+      JidoBudgets.release_memory(attempt.id)
 
       if is_pid(attempt.worker_pid) and Process.alive?(attempt.worker_pid) do
         Worker.cancel(attempt.worker_pid)
@@ -251,10 +273,54 @@ defmodule Casein.Agents.JidoPod.Pod do
       {state, queued} = enqueue(state, attempt.id, reason)
       {:reply, {:ok, Attempt.public(queued)}, state}
     else
-      state = drop_attempt(state, attempt.id)
-      Metrics.inc(:rejected)
-      {:reply, {:error, :backpressure}, state}
+      reject_admit(state, attempt, reject_reason(reason), 0)
     end
+  end
+
+  defp reject_admit(state, attempt, reason, started_at) do
+    if started_at > 0 do
+      JidoBudgets.record_admission(System.monotonic_time(:millisecond) - started_at)
+    end
+
+    state = drop_attempt(state, attempt.id)
+    Metrics.inc(:rejected)
+    Metrics.emit(:admit, %{queue_depth: queue_len(state)}, %{result: :rejected, reason: reason})
+    JidoBudgets.record(state.workspace_id, :reject, reason, %{queue_depth: queue_len(state)})
+    {:reply, {:error, reject_error(reason)}, state}
+  end
+
+  defp reject_reason(:workspace_limit), do: :queue_full
+  defp reject_reason(reason), do: reason
+
+  defp reject_error(:queue_full), do: :backpressure
+  defp reject_error(reason), do: reason
+
+  defp maybe_pressure_drain(state, reason) when reason in [:cpu_pressure, :rss_pressure] do
+    {state, cancelled} =
+      Enum.reduce(queued_ids(state.attempts), {%{state | queue: :queue.new()}, []}, fn id,
+                                                                                       {acc, list} ->
+        case Map.get(acc.attempts, id) do
+          %Attempt{state: :queued} = attempt ->
+            {acc, done} = finish(acc, attempt, :cancelled, reason: reason)
+            {acc, [done | list]}
+
+          _ ->
+            {acc, list}
+        end
+      end)
+
+    JidoBudgets.record(state.workspace_id, :drain, reason, %{drained: length(cancelled)})
+    state
+  end
+
+  defp maybe_pressure_drain(state, _reason), do: state
+
+  defp pod_usage(state) do
+    %{
+      running: running_count(state),
+      queued: queue_len(state),
+      draining?: state.draining?
+    }
   end
 
   defp enqueue(state, attempt_id, reason \\ :workspace_limit) do
@@ -262,7 +328,8 @@ defmodule Casein.Agents.JidoPod.Pod do
     queued = Attempt.transition(attempt, :queued, reason: reason)
     Fleet.register_waiter(state.workspace_id)
     Metrics.inc(:queued)
-    Metrics.emit(:admit, %{queue_depth: queue_len(state) + 1}, %{result: :queued})
+    Metrics.emit(:admit, %{queue_depth: queue_len(state) + 1}, %{result: :queued, reason: reason})
+    JidoBudgets.record(state.workspace_id, :queue, reason, %{queue_depth: queue_len(state) + 1})
     publish(queued)
 
     {%{
@@ -280,21 +347,29 @@ defmodule Casein.Agents.JidoPod.Pod do
         {:error, state, :workspace_limit}
 
       attempt.lease? ->
-        spawn_worker(state, attempt, false)
+        acquire_provider_and_spawn(state, attempt, false)
 
       true ->
         case Fleet.try_acquire(state.workspace_id) do
           :ok ->
-            spawn_worker(state, attempt, true)
+            acquire_provider_and_spawn(state, attempt, true)
 
-          {:error, :fleet_limit} ->
+          {:error, reason} when reason in [:fleet_limit, :fairness, :workspace_share] ->
             Fleet.register_waiter(state.workspace_id)
-            {:error, state, :fleet_limit}
-
-          {:error, :fairness} ->
-            Fleet.register_waiter(state.workspace_id)
-            {:error, state, :fairness}
+            {:error, state, reason}
         end
+    end
+  end
+
+  defp acquire_provider_and_spawn(state, attempt, acquired_now?) do
+    case JidoBudgets.try_provider(attempt.id) do
+      :ok ->
+        spawn_worker(state, attempt, acquired_now?)
+
+      {:error, :provider_limit} ->
+        if acquired_now?, do: Fleet.release(state.workspace_id)
+        Fleet.register_waiter(state.workspace_id)
+        {:error, state, :provider_limit}
     end
   end
 
@@ -314,12 +389,14 @@ defmodule Casein.Agents.JidoPod.Pod do
             reason: nil
           )
 
+        JidoBudgets.acquire_lease(state.workspace_id, started.id)
         Metrics.inc(:running)
         Metrics.emit(:admit, %{running: running_count(state) + 1}, %{result: :running})
         publish(started)
         {:ok, put_attempt(state, started), started}
 
       {:error, reason} ->
+        JidoBudgets.release_provider(attempt.id)
         if acquired_now?, do: Fleet.release(state.workspace_id)
         {:error, state, reason}
     end
@@ -363,6 +440,7 @@ defmodule Casein.Agents.JidoPod.Pod do
             Keyword.merge(opts, worker_pid: nil, worker_ref: nil, lease?: true)
           )
 
+        JidoBudgets.release_provider(attempt.id)
         Metrics.inc(:awaiting_human)
         publish(kept)
         put_attempt(state, kept)
@@ -417,8 +495,15 @@ defmodule Casein.Agents.JidoPod.Pod do
         )
 
       if attempt.lease?, do: Fleet.release(state.workspace_id)
+      JidoBudgets.release_provider(attempt.id)
+      JidoBudgets.release_lease(attempt.id)
       Metrics.inc(:retrying)
-      if opts[:reason] == :worker_crash, do: Metrics.inc(:worker_crash)
+
+      if opts[:reason] == :worker_crash do
+        Metrics.inc(:worker_crash)
+        JidoBudgets.crash(state.workspace_id)
+      end
+
       publish(retried)
       state = put_attempt(state, retried)
 
@@ -431,7 +516,10 @@ defmodule Casein.Agents.JidoPod.Pod do
           state
       end
     else
-      if opts[:reason] == :worker_crash, do: Metrics.inc(:worker_crash)
+      if opts[:reason] == :worker_crash do
+        Metrics.inc(:worker_crash)
+        JidoBudgets.crash(state.workspace_id)
+      end
 
       {state, _done} =
         finish(state, attempt, :failed, Keyword.put(opts, :reason, :retries_exhausted))
@@ -442,6 +530,9 @@ defmodule Casein.Agents.JidoPod.Pod do
 
   defp finish(state, attempt, next_state, opts) do
     if attempt.lease?, do: Fleet.release(state.workspace_id)
+    JidoBudgets.release_provider(attempt.id)
+    JidoBudgets.release_lease(attempt.id)
+    JidoBudgets.release_memory(attempt.id)
 
     done =
       Attempt.transition(
@@ -554,6 +645,7 @@ defmodule Casein.Agents.JidoPod.Pod do
           attempt_id: attempt.id,
           worktree_path: attempt.worktree_path,
           state: attempt.state,
+          reason: attempt.reason,
           headless: true
         },
         status:

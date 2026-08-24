@@ -8,7 +8,8 @@ skills onto the headless Jido path and keeps OpenCode as an explicit fallback.
 
 - **Does not change** the #1014 pod, #1015 action catalog, or #1016 projection
   contracts.
-- **Does not implement** resource budgets ([#1018](https://github.com/dl-alexandre/casein/issues/1018)).
+- **Does not implement** resource budgets ([#1018](https://github.com/dl-alexandre/casein/issues/1018));
+  those live in [`jido_budgets.md`](jido_budgets.md).
 - **Casein** remains authoritative for workspace, worktree, policy, audit,
   human input, and verification.
 - **No visible pane.** Jido attempts are `headless: true` with no `pane_id`.

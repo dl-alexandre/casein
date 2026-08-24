@@ -5,6 +5,7 @@ defmodule Casein.Agents.JidoPod.Worker do
 
   use GenServer, restart: :temporary
 
+  alias Casein.Agents.JidoBudgets
   alias Casein.Agents.JidoPod.{Attempt, CodeActions}
 
   def child_spec(opts) do
@@ -90,7 +91,13 @@ defmodule Casein.Agents.JidoPod.Worker do
         {:stop, {:shutdown, {:completed, %{completed: state.attempt.completed}}}, state}
 
       [action | _rest] ->
-        start_action(state, action)
+        case JidoBudgets.charge_memory(state.attempt.workspace_id, state.attempt.id, action) do
+          :ok ->
+            start_action(state, action)
+
+          {:error, :memory_limit} ->
+            {:stop, {:shutdown, {:failed, :memory_limit}}, state}
+        end
     end
   end
 
@@ -118,9 +125,20 @@ defmodule Casein.Agents.JidoPod.Worker do
   defp handle_action_result(state, {name, action, result}) do
     case classify(result) do
       {:ok, value} ->
-        attempt = record_completed(state.attempt, name, action, value)
-        GenServer.call(state.pod, {:progress, attempt.id, attempt.next_index, attempt.completed})
-        run_next(%{state | attempt: attempt})
+        case JidoBudgets.charge_memory(state.attempt.workspace_id, state.attempt.id, value) do
+          :ok ->
+            attempt = record_completed(state.attempt, name, action, value)
+
+            GenServer.call(
+              state.pod,
+              {:progress, attempt.id, attempt.next_index, attempt.completed}
+            )
+
+            run_next(%{state | attempt: attempt})
+
+          {:error, :memory_limit} ->
+            {:stop, {:shutdown, {:failed, :memory_limit}}, state}
+        end
 
       {:awaiting_human, value} ->
         {:stop,

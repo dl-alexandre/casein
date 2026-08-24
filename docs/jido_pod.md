@@ -20,6 +20,9 @@ workspace-keyed OTP coordinator and short-lived child workers.
 - **Skills / fallback:** `Casein.Agents.JidoSkills` (#1017) selects Jido vs
   OpenCode and records fallback reasons. `git_status` / `git_diff` /
   `task_wait` / `task_cancel` remain `not_yet_supported` on the typed catalog.
+- **Budgets:** `Casein.Agents.JidoBudgets` (#1018) enforces fleet share,
+  provider concurrency, memory, crash/lease, and host pressure. See
+  [`jido_budgets.md`](jido_budgets.md).
 
 ## Runtime selection
 
@@ -55,6 +58,10 @@ config :casein, :jido_pod,
   max_running_per_workspace: 2,
   max_queued_per_workspace: 4,
   max_running_fleet: 8,
+  max_share_per_workspace: 0.5,
+  max_provider_inflight: 4,
+  max_worker_memory_bytes: 2_000_000,
+  max_action_output_bytes: 256_000,
   default_attempt_deadline_ms: 60_000,
   default_action_timeout_ms: 5_000,
   max_retries: 1
@@ -62,4 +69,5 @@ config :casein, :jido_pod,
 
 `Casein.Agents.JidoPod.snapshot/1` and `benchmark/1` expose process count,
 memory, latency, throughput, and the documented OpenCode baseline
-(one OS/TUI process + pane per worker).
+(one OS/TUI process + pane per worker). Full scenario comparison and
+go/no-go live in `Casein.Agents.JidoBudgets.benchmark/1`.

@@ -3,6 +3,7 @@ defmodule Casein.Agents.JidoPod.Supervisor do
 
   use Supervisor
 
+  alias Casein.Agents.JidoBudgets.Ledger
   alias Casein.Agents.JidoPod.{Fleet, Metrics}
 
   def start_link(opts \\ []) do
@@ -17,7 +18,8 @@ defmodule Casein.Agents.JidoPod.Supervisor do
       {Registry, keys: :unique, name: Casein.Agents.JidoPod.Registry},
       {DynamicSupervisor, name: Casein.Agents.JidoPod.PodSupervisor, strategy: :one_for_one},
       {DynamicSupervisor, name: Casein.Agents.JidoPod.WorkerSupervisor, strategy: :one_for_one},
-      Fleet
+      Fleet,
+      Ledger
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

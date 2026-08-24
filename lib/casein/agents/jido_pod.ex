@@ -137,7 +137,10 @@ defmodule Casein.Agents.JidoPod do
 
   @spec snapshot(String.t() | :fleet) :: map()
   def snapshot(:fleet) do
-    Map.merge(Metrics.snapshot(), %{fleet: Fleet.snapshot()})
+    Map.merge(Metrics.snapshot(), %{
+      fleet: Fleet.snapshot(),
+      budgets: Casein.Agents.JidoBudgets.snapshot()
+    })
   end
 
   def snapshot(workspace_id) when is_binary(workspace_id) do
