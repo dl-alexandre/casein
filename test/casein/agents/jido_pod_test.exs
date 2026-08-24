@@ -145,6 +145,32 @@ defmodule Casein.Agents.JidoPodTest do
     assert {:ok, %{state: :completed}} = JidoPod.await(ws, follow.attempt_id)
   end
 
+  test "public attempt results redact tool I/O before notification", %{track: track} do
+    ws = track.("ws-redacted-#{id()}")
+
+    Application.put_env(:casein, :jido_code_actions, fn _name, _args, _ctx ->
+      {:ok,
+       %{
+         output: "secret command output",
+         matches: [%{path: "lib/secret.ex", text: "secret source"}],
+         paths: ["lib/secret.ex"],
+         status: "completed"
+       }}
+    end)
+
+    {:ok, admitted} =
+      JidoPod.admit(%{
+        workspace_id: ws,
+        actions: [%{name: "code_read", args: %{}}]
+      })
+
+    assert {:ok, result} = JidoPod.await(ws, admitted.attempt_id)
+    refute inspect(result) =~ "secret command output"
+    refute inspect(result) =~ "secret source"
+    assert result.result.completed_count == 1
+    assert hd(result.result.completed).result.paths == ["lib/secret.ex"]
+  end
+
   test "workspace isolation: one busy workspace does not starve another", %{track: track} do
     a = track.("ws-iso-a-#{id()}")
     b = track.("ws-iso-b-#{id()}")
