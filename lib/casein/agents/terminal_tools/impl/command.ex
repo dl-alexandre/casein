@@ -11,6 +11,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
   alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.PaneWriteReceipt
   alias Casein.Terminals.SharedWorktreeGuard
+  alias Casein.Terminals.TuiSurface
+  alias Casein.Terminals.TuiSurfaceGuard
   alias Casein.Workspaces
 
   import Casein.Agents.TerminalTools.Impl.Shared
@@ -45,7 +47,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
          {:ok, raw_target} <- target_arg(session, params) do
       {target, implicit?} = resolve_implicit_target(session, raw_target)
 
-      with :ok <- guard_shared_worktree(session, target, command, params) do
+      with :ok <- guard_shared_worktree(session, target, command, params),
+           {:ok, _surface} <- guard_tui_surface(session, target, params) do
         case tmux().send_command(target, command) do
           :ok ->
             # Fallback open for silent runtimes (Grok/OpenCode). Primary open is
@@ -78,10 +81,45 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
            strict: true
          ) do
       {:ok, confirmation} ->
-        {:ok, Map.merge(payload, stringify_confirmation(confirmation))}
+        {:ok, Map.merge(payload, stringify_confirmation(honest_submit(payload, confirmation)))}
 
       {:error, error} ->
-        {:error, Map.merge(payload, stringify_confirmation(error))}
+        {:error, Map.merge(payload, stringify_confirmation(honest_submit(payload, error)))}
+    end
+  end
+
+  defp guard_tui_surface(session, target, params) do
+    TuiSurfaceGuard.check(session, target,
+      allow_non_conversation: allow_non_conversation?(params),
+      tmux: tmux()
+    )
+  end
+
+  defp allow_non_conversation?(params) do
+    truthy?(Map.get(params, "allow_non_conversation") || Map.get(params, :allow_non_conversation))
+  end
+
+  defp honest_submit(payload, result) when is_map(result) do
+    Map.put(
+      result,
+      :submitted,
+      TuiSurface.honest_submitted(payload_surface(payload), result[:submitted])
+    )
+  end
+
+  defp payload_surface(payload) do
+    name =
+      get_in(payload, [:receipt, :surface]) ||
+        get_in(payload, ["receipt", "surface"]) ||
+        payload[:surface] || payload["surface"]
+
+    case name do
+      "conversation" -> :conversation
+      "agents_view" -> :agents_view
+      "menu" -> :menu
+      "unknown" -> :unknown
+      atom when is_atom(atom) and not is_nil(atom) -> atom
+      _ -> :unknown
     end
   end
 

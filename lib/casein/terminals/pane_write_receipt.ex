@@ -8,6 +8,7 @@ defmodule Casein.Terminals.PaneWriteReceipt do
   """
 
   alias Casein.Terminals
+  alias Casein.Terminals.TuiSurface
 
   @excerpt_lines 12
 
@@ -15,6 +16,7 @@ defmodule Casein.Terminals.PaneWriteReceipt do
   def attach(payload, session, pane_id, written) when is_map(payload) do
     excerpt = observe(session, pane_id)
     write_id = Ecto.UUID.generate()
+    surface = TuiSurface.name(TuiSurface.classify(excerpt))
 
     receipt = %{
       write_id: write_id,
@@ -22,11 +24,13 @@ defmodule Casein.Terminals.PaneWriteReceipt do
       pane_id: pane_id,
       observed_excerpt: excerpt,
       observed: excerpt_contains?(excerpt, written),
+      surface: surface,
       delivered_at: DateTime.utc_now() |> DateTime.to_iso8601()
     }
 
     payload
     |> Map.put(:write_id, write_id)
+    |> Map.put(:surface, surface)
     |> Map.put(:receipt, receipt)
   end
 

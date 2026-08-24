@@ -434,6 +434,17 @@ with `submit: true` (paste) or the normal command tools and trust
 `not_confirmed`, capture the pane before resending, or use
 `terminal_set_next_prompt` when the agent is mid-turn.
 
+### Non-conversation TUI surfaces
+
+`submitted: true` means the **conversation** received the text. Claude Code's
+agents view accepts the same Enter into "describe a task for a new session" and
+spawns a second independent agent. `terminal_paste_agent_text` and
+`terminal_send_command` capture the pane first, name the surface on the write
+receipt (`conversation` / `agents_view` / `menu` / `unknown`), and **refuse** a
+non-conversation surface with `error: non_conversation_surface` unless
+`allow_non_conversation: true`. An opted-in write still will not report
+`submitted: true` — that flag stays reserved for the conversation.
+
 ### Explicit pane paste (no agent_pair required)
 
 `terminal_paste_agent_text` accepts an optional `pane` id. When `pane` is set,

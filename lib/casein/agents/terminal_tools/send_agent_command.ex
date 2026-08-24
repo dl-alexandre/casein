@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.SendAgentCommand do
   use Jido.Action,
     name: "terminal_send_agent_command",
     description:
-      "Type a shell command into the dedicated agent pane and press Enter. Requires the agent_pair marker. Use terminal_send_command for explicit pane ids.",
+      "Type a shell command into the dedicated agent pane and press Enter. Requires the agent_pair marker. Use terminal_send_command for explicit pane ids. Non-conversation TUI surfaces are refused unless allow_non_conversation is true.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",
@@ -13,7 +13,8 @@ defmodule Casein.Agents.TerminalTools.SendAgentCommand do
       session: [type: :string],
       caller_pane: [type: :string],
       command: [type: :string, required: true],
-      confirm: [type: :boolean]
+      confirm: [type: :boolean],
+      allow_non_conversation: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction
@@ -29,7 +30,8 @@ defmodule Casein.Agents.TerminalTools.SendAgentCommand do
           session: Helpers.session_param(),
           caller_pane: Helpers.caller_pane_param(),
           command: Helpers.command_param(),
-          confirm: Helpers.confirm_param()
+          confirm: Helpers.confirm_param(),
+          allow_non_conversation: Helpers.allow_non_conversation_param()
         }),
         ["command"]
       )

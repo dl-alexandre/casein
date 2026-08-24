@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.PasteAgentText do
   use Jido.Action,
     name: "terminal_paste_agent_text",
     description:
-      "Paste literal text through a tmux paste buffer. Omit pane to target the role-marked agent_pair pane; pass an explicit pane id to paste into that pane without requiring agent_pair (fleet worker briefs). On submit:true, Enter is pressed after the paste settles and is confirmed (one retry) — do not double-Enter yourself.",
+      "Paste literal text through a tmux paste buffer. Omit pane to target the role-marked agent_pair pane; pass an explicit pane id to paste into that pane without requiring agent_pair (fleet worker briefs). On submit:true, Enter is pressed after the paste settles and is confirmed (one retry) — do not double-Enter yourself. Non-conversation TUI surfaces (Claude Code agents view, menus) are refused unless allow_non_conversation is true. submitted:true means the conversation received the text.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.1.0",
@@ -15,7 +15,8 @@ defmodule Casein.Agents.TerminalTools.PasteAgentText do
       pane: [type: :string],
       text: [type: :string, required: true],
       submit: [type: :boolean],
-      confirm: [type: :boolean]
+      confirm: [type: :boolean],
+      allow_non_conversation: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction
@@ -33,7 +34,8 @@ defmodule Casein.Agents.TerminalTools.PasteAgentText do
           pane: Helpers.pane_param(),
           text: Helpers.paste_text_param(),
           submit: Helpers.submit_param(),
-          confirm: Helpers.confirm_param()
+          confirm: Helpers.confirm_param(),
+          allow_non_conversation: Helpers.allow_non_conversation_param()
         }),
         ["text"]
       )

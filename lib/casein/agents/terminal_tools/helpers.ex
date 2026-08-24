@@ -137,6 +137,18 @@ defmodule Casein.Agents.TerminalTools.Helpers do
   def allow_shared_worktree_param, do: Params.allow_shared_worktree()
 
   @doc false
+  def allow_non_conversation_param do
+    %{
+      type: "boolean",
+      description:
+        "Drive a non-conversation TUI surface (Claude Code agents view, a permission " <>
+          "menu). Refused by default: paste/send into the agents view reports submitted " <>
+          "but spawns a second independent agent. Set true only when that surface is the " <>
+          "intended target. submitted:true still means the conversation received the text."
+    }
+  end
+
+  @doc false
   def since_param do
     %{
       type: "string",
@@ -426,7 +438,10 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "On submit_not_confirmed the text reached the pane but was never submitted — " <>
           "capture the pane before resending, or use terminal_set_next_prompt if the " <>
           "agent is mid-turn.",
-        "Do not double-Enter yourself: submit paths settle, press Enter, and retry once."
+        "Do not double-Enter yourself: submit paths settle, press Enter, and retry once.",
+        "A non-conversation surface (agents view, menu) is refused unless " <>
+          "allow_non_conversation is true. submitted:true means the conversation " <>
+          "received the text."
       ]
     }
   end
@@ -482,7 +497,9 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Prefer terminal_send_agent_command when controlling the dedicated agent pane.",
         "Use terminal_capture after sending input to inspect output.",
         "terminal_send_command confirms the submit (one retry Enter) unless confirm:false.",
-        "On submit_not_confirmed capture the pane before resending."
+        "On submit_not_confirmed capture the pane before resending.",
+        "terminal_send_command refuses a non-conversation surface (agents view, menu) " <>
+          "unless allow_non_conversation is true."
       ],
       examples: [
         %{
