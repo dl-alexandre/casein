@@ -67,11 +67,16 @@ defmodule Casein.Agents.TerminalToolsTest do
   end
 
   test "workspace_id rejects mismatched session" do
-    assert {:error, :workspace_mismatch} =
+    assert {:error, %{error: :workspace_mismatch} = err} =
              TerminalTools.invoke("terminal_topology", %{
                "workspace_id" => "alpha",
                "session" => "casein_other_u-dev"
              })
+
+    assert err.workspace.arg == "alpha"
+    assert err.workspace.kind == :slug
+    assert err.session.name == "casein_other_u-dev"
+    assert err.session.workspace == "other"
   end
 
   test "persisted workspace identity keeps list, topology, and capture in one scope" do
@@ -130,6 +135,79 @@ defmodule Casein.Agents.TerminalToolsTest do
                "session" => session,
                "pane" => "%1"
              })
+  end
+
+  test "next_arguments from list_sessions is accepted by next_tool and topology" do
+    workspace_id = "69ab354b-0157-4344-88db-40b751773eec"
+    session = Tmux.session_name("mbaldin-v3-design-c", "wt-next")
+
+    assert {:ok, _record} =
+             State.sync(%Workspace{
+               id: workspace_id,
+               name: "mbaldin-v3-design-c",
+               path: "/workspace",
+               status: :running
+             })
+
+    seed_live_session!(session)
+
+    assert {:ok, listed} = TerminalTools.list_sessions(%{"workspace_id" => workspace_id})
+    assert listed.recommended_session == session
+    assert listed.next_tool == "terminal_context"
+    assert listed.next_arguments == %{workspace_id: workspace_id, session: session}
+
+    next_args =
+      Map.new(listed.next_arguments, fn {key, value} -> {to_string(key), value} end)
+
+    assert {:ok, _context} = TerminalTools.invoke(listed.next_tool, next_args)
+
+    assert {:ok, %{panes: [%{id: "%1"}]}} =
+             TerminalTools.invoke("terminal_topology", %{
+               "workspace_id" => workspace_id,
+               "session" => session
+             })
+  end
+
+  test "slug and omitted workspace_id resolve or fail fast without manager HTTP" do
+    workspace_id = "69ab354b-0157-4344-88db-40b751773eec"
+    slug = "mbaldin-v3-design-c"
+    session = Tmux.session_name(slug, "wt-fast")
+
+    assert {:ok, _record} =
+             State.sync(%Workspace{
+               id: workspace_id,
+               name: slug,
+               path: "/workspace",
+               status: :running
+             })
+
+    seed_live_session!(session)
+    hang_workspace_source!()
+
+    {slug_elapsed, slug_result} =
+      timed_ms(fn ->
+        TerminalTools.invoke("terminal_topology", %{"workspace_id" => slug, "session" => session})
+      end)
+
+    {uuid_elapsed, uuid_result} =
+      timed_ms(fn ->
+        TerminalTools.invoke("terminal_topology", %{
+          "workspace_id" => workspace_id,
+          "session" => session
+        })
+      end)
+
+    {omitted_elapsed, omitted_result} =
+      timed_ms(fn ->
+        TerminalTools.invoke("terminal_topology", %{"session" => session})
+      end)
+
+    assert {:ok, %{panes: [%{id: "%1"}]}} = slug_result
+    assert {:ok, %{panes: [%{id: "%1"}]}} = uuid_result
+    assert {:ok, %{panes: [%{id: "%1"}]}} = omitted_result
+    assert slug_elapsed < 5_000
+    assert uuid_elapsed < 5_000
+    assert omitted_elapsed < 5_000
   end
 
   test "definitions include workspace_id on every tool" do
@@ -1279,6 +1357,44 @@ defmodule Casein.Agents.TerminalToolsTest do
     assert Enum.any?(candidates, &(&1.session == session_b))
   end
 
+  defp seed_live_session!(session) do
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: "/workspace"
+        }
+      ]
+    })
+  end
+
+  defp hang_workspace_source! do
+    previous = Application.get_env(:casein, :workspace_source)
+    Application.put_env(:casein, :workspace_source, __MODULE__.HangingWorkspaceSource)
+
+    on_exit(fn -> restore_app_env(:workspace_source, previous) end)
+  end
+
+  defp timed_ms(fun) do
+    start = System.monotonic_time(:millisecond)
+    result = fun.()
+    {System.monotonic_time(:millisecond) - start, result}
+  end
+
   defp seed_workspace(id, path) do
     {:ok, _} =
       State.sync(%Workspace{
@@ -2056,4 +2172,39 @@ defmodule Casein.Agents.TerminalToolsTest do
         await_blocked(pid)
     end
   end
+end
+
+defmodule Casein.Agents.TerminalToolsTest.HangingWorkspaceSource do
+  @moduledoc false
+  @behaviour Casein.WorkspaceSource
+
+  @impl true
+  def get(_id, _auth \\ nil) do
+    Process.sleep(30_000)
+    {:error, :timeout}
+  end
+
+  @impl true
+  def list(_opts \\ [], _auth \\ nil), do: {:ok, []}
+
+  @impl true
+  def create(_params, _auth \\ nil), do: {:error, :unsupported}
+
+  @impl true
+  def start(_id, _auth \\ nil), do: {:error, :unsupported}
+
+  @impl true
+  def stop(_id, _auth \\ nil), do: {:error, :unsupported}
+
+  @impl true
+  def delete(_id, _opts \\ [], _auth \\ nil), do: {:error, :unsupported}
+
+  @impl true
+  def stream_logs(_id, _service, _pid), do: {:error, :unsupported}
+
+  @impl true
+  def safe_host_path(_), do: {:error, :unsupported}
+
+  @impl true
+  def safe_host_loc(_), do: {:error, :unsupported}
 end
