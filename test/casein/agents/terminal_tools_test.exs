@@ -330,15 +330,223 @@ defmodule Casein.Agents.TerminalToolsTest do
       {session, "%2"} => "# Casein agent pane\n"
     })
 
-    assert {:ok,
-            %{
-              recommended_session: ^session,
-              recommended_agent_pane: "%2",
-              safe_to_mutate: true,
-              next_tool: "terminal_send_agent_command",
-              next_arguments: %{session: ^session}
-            }} =
+    assert {:ok, payload} =
              TerminalTools.invoke("terminal_context", %{"workspace_id" => "alpha"})
+
+    assert payload.recommended_session == session
+    assert payload.recommended_agent_pane == "%2"
+    assert payload.safe_to_mutate == true
+    assert payload.next_tool == "terminal_send_agent_command"
+    assert payload.next_arguments == %{workspace_id: "alpha", session: session}
+    assert payload.agent_pane.status == "dedicated_pane_present"
+    assert payload.agent_pane.ready == false
+    assert payload.agent_pane.safe_to_target == true
+  end
+
+  test "session discovery exposes stable dev_ide identity metadata" do
+    workspace_id = "ws-dev-ide"
+    workspace_path = "/data/workspaces/dalexandre/dev_ide"
+    session = Tmux.session_name("dev_ide", "wt-coordinator")
+
+    assert {:ok, _record} =
+             State.sync(%Workspace{
+               id: workspace_id,
+               name: "dev_ide",
+               path: workspace_path,
+               status: :running
+             })
+
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [
+        %{id: "@1", index: 0, name: "operator", active: true, panes: 2, activity: 10}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "bash",
+          current_path: workspace_path,
+          role: "operator"
+        },
+        %{
+          id: "%2",
+          window_id: "@1",
+          index: 1,
+          active: false,
+          current_command: "opencode",
+          current_path: "/data/casein-agent-worktrees/dev-ide-worker",
+          role: "agent"
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_session_meta, %{
+      session => %{attached: true, session_alias: "dev_ide coordinator"}
+    })
+
+    on_exit(fn -> TmuxCtl.Test.FakeState.delete(:fake_tmux_session_meta) end)
+
+    assert {:ok, payload} =
+             TerminalTools.list_sessions(%{
+               "workspace_id" => workspace_id,
+               "session" => session
+             })
+
+    assert payload.recommended_session == session
+    refute Map.get(payload, :ambiguous, false)
+
+    assert [candidate] = payload.sessions
+    assert candidate.session == session
+    assert candidate.session_alias == "dev_ide coordinator"
+    assert candidate.workspace_name == "dev_ide"
+    assert candidate.workspace_path == workspace_path
+
+    assert candidate.paths == [
+             "/data/casein-agent-worktrees/dev-ide-worker",
+             workspace_path
+           ]
+
+    assert candidate.pane_roles == ["agent", "operator"]
+    assert candidate.operator_pane_id == "%1"
+    assert candidate.agent_pane_id == "%2"
+    assert candidate.role == "operator"
+    assert candidate.role_source == "pane_role"
+  end
+
+  test "terminal_context identifies the operator and gives an actionable absent-agent step" do
+    workspace_id = "ws-dev-ide-missing-agent"
+    workspace_path = "/data/workspaces/dalexandre/dev_ide"
+    session = Tmux.session_name("dev_ide", "wt-operator")
+
+    assert {:ok, _record} =
+             State.sync(%Workspace{
+               id: workspace_id,
+               name: "dev_ide",
+               path: workspace_path,
+               status: :running
+             })
+
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [
+        %{id: "@1", index: 0, name: "operator", active: true, panes: 1, activity: 10}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "bash",
+          current_path: workspace_path
+        }
+      ]
+    })
+
+    assert {:ok, payload} =
+             TerminalTools.invoke("terminal_context", %{
+               "workspace_id" => workspace_id,
+               "session" => session
+             })
+
+    assert payload.operator_pane == %{
+             pane_id: "%1",
+             role: "operator_candidate",
+             role_marked: false,
+             role_source: "workspace_root_single_pane",
+             status: "identified"
+           }
+
+    assert payload.session_identity.session == session
+    assert payload.session_identity.workspace_name == "dev_ide"
+    assert payload.session_identity.workspace_path == workspace_path
+    assert payload.session_identity.path == workspace_path
+    assert payload.session_identity.role == "operator_candidate"
+
+    assert payload.agent_pane.status == "absent"
+    assert payload.agent_pane.ready == false
+    assert payload.agent_pane.safe_to_target == false
+    assert payload.agent_pane.suggested_template == "agent_pair"
+    assert payload.agent_pane.next_step =~ "worker_launch"
+    assert payload.reason == "dedicated_agent_pane_absent"
+    assert payload.safe_to_mutate == false
+    assert payload.next_tool == "worker_launch"
+    assert payload.next_arguments == %{workspace_id: workspace_id, session: session}
+    assert payload.next_required_arguments == ["runtime", "task_slug", "initial_prompt"]
+  end
+
+  test "terminal_topology identifies the unique workspace-root operator beside worker windows" do
+    workspace_id = "ws-dev-ide-workers"
+    workspace_path = "/data/workspaces/dalexandre/dev_ide"
+    session = Tmux.session_name("dev_ide", "wt-workers")
+
+    assert {:ok, _record} =
+             State.sync(%Workspace{
+               id: workspace_id,
+               name: "dev_ide",
+               path: workspace_path,
+               status: :running
+             })
+
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [
+        %{id: "@1", index: 0, name: "operator", active: true, panes: 1, activity: 10},
+        %{id: "@2", index: 1, name: "worker-task", active: false, panes: 1, activity: 9}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "opencode",
+          current_path: workspace_path
+        },
+        %{
+          id: "%2",
+          window_id: "@2",
+          index: 0,
+          active: true,
+          current_command: "opencode",
+          current_path: "/data/casein-agent-worktrees/worker-task"
+        }
+      ]
+    })
+
+    assert {:ok, payload} =
+             TerminalTools.invoke("terminal_topology", %{
+               "workspace_id" => workspace_id,
+               "session" => session
+             })
+
+    assert payload.operator_pane == %{
+             pane_id: "%1",
+             role: "operator_candidate",
+             role_marked: false,
+             role_source: "workspace_root_unique_pane",
+             status: "identified"
+           }
+
+    assert payload.session_identity.operator_pane_id == "%1"
+    assert payload.session_identity.role == "operator_candidate"
+    assert payload.agent_pane.status == "absent"
+    assert payload.safe_to_mutate == false
   end
 
   test "terminal_context recommends the attached session when ambiguous" do

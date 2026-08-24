@@ -83,6 +83,51 @@ defmodule Casein.MCP.Scope do
     preview_playback_open
   )
 
+  # Terminal MCP URLs generated for a pane carry `tmux_session`. Terminal tool
+  # schemas call the same target `session`, so transport scoping must translate
+  # the query key instead of silently dropping it.
+  @terminal_default_tmux_session_tools ~w(
+    terminal_list_sessions
+    terminal_context
+    terminal_topology
+    terminal_capture
+    terminal_agent_pane
+    terminal_capture_agent
+    terminal_agent_transcript
+    terminal_send_agent_keys
+    terminal_send_agent_command
+    terminal_paste_agent_text
+    terminal_set_next_prompt
+    terminal_clear_next_prompt
+    terminal_get_next_prompt
+    terminal_request_clarification
+    terminal_request_human_input
+    terminal_say
+    terminal_inbox
+    terminal_send_keys
+    terminal_send_command
+    file_open_in_pane
+    terminal_layout_snapshot
+    terminal_layout_apply
+    terminal_set_agent_label
+    terminal_bind_issue
+    terminal_work_handle_create
+    terminal_report_agent_state
+    terminal_wait_agent_state
+    orchestration_status
+    worker_status
+    orchestration_list_workers
+    worker_launch
+    worker_cancel
+    worktree_status
+    worktree_changed_paths
+    worktree_diff
+  )
+
+  @doc "Returns terminal tools whose MCP URL may pin an exact tmux session."
+  @spec terminal_default_tmux_session_tool_names() :: [String.t()]
+  def terminal_default_tmux_session_tool_names, do: @terminal_default_tmux_session_tools
+
   # Terminal tools whose resolution can anchor to the calling agent's own
   # pane. Kept in sync with the `caller_pane` key in each action's schema —
   # injection into a tool without the schema key would fail validation.
@@ -228,6 +273,41 @@ defmodule Casein.MCP.Scope do
   end
 
   defp resolve_tmux_session_args(
+         tool_name,
+         args,
+         default_tmux_session,
+         default_workspace_id,
+         :terminal
+       )
+       when tool_name in @terminal_default_tmux_session_tools and
+              is_binary(default_tmux_session) do
+    with :ok <-
+           enforce_terminal_tmux_workspace_scope(default_tmux_session, default_workspace_id) do
+      case terminal_session(args) do
+        nil ->
+          {:ok, Map.put(args, "session", default_tmux_session), :pre_scoped}
+
+        ^default_tmux_session ->
+          {:ok, args, :args}
+
+        requested ->
+          if equivalent_scoped_session?(
+               default_tmux_session,
+               requested,
+               args,
+               default_workspace_id
+             ) do
+            # The endpoint's concrete session stays authoritative even when
+            # the caller used the workspace-name alias for the same sid.
+            {:ok, Map.put(args, "session", default_tmux_session), :pre_scoped}
+          else
+            {:error, tmux_session_scope_mismatch(default_tmux_session, requested)}
+          end
+      end
+    end
+  end
+
+  defp resolve_tmux_session_args(
          _tool_name,
          args,
          _default_tmux_session,
@@ -241,6 +321,30 @@ defmodule Casein.MCP.Scope do
     case workspace_id(args) || default_workspace_id do
       id when is_binary(id) -> TmuxScope.equivalent_session?(scoped, requested, id)
       _ -> false
+    end
+  end
+
+  defp enforce_terminal_tmux_workspace_scope(_session, nil) do
+    {:error,
+     %{
+       error: :tmux_session_requires_workspace_scope,
+       message: "A session-scoped Terminal MCP endpoint must also be scoped to a workspace."
+     }}
+  end
+
+  defp enforce_terminal_tmux_workspace_scope(session, workspace_id) do
+    if TmuxScope.session_in_workspace?(session, workspace_id) do
+      :ok
+    else
+      {:error,
+       %{
+         error: :tmux_session_workspace_mismatch,
+         scoped_workspace_id: workspace_id,
+         scoped_tmux_session: session,
+         message:
+           "The Terminal MCP endpoint session #{inspect(session)} does not belong to " <>
+             "workspace #{inspect(workspace_id)}."
+       }}
     end
   end
 
@@ -380,10 +484,10 @@ defmodule Casein.MCP.Scope do
   end
 
   defp tmux_session(args) when is_map(args) do
-    args
-    |> value("tmux_session")
-    |> non_empty()
+    non_empty(value(args, "tmux_session")) || terminal_session(args)
   end
+
+  defp terminal_session(args) when is_map(args), do: args |> value("session") |> non_empty()
 
   defp value(map, key) when is_binary(key) do
     Map.get(map, key) || Map.get(map, atom_key(key))
@@ -395,6 +499,7 @@ defmodule Casein.MCP.Scope do
   defp atom_key("path"), do: :path
   defp atom_key("cwd"), do: :cwd
   defp atom_key("tmux_session"), do: :tmux_session
+  defp atom_key("session"), do: :session
   defp atom_key(_key), do: nil
 
   defp non_empty(value) when is_binary(value) do
@@ -456,9 +561,9 @@ defmodule Casein.MCP.Scope do
       scoped_tmux_session: scoped_tmux_session,
       requested_tmux_session: requested_tmux_session,
       message:
-        "This Preview MCP endpoint is pre-scoped to tmux_session #{inspect(scoped_tmux_session)}. " <>
-          "Omit tmux_session on preview-open calls so it is injected automatically, " <>
-          "or use the MCP URL for #{inspect(requested_tmux_session)}."
+        "This MCP endpoint is pre-scoped to tmux_session #{inspect(scoped_tmux_session)}. " <>
+          "Omit the session argument so it is injected automatically, or use the MCP URL " <>
+          "for #{inspect(requested_tmux_session)}."
     }
   end
 end
