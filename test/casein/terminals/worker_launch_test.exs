@@ -495,6 +495,7 @@ defmodule Casein.Terminals.WorkerLaunchTest do
            load1 40.00 exceeds nproc 32 × max_ratio 1.0
            probe: load1=40.00 nproc=32 max_ratio=1.0 mem_available_kb=37748736 min_mem_kb=2097152
            override: CASEIN_SPAWN_FORCE=1 bash scripts/spawn-agent-worker.sh ...
+    refused:headroom
     """
 
     test "exit 75 with a headroom decline is spawn_headroom_exhausted, not a bare exit code" do
@@ -520,6 +521,7 @@ defmodule Casein.Terminals.WorkerLaunchTest do
 
       assert err.error == :spawn_headroom_exhausted
       assert err.exit_status == 75
+      assert err.token == "refused:headroom"
       assert err.reason =~ "load1 40.00 exceeds nproc 32"
       assert err.load1 == "40.00"
       assert err.nproc == 32
@@ -565,8 +567,64 @@ defmodule Casein.Terminals.WorkerLaunchTest do
                )
 
       assert err.error == :spawn_headroom_exhausted
+      assert err.token == "refused:headroom"
       assert is_binary(err.reason) and err.reason != ""
       assert McpCtl.Error.summary(err) =~ "headroom"
+    end
+
+    test "exit 75 with refused:headroom token classifies without the prose phrase" do
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_dry_run_failed,
+           exit_status: 75,
+           output:
+             "refused:headroom\nprobe: load1=40.00 nproc=32 max_ratio=1.0 mem_available_kb=1000",
+           message: "spawn dry-run failed (exit 75)"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "grok",
+                 task_slug: "token",
+                 dry_run: true,
+                 runner: runner
+               )
+
+      assert err.error == :spawn_headroom_exhausted
+      assert err.token == "refused:headroom"
+      assert err.load1 == "40.00"
+      refute err.message == "spawn dry-run failed (exit 75)"
+    end
+
+    test "proceed:headroom-force is never classified as a refusal" do
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_dry_run_failed,
+           exit_status: 75,
+           output:
+             "proceed:headroom-force\nwarn: host headroom below threshold; proceeding under CASEIN_SPAWN_FORCE",
+           message: "spawn dry-run failed (exit 75)"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "claude",
+                 task_slug: "force",
+                 dry_run: true,
+                 runner: runner
+               )
+
+      refute err.error == :spawn_headroom_exhausted
+      refute Map.has_key?(err, :token)
+      assert err.exit_status == 75
     end
   end
 
