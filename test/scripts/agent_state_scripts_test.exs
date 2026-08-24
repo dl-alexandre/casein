@@ -132,6 +132,29 @@ defmodule Scripts.AgentStateScriptsTest do
     refute run_state_script(%{"GROK_HOOK_EVENT" => "post_tool_use"})
   end
 
+  test "startup Notification banners report idle, not blocked" do
+    body =
+      run_state_script(
+        %{},
+        ~s({"hook_event_name": "Notification", "message": "Claude Code login successful"})
+      )
+
+    assert body =~ ~s("state": "idle")
+    refute body =~ "login successful"
+    refute body =~ ~s("state": "blocked")
+  end
+
+  test "permission Notification still reports blocked" do
+    body =
+      run_state_script(
+        %{},
+        ~s({"hook_event_name": "Notification", "message": "needs permission to edit"})
+      )
+
+    assert body =~ ~s("state": "blocked")
+    assert body =~ "needs permission to edit"
+  end
+
   test "codex legacy notify forwards the canonical event to the workspace hook receiver" do
     notification =
       Jason.encode!(%{
