@@ -385,9 +385,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
              "terminal_list_sessions",
              "terminal_context",
              "terminal_topology",
-             "terminal_capture",
              "terminal_agent_pane",
-             "terminal_capture_agent",
              "terminal_agent_transcript"
            ] do
     %{
@@ -395,6 +393,18 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       danger_level: :low,
       capabilities: [:terminal_read],
       recovery_hints: ["Call terminal_list_sessions first when session is unknown."]
+    }
+  end
+
+  def metadata(name) when name in ["terminal_capture", "terminal_capture_agent"] do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: [
+        "Call terminal_list_sessions first when session is unknown.",
+        "input_buffer.source == placeholder is a suggested prompt, not unsent user text; unknown is not typed content."
+      ]
     }
   end
 
@@ -426,7 +436,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "On submit_not_confirmed the text reached the pane but was never submitted — " <>
           "capture the pane before resending, or use terminal_set_next_prompt if the " <>
           "agent is mid-turn.",
-        "Do not double-Enter yourself: submit paths settle, press Enter, and retry once."
+        "Do not double-Enter yourself: submit paths settle, press Enter, and retry once.",
+        "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ]
     }
   end
@@ -482,7 +493,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Prefer terminal_send_agent_command when controlling the dedicated agent pane.",
         "Use terminal_capture after sending input to inspect output.",
         "terminal_send_command confirms the submit (one retry Enter) unless confirm:false.",
-        "On submit_not_confirmed capture the pane before resending."
+        "On submit_not_confirmed capture the pane before resending.",
+        "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ],
       examples: [
         %{
