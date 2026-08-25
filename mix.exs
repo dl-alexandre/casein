@@ -438,6 +438,7 @@ defmodule Casein.MixProject do
     lib_files = [
       "agent-auth-profile.sh",
       "agent-env.sh",
+      "agent-identity.sh",
       "agent-skills.sh",
       "agent-worktree.sh",
       "grok-capability-bundle.py",
