@@ -130,6 +130,12 @@ jobs:
           bash scripts/npm-audit.sh
 
       - name: Test host and terminal resolution
+        env:
+          # The desktop smoke suite is database-independent and the packaged
+          # desktop runtime uses SQLite. Hosted macOS runners cannot provide
+          # Linux container services, so keep that lane hermetic instead of
+          # waiting on an unavailable PostgreSQL daemon at localhost:5432.
+          CASEIN_REPO_ADAPTER: ${{ matrix.selfHosted && 'postgres' || 'sqlite' }}
         run: |
           # The self-hosted macOS runner is shared with the desktop package
           # smoke and has limited scheduler/process headroom. These native
