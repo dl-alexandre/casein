@@ -14,8 +14,17 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
   @doc "Ensure the runtime-owned preview server for the scoped agent session."
   @spec ensure_server_here(map(), map()) :: {:ok, map()} | {:error, term()}
   def ensure_server_here(workspace, params \\ %{}) do
-    with session when is_binary(session) <- resolve_tmux_session(workspace, params),
-         {:ok, %Runtime{} = runtime} <- runtime_for_tmux_session(workspace, session),
+    case resolve_tmux_session(workspace, params) do
+      session when is_binary(session) ->
+        start_runtime_preview_server(workspace, session)
+
+      _ ->
+        {:error, missing_tmux_session_error()}
+    end
+  end
+
+  defp start_runtime_preview_server(workspace, session) do
+    with {:ok, %Runtime{} = runtime} <- runtime_for_tmux_session(workspace, session),
          %{} = preview_server <- Deps.impl(:runtimes).runtime_preview_server(runtime),
          :ok <- Deps.impl(:runtimes).ensure_preview_server_started(runtime) do
       {:ok,
@@ -28,7 +37,7 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
        }}
     else
       nil ->
-        {:error, missing_tmux_session_error()}
+        {:error, :runtime_preview_server_missing}
 
       false ->
         {:error, :runtime_preview_server_missing}
@@ -143,10 +152,8 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
   defp preview_preflight_reason(reason), do: inspect(reason)
 
   defp resolve_tmux_session(workspace, params) do
-    case string_param(params, :tmux_session) || string_param(params, :session) do
-      session when is_binary(session) -> session
-      _ -> SessionResolve.workspace_tmux_session(workspace)
-    end
+    SessionResolve.requested_tmux_session(params) ||
+      SessionResolve.workspace_tmux_session(workspace)
   end
 
   defp runtime_for_tmux_session(workspace, tmux_session) do
@@ -201,6 +208,10 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
     end
   end
 
+  defp runtime_scope(%{id: id, name: name} = workspace)
+       when is_binary(id) and is_binary(name) and name != "",
+       do: workspace
+
   defp runtime_scope(workspace) do
     case workspace_id(workspace) do
       id when is_binary(id) -> id
@@ -227,13 +238,6 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
 
   defp workspace_id(workspace),
     do: Map.get(workspace, :id) || Map.get(workspace, "id")
-
-  defp string_param(params, key) do
-    case Map.get(params, Atom.to_string(key)) || Map.get(params, key) do
-      value when is_binary(value) and value != "" -> value
-      _ -> nil
-    end
-  end
 
   defp parse_port(port) when is_integer(port), do: {:ok, port}
 

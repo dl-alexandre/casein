@@ -38,7 +38,13 @@ defmodule Casein.Agents.Transcripts.Discovery do
   # go stale together.
   @live_window_seconds 1_800
 
-  @type error_reason :: :no_cwd | :no_transcript_dir | :no_live_transcript | :ambiguous
+  @type error_reason ::
+          :no_cwd
+          | :no_transcript_dir
+          | :no_live_transcript
+          | :ambiguous
+          | :path_missing
+          | :invalid_session_id
 
   @doc "Seconds within which a session file counts as live evidence."
   @spec live_window_seconds() :: pos_integer()
@@ -104,6 +110,72 @@ defmodule Casein.Agents.Transcripts.Discovery do
 
   def resolve(cwd, _roots, _opts) when is_binary(cwd), do: {:error, :no_cwd}
   def resolve(nil, _roots, _opts), do: {:error, :no_cwd}
+
+  @doc """
+  Resolve the transcript file named for `session_id` under `cwd`.
+
+  Claude writes `{session_id}.jsonl` in the project directory derived from the
+  launch cwd. Unlike `resolve/3` this is unambiguous even when two sessions
+  look live: the id is the file name.
+  """
+  @spec resolve_session(String.t() | nil, String.t() | nil, [String.t()]) ::
+          {:ok, String.t()} | {:error, error_reason()}
+  def resolve_session(cwd, session_id, roots)
+
+  def resolve_session(cwd, session_id, roots)
+      when is_binary(cwd) and cwd != "" and is_binary(session_id) and is_list(roots) do
+    case session_filename(session_id) do
+      {:ok, filename} ->
+        slug = project_slug(cwd)
+
+        dirs =
+          roots
+          |> Enum.map(&Path.join(&1, slug))
+          |> Enum.filter(&File.dir?/1)
+
+        if dirs == [] do
+          {:error, :no_transcript_dir}
+        else
+          dirs
+          |> Enum.map(&Path.join(&1, filename))
+          |> Enum.find(&File.regular?/1)
+          |> case do
+            nil -> {:error, :path_missing}
+            path -> {:ok, path}
+          end
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def resolve_session(_cwd, session_id, _roots)
+      when not is_binary(session_id) or session_id == "",
+      do: {:error, :invalid_session_id}
+
+  def resolve_session(_cwd, _session_id, _roots), do: {:error, :no_cwd}
+
+  defp session_filename(session_id) do
+    trimmed = String.trim(session_id)
+
+    cond do
+      trimmed == "" ->
+        {:error, :invalid_session_id}
+
+      String.contains?(trimmed, ["/", "\\", ".."]) ->
+        {:error, :invalid_session_id}
+
+      not Regex.match?(~r/^[A-Za-z0-9._-]+$/, trimmed) ->
+        {:error, :invalid_session_id}
+
+      String.ends_with?(trimmed, ".jsonl") ->
+        {:ok, trimmed}
+
+      true ->
+        {:ok, trimmed <> ".jsonl"}
+    end
+  end
 
   # One `ls` of a single directory whose name is derived from the caller's own
   # cwd. Non-`.jsonl` entries and subdirectories are ignored rather than

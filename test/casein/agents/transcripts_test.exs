@@ -320,6 +320,51 @@ defmodule Casein.Agents.TranscriptsTest do
     end
   end
 
+  describe "resolve_for_pane/2" do
+    test "rebuilds the path from agent_session_id and cwd when the cache is gone", %{home: home} do
+      cwd = Path.join(home, "wt-resolve")
+      File.mkdir_p!(cwd)
+      session_id = "sess-live"
+      path = claude_project_transcript!(home, cwd, session_id <> ".jsonl", sample_transcript())
+
+      pane = %{id: "%1", current_path: cwd, current_command: "claude"}
+      report = %{transcript_path: nil, agent_session_id: session_id}
+
+      assert {:ok, ^path} = Transcripts.resolve_for_pane(pane, report: report)
+    end
+
+    test "uses a still-valid reported path without rediscovery", %{home: home} do
+      path = claude_transcript!(home, "cached.jsonl", sample_transcript())
+      pane = %{id: "%1", current_path: "/unused", current_command: "claude"}
+      report = %{transcript_path: path, agent_session_id: "sess"}
+
+      assert {:ok, ^path} = Transcripts.resolve_for_pane(pane, report: report)
+    end
+
+    test "returns path_missing when the session file is absent", %{home: home} do
+      cwd = Path.join(home, "wt-missing")
+      File.mkdir_p!(cwd)
+      _dir = claude_project_dir!(home, cwd)
+
+      pane = %{id: "%1", current_path: cwd, current_command: "claude"}
+      report = %{agent_session_id: "does-not-exist"}
+
+      assert {:error, :path_missing} = Transcripts.resolve_for_pane(pane, report: report)
+    end
+
+    test "returns unsupported_runtime for hook-less panes", %{home: home} do
+      pane = %{id: "%1", current_path: Path.join(home, "wt-oc"), current_command: "opencode"}
+
+      assert {:error, :unsupported_runtime} = Transcripts.resolve_for_pane(pane, report: nil)
+    end
+
+    test "returns no_hook when nothing was reported and discovery has no dir", %{home: home} do
+      pane = %{id: "%1", current_path: Path.join(home, "empty"), current_command: "claude"}
+
+      assert {:error, :no_hook} = Transcripts.resolve_for_pane(pane, report: nil)
+    end
+  end
+
   defp sample_transcript do
     [
       user_entry("u1", nil, "Fix the bug", "2026-07-06T10:00:00.000Z"),
@@ -371,6 +416,25 @@ defmodule Casein.Agents.TranscriptsTest do
   defp claude_transcript!(home, name, body) do
     path = Path.join([home, ".claude", "projects", "test-project", name])
     File.mkdir_p!(Path.dirname(path))
+    File.write!(path, body)
+    path
+  end
+
+  defp claude_project_dir!(home, cwd) do
+    dir =
+      Path.join([
+        home,
+        ".claude",
+        "projects",
+        Casein.Agents.Transcripts.Discovery.project_slug(cwd)
+      ])
+
+    File.mkdir_p!(dir)
+    dir
+  end
+
+  defp claude_project_transcript!(home, cwd, name, body) do
+    path = Path.join(claude_project_dir!(home, cwd), name)
     File.write!(path, body)
     path
   end

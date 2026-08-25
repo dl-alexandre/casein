@@ -1460,20 +1460,16 @@ defmodule Casein.Agents.PreviewToolsTest do
         else: Application.put_env(:casein, :runtime_preview_launcher_enabled, previous)
     end)
 
-    {:ok, _} =
-      Casein.Workspaces.State.sync(%Casein.Workspace{
-        id: @v3_workspace.id,
-        name: "tools",
-        path: "/tmp/ws-tools",
-        status: :running
-      })
+    workspace = Map.put(@v3_workspace, :name, "tools")
+    stored = Tmux.session_name(workspace.id, "u-dev")
+    requested = Tmux.session_name(workspace.name, "u-dev")
+    other = Tmux.session_name(workspace.id, "wt-other")
 
-    stored = Tmux.session_name(@v3_workspace.id, "u-dev")
-    requested = Tmux.session_name("tools", "u-dev")
-    seed_runtime_surface!(@v3_workspace.id, stored, runtime_id: "rt-alias", port: 4103)
+    seed_runtime_surface!(workspace.id, stored, runtime_id: "rt-alias", port: 4103)
+    seed_runtime_surface!(workspace.id, other, runtime_id: "rt-other", port: 4105)
 
     assert {:ok, %{runtime_id: "rt-alias", tmux_session: ^requested}} =
-             PreviewTools.invoke("preview_ensure_server_here", @v3_workspace, %{
+             PreviewTools.invoke("preview_ensure_server_here", workspace, %{
                "tmux_session" => requested
              })
   end
@@ -1490,13 +1486,19 @@ defmodule Casein.Agents.PreviewToolsTest do
 
     prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
     worktree_session = "#{prefix}wt-agent"
+    other_session = "#{prefix}wt-other"
 
     seed_runtime_surface!(@v3_workspace.id, worktree_session,
       runtime_id: "rt-session",
       port: 4104
     )
 
-    assert {:ok, %{runtime_id: "rt-session"}} =
+    seed_runtime_surface!(@v3_workspace.id, other_session,
+      runtime_id: "rt-other",
+      port: 4106
+    )
+
+    assert {:ok, %{runtime_id: "rt-session", tmux_session: ^worktree_session}} =
              PreviewTools.invoke("preview_ensure_server_here", @v3_workspace, %{
                "session" => worktree_session
              })

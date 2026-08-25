@@ -1,7 +1,7 @@
 defmodule Casein.Agents.TerminalTools.Impl.Agent do
   @moduledoc false
 
-  alias Casein.Agents.{Inbox, TerminalOutputFormat, Transcripts}
+  alias Casein.Agents.{AuthProfile, Inbox, TerminalOutputFormat, Transcripts}
   alias Casein.Agents.TerminalTools.Helpers
   alias Casein.Agents.Inbox.Address
   alias Casein.AgentSessions.GrokACP.Attachments
@@ -45,7 +45,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   def agent_transcript(params) do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, pane} <- label_target_pane(session, params),
-         {:ok, path} <- transcript_path_for(session, pane.id),
+         {:ok, path} <- transcript_path_for(session, pane, params),
          {:ok, transcript} <-
            Transcripts.read(path,
              since: string_param(params, "since"),
@@ -652,7 +652,13 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
         value ->
           case IssueBinding.bind(workspace_id, session, pane.id, value,
                  url: Map.get(params, "url") || Map.get(params, :url),
-                 title: Map.get(params, "title") || Map.get(params, :title)
+                 title: Map.get(params, "title") || Map.get(params, :title),
+                 window_id: Map.get(pane, :window_id) || Map.get(pane, "window_id"),
+                 allow_duplicate:
+                   truthy?(
+                     Map.get(params, "allow_duplicate") || Map.get(params, :allow_duplicate)
+                   ),
+                 check_live: true
                ) do
             {:ok, entry} ->
               {:ok,
@@ -666,6 +672,9 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
 
             {:error, :invalid_issue} ->
               {:error, {:invalid_issue, value}}
+
+            {:error, %{error: :issue_already_bound} = refusal} ->
+              {:error, refusal}
           end
       end
     end
@@ -702,6 +711,40 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       {:error, :unknown_handle} -> {:error, :unknown_handle}
       other -> other
     end
+  end
+
+  @doc "Read-only workspace-scoped holders of a GitHub issue."
+  @spec issue_holders(map()) :: {:ok, map()} | {:error, term()}
+  def issue_holders(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         raw = Map.get(params, "issue") || Map.get(params, :issue),
+         {:ok, issue} <- issue_arg(raw) do
+      holders = IssueBinding.holders(workspace_id, issue, check_live: true)
+
+      {:ok,
+       %{
+         workspace_id: workspace_id,
+         issue: issue,
+         holders: Enum.map(holders, &holder_payload/1),
+         count: length(holders)
+       }}
+    end
+  end
+
+  defp issue_arg(raw) do
+    case IssueBinding.normalize_issue(raw) do
+      nil -> {:error, {:invalid_issue, raw}}
+      number -> {:ok, number}
+    end
+  end
+
+  defp holder_payload(holder) do
+    %{
+      pane_id: holder.pane_id,
+      window_id: holder.window_id,
+      session: holder.session,
+      issue: holder.issue
+    }
   end
 
   @doc "List durable work handles for a workspace."
@@ -1085,12 +1128,13 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   defp put_wait_answer(payload, _session, _pane_id, _state, _matched, _params), do: payload
 
   defp transcript_answer(session, pane_id) do
-    case AgentState.get(session, pane_id) do
-      %{transcript_path: path} when is_binary(path) and path != "" ->
-        Transcripts.final_assistant_message(path)
+    pane =
+      tmux().list_session_panes(session)
+      |> Enum.find(&(&1.id == pane_id))
 
-      _ ->
-        nil
+    case transcript_path_for(session, pane || %{id: pane_id}, %{}) do
+      {:ok, path} -> Transcripts.final_assistant_message(path)
+      _ -> nil
     end
   end
 
@@ -1213,17 +1257,33 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
     end
   end
 
-  defp transcript_path_for(session, pane_id) do
-    case AgentState.get(session, pane_id) do
-      %{transcript_path: path} when is_binary(path) and path != "" ->
-        if Transcripts.allowed_path?(path),
-          do: {:ok, path},
-          else: {:error, :invalid_transcript_path}
+  defp transcript_path_for(session, pane, params) do
+    pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+    report = if is_binary(pane_id), do: AgentState.get(session, pane_id)
 
-      _ ->
-        {:error, :no_transcript}
+    case Transcripts.resolve_for_pane(pane, transcript_resolve_opts(report, params)) do
+      {:ok, path} ->
+        {:ok, path}
+
+      {:error, reason} ->
+        {:error, %{error: :no_transcript, reason: reason}}
     end
   end
+
+  defp transcript_resolve_opts(report, params) do
+    workspace = workspace_id(params)
+
+    [
+      report: report,
+      owner: workspace,
+      claude_home: transcript_claude_home(workspace)
+    ]
+  end
+
+  defp transcript_claude_home(workspace) when is_binary(workspace) and workspace != "",
+    do: AuthProfile.active_profile_dir(workspace, :claude)
+
+  defp transcript_claude_home(_workspace), do: nil
 
   defp tail_param(params) do
     case Map.get(params, "tail") || Map.get(params, :tail) do

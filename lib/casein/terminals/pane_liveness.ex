@@ -427,7 +427,11 @@ defmodule Casein.Terminals.PaneLiveness do
   # correctness work here, not just saving syscalls.
   defp put_transcript(pane, opts) do
     if Keyword.get(opts, :transcript, false) and observable?(pane, opts) do
-      Map.put(pane, :transcript, transcript_evidence(pane, opts))
+      evidence = transcript_evidence(pane, opts)
+
+      pane
+      |> Map.put(:transcript, evidence)
+      |> maybe_put(:transcript_path, Map.get(evidence, :transcript_path))
     else
       pane
     end
