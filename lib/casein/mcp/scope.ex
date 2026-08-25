@@ -251,6 +251,8 @@ defmodule Casein.MCP.Scope do
          :preview
        )
        when tool_name in @preview_default_tmux_session_tools and is_binary(default_tmux_session) do
+    args = promote_session_alias(args)
+
     case tmux_session(args) do
       nil ->
         {:ok, Map.put(args, "tmux_session", default_tmux_session), :pre_scoped}
@@ -270,6 +272,18 @@ defmodule Casein.MCP.Scope do
           {:error, tmux_session_scope_mismatch(default_tmux_session, requested)}
         end
     end
+  end
+
+  defp resolve_tmux_session_args(
+         tool_name,
+         args,
+         _default_tmux_session,
+         _default_workspace_id,
+         :preview
+       )
+       when tool_name in @preview_default_tmux_session_tools do
+    args = promote_session_alias(args)
+    {:ok, args, tmux_session_arg_origin(args)}
   end
 
   defp resolve_tmux_session_args(
@@ -317,10 +331,26 @@ defmodule Casein.MCP.Scope do
     {:ok, args, tmux_session_arg_origin(args)}
   end
 
+  defp promote_session_alias(args) do
+    case {args |> value("tmux_session") |> non_empty(), session_alias(args)} do
+      {nil, session} when is_binary(session) -> Map.put(args, "tmux_session", session)
+      _ -> args
+    end
+  end
+
   defp equivalent_scoped_session?(scoped, requested, args, default_workspace_id) do
     case workspace_id(args) || default_workspace_id do
-      id when is_binary(id) -> TmuxScope.equivalent_session?(scoped, requested, id)
-      _ -> false
+      id when is_binary(id) ->
+        workspace =
+          case Workspaces.get(id) do
+            {:ok, ws} -> ws
+            _ -> id
+          end
+
+        TmuxScope.equivalent_session?(scoped, requested, workspace)
+
+      _ ->
+        false
     end
   end
 
@@ -487,7 +517,13 @@ defmodule Casein.MCP.Scope do
     non_empty(value(args, "tmux_session")) || terminal_session(args)
   end
 
-  defp terminal_session(args) when is_map(args), do: args |> value("session") |> non_empty()
+  defp session_alias(args) when is_map(args) do
+    args
+    |> value("session")
+    |> non_empty()
+  end
+
+  defp terminal_session(args) when is_map(args), do: session_alias(args)
 
   defp value(map, key) when is_binary(key) do
     Map.get(map, key) || Map.get(map, atom_key(key))

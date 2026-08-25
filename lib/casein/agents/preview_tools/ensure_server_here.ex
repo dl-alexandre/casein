@@ -47,6 +47,9 @@ defmodule Casein.Agents.PreviewTools.EnsureServerHere do
   def parameters, do: Tool.object(Helpers.open_props(), [:workspace_id])
 
   @impl Casein.Agents.ToolAction
+  def param_aliases, do: %{tmux_session: ~w(tmux_session session)}
+
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_ensure_server_here")
 
   @impl Jido.Action
