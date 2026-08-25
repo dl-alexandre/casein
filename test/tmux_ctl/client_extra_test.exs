@@ -528,6 +528,11 @@ defmodule TmuxCtl.ClientExtraTest do
              %{session: "casein_b_main", attached: false, activity: 45, session_alias: nil},
              %{session: "casein_c_main", attached: false, activity: 7}
            ] = Client.list_sessions()
+
+    assert_receive {:tmux_runner, argv}
+    assert Enum.take(argv, 2) == ~w[list-sessions -F]
+    assert [_, _, format] = argv
+    assert String.contains?(format, ~s|@casein_actor|)
   end
 
   test "set_session_actor binds an unowned session" do
