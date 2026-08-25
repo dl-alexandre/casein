@@ -270,7 +270,10 @@ defmodule Casein.Agents.CodeTools.Helpers do
     workspace_id
     |> Runtimes.list_agent_worktrees()
     |> Enum.any?(fn entry ->
-      candidate = Map.get(entry, :worktree_path) || Map.get(entry, "worktree_path")
+      candidate =
+        Map.get(entry, :worktree_path) || Map.get(entry, "worktree_path") ||
+          Map.get(entry, :path) || Map.get(entry, "path")
+
       is_binary(candidate) and canonicalize(candidate) == canonical
     end)
   end
@@ -294,10 +297,8 @@ defmodule Casein.Agents.CodeTools.Helpers do
     Map.get(params, :worktree_path) || Map.get(params, "worktree_path")
   end
 
-  defp actor_id(params, context) do
-    context[:actor] ||
-      Map.get(params, :actor_id) ||
-      Map.get(params, "actor_id")
+  defp actor_id(_params, context) do
+    context[:actor] || context[:principal]
   end
 
   defp optional_string(params, key) do
