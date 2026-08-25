@@ -15,6 +15,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   alias Casein.Terminals.PaneState
   alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.PaneWriteReceipt
+  alias Casein.Terminals.TuiSurface
+  alias Casein.Terminals.TuiSurfaceGuard
   alias Casein.Terminals.TmuxTopology
   alias Casein.Terminals.WorkHandles
 
@@ -106,7 +108,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   def send_agent_command(params) do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, command} <- string_arg(params, "command"),
-         {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: false) do
+         {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: false),
+         {:ok, _surface} <- guard_tui_surface(session, pane.id, params) do
       case tmux().send_command(session, command, target: pane.id) do
         :ok ->
           report_dispatch_working(
@@ -154,7 +157,8 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   def paste_agent_text(params) do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, text} <- string_arg(params, "text"),
-         {:ok, pane} <- paste_target_pane(session, params) do
+         {:ok, pane} <- paste_target_pane(session, params),
+         {:ok, _surface} <- guard_tui_surface(session, pane.id, params) do
       submit? = truthy?(Map.get(params, "submit") || Map.get(params, :submit))
 
       # Always paste without Enter. Submit ownership stays in PaneSubmit so the
@@ -230,13 +234,15 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
 
       case PaneSubmit.confirm_submit(session, pane_id, confirm_opts) do
         {:ok, confirmation} ->
+          confirmation = honest_submit(payload, confirmation)
+
           {:ok,
            payload
            |> Map.merge(stringify_confirmation(confirmation))
            |> PaneWriteReceipt.promote_observed(confirmation.delivery)}
 
         {:error, error} ->
-          {:error, Map.merge(payload, stringify_confirmation(error))}
+          {:error, Map.merge(payload, stringify_confirmation(honest_submit(payload, error)))}
       end
     else
       presses = press_enter_if_needed(session, pane_id, opts)
@@ -251,6 +257,43 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
            enter_presses: presses
          })
        )}
+    end
+  end
+
+  defp guard_tui_surface(session, pane_id, params) do
+    TuiSurfaceGuard.check(session, pane_id,
+      allow_non_conversation: allow_non_conversation?(params),
+      tmux: tmux()
+    )
+  end
+
+  defp allow_non_conversation?(params) do
+    truthy?(Map.get(params, "allow_non_conversation") || Map.get(params, :allow_non_conversation))
+  end
+
+  # `submitted: true` is a claim that the conversation received the text.
+  # A screen change on the agents view (or a menu) is not that claim.
+  defp honest_submit(payload, result) when is_map(result) do
+    Map.put(
+      result,
+      :submitted,
+      TuiSurface.honest_submitted(payload_surface(payload), result[:submitted])
+    )
+  end
+
+  defp payload_surface(payload) do
+    name =
+      get_in(payload, [:receipt, :surface]) ||
+        get_in(payload, ["receipt", "surface"]) ||
+        payload[:surface] || payload["surface"]
+
+    case name do
+      "conversation" -> :conversation
+      "agents_view" -> :agents_view
+      "menu" -> :menu
+      "unknown" -> :unknown
+      atom when is_atom(atom) and not is_nil(atom) -> atom
+      _ -> :unknown
     end
   end
 

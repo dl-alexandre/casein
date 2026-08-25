@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.SendCommand do
   use Jido.Action,
     name: "terminal_send_command",
     description:
-      "Type a shell command into a pane and press Enter. Target the agent pane from terminal_topology — do not use the operator's focused pane. Confirms the submit landed (hook/transcript/screen) unless confirm:false. Unconfirmed submits return submit_not_confirmed — Enter is not retried. Read the result afterward with terminal_capture. A git command that would write a worktree another pane is also working in is refused (shared_worktree_mutation); pass allow_shared_worktree when the sharing is deliberate. The write receipt includes `input_buffer` (`has_content`, `source`: empty|placeholder|typed|unknown); `placeholder` is a suggested prompt, not unsent user text.",
+      "Type a shell command into a pane and press Enter. Target the agent pane from terminal_topology — do not use the operator's focused pane. Confirms the submit landed (hook/transcript/screen) unless confirm:false. Unconfirmed submits return submit_not_confirmed — Enter is not retried. Read the result afterward with terminal_capture. A git command that would write a worktree another pane is also working in is refused (shared_worktree_mutation); pass allow_shared_worktree when the sharing is deliberate. Non-conversation TUI surfaces (Claude Code agents view, menus) are refused unless allow_non_conversation is true. submitted:true means the conversation received the text. The write receipt includes `input_buffer` (`has_content`, `source`: empty|placeholder|typed|unknown); `placeholder` is a suggested prompt, not unsent user text.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.1.0",
@@ -14,7 +14,8 @@ defmodule Casein.Agents.TerminalTools.SendCommand do
       command: [type: :string, required: true],
       pane: [type: :string],
       confirm: [type: :boolean],
-      allow_shared_worktree: [type: :boolean]
+      allow_shared_worktree: [type: :boolean],
+      allow_non_conversation: [type: :boolean]
     ]
 
   @behaviour Casein.Agents.ToolAction
@@ -31,7 +32,8 @@ defmodule Casein.Agents.TerminalTools.SendCommand do
           command: Helpers.command_param(),
           pane: Helpers.pane_param(),
           confirm: Helpers.confirm_param(),
-          allow_shared_worktree: Helpers.allow_shared_worktree_param()
+          allow_shared_worktree: Helpers.allow_shared_worktree_param(),
+          allow_non_conversation: Helpers.allow_non_conversation_param()
         }),
         ["session", "command"]
       )

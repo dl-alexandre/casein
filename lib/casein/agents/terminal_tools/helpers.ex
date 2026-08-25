@@ -154,6 +154,18 @@ defmodule Casein.Agents.TerminalTools.Helpers do
   def allow_shared_worktree_param, do: Params.allow_shared_worktree()
 
   @doc false
+  def allow_non_conversation_param do
+    %{
+      type: "boolean",
+      description:
+        "Drive a non-conversation TUI surface (Claude Code agents view, a permission " <>
+          "menu). Refused by default: paste/send into the agents view reports submitted " <>
+          "but spawns a second independent agent. Set true only when that surface is the " <>
+          "intended target. submitted:true still means the conversation received the text."
+    }
+  end
+
+  @doc false
   def allow_duplicate_param do
     %{
       type: "boolean",
@@ -480,6 +492,9 @@ defmodule Casein.Agents.TerminalTools.Helpers do
           "agent is mid-turn.",
         "Do not double-Enter yourself: submit paths settle, press Enter once, and return " <>
           "submit_not_confirmed when consumption cannot be confirmed.",
+        "A non-conversation surface (agents view, menu) is refused unless " <>
+          "allow_non_conversation is true. submitted:true means the conversation " <>
+          "received the text.",
         "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ]
     }
@@ -537,6 +552,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Use terminal_capture after sending input to inspect output.",
         "terminal_send_command confirms the submit (no Enter retry) unless confirm:false.",
         "On submit_not_confirmed capture the pane before resending.",
+        "terminal_send_command refuses a non-conversation surface (agents view, menu) " <>
+          "unless allow_non_conversation is true.",
         "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ],
       examples: [
