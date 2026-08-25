@@ -17,6 +17,7 @@ defmodule Casein.Agents.JidoActions do
     Compatibility,
     Context,
     GitDiff,
+    GitPush,
     GitStatus,
     HandoffEvidence,
     ReportProgress,
@@ -68,6 +69,14 @@ defmodule Casein.Agents.JidoActions do
       module: CodeExec,
       capability: :code,
       idempotent: false,
+      mutates: true,
+      supported: true
+    },
+    %{
+      name: "git_push",
+      module: GitPush,
+      capability: :handoff,
+      idempotent: true,
       mutates: true,
       supported: true
     },

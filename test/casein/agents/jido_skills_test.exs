@@ -69,6 +69,7 @@ defmodule Casein.Agents.JidoSkillsTest do
     assert "inspect" in names
     assert "representative-edit" in names
     assert Enum.all?(JidoSkills.default_coding(), &(&1 in names))
+    assert "pr-handoff" in names
 
     {:ok, inspect} = JidoSkills.get("inspect", roots)
     assert inspect.kind == :task
@@ -110,6 +111,9 @@ defmodule Casein.Agents.JidoSkillsTest do
     support = JidoSkills.support(git)
     refute support.supported?
     assert support.reason == :not_yet_supported
+    {:ok, handoff} = JidoSkills.get("pr-handoff", roots)
+    assert handoff.actions == ["git_push", "handoff_evidence", "report_result"]
+    assert JidoSkills.support(handoff).supported?
     assert "git_status" in support.missing
 
     write_skill!(extra, "keystroke", """
@@ -275,6 +279,7 @@ defmodule Casein.Agents.JidoSkillsTest do
 
     assert by.inspect.first_release == :supported
     assert by.patch.first_release == :supported
+    assert by.pr_handoff.first_release == :supported
     assert by.verify.first_release == :supported
     assert by.git.first_release == :not_yet_supported
     assert by.task_control.first_release == :not_yet_supported

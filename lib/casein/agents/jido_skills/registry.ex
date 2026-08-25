@@ -6,7 +6,7 @@ defmodule Casein.Agents.JidoSkills.Registry do
 
   @type skill :: Loader.skill()
 
-  @default_coding ~w(inspect patch approved-verify human-input progress representative-edit)
+  @default_coding ~w(inspect patch approved-verify human-input progress representative-edit pr-handoff)
   @default_model "opencode/grok-4.6"
   @default_provider "opencode"
   @name_re ~r/^[A-Za-z0-9][A-Za-z0-9_.-]*$/

@@ -37,12 +37,18 @@ lists the typed actions it needs; those names are mapped onto
 | `human-input` | `request_clarification`, `request_human_input` | supported |
 | `progress` | `report_progress`, `report_result`, `handoff_evidence` | supported |
 | `representative-edit` | inspect + patch + verify + evidence | supported |
+| `pr-handoff` | `git_push`, `handoff_evidence`, `report_result` | supported |
 | `git-inspect` | `git_status`, `git_diff` | **not yet supported** |
 | `task-control` | `task_wait`, `task_cancel` | **not yet supported** |
 
 Unsupported skills fail with a machine-readable payload
 (`error: :not_yet_supported` or `:runtime_specific`). They are not silently
 approximated.
+
+pr-handoff is the completion skill for a worker that has passed its targeted
+tests and pre-push gate. The worker may push its verified branch and emit the
+receipt; Dash is the only component that creates or updates the PR, resolves
+review threads, checks CI, enables auto-merge, or merges.
 
 ## Runtime selector
 
@@ -52,6 +58,7 @@ fallback:
 | Input | Result |
 |-------|--------|
 | `runtime: :opencode` | legacy OpenCode (`reason: :explicit_opencode`) |
+
 | `runtime: :jido` and flag off | `{:error, %{error: :jido_disabled}}` |
 | supported skill + flag on | Jido (`reason: :jido_default` or `:explicit_jido`) |
 | unsupported skill + Jido | `{:error, %{error: :not_yet_supported}}` |
@@ -107,5 +114,5 @@ benchmark.
 ## Parity matrix
 
 `JidoSkills.parity_matrix/0` is the machine-readable copy of the table in
-this doc. First-release gaps (`git`, `task_control`, TUI/runtime skills)
-are named, not faked.
+this doc. First-release gaps (git inspection, task_control, TUI/runtime skills)
+are named, not faked; push-only PR handoff is supported.

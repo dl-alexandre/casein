@@ -23,7 +23,9 @@ absolute path.
 - Toolchain: `mise exec elixir@1.20.0-otp-28 erlang@28.5 -- mix ...` from inside
   your worktree (never host `mix`).
 - Pre-push gate: `bash scripts/pre-push-check.sh` before any push.
-- Commit to your branch; do **not** push unless explicitly asked.
+- Commit to your branch.
+- After targeted tests and the pre-push gate pass, push the completed worker branch
+  to its configured remote. Workers may push; never merge a PR or resolve review threads.
 
 ## Constraints
 

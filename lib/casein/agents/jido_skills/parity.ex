@@ -43,6 +43,14 @@ defmodule Casein.Agents.JidoSkills.Parity do
       first_release: :supported
     },
     %{
+      capability: :pr_handoff,
+      skill: "pr-handoff",
+      actions: ~w(git_push handoff_evidence report_result),
+      jido: :supported,
+      opencode: :supported,
+      first_release: :supported
+    },
+    %{
       capability: :task_control,
       skill: "task-control",
       actions: ~w(task_wait task_cancel),

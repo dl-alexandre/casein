@@ -38,6 +38,7 @@ defmodule Casein.Agents.JidoLifecycle.ReadModel do
           blocker: map() | nil,
           result: map() | nil,
           evidence: map() | nil,
+          handoff: map() | nil,
           error: term(),
           retryable?: boolean(),
           checkpoint: map() | nil,
@@ -63,6 +64,7 @@ defmodule Casein.Agents.JidoLifecycle.ReadModel do
       blocker: nil,
       result: nil,
       evidence: nil,
+      handoff: nil,
       error: nil,
       retryable?: false,
       checkpoint: nil,
@@ -189,6 +191,27 @@ defmodule Casein.Agents.JidoLifecycle.ReadModel do
       verification_ref: payload["verification_ref"] || payload[:verification_ref],
       freshness: freshness(payload, snapshot),
       at: occurred_at(event)
+    })
+  end
+
+  defp apply_typed("jido.handoff", payload, snapshot, event) do
+    handoff = payload["handoff"] || payload[:handoff] || %{}
+
+    head_sha =
+      payload["head_sha"] || payload[:head_sha] || handoff["head_sha"] || handoff[:head_sha]
+
+    snapshot
+    |> identity(event, payload)
+    |> Map.put(:handoff, handoff)
+    |> Map.put(:last_progress, %{
+      summary:
+        Envelope.bound_summary(payload["summary"] || payload[:summary] || "worker branch pushed"),
+      at: occurred_at(event),
+      sequence: sequence(event),
+      action: "git_push",
+      pushed?: (payload["pushed"] || payload[:pushed]) == true,
+      head_sha: head_sha,
+      idempotency_key: payload["idempotency_key"] || payload[:idempotency_key]
     })
   end
 

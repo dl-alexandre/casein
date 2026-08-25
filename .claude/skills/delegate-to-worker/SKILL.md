@@ -356,6 +356,22 @@ git -C <worker-worktree-path> diff origin/master...HEAD
 Cross-check `files_changed` against the actual diff. Run targeted tests if the
 task warrants it.
 
+## 9.1 PR handoff
+
+When the task produces a completed branch, the worker owns only the branch
+commit and push:
+
+- Run the targeted tests and `bash scripts/pre-push-check.sh`.
+- Use Casein's `git_push` handoff action so the assigned isolated worktree,
+  exact branch, full head SHA, and clean tree are verified before pushing.
+- Include the returned `handoff_id`, `idempotency_key`, remote branch, and
+  full head SHA in the completion evidence.
+- Do not create, approve, resolve review threads, enable auto-merge, or merge a
+  pull request. Dash re-reads the live PR and commit state, resolves review
+  threads, checks CI, merges with the expected SHA, and verifies the merged
+  SHA plus post-merge pipeline/deployment state.
+
+
 ## 10. Cleanup
 
 Report to the user: runtime, worker `pane_id`, worktree path, branch name,

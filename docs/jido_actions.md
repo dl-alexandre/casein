@@ -23,6 +23,11 @@ between a headless Jido worker and Casein-owned capabilities.
 Raw terminal keystrokes and pane scrapes are not actions. Cross-workspace
 paths and unscoped credentials are denied.
 
+
+`git_push` verifies the assigned isolated worktree, exact branch/SHA, and
+clean tree, then pushes only the worker branch and emits a redacted receipt. It
+never creates, resolves, approves, or merges a PR; Dash owns those GitHub
+operations.
 ## Catalog
 
 | Action | Capability | Supported | Idempotent | Mutates |
@@ -31,6 +36,7 @@ paths and unscoped credentials are denied.
 | `code_search` | code | yes — `CodeTools` | yes | no |
 | `code_apply_patch` | code | yes — `CodeTools` | yes (already-applied) | yes |
 | `code_exec` | code | yes — `CodeTools` | no | yes |
+| `git_push` | handoff | yes — verified push-only worker handoff | yes (handoff key) | yes |
 | `git_status` | git | not yet (`not_yet_supported`) | yes | no |
 | `git_diff` | git | not yet (`not_yet_supported`) | yes | no |
 | `task_wait` | task | not yet (`not_yet_supported`) | yes | no |
@@ -57,7 +63,7 @@ Every call returns `{:ok, payload}` or `{:error, payload}` with a stable
 | `cancelled` | Attempt already cancelled |
 | `stale_attempt` | Attempt already completed/failed/timed out |
 | `provider_failure` | CodeTools/provider unavailable |
-| `not_yet_supported` | git/task follow-ups not on the #1013 contract |
+| `not_yet_supported` | git/task controls other than the push-only handoff |
 | `invalid` | Missing trusted context or bad arguments |
 
 `blocked_on_human` also sets `error: :awaiting_human` so the #1014 worker

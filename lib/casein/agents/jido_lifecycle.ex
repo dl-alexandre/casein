@@ -90,6 +90,21 @@ defmodule Casein.Agents.JidoLifecycle do
             }
           )
 
+        name == "git_push" ->
+          persist_named("jido.handoff", name, payload, ctx, sequence,
+            audit: true,
+            extra: %{
+              "handoff" => payload[:handoff] || %{},
+              "handoff_id" => payload[:handoff_id],
+              "idempotency_key" => payload[:idempotency_key],
+              "pushed" => payload[:pushed] == true,
+              "remote" => payload[:remote],
+              "remote_branch" => payload[:remote_branch],
+              "head_sha" => payload[:head_sha],
+              "summary" => Envelope.bound_summary(payload[:summary] || "worker branch pushed")
+            }
+          )
+
         true ->
           persist_named("jido.action", name, payload, ctx, sequence,
             error: payload[:result] not in [:ok, nil],
@@ -173,6 +188,7 @@ defmodule Casein.Agents.JidoLifecycle do
       "jido.result",
       "jido.evidence",
       "jido.human_resolved",
+      "jido.handoff",
       "agent.state_changed"
     ])
     |> Enum.group_by(&worker_key/1)

@@ -13,7 +13,7 @@ defmodule Casein.Agents.JidoActions.Result do
 
   @denied_errors ~w(denied policy_denied not_allowed worktree_not_assigned worktree_not_found worktree_path_required workspace_not_found workspace_scope_mismatch workspace_root_unavailable absolute_path outside_root backslash_in_path nul_in_path path_not_allowed invalid_path invalid_patch patch_does_not_apply too_large unknown_tool legacy_opencode)a
 
-  @mutating ~w(code_apply_patch code_exec request_clarification request_human_input report_result handoff_evidence)
+  @mutating ~w(code_apply_patch code_exec git_push request_clarification request_human_input report_result handoff_evidence)
 
   @spec kinds() :: [atom()]
   def kinds, do: @kinds
@@ -94,6 +94,11 @@ defmodule Casein.Agents.JidoActions.Result do
   defp kind_for(:missing_workspace_id, _reason), do: :invalid
   defp kind_for(:verification_failed, _reason), do: :invalid
   defp kind_for(:execution_failed, _reason), do: :invalid
+  defp kind_for(:invalid_handoff, _reason), do: :invalid
+  defp kind_for(:missing_handoff_field, _reason), do: :invalid
+  defp kind_for(:invalid_remote, _reason), do: :invalid
+  defp kind_for(:git_inspection_failed, _reason), do: :provider_failure
+  defp kind_for(:detached_head, _reason), do: :denied
   defp kind_for(error, _reason) when error in @denied_errors, do: :denied
   defp kind_for(_error, %{result: kind}) when kind in @kinds, do: kind
   defp kind_for(_error, _reason), do: :denied
