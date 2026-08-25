@@ -1,6 +1,7 @@
 defmodule Casein.Terminals.WorkerLaunchTest do
   use ExUnit.Case, async: false
 
+  alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.AgentState
   alias Casein.Terminals.WorkerLaunch
   alias Casein.Terminals.WorkHandles
@@ -113,6 +114,84 @@ defmodule Casein.Terminals.WorkerLaunchTest do
       assert plan.plan.plan_text =~ "workspace=#{@ws}"
       assert plan.plan.plan_text =~ "session=#{@session}"
       assert plan.plan.plan_text =~ "checkout=#{checkout}"
+    end
+  end
+
+  describe "launch/1 issue guard" do
+    setup do
+      IssueBinding.clear_all()
+      on_exit(&IssueBinding.clear_all/0)
+      :ok
+    end
+
+    test "refuses spawn when the issue is already held" do
+      {:ok, _} = IssueBinding.bind(@ws, @session, "%1", 678, window_id: "@1")
+
+      runner = fn _, _, _, _ ->
+        flunk("runner must not run when the issue is already held")
+      end
+
+      assert {:error,
+              %{
+                error: :issue_already_bound,
+                pane_id: "%1",
+                window_id: "@1",
+                issue: 678
+              }} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "opencode",
+                 task_slug: "dup",
+                 issue: "678",
+                 live?: fn _, _ -> true end,
+                 runner: runner
+               )
+    end
+
+    test "allow_duplicate launches and records both holders" do
+      {:ok, _} = IssueBinding.bind(@ws, @session, "%1", 678, window_id: "@1")
+
+      runner = fn _, slug, _, _ -> {:ok, %{pane_id: "%42", window_name: "worker-#{slug}"}} end
+      observe = fn _, _ -> %{window_id: "@9"} end
+
+      assert {:ok, receipt} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "opencode",
+                 task_slug: "dup",
+                 issue: 678,
+                 allow_duplicate: true,
+                 live?: fn _, _ -> true end,
+                 runner: runner,
+                 observe: observe,
+                 attach_handle: false
+               )
+
+      assert receipt.issue == 678
+      assert receipt.pane_id == "%42"
+      assert Enum.sort(Enum.map(IssueBinding.holders(@ws, 678), & &1.pane_id)) == ["%1", "%42"]
+    end
+
+    test "binds the new pane when the issue is free" do
+      runner = fn _, slug, _, _ -> {:ok, %{pane_id: "%42", window_name: "worker-#{slug}"}} end
+      observe = fn _, _ -> %{window_id: "@9"} end
+
+      assert {:ok, receipt} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "opencode",
+                 task_slug: "free",
+                 issue: "#678",
+                 runner: runner,
+                 observe: observe,
+                 attach_handle: false
+               )
+
+      assert receipt.issue == 678
+      assert %{issue: 678, window_id: "@9"} = IssueBinding.get(@session, "%42")
     end
   end
 

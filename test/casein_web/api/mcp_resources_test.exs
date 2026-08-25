@@ -8,14 +8,8 @@ defmodule CaseinWeb.API.MCPResourcesTest do
 
   use ExUnit.Case, async: false
 
+  alias Casein.Terminals.FleetSnapshot
   alias CaseinWeb.API.{ArtifactMCP, MCPEnvelope, TerminalMCP}
-
-  defmodule EmptyTmux do
-    def list_sessions, do: []
-    def session_topology(_), do: {[], []}
-    def list_session_windows(_), do: []
-    def list_session_panes(_), do: []
-  end
 
   @ui_uri "ui://casein-artifact/artifact-app.html"
   @ui_mime "text/html;profile=mcp-app"
@@ -113,9 +107,30 @@ defmodule CaseinWeb.API.MCPResourcesTest do
     end
 
     test "resources/read returns JSON fleet summary text" do
-      previous = Application.get_env(:casein, :tmux_adapter)
-      Application.put_env(:casein, :tmux_adapter, EmptyTmux)
-      on_exit(fn -> Application.put_env(:casein, :tmux_adapter, previous) end)
+      FleetSnapshot.ensure_table!()
+      FleetSnapshot.delete()
+
+      FleetSnapshot.put(%{
+        generated_at: "2026-08-24T16:00:00Z",
+        incomplete: false,
+        incomplete_reason: nil,
+        boards: %{},
+        needs_you: %{},
+        totals: %{},
+        summary: %{
+          uri: "casein://fleet/summary",
+          workspace_id: "ws-scoped",
+          generated_at: "2026-08-24T16:00:00Z",
+          incomplete: false,
+          incomplete_reason: nil,
+          session_count: 0,
+          pane_count: 0,
+          sessions: [],
+          note: "Read-only fleet summary from FleetSnapshot."
+        }
+      })
+
+      on_exit(fn -> FleetSnapshot.delete() end)
 
       assert {:reply, %{result: result}} =
                MCPEnvelope.handle(
@@ -131,7 +146,9 @@ defmodule CaseinWeb.API.MCPResourcesTest do
       assert decoded["uri"] == "casein://fleet/summary"
       assert decoded["workspace_id"] == "ws-scoped"
       assert decoded["sessions"] == []
-      assert decoded["note"] =~ "process/CPU"
+      assert decoded["generated_at"] == "2026-08-24T16:00:00Z"
+      assert decoded["incomplete"] == false
+      assert decoded["note"] =~ "FleetSnapshot"
     end
 
     test "unscoped fleet summary does not dump the host" do

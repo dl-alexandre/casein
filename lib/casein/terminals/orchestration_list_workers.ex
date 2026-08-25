@@ -30,6 +30,9 @@ defmodule Casein.Terminals.OrchestrationListWorkers do
           workspace_id: String.t(),
           session: String.t(),
           generated_at: String.t(),
+          incomplete: boolean(),
+          incomplete_reason: String.t() | nil,
+          needs_you_observe_state: String.t(),
           total: non_neg_integer(),
           filtered_total: non_neg_integer(),
           workers: [row()],
@@ -46,6 +49,7 @@ defmodule Casein.Terminals.OrchestrationListWorkers do
     * `:now` — `DateTime` for `generated_at` (default utc_now)
     * `:fleet_role` — optional `"manager"` | `"worker"` (atom or string) filter
     * `:needs_you_only` — when true, keep only `needs_you?` rows
+    * `:incomplete` / `:incomplete_reason` — snapshot miss or partial refresh
   """
   @spec project(FleetBoard.board(), keyword()) :: payload()
   def project(board, opts \\ []) when is_map(board) do
@@ -54,6 +58,8 @@ defmodule Casein.Terminals.OrchestrationListWorkers do
     now = Keyword.get(opts, :now) || DateTime.utc_now()
     fleet_role = normalize_role_filter(Keyword.get(opts, :fleet_role))
     needs_you_only? = Keyword.get(opts, :needs_you_only) == true
+    incomplete? = Keyword.get(opts, :incomplete) == true
+    incomplete_reason = Keyword.get(opts, :incomplete_reason)
 
     all_rows = Enum.map(Map.get(board, :rows) || [], &compact_row/1)
 
@@ -66,13 +72,18 @@ defmodule Casein.Terminals.OrchestrationListWorkers do
       workspace_id: workspace_id,
       session: session,
       generated_at: DateTime.to_iso8601(now),
+      incomplete: incomplete?,
+      incomplete_reason: incomplete_reason,
+      needs_you_observe_state: if(incomplete?, do: "unknown", else: "ok"),
       total: Map.get(board, :total, length(all_rows)),
       filtered_total: length(workers),
       workers: workers,
       filters: filters_json(fleet_role, needs_you_only?),
       note:
         "M3 compact worker list. Reuses FleetBoard/OrchestrationStatus.tabs_from_topology. " <>
-          "liveness unknown ≠ idle. worker_launch, durable graphs, and verifiers remain out of scope."
+          "needs_you_observe_state=unknown means the snapshot could not be computed, " <>
+          "not that nobody needs you. liveness unknown ≠ idle. " <>
+          "worker_launch, durable graphs, and verifiers remain out of scope."
     }
   end
 

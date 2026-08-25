@@ -115,6 +115,133 @@ defmodule Casein.Agents.Transcripts do
     end
   end
 
+  @hookless_runtimes ~w(opencode cursor)
+
+  @type resolve_reason ::
+          Discovery.error_reason()
+          | :no_hook
+          | :unsupported_runtime
+
+  @doc """
+  Resolve a pane's transcript on every call.
+
+  A hook-reported path is used only while it still exists. After a TUI view
+  switch the cache is often gone while `agent_session_id` and the worktree
+  remain — this rebuilds the path from those, then falls back to cwd discovery.
+  """
+  @spec resolve_for_pane(map() | nil, keyword()) ::
+          {:ok, String.t()} | {:error, resolve_reason()}
+  def resolve_for_pane(pane, opts \\ [])
+
+  def resolve_for_pane(pane, opts) when is_map(pane) do
+    report = Keyword.get(opts, :report)
+    locations = pane_locations(pane)
+
+    cond do
+      usable_reported_path?(report) ->
+        {:ok, report.transcript_path}
+
+      true ->
+        case resolve_from_identity(report, locations, opts) do
+          {:ok, path} -> {:ok, path}
+          {:error, reason} -> {:error, classify_failure(reason, report, pane)}
+        end
+    end
+  end
+
+  def resolve_for_pane(_pane, opts) do
+    case Keyword.get(opts, :report) do
+      %{transcript_path: path} = report when is_binary(path) and path != "" ->
+        if allowed_path?(path) do
+          {:ok, path}
+        else
+          {:error, classify_failure(:path_missing, report, %{})}
+        end
+
+      report ->
+        {:error, classify_failure(:no_cwd, report, %{})}
+    end
+  end
+
+  defp usable_reported_path?(%{transcript_path: path}) when is_binary(path) and path != "",
+    do: allowed_path?(path)
+
+  defp usable_reported_path?(_report), do: false
+
+  defp resolve_from_identity(%{agent_session_id: session_id}, locations, opts)
+       when is_binary(session_id) and session_id != "" do
+    case discover_session(session_id, locations, opts) do
+      {:ok, path} -> {:ok, path}
+      {:error, _reason} -> {:error, :path_missing}
+    end
+  end
+
+  defp resolve_from_identity(_report, locations, opts), do: discover_first(locations, opts)
+
+  defp discover_session(session_id, locations, opts) do
+    roots = project_roots(Keyword.get(opts, :claude_home), Keyword.get(opts, :owner))
+
+    Enum.reduce_while(locations, {:error, :no_cwd}, fn cwd, acc ->
+      case Discovery.resolve_session(cwd, session_id, roots) do
+        {:ok, path} ->
+          if allowed_path?(path), do: {:halt, {:ok, path}}, else: {:halt, {:error, :path_missing}}
+
+        {:error, :no_cwd} ->
+          {:cont, acc}
+
+        {:error, reason} ->
+          {:cont, {:error, reason}}
+      end
+    end)
+  end
+
+  defp discover_first(locations, opts) do
+    Enum.reduce_while(locations, {:error, :no_cwd}, fn cwd, acc ->
+      case discover(cwd, opts) do
+        {:ok, path} -> {:halt, {:ok, path}}
+        {:error, :no_cwd} -> {:cont, acc}
+        {:error, reason} -> {:cont, {:error, reason}}
+      end
+    end)
+  end
+
+  defp classify_failure(:path_missing, _report, _pane), do: :path_missing
+  defp classify_failure(:invalid_session_id, _report, _pane), do: :path_missing
+
+  defp classify_failure(reason, report, pane) do
+    cond do
+      hookless_runtime?(pane) -> :unsupported_runtime
+      not has_hook_pointer?(report) -> :no_hook
+      true -> reason
+    end
+  end
+
+  defp has_hook_pointer?(%{transcript_path: path}) when is_binary(path) and path != "", do: true
+  defp has_hook_pointer?(%{agent_session_id: id}) when is_binary(id) and id != "", do: true
+  defp has_hook_pointer?(_report), do: false
+
+  defp hookless_runtime?(pane) when is_map(pane) do
+    case pane_string(pane, :current_command) do
+      nil -> false
+      command -> String.downcase(command) in @hookless_runtimes
+    end
+  end
+
+  defp hookless_runtime?(_pane), do: false
+
+  defp pane_locations(pane) do
+    [pane_string(pane, :current_path), pane_string(pane, :worktree_path)]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp pane_string(pane, key) do
+    case Map.get(pane, key) || Map.get(pane, Atom.to_string(key)) do
+      value when is_binary(value) and value != "" -> value
+      _ -> nil
+    end
+  end
+
   # Owner profile first: on a multi-owner box the host global login is the
   # fallback for owners who have not signed in, and must never shadow another
   # owner's profile.

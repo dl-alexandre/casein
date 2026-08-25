@@ -86,10 +86,10 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     %{
       type: "boolean",
       description:
-        "Verify the agent actually consumed the submit (re-pressing Enter once if it did " <>
-          "not) and fail with submit_not_confirmed when it never did. Defaults to true. " <>
-          "Pass false when the keystroke itself is the point — answering a TUI menu or a " <>
-          "y/n prompt, where no new turn starts."
+        "Verify the agent actually consumed the submit (hook, transcript, or screen) and " <>
+          "fail with submit_not_confirmed when it never did. Enter is not retried. " <>
+          "Defaults to true. Pass false when the keystroke itself is the point — answering " <>
+          "a TUI menu or a y/n prompt, where no new turn starts."
     }
   end
 
@@ -152,6 +152,15 @@ defmodule Casein.Agents.TerminalTools.Helpers do
 
   @doc false
   def allow_shared_worktree_param, do: Params.allow_shared_worktree()
+
+  @doc false
+  def allow_duplicate_param do
+    %{
+      type: "boolean",
+      description:
+        "When true, bind even if another live pane in this workspace already holds the issue, and record both holders. Default false refuses with issue_already_bound."
+    }
+  end
 
   @doc false
   def since_param do
@@ -469,7 +478,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "On submit_not_confirmed the text reached the pane but was never submitted — " <>
           "capture the pane before resending, or use terminal_set_next_prompt if the " <>
           "agent is mid-turn.",
-        "Do not double-Enter yourself: submit paths settle, press Enter, and retry once.",
+        "Do not double-Enter yourself: submit paths settle, press Enter once, and return " <>
+          "submit_not_confirmed when consumption cannot be confirmed.",
         "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ]
     }
@@ -525,7 +535,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Use terminal_topology to target the intended pane explicitly.",
         "Prefer terminal_send_agent_command when controlling the dedicated agent pane.",
         "Use terminal_capture after sending input to inspect output.",
-        "terminal_send_command confirms the submit (one retry Enter) unless confirm:false.",
+        "terminal_send_command confirms the submit (no Enter retry) unless confirm:false.",
         "On submit_not_confirmed capture the pane before resending.",
         "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ],
@@ -697,10 +707,23 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("terminal_bind_issue") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:terminal_metadata],
+      recovery_hints: [
+        "Pass workspace_id so Casein can associate the update with the workspace.",
+        "On issue_already_bound, the named pane_id/window_id already holds the issue.",
+        "Re-send with allow_duplicate: true only when two live holders are deliberate.",
+        "terminal_issue_holders lists current live holders in one call."
+      ]
+    }
+  end
+
   def metadata(name)
       when name in [
              "terminal_set_agent_label",
-             "terminal_bind_issue",
              "terminal_work_handle_create",
              "terminal_report_worktree",
              "terminal_report_agent_state",
@@ -723,7 +746,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       capabilities: [:terminal_metadata],
       recovery_hints: [
         "On ambiguous_recipient, re-send to one of the returned pane addresses.",
-        "On unknown_recipient, call terminal_topology to see the live window names.",
+        "On unknown_recipient, the pane is gone or the handle id is unknown — use handle:<id> for roles that respawn, or terminal_inbox orphaned=true to find stranded pane: queues.",
         "Delivery is not reading: the recipient collects with terminal_inbox."
       ]
     }
@@ -735,7 +758,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       danger_level: :low,
       capabilities: [:terminal_metadata],
       recovery_hints: [
-        "Omit address to read the caller pane's own mailbox.",
+        "Omit address to read the caller pane plus any attached work handle.",
+        "Pass orphaned=true to list pane: mailboxes whose pane no longer exists.",
         "Each message has status queued|collected and unread? — never treat send as read (#911).",
         "Pass collect=true only once you have acted; that clears unread and returns those messages with bodies.",
         "Double-collect is idempotent via stable message_id — safe to retry, and still returns bodies.",
@@ -778,6 +802,36 @@ defmodule Casein.Agents.TerminalTools.Helpers do
                 "status" => "collected",
                 "unread?" => false,
                 "body" => "rebase before auth"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  end
+
+  def metadata("terminal_issue_holders") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read, :terminal_metadata],
+      recovery_hints: [
+        "Requires workspace_id and issue.",
+        "Dead-pane bindings are dropped before the list is returned.",
+        "Empty holders means nobody live in this workspace is on that issue."
+      ],
+      examples: [
+        %{
+          arguments: %{"workspace_id" => "ws-1", "issue" => "678"},
+          structured_content: %{
+            "issue" => 678,
+            "count" => 1,
+            "holders" => [
+              %{
+                "pane_id" => "%3",
+                "window_id" => "@2",
+                "session" => "casein_ws-1_x",
+                "issue" => 678
               }
             ]
           }
@@ -976,7 +1030,9 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "dry_run: true plans without opening a window.",
         "Spawn helper failures name the script and searched paths — a bare exit 127 is a missing host helper, not a broken tool. Ask an in-workspace factory manager, or set CASEIN_SPAWN_WORKER_SCRIPT / CASEIN_SCRIPTS_ROOT.",
         "Never falls back to a hidden subagent; spawn failure is a hard error.",
-        "Follow with worker_status / worker_cancel / orchestration_list_workers; durable graph still out of scope."
+        "Follow with worker_status / worker_cancel / orchestration_list_workers; durable graph still out of scope.",
+        "Optional issue applies the same live-holder check as terminal_bind_issue before spawn.",
+        "On issue_already_bound, the named pane already holds that issue — pass allow_duplicate to override."
       ],
       examples: [
         %{

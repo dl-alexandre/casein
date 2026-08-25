@@ -26,6 +26,7 @@ defmodule Casein.Application do
     Casein.Terminals.SessionRecovery.ensure_table!()
     Casein.CommandPalette.FileIndex.ensure_table!()
     Casein.Terminals.TicketFeed.ensure_table!()
+    Casein.Terminals.FleetSnapshot.ensure_table!()
     Casein.Terminals.PaneLiveness.ensure_cockpit_cache!()
 
     # jido_signal extensions self-register only via @after_compile, which

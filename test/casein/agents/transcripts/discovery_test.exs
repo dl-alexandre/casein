@@ -102,6 +102,26 @@ defmodule Casein.Agents.Transcripts.DiscoveryTest do
       assert {:error, :no_cwd} = Discovery.resolve("", [root])
     end
 
+    test "resolve_session finds the file named for the session id", %{root: root} do
+      cwd = "/data/worktrees/wt-session"
+      path = session!(root, cwd, "abc-123.jsonl")
+      session!(root, cwd, "other.jsonl")
+
+      assert {:ok, ^path} = Discovery.resolve_session(cwd, "abc-123", [root])
+    end
+
+    test "resolve_session is path_missing when the id is absent", %{root: root} do
+      cwd = "/data/worktrees/wt-missing"
+      session!(root, cwd, "other.jsonl")
+
+      assert {:error, :path_missing} = Discovery.resolve_session(cwd, "abc-123", [root])
+    end
+
+    test "resolve_session rejects traversal in the session id", %{root: root} do
+      assert {:error, :invalid_session_id} =
+               Discovery.resolve_session("/data/worktrees/wt-x", "../secret", [root])
+    end
+
     test "the live window is caller-tunable", %{root: root} do
       cwd = "/data/worktrees/wt-g"
       path = session!(root, cwd, "recent.jsonl")

@@ -22,6 +22,7 @@ defmodule CaseinWeb.API.TerminalMCP do
 
   alias Casein.Agents.{MCPAudit, MCPError, MCPTasks, TerminalTools}
   alias Casein.MCP.Scope
+  alias Casein.Terminals.FleetSnapshot
   alias Casein.Terminals.FleetSummary
   alias Casein.Terminals.HostHealth
   alias CaseinWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
@@ -109,10 +110,10 @@ defmodule CaseinWeb.API.TerminalMCP do
     payload =
       cond do
         is_binary(workspace_id) ->
-          FleetSummary.build(workspace_id: workspace_id)
+          FleetSnapshot.fleet_summary(workspace_id)
 
         Application.get_env(:casein, :allow_global_mcp_tool_calls, false) ->
-          FleetSummary.build([])
+          FleetSnapshot.fleet_summary(nil)
 
         true ->
           FleetSummary.build(workspace_id: nil, sessions: [])

@@ -272,13 +272,18 @@ operator time on an 18-worker night:
 
 ```text
 orchestration_status { workspace_id, session, gate_pr? }
-→ counts, attention_count, rows[] (liveness, blocked_on),
+→ generated_at, incomplete, incomplete_reason,
+  counts, attention_count, rows[] (liveness, blocked_on),
   blocked[], gate_queue (+ positions, my_position), orphaned_claims
 ```
 
+Served from `FleetSnapshot` (timer-refreshed ETS). A missing or partial
+refresh returns `incomplete: true` plus a reason — never hangs to the MCP
+client timeout, and never looks like a genuinely empty fleet.
+
 | Field | Source |
 |-------|--------|
-| `counts` / `rows` | `FleetBoard` over topology-enriched window tabs (**liveness on**) |
+| `counts` / `rows` | last `FleetBoard` snapshot (cached liveness, not a per-request walk) |
 | `blocked` | rows with `blocked_on` or blocked/errored/stalled state |
 | `gate_queue` | `GateQueue.observe` + `with_positions` — `observe_state: unknown` never free |
 | `gate_queue.my_position` | `GateQueue.position/2` when identity args given; unknown lock → `status: unknown` not `not_in_queue` |
@@ -333,8 +338,13 @@ liveness never becomes idle (FleetBoard kind discipline). Requires
 
 ```text
 orchestration_list_workers { workspace_id, session, fleet_role?, needs_you_only? }
-→ total, filtered_total, filters, workers[]
+→ generated_at, incomplete, needs_you_observe_state,
+  total, filtered_total, filters, workers[]
 ```
+
+`needs_you_only: true` is the cheap path: it reads a precomputed index, not
+the full board. `needs_you_observe_state: "ok"` + empty `workers` means
+nobody needs you; `"unknown"` means the snapshot could not be computed.
 
 Use `worker_status` when you need one-pane depth (`worktree_path`, full
 liveness); use this tool to answer "which of my N workers need me?" without the
@@ -515,12 +525,16 @@ for "what is my fleet doing?".
 
 ```text
 resources/read { uri: "casein://fleet/summary" }
-→ sessions[], each with panes[]:
+→ generated_at, incomplete, incomplete_reason,
+  sessions[], each with panes[]:
     runtime, worktree_path, branch, ahead/behind,
     commits_not_on_origin?,
     liveness { source: "process_cpu", state, … },
     progress { state, axes, … }
 ```
+
+Served from the same `FleetSnapshot` as the orchestration tools. Reads never
+rebuild the fleet. `incomplete: true` is a partial scan, not an empty fleet.
 
 **`liveness` is process/CPU presence, not the spinner.** `PaneProcessLiveness`
 samples `pane_pid` + its `/proc` process tree and compares cumulative CPU
@@ -577,6 +591,7 @@ orchestration_list_workers paths owned by #384.
 - `Casein.Agents.TerminalTools.WorktreeChangedPaths` — Jido / MCP `worktree_changed_paths`
 - `Casein.Terminals.WorktreeDiff` — one-call bounded unified diff (M4.4)
 - `Casein.Agents.TerminalTools.WorktreeDiff` — Jido / MCP `worktree_diff`
+- `Casein.Terminals.FleetSnapshot` — timer-refreshed ETS snapshot for fleet reads
 - `Casein.Terminals.FleetSummary` — `casein://fleet/summary` payload builder (#859/#879)
 - `Casein.Terminals.PaneProcessLiveness` — process-tree CPU jiffy presence (#859)
 - `Casein.Terminals.AgentProgress` — composite progress + running_but_not_progressing (#879)

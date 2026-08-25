@@ -611,6 +611,55 @@ defmodule CaseinWeb.API.PreviewMCPTest do
     assert first["url"] == "http://localhost:4000"
   end
 
+  test "preview_ensure_server_here accepts the same tmux_session alias sibling tools accept" do
+    previous = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:casein, :runtime_preview_launcher_enabled),
+        else: Application.put_env(:casein, :runtime_preview_launcher_enabled, previous)
+    end)
+
+    workspace = %Workspace{
+      id: @v3_workspace.id,
+      name: "mcp-alias",
+      user: "alice",
+      branch: "main",
+      status: :running,
+      path: "/tmp/ws-mcp",
+      metadata: @v3_workspace.metadata
+    }
+
+    Application.put_env(:casein, :preview_mcp_test_workspace, workspace)
+
+    stored = Tmux.session_name(workspace.id, "wt-agent")
+    requested = Tmux.session_name(workspace.name, "wt-agent")
+    other = Tmux.session_name(workspace.id, "wt-other")
+
+    seed_runtime_surface!(stored, 4107, runtime_id: "rt-here")
+    seed_runtime_surface!(other, 4108, runtime_id: "rt-other")
+
+    assert {:reply, %{result: result}} =
+             PreviewMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 47,
+                 "method" => "tools/call",
+                 "params" => %{
+                   "name" => "preview_ensure_server_here",
+                   "arguments" => %{"session" => requested}
+                 }
+               },
+               default_workspace_id: workspace.id,
+               default_tmux_session: stored
+             )
+
+    refute result[:isError]
+    assert result.structuredContent["runtime_id"] == "rt-here"
+    assert result.structuredContent["tmux_session"] == requested
+  end
+
   test "preview_open_here reports structured error without tmux_session" do
     assert {:reply,
             %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
@@ -978,17 +1027,36 @@ defmodule CaseinWeb.API.PreviewMCPTest do
 
   defp seed_runtime_surface!(tmux_session, port, opts \\ []) do
     runtime_id = Keyword.get(opts, :runtime_id, "rt-preview")
+    worktree_path = "/tmp/ws-mcp/#{runtime_id}"
+
+    preview_server = %{
+      "id" => "preview:#{runtime_id}:app",
+      "runtime_id" => runtime_id,
+      "workspace_id" => @v3_workspace.id,
+      "tmux_session_id" => tmux_session,
+      "cwd" => worktree_path,
+      "worktree_path" => worktree_path,
+      "port" => port,
+      "status" => "provisioned",
+      "command" => ["true"],
+      "env" => %{"PORT" => Integer.to_string(port)},
+      "surface_key" => "runtime:#{runtime_id}:app",
+      "surface_name" => "app",
+      "url" => "http://localhost:#{port}",
+      "source" => "runtime_preview_server"
+    }
 
     RuntimeSeed.seed_runtime!(@v3_workspace.id,
       runtime_id: runtime_id,
       status: "provisioned",
       tmux_session_id: tmux_session,
-      worktree_path: "/tmp/ws-mcp/#{runtime_id}",
+      worktree_path: worktree_path,
       runtime_profile: %{
         "name" => "custom",
         "ports" => %{"app" => port},
         "surfaces" => [%{"name" => "app", "port" => port}]
-      }
+      },
+      metadata: %{"kind" => "agent_worktree", "preview_server" => preview_server}
     )
   end
 

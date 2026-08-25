@@ -247,14 +247,6 @@ defmodule Casein.MCP.ScopeTest do
   end
 
   test "accepts a workspace-name alias of the pre-scoped tmux session" do
-    {:ok, _} =
-      Casein.Workspaces.State.sync(%Workspace{
-        id: "ws-scope",
-        name: "scope",
-        path: "/tmp/ws-scope",
-        status: :running
-      })
-
     scoped = Casein.Terminals.Tmux.session_name("ws-scope", "agent")
     alias_session = Casein.Terminals.Tmux.session_name("scope", "agent")
 
@@ -262,6 +254,23 @@ defmodule Casein.MCP.ScopeTest do
              Scope.resolve_tool_call(
                "preview_ensure_server_here",
                %{"workspace_id" => "ws-scope", "tmux_session" => alias_session},
+               surface: :preview,
+               default_tmux_session: scoped,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert scope.args["tmux_session"] == alias_session
+    assert scope.resolved_from.tmux_session == :args
+  end
+
+  test "promotes a terminal session alias to tmux_session for preview tools" do
+    scoped = Casein.Terminals.Tmux.session_name("ws-scope", "agent")
+    alias_session = Casein.Terminals.Tmux.session_name("scope", "agent")
+
+    assert {:ok, scope} =
+             Scope.resolve_tool_call(
+               "preview_ensure_server_here",
+               %{"workspace_id" => "ws-scope", "session" => alias_session},
                surface: :preview,
                default_tmux_session: scoped,
                default_workspace_id: "ws-scope"

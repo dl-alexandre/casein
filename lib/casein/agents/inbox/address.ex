@@ -2,11 +2,14 @@ defmodule Casein.Agents.Inbox.Address do
   @moduledoc """
   Canonical recipients for `Casein.Agents.Inbox`, and the refusal to guess one.
 
-  Two forms, both derived from facts tmux already tracks:
+  Three forms:
 
-    * `pane:%3` — one exact pane
-    * `worktree:/abs/path` — whoever is working in that checkout, which is the
-      address that survives an agent being restarted into a new pane
+    * `pane:%3` — one exact pane. Ephemeral: a respawn orphans this mailbox.
+    * `worktree:/abs/path` — whoever is working in that checkout. Survives a
+      restart into a new pane in the same tree; a fresh worktree orphans it.
+    * `handle:<handle_id>` — a durable work handle. Survives pane respawn
+      when the successor reattaches the same handle. This is the address for
+      a long-lived role (coordinator, factory manager).
 
   ## Ambiguity is an error, not a choice
 
@@ -25,6 +28,7 @@ defmodule Casein.Agents.Inbox.Address do
 
   @pane_prefix "pane:"
   @worktree_prefix "worktree:"
+  @handle_prefix "handle:"
 
   @type t :: String.t()
   @type candidate :: %{address: t(), name: String.t() | nil, pane_id: String.t() | nil}
@@ -36,6 +40,26 @@ defmodule Casein.Agents.Inbox.Address do
   @doc "A canonical address for everyone working in a checkout."
   @spec for_worktree(String.t()) :: t()
   def for_worktree(path) when is_binary(path), do: @worktree_prefix <> Path.expand(path)
+
+  @doc "A canonical address for a durable work handle."
+  @spec for_handle(String.t()) :: t()
+  def for_handle(handle_id) when is_binary(handle_id), do: @handle_prefix <> handle_id
+
+  @doc "The pane id inside a `pane:%N` address, or nil."
+  @spec pane_id(t()) :: String.t() | nil
+  def pane_id(address) when is_binary(address) do
+    rest_after(address, @pane_prefix)
+  end
+
+  def pane_id(_address), do: nil
+
+  @doc "The handle id inside a `handle:<id>` address, or nil."
+  @spec handle_id(t()) :: String.t() | nil
+  def handle_id(address) when is_binary(address) do
+    rest_after(address, @handle_prefix)
+  end
+
+  def handle_id(_address), do: nil
 
   @doc """
   Accept an already-canonical address.
@@ -53,6 +77,9 @@ defmodule Casein.Agents.Inbox.Address do
         {:ok, trimmed}
 
       String.starts_with?(trimmed, @worktree_prefix) and rest_present?(trimmed, @worktree_prefix) ->
+        {:ok, trimmed}
+
+      String.starts_with?(trimmed, @handle_prefix) and rest_present?(trimmed, @handle_prefix) ->
         {:ok, trimmed}
 
       true ->
@@ -76,7 +103,7 @@ defmodule Casein.Agents.Inbox.Address do
     trimmed = String.trim(value)
 
     case validate(trimmed) do
-      {:ok, address} -> {:ok, address}
+      {:ok, address} -> resolve_canonical(address, topology)
       {:error, _reason} -> resolve_loose(trimmed, topology)
     end
   end
@@ -84,6 +111,18 @@ defmodule Casein.Agents.Inbox.Address do
   def resolve(_value, _topology), do: {:error, :invalid_address}
 
   ## Internals
+
+  defp resolve_canonical(address, topology) do
+    case pane_id(address) do
+      nil ->
+        {:ok, address}
+
+      pane ->
+        if pane_in_topology?(pane, topology),
+          do: {:ok, address},
+          else: {:error, :unknown_recipient}
+    end
+  end
 
   defp resolve_loose("", _topology), do: {:error, :invalid_address}
 
@@ -137,7 +176,21 @@ defmodule Casein.Agents.Inbox.Address do
 
   defp pane_id?(value), do: String.starts_with?(value, "%")
 
+  defp pane_in_topology?(pane_id, topology) do
+    panes = Map.get(topology, :panes) || Map.get(topology, "panes") || []
+    Enum.any?(panes, &(PaneState.map_get(&1, :id) == pane_id))
+  end
+
+  defp rest_after(value, prefix) do
+    if String.starts_with?(value, prefix) do
+      rest = value |> String.replace_prefix(prefix, "") |> String.trim()
+      if rest == "", do: nil, else: rest
+    else
+      nil
+    end
+  end
+
   defp rest_present?(value, prefix) do
-    value |> String.replace_prefix(prefix, "") |> String.trim() != ""
+    rest_after(value, prefix) != nil
   end
 end
