@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.SendAgentKeys do
   use Jido.Action,
     name: "terminal_send_agent_keys",
     description:
-      "Send raw keystrokes to the dedicated agent pane only. Requires the agent_pair marker — does not fall back to agent process detection.",
+      "Send raw keystrokes to the dedicated agent pane only. Requires the agent_pair marker — does not fall back to agent process detection. The write receipt includes `input_buffer` (`has_content`, `source`: empty|placeholder|typed|unknown); `placeholder` is a suggested prompt, not unsent user text.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

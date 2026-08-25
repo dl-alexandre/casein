@@ -119,6 +119,70 @@ config :casein,
        :mobile_agent_composer,
        truthy_env?.("CASEIN_MOBILE_AGENT_COMPOSER")
 
+config :casein, :jido_headless, truthy_env?.("CASEIN_JIDO_HEADLESS")
+
+if model = System.get_env("CASEIN_JIDO_DEFAULT_MODEL") do
+  if String.trim(model) != "" do
+    config :casein, :jido_default_model, String.trim(model)
+  end
+end
+
+if workspaces = System.get_env("CASEIN_JIDO_HEADLESS_WORKSPACES") do
+  config :casein,
+         :jido_headless_workspaces,
+         workspaces
+         |> String.split(",", trim: true)
+         |> Map.new(&{String.trim(&1), true})
+end
+
+jido_pod_env = [
+  max_running_per_workspace: "CASEIN_JIDO_MAX_RUNNING_PER_WORKSPACE",
+  max_queued_per_workspace: "CASEIN_JIDO_MAX_QUEUED_PER_WORKSPACE",
+  max_running_fleet: "CASEIN_JIDO_MAX_RUNNING_FLEET",
+  max_provider_inflight: "CASEIN_JIDO_MAX_PROVIDER_INFLIGHT",
+  max_worker_memory_bytes: "CASEIN_JIDO_MAX_WORKER_MEMORY_BYTES",
+  max_action_output_bytes: "CASEIN_JIDO_MAX_ACTION_OUTPUT_BYTES",
+  max_crash_rate: "CASEIN_JIDO_MAX_CRASH_RATE"
+]
+
+jido_pod_overrides =
+  Enum.reduce(jido_pod_env, [], fn {key, env}, acc ->
+    case System.get_env(env) do
+      nil ->
+        acc
+
+      raw ->
+        case Integer.parse(String.trim(raw)) do
+          {value, ""} when value >= 0 -> [{key, value} | acc]
+          _ -> acc
+        end
+    end
+  end)
+
+jido_pod_overrides =
+  case System.get_env("CASEIN_JIDO_MAX_SHARE_PER_WORKSPACE") do
+    nil ->
+      jido_pod_overrides
+
+    raw ->
+      case Float.parse(String.trim(raw)) do
+        {value, _} when value > 0 and value <= 1 ->
+          [{:max_share_per_workspace, value} | jido_pod_overrides]
+
+        _ ->
+          jido_pod_overrides
+      end
+  end
+
+if jido_pod_overrides != [] do
+  config :casein,
+         :jido_pod,
+         Keyword.merge(
+           Application.get_env(:casein, :jido_pod, []),
+           Enum.reverse(jido_pod_overrides)
+         )
+end
+
 # When on, Casein.Ops.PgProbe polls the box's Postgres servers (host 5432 +
 # release 15432 by default) for connection saturation and leak-shaped
 # application_names (wf_*, casein-<uuid>), emitting ops.pg_saturation_*

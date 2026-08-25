@@ -11,7 +11,7 @@ description: >
 # Delegate to a worker
 
 Orchestrate a worker agent through Casein terminal MCP. No `agent_pair` marker
-required — always pass an explicit `pane` id from topology or the spawn helper.
+required — always pass an explicit `pane` id from topology or `worker_launch`.
 
 All four runtimes get per-workspace Casein MCP configs materialized at launch, so
 any of them can call `terminal_report_agent_state` back at you. What differs is
@@ -133,41 +133,41 @@ From `terminal_topology`, find a pane for your chosen runtime that is:
 
 ### Spawn fresh (preferred when reuse is ambiguous)
 
-Invoke the Casein-owned helper, even when the orchestrator is working in a
-different product repository:
+**Step one is the `worker_launch` MCP tool.** It is the only supported spawn
+path. Do not shell out to `spawn-agent-worker.sh`. Do not resolve
+`$CASEIN_SCRIPTS` or `$CASEIN_CHECKOUT/scripts`. Do **not** `find` / `locate`
+the helper — a filesystem search that hits a stale Casein checkout is worse
+than a clean failure (wrong version, no signal). If `worker_launch` fails,
+stop; do not fall back to a shell spawn.
 
-```bash
-bash "${CASEIN_SCRIPTS:-${CASEIN_CHECKOUT}/scripts}/spawn-agent-worker.sh" <runtime> <task-slug> [session]
+```text
+worker_launch {
+  workspace_id,
+  session,
+  runtime: grok|codex|claude|opencode|agent,
+  task_slug,
+  label?,
+  dry_run?
+}
 ```
 
-`<runtime>` is `grok | codex | claude | opencode | agent`.
+The receipt is the spawn result — no topology scrape required:
 
-Resolve that script path rather than hardcoding one: `$CASEIN_SCRIPTS` (set by the
-materialized workspace env), else `$CASEIN_CHECKOUT/scripts` when the orchestrator
-is in a casein checkout, else the primary casein checkout from
-`git worktree list --porcelain | head -1`. Do **not** paste a literal
-`/data/workspaces/<user>/<repo>` path into a prompt or script — that path has
-already broken once across a repo rename, and the primary checkout on disk can be
-hundreds of commits stale even when the path is right.
+- `pane_id` (e.g. `%255`)
+- `window_name` (`worker-<slug>`)
+- `worktree_path`, `branch`
+- `handle_id`
 
-Stdout is the new `pane_id` (e.g. `%255`). The helper sources the orchestrator's
-materialized workspace env file in the new tmux window, unsets
-`CASEIN_AGENT_WORKTREE_PATH` / `CASEIN_TMUX_SOCKET_RESOLVED`, pins
-`CASEIN_AGENT_FORCE_FRESH_WORKTREE=1`, and resolves `CASEIN_CHECKOUT` to the
-**primary** working tree so the worker branches a fresh worktree instead of
-adopting the orchestrator's. Do not invoke a product-local
-`scripts/launch-casein-agent.sh`; product repos are not expected to carry Casein
-host infrastructure.
+`dry_run: true` prints the plan without opening a window.
 
-Preflight with `CASEIN_SPAWN_DRY_RUN=1` when unsure — it prints the resolved
-session, checkout, env file, launcher, and full launch command without opening a
-window.
+`worker_launch` resolves the installed Casein helper (release `priv/scripts`,
+then host overlay), sources the workspace env in the new window, and pins a
+fresh worktree (`CASEIN_AGENT_FORCE_FRESH_WORKTREE=1`) so the worker does not
+adopt the orchestrator's checkout. Product repos are not expected to carry
+Casein host infrastructure.
 
-**A printed pane id means a live agent.** The helper does not return until the
-runtime's own process is running in that pane's process tree; a window that never
-gets one is closed and the helper exits non-zero with the pane's output. So there
-is no "spawned but empty" state to check for — if you got a pane id, something is
-there to talk to.
+**A returned `pane_id` means a live agent.** There is no "spawned but empty"
+state to check for — if you got a pane id, something is there to talk to.
 
 It does *not* mean the agent has finished drawing its prompt, so still confirm
 that before sending:
@@ -176,11 +176,7 @@ that before sending:
 2. `terminal_capture(pane: <id>, lines: 40)` shows that runtime's input prompt.
 
 Re-issue every ~10s. Spawn itself absorbs most of the 30–90s startup (worktree +
-MCP materialize) before it returns; it gives up after
-`CASEIN_SPAWN_READY_SECONDS` (default 120). Raise that for a genuinely slow box
-rather than treating the failure as transient — it is reporting a window that
-would never have answered. `CASEIN_SPAWN_KEEP_FAILED_WINDOW=1` keeps the failed
-window (renamed `failed-worker-<slug>`) when you want to look at it yourself.
+MCP materialize) before it returns.
 
 **Collision note:** branch stamps are per-second; two spawns in the same second
 can collide — serialize spawns or use distinct task slugs.
@@ -195,10 +191,12 @@ That call is what upgrades a poll into an exact wait — see §6.
 
 ## 5. Send to the worker
 
-**Put the prompt in the worker's inbox, then type one line to wake it.** Typing a
-multi-thousand-token prompt into a TUI is the least reliable step in this whole
-flow: keystrokes race whatever the agent is drawing, a chunked send can interleave,
-and a paste that half-landed looks identical to one that worked.
+**Put the prompt in the worker's inbox, then type one line to wake it.** This is
+the correct way to hand over a multi-KB work order without racing the TUI — not
+a fallback after spawn. Typing a multi-thousand-token prompt into a TUI is the
+least reliable step in this whole flow: keystrokes race whatever the agent is
+drawing, a chunked send can interleave, and a paste that half-landed looks
+identical to one that worked.
 
 ```text
 terminal_say(to: "pane:<worker_pane>", body: <the full prompt>, message_id: <task-slug>)
@@ -386,17 +384,24 @@ git -C <worker-worktree-path> status --short       # empty = hang was before any
 ```
 
 **2. Respawn the SAME pane in place** — preserves the pane id, the committed slice,
-the materialized MCP, and the agent-state hook:
+the materialized MCP, and the agent-state hook. Do **not** call `worker_launch`
+again (it forces a fresh worktree and would strand committed slices). Do **not**
+resolve `launch-casein-agent.sh` via `$CASEIN_SCRIPTS` or `find`.
+
+Extract the installed launcher from the pane's original start command (the path
+`worker_launch` already used). If that path is missing, stop.
 
 ```bash
+start=$(tmux display-message -p -t <worker_pane> '#{pane_start_command}')
+launcher=$(printf '%s\n' "$start" | grep -oE '/[^[:space:]]+/launch-casein-agent.sh' | head -1)
+# If $launcher is empty, stop. Do not search the filesystem.
 tmux respawn-pane -k -t <worker_pane> -c <worker-worktree-path> \
-  "bash -lc 'cd \"<worker-worktree-path>\" && CASEIN_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" CASEIN_AGENT_TASK=<task-slug> exec bash \"${CASEIN_SCRIPTS}/launch-casein-agent.sh\" <runtime>'"
+  "bash -lc 'cd \"<worker-worktree-path>\" && CASEIN_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" CASEIN_AGENT_TASK=<task-slug> exec bash \"$launcher\" <runtime>'"
 ```
 
-Use **`launch-casein-agent.sh`**, not `spawn-agent-worker.sh` (§3): the launcher
-*reuses* the worktree when `CASEIN_AGENT_WORKTREE_PATH` points at it, whereas the
-spawn helper forces a fresh worktree — which would strand the already-committed
-slices. Wait for the prompt as in §3 (30–90s).
+Use **`launch-casein-agent.sh`**, not another `worker_launch` / spawn (§3): the
+launcher *reuses* the worktree when `CASEIN_AGENT_WORKTREE_PATH` points at it.
+Wait for the prompt as in §3 (30–90s).
 
 **3. Re-brief compactly** — self-contained, since the fresh session has no chat
 memory. Send the plan path plus where to resume, then continue the §6 wait loop:
@@ -424,5 +429,5 @@ Slice N+1: <one-line slice spec>. Read the committed code + plan, then proceed.
 | `unknown` | No marker; for grok/codex/opencode this is the idle tell |
 | `done` / `blocked` | **Report-only** — hooks (claude, codex) or `terminal_report_agent_state` |
 | `⠹ Compacting…` >1 min | Grok **wedged** — respawn same pane/worktree ([recover](#recover-a-wedged-worker-compaction-hang)) |
-| spawn helper `exit 3` | Grok refused: agent write locked — route to codex or ask for a re-grant |
+| `worker_launch` spawn refused / exit 3 | Grok refused: agent write locked — route to codex or ask for a re-grant |
 | `include_answer` | Unreliable on worker panes — use `terminal_capture` + JSON parse |

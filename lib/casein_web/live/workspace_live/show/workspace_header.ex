@@ -20,8 +20,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
   attr :tmux_window_tabs, :any, required: true
   attr :workspace, :any, required: true
   attr :workspace_start_error, :any, required: true
+  attr :host_health, :map, default: nil
 
   def header_overflow_menu(assigns) do
+    assigns =
+      assign(assigns, :host_health, assigns.host_health || Casein.Terminals.HostHealth.snapshot())
+
     ~H"""
     <span
       id={"agent-approval-announcer-" <> @workspace.id}
@@ -62,6 +66,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
             {@workspace.branch}
           </span>
         </div>
+
+        <.host_health_row health={@host_health} workspace_id={@workspace.id} />
 
         <button
           :if={not @desktop_terminal? and workspace_startable?(@workspace, @workspace_start_error)}
@@ -369,9 +375,109 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
     """
   end
 
-  # Menu rows that carry a binding show it: a shortcut discoverable only by
-  # hovering for a `title` tooltip is a shortcut nobody learns, and the panel
-  # now sizes to its content so the hint costs no truncation.
+  attr :health, :map, required: true
+  attr :workspace_id, :string, required: true
+
+  defp host_health_row(assigns) do
+    ~H"""
+    <details
+      id={"host-health-" <> @workspace_id}
+      class="group/host-health"
+      data-host-health-state={@health.state}
+      data-host-health-sampled-at={@health.sampled_at}
+    >
+      <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-1.5 text-left text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden">
+        <span class="flex min-w-0 items-center gap-2">
+          <span class={["size-1.5 shrink-0 rounded-full", host_health_dot_class(@health.state)]}></span>
+          <span>Host health</span>
+        </span>
+        <span class={["shrink-0 font-medium", host_health_label_class(@health.state)]}>
+          {@health.state_label}
+          <span :if={@health.age_seconds} class="font-normal text-base-content/50">
+            · {host_health_age(@health.age_seconds)}
+          </span>
+        </span>
+      </summary>
+
+      <div class="space-y-1 px-3 pb-2 text-density-label text-base-content/70">
+        <div class="font-mono text-base-content/60" title={@health.sampled_at}>
+          {@health.host}
+          <span :if={@health.reason} class={host_health_label_class(@health.state)}>
+            · {@health.reason}
+          </span>
+        </div>
+        <div class="flex flex-wrap gap-x-2 gap-y-0.5 font-mono">
+          <span>load {host_health_number(@health.load1)}</span>
+          <span>idle {host_health_pct(@health.cpu_idle_pct)}</span>
+          <span>mem {host_health_mem(@health.mem_available_kb)}</span>
+          <span>swap {host_health_mem(@health.swap_used_kb)}</span>
+          <span>oc {host_health_count(@health.opencode_processes)}</span>
+          <span>beam {host_health_count(@health.beam_processes)}</span>
+        </div>
+        <div>
+          alert {host_health_alert(@health.alert)}
+          <span :if={@health.latest_alert_at} class="text-base-content/50">
+            · {@health.latest_alert_at}
+          </span>
+        </div>
+        <div :if={@health.alerts == []} class="text-base-content/50">No recent alerts</div>
+        <ul :if={@health.alerts != []} class="space-y-0.5">
+          <li :for={alert <- @health.alerts} class="font-mono">
+            {Map.get(alert, :timestamp) || "—"}
+            {Map.get(alert, :signal) || "alert"}
+            {Map.get(alert, :message)}
+          </li>
+        </ul>
+      </div>
+    </details>
+    """
+  end
+
+  defp host_health_dot_class("healthy"), do: "bg-status-ok"
+  defp host_health_dot_class("warning"), do: "bg-status-warning"
+  defp host_health_dot_class("pressure"), do: "bg-status-danger"
+  defp host_health_dot_class("stuck"), do: "bg-status-danger"
+  defp host_health_dot_class(_), do: "bg-base-content/35"
+
+  defp host_health_label_class("healthy"), do: "text-status-ok-fg"
+  defp host_health_label_class("warning"), do: "text-status-warning-fg"
+  defp host_health_label_class("pressure"), do: "text-status-danger-fg"
+  defp host_health_label_class("stuck"), do: "text-status-danger-fg"
+  defp host_health_label_class(_), do: "text-base-content/60"
+
+  defp host_health_age(seconds) when is_integer(seconds) and seconds < 60, do: "#{seconds}s"
+
+  defp host_health_age(seconds) when is_integer(seconds) and seconds < 3600,
+    do: "#{div(seconds, 60)}m"
+
+  defp host_health_age(seconds) when is_integer(seconds), do: "#{div(seconds, 3600)}h"
+  defp host_health_age(_), do: "n/a"
+
+  defp host_health_number(nil), do: "—"
+
+  defp host_health_number(value) when is_float(value),
+    do: :erlang.float_to_binary(value, decimals: 2)
+
+  defp host_health_number(value), do: to_string(value)
+
+  defp host_health_pct(nil), do: "—"
+  defp host_health_pct(value), do: "#{value}%"
+
+  defp host_health_count(nil), do: "—"
+  defp host_health_count(value), do: to_string(value)
+
+  defp host_health_mem(nil), do: "—"
+
+  defp host_health_mem(kb) when is_integer(kb) and kb >= 1_048_576,
+    do: "#{Float.round(kb / 1_048_576, 1)}G"
+
+  defp host_health_mem(kb) when is_integer(kb) and kb >= 1024, do: "#{div(kb, 1024)}M"
+  defp host_health_mem(kb) when is_integer(kb), do: "#{kb}K"
+  defp host_health_mem(_), do: "—"
+
+  defp host_health_alert(nil), do: "—"
+  defp host_health_alert(alert), do: alert
+
   attr :keys, :string, required: true
 
   defp menu_kbd(assigns) do

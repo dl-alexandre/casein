@@ -142,8 +142,16 @@ defmodule Casein.Agents.InboxToolsTest do
       # Still there: peeking is not acting.
       assert {:ok, %{count: 1, unread: 1}} = inbox(session, %{}, "%3")
 
-      assert {:ok, %{collected: true, pending: 0, unread: 0, unread_before: 1}} =
-               inbox(session, %{"collect" => true}, "%3")
+      assert {:ok,
+              %{
+                collected: true,
+                pending: 0,
+                unread: 0,
+                unread_before: 1,
+                pending_before: 1,
+                count: 1,
+                messages: [%{body: "act on me", status: "collected", unread?: false}]
+              }} = inbox(session, %{"collect" => true}, "%3")
 
       assert {:ok, %{count: 0, pending: 0, unread: 0}} = inbox(session, %{}, "%3")
     end
@@ -156,8 +164,16 @@ defmodule Casein.Agents.InboxToolsTest do
       assert msg.unread? == true
       assert msg.message_id == "wire-1"
 
-      assert {:ok, %{pending: 0, unread: 0, collect_results: [result]}} =
-               inbox(session, %{"collect" => true}, "%3")
+      assert {:ok,
+              %{
+                pending: 0,
+                unread: 0,
+                pending_before: 1,
+                unread_before: 1,
+                count: 1,
+                messages: [%{body: "status check", status: "collected"}],
+                collect_results: [result]
+              }} = inbox(session, %{"collect" => true}, "%3")
 
       assert result.outcome == :inserted
       assert result.message_id == "wire-1"
@@ -173,17 +189,37 @@ defmodule Casein.Agents.InboxToolsTest do
     test "double collect via terminal_inbox is idempotent", %{session: session} do
       say(session, %{"to" => "pane:%3", "body" => "once", "message_id" => "idem-1"})
 
-      assert {:ok, %{collect_results: [first]}} =
+      assert {:ok, %{collect_results: [first], messages: [%{body: "once"}], count: 1}} =
                inbox(session, %{"collect" => true}, "%3")
 
       assert first.outcome == :inserted
 
-      # Second collect with include_collected still only duplicates the receipt
-      assert {:ok, %{collect_results: [second], unread: 0}} =
-               inbox(session, %{"collect" => true, "include_collected" => true}, "%3")
+      # Retry without include_collected still returns the body (not an empty mailbox).
+      assert {:ok, %{collect_results: [second], unread: 0, count: 1, messages: [again]}} =
+               inbox(session, %{"collect" => true}, "%3")
 
       assert second.outcome == :duplicate
       assert second.message_id == first.message_id
+      assert again.body == "once"
+      assert again.status == "collected"
+    end
+
+    test "collect returns bodies and count matches collect_results", %{session: session} do
+      say(session, %{"to" => "pane:%3", "body" => "work order", "message_id" => "wo-1"})
+      say(session, %{"to" => "pane:%3", "body" => "addendum", "message_id" => "wo-2"})
+
+      assert {:ok, payload} = inbox(session, %{"collect" => true}, "%3")
+
+      assert payload.collected == true
+      assert payload.pending_before == 2
+      assert payload.unread_before == 2
+      assert payload.pending == 0
+      assert payload.unread == 0
+      refute payload.collect_results == []
+      refute payload.count == 0
+      assert payload.count == length(payload.collect_results)
+      assert Enum.map(payload.messages, & &1.body) == ["work order", "addendum"]
+      assert Enum.all?(payload.messages, &(&1.status == "collected" and &1.unread? == false))
     end
 
     test "one agent's mailbox is not another's", %{session: session} do

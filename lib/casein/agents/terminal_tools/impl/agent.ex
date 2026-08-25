@@ -2,6 +2,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   @moduledoc false
 
   alias Casein.Agents.{Inbox, TerminalOutputFormat, Transcripts}
+  alias Casein.Agents.TerminalTools.Helpers
   alias Casein.Agents.Inbox.Address
   alias Casein.AgentSessions.GrokACP.Attachments
   alias Casein.Labels
@@ -31,7 +32,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
          session: session,
          pane: pane.id,
          reason: pane.agent_match,
-         safe_to_mutate: pane.agent_match == "agent_pair_marker"
+         safe_to_mutate: pane.agent_match in ["agent_pair_marker", "pane_role"]
        }
        |> put_pending_next_prompt(session, pane.id)
        |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))}
@@ -70,16 +71,17 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
          {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: true) do
       ansi? = Map.get(params, "ansi", false) == true
       requested_lines = lines_param(params) || @default_capture_lines
-      opts = [ansi: ansi?] |> put_lines(requested_lines)
+      opts = [ansi: true] |> put_lines(requested_lines)
 
-      output =
+      raw =
         session
         |> then(&tmux().capture_scrollback(&1, Keyword.put(opts, :target, pane.id)))
-        |> TerminalOutputFormat.format(ansi: ansi?)
+
+      output = TerminalOutputFormat.format(raw, ansi: ansi?)
 
       {:ok,
        %{session: session, target: pane.id, output: output}
-       |> put_capture_metadata(output, requested_lines)
+       |> put_capture_metadata(output, requested_lines, raw)
        |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))}
     end
   end
@@ -325,6 +327,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
 
   #911 lifecycle: each message carries `status` (`queued`|`collected`),
   `unread?`, and stable `message_id`. Collect clears unread — peek does not.
+  `collect: true` returns those same messages with bodies in `messages`.
   This is an addressed store; it never writes into panes.
   """
   @spec inbox(map()) :: {:ok, map()} | {:error, term()}
@@ -351,11 +354,23 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
       list_opts = [limit: limit, include_collected: include_collected?]
       messages = Inbox.list(workspace_id, addresses, list_opts)
 
-      collect_results =
-        if collect?, do: collect_inbox(workspace_id, messages, session, params), else: []
+      # A collect retry with nothing pending still needs the already-collected
+      # payloads so double-collect stays idempotent and still returns bodies.
+      messages =
+        if collect? and messages == [] and not include_collected? do
+          Inbox.list(workspace_id, addresses, limit: limit, include_collected: true)
+        else
+          messages
+        end
 
-      messages_after =
-        if collect?, do: Inbox.list(workspace_id, addresses, list_opts), else: messages
+      {collect_results, messages_after} =
+        if collect? do
+          messages
+          |> Enum.map(&collect_inbox_message(workspace_id, session, params, &1))
+          |> Enum.unzip()
+        else
+          {[], messages}
+        end
 
       after_summary = Inbox.summary(workspace_id, addresses)
 
@@ -384,27 +399,28 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
     end
   end
 
-  defp collect_inbox(workspace_id, messages, session, params) do
-    Enum.map(messages, fn message ->
-      ref = message.message_id || message.id
+  defp collect_inbox_message(workspace_id, session, params, message) do
+    # Prefer stable message_id so double-collect is idempotent across
+    # retries that only retained the send-side id (#911 / #872 pattern).
+    ref = message.message_id || message.id
 
-      case Inbox.collect(workspace_id, ref, %{
-             to: message.to,
-             tmux_session_id: session,
-             pane_id: caller_pane(params)
-           }) do
-        {:ok, _receipt, outcome} ->
-          %{message_id: message.message_id, message_event_id: message.id, outcome: outcome}
+    case Inbox.collect(workspace_id, ref, %{
+           to: message.to,
+           tmux_session_id: session,
+           pane_id: caller_pane(params)
+         }) do
+      {:ok, receipt, outcome} ->
+        {%{message_id: message.message_id, message_event_id: message.id, outcome: outcome},
+         mark_inbox_collected(message, receipt, outcome)}
 
-        {:error, reason} ->
-          %{
-            message_id: message.message_id,
-            message_event_id: message.id,
-            outcome: :error,
-            error: reason
-          }
-      end
-    end)
+      {:error, reason} ->
+        {%{
+           message_id: message.message_id,
+           message_event_id: message.id,
+           outcome: :error,
+           error: reason
+         }, message}
+    end
   end
 
   defp orphaned_inbox(workspace_id, params) do
@@ -419,6 +435,16 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
      }}
   end
 
+  defp mark_inbox_collected(message, receipt, outcome) when outcome in [:inserted, :duplicate] do
+    %{
+      message
+      | status: :collected,
+        unread?: false,
+        collected_at: message.collected_at || receipt.occurred_at || receipt.inserted_at
+    }
+  end
+
+  defp mark_inbox_collected(message, _receipt, _outcome), do: message
   defp inbox_message(message) do
     status = Map.get(message, :status) || :queued
     unread? = Map.get(message, :unread?)
@@ -1266,10 +1292,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   end
 
   defp clamped_timeout(params) do
-    case Map.get(params, "timeout_ms") || Map.get(params, :timeout_ms) do
-      ms when is_integer(ms) -> ms |> max(0) |> min(55_000)
-      _ -> 30_000
-    end
+    Helpers.clamp_wait_timeout_ms(Map.get(params, "timeout_ms") || Map.get(params, :timeout_ms))
   end
 
   defp sent_payload(session, target, next_tool, params) do

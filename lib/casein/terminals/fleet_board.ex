@@ -264,6 +264,26 @@ defmodule Casein.Terminals.FleetBoard do
 
   def unknown_reason_string(other), do: inspect(other)
 
+  @doc "Project existing report/liveness signals into an operator-facing lifecycle status."
+  @spec operational_status(map()) :: String.t()
+  def operational_status(row) when is_map(row) do
+    state = normalize_state(Map.get(row, :agent_state) || Map.get(row, "agent_state"))
+    liveness = Map.get(row, :liveness) || Map.get(row, "liveness")
+
+    case state do
+      :working -> "active"
+      :awaiting_input -> "awaiting_input"
+      :errored -> "failed"
+      :stalled -> "stale"
+      :blocked -> "blocked"
+      :done -> "completed"
+      :idle -> "idle"
+      _ -> if(liveness_state(liveness) == :active, do: "active", else: "unknown")
+    end
+  end
+
+  def operational_status(_), do: "unknown"
+
   defp stringify_reason(nil), do: nil
   defp stringify_reason(value) when is_atom(value), do: Atom.to_string(value)
   defp stringify_reason(value) when is_binary(value), do: value
@@ -387,6 +407,8 @@ defmodule Casein.Terminals.FleetBoard do
       active?: Map.get(tab, :active?) == true or Map.get(tab, :active) == true,
       liveness: liveness,
       blocked_on: blocked_on,
+      status: operational_status(%{agent_state: agent_state, liveness: liveness}),
+      work_handle: Map.get(tab, :work_handle) || Map.get(tab, "work_handle"),
       worktree_path: blank_to_nil(Map.get(tab, :worktree_path) || Map.get(tab, "worktree_path")),
       ticket: nil,
       ticket_match: nil,
@@ -444,6 +466,14 @@ defmodule Casein.Terminals.FleetBoard do
   defp normalize_liveness_state("quiet"), do: :quiet
   defp normalize_liveness_state("unknown"), do: :unknown
   defp normalize_liveness_state(_), do: :unknown
+
+  defp liveness_state(%{state: state}), do: normalize_liveness_state(state)
+  defp liveness_state(%{"state" => state}), do: normalize_liveness_state(state)
+
+  defp liveness_state(state) when is_atom(state) or is_binary(state),
+    do: normalize_liveness_state(state)
+
+  defp liveness_state(_), do: :unknown
 
   defp liveness_int(live, key) when is_map(live) do
     case Map.get(live, key) || Map.get(live, Atom.to_string(key)) do

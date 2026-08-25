@@ -7,7 +7,9 @@ defmodule Casein.Agents.TerminalTools.CaptureAgent do
     name: "terminal_capture_agent",
     description:
       "Capture scrollback from the dedicated agent pane. Avoids reading the operator pane. " <>
-        "Defaults to the last #{@default_capture_lines} lines when lines is omitted.",
+        "Defaults to the last #{@default_capture_lines} lines when lines is omitted. " <>
+        "Returns `input_buffer` (`has_content`, `source`: empty|placeholder|typed|unknown): " <>
+        "a suggested prompt is `placeholder`, not unsent user text; `unknown` is not typed content.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

@@ -70,6 +70,12 @@ compile-time-fixed argv.
 | `Casein.Agents.Activity` | `lib/casein/agents/activity.ex` | Live operator feed. It remains a transient PubSub/cache projection and hydrates its reads from durable `AgentEvents`. |
 | `Casein.Agents.ReviewCommand` | `lib/casein/agents/review_command.ex` | Allowlisted review-mode command; argv fixed at compile time, gated on detected capabilities. |
 | `Casein.Agents.Run` | `lib/casein/agents/run.ex` | One in-flight review-mode run per workspace (supervised, linger, hard timeout). |
+| `Casein.Agents.JidoPod` | `lib/casein/agents/jido_pod.ex` | Headless workspace coordinator (#1014): admit/queue/cancel bounded workers that call typed Code actions. Feature-flagged vs legacy OpenCode. No tmux pane. |
+| `Casein.Agents.JidoActions` | `lib/casein/agents/jido_actions.ex` | Typed worker action catalog (#1015): one validated action per capability, trusted context, distinct deny/human/timeout/cancel/stale/provider results. Behind the same Jido feature flag. |
+| `Casein.Agents.JidoLifecycle` | `lib/casein/agents/jido_lifecycle.ex` | Headless lifecycle projection (#1016): stable redacted envelope into AgentEvents/activity/audit/inbox; replayable worker snapshot shared with OpenCode. |
+| `Casein.Agents.JidoSkills` | `lib/casein/agents/jido_skills.ex` | Skill registry/loader, runtime selector, parity matrix, and OpenCode fallback (#1017). No pane required. |
+| `Casein.Agents.JidoBudgets` | `lib/casein/agents/jido_budgets.ex` | Workspace/fleet resource budgets, honest queue/reject, host pressure drain, and OpenCode-vs-Jido benchmark (#1018). |
+| `Casein.Agents.JidoProvider` | `lib/casein/agents/jido_provider.ex` | Secret-safe Jido.AI provider boundary: Grok 4.6 through OpenCode Zen with the existing OpenCode credential resolved fresh per request. |
 | `Casein.Desktop.AgentLauncher` | `lib/casein/desktop/agent_launcher.ex` | Native Windows runtime allowlist plus token-free executable/version/auth diagnostics. |
 | `Casein.Desktop.AgentWorktree` | `lib/casein/desktop/agent_worktree.ex` | Native Windows isolated worktree creation with validated product-derived paths and argv-only Git execution. |
 | `Casein.Desktop.NativeAgentLaunch` | `lib/casein/desktop/native_agent_launch.ex` | Provides one prepare/start transaction across isolated worktree creation, provider MCP materialization, topology-validated ConPTY pane input, runtime reporting, and explicit clean-only finish cleanup. |
@@ -176,18 +182,21 @@ slices; creating the worktree alone does not start an agent or alter the web UI.
 
 **An agent calling a tool (request lifecycle):**
 
-1. Agent POSTs JSON-RPC to `/api/terminals/mcp`, `/api/preview/mcp`, or
-   `/api/artifacts/mcp` (bearer auth). The thin `*MCPController` hands the
-   decoded message to `CaseinWeb.API.TerminalMCP.handle/2` /
-   `PreviewMCP.handle/2` / `ArtifactMCP.handle/2`.
+1. Agent POSTs JSON-RPC to `/api/terminals/mcp`, `/api/preview/mcp`,
+   `/api/artifacts/mcp`, or `/api/code/mcp` (bearer auth). The thin
+   `*MCPController` hands the decoded message to
+   `CaseinWeb.API.TerminalMCP.handle/2` / `PreviewMCP.handle/2` /
+   `ArtifactMCP.handle/2` / `CodeMCP.handle/2`.
 2. The web handler resolves/scopes `workspace_id` (pre-scoped from the URL query
    param when present), then dispatches `tools/call` to
-   `TerminalTools.invoke/2`, `PreviewTools.invoke/3`, or `ArtifactTools.invoke/2`.
+   `TerminalTools.invoke/2`, `PreviewTools.invoke/3`, `ArtifactTools.invoke/2`,
+   or `CodeTools.invoke/3`.
 3. The tool handler validates scope (terminal: `casein_` prefix +
-   `workspace_matches?`; preview: `ensure_pane_workspace_scope`), performs the
-   tmux/preview operation, and returns `{:ok, map}` or `{:error, reason}`.
+   `workspace_matches?`; preview: `ensure_pane_workspace_scope`; code:
+   assigned `worktree_path` + PathSafety), performs the
+   tmux/preview/worktree operation, and returns `{:ok, map}` or `{:error, reason}`.
 4. Result is recorded via `MCPAudit.record_terminal/3` /
-   `record_preview/4` / `record_artifact/4` (→ metadata-only `mcp.completed`
+   `record_preview/4` / `record_artifact/4` / `record_code/5` (→ metadata-only `mcp.completed`
    `AgentEvent` + `Activity` feed; `Audit.emit!` for successful mutating tools;
    label proposals), and errors are shaped by `MCPError` into MCP
    `structuredContent`.
@@ -439,5 +448,15 @@ available. The list is surfaced through agent UI and `GET
   pane lifecycle.
 - [`../architecture.md`](../architecture.md) — system-level first principles
   (FP-10: agent MCP tool calls leave reviewable evidence).
+- [`../jido_pod.md`](../jido_pod.md) — headless Jido workspace pod, lifecycle,
+  backpressure, and the OpenCode feature flag.
+- [`../jido_lifecycle.md`](../jido_lifecycle.md) — event envelope, replayable
+  worker snapshot, human resume, and OpenCode read-model parity.
+- [`../jido_skills.md`](../jido_skills.md) — skill registry, parity matrix,
+  runtime selector, and OpenCode fallback.
+- [`../jido_budgets.md`](../jido_budgets.md) — workspace/fleet budgets, honest
+  backpressure, host pressure drain, and the OpenCode-vs-Jido benchmark.
+- [`../jido_provider.md`](../jido_provider.md) — Jido.AI Zen/Grok 4.6 routing,
+  runtime OpenCode credential reuse, and secret-free provider failures.
 - [`../glossary.md`](../glossary.md) — term constraints (workspace, session,
   capability).

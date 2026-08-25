@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.SendKeys do
   use Jido.Action,
     name: "terminal_send_keys",
     description:
-      "Send raw keystrokes to a pane WITHOUT a trailing Enter. Use tmux key names for control keys (e.g. \"C-c\", \"Up\", \"Enter\"). Defaults to the active pane; pass `pane` to target the agent pane from terminal_topology. For running a shell command, prefer terminal_send_command. A git command that would write a worktree another pane is also working in is refused (shared_worktree_mutation); pass allow_shared_worktree when the sharing is deliberate.",
+      "Send raw keystrokes to a pane WITHOUT a trailing Enter. Use tmux key names for control keys (e.g. \"C-c\", \"Up\", \"Enter\"). Defaults to the active pane; pass `pane` to target the agent pane from terminal_topology. For running a shell command, prefer terminal_send_command. A git command that would write a worktree another pane is also working in is refused (shared_worktree_mutation); pass allow_shared_worktree when the sharing is deliberate. The write receipt includes `input_buffer` (`has_content`, `source`: empty|placeholder|typed|unknown); `placeholder` is a suggested prompt, not unsent user text.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

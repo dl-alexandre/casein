@@ -373,6 +373,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     {out, 0} = spawn_worker(ctx, "codex", [{"FAKE_PANE_STATE", "alive"}])
 
+    assert out =~ ~r/^spawned %99$/m
     assert out =~ ~r/^%99$/m
     refute out =~ "died immediately"
     # A success leaves the window exactly as spawned.
@@ -576,7 +577,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
     [
       {"CASEIN_SPAWN_LOADAVG_PATH", ctx.loadavg},
       {"CASEIN_SPAWN_MEMINFO_PATH", ctx.meminfo},
-      {"CASEIN_SPAWN_NPROC", "32"}
+      {"CASEIN_SPAWN_NPROC", "32"},
+      {"CASEIN_SPAWN_MAX_LOAD_RATIO", "1.0"},
+      {"CASEIN_SPAWN_MIN_MEM_AVAILABLE_KB", "2097152"},
+      {"CASEIN_SPAWN_FORCE", "0"}
     ]
   end
 
@@ -671,7 +675,10 @@ defmodule Scripts.SpawnAgentWorkerTest do
     [
       {"CASEIN_SPAWN_LOADAVG_PATH", loadavg},
       {"CASEIN_SPAWN_MEMINFO_PATH", meminfo},
-      {"CASEIN_SPAWN_NPROC", "32"}
+      {"CASEIN_SPAWN_NPROC", "32"},
+      {"CASEIN_SPAWN_MAX_LOAD_RATIO", "1.0"},
+      {"CASEIN_SPAWN_MIN_MEM_AVAILABLE_KB", "2097152"},
+      {"CASEIN_SPAWN_FORCE", "0"}
     ]
   end
 end
