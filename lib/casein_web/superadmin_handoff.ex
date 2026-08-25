@@ -45,11 +45,10 @@ defmodule CaseinWeb.SuperadminHandoff do
 
   def verify_actor(_), do: {:error, :invalid_handoff}
 
-  @spec email_domain() :: String.t()
+  @spec email_domain() :: String.t() | nil
   def email_domain do
     Application.get_env(:casein, :forward_auth_email_domain) ||
-      System.get_env("CASEIN_FORWARD_AUTH_EMAIL_DOMAIN") ||
-      "milcgroup.com"
+      System.get_env("CASEIN_FORWARD_AUTH_EMAIL_DOMAIN")
   end
 
   defp validate_claims(%{
@@ -100,9 +99,15 @@ defmodule CaseinWeb.SuperadminHandoff do
 
   defp valid_email?(email) do
     normalized = String.downcase(String.trim(email))
-    domain = String.downcase(String.trim(email_domain()))
 
-    String.contains?(normalized, "@") and String.ends_with?(normalized, "@" <> domain)
+    case email_domain() do
+      domain when is_binary(domain) and domain != "" ->
+        domain = String.downcase(String.trim(domain))
+        String.contains?(normalized, "@") and String.ends_with?(normalized, "@" <> domain)
+
+      _ ->
+        false
+    end
   end
 
   defp secret do
