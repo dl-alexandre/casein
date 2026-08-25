@@ -994,6 +994,14 @@ if config_env() == :prod and not release_cli? do
     config :casein, :forward_auth_email_domain, domain
   end
 
+  if handoff_secret = System.get_env("CASEIN_HANDOFF_SECRET") do
+    config :casein, :superadmin_handoff_secret, handoff_secret
+  end
+
+  if embed_origins = System.get_env("CASEIN_EMBED_ORIGINS") do
+    config :casein, :embed_origins, String.split(embed_origins, ",", trim: true)
+  end
+
   if modes_json = System.get_env("CASEIN_WORKSPACE_MODES") do
     modes =
       modes_json

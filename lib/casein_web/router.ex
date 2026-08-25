@@ -34,10 +34,24 @@ defmodule CaseinWeb.Router do
                                   "img-src 'self' data: blob:",
                                   "connect-src 'self' ws: wss:",
                                   "object-src 'none'",
-                                  "base-uri 'self'",
-                                  "frame-ancestors 'self'"
+                                  "base-uri 'self'"
                                 ]
                                 |> Enum.join("; ")
+
+  defp frame_ancestors do
+    origins =
+      Application.get_env(:casein, :embed_origins, [])
+      |> List.wrap()
+      |> Enum.filter(&is_binary/1)
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+
+    Enum.join(["'self'" | origins], " ")
+  end
+
+  defp browser_content_security_policy do
+    @content_security_policy_base <> "; frame-ancestors " <> frame_ancestors()
+  end
 
   defp put_content_security_policy(conn, _opts) do
     frame_src = Application.get_env(:casein, :preview_frame_src, @default_frame_src)
@@ -45,7 +59,7 @@ defmodule CaseinWeb.Router do
     Plug.Conn.put_resp_header(
       conn,
       "content-security-policy",
-      @content_security_policy_base <> "; " <> frame_src
+      browser_content_security_policy() <> "; " <> frame_src
     )
   end
 
@@ -56,11 +70,7 @@ defmodule CaseinWeb.Router do
     plug :put_root_layout, html: {CaseinWeb.Layouts, :root}
     plug :protect_from_forgery
 
-    plug :put_secure_browser_headers,
-         %{
-           "content-security-policy" =>
-             @content_security_policy_base <> "; " <> @default_frame_src
-         }
+    plug :put_secure_browser_headers
 
     plug :put_content_security_policy
     plug CaseinWeb.Plugs.ForwardAuth
@@ -123,6 +133,14 @@ defmodule CaseinWeb.Router do
   # to read it to find out how to authenticate.
   pipeline :mcp_metadata do
     plug :accepts, ["json"]
+  end
+
+  # OneBackend's already-authenticated superadmin shell establishes a signed
+  # Casein browser session through the short-lived handoff endpoint. The
+  # forward-auth bridge reads only that signed Casein session cookie; it never
+  # trusts browser-supplied identity headers.
+  pipeline :superadmin_session do
+    plug :fetch_session
   end
 
   # GitHub push webhook — authenticated via X-Hub-Signature-256, not ApiAuth.
@@ -238,6 +256,13 @@ defmodule CaseinWeb.Router do
     get "/push/vapid-key", PushController, :vapid_key
     post "/push/subscribe", PushController, :subscribe
     post "/push/unsubscribe", PushController, :unsubscribe
+  end
+
+  scope "/api", CaseinWeb.API do
+    pipe_through :superadmin_session
+
+    get "/superadmin/handoff", SuperadminHandoffController, :exchange
+    get "/superadmin/authz", SuperadminHandoffController, :authz
   end
 
   scope "/api", CaseinWeb.API do

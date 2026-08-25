@@ -1,5 +1,5 @@
 defmodule CaseinWeb.ContentSecurityPolicyTest do
-  use CaseinWeb.ConnCase, async: true
+  use CaseinWeb.ConnCase, async: false
 
   @root_layout "lib/casein_web/components/layouts/root.html.heex"
 
@@ -10,6 +10,25 @@ defmodule CaseinWeb.ContentSecurityPolicyTest do
     assert csp =~ "default-src 'self'"
     assert csp =~ "object-src 'none'"
     assert csp =~ "frame-ancestors 'self'"
+  end
+
+  test "CSP permits configured internal superadmin embedding", %{conn: conn} do
+    original = Application.get_env(:casein, :embed_origins)
+
+    on_exit(fn ->
+      if original do
+        Application.put_env(:casein, :embed_origins, original)
+      else
+        Application.delete_env(:casein, :embed_origins)
+      end
+    end)
+
+    Application.put_env(:casein, :embed_origins, ["https://dev.milcgroup.com"])
+
+    conn = get(conn, ~p"/")
+    [csp] = get_resp_header(conn, "content-security-policy")
+
+    assert csp =~ "frame-ancestors 'self' https://dev.milcgroup.com"
   end
 
   test "script-src hash matches the inline theme script in the root layout", %{conn: conn} do
