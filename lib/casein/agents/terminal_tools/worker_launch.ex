@@ -4,16 +4,17 @@ defmodule Casein.Agents.TerminalTools.WorkerLaunch do
   use Jido.Action,
     name: "worker_launch",
     description:
-      "Launch a visible Casein worker window (M4-lite #384): spawns via spawn-agent-worker.sh into an isolated worktree, never a hidden subagent, and returns one structured receipt (pane_id, window_name, worktree_path, branch, handle_id). Requires workspace_id, session, runtime (grok|codex|claude|opencode|agent), and task_slug. Optional label, dry_run, issue (same live-holder check as terminal_bind_issue), allow_duplicate. No durable task graph / path contracts / verifiers.",
+      "Launch a visible Casein worker window (M4-lite #384) into an isolated worktree, never a hidden subagent, and return a structured receipt joining session, window, pane, runtime, task, worktree, branch, and handle. Requires workspace_id, session, runtime (grok|codex|claude|opencode|agent), and task_slug. Optional label, initial_prompt, dry_run, issue (same live-holder check as terminal_bind_issue), and allow_duplicate. An unconfirmed prompt submit is a loud error that still includes the inspectable worker receipt. No durable task graph / path contracts / verifiers.",
     category: "terminal",
     tags: ["terminal", "orchestration"],
-    vsn: "1.0.0",
+    vsn: "1.1.0",
     schema: [
       workspace_id: [type: :string, required: true],
       session: [type: :string, required: true],
       runtime: [type: :string, required: true],
       task_slug: [type: :string, required: true],
       label: [type: :string],
+      initial_prompt: [type: :string],
       dry_run: [type: :boolean],
       issue: [type: :string],
       allow_duplicate: [type: :boolean],
@@ -45,6 +46,11 @@ defmodule Casein.Agents.TerminalTools.WorkerLaunch do
           label: %{
             type: "string",
             description: "Optional chrome / work-handle label (default worker: <slug>)."
+          },
+          initial_prompt: %{
+            type: "string",
+            description:
+              "Optional first worker brief. It is pasted and submitted only after the visible pane and durable work handle are recorded; delivery must be confirmed."
           },
           dry_run: %{
             type: "boolean",

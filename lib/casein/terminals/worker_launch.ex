@@ -37,8 +37,11 @@ defmodule Casein.Terminals.WorkerLaunch do
   * **Do not widen Backend/Fake adapter surface from this lane** — #896/#901 own that.
   """
 
+  alias Casein.Labels
+  alias Casein.Terminals.AgentState
   alias Casein.Terminals.Backend
   alias Casein.Terminals.IssueBinding
+  alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.WorkHandles
 
   @runtimes ~w(grok codex claude opencode agent)
@@ -60,6 +63,8 @@ defmodule Casein.Terminals.WorkerLaunch do
           optional(:branch) => String.t(),
           optional(:handle_id) => String.t(),
           optional(:label) => String.t(),
+          optional(:label_status) => String.t() | map(),
+          optional(:prompt_delivery) => map(),
           optional(:note) => String.t()
         }
 
@@ -77,6 +82,9 @@ defmodule Casein.Terminals.WorkerLaunch do
     * `:runner` — `(runtime, slug, session, opts -> {:ok, map()} | {:error, term()})` for tests
     * `:observe` — `(session, pane_id -> map())` pane facts after spawn (tests)
     * `:attach_handle` — when true (default), mint/attach a `WorkHandles` id
+    * `:initial_prompt` — optional first brief, submitted with confirmation
+    * `:deliver_prompt` — injectable prompt delivery function for tests
+    * `:set_label` — injectable pane-label function for tests
     * `:scripts_root` / `:spawn_script` — override script location
   """
   @spec launch(keyword()) :: {:ok, receipt() | map()} | {:error, map()}
@@ -134,14 +142,18 @@ defmodule Casein.Terminals.WorkerLaunch do
               visible?: true,
               hidden_subagent?: false,
               note:
-                "M4-lite worker_launch receipt. Worker is a Casein tmux window (worker-<slug>). " <>
-                  "No hidden subagent. Durable task graph / path contracts / verifiers remain out of scope."
+                "Visible worker_launch receipt. Worker is a Casein tmux window (worker-<slug>), " <>
+                  "with an inspectable work handle and explicit initial-prompt delivery receipt. " <>
+                  "No hidden subagent. Task graphs / path contracts / verifiers remain out of scope."
             }
-            |> maybe_attach_handle(workspace_id, session, pane_id, label, opts)
-            |> maybe_bind_issue(workspace_id, session, pane_id, opts)
-            |> reject_nils()
 
-          {:ok, receipt}
+          with {:ok, receipt} <-
+                 maybe_attach_handle(receipt, workspace_id, session, pane_id, label, opts) do
+            receipt = maybe_bind_issue(receipt, workspace_id, session, pane_id, opts)
+            receipt = reject_nils(receipt)
+            receipt = put_label_status(receipt, workspace_id, session, pane_id, label, opts)
+            maybe_deliver_initial_prompt(receipt, opts)
+          end
 
         {:ok, other} ->
           {:error,
@@ -172,32 +184,36 @@ defmodule Casein.Terminals.WorkerLaunch do
   end
 
   defp dry_run_spawn(runtime, slug, session, opts) do
-    script = spawn_script(opts)
-    window_name = "worker-#{slug}"
+    case ensure_spawn_script(opts) do
+      {:error, reason} ->
+        {:error, reason}
 
-    env = spawn_env(opts)
+      {:ok, script} ->
+        window_name = "worker-#{slug}"
+        env = spawn_env(opts)
 
-    case System.cmd(
-           "bash",
-           [script, runtime, slug, session],
-           stderr_to_stdout: true,
-           env: [{"CASEIN_SPAWN_DRY_RUN", "1"} | env],
-           cd: scripts_cd(opts)
-         ) do
-      {out, 0} ->
-        {:ok,
-         %{
-           dry_run: true,
-           window_name: window_name,
-           runtime: runtime,
-           task_slug: slug,
-           session: session,
-           script: script,
-           plan_text: String.trim(out)
-         }}
+        case System.cmd(
+               "bash",
+               [script, runtime, slug, session],
+               stderr_to_stdout: true,
+               env: [{"CASEIN_SPAWN_DRY_RUN", "1"} | env],
+               cd: scripts_cd(opts)
+             ) do
+          {out, 0} ->
+            {:ok,
+             %{
+               dry_run: true,
+               window_name: window_name,
+               runtime: runtime,
+               task_slug: slug,
+               session: session,
+               script: script,
+               plan_text: String.trim(out)
+             }}
 
-      {out, code} ->
-        {:error, spawn_failure(:spawn_dry_run_failed, code, out)}
+          {out, code} ->
+            {:error, spawn_failure(:spawn_dry_run_failed, code, out, script, opts)}
+        end
     end
   rescue
     e ->
@@ -206,49 +222,54 @@ defmodule Casein.Terminals.WorkerLaunch do
 
   # sobelow_skip ["CI.System"]
   defp live_spawn(runtime, slug, session, opts) do
-    script = spawn_script(opts)
-    timeout = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
-    env = spawn_env(opts)
-    window_name = "worker-#{slug}"
+    case ensure_spawn_script(opts) do
+      {:error, reason} ->
+        {:error, reason}
 
-    task =
-      Task.async(fn ->
-        System.cmd(
-          "bash",
-          [script, runtime, slug, session],
-          stderr_to_stdout: true,
-          env: env,
-          cd: scripts_cd(opts)
-        )
-      end)
+      {:ok, script} ->
+        timeout = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
+        env = spawn_env(opts)
+        window_name = "worker-#{slug}"
 
-    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, {out, 0}} ->
-        case parse_pane_id(out) do
-          {:ok, pane_id} ->
-            {:ok, %{pane_id: pane_id, window_name: window_name, output: String.trim(out)}}
+        task =
+          Task.async(fn ->
+            System.cmd(
+              "bash",
+              [script, runtime, slug, session],
+              stderr_to_stdout: true,
+              env: env,
+              cd: scripts_cd(opts)
+            )
+          end)
 
-          {:error, reason} ->
+        case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+          {:ok, {out, 0}} ->
+            case parse_pane_id(out) do
+              {:ok, pane_id} ->
+                {:ok, %{pane_id: pane_id, window_name: window_name, output: String.trim(out)}}
+
+              {:error, reason} ->
+                {:error,
+                 Map.merge(reason, %{
+                   output: String.trim(out),
+                   message: "spawn succeeded but printed no pane id"
+                 })}
+            end
+
+          {:ok, {out, code}} ->
+            {:error, spawn_failure(:spawn_failed, code, out, script, opts)}
+
+          nil ->
             {:error,
-             Map.merge(reason, %{
-               output: String.trim(out),
-               message: "spawn succeeded but printed no pane id"
-             })}
+             %{
+               error: :spawn_timeout,
+               timeout_ms: timeout,
+               message: "spawn exceeded #{timeout}ms"
+             }}
+
+          {:exit, reason} ->
+            {:error, %{error: :spawn_exit, detail: inspect(reason)}}
         end
-
-      {:ok, {out, code}} ->
-        {:error, spawn_failure(:spawn_failed, code, out)}
-
-      nil ->
-        {:error,
-         %{
-           error: :spawn_timeout,
-           timeout_ms: timeout,
-           message: "spawn exceeded #{timeout}ms"
-         }}
-
-      {:exit, reason} ->
-        {:error, %{error: :spawn_exit, detail: inspect(reason)}}
     end
   rescue
     e ->
@@ -356,21 +377,40 @@ defmodule Casein.Terminals.WorkerLaunch do
 
   defp maybe_attach_handle(receipt, workspace_id, session, pane_id, label, opts) do
     if Keyword.get(opts, :attach_handle, true) do
-      case safe_handle_create(workspace_id, session, pane_id, label) do
-        {:ok, handle_id} -> Map.put(receipt, :handle_id, handle_id)
-        _ -> receipt
+      case safe_handle_create(workspace_id, session, pane_id, label, receipt, opts) do
+        {:ok, handle_id} ->
+          {:ok, Map.put(receipt, :handle_id, handle_id)}
+
+        {:error, reason} ->
+          {:error,
+           %{
+             error: :work_handle_attach_failed,
+             reason: reason,
+             worker: receipt,
+             message:
+               "Worker opened, but its durable association could not be recorded. " <>
+                 "Inspect the returned worker receipt before retrying."
+           }}
       end
     else
-      receipt
+      {:ok, receipt}
     end
   end
 
-  defp safe_handle_create(workspace_id, session, pane_id, label) do
+  defp safe_handle_create(workspace_id, session, pane_id, label, receipt, opts) do
+    initial_prompt = initial_prompt(opts)
+
     case WorkHandles.create(workspace_id,
            session: session,
            pane_id: pane_id,
            label: label,
-           recorded_status: "working",
+           runtime: receipt.runtime,
+           task_slug: receipt.task_slug,
+           worktree_path: Map.get(receipt, :worktree_path),
+           branch: Map.get(receipt, :branch),
+           window_id: Map.get(receipt, :window_id),
+           window_name: Map.get(receipt, :window_name),
+           recorded_status: if(initial_prompt, do: "working", else: "awaiting_input"),
            message: "launched via worker_launch"
          ) do
       {:ok, %{handle_id: id}} -> {:ok, id}
@@ -380,23 +420,158 @@ defmodule Casein.Terminals.WorkerLaunch do
     :exit, _ -> {:error, :work_handles_unavailable}
   end
 
-  ## Paths / env
+  defp put_label_status(receipt, workspace_id, session, pane_id, label, opts) do
+    set_label = Keyword.get(opts, :set_label, &default_set_label/5)
 
-  defp spawn_script(opts) do
-    cond do
-      is_binary(Keyword.get(opts, :spawn_script)) ->
-        Keyword.fetch!(opts, :spawn_script)
+    status =
+      case set_label.(workspace_id, session, pane_id, label,
+             freeze: true,
+             tool: "worker_launch"
+           ) do
+        :ok -> "set"
+        {:error, reason} -> %{status: "failed", reason: inspect(reason)}
+        other -> %{status: "failed", reason: inspect(other)}
+      end
 
-      is_binary(Keyword.get(opts, :scripts_root)) ->
-        Path.join(Keyword.fetch!(opts, :scripts_root), "spawn-agent-worker.sh")
+    Map.put(receipt, :label_status, status)
+  catch
+    :exit, reason ->
+      Map.put(receipt, :label_status, %{status: "unavailable", reason: inspect(reason)})
+  end
 
-      true ->
-        resolve_spawn_script()
+  defp default_set_label(workspace_id, session, pane_id, label, opts) do
+    Labels.set_agent_label(workspace_id, session, pane_id, label, opts)
+  end
+
+  defp maybe_deliver_initial_prompt(receipt, opts) do
+    case initial_prompt(opts) do
+      nil ->
+        {:ok,
+         Map.put(receipt, :prompt_delivery, %{
+           status: "not_requested",
+           submitted: false
+         })}
+
+      prompt ->
+        deliver = Keyword.get(opts, :deliver_prompt, &PaneSubmit.deliver/4)
+
+        delivery_opts = [
+          workspace_id: receipt.workspace_id,
+          name_session: false,
+          name_window: false,
+          name_pane: false,
+          confirm: true,
+          strict: true
+        ]
+
+        case deliver.(receipt.session, receipt.pane_id, prompt, delivery_opts) do
+          {:ok, result} -> finish_prompt_delivery(receipt, result)
+          {:error, error} -> prompt_delivery_error(receipt, error)
+          other -> prompt_delivery_error(receipt, %{reason: inspect(other)})
+        end
     end
   end
 
-  defp resolve_spawn_script do
-    candidates = [
+  defp finish_prompt_delivery(receipt, result) when is_map(result) do
+    summary = prompt_delivery_summary(result)
+
+    if summary.status == "delivered" and summary.submitted == true do
+      {:ok, Map.put(receipt, :prompt_delivery, summary)}
+    else
+      prompt_delivery_error(receipt, summary)
+    end
+  end
+
+  defp prompt_delivery_error(receipt, error) do
+    summary = prompt_delivery_summary(error)
+    _ = mark_prompt_failure(receipt)
+
+    {:error,
+     %{
+       error: :initial_prompt_delivery_failed,
+       worker: Map.put(receipt, :prompt_delivery, summary),
+       prompt_delivery: summary,
+       message:
+         "Worker opened and remains inspectable, but the initial prompt was not confirmed. " <>
+           "Capture the returned pane before retrying so the brief is not duplicated."
+     }}
+  end
+
+  defp prompt_delivery_summary(result) when is_map(result) do
+    delivery = atom_string(Map.get(result, :delivery) || Map.get(result, "delivery"))
+    submitted = Map.get(result, :submitted) || Map.get(result, "submitted") || false
+
+    %{
+      status: if(delivery == "delivered" and submitted == true, do: "delivered", else: "failed"),
+      delivery: delivery || "unknown",
+      submitted: submitted,
+      confirmation:
+        atom_string(Map.get(result, :confirmation) || Map.get(result, "confirmation")),
+      enter_presses: Map.get(result, :enter_presses) || Map.get(result, "enter_presses"),
+      error: atom_string(Map.get(result, :error) || Map.get(result, "error")),
+      message: Map.get(result, :message) || Map.get(result, "message")
+    }
+    |> reject_nils()
+  end
+
+  defp prompt_delivery_summary(other),
+    do: %{status: "failed", delivery: "unknown", submitted: false, reason: inspect(other)}
+
+  defp mark_prompt_failure(%{handle_id: handle_id} = receipt) when is_binary(handle_id) do
+    _ = WorkHandles.record_status(handle_id, "blocked", "initial prompt delivery failed")
+
+    AgentState.report(
+      receipt.workspace_id,
+      receipt.session,
+      receipt.pane_id,
+      :blocked,
+      "initial prompt delivery failed",
+      source: :dispatch,
+      tool: "worker_launch"
+    )
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp mark_prompt_failure(_receipt), do: :ok
+
+  defp initial_prompt(opts) do
+    case Keyword.get(opts, :initial_prompt) do
+      prompt when is_binary(prompt) -> if(String.trim(prompt) == "", do: nil, else: prompt)
+      _ -> nil
+    end
+  end
+
+  defp atom_string(nil), do: nil
+  defp atom_string(value) when is_atom(value), do: Atom.to_string(value)
+  defp atom_string(value) when is_binary(value), do: value
+  defp atom_string(value), do: inspect(value)
+
+  ## Paths / env
+
+  defp spawn_script(opts) do
+    opts
+    |> spawn_script_candidates()
+    |> Enum.find(&binary_and_regular?/1) ||
+      List.last(spawn_script_candidates(opts)) ||
+      Path.expand("scripts/spawn-agent-worker.sh")
+  end
+
+  defp spawn_script_candidates(opts) do
+    cond do
+      is_binary(Keyword.get(opts, :spawn_script)) ->
+        [Keyword.fetch!(opts, :spawn_script)]
+
+      is_binary(Keyword.get(opts, :scripts_root)) ->
+        [Path.join(Keyword.fetch!(opts, :scripts_root), "spawn-agent-worker.sh")]
+
+      true ->
+        resolve_spawn_script_candidates()
+    end
+  end
+
+  defp resolve_spawn_script_candidates do
+    [
       System.get_env("CASEIN_SPAWN_WORKER_SCRIPT"),
       # The service release may not have a checkout-level `scripts/` tree.
       # CASEIN_SCRIPTS_ROOT is the host/runtime overlay seam used by the
@@ -412,9 +587,19 @@ defmodule Casein.Terminals.WorkerLaunch do
       # #248: no /opt/casein/deploy-build fallback — that layout is overlay-only.
       Path.expand("scripts/spawn-agent-worker.sh")
     ]
+    |> Enum.filter(&is_binary/1)
+    |> Enum.uniq()
+  end
 
-    Enum.find(candidates, &binary_and_regular?/1) ||
-      Path.expand("scripts/spawn-agent-worker.sh")
+  defp ensure_spawn_script(opts) do
+    script = spawn_script(opts)
+    searched = spawn_script_candidates(opts)
+
+    if File.regular?(script) do
+      {:ok, script}
+    else
+      {:error, script_not_found_error(script, searched)}
+    end
   end
 
   defp scripts_join(nil), do: nil
@@ -566,16 +751,17 @@ defmodule Casein.Terminals.WorkerLaunch do
   defp blank_to_nil(s) when is_binary(s), do: s
   defp blank_to_nil(_), do: nil
 
-  # #970: MCP clients render McpCtl.Error.summary/1, which is `message` only.
-  # The shell already prints a loud #863 decline (reason + probe + override);
-  # stuffing that only in `output` made exit 75 look like "spawn never happened"
-  # and agents self-parked on a stale-CASEIN_SCRIPTS guess. Classify here so
-  # both the real spawn path and injected runner errors stay loud.
-  defp spawn_failure(kind, code, out) when is_integer(code) do
-    classify_headroom_refusal(%{
+  # #970 / OB #19287: MCP clients render McpCtl.Error.summary/1, which is
+  # `message` only. A bare "exit 75" or "exit 127" made spawn look permanently
+  # broken. Classify here so both the real spawn path and injected runner
+  # errors stay loud.
+  defp spawn_failure(kind, code, out, script, opts) when is_integer(code) do
+    classify_spawn_failure(%{
       error: kind,
       exit_status: code,
       output: String.trim(to_string(out || "")),
+      script: script,
+      searched: spawn_script_candidates(opts),
       message: spawn_failure_message(kind, code)
     })
   end
@@ -585,9 +771,131 @@ defmodule Casein.Terminals.WorkerLaunch do
 
   defp spawn_failure_message(_kind, code), do: "spawn-agent-worker.sh exited #{code}"
 
-  defp normalize_error(%{} = err), do: classify_headroom_refusal(err)
+  defp normalize_error(%{} = err), do: classify_spawn_failure(err)
   defp normalize_error(atom) when is_atom(atom), do: %{error: atom}
   defp normalize_error(other), do: %{error: :spawn_failed, detail: inspect(other)}
+
+  defp classify_spawn_failure(%{} = err) do
+    err
+    |> classify_headroom_refusal()
+    |> classify_command_not_found()
+    |> ensure_loud_exit_message()
+  end
+
+  defp script_not_found_error(script, searched) do
+    %{
+      error: :spawn_script_not_found,
+      script: script,
+      searched: searched,
+      message: missing_helper_message("spawn helper not found.", script, searched, nil)
+    }
+  end
+
+  defp classify_command_not_found(%{exit_status: 127} = err) do
+    script = Map.get(err, :script)
+    searched = Map.get(err, :searched) || []
+    output = err |> Map.get(:output) |> to_string() |> String.trim()
+
+    err
+    |> Map.merge(%{
+      error: :spawn_command_not_found,
+      script: script,
+      searched: searched,
+      message:
+        missing_helper_message("spawn helper not found (exit 127).", script, searched, output)
+    })
+  end
+
+  defp classify_command_not_found(err), do: err
+
+  defp missing_helper_message(prefix, script, searched, output) do
+    script_part =
+      if is_binary(script) and script != "",
+        do: " Missing helper: #{script}.",
+        else: " spawn-agent-worker.sh was not found."
+
+    searched_part =
+      case Enum.filter(List.wrap(searched), &is_binary/1) do
+        [] -> ""
+        paths -> " Searched: #{Enum.join(paths, ", ")}."
+      end
+
+    output_part =
+      if is_binary(output) and output != "",
+        do: " Output: #{collapse_output(output)}.",
+        else: ""
+
+    prefix <>
+      script_part <>
+      searched_part <>
+      output_part <>
+      " worker_launch runs on the Casein host; an external MCP client cannot see a checkout-only helper." <>
+      " Ask an in-workspace factory manager to launch, or set CASEIN_SPAWN_WORKER_SCRIPT / CASEIN_SCRIPTS_ROOT on the host."
+  end
+
+  defp ensure_loud_exit_message(%{exit_status: code} = err) when is_integer(code) do
+    message = Map.get(err, :message)
+
+    if bare_exit_message?(err, message) do
+      Map.put(err, :message, enrich_exit_message(err, message))
+    else
+      err
+    end
+  end
+
+  defp ensure_loud_exit_message(err), do: err
+
+  defp bare_exit_message?(%{error: kind, exit_status: code}, message)
+       when is_binary(message) and is_atom(kind) and is_integer(code) do
+    message == spawn_failure_message(kind, code)
+  end
+
+  defp bare_exit_message?(%{exit_status: _}, message)
+       when not is_binary(message) or message == "",
+       do: true
+
+  defp bare_exit_message?(_, _), do: false
+
+  defp enrich_exit_message(%{exit_status: code} = err, message) when is_binary(message) do
+    extras =
+      [
+        err |> Map.get(:script) |> script_clause(),
+        err |> Map.get(:output) |> output_clause()
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    case extras do
+      [] ->
+        "#{message} — see structured error fields (script, output, searched); never treat a bare exit #{code} as the whole diagnosis"
+
+      parts ->
+        "#{message}: #{Enum.join(parts, ". ")}"
+    end
+  end
+
+  defp enrich_exit_message(%{exit_status: code} = err, _) do
+    enrich_exit_message(err, "spawn-agent-worker.sh exited #{code}")
+  end
+
+  defp script_clause(script) when is_binary(script) and script != "", do: "script=#{script}"
+  defp script_clause(_), do: nil
+
+  defp output_clause(output) when is_binary(output) do
+    case String.trim(output) do
+      "" -> nil
+      trimmed -> collapse_output(trimmed)
+    end
+  end
+
+  defp output_clause(_), do: nil
+
+  defp collapse_output(output) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.take(3)
+    |> Enum.join(" ")
+    |> String.slice(0, 400)
+  end
 
   defp classify_headroom_refusal(%{exit_status: 75} = err) do
     output = err |> Map.get(:output) |> to_string()
@@ -608,6 +916,7 @@ defmodule Casein.Terminals.WorkerLaunch do
         error: :spawn_headroom_exhausted,
         reason: reason,
         override: "CASEIN_SPAWN_FORCE=1",
+        token: "refused:headroom",
         message: message
       })
     else
@@ -617,9 +926,17 @@ defmodule Casein.Terminals.WorkerLaunch do
 
   defp classify_headroom_refusal(err), do: err
 
+  # #996: prefer the stdout token. "headroom exhausted" used to appear on both
+  # the refuse path and CASEIN_SPAWN_FORCE proceed; a FORCE success is exit 0
+  # and emits proceed:headroom-force, so never treat that as a refusal.
   defp headroom_refusal?(output) when is_binary(output) do
-    String.contains?(output, "headroom exhausted") or
-      (String.contains?(output, "spawn refused") and String.contains?(output, "probe:"))
+    cond do
+      String.contains?(output, "proceed:headroom-force") -> false
+      String.contains?(output, "refused:headroom") -> true
+      String.contains?(output, "headroom exhausted") -> true
+      String.contains?(output, "spawn refused") and String.contains?(output, "probe:") -> true
+      true -> false
+    end
   end
 
   defp headroom_refusal?(_), do: false

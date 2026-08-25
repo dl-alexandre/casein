@@ -13,7 +13,8 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthz do
   @surface_paths %{
     "/api/terminals/mcp" => "terminal",
     "/api/preview/mcp" => "preview",
-    "/api/artifacts/mcp" => "artifact"
+    "/api/artifacts/mcp" => "artifact",
+    "/api/code/mcp" => "code"
   }
 
   def init(opts), do: opts
@@ -77,6 +78,7 @@ defmodule CaseinWeb.Plugs.AgentCapabilityAuthz do
   defp authorize_workspace(_conn, _claims), do: {:error, :invalid_capability_claims}
 
   defp authorize_tmux_session(_conn, "artifact", _claims), do: :ok
+  defp authorize_tmux_session(_conn, "code", _claims), do: :ok
 
   defp authorize_tmux_session(conn, _surface, %{tmux_session_id: expected}) do
     if conn.query_params["tmux_session"] == expected,

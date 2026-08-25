@@ -217,6 +217,9 @@ workspace-scoping rules.
 | POST | `/api/artifacts/mcp` | `ArtifactMCPController` · `:rpc` | Drive `Casein.Agents.ArtifactTools` (create/update/list/get/serve/snapshot artifact worktrees) via `ArtifactMCP.handle/2` |
 | GET | `/api/artifacts/mcp` | `ArtifactMCPController` · `:info` | Streamable HTTP SSE channel for a known `Mcp-Session-Id` |
 | DELETE | `/api/artifacts/mcp` | `ArtifactMCPController` · `:delete` | End a streamable MCP session |
+| POST | `/api/code/mcp` | `CodeMCPController` · `:rpc` | Drive `Casein.Agents.CodeTools` (read/search/patch/exec) via `CodeMCP.handle/2` |
+| GET | `/api/code/mcp` | `CodeMCPController` · `:info` | Streamable HTTP SSE channel for a known `Mcp-Session-Id` |
+| DELETE | `/api/code/mcp` | `CodeMCPController` · `:delete` | End a streamable MCP session |
 
 MCP methods handled by all `*MCP` modules: `initialize`, `ping`,
 `tools/list`, `tools/call`; `notifications/*` → 202 no-body. Every

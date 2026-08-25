@@ -131,6 +131,9 @@ defmodule Casein.MixProject do
       # children; test/casein/oban_fate_test.exs enforces that pairing.
       {:oban, "~> 2.23"},
       {:hammer, "~> 7.4"},
+      # Headless provider runtime. Credentials are resolved by Casein per request;
+      # never configure provider keys in Jido.AI or ReqLLM application env.
+      {:jido_ai, "~> 2.3"},
       # Agent MCP tool actions (validated params) — standalone, no agent runtime.
       {:jido_action, "~> 2.3"},
       # CloudEvents envelope + IDs for audit causality — standalone, bus unused for now.

@@ -37,6 +37,7 @@ defmodule Casein.Agents.TerminalTools do
     Context,
     GateReport,
     HostCapacity,
+    HostHealth,
     GetNextPrompt,
     Inbox,
     LayoutApply,
@@ -126,6 +127,7 @@ defmodule Casein.Agents.TerminalTools do
     WorktreeDiff,
     GateReport,
     HostCapacity,
+    HostHealth,
     McpSelfTest
   ]
 
@@ -245,6 +247,8 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate gate_report(params), to: Report
   @doc false
   defdelegate host_capacity(params \\ %{}), to: Session
+  @doc false
+  defdelegate host_health(params \\ %{}), to: Session
   @doc false
   defdelegate mcp_self_test(params \\ %{}), to: SelfTest, as: :run
 end

@@ -580,6 +580,7 @@ defmodule Scripts.AgentWorktreeTest do
           "agent-worktree.sh",
           "real-agent-bin.sh",
           "agent-auth-profile.sh",
+          "agent-identity.sh",
           "sidechat.sh",
           "agent-skills.sh"
         ] do

@@ -202,6 +202,7 @@ All endpoints are bearer-gated with `CASEIN_API_TOKEN`.
 |---|---|---|
 | `POST` | `/api/terminals/mcp` | Terminal control MCP (see [`docs/terminal_mcp.md`](docs/terminal_mcp.md)) |
 | `POST` | `/api/preview/mcp` | Preview control MCP (see [`docs/preview_mcp.md`](docs/preview_mcp.md)) |
+| `POST` | `/api/code/mcp` | Worktree-scoped code MCP (see [`docs/code_mcp.md`](docs/code_mcp.md)) |
 
 ## Safety model
 

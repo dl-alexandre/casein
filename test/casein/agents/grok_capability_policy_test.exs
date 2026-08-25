@@ -25,6 +25,9 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     assert "terminal_send_command" in ceiling["terminal"]
     assert "terminal_send_keys" in ceiling["terminal"]
     assert "artifact_create" in ceiling["artifact"]
+    assert "code_read" in ceiling["code"]
+    assert "code_apply_patch" in ceiling["code"]
+    assert "code_exec" in ceiling["code"]
   end
 
   test "locked workspaces grant reads and reporting, not execution or artifact writes" do
@@ -49,6 +52,9 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     refute "terminal_send_command" in snapshot.allowed_tools["terminal"]
     refute "terminal_send_agent_command" in snapshot.allowed_tools["terminal"]
     refute "artifact_create" in snapshot.allowed_tools["artifact"]
+    assert "code_read" in snapshot.allowed_tools["code"]
+    refute "code_apply_patch" in snapshot.allowed_tools["code"]
+    refute "code_exec" in snapshot.allowed_tools["code"]
   end
 
   test "known isolation grants mutations including raw send; unknown isolation removes them" do
