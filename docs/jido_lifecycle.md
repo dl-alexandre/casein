@@ -43,3 +43,4 @@ code, command/keys, and tool I/O are dropped before persist and notification.
 Resume token: `jido:<workspace_id>:<attempt_id>`.
 
 Skills and OpenCode fallback live in [`jido_skills.md`](jido_skills.md).
+Budgets and the OpenCode comparison live in [`jido_budgets.md`](jido_budgets.md).

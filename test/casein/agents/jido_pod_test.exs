@@ -19,6 +19,7 @@ defmodule Casein.Agents.JidoPodTest do
     Application.put_env(:casein, :jido_code_actions, &sync_ok/3)
     Metrics.reset()
     Fleet.reset()
+    Casein.Agents.JidoBudgets.reset()
 
     on_exit(fn ->
       Registry.select(Casein.Agents.JidoPod.Registry, [
@@ -32,6 +33,7 @@ defmodule Casein.Agents.JidoPodTest do
       restore(:jido_code_actions, previous.runner)
       Metrics.reset()
       Fleet.reset()
+      Casein.Agents.JidoBudgets.reset()
     end)
 
     {:ok, track: fn ws -> ws end}
@@ -170,7 +172,13 @@ defmodule Casein.Agents.JidoPodTest do
     b = track.("ws-fair-b-#{id()}")
     gate = start_gate()
     Application.put_env(:casein, :jido_code_actions, gate_runner(gate))
-    put_limits(max_running_per_workspace: 2, max_queued_per_workspace: 4, max_running_fleet: 2)
+
+    put_limits(
+      max_running_per_workspace: 2,
+      max_queued_per_workspace: 4,
+      max_running_fleet: 2,
+      max_share_per_workspace: 1.0
+    )
 
     _a1 = admit_blocked(a, "a1")
     _a2 = admit_blocked(a, "a2")

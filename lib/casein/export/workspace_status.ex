@@ -11,7 +11,7 @@ defmodule Casein.Export.WorkspaceStatus do
     * Proposal diffs are NOT included; only metadata + analysis risk.
   """
 
-  alias Casein.Agents.{GrokCapabilityPolicy, JidoLifecycle, MCPUrls, TidewaveMCP}
+  alias Casein.Agents.{GrokCapabilityPolicy, JidoBudgets, JidoLifecycle, MCPUrls, TidewaveMCP}
   alias Casein.Previews
   alias Casein.Audit
   alias Casein.Deployment.{Health, Registry}
@@ -61,6 +61,7 @@ defmodule Casein.Export.WorkspaceStatus do
             agent_sessions: agent_sessions(session_summary),
             agent_layout: agent_layout(session_summary),
             headless_workers: headless_workers(external_id),
+            jido_budgets: jido_budgets(external_id),
             active_run: active_run_summary(external_id),
             recent_runs: recent_runs(external_id),
             recent_proposals: recent_proposals(record),
@@ -521,6 +522,28 @@ defmodule Casein.Export.WorkspaceStatus do
   defp stringify(nil), do: nil
   defp stringify(value) when is_atom(value), do: Atom.to_string(value)
   defp stringify(value), do: value
+
+  defp jido_budgets(workspace_id) do
+    snap = JidoBudgets.snapshot(workspace_id)
+
+    %{
+      limits:
+        Map.take(snap.limits, [
+          :max_running_per_workspace,
+          :max_queued_per_workspace,
+          :max_running_fleet,
+          :max_share_per_workspace,
+          :max_provider_inflight
+        ]),
+      last_decision: snap.last_decision,
+      backpressure: snap.backpressure,
+      fleet_running: get_in(snap, [:fleet, :fleet_running]),
+      provider_inflight: get_in(snap, [:ledger, :provider_inflight]),
+      leaked_leases: get_in(snap, [:ledger, :leaked_leases])
+    }
+  rescue
+    _ -> %{limits: %{}, last_decision: nil, backpressure: []}
+  end
 
   defp headless_workers(workspace_id) do
     workspace_id

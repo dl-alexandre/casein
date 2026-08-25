@@ -8,13 +8,15 @@ defmodule Casein.Agents.JidoPod.Fleet do
 
   use GenServer
 
+  alias Casein.Agents.JidoBudgets.Limits
+
   @default_max_running 8
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @spec try_acquire(String.t()) :: :ok | {:error, :fleet_limit}
+  @spec try_acquire(String.t()) :: :ok | {:error, :fleet_limit | :fairness | :workspace_share}
   def try_acquire(workspace_id) when is_binary(workspace_id) do
     GenServer.call(__MODULE__, {:try_acquire, workspace_id})
   end
@@ -59,6 +61,9 @@ defmodule Casein.Agents.JidoPod.Fleet do
     cond do
       running >= max_running() ->
         {:reply, {:error, :fleet_limit}, state}
+
+      mine >= Limits.max_workspace_share(max_running()) ->
+        {:reply, {:error, :workspace_share}, state}
 
       fairer_waiter?(state, workspace_id, mine) ->
         {:reply, {:error, :fairness}, state}

@@ -31,7 +31,8 @@ defmodule Casein.Agents.Activity do
             | :jido_pod
             | :jido_actions
             | :jido_lifecycle
-            | :jido_skills,
+            | :jido_skills
+            | :jido_budgets,
           tool: String.t(),
           summary: String.t(),
           metadata: map(),
