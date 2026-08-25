@@ -79,6 +79,7 @@ defmodule Casein.Terminals.OrchestrationListWorkersTest do
       assert blocked.window_id == "w1"
       assert blocked.issue == 384
       assert blocked.agent_state == "blocked"
+      assert blocked.status == "blocked"
       assert blocked.fleet_role == "worker"
       assert blocked.needs_you? == true
       assert blocked.blocked_on.kind == "report"
@@ -87,6 +88,7 @@ defmodule Casein.Terminals.OrchestrationListWorkersTest do
 
       working = Enum.find(payload.workers, &(&1.pane_id == "%w2"))
       assert working.agent_state == "working"
+      assert working.status == "active"
       assert working.fleet_role == "manager"
       assert working.needs_you? == false
       refute Map.has_key?(working, :blocked_on)
@@ -165,6 +167,7 @@ defmodule Casein.Terminals.OrchestrationListWorkersTest do
       # nil agent_state is omitted (reject_nils), never invented as idle
       refute Map.get(row, :agent_state) == "idle"
       refute Map.has_key?(row, :agent_state)
+      assert row.status == "unknown"
     end
 
     test "reuses tabs_from_topology + FleetBoard without a second classifier" do
@@ -204,10 +207,49 @@ defmodule Casein.Terminals.OrchestrationListWorkersTest do
       assert row.window == "worker-384"
       assert row.issue == 384
       assert row.agent_state == "stalled"
+      assert row.status == "stale"
       assert row.blocked_on.kind == "derived"
       assert row.blocked_on.reason == "stalled"
       # Derived: still reported as a blocker, still not a summons.
       assert row.needs_you? == false
+    end
+
+    test "list exposes a launched worker handle and its recorded awaiting-input state" do
+      handle = %{
+        handle_id: "handle-awaiting",
+        runtime: "codex",
+        task_slug: "recover-session",
+        status: %{source: "recorded", state: "awaiting_input", message: "needs first brief"}
+      }
+
+      topology = %{
+        windows: [%{id: "@9", name: "worker-recover-session", active: true}],
+        panes: [
+          %{
+            id: "%9",
+            window_id: "@9",
+            role: "agent",
+            fleet_role: :worker,
+            work_handle: handle
+          }
+        ]
+      }
+
+      payload =
+        topology
+        |> OrchestrationStatus.tabs_from_topology()
+        |> board()
+        |> OrchestrationListWorkers.project(
+          workspace_id: "ws-1",
+          session: "casein_ws-1_main",
+          now: @now
+        )
+
+      assert [worker] = payload.workers
+      assert worker.pane_id == "%9"
+      assert worker.status == "awaiting_input"
+      assert worker.agent_state == "awaiting_input"
+      assert worker.work_handle == handle
     end
   end
 end

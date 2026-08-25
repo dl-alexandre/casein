@@ -7,17 +7,22 @@ defmodule Casein.Agents.PaneEnv do
 
   alias Casein.Agents.{
     AgentShims,
-    AuthProfile,
     MCPMaterializer,
     MCPUrls,
     TidewaveMCP,
     WorkspaceTokens
   }
 
+  alias Casein.Identity
   alias Casein.Terminals.Shims
 
   @doc """
   Build the environment map agents need for Casein MCP, keyed as strings.
+
+  Pass `:viewer` (a `ForwardAuth` identity map) so provider homes and
+  `GH_CONFIG_DIR` resolve to the person who triggered the launch rather than
+  the workspace owner — see `Casein.Identity`. Without it the identity falls
+  back to the workspace owner, which is what non-request callers want.
   """
   @spec vars_for_workspace(map(), keyword()) ::
           {:ok, %{String.t() => String.t()}} | {:error, term()}
@@ -63,10 +68,22 @@ defmodule Casein.Agents.PaneEnv do
         }
         |> maybe_put_tmux_session(opts)
         |> maybe_put_tidewave(workspace, opts)
-        |> Map.merge(AuthProfile.env_for_workspace(workspace))
+        |> Map.merge(identity_env(workspace, opts))
 
       {:ok, vars}
     end
+  end
+
+  # `env: false` — the identity must come from the caller or the workspace, never
+  # from the release's own environment. A `CASEIN_ACTOR` inherited by the beam
+  # would otherwise stamp every workspace on the box with one principal.
+  defp identity_env(workspace, opts) do
+    Identity.env(
+      viewer: Keyword.get(opts, :viewer),
+      principal: Keyword.get(opts, :principal),
+      workspace: workspace,
+      env: false
+    )
   end
 
   @doc """

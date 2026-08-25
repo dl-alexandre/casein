@@ -1,9 +1,9 @@
 defmodule Casein.Agents.TerminalTools.Impl.Session do
   @moduledoc false
 
-  alias Casein.Agents.AuthProfile
   alias Casein.Agents.GrokCapabilityPolicy
   alias Casein.Agents.TerminalOutputFormat
+  alias Casein.Identity
   alias Casein.Labels
   alias Casein.Operator.SituationServer
   alias Casein.Terminals.AgentState
@@ -17,9 +17,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.TmuxTopology
   alias Casein.Terminals.WorkerCancel
   alias Casein.Terminals.WorkerStatus
+  alias Casein.Terminals.WorkHandles
   alias Casein.Terminals.WorktreeChangedPaths
   alias Casein.Terminals.WorktreeDiff
   alias Casein.Terminals.WorktreeStatus
+  alias Casein.Terminals.HostHealth
+  alias Casein.Workspaces.Identity, as: WorkspaceIdentity
 
   import Casein.Agents.TerminalTools.Impl.Shared
 
@@ -43,30 +46,40 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
                               "report, set label 'blocked: workspace isolation', and STOP."
 
   @doc "List live Casein-managed tmux sessions."
-  @spec list_sessions(map()) :: {:ok, map()}
+  @spec list_sessions(map()) :: {:ok, map()} | {:error, term()}
   def list_sessions(params \\ %{}) do
     contains = Map.get(params, "contains") || Map.get(params, :contains)
 
-    sessions =
+    raw_sessions =
       tmux().list_sessions()
       |> Enum.filter(&String.starts_with?(&1.session, @session_prefix))
       |> filter_workspace(params)
       |> filter_contains(contains)
 
-    {:ok,
-     %{
-       sessions: sessions,
-       workspace_id: workspace_id(params),
-       control_plane: ControlPlane.status(),
-       host_capacity: HostCapacity.snapshot()
-     }
-     |> put_session_guidance(params, sessions)
-     |> compact()}
+    with {:ok, raw_sessions} <- filter_exact_session(raw_sessions, params) do
+      sessions = Enum.map(raw_sessions, &session_candidate(&1, params))
+
+      {:ok,
+       %{
+         sessions: sessions,
+         workspace_id: workspace_id(params),
+         workspace: workspace_identity(params),
+         session_scope: if(string_param(params, "session"), do: "exact", else: "workspace"),
+         control_plane: ControlPlane.status(),
+         host_capacity: HostCapacity.snapshot()
+       }
+       |> put_session_guidance(params, sessions)
+       |> compact()}
+    end
   end
 
   @doc "Return the shared live host-capacity probe for worker-wave scheduling."
   @spec host_capacity(map()) :: {:ok, map()}
   def host_capacity(_params \\ %{}), do: {:ok, HostCapacity.snapshot()}
+
+  @doc "Return the shared host-watchdog snapshot used by the Host health menu."
+  @spec host_health(map()) :: {:ok, map()}
+  def host_health(_params \\ %{}), do: {:ok, HostHealth.snapshot()}
 
   @doc "Return a self-routing terminal context for agent planning."
   @spec context(map()) :: {:ok, map()} | {:error, term()}
@@ -75,18 +88,21 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
 
     case session_or_default_arg(params) do
       {:ok, session} ->
-        snapshot = enriched_snapshot(session)
+        snapshot = enriched_snapshot(session, params)
 
         payload =
           %{
             workspace_id: workspace_id(params),
-            sessions: Enum.map(sessions, &session_candidate/1),
+            sessions: Enum.map(sessions, &session_candidate(&1, params)),
+            workspace: workspace_identity(params),
             recommended_session: session,
             topology: snapshot,
             control_plane: ControlPlane.status(),
             host_capacity: HostCapacity.snapshot()
           }
+          |> put_session_identity(session, params)
           |> put_caller_anchor(snapshot, params)
+          |> put_operator_pane_guidance(snapshot, params)
           |> put_agent_pane_guidance(session, params)
           |> put_agent_write(params)
           |> compact()
@@ -133,6 +149,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         |> NextPrompt.enrich_topology(session)
         |> IssueBinding.enrich_topology(session)
         |> Labels.enrich_topology(session)
+        |> WorkHandles.enrich_topology(workspace_id(params), session)
         # Fleet chrome is a pure projection over the fields above — role from
         # label/window convention, ready_no_task from idle + no issue + quiet.
         |> put_agent_state_ages(session)
@@ -140,8 +157,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         |> FleetChrome.enrich_topology()
         |> put_window_active_panes()
         |> put_shared_worktree_warning()
+        |> put_session_identity(session, params)
         |> Map.put(:active_pane_note, @active_pane_note)
         |> put_caller_anchor(snapshot, params)
+        |> put_operator_pane_guidance(snapshot, params)
         |> put_agent_pane_guidance(session, params)
 
       {:ok, payload}
@@ -151,33 +170,44 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   # Direct tmux snapshot plus the semantic agent-state layer. The watcher path
   # (`TmuxTopology.get/2`) stays heuristic-only; enriching here keeps reported
   # :blocked/:done/:idle states visible to MCP consumers without touching it.
-  defp enriched_snapshot(session) do
+  defp enriched_snapshot(session, params) do
     session
     |> TmuxTopology.snapshot(tmux: tmux())
     |> AgentState.enrich_topology(session)
+    |> WorkHandles.enrich_topology(workspace_id(params), session)
   end
 
   # Worktree resolution is cheap and always useful — an orchestrator should not
   # have to shell out to `tmux list-panes` to learn where a window is working.
   # The liveness *walk* is the part that costs, so it stays opt-in.
   defp put_liveness(snapshot, params) do
+    transcript? = truthy?(Map.get(params, :include_transcript))
+
     PaneLiveness.enrich_topology(snapshot,
       liveness: truthy?(Map.get(params, :include_liveness)),
-      transcript: truthy?(Map.get(params, :include_transcript)),
-      claude_home: claude_home(params)
+      transcript: transcript?,
+      claude_home: if(transcript?, do: claude_home(params))
     )
   end
 
-  # Transcripts live under the *workspace owner's* auth profile. Resolving it
-  # here rather than sweeping `profiles/` is what keeps one owner's sessions
-  # invisible to another's agents on a shared box.
+  # Transcripts live under a *person's* auth profile. Resolving one here rather
+  # than sweeping `profiles/` is what keeps one person's sessions invisible to
+  # another's agents on a shared box.
+  #
+  # The workspace has to be looked up first. This used to hand the raw
+  # workspace **id** to the profile resolver, which parsed it as a name and
+  # reduced the UUID to its first hex group — so every call resolved a profile
+  # dir like `profiles/e7c18b93/claude` that cannot exist, and transcript
+  # enrichment silently returned nothing. `Casein.Identity` refuses UUIDs
+  # outright now. Resolve from local State only — never Workspaces.get/1
+  # (manager HTTP).
   defp claude_home(params) do
-    case workspace_id(params) do
-      workspace when is_binary(workspace) and workspace != "" ->
-        AuthProfile.active_profile_dir(workspace, :claude)
-
-      _ ->
-        nil
+    with id when is_binary(id) and id != "" <- workspace_id(params),
+         {:ok, resolved} <- WorkspaceIdentity.resolve(id) do
+      workspace = %{id: resolved.id, name: resolved.name || resolved.id}
+      Identity.config_dir([workspace: workspace, env: false], :claude)
+    else
+      _ -> nil
     end
   end
 
@@ -336,13 +366,14 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
       # operator window switches cannot silently retarget follow-up calls.
       {target, implicit?} = resolve_implicit_target(session, raw_target)
       ansi? = Map.get(params, "ansi", false) == true
-      opts = [ansi: ansi?] |> put_lines(lines_param(params))
-      output = tmux().capture_scrollback(target, opts) |> TerminalOutputFormat.format(ansi: ansi?)
+      opts = [ansi: true] |> put_lines(lines_param(params))
+      raw = tmux().capture_scrollback(target, opts)
+      output = TerminalOutputFormat.format(raw, ansi: ansi?)
 
       {:ok,
        %{session: session, target: target, output: output}
        |> put_implicit_target_warning(implicit?)
-       |> put_capture_metadata(output, lines_param(params))
+       |> put_capture_metadata(output, lines_param(params), raw)
        |> put_next("terminal_capture", capture_next_args(session, target, params))}
     end
   end
@@ -578,6 +609,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         runtime: runtime,
         task_slug: task_slug,
         label: string_param(params, "label"),
+        initial_prompt: string_param(params, "initial_prompt"),
         dry_run: truthy?(Map.get(params, "dry_run") || Map.get(params, :dry_run))
       ]
 
@@ -664,6 +696,18 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   defp filter_contains(sessions, needle) when is_binary(needle),
     do: Enum.filter(sessions, &String.contains?(&1.session, needle))
 
+  defp filter_exact_session(sessions, params) do
+    case string_param(params, "session") do
+      nil ->
+        {:ok, sessions}
+
+      _requested ->
+        with {:ok, session} <- session_arg(params) do
+          {:ok, Enum.filter(sessions, &(&1.session == session))}
+        end
+    end
+  end
+
   # Ambiguity stays safe-by-default (never an implicit mutation target), but
   # agents still need a starting point: the operator's attached session beats
   # any detached leftover, and recency breaks the remaining ties.
@@ -711,23 +755,53 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   defp put_session_guidance(payload, _params, []),
     do: Map.merge(payload, %{safe_to_mutate: false, reason: "no_workspace_sessions"})
 
-  defp put_session_guidance(payload, _params, sessions) do
+  defp put_session_guidance(payload, params, sessions) do
     Map.merge(payload, %{
       ambiguous: true,
       safe_to_mutate: false,
       reason: "multiple_sessions",
-      candidate_sessions: Enum.map(sessions, &session_candidate/1),
+      candidate_sessions: Enum.map(sessions, &session_candidate(&1, params)),
       next_tool: "terminal_context"
     })
+  end
+
+  defp put_operator_pane_guidance(payload, snapshot, params) do
+    panes = Map.get(snapshot, :panes) || []
+
+    case operator_pane_identity(panes, params) do
+      nil ->
+        Map.put(payload, :operator_pane, %{
+          status: "not_identified",
+          role_marked: false,
+          reason: "no_operator_role_or_unique_workspace_root_pane"
+        })
+
+      operator ->
+        Map.put(payload, :operator_pane, operator)
+    end
+  end
+
+  defp put_session_identity(payload, session, params) do
+    raw = Enum.find(sessions_for(params), &(&1.session == session)) || %{session: session}
+    Map.put(payload, :session_identity, session_candidate(raw, params))
   end
 
   defp put_agent_pane_guidance(payload, session, params) do
     case find_agent_pane(session, params, allow_process_fallback: false) do
       {:ok, pane} ->
+        ready? = agent_runtime_ready?(pane)
+
         payload
         |> Map.put(:recommended_session, session)
         |> Map.put(:recommended_agent_pane, pane.id)
         |> Map.put(:agent_pane_reason, pane.agent_match)
+        |> Map.put(:agent_pane, %{
+          pane_id: pane.id,
+          status: if(ready?, do: "ready", else: "dedicated_pane_present"),
+          ready: ready?,
+          safe_to_target: true,
+          match: pane.agent_match
+        })
         |> Map.put(:safe_to_mutate, true)
         |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))
 
@@ -735,13 +809,30 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
         payload
         |> Map.put(:recommended_session, session)
         |> Map.put(:safe_to_mutate, false)
-        |> Map.put(:reason, "agent_pair_marker_not_found")
+        |> Map.put(:reason, "dedicated_agent_pane_absent")
         |> Map.put(:agent_pane_error, error_label(reason))
+        |> Map.put(:agent_pane, %{
+          status: "absent",
+          ready: false,
+          safe_to_target: false,
+          required_role: "agent",
+          suggested_template: "agent_pair",
+          next_step:
+            "Apply the agent_pair layout for a dedicated peer pane, or call worker_launch " <>
+              "with runtime, task_slug, and initial_prompt to open a visible isolated worker."
+        })
+        |> Map.put(:next_required_arguments, ["runtime", "task_slug", "initial_prompt"])
         |> put_next(
-          "terminal_agent_pane",
+          "worker_launch",
           compact(%{workspace_id: workspace_id(params), session: session})
         )
     end
+  end
+
+  defp agent_runtime_ready?(pane) do
+    command = Map.get(pane, :current_command) || Map.get(pane, "current_command") || ""
+    command = String.downcase(to_string(command))
+    Enum.any?(~w(claude grok codex opencode), &String.contains?(command, &1))
   end
 
   defp error_label(%{error: error}), do: to_string(error)

@@ -13,7 +13,8 @@ defmodule CaseinWeb.Plugs.ApiAuthTest do
   @mcp_paths [
     "/api/terminals/mcp",
     "/api/preview/mcp",
-    "/api/artifacts/mcp"
+    "/api/artifacts/mcp",
+    "/api/code/mcp"
   ]
 
   setup do

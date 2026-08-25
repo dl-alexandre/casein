@@ -269,6 +269,9 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert text =~ ~S("${HOME}/.grok/auth.json")
     assert text =~ "GROK_SUBAGENTS=0"
     assert text =~ ~S(--leader-socket "$grok_socket" --no-subagents)
+    # #1004: the flag is not an unexplained constant — keep the mint constraint
+    # next to the exec so it cannot drift into a doc nobody reads.
+    assert text =~ "A Grok-spawned subagent therefore has no grant of its own."
     assert text =~ ~S("${HOME}/.ssh")
     assert text =~ "find /data/workspaces -xdev -maxdepth 4"
     assert text =~ ~S("/proc")

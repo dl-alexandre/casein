@@ -104,8 +104,9 @@ defmodule Casein.Terminals.OrchestrationStatus do
           Map.get(window, :name) || Map.get(window, "name") ||
             Map.get(agent || %{}, :window_name) || window_id,
         active?: truthy?(Map.get(window, :active) || Map.get(window, "active")),
-        agent_state: pane_field(agent, :agent_state),
-        agent_state_message: pane_field(agent, :agent_state_message),
+        agent_state: pane_field(agent, :agent_state) || work_handle_status(agent, :state),
+        agent_state_message:
+          pane_field(agent, :agent_state_message) || work_handle_status(agent, :message),
         agent_pane_id: pane_field(agent, :id),
         label: pane_field(agent, :label),
         issue: pane_field(agent, :issue) || Map.get(window, :issue) || Map.get(window, "issue"),
@@ -117,6 +118,7 @@ defmodule Casein.Terminals.OrchestrationStatus do
           pane_field(agent, :ready_no_task_for_seconds) ||
             Map.get(window, :ready_no_task_for_seconds),
         liveness: pane_field(agent, :liveness),
+        work_handle: pane_field(agent, :work_handle),
         quiet?: false,
         unseen_quiet?: false
       }
@@ -142,6 +144,15 @@ defmodule Casein.Terminals.OrchestrationStatus do
 
   defp pane_field(pane, key) when is_map(pane) do
     Map.get(pane, key) || Map.get(pane, Atom.to_string(key))
+  end
+
+  defp work_handle_status(pane, key) do
+    with handle when is_map(handle) <- pane_field(pane, :work_handle),
+         status when is_map(status) <- Map.get(handle, :status) || Map.get(handle, "status") do
+      Map.get(status, key) || Map.get(status, Atom.to_string(key))
+    else
+      _ -> nil
+    end
   end
 
   defp counts_json(counts) do
@@ -242,6 +253,7 @@ defmodule Casein.Terminals.OrchestrationStatus do
       pane_id: Map.get(row, :pane_id),
       name: Map.get(row, :display_name) || Map.get(row, :name),
       agent_state: atom_or_nil(Map.get(row, :agent_state)),
+      status: Map.get(row, :status) || FleetBoard.operational_status(row),
       agent_state_message: Map.get(row, :agent_state_message),
       issue: Map.get(row, :issue),
       issue_title: Map.get(row, :issue_title),
@@ -254,7 +266,8 @@ defmodule Casein.Terminals.OrchestrationStatus do
       unknown_reason: unknown_reason_json(Map.get(row, :unknown_reason)),
       active?: Map.get(row, :active?) == true,
       liveness: liveness_json(Map.get(row, :liveness)),
-      blocked_on: blocked_on_json(Map.get(row, :blocked_on))
+      blocked_on: blocked_on_json(Map.get(row, :blocked_on)),
+      work_handle: Map.get(row, :work_handle)
     }
     |> reject_nils()
   end
