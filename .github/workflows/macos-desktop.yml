@@ -131,7 +131,13 @@ jobs:
 
       - name: Test host and terminal resolution
         run: |
-          mix test test/casein/terminals/tmux_executable_test.exs test/casein/desktop
+          # The self-hosted macOS runner is shared with the desktop package
+          # smoke and has limited scheduler/process headroom. These native
+          # session tests are async-safe in isolation, but four concurrent
+          # ExUnit cases can starve their GenServers long enough to hit the
+          # default 5s call timeout. Keep the package lane deterministic;
+          # the regular PR gate retains the suite's normal concurrency.
+          mix test --max-cases 1 test/casein/terminals/tmux_executable_test.exs test/casein/desktop
           # Self-hosted runner sessions have no unlocked login keychain. Keep
           # the real Security.framework round trip without prompting for UI.
           scripts/with-ephemeral-macos-keychain.sh \
