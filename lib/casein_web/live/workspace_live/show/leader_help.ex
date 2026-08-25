@@ -254,11 +254,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
               Connect an external agent
             </h3>
             <p class="mb-2 text-density-body text-base-content/60">
-              Mint a <strong>revocable</strong>, auto-expiring MCP bearer for an off-box agent and
-              copy a ready-to-paste <code class="rounded bg-base-200 px-1">.mcp.json</code>. It is
-              stored hashed and is <strong>not</strong>
-              the root token. Scope a call with <code class="rounded bg-base-200 px-1">workspace_id</code>, or omit it to traverse. Full
-              walkthrough in <code>docs/external-agent-connect.md</code>.
+              Issue a <strong>workspace-scoped</strong>
+              MCP credential for an off-box agent and
+              copy a ready-to-paste <code class="rounded bg-base-200 px-1">.mcp.json</code>
+              with <code class="rounded bg-base-200 px-1">?workspace_id=</code>
+              baked in. It cannot list or mutate other workspaces.
+              <code class="rounded bg-base-200 px-1">allow_cross_workspace</code>
+              is the only opt-in read-only peek. Rotate with <code class="rounded bg-base-200 px-1">POST /api/workspaces/&lt;uuid&gt;/api-token/rotate</code>.
+              Full walkthrough in <code>docs/external-agent-connect.md</code>.
             </p>
 
             <div

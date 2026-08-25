@@ -93,6 +93,7 @@ or `folder:<base64url-path>`). Unknown workspace → 404 `not_found`.
 | GET | `/api/workspaces/:id/proposals` | `WorkspaceController` · `:proposals` | Proposals list |
 | GET | `/api/workspaces/:id/audit` | `WorkspaceController` · `:audit` | Audit-event export |
 | GET | `/api/workspaces/:id/previous_sessions` | `WorkspaceController` · `:previous_sessions` | Bounded search over recent session metadata, audit, MCP activity, and pane labels. Query params: `query`/`q`, `workspace`/`workspace_id`/`workspace_name`, `source`/`sources` (`session`, `audit`, `activity`, `label`, or `preview`), `session`/`session_id`, `pane`/`pane_id`, `since`/`from`, `until`/`to`, `limit` (clamped at 50), `source_limit` (audit/activity scan cap, clamped at 1000) |
+| POST | `/api/workspaces/:id/api-token/rotate` | `WorkspaceController` · `:rotate_token` | Rotate the workspace-scoped MCP bearer. Returns the new token once. Shell-backed panes rebind via tmux env; process-frozen clients (`grokcap_*`, `grant_lifecycle: frozen_at_launch`) get `401 stale_grant` until relaunch. Issuer must be a workspace-scoped token for `id`, the global token, or an orchestrator token. |
 
 `status` includes a compact `agent_sessions` list derived from current tmux
 session summaries and recent prompt activity. Entries expose only safe summary

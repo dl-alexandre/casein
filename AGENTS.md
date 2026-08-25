@@ -577,13 +577,13 @@ split, the mobile authority flap, and the iPad scroll fix (`1e8f4ef0`).
 
 | Surface | URL | Auth |
 |---------|-----|------|
-| Terminal MCP | `https://casein.devbox.milcgroup.com/api/terminals/mcp` | Bearer `CASEIN_API_TOKEN` |
-| Preview MCP | `https://casein.devbox.milcgroup.com/api/preview/mcp` | Bearer `CASEIN_API_TOKEN` |
+| Terminal MCP | `https://casein.devbox.milcgroup.com/api/terminals/mcp?workspace_id=<uuid>` | Bearer workspace-scoped `CASEIN_API_TOKEN` |
+| Preview MCP | `https://casein.devbox.milcgroup.com/api/preview/mcp?workspace_id=<uuid>` | Bearer workspace-scoped `CASEIN_API_TOKEN` |
 | Code MCP | `https://casein.devbox.milcgroup.com/api/code/mcp` | Bearer `CASEIN_API_TOKEN` |
 
 Same-host agents may use `http://127.0.0.1:4000/api/...` instead. Read `docs/terminal_mcp.md` and `docs/preview_mcp.md` before changing MCP behavior.
 
-For wiring an **off-box** agent end-to-end (both transports, ready-to-paste `.mcp.json` + agent prompts, pinned vs durable/workspace-agnostic config), see **`docs/external-agent-connect.md`** and the host-side `casein-remote` skill.
+For wiring an **off-box** agent end-to-end (both transports, ready-to-paste pre-scoped `.mcp.json` + agent prompts), see **`docs/external-agent-connect.md`** and the host-side `casein-remote` skill. Workspace-scoped tokens and `?workspace_id=` are required; unscoped listing is refused.
 
 For a **host laptop Grok** (or similar) that uses Casein Terminal/Preview/Artifact MCP while its shell stays on the Mac — dual-plane ground truth, multi-workspace ops, and when *not* to assume `agent_pair` / `safe_to_mutate` — see **`docs/agents/host-grok-dual-plane.md`**.
 

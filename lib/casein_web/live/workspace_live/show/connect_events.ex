@@ -1,6 +1,7 @@
 defmodule CaseinWeb.WorkspaceLive.Show.ConnectEvents do
-  # Events for the "Connect an external agent" drawer: mint/revoke self-serve
-  # orchestrator MCP tokens and reveal a ready-to-paste durable .mcp.json.
+  # Events for the "Connect an external agent" drawer: issue a workspace-scoped
+  # MCP credential and reveal a ready-to-paste pre-scoped .mcp.json. Leftover
+  # orchestrator tokens can still be listed/revoked.
   #
   # These are function-component events, so they flow through the Show LV's
   # authz_gate hook (viewer authorization + @known_events whitelist) — no
@@ -10,7 +11,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ConnectEvents do
 
   import Phoenix.Component, only: [assign: 2]
 
-  alias Casein.Agents.OrchestratorTokens
+  alias Casein.Agents.{MCPUrls, OrchestratorTokens, WorkspaceTokens}
 
   def handle_event("connect:toggle", _params, socket) do
     open? = not (socket.assigns[:connect_drawer_open] || false)
@@ -35,23 +36,31 @@ defmodule CaseinWeb.WorkspaceLive.Show.ConnectEvents do
      )}
   end
 
-  def handle_event("connect:mint", params, socket) do
-    case OrchestratorTokens.create_for_subject(socket.assigns.current_user,
-           label: params["label"]
-         ) do
-      {:ok, raw, _record} ->
+  def handle_event("connect:mint", _params, socket) do
+    workspace = socket.assigns[:workspace]
+
+    case issue_scoped_credential(workspace) do
+      {:ok, token} ->
+        workspace_id = workspace_id(workspace)
+
         {:noreply,
          socket
          |> assign(
-           connect_new_token: raw,
-           connect_mcp_json: durable_mcp_json(raw),
-           connect_info: "Token minted — copy it now; it is not shown again.",
+           connect_new_token: token,
+           connect_mcp_json: scoped_mcp_json(workspace, token),
+           connect_info:
+             "Workspace-scoped MCP credential ready — copy the .mcp.json. " <>
+               "Rotate with POST /api/workspaces/#{workspace_id}/api-token/rotate " <>
+               "(in-flight grokcap_* agents see stale_grant until relaunch).",
            connect_error: nil
          )
          |> load_tokens()}
 
-      {:error, _changeset} ->
-        {:noreply, assign(socket, connect_error: "Could not mint a token. Please try again.")}
+      {:error, _reason} ->
+        {:noreply,
+         assign(socket,
+           connect_error: "Could not issue a workspace-scoped token. Please try again."
+         )}
     end
   end
 
@@ -84,22 +93,20 @@ defmodule CaseinWeb.WorkspaceLive.Show.ConnectEvents do
     end
   end
 
-  # Durable, workspace-agnostic config: no ?workspace_id in the URL — the agent
-  # picks workspace_id per call, so this one config outlives any workspace. Uses
-  # the public endpoint URL (Door 2) since the panel is reached over it.
-  defp durable_mcp_json(token) do
-    base = String.trim_trailing(CaseinWeb.Endpoint.url(), "/")
-    auth = %{"Authorization" => "Bearer " <> token}
-
-    Jason.encode!(
-      %{
-        "mcpServers" => %{
-          "casein-terminal" => %{"url" => base <> "/api/terminals/mcp", "headers" => auth},
-          "casein-preview" => %{"url" => base <> "/api/preview/mcp", "headers" => auth},
-          "casein-artifact" => %{"url" => base <> "/api/artifacts/mcp", "headers" => auth}
-        }
-      },
-      pretty: true
-    )
+  defp issue_scoped_credential(workspace) do
+    case workspace_id(workspace) do
+      id when is_binary(id) and id != "" -> WorkspaceTokens.ensure_for(id)
+      _ -> {:error, :workspace_id_missing}
+    end
   end
+
+  defp scoped_mcp_json(workspace, token) do
+    MCPUrls.client_mcp_json(workspace, token, base_url: public_base())
+  end
+
+  defp public_base, do: String.trim_trailing(CaseinWeb.Endpoint.url(), "/")
+
+  defp workspace_id(%{id: id}) when is_binary(id), do: id
+  defp workspace_id(%{"id" => id}) when is_binary(id), do: id
+  defp workspace_id(_), do: nil
 end

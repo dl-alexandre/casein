@@ -1,7 +1,7 @@
 defmodule CaseinWeb.WorkspaceLive.Show.ConnectEventsTest do
   use Casein.DataCase, async: true
 
-  alias Casein.Agents.OrchestratorTokens
+  alias Casein.Agents.{OrchestratorTokens, WorkspaceTokens}
   alias CaseinWeb.WorkspaceLive.Show.ConnectEvents
 
   defp socket(assigns) do
@@ -46,12 +46,32 @@ defmodule CaseinWeb.WorkspaceLive.Show.ConnectEventsTest do
     assert s2.assigns.connect_tokens == :sentinel
   end
 
-  test "connect:mint happy path returns raw once, durable mcp json, and hashed list entry" do
+  test "connect:mint issues a workspace-scoped credential and pre-scoped mcp json" do
+    prev_tokens = Application.get_env(:casein, :workspace_api_tokens)
+    prev_store = Application.get_env(:casein, :workspace_tokens_store)
+    store = Path.join(System.tmp_dir!(), "ws-tokens-#{System.unique_integer([:positive])}.json")
+    Application.put_env(:casein, :workspace_api_tokens, %{})
+    Application.put_env(:casein, :workspace_tokens_store, store)
+
+    on_exit(fn ->
+      if prev_tokens,
+        do: Application.put_env(:casein, :workspace_api_tokens, prev_tokens),
+        else: Application.delete_env(:casein, :workspace_api_tokens)
+
+      if prev_store,
+        do: Application.put_env(:casein, :workspace_tokens_store, prev_store),
+        else: Application.delete_env(:casein, :workspace_tokens_store)
+
+      File.rm(store)
+    end)
+
     user = unique_user()
+    workspace = %{id: "ws-connect-#{System.unique_integer([:positive])}", name: "demo-ws"}
 
     s =
       socket(%{
         current_user: user,
+        workspace: workspace,
         connect_drawer_open: true,
         connect_new_token: nil,
         connect_mcp_json: nil,
@@ -66,41 +86,43 @@ defmodule CaseinWeb.WorkspaceLive.Show.ConnectEventsTest do
     raw = s2.assigns.connect_new_token
     assert is_binary(raw) and raw != ""
     assert s2.assigns.connect_error == nil
-    assert is_binary(s2.assigns.connect_info) and s2.assigns.connect_info != ""
+    assert s2.assigns.connect_info =~ "Workspace-scoped"
+    assert s2.assigns.connect_info =~ "api-token/rotate"
+    assert WorkspaceTokens.token_for(workspace.id) == raw
 
     mcp = Jason.decode!(s2.assigns.connect_mcp_json)
     assert %{"mcpServers" => servers} = mcp
 
-    for name <- ["casein-terminal", "casein-preview", "casein-artifact"] do
-      assert %{"headers" => %{"Authorization" => auth}} = servers[name]
+    for {name, path} <- [
+          {"casein-terminal-demo-ws", "/api/terminals/mcp"},
+          {"casein-preview-demo-ws", "/api/preview/mcp"},
+          {"casein-artifact-demo-ws", "/api/artifacts/mcp"}
+        ] do
+      assert %{"url" => url, "headers" => %{"Authorization" => auth}} = servers[name]
       assert auth == "Bearer " <> raw
+      assert url =~ path
+      assert url =~ "workspace_id=#{workspace.id}"
     end
-
-    assert [record] = s2.assigns.connect_tokens
-    assert record.label == "My laptop"
-    assert record.token_hash == OrchestratorTokens.token_hash(raw)
-    assert record.token_hash != raw
   end
 
-  test "connect:revoke own token clears list and revealed raw" do
+  test "connect:revoke own leftover orchestrator token clears list and revealed raw" do
     user = unique_user()
+
+    assert {:ok, raw, record} =
+             OrchestratorTokens.create_for_subject(user, label: "to-revoke")
 
     s =
       socket(%{
         current_user: user,
         connect_drawer_open: true,
-        connect_new_token: nil,
-        connect_mcp_json: nil,
+        connect_new_token: raw,
+        connect_mcp_json: "{}",
         connect_error: nil,
         connect_info: nil,
-        connect_tokens: []
+        connect_tokens: [record]
       })
 
-    assert {:noreply, s2} =
-             ConnectEvents.handle_event("connect:mint", %{"label" => "to-revoke"}, s)
-
-    assert [record] = s2.assigns.connect_tokens
-    assert is_binary(s2.assigns.connect_new_token)
+    s2 = s
 
     assert {:noreply, s3} =
              ConnectEvents.handle_event("connect:revoke", %{"id" => record.id}, s2)

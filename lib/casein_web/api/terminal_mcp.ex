@@ -106,7 +106,18 @@ defmodule CaseinWeb.API.TerminalMCP do
   @impl true
   def read_resource(@fleet_summary_uri, opts) do
     workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
-    payload = FleetSnapshot.fleet_summary(workspace_id)
+
+    payload =
+      cond do
+        is_binary(workspace_id) ->
+          FleetSnapshot.fleet_summary(workspace_id)
+
+        Application.get_env(:casein, :allow_global_mcp_tool_calls, false) ->
+          FleetSnapshot.fleet_summary(nil)
+
+        true ->
+          FleetSummary.build(workspace_id: nil, sessions: [])
+      end
 
     {:ok,
      [

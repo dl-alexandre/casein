@@ -151,6 +151,24 @@ defmodule CaseinWeb.API.MCPResourcesTest do
       assert decoded["note"] =~ "FleetSnapshot"
     end
 
+    test "unscoped fleet summary does not dump the host" do
+      previous = Application.get_env(:casein, :tmux_adapter)
+      Application.put_env(:casein, :tmux_adapter, EmptyTmux)
+      on_exit(fn -> Application.put_env(:casein, :tmux_adapter, previous) end)
+
+      assert {:reply, %{result: result}} =
+               MCPEnvelope.handle(
+                 modern("resources/read", %{"uri" => "casein://fleet/summary"}),
+                 TerminalMCP,
+                 []
+               )
+
+      assert [%{text: text}] = result.contents
+      decoded = Jason.decode!(text)
+      assert decoded["sessions"] == []
+      assert decoded["session_count"] == 0
+    end
+
     test "resources/list publishes casein://host/health" do
       assert {:reply, %{result: result}} =
                MCPEnvelope.handle(modern("resources/list"), TerminalMCP, [])
