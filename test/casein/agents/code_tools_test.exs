@@ -105,6 +105,22 @@ defmodule Casein.Agents.CodeToolsTest do
     _ = repo
   end
 
+  test "code_read rejects a nested directory that is not an assigned worktree", %{repo: repo} do
+    nested = Path.join(repo, "nested")
+    File.mkdir_p!(nested)
+
+    assert {:error, %{error: :worktree_not_assigned}} =
+             CodeTools.invoke(
+               "code_read",
+               %{
+                 "workspace_id" => @workspace_id,
+                 "worktree_path" => nested,
+                 "path" => "README.md"
+               },
+               %{actor: "ws:#{@workspace_id}"}
+             )
+  end
+
   test "code_search returns capped matches", %{repo: repo} do
     File.write!(Path.join(repo, "lib/a.ex"), "needle one\n")
     File.write!(Path.join(repo, "lib/b.ex"), "needle two\n")
@@ -124,6 +140,33 @@ defmodule Casein.Agents.CodeToolsTest do
     assert result.match_count == 1
     assert result.truncated
     assert hd(result.matches).text =~ "needle"
+  end
+
+  test "code_search fallback rejects symlinks that leave the worktree", %{
+    repo: repo,
+    base: base
+  } do
+    outside = Path.join(base, "outside.txt")
+    link = Path.join(repo, "lib/outside.txt")
+    previous_path = System.get_env("PATH")
+    File.write!(outside, "outside-secret-needle\n")
+    File.ln_s!(outside, link)
+    System.put_env("PATH", "")
+
+    on_exit(fn -> restore_system_env("PATH", previous_path) end)
+
+    assert {:ok, result} =
+             CodeTools.invoke(
+               "code_search",
+               %{
+                 "workspace_id" => @workspace_id,
+                 "worktree_path" => repo,
+                 "query" => "outside-secret-needle"
+               },
+               %{actor: "ws:#{@workspace_id}"}
+             )
+
+    assert result.matches == []
   end
 
   test "code_apply_patch applies a validated diff and is idempotent on retry", %{repo: repo} do
@@ -230,6 +273,46 @@ defmodule Casein.Agents.CodeToolsTest do
     assert result.status in ["completed", "timeout", "error"]
   end
 
+  test "code_exec reports a non-zero verifier exit as failed", %{repo: repo} do
+    assert {:ok, result} =
+             CodeTools.invoke(
+               "code_exec",
+               %{
+                 "workspace_id" => @workspace_id,
+                 "worktree_path" => repo,
+                 "command_id" => "test",
+                 "extra_args" => ["missing_test_file.exs"]
+               },
+               %{actor: "ws:#{@workspace_id}"}
+             )
+
+    assert result.exit_code != 0
+    assert result.status == "failed"
+  end
+
+  test "code_search keeps the encoded match payload within max_bytes", %{repo: repo} do
+    File.write!(
+      Path.join(repo, "lib/many.ex"),
+      Enum.map_join(1..50, "\n", &"needle #{&1} with a deliberately long line")
+    )
+
+    assert {:ok, result} =
+             CodeTools.invoke(
+               "code_search",
+               %{
+                 "workspace_id" => @workspace_id,
+                 "worktree_path" => repo,
+                 "query" => "needle",
+                 "max_matches" => 50,
+                 "max_bytes" => 256
+               },
+               %{actor: "ws:#{@workspace_id}"}
+             )
+
+    assert result.byte_truncated
+    assert byte_size(Jason.encode!(result.matches)) <= 256
+  end
+
   test "code_exec denies when the actor is unauthenticated", %{repo: repo} do
     assert {:error, %{error: :policy_denied, reason: :forbidden}} =
              CodeTools.invoke(
@@ -293,4 +376,7 @@ defmodule Casein.Agents.CodeToolsTest do
 
   defp restore(key, nil), do: Application.delete_env(:casein, key)
   defp restore(key, value), do: Application.put_env(:casein, key, value)
+
+  defp restore_system_env(key, nil), do: System.delete_env(key)
+  defp restore_system_env(key, value), do: System.put_env(key, value)
 end

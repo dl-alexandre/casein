@@ -111,12 +111,7 @@ defmodule Casein.Agents.CodeTools.ApplyPatch do
   # tmp is Path.join(System.tmp_dir!(), unique integer), not user input.
   # sobelow_skip ["Traversal.FileModule"]
   defp apply_patch(assignment, params, changes) do
-    tmp =
-      Path.join(System.tmp_dir!(), "casein-code-patch-#{System.unique_integer([:positive])}.diff")
-
-    try do
-      File.write!(tmp, params.patch)
-
+    with_temp_patch(params.patch, fn tmp ->
       case GitAdapter.check(assignment.worktree_path, tmp) do
         :ok ->
           case GitAdapter.apply(assignment.worktree_path, tmp) do
@@ -136,9 +131,42 @@ defmodule Casein.Agents.CodeTools.ApplyPatch do
               {:error, git_error(:patch_does_not_apply, reason)}
           end
       end
-    after
-      File.rm(tmp)
+    end)
+  end
+
+  # The path has a cryptographically random server-generated suffix and is
+  # created exclusively before content is written; no request path reaches it.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp with_temp_patch(patch, fun) do
+    suffix = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+    path = Path.join(System.tmp_dir!(), "casein-code-patch-#{suffix}.diff")
+
+    case File.open(path, [:write, :binary, :exclusive]) do
+      {:ok, io} ->
+        try do
+          with :ok <- File.chmod(path, 0o600),
+               :ok <- IO.binwrite(io, patch),
+               :ok <- File.close(io) do
+            fun.(path)
+          else
+            {:error, _reason} -> temporary_file_error()
+          end
+        after
+          _ = File.close(io)
+          _ = File.rm(path)
+        end
+
+      {:error, _reason} ->
+        temporary_file_error()
     end
+  end
+
+  defp temporary_file_error do
+    {:error,
+     %{
+       error: :temporary_file_unavailable,
+       message: "Could not prepare the patch for validation"
+     }}
   end
 
   defp result(assignment, params, changes, already_applied: already?) do

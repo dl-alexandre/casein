@@ -148,13 +148,15 @@ defmodule Casein.Terminals.AgentStateTest do
       assert metadata.message == "needs perm"
       assert metadata.agent_session_id == "grok-session-blocked"
 
-      # Both transitions can share the adapter's timestamp precision, so their
-      # relative order in recent_for/1 is intentionally unspecified. Assert on
-      # the transition identity instead of assuming the blocked row sorts first.
+      # AgentEvents.append_state_transition and JidoLifecycle.ingest_opencode
+      # both write agent.state_changed for this pane. recent_for/1 is newest
+      # first and timestamps can collide, so a type+session find can land on
+      # the Jido projection (no message_present). Identify the AgentEvents row.
       transition =
         Enum.find(AgentEvents.recent_for(ws), fn event ->
           event.event_type == "agent.state_changed" and
-            event.agent_session_id == "grok-session-blocked"
+            event.agent_session_id == "grok-session-blocked" and
+            Map.has_key?(event.payload, "message_present")
         end)
 
       assert transition

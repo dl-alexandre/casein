@@ -300,6 +300,6 @@ defmodule Casein.Agents.CodeTools.Exec do
   end
 
   defp status_for(%{exit_code: 0}), do: "completed"
-  defp status_for(%{exit_code: code}) when is_integer(code), do: "completed"
+  defp status_for(%{exit_code: code}) when is_integer(code), do: "failed"
   defp status_for(_), do: "error"
 end

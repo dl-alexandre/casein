@@ -69,11 +69,7 @@ defmodule Casein.Agents.CodeTools.Search do
       {matches, match_truncated?} =
         search(assignment.worktree_path, search_rel, params.query, glob, limit)
 
-      encoded = Jason.encode!(matches)
-      {_ignored, byte_truncated?} = Helpers.truncate_bytes(encoded, max_bytes)
-
-      matches =
-        if byte_truncated?, do: Enum.take(matches, max(div(length(matches), 2), 1)), else: matches
+      {matches, byte_truncated?} = fit_matches(matches, max_bytes)
 
       {:ok,
        assignment
@@ -117,6 +113,21 @@ defmodule Casein.Agents.CodeTools.Search do
   end
 
   defp normalize_glob(_), do: {:error, %{error: :invalid_glob}}
+
+  defp fit_matches(matches, max_bytes) do
+    {kept, truncated?} =
+      Enum.reduce_while(matches, {[], false}, fn match, {kept, _truncated?} ->
+        candidate = Enum.reverse([match | kept])
+
+        if byte_size(Jason.encode!(candidate)) <= max_bytes do
+          {:cont, {[match | kept], false}}
+        else
+          {:halt, {kept, true}}
+        end
+      end)
+
+    {Enum.reverse(kept), truncated? or length(kept) < length(matches)}
+  end
 
   defp search(worktree, rel, query, glob, limit) do
     case System.find_executable("rg") do
@@ -210,12 +221,12 @@ defmodule Casein.Agents.CodeTools.Search do
 
   defp list_files(root, worktree, glob) do
     cond do
-      File.regular?(root) ->
+      safe_regular_file?(worktree, root) ->
         [root]
 
       File.dir?(root) ->
         Path.wildcard(Path.join(root, "**/*"), match_dot: false)
-        |> Enum.filter(&File.regular?/1)
+        |> Enum.filter(&safe_regular_file?(worktree, &1))
         |> Enum.reject(fn abs ->
           rel = Path.relative_to(abs, worktree)
           PathSafety.ignored?(rel) or not glob_match?(rel, glob)
@@ -223,6 +234,25 @@ defmodule Casein.Agents.CodeTools.Search do
 
       true ->
         []
+    end
+  end
+
+  defp safe_regular_file?(worktree, abs) do
+    case validated_read_path(worktree, abs) do
+      {:ok, safe_abs} -> File.regular?(safe_abs)
+      :error -> false
+    end
+  end
+
+  defp validated_read_path(worktree, abs) do
+    rel = Path.relative_to(abs, worktree)
+
+    case PathSafety.resolve(worktree, rel) do
+      {:ok, safe_abs} ->
+        if safe_abs == Path.expand(abs), do: {:ok, safe_abs}, else: :error
+
+      {:error, _reason} ->
+        :error
     end
   end
 
@@ -250,21 +280,21 @@ defmodule Casein.Agents.CodeTools.Search do
   # abs is a Path.wildcard result under a worktree-confined root.
   # sobelow_skip ["Traversal.FileModule"]
   defp file_matches(worktree, abs, query, remaining) when remaining > 0 do
-    case File.read(abs) do
-      {:ok, content} when byte_size(content) <= 256 * 1024 ->
-        if PathSafety.likely_binary?(content) do
-          []
-        else
-          rel = Path.relative_to(abs, worktree)
+    with {:ok, safe_abs} <- validated_read_path(worktree, abs),
+         {:ok, content} when byte_size(content) <= 256 * 1024 <- File.read(safe_abs) do
+      if PathSafety.likely_binary?(content) do
+        []
+      else
+        rel = Path.relative_to(safe_abs, worktree)
 
-          content
-          |> String.split("\n")
-          |> Enum.with_index(1)
-          |> Enum.filter(fn {line, _} -> String.contains?(line, query) end)
-          |> Enum.take(remaining)
-          |> Enum.map(fn {line, n} -> %{path: rel, line: n, text: line} end)
-        end
-
+        content
+        |> String.split("\n")
+        |> Enum.with_index(1)
+        |> Enum.filter(fn {line, _} -> String.contains?(line, query) end)
+        |> Enum.take(remaining)
+        |> Enum.map(fn {line, n} -> %{path: rel, line: n, text: line} end)
+      end
+    else
       _ ->
         []
     end
