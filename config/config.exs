@@ -33,10 +33,42 @@ config :casein, CaseinWeb.Plugs.McpTicketRateLimit,
   scale_ms: 60_000,
   limit: 30
 
+# Casein resolves the existing OpenCode Zen credential at call time. Do not let
+# ReqLLM discover or retain a second provider credential from project dotenvs.
+config :req_llm, load_dotenv: false
+
 config :casein,
   # Phase-1 mobile compose-first surface for role-tagged agent panes. Shell
   # panes retain the existing grid/key-bar interaction path.
   mobile_agent_composer: false,
+  jido_headless: false,
+  jido_headless_workspaces: %{},
+  jido_default_model: "opencode/grok-4.6",
+  jido_default_provider: "opencode",
+  jido_provider_adapter: Casein.Agents.JidoProvider.OpenCodeZen,
+  jido_auth_resolver: Casein.Agents.JidoProvider.OpenCodeAuth,
+  jido_pod: [
+    max_running_per_workspace: 2,
+    max_queued_per_workspace: 4,
+    max_running_fleet: 8,
+    max_share_per_workspace: 0.5,
+    max_provider_inflight: 4,
+    max_worker_memory_bytes: 2_000_000,
+    max_action_output_bytes: 256_000,
+    max_fleet_memory_bytes: 16_000_000,
+    max_crash_rate: 5,
+    crash_window_ms: 60_000,
+    max_leaked_leases: 0,
+    default_attempt_deadline_ms: 60_000,
+    default_action_timeout_ms: 5_000,
+    max_retries: 1,
+    opencode_rss_per_worker_bytes: 262_144_000,
+    go_process_ratio: 0.5,
+    go_rss_ratio: 0.5,
+    go_max_error_rate: 0.05,
+    rollback_process_ratio: 1.0,
+    cpu_pressure_ratio: 0.9
+  ],
   # Event-driven tmux topology (Slices 1/2). Default OFF — polling path
   # unchanged. Dev flips ON in config/dev.exs (Slice 3); canary/prod via
   # CASEIN_TMUX_EVENTS after soak on flap/refresh telemetry (see
@@ -48,6 +80,13 @@ config :casein,
   control_plane_reconcile_ms: 30_000,
   host_capacity_max_load_ratio: 1.0,
   host_capacity_min_mem_available_kb: 2_097_152,
+  host_health: [
+    status_path: "/var/lib/casein/host-watchdog/status.json",
+    alerts_path: "/var/lib/casein/host-watchdog/alerts.jsonl",
+    host: "milc-devbox",
+    stale_after_seconds: 720,
+    max_alerts: 5
+  ],
   # SessionDirectory reconcile while event mode is healthy (5s: quieter than the
   # old 2s poll, but keeps quiet-agent / needs_you attention flips tighter than
   # the design doc's 10s option — open question §8.1).

@@ -93,6 +93,136 @@ defmodule CaseinWeb.WorkspaceLive.Show.UI do
     """
   end
 
+  attr :identity, :any, required: true
+  attr :current_user, :any, default: nil
+
+  @doc """
+  Top-left account menu: who you are signed in as, and who your agents act as.
+
+  Those are not the same question, which is the whole reason this exists. The
+  viewer is whoever oauth2-proxy authenticated; the *principal* is the identity
+  agents launched from this pane use for Claude, Codex, and GitHub. A runtime
+  showing `global` is not per-person at all — it acts as whatever account the
+  box is logged into, which is how agents spent the wrong GitHub account for a
+  long time without anything on screen saying so.
+  """
+  def account_menu(assigns) do
+    ~H"""
+    <details
+      :if={@identity}
+      class="dropdown shrink-0"
+      id="account-menu"
+      phx-click-away={JS.remove_attribute("open", to: "#account-menu")}
+    >
+      <summary
+        class="flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 hover:bg-base-200"
+        title={account_menu_title(@identity)}
+      >
+        <span class="grid size-4 shrink-0 place-items-center rounded-full bg-primary/15 font-mono text-[9px] font-semibold text-primary">
+          {account_initials(@identity, @current_user)}
+        </span>
+        <span
+          :if={account_needs_attention?(@identity)}
+          class="size-1.5 shrink-0 rounded-full bg-warning"
+          aria-hidden="true"
+        />
+      </summary>
+
+      <div class="dropdown-content z-50 mt-1 w-72 rounded border border-base-300 bg-base-100 p-2 text-xs shadow-lg">
+        <div class="mb-2 border-b border-base-300/70 pb-2">
+          <div class="font-semibold">{account_viewer_label(@current_user, @identity)}</div>
+          <div class="text-base-content/60">signed in</div>
+        </div>
+
+        <div class="mb-1 flex items-baseline justify-between gap-2">
+          <span class="text-base-content/60">agents act as</span>
+          <span class="truncate font-mono font-semibold">
+            {@identity.principal || "unresolved"}
+          </span>
+        </div>
+        <div class="mb-2 text-[10px] text-base-content/50">
+          {account_source_hint(@identity)}
+        </div>
+
+        <ul class="space-y-1">
+          <li
+            :for={runtime <- @identity.runtimes}
+            class="flex items-baseline justify-between gap-2"
+          >
+            <span class="font-mono text-base-content/70">{runtime.runtime}</span>
+            <span class={[
+              "truncate text-right",
+              runtime.state == :profile && "text-success",
+              runtime.state == :pending && "text-warning",
+              runtime.state == :global && "text-base-content/50"
+            ]}>
+              {account_runtime_label(runtime, @identity)}
+            </span>
+          </li>
+        </ul>
+
+        <p :if={account_needs_attention?(@identity)} class="mt-2 text-[10px] text-warning">
+          Run <code>casein agent auth signin &lt;runtime&gt;</code>
+          in a terminal to bind these to you.
+        </p>
+      </div>
+    </details>
+    """
+  end
+
+  defp account_initials(identity, current_user) do
+    name =
+      account_viewer_label(current_user, identity) ||
+        (identity && identity.principal) || "?"
+
+    name |> String.trim_leading("@") |> String.slice(0, 2) |> String.upcase()
+  end
+
+  defp account_viewer_label(current_user, identity) when is_map(current_user) do
+    Map.get(current_user, :username) || Map.get(current_user, "username") ||
+      Map.get(current_user, :email) || Map.get(current_user, "email") ||
+      Map.get(current_user, :id) || Map.get(current_user, "id") ||
+      (identity && identity.principal)
+  end
+
+  defp account_viewer_label(_current_user, identity), do: identity && identity.principal
+
+  defp account_menu_title(%{principal: nil}), do: "No agent identity resolved"
+
+  defp account_menu_title(%{principal: principal}),
+    do: "Agents act as #{principal}"
+
+  # A runtime on the host global login is the state worth a badge: it is not
+  # bound to anyone, so the agent acts as whatever the box last logged in as.
+  defp account_needs_attention?(%{principal: nil}), do: true
+
+  defp account_needs_attention?(%{runtimes: runtimes}),
+    do: Enum.any?(runtimes, &(&1.state != :profile))
+
+  defp account_needs_attention?(_identity), do: false
+
+  defp account_source_hint(%{source: :viewer}), do: "from your signed-in account"
+  defp account_source_hint(%{source: :env}), do: "from this pane's CASEIN_ACTOR"
+
+  defp account_source_hint(%{source: :workspace}),
+    do: "from the workspace owner — not you"
+
+  defp account_source_hint(%{source: :explicit}), do: "set explicitly"
+  defp account_source_hint(_identity), do: "nothing resolved; host global login"
+
+  defp account_runtime_label(%{state: :profile, account: account}, _identity)
+       when is_binary(account),
+       do: account
+
+  defp account_runtime_label(%{state: :profile}, identity), do: identity.principal
+  defp account_runtime_label(%{state: :pending}, _identity), do: "sign-in required"
+
+  defp account_runtime_label(%{state: :global, account: account}, _identity)
+       when is_binary(account),
+       do: "global (#{account})"
+
+  defp account_runtime_label(%{state: :global}, _identity), do: "global"
+
   @doc """
   The intermediate directory crumbs for a workspace route: every segment above
   the workspace itself, as `%{label, dir}` with `dir` the root-relative path

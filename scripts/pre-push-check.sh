@@ -172,6 +172,11 @@ if command -v shellcheck >/dev/null 2>&1; then
     scripts/launch-casein-agent.sh \
     scripts/lib/real-agent-bin.sh \
     scripts/lib/agent-doctor.sh \
+    scripts/lib/agent-auth-profile.sh \
+    scripts/lib/agent-auth-login.sh \
+    scripts/lib/agent-identity.sh \
+    scripts/migrate-gh-auth-profiles.sh \
+    scripts/ensure-gh-shell-identity.sh \
     scripts/lib/canary-drain.sh \
     scripts/lib/caddy-upstream.sh \
     scripts/lib/preview-router-reap.sh \

@@ -87,7 +87,9 @@ defmodule Casein.Terminals.OrchestrationListWorkers do
       window_id: Map.get(row, :window_id),
       issue: Map.get(row, :issue),
       agent_state: atom_or_nil(Map.get(row, :agent_state)),
+      status: Map.get(row, :status) || FleetBoard.operational_status(row),
       blocked_on: blocked,
+      work_handle: Map.get(row, :work_handle),
       fleet_role: atom_or_nil(Map.get(row, :fleet_role)),
       needs_you?: Map.get(row, :needs_you?) == true
     }

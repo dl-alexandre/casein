@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.Capture do
   use Jido.Action,
     name: "terminal_capture",
     description:
-      "Capture a pane's scrollback to read a server log or command output. By default reads the session's active pane and full history; pass `pane` (a pane id from terminal_topology, e.g. \"%3\") to read a specific non-focused pane, `lines` to tail only the last N lines, and `ansi: false` (default) for plain text (fewer tokens).",
+      "Capture a pane's scrollback to read a server log or command output. By default reads the session's active pane and full history; pass `pane` (a pane id from terminal_topology, e.g. \"%3\") to read a specific non-focused pane, `lines` to tail only the last N lines, and `ansi: false` (default) for plain text (fewer tokens). Also returns `input_buffer` (`has_content`, `source`: empty|placeholder|typed|unknown): a Claude suggested-next-prompt is `placeholder` (not unsent user text); `unknown` means the runtime could not distinguish them — do not treat it as typed content.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

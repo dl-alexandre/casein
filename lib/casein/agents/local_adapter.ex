@@ -78,6 +78,7 @@ defmodule Casein.Agents.LocalAdapter do
       %Capability{kind: :opencode, status: :missing},
       local_tidewave_capability(),
       artifact_mcp_capability(),
+      code_mcp_capability(),
       preview_mcp_capability(),
       terminal_mcp_capability(),
       %Capability{kind: :fff, status: :missing},
@@ -90,6 +91,7 @@ defmodule Casein.Agents.LocalAdapter do
       detect_opencode(root),
       local_tidewave_capability(),
       artifact_mcp_capability(),
+      code_mcp_capability(),
       preview_mcp_capability(),
       terminal_mcp_capability(),
       detect_fff(root),
@@ -164,6 +166,7 @@ defmodule Casein.Agents.LocalAdapter do
 
   defp local_tidewave_capability, do: Casein.Agents.TidewaveCapability.detect()
   defp artifact_mcp_capability, do: Casein.Agents.ArtifactMCPCapability.detect()
+  defp code_mcp_capability, do: Casein.Agents.CodeMCPCapability.detect()
   defp preview_mcp_capability, do: Casein.Agents.PreviewTools.MCPCapability.detect()
   defp terminal_mcp_capability, do: Casein.Agents.TerminalMCPCapability.detect()
 

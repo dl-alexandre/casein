@@ -75,6 +75,7 @@ import {
   ConnectionEffect,
   ConnectionEvent,
   ConnectionPhase,
+  ConnectionTimer,
   INITIAL_CONNECTION_PHASE,
   transitionTerminalConnection
 } from "./terminal_connection_model.mjs"
@@ -1216,6 +1217,68 @@ function performTerminalResync(hook, reason) {
   })
 }
 
+const CONNECTION_TIMER_FIELD = Object.freeze({
+  [ConnectionTimer.AUTHORITY_LATCH]: "__authorityLatchTimer",
+  [ConnectionTimer.FIT_REHEAL]: "__fitRehealTimer",
+  [ConnectionTimer.LAYOUT]: "__layoutTimer",
+  [ConnectionTimer.LONGPRESS]: "__lpTimer",
+  [ConnectionTimer.SHRINK_CONFIRM]: "__shrinkConfirmTimer"
+})
+
+function cancelConnectionTimer(hook, timer) {
+  const field = CONNECTION_TIMER_FIELD[timer]
+  if (!field) return
+  const id = hook[field]
+  if (id == null) return
+  if (timer === ConnectionTimer.FIT_REHEAL) clearInterval(id)
+  else clearTimeout(id)
+  hook[field] = null
+}
+
+function onConnectionTimerFired(hook, timer) {
+  switch (timer) {
+    case ConnectionTimer.AUTHORITY_LATCH: {
+      const wasActive = hook.__lastViewportActive === true
+      reportViewportActive(hook)
+      onViewportAuthorityChanged(hook, wasActive)
+      return
+    }
+    case ConnectionTimer.LAYOUT:
+      applyTerminalLayout(hook, hook.__layoutTrigger || "event")
+      return
+    case ConnectionTimer.SHRINK_CONFIRM:
+      reconcileLayout(hook, "shrink_confirm", {trigger: "confirm", immediate: true})
+      return
+    case ConnectionTimer.LONGPRESS:
+      hook.__longPress = true
+      hud(`lp@${LONGPRESS_MS}`)
+      return
+    default:
+      return
+  }
+}
+
+function startConnectionTimer(hook, effect) {
+  const timer = effect.timer
+  cancelConnectionTimer(hook, timer)
+  const field = CONNECTION_TIMER_FIELD[timer]
+  if (!field) return
+
+  if (timer === ConnectionTimer.FIT_REHEAL) {
+    if (typeof setInterval !== "function") return
+    hook[field] = setInterval(
+      () => reconcilePeriodically(hook),
+      effect.delay ?? FIT_REHEAL_INTERVAL_MS
+    )
+    return
+  }
+
+  hook[field] = setTimeout(() => {
+    hook[field] = null
+    onConnectionTimerFired(hook, timer)
+  }, effect.delay)
+}
+
 function dispatchTerminalConnectionEvent(hook, event) {
   const transition = transitionTerminalConnection(
     hook.__terminalConnectionPhase || INITIAL_CONNECTION_PHASE,
@@ -1226,8 +1289,27 @@ function dispatchTerminalConnectionEvent(hook, event) {
   for (const effect of transition.effects) {
     if (effect.type === ConnectionEffect.REQUEST_RESYNC) {
       performTerminalResync(hook, effect.reason)
+    } else if (effect.type === ConnectionEffect.CANCEL_TIMER) {
+      cancelConnectionTimer(hook, effect.timer)
+    } else if (effect.type === ConnectionEffect.START_TIMER) {
+      startConnectionTimer(hook, effect)
     }
   }
+}
+
+function requestConnectionTimer(hook, timer, delay) {
+  dispatchTerminalConnectionEvent(hook, {
+    type: ConnectionEvent.TIMER_REQUESTED,
+    timer,
+    delay
+  })
+}
+
+function cancelRequestedConnectionTimer(hook, timer) {
+  dispatchTerminalConnectionEvent(hook, {
+    type: ConnectionEvent.TIMER_CANCEL_REQUESTED,
+    timer
+  })
 }
 
 function dropFrameAndResync(hook, payload, reason) {
@@ -1975,21 +2057,13 @@ function reportViewportActive(hook, force = false) {
     graceMs: AUTHORITY_LATCH_GRACE_MS
   })
 
-  if (hook.__authorityLatchTimer) {
-    clearTimeout(hook.__authorityLatchTimer)
-    hook.__authorityLatchTimer = null
-  }
+  cancelRequestedConnectionTimer(hook, ConnectionTimer.AUTHORITY_LATCH)
   // While the latch is holding active despite a false raw signal, re-check once
   // the grace window elapses so authority can actually settle to observer if the
   // blip was real (this handler is otherwise only event-driven).
   if (!raw && active) {
     const wait = Math.max(60, AUTHORITY_LATCH_GRACE_MS - (now - hook.__lastActiveAtMs) + 40)
-    hook.__authorityLatchTimer = setTimeout(() => {
-      hook.__authorityLatchTimer = null
-      const wasActive = hook.__lastViewportActive === true
-      reportViewportActive(hook)
-      onViewportAuthorityChanged(hook, wasActive)
-    }, wait)
+    requestConnectionTimer(hook, ConnectionTimer.AUTHORITY_LATCH, wait)
   }
 
   if (!force && hook.__lastViewportActive === active) return
@@ -2352,18 +2426,9 @@ const SHRINK_CONFIRM_MS = 600
 // shrink would sit letterboxed until the next unrelated event: that is this.
 function scheduleShrinkConfirm(hook, result) {
   if (!result.confirmShrink) return
-  if (hook.__shrinkConfirmTimer !== null && hook.__shrinkConfirmTimer !== undefined) return
+  if (hook.__shrinkConfirmTimer != null) return
 
-  hook.__shrinkConfirmTimer = setTimeout(() => {
-    hook.__shrinkConfirmTimer = null
-    reconcileLayout(hook, "shrink_confirm", {trigger: "confirm", immediate: true})
-  }, SHRINK_CONFIRM_MS)
-}
-
-function cancelShrinkConfirm(hook) {
-  if (hook.__shrinkConfirmTimer === null || hook.__shrinkConfirmTimer === undefined) return
-  clearTimeout(hook.__shrinkConfirmTimer)
-  hook.__shrinkConfirmTimer = null
+  requestConnectionTimer(hook, ConnectionTimer.SHRINK_CONFIRM, SHRINK_CONFIRM_MS)
 }
 
 /**
@@ -2437,19 +2502,13 @@ function reconcileLayout(hook, reason, {trigger = "event", immediate = false} = 
   hook.__layoutReason = reason
 
   if (immediate) {
-    if (hook.__layoutTimer !== null) {
-      clearTimeout(hook.__layoutTimer)
-      hook.__layoutTimer = null
-    }
+    cancelRequestedConnectionTimer(hook, ConnectionTimer.LAYOUT)
     applyTerminalLayout(hook, trigger)
     return
   }
 
-  if (hook.__layoutTimer !== null) clearTimeout(hook.__layoutTimer)
-  hook.__layoutTimer = setTimeout(() => {
-    hook.__layoutTimer = null
-    applyTerminalLayout(hook, trigger)
-  }, 75)
+  hook.__layoutTrigger = trigger
+  requestConnectionTimer(hook, ConnectionTimer.LAYOUT, 75)
 }
 
 // Level-triggered backstop. Every other trigger is edge-driven (ResizeObserver,
@@ -2561,8 +2620,6 @@ function installScaleFitLayout(hook) {
     hook.pendingFitTimer = null
   }
 
-  hook.__layoutTimer = null
-  hook.__shrinkConfirmTimer = null
   hook.onWindowResize = () => reconcileLayout(hook, "window_resize")
 
   if (typeof ResizeObserver !== "undefined") {
@@ -2572,9 +2629,8 @@ function installScaleFitLayout(hook) {
 
   // Level-triggered backstop for the edge-triggered fit above: recover a grid
   // stranded small when no resize/refit event landed after the container grew.
-  if (hook.fitEnabled && typeof setInterval === "function") {
-    if (hook.__fitRehealTimer) clearInterval(hook.__fitRehealTimer)
-    hook.__fitRehealTimer = setInterval(() => reconcilePeriodically(hook), FIT_REHEAL_INTERVAL_MS)
+  if (hook.fitEnabled) {
+    requestConnectionTimer(hook, ConnectionTimer.FIT_REHEAL, FIT_REHEAL_INTERVAL_MS)
   }
 }
 
@@ -3204,7 +3260,7 @@ const GhosttyTerminal = {
           // one-finger phase had latched the arrow d-pad (e.g. output grew past
           // the fold after the drag began).
           this.__scrollbackGesture = true
-          clearTimeout(this.__lpTimer)
+          cancelRequestedConnectionTimer(this, ConnectionTimer.LONGPRESS)
           this.__longPress = false
           this.__scrollLastX = t.clientX
           this.__scrollLastY = t.clientY
@@ -3231,11 +3287,7 @@ const GhosttyTerminal = {
         if (wasFocused) this.input.blur()
         const tag = (e.target && e.target.tagName) || "?"
         hud(`touchstart tgt=${tag} kb=${wasFocused ? 1 : 0}`)
-        clearTimeout(this.__lpTimer)
-        this.__lpTimer = setTimeout(() => {
-          this.__longPress = true
-          hud(`lp@${LONGPRESS_MS}`)
-        }, LONGPRESS_MS)
+        requestConnectionTimer(this, ConnectionTimer.LONGPRESS, LONGPRESS_MS)
       }
 
       this.__onTouchMove = (e) => {
@@ -3244,7 +3296,7 @@ const GhosttyTerminal = {
         const dx = Math.abs(t.clientX - this.__touchXY.x)
         const dy = Math.abs(t.clientY - this.__touchXY.y)
         if (!this.__longPress && (dx > 10 || dy > 10)) {
-          clearTimeout(this.__lpTimer)
+          cancelRequestedConnectionTimer(this, ConnectionTimer.LONGPRESS)
           hud("move-cancel")
         }
         // A matured long-press is a text selection drag — leave it alone.
@@ -3321,7 +3373,7 @@ const GhosttyTerminal = {
           this.__scrollLastT = performance.now()
           return
         }
-        clearTimeout(this.__lpTimer)
+        cancelRequestedConnectionTimer(this, ConnectionTimer.LONGPRESS)
         if (this.__scrollActive) {
           // A scroll is never also a tap-to-focus or a selection. Only a
           // scrollback drag (two-finger, or one-finger with history) carries
@@ -3643,16 +3695,6 @@ const GhosttyTerminal = {
     this.__clipboardCleanup = null
     setDropActive(this, false)
 
-    clearTimeout(this.__lpTimer)
-    if (this.__authorityLatchTimer) {
-      clearTimeout(this.__authorityLatchTimer)
-      this.__authorityLatchTimer = null
-    }
-    if (this.__fitRehealTimer) {
-      clearInterval(this.__fitRehealTimer)
-      this.__fitRehealTimer = null
-    }
-    cancelShrinkConfirm(this)
     if (this.__paintRaf != null) {
       cancelAnimationFrame(this.__paintRaf)
       this.__paintRaf = null

@@ -20,14 +20,15 @@ Commands:
   update check [--json]              Compare installed revision to remote manifest
   agent launch <runtime> [args...]   Launch an agent with Terminal + Preview MCP
   agent env                          Print shell exports (eval "$(casein agent env)")
-  agent auth signin <runtime>        Sign in current owner for Claude/Codex
+  agent auth signin <runtime>        Sign in current principal (claude|codex|gh)
   agent auth signin <owner> <runtime>
                                      Sign in once for <owner>-* workspaces
   agent auth status [workspace] [runtime]
                                      Show owner auth profile and sign-in state
   agent auth list                    List configured owner auth profiles
-  agent auth register <owner>        Fail closed: <owner>-* workspaces stop
-                                     falling back to the host global login
+  agent auth register <owner> [runtimes]
+                                     Fail closed for those runtimes (default: all,
+                                     e.g. claude,codex leaves gh on global auth)
   agent auth unregister <owner>      Allow global-auth fallback again
   doctor agents                      Run the complete Casein agent/MCP health check
   mcp ensure                         Materialize per-workspace MCP client configs
@@ -125,34 +126,37 @@ agent_auth() {
       fi
 
       case "${1:-}" in
-        claude|codex)
+        claude|codex|gh)
           runtime="$1"
           shift || true
 
           if ! agent_env_resolve >/dev/null 2>&1; then
-            echo "error: could not detect owner; run inside a Casein workspace or use: casein agent auth signin <owner> <claude|codex>" >&2
+            echo "error: could not detect owner; run inside a Casein workspace or use: casein agent auth signin <owner> <claude|codex|gh>" >&2
             exit 64
           fi
 
           workspace="${CASEIN_WORKSPACE_NAME:-${CASEIN_WORKSPACE_ID:-}}"
           # shellcheck source=lib/agent-auth-profile.sh
           source "$profile_script"
-          owner="$(agent_auth_profile_owner_slug "$workspace" 2>/dev/null || true)"
+          # agent_auth_principal honours CASEIN_ACTOR, so signing in from a
+          # colleague's workspace still signs in *you*, not the workspace owner.
+          owner="$(agent_auth_principal "$workspace" 2>/dev/null || true)"
           if [[ -z "$owner" ]]; then
-            echo "error: could not derive owner from workspace: ${workspace}" >&2
+            echo "error: could not derive a principal from workspace: ${workspace}" >&2
+            echo "hint: set CASEIN_ACTOR, or use: casein agent auth signin <principal> ${runtime}" >&2
             exit 64
           fi
-          echo "signing ${runtime} into owner profile: ${owner} (${workspace})" >&2
+          echo "signing ${runtime} into profile: ${owner} (${workspace})" >&2
           ;;
         "")
-          echo "usage: casein agent auth signin <claude|codex>  # inside a Casein workspace" >&2
-          echo "   or: casein agent auth signin <owner> <claude|codex>" >&2
+          echo "usage: casein agent auth signin <claude|codex|gh>  # inside a Casein workspace" >&2
+          echo "   or: casein agent auth signin <owner> <claude|codex|gh>" >&2
           exit 64
           ;;
         *)
           if [[ -z "${2:-}" ]]; then
-            echo "usage: casein agent auth signin <claude|codex>  # inside a Casein workspace" >&2
-            echo "   or: casein agent auth signin <owner> <claude|codex>" >&2
+            echo "usage: casein agent auth signin <claude|codex|gh>  # inside a Casein workspace" >&2
+            echo "   or: casein agent auth signin <owner> <claude|codex|gh>" >&2
             exit 64
           fi
           owner="$1"
@@ -202,10 +206,10 @@ agent_auth() {
 
       local owner="${1:-}"
       if [[ -z "$owner" ]]; then
-        echo "usage: casein agent auth ${sub} <owner>" >&2
+        echo "usage: casein agent auth ${sub} <owner> [runtime,runtime...]" >&2
         exit 64
       fi
-      bash "$script" "--${sub}" "$owner"
+      bash "$script" "--${sub}" "$owner" "${2:-}"
       ;;
     -h|--help|help|"")
       echo "usage: casein agent auth <signin|status|list|register|unregister> ..." >&2

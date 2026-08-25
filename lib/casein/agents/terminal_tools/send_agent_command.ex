@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.SendAgentCommand do
   use Jido.Action,
     name: "terminal_send_agent_command",
     description:
-      "Type a shell command into the dedicated agent pane and press Enter. Requires the agent_pair marker. Use terminal_send_command for explicit pane ids. Non-conversation TUI surfaces are refused unless allow_non_conversation is true.",
+      "Type a shell command into the dedicated agent pane and press Enter. Requires the agent_pair marker. Use terminal_send_command for explicit pane ids. Non-conversation TUI surfaces are refused unless allow_non_conversation is true. The write receipt includes `input_buffer` (`has_content`, `source`: empty|placeholder|typed|unknown); `placeholder` is a suggested prompt, not unsent user text.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

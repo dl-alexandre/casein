@@ -7,8 +7,8 @@ defmodule Casein.Terminals.WorkerStatus do
 
   Reuses `FleetBoard` row shaping for `blocked_on` / liveness kind discipline —
   report-only (`blocked`/`errored`) stays distinct from derived-only (`stalled`);
-  liveness `unknown` never becomes quiet/idle. No scrollback, no shell, no
-  mutations. `worker_launch` remains out of scope.
+  liveness `unknown` never becomes quiet/idle. No scrollback, no shell, and no
+  mutations. A `worker_launch` work handle is joined when one was recorded.
   """
 
   alias Casein.Terminals.FleetBoard
@@ -104,9 +104,20 @@ defmodule Casein.Terminals.WorkerStatus do
         atom_or_nil(Map.get(row, :fleet_readiness) || pane_field(pane, :fleet_readiness)),
       ready_no_task_for_seconds:
         Map.get(row, :ready_no_task_for_seconds) || pane_field(pane, :ready_no_task_for_seconds),
-      agent_state: atom_or_nil(Map.get(row, :agent_state) || pane_field(pane, :agent_state)),
+      agent_state:
+        atom_or_nil(
+          Map.get(row, :agent_state) || pane_field(pane, :agent_state) ||
+            work_handle_status(pane, :state)
+        ),
+      status:
+        Map.get(row, :status) ||
+          FleetBoard.operational_status(%{
+            agent_state: pane_field(pane, :agent_state),
+            liveness: pane_field(pane, :liveness)
+          }),
       agent_state_message:
-        Map.get(row, :agent_state_message) || pane_field(pane, :agent_state_message),
+        Map.get(row, :agent_state_message) || pane_field(pane, :agent_state_message) ||
+          work_handle_status(pane, :message),
       issue: Map.get(row, :issue) || pane_field(pane, :issue),
       issue_title: Map.get(row, :issue_title) || pane_field(pane, :issue_title),
       task_summary: Map.get(row, :task_summary) || pane_field(pane, :task_summary),
@@ -117,9 +128,11 @@ defmodule Casein.Terminals.WorkerStatus do
       bucket: atom_or_nil(Map.get(row, :bucket)),
       liveness: liveness_json(Map.get(row, :liveness) || pane_field(pane, :liveness)),
       blocked_on: blocked_on_json(Map.get(row, :blocked_on)),
+      work_handle: Map.get(row, :work_handle) || pane_field(pane, :work_handle),
       note:
         "M2 single-worker status. Reuses FleetBoard blocked_on/liveness kind discipline. " <>
-          "liveness unknown ≠ quiet. worker_launch, durable graphs, and verifiers remain out of scope."
+          "liveness unknown ≠ quiet. Recorded worker_launch identity is included; " <>
+          "task graphs and verifiers remain out of scope."
     }
 
     reject_nils(base)
@@ -133,9 +146,7 @@ defmodule Casein.Terminals.WorkerStatus do
       found?: false,
       pane_id: pane_id,
       window_id: window_id,
-      note:
-        "M2 single-worker status: pane not found in session topology. " <>
-          "worker_launch remains out of scope."
+      note: "M2 single-worker status: pane not found in session topology."
     }
     |> reject_nils()
   end
@@ -152,8 +163,9 @@ defmodule Casein.Terminals.WorkerStatus do
         pane_field(pane, :window_name) || Map.get(window || %{}, :name) ||
           Map.get(window || %{}, "name") || window_id,
       active?: truthy?(Map.get(window || %{}, :active) || Map.get(window || %{}, "active")),
-      agent_state: pane_field(pane, :agent_state),
-      agent_state_message: pane_field(pane, :agent_state_message),
+      agent_state: pane_field(pane, :agent_state) || work_handle_status(pane, :state),
+      agent_state_message:
+        pane_field(pane, :agent_state_message) || work_handle_status(pane, :message),
       agent_pane_id: pane_field(pane, :id),
       label: pane_field(pane, :label),
       issue: pane_field(pane, :issue),
@@ -166,6 +178,7 @@ defmodule Casein.Terminals.WorkerStatus do
         pane_field(pane, :ready_no_task_for_seconds) ||
           Map.get(window || %{}, :ready_no_task_for_seconds),
       liveness: pane_field(pane, :liveness),
+      work_handle: pane_field(pane, :work_handle),
       quiet?: false,
       unseen_quiet?: false
     }
@@ -192,6 +205,15 @@ defmodule Casein.Terminals.WorkerStatus do
 
   defp pane_field(pane, key) when is_map(pane) do
     Map.get(pane, key) || Map.get(pane, Atom.to_string(key))
+  end
+
+  defp work_handle_status(pane, key) do
+    with handle when is_map(handle) <- pane_field(pane, :work_handle),
+         status when is_map(status) <- Map.get(handle, :status) || Map.get(handle, "status") do
+      Map.get(status, key) || Map.get(status, Atom.to_string(key))
+    else
+      _ -> nil
+    end
   end
 
   # GateQueue is irrelevant for single-worker projection; avoid host /proc scan.
