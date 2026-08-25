@@ -82,8 +82,9 @@ are not retryable.
 ## Current integration boundary
 
 This slice supplies the provider adapter and production Jido.AI dependency. It
-does not alter the existing #1014 pod's deterministic typed-action execution or
-pretend that `worker_launch` already invokes a reasoning agent. Wiring the
+does not alter the existing #1014 pod's deterministic typed-action execution.
+Manager MCP (`jido_admit` / `jido_status` / `jido_cancel`) admits that typed
+list; it does not invoke this provider as a reasoning loop. Wiring the
 provider into a model-selected tool loop and adding durable attempt/action-run
 checkpoints, leases, and idempotency remain explicit follow-ups. Persistence is
 scheduled only after this provider PR lands cleanly.

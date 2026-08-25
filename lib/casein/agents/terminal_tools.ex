@@ -51,6 +51,9 @@ defmodule Casein.Agents.TerminalTools do
     WorkerStatus,
     WorkerLaunch,
     WorkerCancel,
+    JidoAdmit,
+    JidoStatus,
+    JidoCancel,
     WorktreeStatus,
     WorktreeChangedPaths,
     WorktreeDiff,
@@ -122,6 +125,9 @@ defmodule Casein.Agents.TerminalTools do
     RuntimeSignal,
     WorkerLaunch,
     WorkerCancel,
+    JidoAdmit,
+    JidoStatus,
+    JidoCancel,
     WorktreeStatus,
     WorktreeChangedPaths,
     WorktreeDiff,
@@ -237,6 +243,12 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate worker_launch(params), to: Session
   @doc false
   defdelegate worker_cancel(params), to: Session
+  @doc false
+  defdelegate jido_admit(params), to: Casein.Agents.JidoDelegate, as: :admit
+  @doc false
+  defdelegate jido_status(params), to: Casein.Agents.JidoDelegate, as: :status
+  @doc false
+  defdelegate jido_cancel(params), to: Casein.Agents.JidoDelegate, as: :cancel
   @doc false
   defdelegate worktree_status(params), to: Session
   @doc false
