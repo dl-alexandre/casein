@@ -1045,8 +1045,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
 
   defp transcript_answer(session, pane_id) do
     pane =
-      session
-      |> tmux().list_session_panes()
+      tmux().list_session_panes(session)
       |> Enum.find(&(&1.id == pane_id))
 
     case transcript_path_for(session, pane || %{id: pane_id}, %{}) do
