@@ -7,6 +7,13 @@ defmodule Scripts.LaunchCaseinAgentTest do
     assert {_, 0} = System.cmd("bash", ["-n", @script])
   end
 
+  test "release packaging copies agent-identity.sh into priv/scripts/lib" do
+    mix = File.read!(Path.expand("../../mix.exs", __DIR__))
+
+    assert File.read!(@script) =~ ~s(source "${ROOT}/scripts/lib/agent-identity.sh")
+    assert mix =~ ~r/lib_files = \[[^\]]*?"agent-identity\.sh"/s
+  end
+
   test "managed Grok binds current tmux scope before capability bundle materialization" do
     text = File.read!(@script)
 
