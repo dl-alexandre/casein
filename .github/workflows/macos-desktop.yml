@@ -62,6 +62,11 @@ permissions:
 jobs:
   package-smoke:
     name: Build and verify (${{ matrix.name }})
+    # SECURITY: this job checks out and executes repository code on a
+    # persistent self-hosted Mac. Once the repository is public, never allow a
+    # fork PR to reach that runner. Same-repository PRs and pushes remain on
+    # the trusted fast path; fork PRs are intentionally skipped here.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
       matrix:
