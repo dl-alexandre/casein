@@ -174,11 +174,15 @@ defmodule Casein.Agents.TerminalLayoutToolsTest do
     end
 
     test "refuses a session outside the caller's workspace" do
-      assert {:error, :workspace_mismatch} =
+      assert {:error, %{error: :workspace_mismatch} = err} =
                TerminalTools.invoke("terminal_layout_snapshot", %{
                  "workspace_id" => @workspace,
                  "session" => "casein_other-workspace_main"
                })
+
+      assert err.workspace.arg == @workspace
+      assert err.session.name == "casein_other-workspace_main"
+      assert err.session.workspace == "other-workspace"
     end
   end
 

@@ -20,6 +20,11 @@ defmodule Casein.ProposalApply.GitAdapter do
   @impl true
   def apply(root, patch_path), do: run(root, ["apply", patch_path])
 
+  @doc "True when the patch is already applied (reverse --check succeeds)."
+  @spec check_reverse(String.t(), String.t()) :: :ok | {:error, term()}
+  def check_reverse(root, patch_path),
+    do: run(root, ["apply", "--reverse", "--check", patch_path])
+
   # sobelow_skip ["CI.System"]
   defp run(root, args) do
     git = System.find_executable("git")

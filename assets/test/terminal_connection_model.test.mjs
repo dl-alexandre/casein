@@ -14,7 +14,9 @@ import {
   ConnectionEffect,
   ConnectionEvent,
   ConnectionPhase,
+  ConnectionTimer,
   INITIAL_CONNECTION_PHASE,
+  LIVE_CONNECTION_TIMERS,
   TERMINAL_CONNECTION_PHASES,
   transitionTerminalConnection
 } from "../js/terminal_connection_model.mjs"
@@ -28,6 +30,8 @@ const EVENTS = [
   {type: ConnectionEvent.DOCUMENT_LIFECYCLE_RESUMED, lifecycleType: "pageshow"},
   {type: ConnectionEvent.SURFACE_REFIT_REQUESTED, reason: "tabs_resized"},
   {type: ConnectionEvent.LIVEVIEW_RECONNECTED},
+  {type: ConnectionEvent.TIMER_REQUESTED, timer: ConnectionTimer.LAYOUT, delay: 75},
+  {type: ConnectionEvent.TIMER_CANCEL_REQUESTED, timer: ConnectionTimer.LAYOUT},
   {type: ConnectionEvent.HOOK_DESTROYED}
 ]
 
@@ -99,10 +103,89 @@ test("I4: a transition cancels every timer owned only by its predecessor", () =>
   }
 })
 
-test("slice 1 does not claim ownership of the five legacy hook timers", () => {
+test("live phases own the five legacy hook timers; terminal phases own none", () => {
+  const live = new Set([
+    ConnectionPhase.ATTACHING,
+    ConnectionPhase.ATTACHED,
+    ConnectionPhase.REATTACHING
+  ])
+
+  assert.deepEqual(
+    [...LIVE_CONNECTION_TIMERS],
+    [
+      ConnectionTimer.AUTHORITY_LATCH,
+      ConnectionTimer.FIT_REHEAL,
+      ConnectionTimer.LAYOUT,
+      ConnectionTimer.LONGPRESS,
+      ConnectionTimer.SHRINK_CONFIRM
+    ]
+  )
+
   for (const phase of CONNECTION_PHASES) {
-    assert.deepEqual(CONNECTION_TIMERS_BY_PHASE[phase], [], `${phase} rewired a timer before #987`)
+    if (live.has(phase)) {
+      assert.deepEqual(CONNECTION_TIMERS_BY_PHASE[phase], LIVE_CONNECTION_TIMERS, `${phase} must own the five timers`)
+    } else {
+      assert.deepEqual(CONNECTION_TIMERS_BY_PHASE[phase], [], `${phase} must not own a timer`)
+    }
   }
+})
+
+test("destroying a live phase cancels every owned timer", () => {
+  for (const phase of [ConnectionPhase.ATTACHING, ConnectionPhase.ATTACHED, ConnectionPhase.REATTACHING]) {
+    const result = transitionTerminalConnection(phase, {type: ConnectionEvent.HOOK_DESTROYED})
+    assert.equal(result.phase, ConnectionPhase.DISPOSED)
+    assert.deepEqual(
+      result.effects,
+      LIVE_CONNECTION_TIMERS.map((timer) => ({type: ConnectionEffect.CANCEL_TIMER, timer}))
+    )
+  }
+})
+
+test("a phase may start or cancel only the timers it owns", () => {
+  for (const phase of CONNECTION_PHASES) {
+    const owned = new Set(CONNECTION_TIMERS_BY_PHASE[phase])
+
+    for (const timer of LIVE_CONNECTION_TIMERS) {
+      const started = transitionTerminalConnection(phase, {
+        type: ConnectionEvent.TIMER_REQUESTED,
+        timer,
+        delay: 40
+      })
+      const cancelled = transitionTerminalConnection(phase, {
+        type: ConnectionEvent.TIMER_CANCEL_REQUESTED,
+        timer
+      })
+
+      const startEffects = started.effects.filter((effect) => effect.type === ConnectionEffect.START_TIMER)
+      const cancelEffects = cancelled.effects.filter((effect) => effect.type === ConnectionEffect.CANCEL_TIMER)
+
+      if (owned.has(timer)) {
+        assert.deepEqual(startEffects, [{type: ConnectionEffect.START_TIMER, timer, delay: 40}])
+        assert.deepEqual(started.effects[0], {type: ConnectionEffect.CANCEL_TIMER, timer})
+        assert.deepEqual(cancelEffects, [{type: ConnectionEffect.CANCEL_TIMER, timer}])
+      } else {
+        assert.deepEqual(startEffects, [])
+        assert.deepEqual(cancelEffects, [])
+      }
+    }
+  }
+})
+
+test("an unknown or missing timer request emits nothing", () => {
+  const phase = ConnectionPhase.ATTACHED
+
+  assert.deepEqual(
+    transitionTerminalConnection(phase, {type: ConnectionEvent.TIMER_REQUESTED, timer: "not_a_timer"}).effects,
+    []
+  )
+  assert.deepEqual(
+    transitionTerminalConnection(phase, {type: ConnectionEvent.TIMER_REQUESTED}).effects,
+    []
+  )
+  assert.deepEqual(
+    transitionTerminalConnection(phase, {type: ConnectionEvent.TIMER_CANCEL_REQUESTED}).effects,
+    []
+  )
 })
 
 test("the six resync events preserve the current response in every phase", () => {
@@ -125,12 +208,18 @@ test("only attachment-loss events change an active attachment phase", () => {
     ConnectionEvent.SIZE_AUTHORITY_GAINED,
     ConnectionEvent.SIZE_AUTHORITY_LOST,
     ConnectionEvent.DOCUMENT_LIFECYCLE_RESUMED,
-    ConnectionEvent.SURFACE_REFIT_REQUESTED
+    ConnectionEvent.SURFACE_REFIT_REQUESTED,
+    ConnectionEvent.TIMER_REQUESTED,
+    ConnectionEvent.TIMER_CANCEL_REQUESTED
   ]
 
   for (const type of ordinaryRefits) {
     assert.equal(
-      transitionTerminalConnection(ConnectionPhase.ATTACHED, {type}).phase,
+      transitionTerminalConnection(ConnectionPhase.ATTACHED, {
+        type,
+        timer: ConnectionTimer.LAYOUT,
+        delay: 75
+      }).phase,
       ConnectionPhase.ATTACHED
     )
   }

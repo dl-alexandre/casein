@@ -92,6 +92,11 @@ defmodule Casein.Terminals.AgentState do
   # A `working` report older than this, with the title showing `ready`, means the
   # agent almost certainly stopped and the hook missed the `Stop` event.
   @working_ttl_seconds 120
+  # Past this, an uncorroborated report is no longer asserted. Topology reports
+  # `:unknown` rather than the last known value — unknown never means idle.
+  # Same window as `@working_ttl_seconds` so a ready title and a silent
+  # worktree age out together. `agent_state_age_s` is this clock.
+  @stale_assert_seconds 120
   # Beyond this a report is stale enough to discard entirely and fall back to the
   # title heuristic. Matches `Activity`'s attention window.
   @max_report_ttl_seconds 1_800
@@ -100,6 +105,16 @@ defmodule Casein.Terminals.AgentState do
   # thinking time are normal, and a false `:stalled` costs operator trust.
   # Attention Delivery thresholds must not silently retune this (see #699).
   @stall_seconds 600
+  # Notification hooks fire for startup banners as well as permission prompts.
+  # These needles are never a blocked `agent_state_message`.
+  @lifecycle_message_needles [
+    "login successful",
+    "logged in",
+    "session start",
+    "session started",
+    "session end",
+    "session ended"
+  ]
 
   @report_states [:working, :blocked, :done, :idle, :errored]
   @screen_fallback_runtimes ~w(opencode cursor)
@@ -193,6 +208,14 @@ defmodule Casein.Terminals.AgentState do
   """
   @spec stall_seconds() :: pos_integer()
   def stall_seconds, do: @stall_seconds
+
+  @doc """
+  Seconds a report may be asserted without a corroborating signal before
+  `resolve/5` yields `:unknown`. Inspectable so topology tests can pin the
+  `agent_state_age_s` clock without re-deriving the threshold.
+  """
+  @spec stale_assert_seconds() :: pos_integer()
+  def stale_assert_seconds, do: @stale_assert_seconds
 
   @doc """
   Record an explicit semantic-state report for a pane.
@@ -336,6 +359,12 @@ defmodule Casein.Terminals.AgentState do
       age > @max_report_ttl_seconds ->
         resolve(nil, heuristic, now, liveness, transcript)
 
+      # Startup/lifecycle Notification strings are not a human-attention claim.
+      # Drop them before the grace window so a login banner never lands as
+      # `:blocked` even for a few seconds.
+      rstate == :blocked and lifecycle_message?(msg) ->
+        uncorroborated(heuristic, now, liveness, transcript)
+
       age < @grace_seconds ->
         {rstate, msg}
 
@@ -360,6 +389,13 @@ defmodule Casein.Terminals.AgentState do
       heuristic == :ready and rstate == :working and age > @working_ttl_seconds ->
         if liveness == :active, do: {:working, msg}, else: {derived(:idle, transcript), nil}
 
+      # blocked + ready (or any non-working title) past the assert window, with
+      # no active worktree: stop asserting the last known value. Unknown never
+      # means idle — a pane at an empty prompt is not `:blocked`.
+      rstate == :blocked and age > @stale_assert_seconds and
+          not corroborated_block?(heuristic, liveness) ->
+        {:unknown, nil}
+
       true ->
         {rstate, msg}
     end
@@ -374,6 +410,29 @@ defmodule Casein.Terminals.AgentState do
     do: :awaiting_input
 
   defp derived(state, _transcript), do: state
+
+  # A discarded blocked claim must not become `:idle` via the title heuristic —
+  # unknown never means idle. Keep only positive observations (spinner, stall,
+  # transcript waiting).
+  defp uncorroborated(heuristic, now, liveness, transcript) do
+    case resolve(nil, heuristic, now, liveness, transcript) do
+      {:stalled, message} -> {:stalled, message}
+      {:awaiting_input, message} -> {:awaiting_input, message}
+      {:working, message} -> {:working, message}
+      _other -> {:unknown, nil}
+    end
+  end
+
+  defp corroborated_block?(:working, _liveness), do: true
+  defp corroborated_block?(_heuristic, :active), do: true
+  defp corroborated_block?(_heuristic, _liveness), do: false
+
+  defp lifecycle_message?(message) when is_binary(message) do
+    down = String.downcase(message)
+    Enum.any?(@lifecycle_message_needles, &String.contains?(down, &1))
+  end
+
+  defp lifecycle_message?(_message), do: false
 
   @doc """
   Like `resolve/3`, but returns `{:unknown, nil}` when there is no live report
@@ -441,12 +500,17 @@ defmodule Casein.Terminals.AgentState do
         heuristic = PaneState.window_state(window)
         pane = PaneState.agent_or_active_pane(window)
         entry = pane && Map.get(reports, PaneState.map_get(pane, :id))
+        age_s = report_age_s(entry, now)
 
         resolved =
-          resolve_for_display(entry, heuristic, now, pane_liveness(pane), pane_transcript(pane))
+          entry
+          |> resolve_for_display(heuristic, now, pane_liveness(pane), pane_transcript(pane))
+          |> age_out_with(age_s, heuristic, pane_liveness(pane))
 
         window
+        |> put_report_age(age_s)
         |> put_state(resolved)
+        |> put_blocked_ready_conflict(resolved, heuristic)
         |> put_agent_session_id(entry, resolved)
       end)
 
@@ -458,16 +522,50 @@ defmodule Casein.Terminals.AgentState do
   defp enrich_pane(pane, reports, now) when is_map(pane) do
     heuristic = normalize_heuristic(PaneState.map_get(pane, :pane_state))
     entry = Map.get(reports, PaneState.map_get(pane, :id))
+    age_s = report_age_s(entry, now)
+    liveness = pane_liveness(pane)
 
     resolved =
-      resolve_for_display(entry, heuristic, now, pane_liveness(pane), pane_transcript(pane))
+      entry
+      |> resolve_for_display(heuristic, now, liveness, pane_transcript(pane))
+      |> age_out_with(age_s, heuristic, liveness)
 
     pane
+    |> put_report_age(age_s)
     |> put_state(resolved)
+    |> put_blocked_ready_conflict(resolved, heuristic)
     |> put_agent_session_id(entry, resolved)
   end
 
   defp enrich_pane(pane, _reports, _now), do: pane
+
+  defp report_age_s(%{reported_at: %DateTime{} = at}, now),
+    do: max(DateTime.diff(now, at, :second), 0)
+
+  defp report_age_s(_entry, _now), do: nil
+
+  defp put_report_age(map, age_s) when is_integer(age_s),
+    do: Map.put(map, :agent_state_age_s, age_s)
+
+  defp put_report_age(map, _age_s), do: map
+
+  # The classifier reads `agent_state_age_s` (same clock as resolve/5) so a
+  # topology that already carries the age cannot keep asserting a stale
+  # `:blocked` over a ready title.
+  defp age_out_with({:blocked, _message} = resolved, age_s, heuristic, liveness)
+       when is_integer(age_s) and age_s > @stale_assert_seconds do
+    if corroborated_block?(heuristic, liveness), do: resolved, else: {:unknown, nil}
+  end
+
+  defp age_out_with(resolved, _age_s, _heuristic, _liveness), do: resolved
+
+  # blocked + ready on the same pane is a conflict. Recency is the only
+  # qualification that lets the report stand; surface it so consumers do not
+  # treat the pair as unqualified.
+  defp put_blocked_ready_conflict(map, {:blocked, _message}, :ready),
+    do: Map.put(map, :agent_state_conflict, :blocked_while_ready)
+
+  defp put_blocked_ready_conflict(map, _resolved, _heuristic), do: map
 
   # Omit `:unknown` so payloads and stable hashes stay compact when nothing is
   # known about a pane/window.

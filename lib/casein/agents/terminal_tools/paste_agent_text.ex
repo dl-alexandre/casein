@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.PasteAgentText do
   use Jido.Action,
     name: "terminal_paste_agent_text",
     description:
-      "Paste literal text through a tmux paste buffer. Omit pane to target the role-marked agent_pair pane; pass an explicit pane id to paste into that pane without requiring agent_pair (fleet worker briefs). On submit:true, Enter is pressed after the paste settles and confirmed via hook/transcript/screen — Enter is not retried; do not double-Enter yourself.",
+      "Paste literal text through a tmux paste buffer. Omit pane to target the role-marked agent_pair pane; pass an explicit pane id to paste into that pane without requiring agent_pair (fleet worker briefs). On submit:true, Enter is pressed after the paste settles and confirmed via hook/transcript/screen — Enter is not retried; do not double-Enter yourself. The write receipt includes `input_buffer` (`has_content`, `source`: empty|placeholder|typed|unknown); `placeholder` is a suggested prompt, not unsent user text.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.1.0",

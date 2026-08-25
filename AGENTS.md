@@ -15,7 +15,15 @@ This is a web application written using the Phoenix web framework.
   - **Lost safety property, not yet replaced:** the old 1.18.4 CI job compiled `MIX_ENV=test` only and existed to catch syntax unavailable on the oldest supported runtime. Nothing enforces the declared `elixir: "~> 1.15"` floor in `mix.exs` any more, and that floor is already untrue — `config/dev.exs` uses `~r"..."E` sigils that need ≥1.19. Either raise the floor to match reality or add a job that compiles `MIX_ENV=dev` on it.
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 - For tmux topology, LiveView controls, and agent mutation endpoints, read `docs/tmux_control_plane.md` before changing terminal control-plane behavior
-- For GitHub operations in this `/data/workspaces/dalexandre/casein` checkout, use the repo-local credential helper already stored in `.git/config`. Normal `git fetch` / `git push origin master` should authenticate with the dalexandre GitHub CLI config at `/home/devbox/.config/gh-dalexandre`. Do not move this helper to global Git config; it is intentionally scoped to this checkout so other workspaces/users are not affected. If the helper is missing, restore it with: `git config --local credential.https://github.com.helper '!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential'`.
+- **GitHub identity is per person, not per directory** — see "Who an agent acts as" below. For GitHub operations use the repo-local credential helper in `.git/config`, which pins a `GH_CONFIG_DIR` so an ambient `GH_TOKEN` cannot shadow it. Do not move the helper to global Git config; it is intentionally scoped per checkout. Restore a missing helper with the *principal's* profile, not a hardcoded person's:
+
+  ```bash
+  profile="$HOME/.casein/agent-auth/profiles/${CASEIN_ACTOR:?run inside a Casein pane}/gh"
+  git config --local credential.https://github.com.helper \
+    "!GH_CONFIG_DIR=${profile} GH_TOKEN= GITHUB_TOKEN= gh auth git-credential"
+  ```
+
+  Checkouts still carrying the old `gh-dalexandre` helper push as `dl-alexandre` whoever is driving — `git config --local --get-regexp credential` to check.
 
 ## Devbox agent pairing (human + external agent)
 
@@ -341,6 +349,97 @@ while another commits fixes to it). Before starting non-trivial work:
   read-only by other agents until the change lands. See the shared-checkout
   hazards in the memory notes.
 
+### Who an agent acts as
+
+One resolver decides this: `Casein.Identity` (`lib/casein/identity.ex`), mirrored
+for shell by `agent_auth_principal` in `scripts/lib/agent-auth-profile.sh`.
+**Change a rule in one and you must change it in the other**, or a pane's Claude
+home and its `GH_CONFIG_DIR` end up naming different people.
+
+The principal is **the viewer who launched the pane**, not the workspace owner.
+Working in a colleague's workspace spends your provider quota, opens PRs under
+your GitHub account, and puts your name on the commits. Resolution order, first
+hit wins:
+
+1. an explicit principal passed by the caller
+2. `:viewer` — the `ForwardAuth` identity (LiveView passes `current_user`)
+3. `CASEIN_ACTOR` — stamped into the pane environment at launch
+4. the workspace owner — fallback only, from the manager's `Workspace.user`,
+   and only then from the workspace *name* prefix
+
+Unresolved means every runtime keeps its host-global login, exactly as before.
+
+Each principal owns one profile tree, and `gh` sits in it alongside the
+providers:
+
+```
+~/.casein/agent-auth/profiles/<principal>/claude   -> CLAUDE_CONFIG_DIR
+~/.casein/agent-auth/profiles/<principal>/codex    -> CODEX_HOME
+~/.casein/agent-auth/profiles/<principal>/gh       -> GH_CONFIG_DIR
+```
+
+```bash
+casein agent auth signin gh          # sign this principal's GitHub account in
+casein agent auth status             # what the current pane resolves to
+casein agent auth list               # every principal x runtime
+```
+
+A pane prints its identity at launch — `casein: acting as <principal> — claude=…
+codex=… gh=…`. `global` in that line means that runtime is *not* per-person and
+is using whatever the host has.
+
+**Registered owners fail closed, per runtime.** `<auth-root>/owners` lists
+principals that must never fall back to global auth; their profile dir applies
+even before sign-in, so the CLI prompts for its own login instead of borrowing
+the host's. An entry may scope that to some runtimes:
+
+```
+dalexandre              # every runtime
+sconde:claude,codex     # gh may still use the host global login
+```
+
+A bare slug covers everything, which is what every pre-existing entry means.
+The scoped form exists because the runtimes are not interchangeable — someone
+can have a provider account without having a GitHub account on this box, and
+failing their `gh` closed would break them to protect an identity they do not
+have yet. Set it with `casein agent auth register <owner> claude,codex`;
+re-registering *replaces* the entry rather than appending.
+
+**The account menu** (top-left of the workspace header) shows who you are signed
+in as, who your agents act as, and the state of each runtime. `global` there
+means that runtime is not bound to anyone — the agent acts as whatever account
+the box is logged into. That was `gh`'s silent default on every pane.
+
+**Commit authorship** comes from `GIT_AUTHOR_*` / `GIT_COMMITTER_*` exported per
+pane, not from checkout config — a worktree is shared between panes and people,
+so a persisted `user.email` attributes whoever commits there next.
+
+#### Migrating an existing box
+
+Both of these default to a dry run and print their plan; nothing changes without
+`--apply`.
+
+```bash
+scripts/migrate-gh-auth-profiles.sh                       # show the plan
+scripts/migrate-gh-auth-profiles.sh --map <login>=<principal> ... --apply
+scripts/ensure-gh-shell-identity.sh --apply               # fix the ~/.bashrc hook
+```
+
+`migrate-gh-auth-profiles.sh` splits a multi-account `~/.config/gh` into
+per-principal config dirs. It refuses to guess the login → principal mapping:
+guessing wrong hands one person's GitHub account to another. Verify each profile
+with `GH_CONFIG_DIR=… gh auth status` **before** `--retire-global`, which moves
+the shared config aside so a bare `gh` fails instead of acting as an arbitrary
+account.
+
+`ensure-gh-shell-identity.sh` replaces the path-keyed `~/.bashrc` hook. The old
+one ran on every prompt and chose a GitHub account from `$PWD` — so anyone under
+`/data/workspaces/dalexandre*` acted as `dl-alexandre`, and everywhere else its
+`unset` branch clobbered the `GH_CONFIG_DIR` the launcher had just exported.
+
+**Order matters:** populate the `gh` profiles before retiring the global config,
+or registered owners lose GitHub access until they sign in.
+
 ### Stacked pull requests (`gh stack`)
 
 GitHub stacked PRs went to public preview on 2026-07-30 and are live for the
@@ -389,12 +488,11 @@ Devbox-specific caveats:
   server-side, so run `bash scripts/pre-push-check.sh` on the top branch of the
   stack before merging.
 - **`gh pr merge` does not work on stacked PRs** — use `gh stack merge`.
-- **Auth is per profile.** `submit`/`merge` use whichever `GH_CONFIG_DIR` is
-  active. The `.bashrc` hook only sets it under `/data/workspaces/dalexandre*`;
-  agent worktrees under `/tmp/casein-agent-worktrees` inherit it from the
-  launching pane. Check `gh auth status` first, and note that `dl-alexandre` is
-  currently the only gh account configured on the box — other profiles need
-  their own `gh auth login` before `gh stack submit` will work.
+- **Auth is per principal.** `submit`/`merge` use whichever `GH_CONFIG_DIR` is
+  active, which `launch-casein-agent.sh` sets from the pane's principal (see
+  "Who an agent acts as"). Check `gh auth status` first. A principal without a
+  `gh` profile falls back to the host global login, so `gh stack submit` may
+  open the PR as the wrong account — `casein agent auth signin gh` first.
 - **Branch pushes still use the repo-local credential helper** (see Project
   guidelines) — `gh stack push` is a plain `git push` underneath.
 - **Merge queue support is still rolling out**; if `master` gets a merge queue,
@@ -481,6 +579,7 @@ split, the mobile authority flap, and the iPad scroll fix (`1e8f4ef0`).
 |---------|-----|------|
 | Terminal MCP | `https://casein.devbox.milcgroup.com/api/terminals/mcp` | Bearer `CASEIN_API_TOKEN` |
 | Preview MCP | `https://casein.devbox.milcgroup.com/api/preview/mcp` | Bearer `CASEIN_API_TOKEN` |
+| Code MCP | `https://casein.devbox.milcgroup.com/api/code/mcp` | Bearer `CASEIN_API_TOKEN` |
 
 Same-host agents may use `http://127.0.0.1:4000/api/...` instead. Read `docs/terminal_mcp.md` and `docs/preview_mcp.md` before changing MCP behavior.
 

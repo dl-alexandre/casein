@@ -47,6 +47,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   alias CaseinWeb.WorkspaceLive.Show.ContextMenu
   alias CaseinWeb.WorkspaceLive.Show.LeaderBindings
   alias CaseinWeb.WorkspaceLive.Show.SessionBar
+  alias CaseinWeb.WorkspaceLive.Show.UI
 
   attr :active_run, :any, required: true
   attr :active_session_kind, :any, required: true
@@ -78,6 +79,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   attr :connect_tokens, :any, required: true
   attr :context_menu, :any, required: true
   attr :current_user, :any, required: true
+  attr :identity, :any, default: nil
   attr :db_isolation, :any, required: true
   attr :default_terminal_sid, :any, required: true
   attr :delete_confirm, :any, required: true
@@ -290,6 +292,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
           class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs max-sm:mb-0.5 max-sm:pb-0 max-sm:gap-0.5"
         >
           <div class="header-identity-cluster flex min-w-24 shrink items-center gap-1 overflow-x-clip">
+            <UI.account_menu identity={@identity} current_user={@current_user} />
             {render_slot(@header_back_nav)}
             <div
               :if={@tab == "terminal" and match?({:ok, _}, @host_loc)}

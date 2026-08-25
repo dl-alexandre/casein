@@ -179,7 +179,7 @@ defmodule CaseinWeb.API.MCPTransport do
   """
   @spec maybe_issue_session(
           Plug.Conn.t(),
-          :preview | :terminal | :artifact,
+          :preview | :terminal | :artifact | :code,
           map(),
           String.t() | nil
         ) ::
@@ -298,7 +298,7 @@ defmodule CaseinWeb.API.MCPTransport do
   end
 
   @doc "Open the server→client SSE channel for a session (the `GET` handler)."
-  @spec stream(Plug.Conn.t(), :preview | :terminal | :artifact) :: Plug.Conn.t()
+  @spec stream(Plug.Conn.t(), :preview | :terminal | :artifact | :code) :: Plug.Conn.t()
   def stream(conn, server) do
     case session_id(conn) do
       nil ->
@@ -319,7 +319,7 @@ defmodule CaseinWeb.API.MCPTransport do
   end
 
   @doc "Tear down a session (the `DELETE` handler)."
-  @spec terminate(Plug.Conn.t(), :preview | :terminal | :artifact) :: Plug.Conn.t()
+  @spec terminate(Plug.Conn.t(), :preview | :terminal | :artifact | :code) :: Plug.Conn.t()
   def terminate(conn, server) do
     case session_id(conn) do
       nil ->
@@ -363,6 +363,7 @@ defmodule CaseinWeb.API.MCPTransport do
   defp server_for_path("/api/terminals/mcp"), do: :terminal
   defp server_for_path("/api/preview/mcp"), do: :preview
   defp server_for_path("/api/artifacts/mcp"), do: :artifact
+  defp server_for_path("/api/code/mcp"), do: :code
   defp server_for_path(_path), do: nil
 
   defp sse_loop(conn, id) do

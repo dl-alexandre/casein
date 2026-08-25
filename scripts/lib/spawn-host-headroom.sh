@@ -23,6 +23,12 @@
 #   0  enough headroom (or FORCE override)
 #   75 temporary failure — load or memory over threshold (EX_TEMPFAIL)
 #   2  misconfiguration (bad threshold / unreadable probes)
+#
+# Stdout tokens (#996) — one line, so callers branch without parsing prose:
+#   refused:headroom         exit 75 — gate closed, nothing spawned
+#   proceed:headroom-force   exit 0  — below threshold, FORCE override
+# Absence of either token + exit 0 means headroom was fine (no override).
+# Never emit "headroom exhausted" on a proceed path.
 
 # shellcheck disable=SC2034  # exported for callers/tests that inspect the last probe
 SPAWN_HOST_HEADROOM_LAST=""
@@ -159,6 +165,7 @@ warn: host headroom below threshold; proceeding under CASEIN_SPAWN_FORCE
       operator accepts thrash risk; this is not a silent no-op
       tune: CASEIN_SPAWN_MAX_LOAD_RATIO  CASEIN_SPAWN_MIN_MEM_AVAILABLE_KB
 EOF
+    printf 'proceed:headroom-force\n'
     return 0
   fi
 

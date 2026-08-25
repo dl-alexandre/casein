@@ -37,7 +37,8 @@ defmodule CaseinWeb.API.MCPToolSearch do
   @surface_modules [
     {"terminal", CaseinWeb.API.TerminalMCP},
     {"preview", CaseinWeb.API.PreviewMCP},
-    {"artifact", CaseinWeb.API.ArtifactMCP}
+    {"artifact", CaseinWeb.API.ArtifactMCP},
+    {"code", CaseinWeb.API.CodeMCP}
   ]
 
   # Always-on core per surface: the tools an agent needs every loop, which must

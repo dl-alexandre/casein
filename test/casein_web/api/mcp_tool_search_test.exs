@@ -86,10 +86,11 @@ defmodule CaseinWeb.API.MCPToolSearchTest do
       servers = cat |> Enum.map(& &1.server) |> Enum.uniq() |> Enum.sort()
       names = Enum.map(cat, &to_string(&1.name))
 
-      assert servers == ["artifact", "preview", "terminal"]
+      assert servers == ["artifact", "code", "preview", "terminal"]
       assert "terminal_capture" in names
       assert "preview_screenshot" in names
       assert "artifact_create" in names
+      assert "code_read" in names
     end
 
     test "search over the catalog finds tools on other servers (cross-server)" do

@@ -68,6 +68,18 @@ case "$EVENT" in
   *) exit 0 ;;
 esac
 
+# Notification fires for startup banners as well as permission prompts.
+# "Claude Code login successful" is not a blocker — report idle and drop the
+# lifecycle string so Casein never stores it as agent_state_message.
+if [[ "$STATE" == "blocked" && -n "$MESSAGE" ]]; then
+  case "$(printf '%s' "$MESSAGE" | tr '[:upper:]' '[:lower:]')" in
+    *login\ successful*|*logged\ in*|*session\ start*|*session\ started*|*session\ end*|*session\ ended*)
+      STATE="idle"
+      MESSAGE=""
+      ;;
+  esac
+fi
+
 # Debounce: skip a repeated `working` report within 30s (PreToolUse fires
 # constantly). blocked/done/idle are low-frequency and always sent.
 CACHE_DIR="${CASEIN_AGENT_MCP_HOME:-${DEVIDE_AGENT_MCP_HOME:-${TMPDIR:-/tmp}}}"
