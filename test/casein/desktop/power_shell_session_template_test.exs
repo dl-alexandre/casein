@@ -3,6 +3,12 @@ defmodule Casein.Desktop.PowerShellSessionTemplateTest do
 
   alias Casein.Desktop.PowerShellSession
 
+  # The production apply_template API uses a 30s call budget. The native
+  # session setup is deliberately exercised here through the pid so the fake
+  # transport can observe every pane; keep the direct calls on that same
+  # budget for slower self-hosted desktop runners.
+  @apply_template_timeout 30_000
+
   defmodule FakeTransport do
     @behaviour Casein.Desktop.PowerShellPane.Transport
 
@@ -57,7 +63,8 @@ defmodule Casein.Desktop.PowerShellSessionTemplateTest do
     assert {:ok, result} =
              GenServer.call(
                session,
-               {:apply_template, "agent_pair", [workspace_root: File.cwd!()]}
+               {:apply_template, "agent_pair", [workspace_root: File.cwd!()]},
+               @apply_template_timeout
              )
 
     assert_receive {:transport_started, _term_agent, pty_agent}
@@ -98,7 +105,8 @@ defmodule Casein.Desktop.PowerShellSessionTemplateTest do
     assert {:ok, first} =
              GenServer.call(
                session,
-               {:apply_template, "agent_pair", [workspace_root: File.cwd!()]}
+               {:apply_template, "agent_pair", [workspace_root: File.cwd!()]},
+               @apply_template_timeout
              )
 
     assert_receive {:transport_started, _, _}
@@ -109,7 +117,8 @@ defmodule Casein.Desktop.PowerShellSessionTemplateTest do
     assert {:ok, second} =
              GenServer.call(
                session,
-               {:apply_template, "agent_pair", [workspace_root: File.cwd!()]}
+               {:apply_template, "agent_pair", [workspace_root: File.cwd!()]},
+               @apply_template_timeout
              )
 
     assert_receive {:transport_started, _, _}
