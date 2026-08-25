@@ -416,14 +416,46 @@ a per-pane call.
 `terminal_send_agent_command`, `terminal_send_command`, and
 `terminal_paste_agent_text` (with `submit: true`) verify that the agent consumed
 the Enter instead of reporting success as soon as tmux accepted the keystroke.
-Responses carry `submitted`, `delivery`, `confirmation`, and `enter_presses`:
+Responses carry `submitted`, `delivery`, `confirmation`, `enter_presses`, and a
+`receipt` with `observed`:
 
 | `delivery` | Meaning |
 |------------|---------|
-| `delivered` | The runtime reported a new turn, or the pane visibly redrew. |
-| `not_confirmed` | Two Enter presses and the pane never moved. The text may be sitting unsent — capture the pane before resending. |
-| `uncertain` | The pane could not be captured, so neither signal was readable. |
+| `delivered` | A hook, transcript advance, or pane redraw proved the agent took the input. |
+| `not_confirmed` | One Enter was pressed and nothing acknowledged it. The text may be sitting unsent — capture the pane before resending. |
+| `uncertain` | The pane could not be captured and no hook/transcript signal was readable. |
 | `skipped` | `confirm: false`, or there was nothing to submit. |
+
+| `confirmation` | Meaning |
+|----------------|---------|
+| `hook` | A fresh hook-sourced `working` report (Claude/Grok `UserPromptSubmit`). |
+| `transcript` | The pane's reported CLI transcript grew after Enter. |
+| `screen` | The captured tail changed (including OpenCode busy-footer / spinner). |
+| `unconfirmed` | Signals were readable and none of them fired. |
+| `unavailable` | No signal could be evaluated (blank capture, no transcript, no hook). |
+
+| `observed` | Meaning |
+|------------|---------|
+| `true` | The written bytes were seen in the pane tail, or `delivery` later proved consumption. |
+| `false` | Reserved for a write Casein knows did not land. A tool error means the same. |
+| `"unknown"` | Capture failed, the TUI consumed the input before the excerpt, or the keys do not echo. Not evidence of failure. |
+
+### When to re-send
+
+Do **not** treat `status: "sent"` or `observed: "unknown"` as proof. Use the
+combination:
+
+| `delivery` | `confirmation` | `submitted` | `observed` | Re-send? |
+|------------|----------------|-------------|------------|----------|
+| `delivered` | `hook` / `transcript` / `screen` | `true` | `true` | **No.** Consumption is confirmed. |
+| `not_confirmed` | `unconfirmed` | `false` | `true` or `"unknown"` | **Maybe.** Capture the pane first. If the text is still in the composer, resend Enter yourself or call again. If the agent is mid-turn, use `terminal_set_next_prompt`. |
+| `uncertain` | `unavailable` | `null` | `"unknown"` | **No blind retry.** You cannot tell. Capture, or wait for hook/transcript. |
+| `skipped` | `unavailable` | `null` | any | **No.** You opted out (`confirm: false`) or there was nothing to submit. |
+
+Enter is **never** auto-repeated when the pane state is unconfirmed. A second
+Enter can submit a placeholder, a partial line, or interrupt a turn that did
+accept the first press. `submit_not_confirmed` is the error; the caller
+decides.
 
 ### Delivery contract (do not double-Enter yourself)
 
@@ -433,9 +465,8 @@ when the keystroke arrives, so Enter becomes a newline mid-composer rather than
 a submit. Casein owns that race:
 
 1. Paste text **without** Enter (`paste-buffer` only).
-2. Settle briefly, then press Enter.
-3. If the pane did not move and no runtime hook reported a new turn, press
-   Enter **once more** (max two presses).
+2. Settle briefly (scaled by paste size), then press Enter **once**.
+3. Confirm against hook, then transcript, then screen. Do not press Enter again.
 4. Return `delivery` honestly — never claim success from tmux write alone.
 
 Operators and orchestrators should **not** send a second Enter as folklore. Call
@@ -451,8 +482,9 @@ the paste goes to that pane without requiring the agent_pair role marker — the
 fleet path for worker briefs. When `pane` is omitted, the dedicated agent_pair
 pane is still required.
 
-An unconfirmed submit is reported, not raised on the fire-and-forget tools: the
-signals are heuristics over a screen Casein does not own. Pass `confirm: false`
+An unconfirmed submit is a **tool error** (`submit_not_confirmed`) on the send
+and paste tools: returning `status: "sent"` while text sits in a composer is
+the silent-loss failure these tools exist to close. Pass `confirm: false`
 when the keystroke itself is the point (answering a TUI menu or a y/n prompt),
 where no new turn starts and the confirmation would always read as unconfirmed.
 `terminal_set_next_prompt` remains strict and retries on the next edge.

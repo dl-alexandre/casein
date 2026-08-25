@@ -385,6 +385,7 @@ defmodule Casein.Agents.TerminalToolsTest do
     assert is_binary(write_id)
     assert receipt.write_id == write_id
     assert receipt.pane_id == "%2"
+    assert receipt.observed in [true, "unknown"]
     assert_receive {:fake_tmux_send_command, ^session, "%2", "mix test", _opts}
   end
 
@@ -1722,8 +1723,8 @@ defmodule Casein.Agents.TerminalToolsTest do
       session = agent_pair_session!()
       Casein.Terminals.AgentState.clear()
 
-      # Frozen screen → confirm retries once and fails the tool call; a sent
-      # status must never be mistaken for a delivered prompt.
+      # Frozen screen → confirm does not retry Enter and fails the tool call; a
+      # sent status must never be mistaken for a delivered prompt.
       TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
         {session, "%2"} => "> idle composer"
       })
@@ -1738,7 +1739,7 @@ defmodule Casein.Agents.TerminalToolsTest do
 
       assert result.submitted == false
       assert result.delivery == "not_confirmed"
-      assert result.enter_presses == 2
+      assert result.enter_presses == 1
       # send_command targets the pane id as the tmux session arg when pane is explicit.
       assert_receive {:fake_tmux_send_command, "%2", "%2", "echo brief", _}
     end

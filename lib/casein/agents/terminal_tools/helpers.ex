@@ -86,10 +86,10 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     %{
       type: "boolean",
       description:
-        "Verify the agent actually consumed the submit (re-pressing Enter once if it did " <>
-          "not) and fail with submit_not_confirmed when it never did. Defaults to true. " <>
-          "Pass false when the keystroke itself is the point — answering a TUI menu or a " <>
-          "y/n prompt, where no new turn starts."
+        "Verify the agent actually consumed the submit (hook, transcript, or screen) and " <>
+          "fail with submit_not_confirmed when it never did. Enter is not retried. " <>
+          "Defaults to true. Pass false when the keystroke itself is the point — answering " <>
+          "a TUI menu or a y/n prompt, where no new turn starts."
     }
   end
 
@@ -478,7 +478,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "On submit_not_confirmed the text reached the pane but was never submitted — " <>
           "capture the pane before resending, or use terminal_set_next_prompt if the " <>
           "agent is mid-turn.",
-        "Do not double-Enter yourself: submit paths settle, press Enter, and retry once.",
+        "Do not double-Enter yourself: submit paths settle, press Enter once, and return " <>
+          "submit_not_confirmed when consumption cannot be confirmed.",
         "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ]
     }
@@ -534,7 +535,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Use terminal_topology to target the intended pane explicitly.",
         "Prefer terminal_send_agent_command when controlling the dedicated agent pane.",
         "Use terminal_capture after sending input to inspect output.",
-        "terminal_send_command confirms the submit (one retry Enter) unless confirm:false.",
+        "terminal_send_command confirms the submit (no Enter retry) unless confirm:false.",
         "On submit_not_confirmed capture the pane before resending.",
         "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ],
