@@ -8,6 +8,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   alias Casein.Terminals.TmuxPolicy
   alias Casein.Terminals.TmuxScope
   alias Casein.Terminals.TmuxTopology
+  alias Casein.Workspaces.Identity
   alias Casein.Workspaces.Scratch
   alias Casein.Workspaces.State
 
@@ -93,7 +94,9 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
 
   defp validate_session(session, params) do
     with true <- String.starts_with?(session, @session_prefix) || {:error, :unscoped_session},
-         true <- workspace_matches?(session, params) || {:error, :workspace_mismatch},
+         true <-
+           workspace_matches?(session, params) ||
+             {:error, Identity.mismatch(workspace_id(params), session)},
          true <- session_exists?(session) || {:error, :no_such_session} do
       {:ok, session}
     end
