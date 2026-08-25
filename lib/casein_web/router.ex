@@ -70,7 +70,10 @@ defmodule CaseinWeb.Router do
     plug :put_root_layout, html: {CaseinWeb.Layouts, :root}
     plug :protect_from_forgery
 
-    plug :put_secure_browser_headers
+    plug :put_secure_browser_headers,
+         %{
+           "content-security-policy" => @content_security_policy_base <> "; " <> @default_frame_src
+         }
 
     plug :put_content_security_policy
     plug CaseinWeb.Plugs.ForwardAuth
@@ -83,6 +86,7 @@ defmodule CaseinWeb.Router do
   # The proxy also forwards non-GET dev-app traffic such as Phoenix long-poll
   # transport requests; workspace ownership, allowed-port checks, and a fixed
   # 127.0.0.1 upstream keep it from becoming a general-purpose proxy.
+  # sobelow_skip ["Config.CSRF"]
   pipeline :preview_proxy do
     plug :fetch_session
     plug CaseinWeb.Plugs.ForwardAuth
@@ -139,6 +143,9 @@ defmodule CaseinWeb.Router do
   # Casein browser session through the short-lived handoff endpoint. The
   # forward-auth bridge reads only that signed Casein session cookie; it never
   # trusts browser-supplied identity headers.
+  # The mounted routes are GET-only; the mutating session API uses the
+  # bearer-authenticated :api pipeline below.
+  # sobelow_skip ["Config.CSRF"]
   pipeline :superadmin_session do
     plug :fetch_session
   end
