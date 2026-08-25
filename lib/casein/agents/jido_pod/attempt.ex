@@ -24,6 +24,10 @@ defmodule Casein.Agents.JidoPod.Attempt do
     :provider_unavailable
   ]
 
+  @max_public_completed 100
+  @max_public_paths 100
+  @max_public_changes 100
+
   @type state ::
           :admitted
           | :queued
@@ -170,9 +174,9 @@ defmodule Casein.Agents.JidoPod.Attempt do
       task_id: attempt.task_id,
       worktree_path: attempt.worktree_path,
       state: attempt.state,
-      reason: attempt.reason,
-      result: attempt.result,
-      error: attempt.error,
+      reason: public_payload(attempt.reason),
+      result: public_payload(attempt.result),
+      error: public_payload(attempt.error),
       retries: attempt.retries,
       next_index: attempt.next_index,
       completed_count: length(attempt.completed),
@@ -191,4 +195,115 @@ defmodule Casein.Agents.JidoPod.Attempt do
   defp finished_at(attempt, state, now) do
     if terminal?(state), do: attempt.finished_at || now, else: nil
   end
+
+  defp public_payload(nil), do: nil
+
+  defp public_payload(%{completed: completed}) when is_list(completed) do
+    %{
+      completed_count: length(completed),
+      completed: Enum.take(completed, @max_public_completed) |> Enum.map(&public_completed/1),
+      completed_truncated?: length(completed) > @max_public_completed
+    }
+  end
+
+  defp public_payload(%{} = payload) do
+    [
+      :status,
+      :result,
+      :error,
+      :retryable,
+      :timed_out,
+      :cancelled,
+      :output_truncated,
+      :exit_code,
+      :command_id,
+      :paths,
+      :changes,
+      :reason
+    ]
+    |> Enum.reduce(%{}, fn key, acc -> put_public_field(acc, key, Map.get(payload, key)) end)
+    |> case do
+      %{} = summary when map_size(summary) == 0 -> nil
+      summary -> summary
+    end
+  end
+
+  defp public_payload(value) when is_atom(value) or is_binary(value) or is_number(value),
+    do: public_scalar(value)
+
+  defp public_payload(_value), do: :present
+
+  defp public_completed(%{} = completed) do
+    %{}
+    |> put_public_field(:index, Map.get(completed, :index))
+    |> put_public_field(:name, Map.get(completed, :name))
+    |> put_public_field(:result, Map.get(completed, :result))
+  end
+
+  defp public_completed(_completed), do: %{result: :present}
+
+  defp put_public_field(acc, _key, nil), do: acc
+
+  defp put_public_field(acc, key, value) when key in [:result, :error, :reason] do
+    case public_payload(value) do
+      nil -> acc
+      payload -> Map.put(acc, key, payload)
+    end
+  end
+
+  defp put_public_field(acc, :paths, paths) when is_list(paths) do
+    paths =
+      paths
+      |> Enum.filter(&is_binary/1)
+      |> Enum.take(@max_public_paths)
+      |> Enum.map(&public_scalar/1)
+
+    if paths == [], do: acc, else: Map.put(acc, :paths, paths)
+  end
+
+  defp put_public_field(acc, :changes, changes) when is_list(changes) do
+    changes = Enum.take(changes, @max_public_changes) |> Enum.map(&public_change/1)
+    if changes == [], do: acc, else: Map.put(acc, :changes, changes)
+  end
+
+  defp put_public_field(acc, key, value)
+       when key in [
+              :status,
+              :result,
+              :error,
+              :retryable,
+              :timed_out,
+              :cancelled,
+              :output_truncated,
+              :exit_code,
+              :command_id,
+              :reason,
+              :path,
+              :kind,
+              :index,
+              :name
+            ] do
+    case public_scalar(value) do
+      nil -> acc
+      scalar -> Map.put(acc, key, scalar)
+    end
+  end
+
+  defp put_public_field(acc, _key, _value), do: acc
+
+  defp public_change(%{} = change) do
+    %{}
+    |> put_public_field(:path, Map.get(change, :path))
+    |> put_public_field(:kind, Map.get(change, :kind))
+  end
+
+  defp public_change(_change), do: %{kind: :present}
+
+  defp public_scalar(value) when is_binary(value), do: String.slice(value, 0, 256)
+
+  defp public_scalar(value)
+       when is_atom(value) or is_number(value) or is_boolean(value),
+       do: value
+
+  defp public_scalar(_value), do: nil
 end

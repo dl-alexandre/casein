@@ -169,6 +169,10 @@ defmodule Casein.Agents.JidoPod.Worker do
 
   defp classify({:ok, %{status: :awaiting_human} = value}), do: {:awaiting_human, value}
   defp classify({:ok, %{awaiting_human: true} = value}), do: {:awaiting_human, value}
+
+  defp classify({:ok, %{status: status} = value}) when status in ["failed", "error"],
+    do: {:error, value}
+
   defp classify({:ok, value}), do: {:ok, value}
   defp classify({:awaiting_human, value}), do: {:awaiting_human, value}
   defp classify({:error, :awaiting_human}), do: {:awaiting_human, :awaiting_human}
