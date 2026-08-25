@@ -4,10 +4,10 @@ defmodule Casein.Agents.TerminalTools.Inbox do
   use Jido.Action,
     name: "terminal_inbox",
     description:
-      "Read messages other agents left for you with terminal_say, oldest first. Defaults to your own pane's address. Each message carries honest lifecycle fields (#911): status queued|collected, unread?, stable message_id. Messages stay pending/unread until collect=true — collection clears unread, not sending. Double-collect is idempotent. This is an addressed store agents collect from; it never writes into panes (no terminal_send_*). Poll when waiting on another agent rather than watching its pane.",
+      "Read messages other agents left for you with terminal_say, oldest first. Defaults to your own pane's address. Each message carries honest lifecycle fields (#911): status queued|collected, unread?, stable message_id. Messages stay pending/unread until collect=true — collection clears unread, not sending. collect=true returns those messages with full bodies in messages; count is the number collected. Double-collect is idempotent and still returns the bodies. This is an addressed store agents collect from; it never writes into panes (no terminal_send_*). Poll when waiting on another agent rather than watching its pane.",
     category: "terminal",
     tags: ["terminal"],
-    vsn: "1.1.0",
+    vsn: "1.2.0",
     schema: [
       workspace_id: [type: :string, required: true],
       session: [type: :string],
@@ -41,8 +41,10 @@ defmodule Casein.Agents.TerminalTools.Inbox do
         collect: %{
           type: "boolean",
           description:
-            "Mark the returned messages as collected/read. Leave false to peek: status stays " <>
-              "queued and unread?=true. Collect is what clears unread — not sending. Defaults to false."
+            "Mark the returned messages as collected/read and include those messages with full " <>
+              "bodies in messages (count equals the number collected). Leave false to peek: " <>
+              "status stays queued and unread?=true. Collect is what clears unread — not sending. " <>
+              "Defaults to false."
         },
         include_collected: %{
           type: "boolean",
