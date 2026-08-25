@@ -365,13 +365,14 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
       # operator window switches cannot silently retarget follow-up calls.
       {target, implicit?} = resolve_implicit_target(session, raw_target)
       ansi? = Map.get(params, "ansi", false) == true
-      opts = [ansi: ansi?] |> put_lines(lines_param(params))
-      output = tmux().capture_scrollback(target, opts) |> TerminalOutputFormat.format(ansi: ansi?)
+      opts = [ansi: true] |> put_lines(lines_param(params))
+      raw = tmux().capture_scrollback(target, opts)
+      output = TerminalOutputFormat.format(raw, ansi: ansi?)
 
       {:ok,
        %{session: session, target: target, output: output}
        |> put_implicit_target_warning(implicit?)
-       |> put_capture_metadata(output, lines_param(params))
+       |> put_capture_metadata(output, lines_param(params), raw)
        |> put_next("terminal_capture", capture_next_args(session, target, params))}
     end
   end

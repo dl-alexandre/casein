@@ -69,16 +69,17 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
          {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: true) do
       ansi? = Map.get(params, "ansi", false) == true
       requested_lines = lines_param(params) || @default_capture_lines
-      opts = [ansi: ansi?] |> put_lines(requested_lines)
+      opts = [ansi: true] |> put_lines(requested_lines)
 
-      output =
+      raw =
         session
         |> then(&tmux().capture_scrollback(&1, Keyword.put(opts, :target, pane.id)))
-        |> TerminalOutputFormat.format(ansi: ansi?)
+
+      output = TerminalOutputFormat.format(raw, ansi: ansi?)
 
       {:ok,
        %{session: session, target: pane.id, output: output}
-       |> put_capture_metadata(output, requested_lines)
+       |> put_capture_metadata(output, requested_lines, raw)
        |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))}
     end
   end

@@ -4,6 +4,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   alias Casein.Agents.AgentPane
   alias Casein.Terminals
   alias Casein.Terminals.Backend
+  alias Casein.Terminals.InputBuffer
   alias Casein.Terminals.TmuxPolicy
   alias Casein.Terminals.TmuxScope
   alias Casein.Terminals.TmuxTopology
@@ -423,14 +424,16 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
     end
   end
 
-  def put_capture_metadata(payload, output, requested_lines) do
+  def put_capture_metadata(payload, output, requested_lines, raw \\ nil) do
     line_count = output |> String.split("\n") |> length()
     requested = if is_integer(requested_lines) and requested_lines > 0, do: requested_lines
+    classified = if is_binary(raw), do: raw, else: output
 
     payload
     |> Map.put(:line_count, line_count)
     |> Map.put(:truncated, is_integer(requested) and line_count >= requested)
     |> Map.put(:suggested_next_capture, %{lines: @default_capture_lines, ansi: false})
+    |> Map.put(:input_buffer, InputBuffer.classify(classified))
   end
 
   def capture_next_args(session, target, params) do

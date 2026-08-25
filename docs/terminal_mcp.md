@@ -569,7 +569,12 @@ overridable per call with `allow_shared_worktree: true`. Concurrent git in one
 worktree corrupts index state rather than failing cleanly, so this is the one
 class of command where a `sent` receipt was worse than an error.
 `terminal_capture` returns the full scrollback by default; pass `lines` to
-bound what the agent reads.
+bound what the agent reads. It also returns `input_buffer`
+(`has_content`, `source`) so a Claude suggested-next-prompt is not mistaken
+for unsent user text: `empty`, `placeholder` (suggestion only — empty
+input), `typed`, or `unknown` (do not treat as typed). Write tools attach
+the same field on `receipt`. Default `ansi: false` still strips SGR from
+`output`; classification uses an ANSI-preserving tail internally.
 When `workspace_id` is omitted, `terminal_list_sessions` omits the field from
 the response instead of returning `workspace_id: null`.
 
