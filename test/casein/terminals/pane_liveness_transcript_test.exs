@@ -37,6 +37,7 @@ defmodule Casein.Terminals.PaneLivenessTranscriptTest do
       assert pane.transcript.state == :awaiting_input
       assert pane.transcript.last_shape == :assistant_prose
       assert pane.transcript.transcript_path =~ ".claude/projects/"
+      assert pane.transcript_path == pane.transcript.transcript_path
     end
 
     test "an outstanding tool call is working, not waiting", %{home: home} do

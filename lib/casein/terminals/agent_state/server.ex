@@ -115,23 +115,26 @@ defmodule Casein.Terminals.AgentState.Server do
     key = {tmux_session, pane_id}
     now = DateTime.utc_now()
 
+    previous = Map.get(state.entries, key)
+    {kept_path, kept_session} = keep_runtime_meta(previous, transcript_path, agent_session_id)
+
     entry = %{
       state: rstate,
       message: message,
       source: source,
       tool: tool,
       workspace_id: workspace_id,
-      transcript_path: transcript_path,
-      agent_session_id: agent_session_id,
+      transcript_path: kept_path,
+      agent_session_id: kept_session,
       reported_at: now
     }
 
-    case Map.get(state.entries, key) do
+    case previous do
       %{
         state: ^rstate,
         message: ^message,
-        transcript_path: ^transcript_path,
-        agent_session_id: ^agent_session_id
+        transcript_path: ^kept_path,
+        agent_session_id: ^kept_session
       } = current ->
         # Same state, message, and runtime metadata: refresh freshness silently,
         # never broadcast. This makes high-frequency PreToolUse hooks cheap.
@@ -143,8 +146,8 @@ defmodule Casein.Terminals.AgentState.Server do
          put_entry(state, key, %{
            current
            | reported_at: now,
-             transcript_path: transcript_path,
-             agent_session_id: agent_session_id
+             transcript_path: kept_path,
+             agent_session_id: kept_session
          })}
 
       previous ->
@@ -272,6 +275,33 @@ defmodule Casein.Terminals.AgentState.Server do
   defp prior_state(nil, nil), do: nil
 
   defp put_entry(state, key, entry), do: %{state | entries: Map.put(state.entries, key, entry)}
+
+  # A TUI view switch often re-reports state without transcript_path. Nil must
+  # not wipe a still-valid pointer; a new agent_session_id does drop the old one.
+  defp keep_runtime_meta(previous, transcript_path, agent_session_id) do
+    session_id = present(agent_session_id) || previous_value(previous, :agent_session_id)
+
+    path =
+      cond do
+        present(transcript_path) -> transcript_path
+        session_changed?(previous, session_id) -> nil
+        true -> previous_value(previous, :transcript_path)
+      end
+
+    {path, session_id}
+  end
+
+  defp session_changed?(%{agent_session_id: old}, new)
+       when is_binary(old) and old != "" and is_binary(new) and new != "",
+       do: old != new
+
+  defp session_changed?(_previous, _new), do: false
+
+  defp previous_value(%{} = previous, key), do: present(Map.get(previous, key))
+  defp previous_value(_previous, _key), do: nil
+
+  defp present(value) when is_binary(value) and value != "", do: value
+  defp present(_value), do: nil
 
   # No workspace → no durable timeline. Bulk fillers (and any caller that only
   # needs the in-memory map) must not serialize hundreds of AgentEvents /

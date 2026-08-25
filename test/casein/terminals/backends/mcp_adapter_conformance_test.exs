@@ -45,6 +45,7 @@ defmodule Casein.Terminals.Backends.McpAdapterConformanceTest do
     {:paste_text, 3, "impl/agent.ex:paste_agent_text"},
     {:list_session_panes, 1, "impl/agent.ex:paste_target_pane"},
     {:list_session_panes, 1, "impl/agent.ex:find_agent_pane"},
+    {:list_session_panes, 1, "impl/agent.ex:label_target_pane"},
     {:list_session_panes, 1, "impl/shared.ex:pane_ids"},
     {:list_sessions, 0, "impl/session.ex:list_sessions"},
     {:list_sessions, 0, "impl/shared.ex:workspace sessions"}
