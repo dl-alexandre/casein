@@ -59,6 +59,7 @@ defmodule Scripts.SpawnHostHeadroomTest do
     assert status == 0, out
     assert out =~ "host headroom below threshold"
     assert out =~ "proceeding under CASEIN_SPAWN_FORCE"
+    assert out =~ ~r/^proceed:headroom-force$/m
     refute out =~ "headroom exhausted"
     refute out =~ "spawn refused"
     refute out =~ "refused:headroom"
@@ -72,6 +73,7 @@ defmodule Scripts.SpawnHostHeadroomTest do
     assert status == 75, out
     assert out =~ "headroom exhausted"
     assert out =~ ~r/^refused:headroom$/m
+    refute out =~ "proceed:headroom-force"
   end
 
   test "max load ratio is configurable" do
@@ -127,7 +129,9 @@ defmodule Scripts.SpawnHostHeadroomTest do
           {"PATH", fakebin <> ":" <> System.get_env("PATH")},
           {"CASEIN_SPAWN_LOADAVG_PATH", Path.join(tmp, "loadavg")},
           {"CASEIN_SPAWN_MEMINFO_PATH", Path.join(tmp, "meminfo")},
-          {"CASEIN_SPAWN_NPROC", "8"}
+          {"CASEIN_SPAWN_NPROC", "8"},
+          {"CASEIN_SPAWN_MAX_LOAD_RATIO", "1.0"},
+          {"CASEIN_SPAWN_FORCE", "0"}
         ],
         stderr_to_stdout: true
       )
@@ -135,7 +139,64 @@ defmodule Scripts.SpawnHostHeadroomTest do
     assert status == 75, out
     assert out =~ "spawn refused"
     assert out =~ ~r/^refused:headroom$/m
+    refute out =~ "proceed:headroom-force"
     refute out =~ ~r/^launch=/m
+  end
+
+  test "spawn-agent-worker dry-run FORCE proceeds with a distinct token" do
+    tmp = tmp!()
+    write_probe!(tmp, load1: "80.00", nproc: 8, mem_kb: 40_000_000)
+
+    product = Path.join(tmp, "product")
+    home = Path.join(tmp, "home")
+    fakebin = Path.join(tmp, "bin")
+    Enum.each([product, home, fakebin], &File.mkdir_p!/1)
+
+    {_, 0} = System.cmd("git", ["init", "-q", "-b", "master", product], env: git_env())
+
+    {_, 0} =
+      System.cmd("git", ["-C", product, "commit", "-q", "--allow-empty", "-m", "root"],
+        env: git_env()
+      )
+
+    env_dir = Path.join([home, ".casein", "agent-mcp", "test"])
+    File.mkdir_p!(env_dir)
+
+    File.write!(Path.join(env_dir, "env.sh"), """
+    export CASEIN_API_TOKEN='t'
+    export CASEIN_WORKSPACE_ID='ws'
+    export CASEIN_WORKSPACE_NAME='test'
+    """)
+
+    File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
+    File.chmod!(Path.join(fakebin, "tmux"), 0o755)
+
+    {out, status} =
+      System.cmd("bash", [@spawn, "claude", "headroom", "casein_test_u-x"],
+        env: [
+          {"CASEIN_SPAWN_DRY_RUN", "1"},
+          {"CASEIN_SPAWN_FORCE", "1"},
+          {"CASEIN_CHECKOUT", product},
+          {"HOME", home},
+          {"CASEIN_API_TOKEN", "t"},
+          {"CASEIN_WORKSPACE_ID", "ws"},
+          {"CASEIN_WORKSPACE_NAME", "test"},
+          {"CASEIN_AGENT_ENV_FILE", Path.join(env_dir, "env.sh")},
+          {"PATH", fakebin <> ":" <> System.get_env("PATH")},
+          {"CASEIN_SPAWN_LOADAVG_PATH", Path.join(tmp, "loadavg")},
+          {"CASEIN_SPAWN_MEMINFO_PATH", Path.join(tmp, "meminfo")},
+          {"CASEIN_SPAWN_NPROC", "8"},
+          {"CASEIN_SPAWN_MAX_LOAD_RATIO", "1.0"}
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert status == 0, out
+    assert out =~ ~r/^proceed:headroom-force$/m
+    assert out =~ ~r/^launch=/m
+    refute out =~ "headroom exhausted"
+    refute out =~ "spawn refused"
+    refute out =~ "refused:headroom"
   end
 
   defp run_check(tmp, extra_env) do
@@ -150,7 +211,10 @@ defmodule Scripts.SpawnHostHeadroomTest do
         [
           {"CASEIN_SPAWN_LOADAVG_PATH", Path.join(tmp, "loadavg")},
           {"CASEIN_SPAWN_MEMINFO_PATH", Path.join(tmp, "meminfo")},
-          {"CASEIN_SPAWN_NPROC", File.read!(Path.join(tmp, "nproc")) |> String.trim()}
+          {"CASEIN_SPAWN_NPROC", File.read!(Path.join(tmp, "nproc")) |> String.trim()},
+          {"CASEIN_SPAWN_MAX_LOAD_RATIO", "1.0"},
+          {"CASEIN_SPAWN_MIN_MEM_AVAILABLE_KB", "2097152"},
+          {"CASEIN_SPAWN_FORCE", "0"}
         ] ++ extra_env,
       stderr_to_stdout: true
     )

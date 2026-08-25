@@ -95,6 +95,7 @@ defmodule CaseinWeb.Plugs.ApiAuth do
   defp ticket_surface("/api/terminals/mcp"), do: {:ok, "terminal"}
   defp ticket_surface("/api/preview/mcp"), do: {:ok, "preview"}
   defp ticket_surface("/api/artifacts/mcp"), do: {:ok, "artifact"}
+  defp ticket_surface("/api/code/mcp"), do: {:ok, "code"}
   defp ticket_surface(_path), do: {:error, :ticket_path_forbidden}
 
   defp authorize_agent_capability(conn, token) do
@@ -142,6 +143,7 @@ defmodule CaseinWeb.Plugs.ApiAuth do
       "/api/terminals/mcp",
       "/api/preview/mcp",
       "/api/artifacts/mcp",
+      "/api/code/mcp",
       "/api/agent-capabilities/current",
       "/api/mcp-tickets/exchange"
     ]
@@ -247,7 +249,12 @@ defmodule CaseinWeb.Plugs.ApiAuth do
   defp path_workspace_id(_), do: nil
 
   defp mcp_workspace_allowed?(conn, workspace_id) do
-    conn.request_path in ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"] and
+    conn.request_path in [
+      "/api/terminals/mcp",
+      "/api/preview/mcp",
+      "/api/artifacts/mcp",
+      "/api/code/mcp"
+    ] and
       conn.query_params["workspace_id"] in [workspace_id, nil, ""]
   end
 

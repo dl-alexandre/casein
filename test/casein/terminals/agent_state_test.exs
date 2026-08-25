@@ -148,13 +148,15 @@ defmodule Casein.Terminals.AgentStateTest do
       assert metadata.message == "needs perm"
       assert metadata.agent_session_id == "grok-session-blocked"
 
-      # Both transitions can share the adapter's timestamp precision, so their
-      # relative order in recent_for/1 is intentionally unspecified. Assert on
-      # the transition identity instead of assuming the blocked row sorts first.
+      # AgentEvents.append_state_transition and JidoLifecycle.ingest_opencode
+      # both write agent.state_changed for this pane. recent_for/1 is newest
+      # first and timestamps can collide, so a type+session find can land on
+      # the Jido projection (no message_present). Identify the AgentEvents row.
       transition =
         Enum.find(AgentEvents.recent_for(ws), fn event ->
           event.event_type == "agent.state_changed" and
-            event.agent_session_id == "grok-session-blocked"
+            event.agent_session_id == "grok-session-blocked" and
+            Map.has_key?(event.payload, "message_present")
         end)
 
       assert transition
@@ -354,6 +356,43 @@ defmodule Casein.Terminals.AgentStateTest do
     test "otherwise the report wins" do
       assert AgentState.resolve(entry(:blocked, 60, "perm"), :ready) == {:blocked, "perm"}
       assert AgentState.resolve(entry(:done, 60), :unknown) == {:done, nil}
+    end
+
+    test "a stale blocked report over a ready title ages out to unknown, never idle" do
+      stale = AgentState.stale_assert_seconds() + 60
+
+      assert AgentState.resolve(entry(:blocked, stale, "perm"), :ready) == {:unknown, nil}
+
+      assert AgentState.resolve_for_display(entry(:blocked, stale, "perm"), :ready) ==
+               {:unknown, nil}
+    end
+
+    test "a stale blocked report with no working title and no active worktree is unknown" do
+      stale = AgentState.stale_assert_seconds() + 60
+
+      assert AgentState.resolve(entry(:blocked, stale, "perm"), :unknown) == {:unknown, nil}
+    end
+
+    test "startup messages are never a blocked claim" do
+      assert AgentState.resolve(entry(:blocked, 1, "Claude Code login successful"), :ready) ==
+               {:unknown, nil}
+
+      assert AgentState.resolve_for_display(
+               entry(:blocked, 1, "Claude Code login successful"),
+               :ready
+             ) == {:unknown, nil}
+
+      assert AgentState.resolve(entry(:blocked, 60, "Logged in to Claude"), :working) ==
+               {:working, nil}
+    end
+
+    test "a pane at an idle prompt is never reported as blocked" do
+      stale = AgentState.stale_assert_seconds() + 1
+
+      assert AgentState.resolve_for_display(entry(:blocked, stale, "perm"), :ready) ==
+               {:unknown, nil}
+
+      assert AgentState.resolve_for_display(nil, :ready) == {:unknown, nil}
     end
   end
 
@@ -695,10 +734,40 @@ defmodule Casein.Terminals.AgentStateTest do
       assert agent_pane.agent_state == :blocked
       assert agent_pane.agent_state_message == "needs input"
       assert agent_pane.agent_session_id == "grok-session-123"
+      assert is_integer(agent_pane.agent_state_age_s)
+      assert agent_pane.agent_state_conflict == :blocked_while_ready
       refute Map.has_key?(other_pane, :agent_state)
 
       assert hd(enriched.windows).agent_state == :blocked
       assert hd(enriched.windows).agent_session_id == "grok-session-123"
+      assert hd(enriched.windows).agent_state_conflict == :blocked_while_ready
+    end
+
+    test "agent_state_age_s ages out stale blocked over a ready title" do
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+
+      :ok =
+        AgentState.report(
+          ws,
+          "casein_stale_u-dev",
+          "%3",
+          :blocked,
+          "Claude Code login successful"
+        )
+
+      topology = %{
+        panes: [%{id: "%3", pane_state: :ready, role: "agent"}],
+        windows: [%{pane_list: [%{id: "%3", pane_state: :ready, role: "agent"}]}]
+      }
+
+      # Fresh lifecycle banner is dropped immediately — even before the age
+      # clock elapses — so an idle prompt never reads as blocked.
+      enriched = AgentState.enrich_topology(topology, "casein_stale_u-dev")
+      pane = hd(enriched.panes)
+      assert is_integer(pane.agent_state_age_s)
+      refute Map.has_key?(pane, :agent_state)
+      refute Map.has_key?(pane, :agent_state_message)
+      refute Map.has_key?(pane, :agent_state_conflict)
     end
   end
 end

@@ -1,6 +1,7 @@
 defmodule Casein.Terminals.WorkerLaunchTest do
   use ExUnit.Case, async: false
 
+  alias Casein.Terminals.AgentState
   alias Casein.Terminals.WorkerLaunch
   alias Casein.Terminals.WorkHandles
 
@@ -116,6 +117,139 @@ defmodule Casein.Terminals.WorkerLaunchTest do
   end
 
   describe "launch/1 receipt" do
+    test "launch records the full worker association before delivering the first prompt" do
+      WorkHandles.clear_all()
+      AgentState.clear()
+
+      on_exit(fn ->
+        WorkHandles.clear_all()
+        AgentState.clear()
+      end)
+
+      runner = fn _runtime, slug, _session, _opts ->
+        {:ok, %{pane_id: "%42", window_name: "worker-#{slug}"}}
+      end
+
+      observe = fn _session, _pane ->
+        %{
+          window_id: "@9",
+          window_name: "worker-session-reliability",
+          worktree_path: "/tmp/casein-agent-worktrees/session-reliability",
+          branch: "agent/opencode/session-reliability"
+        }
+      end
+
+      set_label = fn workspace_id, session, pane, label, opts ->
+        send(self(), {:label, workspace_id, session, pane, label, opts})
+        :ok
+      end
+
+      deliver_prompt = fn session, pane, prompt, opts ->
+        # The handle must already be inspectable before any prompt bytes move.
+        assert [%{pane_id: ^pane, session: ^session}] = WorkHandles.list(@ws)
+        send(self(), {:prompt, session, pane, prompt, opts})
+
+        {:ok,
+         %{
+           delivery: :delivered,
+           submitted: true,
+           confirmation: :hook,
+           enter_presses: 1
+         }}
+      end
+
+      assert {:ok, receipt} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "opencode",
+                 task_slug: "session-reliability",
+                 label: "worker: session reliability",
+                 initial_prompt: "Implement the scoped discovery fix.",
+                 runner: runner,
+                 observe: observe,
+                 set_label: set_label,
+                 deliver_prompt: deliver_prompt
+               )
+
+      assert receipt.prompt_delivery == %{
+               status: "delivered",
+               delivery: "delivered",
+               submitted: true,
+               confirmation: "hook",
+               enter_presses: 1
+             }
+
+      assert_received {:label, @ws, @session, "%42", "worker: session reliability", opts}
+      assert opts[:freeze] == true
+      assert opts[:tool] == "worker_launch"
+
+      assert_received {:prompt, @session, "%42", "Implement the scoped discovery fix.", _opts}
+
+      assert {:ok, handle} = WorkHandles.get(receipt.handle_id)
+      assert handle.runtime == "opencode"
+      assert handle.task_slug == "session-reliability"
+      assert handle.worktree_path == "/tmp/casein-agent-worktrees/session-reliability"
+      assert handle.branch == "agent/opencode/session-reliability"
+      assert handle.window_id == "@9"
+      assert handle.window_name == "worker-session-reliability"
+
+      topology =
+        WorkHandles.enrich_topology(
+          %{panes: [%{id: "%42", window_id: "@9"}], windows: []},
+          @ws,
+          @session
+        )
+
+      assert topology.work_handles_observe_state == "ok"
+      assert [%{handle_id: handle_id}] = topology.work_handles
+      assert handle_id == receipt.handle_id
+      assert [%{work_handle: %{handle_id: ^handle_id, runtime: "opencode"}}] = topology.panes
+    end
+
+    test "an unconfirmed initial prompt fails loudly but keeps the worker receipt inspectable" do
+      WorkHandles.clear_all()
+      AgentState.clear()
+
+      on_exit(fn ->
+        WorkHandles.clear_all()
+        AgentState.clear()
+      end)
+
+      runner = fn _, slug, _, _ ->
+        {:ok, %{pane_id: "%43", window_name: "worker-#{slug}"}}
+      end
+
+      deliver_prompt = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :submit_not_confirmed,
+           delivery: :not_confirmed,
+           submitted: false,
+           confirmation: :unconfirmed
+         }}
+      end
+
+      assert {:error, error} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "codex",
+                 task_slug: "prompt-failed",
+                 initial_prompt: "Do the work",
+                 runner: runner,
+                 observe: fn _, _ -> %{} end,
+                 set_label: fn _, _, _, _, _ -> :ok end,
+                 deliver_prompt: deliver_prompt
+               )
+
+      assert error.error == :initial_prompt_delivery_failed
+      assert error.worker.pane_id == "%43"
+      assert error.worker.prompt_delivery.status == "failed"
+      assert is_binary(error.worker.handle_id)
+      assert {:ok, %{status: %{state: "blocked"}}} = WorkHandles.get(error.worker.handle_id)
+    end
+
     test "live spawn returns visible receipt with handle optional" do
       runner = fn _rt, slug, _sess, _opts ->
         {:ok, %{pane_id: "%42", window_name: "worker-#{slug}"}}
@@ -154,7 +288,7 @@ defmodule Casein.Terminals.WorkerLaunchTest do
       assert receipt.branch == "agent/opencode/demo-stamp"
       assert receipt.label == "worker: #384"
       assert receipt.runtime == "opencode"
-      assert receipt.note =~ "M4-lite"
+      assert receipt.note =~ "Visible worker_launch receipt"
       refute Map.has_key?(receipt, :handle_id)
     end
 
@@ -281,7 +415,7 @@ defmodule Casein.Terminals.WorkerLaunchTest do
     assert handle.session == integration_session
     assert handle.pane_id == "%77"
     assert handle.label == "worker: integration-worker"
-    assert handle.status.state == "working"
+    assert handle.status.state == "awaiting_input"
   end
 
   # Constraints in the artifact (not only the brief). If a later slice "helpfully"
@@ -361,6 +495,7 @@ defmodule Casein.Terminals.WorkerLaunchTest do
            load1 40.00 exceeds nproc 32 × max_ratio 1.0
            probe: load1=40.00 nproc=32 max_ratio=1.0 mem_available_kb=37748736 min_mem_kb=2097152
            override: CASEIN_SPAWN_FORCE=1 bash scripts/spawn-agent-worker.sh ...
+    refused:headroom
     """
 
     test "exit 75 with a headroom decline is spawn_headroom_exhausted, not a bare exit code" do
@@ -386,6 +521,7 @@ defmodule Casein.Terminals.WorkerLaunchTest do
 
       assert err.error == :spawn_headroom_exhausted
       assert err.exit_status == 75
+      assert err.token == "refused:headroom"
       assert err.reason =~ "load1 40.00 exceeds nproc 32"
       assert err.load1 == "40.00"
       assert err.nproc == 32
@@ -431,8 +567,180 @@ defmodule Casein.Terminals.WorkerLaunchTest do
                )
 
       assert err.error == :spawn_headroom_exhausted
+      assert err.token == "refused:headroom"
       assert is_binary(err.reason) and err.reason != ""
       assert McpCtl.Error.summary(err) =~ "headroom"
+    end
+
+    test "exit 75 with refused:headroom token classifies without the prose phrase" do
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_dry_run_failed,
+           exit_status: 75,
+           output:
+             "refused:headroom\nprobe: load1=40.00 nproc=32 max_ratio=1.0 mem_available_kb=1000",
+           message: "spawn dry-run failed (exit 75)"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "grok",
+                 task_slug: "token",
+                 dry_run: true,
+                 runner: runner
+               )
+
+      assert err.error == :spawn_headroom_exhausted
+      assert err.token == "refused:headroom"
+      assert err.load1 == "40.00"
+      refute err.message == "spawn dry-run failed (exit 75)"
+    end
+
+    test "proceed:headroom-force is never classified as a refusal" do
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_dry_run_failed,
+           exit_status: 75,
+           output:
+             "proceed:headroom-force\nwarn: host headroom below threshold; proceeding under CASEIN_SPAWN_FORCE",
+           message: "spawn dry-run failed (exit 75)"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "claude",
+                 task_slug: "force",
+                 dry_run: true,
+                 runner: runner
+               )
+
+      refute err.error == :spawn_headroom_exhausted
+      refute Map.has_key?(err, :token)
+      assert err.exit_status == 75
+    end
+  end
+
+  describe "missing spawn helper is loud to MCP (OB #19287)" do
+    test "dry_run names the helper and searched paths instead of exit 127" do
+      missing =
+        Path.join(
+          System.tmp_dir!(),
+          "no-such-spawn-#{System.unique_integer([:positive])}.sh"
+        )
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "claude",
+                 task_slug: "probe",
+                 dry_run: true,
+                 spawn_script: missing
+               )
+
+      assert err.error == :spawn_script_not_found
+      assert err.script == missing
+      assert err.searched == [missing]
+      refute Map.has_key?(err, :pane_id)
+      refute err.message == "spawn dry-run failed (exit 127)"
+      assert err.message =~ missing
+      assert err.message =~ "Searched:"
+      assert err.message =~ "in-workspace factory manager"
+      assert err.message =~ "CASEIN_SPAWN_WORKER_SCRIPT"
+
+      summary = McpCtl.Error.summary(err)
+      refute summary == "spawn dry-run failed (exit 127)"
+      assert summary =~ missing
+      assert summary =~ "in-workspace factory manager"
+
+      text = hd(McpCtl.Error.tool_result(err).content).text
+      refute text == "spawn dry-run failed (exit 127)"
+      assert text =~ missing
+    end
+
+    test "exit 127 is spawn_command_not_found with helper, paths, and in-workspace hint" do
+      script = "/tmp/missing/spawn-agent-worker.sh"
+
+      searched = [
+        script,
+        "/opt/casein/release/lib/casein-0.1.0/priv/scripts/spawn-agent-worker.sh"
+      ]
+
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_dry_run_failed,
+           exit_status: 127,
+           output: "bash: #{script}: No such file or directory",
+           script: script,
+           searched: searched,
+           message: "spawn dry-run failed (exit 127)"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "claude",
+                 task_slug: "probe",
+                 dry_run: true,
+                 runner: runner
+               )
+
+      assert err.error == :spawn_command_not_found
+      assert err.exit_status == 127
+      assert err.script == script
+      assert err.searched == searched
+      refute err.message == "spawn dry-run failed (exit 127)"
+      assert err.message =~ script
+      assert err.message =~ "Searched:"
+      assert err.message =~ "No such file or directory"
+      assert err.message =~ "in-workspace factory manager"
+
+      summary = McpCtl.Error.summary(err)
+      refute summary == "spawn dry-run failed (exit 127)"
+      assert summary =~ script
+      assert summary =~ "in-workspace"
+
+      text = hd(McpCtl.Error.tool_result(err).content).text
+      refute text == "spawn dry-run failed (exit 127)"
+      assert text =~ script
+    end
+
+    test "a non-127 spawn failure still includes output in the MCP message" do
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_failed,
+           exit_status: 1,
+           output: "error: no session",
+           message: "spawn-agent-worker.sh exited 1"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "codex",
+                 task_slug: "x",
+                 runner: runner
+               )
+
+      assert err.error == :spawn_failed
+      assert err.exit_status == 1
+      refute err.message == "spawn-agent-worker.sh exited 1"
+      assert err.message =~ "no session"
+      assert McpCtl.Error.summary(err) =~ "no session"
     end
   end
 

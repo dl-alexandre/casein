@@ -65,6 +65,7 @@ defmodule Casein.Terminals.WorkerStatusTest do
       assert payload.window_id == "w1"
       assert payload.window_name == "worker-demo"
       assert payload.agent_state == "blocked"
+      assert payload.status == "blocked"
       assert payload.agent_state_message == "need unlock"
       assert payload.issue == 384
       assert payload.issue_title == "orch control plane"
@@ -98,6 +99,7 @@ defmodule Casein.Terminals.WorkerStatusTest do
         )
 
       assert payload.agent_state == "stalled"
+      assert payload.status == "stale"
       assert payload.blocked_on.kind == "derived"
       assert payload.blocked_on.reason == "stalled"
       assert payload.liveness.state == "quiet"
@@ -134,6 +136,65 @@ defmodule Casein.Terminals.WorkerStatusTest do
         )
 
       refute Map.has_key?(missing, :liveness)
+    end
+
+    test "operational status distinguishes active, awaiting input, failed, stale, and blocked" do
+      expected = %{
+        working: "active",
+        awaiting_input: "awaiting_input",
+        errored: "failed",
+        stalled: "stale",
+        blocked: "blocked"
+      }
+
+      for {agent_state, status} <- expected do
+        payload =
+          topology([pane("%#{agent_state}", agent_state: agent_state)])
+          |> WorkerStatus.project(
+            workspace_id: "ws-1",
+            session: "casein_ws-1_main",
+            pane: "%#{agent_state}",
+            now: @now
+          )
+
+        assert payload.status == status
+      end
+
+      unknown =
+        topology([pane("%unknown", agent_state: nil, liveness: %{state: :unknown})])
+        |> WorkerStatus.project(
+          workspace_id: "ws-1",
+          session: "casein_ws-1_main",
+          pane: "%unknown",
+          now: @now
+        )
+
+      assert unknown.status == "unknown"
+    end
+
+    test "includes the durable worker association when topology carries it" do
+      handle = %{
+        handle_id: "handle-1",
+        runtime: "opencode",
+        task_slug: "session-reliability",
+        worktree_path: "/tmp/wt-session",
+        branch: "agent/opencode/session-reliability",
+        status: %{source: "recorded", state: "awaiting_input", message: "needs a brief"}
+      }
+
+      payload =
+        topology([pane("%handle", agent_state: nil, work_handle: handle)])
+        |> WorkerStatus.project(
+          workspace_id: "ws-1",
+          session: "casein_ws-1_main",
+          pane: "%handle",
+          now: @now
+        )
+
+      assert payload.work_handle == handle
+      assert payload.agent_state == "awaiting_input"
+      assert payload.status == "awaiting_input"
+      assert payload.agent_state_message == "needs a brief"
     end
 
     test "ready_no_task surfaces readiness clock" do

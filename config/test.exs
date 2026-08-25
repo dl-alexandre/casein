@@ -258,4 +258,11 @@ config :casein,
   # real $HOME; dedicated ToolThemes tests re-enable this with a tmp
   # :tool_theme_home.
   tool_themes_enabled: false,
-  signal_bus_journal_adapter: Jido.Signal.Journal.Adapters.InMemory
+  signal_bus_journal_adapter: Jido.Signal.Journal.Adapters.InMemory,
+  host_health: [
+    status_path: Path.join(System.tmp_dir!(), "casein-test-missing-host-watchdog/status.json"),
+    alerts_path: Path.join(System.tmp_dir!(), "casein-test-missing-host-watchdog/alerts.jsonl"),
+    host: "test-host",
+    stale_after_seconds: 720,
+    max_alerts: 5
+  ]
