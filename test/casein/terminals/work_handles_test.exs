@@ -92,6 +92,15 @@ defmodule Casein.Terminals.WorkHandlesTest do
            }
   end
 
+  test "list_for_pane returns only handles attached to that pane" do
+    {:ok, a} = WorkHandles.create(@ws, session: @session, pane_id: "%1", label: "a")
+    {:ok, _b} = WorkHandles.create(@ws, session: @session, pane_id: "%2", label: "b")
+
+    ids = WorkHandles.list_for_pane(@ws, "%1") |> Enum.map(& &1.handle_id)
+    assert ids == [a.handle_id]
+    assert WorkHandles.list_for_pane(@ws, "%9") == []
+  end
+
   test "list scopes to workspace and includes unbound handles after prune" do
     {:ok, a} = WorkHandles.create(@ws, session: @session, pane_id: "%1", label: "a")
     {:ok, _b} = WorkHandles.create("ws-other", session: @session, pane_id: "%2", label: "b")

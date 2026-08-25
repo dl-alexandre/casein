@@ -50,6 +50,7 @@ compile-time-fixed argv.
 | `Casein.Agents.PreviewTools.MCPCapability` | `lib/casein/agents/preview_tools/mcp_capability.ex` | Detect the preview-control MCP endpoint; advertises URL + tool names. |
 | `Casein.Agents.ArtifactMCPCapability` | `lib/casein/agents/artifact_mcp_capability.ex` | Detect the artifact-project MCP endpoint; advertises URL + tool names. |
 | `Casein.Agents.TidewaveCapability` | `lib/casein/agents/tidewave_capability.ex` | Detect locally-hosted Tidewave (dev/preview-env only) via configured URL-provider MFA. |
+| `Casein.Agents.Inbox` / `Inbox.Address` | `lib/casein/agents/inbox.ex`, `lib/casein/agents/inbox/address.ex` | Agent-to-agent mail. Addresses: `handle:<id>` (survives pane respawn), `pane:%N` (ephemeral), `worktree:/path`. `terminal_inbox orphaned=true` lists pane: queues whose pane is gone. |
 | `Casein.Agents.TerminalTools` | `lib/casein/agents/terminal_tools.ex` | MCP tool definitions + dispatch for tmux control (list/topology/capture/send/label/worktree). `casein_`-prefix and workspace scoping. |
 | `Casein.Agents.PreviewTools` | `lib/casein/agents/preview_tools.ex` | MCP tool definitions + dispatch for preview control (open/observe/click/type/screenshot/navigate/reload). |
 | `Casein.Agents.ArtifactTools` | `lib/casein/agents/artifact_tools.ex` | MCP tool definitions + dispatch for artifact projects (create/update/list/get/serve/snapshot). |

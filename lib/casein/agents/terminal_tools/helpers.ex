@@ -746,7 +746,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       capabilities: [:terminal_metadata],
       recovery_hints: [
         "On ambiguous_recipient, re-send to one of the returned pane addresses.",
-        "On unknown_recipient, call terminal_topology to see the live window names.",
+        "On unknown_recipient, the pane is gone or the handle id is unknown — use handle:<id> for roles that respawn, or terminal_inbox orphaned=true to find stranded pane: queues.",
         "Delivery is not reading: the recipient collects with terminal_inbox."
       ]
     }
@@ -758,7 +758,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       danger_level: :low,
       capabilities: [:terminal_metadata],
       recovery_hints: [
-        "Omit address to read the caller pane's own mailbox.",
+        "Omit address to read the caller pane plus any attached work handle.",
+        "Pass orphaned=true to list pane: mailboxes whose pane no longer exists.",
         "Each message has status queued|collected and unread? — never treat send as read (#911).",
         "Pass collect=true only once you have acted; that clears unread and returns those messages with bodies.",
         "Double-collect is idempotent via stable message_id — safe to retry, and still returns bodies.",

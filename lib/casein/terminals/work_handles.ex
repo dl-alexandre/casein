@@ -119,6 +119,15 @@ defmodule Casein.Terminals.WorkHandles do
     |> Enum.sort_by(& &1.handle_id)
   end
 
+  @doc "Handles currently attached to a pane. Empty when none — never an error."
+  @spec list_for_pane(String.t(), String.t()) :: [map()]
+  def list_for_pane(workspace_id, pane_id)
+      when is_binary(workspace_id) and is_binary(pane_id) do
+    workspace_id
+    |> list()
+    |> Enum.filter(&(&1.pane_id == pane_id))
+  end
+
   @doc "Join inspectable work-handle identity onto an enriched tmux topology."
   @spec enrich_topology(map(), String.t() | nil, String.t()) :: map()
   def enrich_topology(%{panes: panes} = topology, workspace_id, session)

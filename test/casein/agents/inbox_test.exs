@@ -108,8 +108,32 @@ defmodule Casein.Agents.InboxTest do
       assert Inbox.list(ws, Address.for_pane("%3")) == []
     end
 
+    test "a handle address is its own mailbox and survives listing by many", %{ws: ws} do
+      to = Address.for_handle("coord-1")
+      Inbox.send(%{workspace_id: ws, to: to, body: "role mail"})
+      Inbox.send(%{workspace_id: ws, to: Address.for_pane("%3"), body: "pane mail"})
+
+      assert [%{body: "role mail"}] = Inbox.list(ws, to)
+
+      bodies =
+        ws
+        |> Inbox.list([to, Address.for_pane("%3")])
+        |> Enum.map(& &1.body)
+
+      assert bodies == ["role mail", "pane mail"]
+    end
+
     test "an empty mailbox is empty, not an error", %{ws: ws} do
       assert Inbox.list(ws, Address.for_pane("%9")) == []
+    end
+
+    test "orphaned lists pane mailboxes whose pane is gone", %{ws: ws} do
+      Inbox.send(%{workspace_id: ws, to: Address.for_pane("%5"), body: "stranded"})
+      Inbox.send(%{workspace_id: ws, to: Address.for_pane("%3"), body: "live"})
+      Inbox.send(%{workspace_id: ws, to: Address.for_handle("coord-1"), body: "role"})
+
+      assert [%{address: "pane:%5", pending: 1, orphaned: true}] =
+               Inbox.orphaned(ws, ["%3"])
     end
   end
 

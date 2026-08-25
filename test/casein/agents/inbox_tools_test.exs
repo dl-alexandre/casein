@@ -2,8 +2,10 @@ defmodule Casein.Agents.InboxToolsTest do
   use Casein.TestCase, async: false
 
   alias Casein.Agents.AgentEvents
+  alias Casein.Agents.Inbox.Address
   alias Casein.Agents.TerminalTools.Impl.Agent
   alias Casein.Terminals.Tmux
+  alias Casein.Terminals.WorkHandles
 
   @workspace "alpha"
 
@@ -16,6 +18,7 @@ defmodule Casein.Agents.InboxToolsTest do
     }
 
     AgentEvents.clear()
+    WorkHandles.clear_all()
     Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
@@ -52,6 +55,7 @@ defmodule Casein.Agents.InboxToolsTest do
         else: Application.delete_env(:casein, :tmux_adapter)
 
       AgentEvents.clear()
+      WorkHandles.clear_all()
     end)
 
     %{session: session}
@@ -80,6 +84,31 @@ defmodule Casein.Agents.InboxToolsTest do
 
     test "an unknown recipient is refused rather than given a new mailbox", %{session: session} do
       assert {:error, :unknown_recipient} = say(session, %{"to" => "nobody", "body" => "hi"})
+    end
+
+    test "a dead pane: address is refused rather than silently queued", %{session: session} do
+      assert {:error, :unknown_recipient} = say(session, %{"to" => "pane:%99", "body" => "hi"})
+    end
+
+    test "an unknown handle is refused rather than given a new mailbox", %{session: session} do
+      assert {:error, %{error: :unknown_recipient}} =
+               say(session, %{"to" => "handle:missing", "body" => "hi"})
+    end
+
+    test "mail addressed to a work handle follows the pane across respawn", %{session: session} do
+      {:ok, handle} =
+        WorkHandles.create(@workspace, session: session, pane_id: "%3", label: "coordinator")
+
+      address = Address.for_handle(handle.handle_id)
+
+      assert {:ok, %{to: ^address}} =
+               say(session, %{"to" => address, "body" => "dispatch issue 19360"})
+
+      WorkHandles.prune_session(session, [])
+      assert {:ok, _} = WorkHandles.attach(handle.handle_id, @workspace, session, "%1")
+
+      assert {:ok, %{address: ^address, messages: [%{body: "dispatch issue 19360"}]}} =
+               inbox(session, %{}, "%1")
     end
 
     test "an empty body is refused rather than delivered", %{session: session} do
@@ -205,6 +234,46 @@ defmodule Casein.Agents.InboxToolsTest do
     } do
       assert {:error, :no_inbox_address} =
                Agent.inbox(%{"workspace_id" => @workspace, "session" => session})
+    end
+
+    test "orphaned=true lists pane mailboxes whose pane is gone", %{session: session} do
+      assert {:ok, _} = say(session, %{"to" => "pane:%3", "body" => "stranded work order"})
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          %{
+            id: "%1",
+            window_id: "@1",
+            index: 0,
+            active: true,
+            title: "orchestrator",
+            role: "agent"
+          }
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{id: "@1", index: 0, name: "orchestrator", active: true, panes: 1, activity: 5}
+        ]
+      })
+
+      assert {:error, :unknown_recipient} =
+               say(session, %{"to" => "pane:%3", "body" => "too late"})
+
+      assert {:ok, %{orphaned: true, count: 1, mailboxes: [mailbox]}} =
+               Agent.inbox(%{
+                 "workspace_id" => @workspace,
+                 "session" => session,
+                 "orphaned" => true
+               })
+
+      assert mailbox.address == "pane:%3"
+      assert mailbox.pending == 1
+      assert mailbox.orphaned == true
+
+      assert {:ok, %{messages: [%{body: "stranded work order"}]}} =
+               inbox(session, %{"address" => "pane:%3"})
     end
   end
 

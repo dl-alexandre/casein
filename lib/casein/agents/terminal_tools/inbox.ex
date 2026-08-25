@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.Inbox do
   use Jido.Action,
     name: "terminal_inbox",
     description:
-      "Read messages other agents left for you with terminal_say, oldest first. Defaults to your own pane's address. Each message carries honest lifecycle fields (#911): status queued|collected, unread?, stable message_id. Messages stay pending/unread until collect=true — collection clears unread, not sending. collect=true returns those messages with full bodies in messages; count is the number collected. Double-collect is idempotent and still returns the bodies. This is an addressed store agents collect from; it never writes into panes (no terminal_send_*). Poll when waiting on another agent rather than watching its pane.",
+      "Read messages other agents left for you with terminal_say, oldest first. Defaults to the caller pane plus any work handle attached there, so a successor that reattaches the handle still sees queued role mail. Each message carries honest lifecycle fields (#911): status queued|collected, unread?, stable message_id. Messages stay pending/unread until collect=true — collection clears unread, not sending. collect=true returns those messages with full bodies in messages; count is the number collected. Double-collect is idempotent and still returns the bodies. Pass orphaned=true to list pane: mailboxes whose pane no longer exists. This is an addressed store agents collect from; it never writes into panes (no terminal_send_*). Poll when waiting on another agent rather than watching its pane.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.2.0",
@@ -16,6 +16,7 @@ defmodule Casein.Agents.TerminalTools.Inbox do
       pane: [type: :string],
       collect: [type: :boolean],
       include_collected: [type: :boolean],
+      orphaned: [type: :boolean],
       limit: [type: :integer]
     ]
 
@@ -34,8 +35,8 @@ defmodule Casein.Agents.TerminalTools.Inbox do
           type: "string",
           maxLength: 512,
           description:
-            "Mailbox to read (pane:%3 or worktree:/abs/path). Defaults to the caller pane's " <>
-              "own address."
+            "Mailbox to read (handle:<id>, pane:%3, or worktree:/abs/path). Defaults to the " <>
+              "caller pane plus any attached work handle."
         },
         pane: Helpers.pane_param(),
         collect: %{
@@ -51,6 +52,12 @@ defmodule Casein.Agents.TerminalTools.Inbox do
           description:
             "When true, also return already-collected messages (status=collected, unread?=false). " <>
               "Default false returns only pending/queued."
+        },
+        orphaned: %{
+          type: "boolean",
+          description:
+            "When true, list pane: mailboxes whose pane no longer exists instead of " <>
+              "reading one mailbox. A queue nothing is listening to is a reportable condition."
         },
         limit: %{
           type: "integer",
