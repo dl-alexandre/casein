@@ -1921,6 +1921,41 @@ defmodule Casein.Agents.TerminalToolsTest do
 
       assert result.matched == false
       assert result.timed_out == true
+      assert is_binary(result.state)
+      assert is_integer(result.waited_ms)
+      assert result.waited_ms >= 0
+    end
+
+    test "advertised-max timeout_ms returns structured timed_out instead of hanging" do
+      session = agent_pair_session!()
+      Casein.Terminals.AgentState.clear()
+      previous = Application.get_env(:casein, :agent_state_wait_max_ms)
+      Application.put_env(:casein, :agent_state_wait_max_ms, 80)
+
+      on_exit(fn ->
+        if previous,
+          do: Application.put_env(:casein, :agent_state_wait_max_ms, previous),
+          else: Application.delete_env(:casein, :agent_state_wait_max_ms)
+      end)
+
+      started = System.monotonic_time(:millisecond)
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_wait_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "states" => ["done"],
+                 "timeout_ms" => Casein.Agents.TerminalTools.Helpers.wait_timeout_default_ms()
+               })
+
+      elapsed = System.monotonic_time(:millisecond) - started
+
+      assert result.matched == false
+      assert result.timed_out == true
+      assert is_binary(result.state)
+      assert is_integer(result.waited_ms)
+      assert result.waited_ms < 500
+      assert elapsed < 500
     end
 
     test "unblocks when a report arrives mid-wait" do

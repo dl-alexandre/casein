@@ -398,6 +398,28 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     end
   end
 
+  describe "terminal_wait_agent_state timeout ceiling" do
+    test "schema advertised maximum is the MCP-client-safe 25s ceiling" do
+      tool = definition("terminal_wait_agent_state")
+      timeout = tool.parameters.properties.timeout_ms
+
+      assert timeout.maximum == 25_000
+      assert timeout.description =~ "25000"
+      assert timeout.description =~ ~r/30s|30 s/
+      assert tool.description =~ "25000"
+      assert tool.description =~ ~r/30s|30 s/
+    end
+
+    test "values above the ceiling clamp to the effective max" do
+      alias Casein.Agents.TerminalTools.Helpers
+
+      assert Helpers.clamp_wait_timeout_ms(55_000) == 25_000
+      assert Helpers.clamp_wait_timeout_ms(25_000) == 25_000
+      assert Helpers.clamp_wait_timeout_ms(nil) == 25_000
+      assert Helpers.clamp_wait_timeout_ms(-1) == 0
+    end
+  end
+
   defp definition(name) do
     Enum.find(TerminalTools.definitions(), &(&1.name == name))
   end

@@ -8,9 +8,26 @@ defmodule Casein.Agents.TerminalTools.Helpers do
   alias McpCtl.Params
 
   @default_capture_lines 120
+  @wait_timeout_default_ms 25_000
+  @wait_timeout_effective_max_ms 25_000
 
   @doc false
   def default_capture_lines, do: @default_capture_lines
+
+  @doc false
+  def wait_timeout_default_ms, do: @wait_timeout_default_ms
+
+  @doc false
+  def wait_timeout_effective_max_ms do
+    Application.get_env(:casein, :agent_state_wait_max_ms, @wait_timeout_effective_max_ms)
+  end
+
+  @doc false
+  def clamp_wait_timeout_ms(ms) when is_integer(ms) do
+    ms |> max(0) |> min(wait_timeout_effective_max_ms())
+  end
+
+  def clamp_wait_timeout_ms(_), do: @wait_timeout_default_ms
 
   @doc false
   def workspace_props, do: Params.terminal_workspace_props()
@@ -364,8 +381,13 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     %{
       type: "integer",
       minimum: 0,
-      maximum: 55_000,
-      description: "Max time to block, in milliseconds (default 30000, capped at 55000)."
+      maximum: @wait_timeout_effective_max_ms,
+      description:
+        "Max time to block, in milliseconds (default #{@wait_timeout_default_ms}, " <>
+          "capped at #{@wait_timeout_effective_max_ms}). The ceiling is the MCP client " <>
+          "HTTP abort (~30s): the server returns structured timed_out with state and " <>
+          "waited_ms at 25s rather than holding until the client drops the call. " <>
+          "Re-issue to keep long-polling. Values above the ceiling are clamped."
     }
   end
 
@@ -1088,6 +1110,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     %{
       mutation?: false,
       danger_level: :low,
+      timeout_ms: @wait_timeout_effective_max_ms + 3_000,
       capabilities: [:terminal_read],
       recovery_hints: [
         "Re-issue the call when timed_out is true to keep long-polling.",

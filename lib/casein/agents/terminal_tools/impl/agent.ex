@@ -2,6 +2,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   @moduledoc false
 
   alias Casein.Agents.{Inbox, TerminalOutputFormat, Transcripts}
+  alias Casein.Agents.TerminalTools.Helpers
   alias Casein.Agents.Inbox.Address
   alias Casein.AgentSessions.GrokACP.Attachments
   alias Casein.Labels
@@ -1186,10 +1187,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   end
 
   defp clamped_timeout(params) do
-    case Map.get(params, "timeout_ms") || Map.get(params, :timeout_ms) do
-      ms when is_integer(ms) -> ms |> max(0) |> min(55_000)
-      _ -> 30_000
-    end
+    Helpers.clamp_wait_timeout_ms(Map.get(params, "timeout_ms") || Map.get(params, :timeout_ms))
   end
 
   defp sent_payload(session, target, next_tool, params) do

@@ -256,15 +256,18 @@ An orchestrating agent can wait on another agent's state instead of polling
 terminal_wait_agent_state(
   workspace_id,
   states,        # e.g. ["blocked", "done"]
-  timeout_ms?,   # default 30000, capped at 55000
+  timeout_ms?,   # default 25000, capped at 25000 (MCP clients abort ~30s)
   pane?,
   session?
 )
 ```
 
 It returns immediately if the pane is already in a target state. A timeout is not
-an error — the result carries `timed_out: true` and `matched: false`; re-issue the
-call to keep long-polling.
+an error — the result carries `timed_out: true`, `matched: false`, `state`, and
+`waited_ms`; re-issue the call to keep long-polling. The 25s ceiling exists
+because standard MCP clients abort the HTTP request around 30s; the server
+returns a structured timeout before that deadline instead of letting the client
+drop the call.
 
 ### Agent skills (cross-repo)
 
