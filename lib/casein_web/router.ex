@@ -72,7 +72,8 @@ defmodule CaseinWeb.Router do
 
     plug :put_secure_browser_headers,
          %{
-           "content-security-policy" => @content_security_policy_base <> "; " <> @default_frame_src
+           "content-security-policy" =>
+             @content_security_policy_base <> "; " <> @default_frame_src
          }
 
     plug :put_content_security_policy
