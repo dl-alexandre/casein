@@ -113,6 +113,8 @@ defmodule Casein.Terminals.FleetSummaryTest do
 
     assert payload.uri == "casein://fleet/summary"
     assert payload.workspace_id == "ws-1"
+    assert payload.incomplete == false
+    assert is_nil(payload.incomplete_reason)
     assert payload.session_count == 1
     assert payload.pane_count == 1
     assert payload.note =~ "process/CPU"
@@ -160,6 +162,22 @@ defmodule Casein.Terminals.FleetSummaryTest do
     payload = FleetSummary.build(workspace_id: "ws-1", sessions: [])
     assert payload.session_count == 0
     assert payload.pane_count == 0
+    assert payload.sessions == []
+    assert payload.incomplete == false
+  end
+
+  test "budget expiry returns incomplete rather than hanging" do
+    payload =
+      FleetSummary.build(
+        workspace_id: "ws-1",
+        sessions: [%{session: "casein_ws-1_a"}, %{session: "casein_ws-1_b"}],
+        tmux: FakeTmux,
+        git: false,
+        budget_ms: 0
+      )
+
+    assert payload.incomplete == true
+    assert payload.incomplete_reason == "refresh_budget_exceeded"
     assert payload.sessions == []
   end
 end
