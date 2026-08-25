@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.WaitAgentState do
   use Jido.Action,
     name: "terminal_wait_agent_state",
     description:
-      "Block until the agent pane reaches one of the given semantic states, or until timeout_ms elapses (max 55000). Returns immediately if already in a target state. A timeout is not an error — re-issue the call to keep long-polling. Defaults to the dedicated agent pane.",
+      "Block until the agent pane reaches one of the given semantic states, or until timeout_ms elapses (max 25000). The 25s ceiling exists because standard MCP clients abort the HTTP request around 30s; a longer wait would be a transport timeout with no state. Returns immediately if already in a target state. A timeout is not an error — it returns timed_out, state, and waited_ms; re-issue the call to keep long-polling. Defaults to the dedicated agent pane.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

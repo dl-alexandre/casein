@@ -221,6 +221,61 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
     assert output =~ "\e[31m"
   end
 
+  test "capture classifies a faint suggested prompt as an empty placeholder buffer" do
+    session = Tmux.session_name("alpha", "main")
+    fake_adapter()
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [%{id: "%1", window_id: "@1", index: 0, active: true}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
+      "%1" =>
+        "done\n\n❯  \e[2mswitch gh to my account mbaldin\e[22m\n  1.0K · claude-sonnet · ⏎ send\n"
+    })
+
+    assert {:ok, result} =
+             TerminalTools.invoke("terminal_capture", %{
+               "workspace_id" => "alpha",
+               "session" => session,
+               "pane" => "%1"
+             })
+
+    assert result.output =~ "switch gh to my account mbaldin"
+    refute result.output =~ "\e[2m"
+    assert result.input_buffer == %{has_content: false, source: "placeholder"}
+  end
+
+  test "capture reports unknown when composer text has no ANSI to classify" do
+    session = Tmux.session_name("alpha", "main")
+    fake_adapter()
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [%{id: "%1", window_id: "@1", index: 0, active: true}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
+      "%1" => "done\n\n❯  switch gh to my account mbaldin\n  1.0K · claude-sonnet · ⏎ send\n"
+    })
+
+    assert {:ok, %{input_buffer: buffer}} =
+             TerminalTools.invoke("terminal_capture", %{
+               "workspace_id" => "alpha",
+               "session" => session,
+               "pane" => "%1"
+             })
+
+    assert buffer == %{has_content: "unknown", source: "unknown"}
+  end
+
   # ---- list_sessions contains filter ----
 
   test "list_sessions filters by the contains substring" do

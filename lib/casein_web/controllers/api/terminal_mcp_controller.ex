@@ -18,6 +18,7 @@ defmodule CaseinWeb.API.TerminalMCPController do
   def rpc(conn, _params) do
     conn = fetch_query_params(conn)
     workspace_id = default_workspace_id(conn)
+    tmux_session = default_tmux_session(conn)
     caller_pane = default_caller_pane(conn)
 
     case MCPTransport.preflight(conn, conn.body_params) do
@@ -28,6 +29,7 @@ defmodule CaseinWeb.API.TerminalMCPController do
         opts =
           [
             default_workspace_id: workspace_id,
+            default_tmux_session: tmux_session,
             default_caller_pane: caller_pane,
             actor: CaseinWeb.Plugs.ApiAuth.actor(conn)
           ] ++ AgentCapabilityAuthz.handler_opts(conn)
@@ -61,6 +63,17 @@ defmodule CaseinWeb.API.TerminalMCPController do
   defp default_workspace_id(conn) do
     conn.query_params["workspace_id"] || conn.assigns[:api_workspace_id]
   end
+
+  defp default_tmux_session(conn), do: non_empty(conn.query_params["tmux_session"])
+
+  defp non_empty(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      value -> value
+    end
+  end
+
+  defp non_empty(_), do: nil
 
   # The calling agent's own tmux pane. Casein-launched agents send it via the
   # X-Casein-Caller-Pane header (env-expanded per pane at client startup);

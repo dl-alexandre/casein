@@ -312,29 +312,10 @@ defmodule Casein.Terminals.OrphanedClaims do
       {:error, :gh_unavailable}
   end
 
-  defp gh_env(opts) do
-    config_dir =
-      Keyword.get(opts, :gh_config_dir) ||
-        System.get_env("GH_CONFIG_DIR") ||
-        default_gh_config_dir()
-
-    base = [
-      {"GH_TOKEN", ""},
-      {"GITHUB_TOKEN", ""},
-      {"GH_PROMPT_DISABLED", "1"},
-      {"GH_NO_UPDATE_NOTIFIER", "1"}
-    ]
-
-    if is_binary(config_dir) and config_dir != "" do
-      [{"GH_CONFIG_DIR", config_dir} | base]
-    else
-      base
-    end
-  end
-
-  defp default_gh_config_dir do
-    Path.expand("~/.config/gh-dalexandre")
-  end
+  # Identity for claim reconciliation. See `Casein.Identity.gh_env/1` — this
+  # used to hardcode one engineer's config dir, so every claim Casein observed
+  # or acted on was read through their account regardless of who triggered it.
+  defp gh_env(opts), do: Casein.Identity.gh_env(opts)
 
   defp decode_issues(body) when is_binary(body) do
     case Jason.decode(body) do

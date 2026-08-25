@@ -8,9 +8,26 @@ defmodule Casein.Agents.TerminalTools.Helpers do
   alias McpCtl.Params
 
   @default_capture_lines 120
+  @wait_timeout_default_ms 25_000
+  @wait_timeout_effective_max_ms 25_000
 
   @doc false
   def default_capture_lines, do: @default_capture_lines
+
+  @doc false
+  def wait_timeout_default_ms, do: @wait_timeout_default_ms
+
+  @doc false
+  def wait_timeout_effective_max_ms do
+    Application.get_env(:casein, :agent_state_wait_max_ms, @wait_timeout_effective_max_ms)
+  end
+
+  @doc false
+  def clamp_wait_timeout_ms(ms) when is_integer(ms) do
+    ms |> max(0) |> min(wait_timeout_effective_max_ms())
+  end
+
+  def clamp_wait_timeout_ms(_), do: @wait_timeout_default_ms
 
   @doc false
   def workspace_props, do: Params.terminal_workspace_props()
@@ -364,8 +381,13 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     %{
       type: "integer",
       minimum: 0,
-      maximum: 55_000,
-      description: "Max time to block, in milliseconds (default 30000, capped at 55000)."
+      maximum: @wait_timeout_effective_max_ms,
+      description:
+        "Max time to block, in milliseconds (default #{@wait_timeout_default_ms}, " <>
+          "capped at #{@wait_timeout_effective_max_ms}). The ceiling is the MCP client " <>
+          "HTTP abort (~30s): the server returns structured timed_out with state and " <>
+          "waited_ms at 25s rather than holding until the client drops the call. " <>
+          "Re-issue to keep long-polling. Values above the ceiling are clamped."
     }
   end
 
@@ -385,9 +407,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
              "terminal_list_sessions",
              "terminal_context",
              "terminal_topology",
-             "terminal_capture",
              "terminal_agent_pane",
-             "terminal_capture_agent",
              "terminal_agent_transcript"
            ] do
     %{
@@ -398,6 +418,18 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata(name) when name in ["terminal_capture", "terminal_capture_agent"] do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: [
+        "Call terminal_list_sessions first when session is unknown.",
+        "input_buffer.source == placeholder is a suggested prompt, not unsent user text; unknown is not typed content."
+      ]
+    }
+  end
+
   def metadata("terminal_host_capacity") do
     %{
       mutation?: false,
@@ -405,6 +437,17 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       capabilities: [:terminal_read],
       recovery_hints: [
         "Use this probe before assigning a worker wave; unknown capacity is not spare capacity."
+      ]
+    }
+  end
+
+  def metadata("terminal_host_health") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: [
+        "Unknown or stale host health is not a healthy host. Read reason and latest_alert_at."
       ]
     }
   end
@@ -426,7 +469,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "On submit_not_confirmed the text reached the pane but was never submitted — " <>
           "capture the pane before resending, or use terminal_set_next_prompt if the " <>
           "agent is mid-turn.",
-        "Do not double-Enter yourself: submit paths settle, press Enter, and retry once."
+        "Do not double-Enter yourself: submit paths settle, press Enter, and retry once.",
+        "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ]
     }
   end
@@ -482,7 +526,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Prefer terminal_send_agent_command when controlling the dedicated agent pane.",
         "Use terminal_capture after sending input to inspect output.",
         "terminal_send_command confirms the submit (one retry Enter) unless confirm:false.",
-        "On submit_not_confirmed capture the pane before resending."
+        "On submit_not_confirmed capture the pane before resending.",
+        "receipt.input_buffer.source == placeholder is a suggested prompt, not unsent user text."
       ],
       examples: [
         %{
@@ -692,8 +737,8 @@ defmodule Casein.Agents.TerminalTools.Helpers do
       recovery_hints: [
         "Omit address to read the caller pane's own mailbox.",
         "Each message has status queued|collected and unread? — never treat send as read (#911).",
-        "Pass collect=true only once you have acted; that clears unread. Peek leaves pending.",
-        "Double-collect is idempotent via stable message_id — safe to retry.",
+        "Pass collect=true only once you have acted; that clears unread and returns those messages with bodies.",
+        "Double-collect is idempotent via stable message_id — safe to retry, and still returns bodies.",
         "Addressed store only — does not write into panes (no terminal_send_*)."
       ],
       examples: [
@@ -708,6 +753,30 @@ defmodule Casein.Agents.TerminalTools.Helpers do
                 "message_id" => "msg-1",
                 "status" => "queued",
                 "unread?" => true,
+                "body" => "rebase before auth"
+              }
+            ]
+          }
+        },
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "casein_ws-1_x",
+            "collect" => true
+          },
+          structured_content: %{
+            "address" => "pane:%3",
+            "collected" => true,
+            "count" => 1,
+            "pending" => 0,
+            "unread" => 0,
+            "pending_before" => 1,
+            "unread_before" => 1,
+            "messages" => [
+              %{
+                "message_id" => "msg-1",
+                "status" => "collected",
+                "unread?" => false,
                 "body" => "rebase before auth"
               }
             ]
@@ -905,6 +974,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Requires workspace_id, session, runtime, task_slug — fail closed when any is missing.",
         "One call returns the full receipt (pane_id, worktree_path, handle_id) — no topology scrape required.",
         "dry_run: true plans without opening a window.",
+        "Spawn helper failures name the script and searched paths — a bare exit 127 is a missing host helper, not a broken tool. Ask an in-workspace factory manager, or set CASEIN_SPAWN_WORKER_SCRIPT / CASEIN_SCRIPTS_ROOT.",
         "Never falls back to a hidden subagent; spawn failure is a hard error.",
         "Follow with worker_status / worker_cancel / orchestration_list_workers; durable graph still out of scope."
       ],
@@ -1065,6 +1135,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     %{
       mutation?: false,
       danger_level: :low,
+      timeout_ms: @wait_timeout_effective_max_ms + 3_000,
       capabilities: [:terminal_read],
       recovery_hints: [
         "Re-issue the call when timed_out is true to keep long-polling.",

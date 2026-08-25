@@ -13,11 +13,12 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 46
+      assert length(names) == 47
 
       for expected <- [
             "terminal_list_sessions",
             "terminal_host_capacity",
+            "terminal_host_health",
             "terminal_context",
             "terminal_topology",
             "terminal_capture",
@@ -394,6 +395,28 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "unknown tools still return :unknown_tool" do
       assert {:error, :unknown_tool} =
                TerminalTools.invoke("terminal_not_a_tool", %{"workspace_id" => "ws-1"})
+    end
+  end
+
+  describe "terminal_wait_agent_state timeout ceiling" do
+    test "schema advertised maximum is the MCP-client-safe 25s ceiling" do
+      tool = definition("terminal_wait_agent_state")
+      timeout = tool.parameters.properties.timeout_ms
+
+      assert timeout.maximum == 25_000
+      assert timeout.description =~ "25000"
+      assert timeout.description =~ ~r/30s|30 s/
+      assert tool.description =~ "25000"
+      assert tool.description =~ ~r/30s|30 s/
+    end
+
+    test "values above the ceiling clamp to the effective max" do
+      alias Casein.Agents.TerminalTools.Helpers
+
+      assert Helpers.clamp_wait_timeout_ms(55_000) == 25_000
+      assert Helpers.clamp_wait_timeout_ms(25_000) == 25_000
+      assert Helpers.clamp_wait_timeout_ms(nil) == 25_000
+      assert Helpers.clamp_wait_timeout_ms(-1) == 0
     end
   end
 

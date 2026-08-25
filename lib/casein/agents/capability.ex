@@ -8,6 +8,7 @@ defmodule Casein.Agents.Capability do
           :opencode
           | :tidewave
           | :artifact_mcp
+          | :code_mcp
           | :preview_mcp
           | :terminal_mcp
           | :fff

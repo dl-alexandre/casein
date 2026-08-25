@@ -22,11 +22,17 @@ defmodule Casein.Agents.Activity do
             :terminal_mcp
             | :preview_mcp
             | :artifact_mcp
+            | :code_mcp
             | :grok_acp
             | :agent_state
             | :transcript
             | :worktree
-            | :agent_event,
+            | :agent_event
+            | :jido_pod
+            | :jido_actions
+            | :jido_lifecycle
+            | :jido_skills
+            | :jido_budgets,
           tool: String.t(),
           summary: String.t(),
           metadata: map(),

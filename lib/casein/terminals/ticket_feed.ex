@@ -446,25 +446,9 @@ defmodule Casein.Terminals.TicketFeed do
     _ -> {:error, :gh_unavailable}
   end
 
-  defp gh_env(opts) do
-    config_dir =
-      Keyword.get(opts, :gh_config_dir) ||
-        System.get_env("GH_CONFIG_DIR") ||
-        Path.expand("~/.config/gh-dalexandre")
-
-    base = [
-      {"GH_TOKEN", ""},
-      {"GITHUB_TOKEN", ""},
-      {"GH_PROMPT_DISABLED", "1"},
-      {"GH_NO_UPDATE_NOTIFIER", "1"}
-    ]
-
-    if is_binary(config_dir) and config_dir != "" do
-      [{"GH_CONFIG_DIR", config_dir} | base]
-    else
-      base
-    end
-  end
+  # Identity for read-only `gh issue list`. See `Casein.Identity.gh_env/1` —
+  # this used to hardcode one engineer's config dir as the fallback.
+  defp gh_env(opts), do: Casein.Identity.gh_env(opts)
 
   ## Internals — normalization
 
