@@ -40,6 +40,7 @@ defmodule Casein.Terminals.WorkerLaunch do
   alias Casein.Labels
   alias Casein.Terminals.AgentState
   alias Casein.Terminals.Backend
+  alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.PaneSubmit
   alias Casein.Terminals.WorkHandles
 
@@ -75,6 +76,8 @@ defmodule Casein.Terminals.WorkerLaunch do
     * `:workspace_id` / `:session` / `:runtime` / `:task_slug` — required
     * `:label` — chrome / work-handle label (default `worker: <slug>`)
     * `:dry_run` — plan only; never opens a window
+    * `:issue` — optional GitHub issue; same live-holder check as `terminal_bind_issue`
+    * `:allow_duplicate` — record a second live holder instead of refusing spawn
     * `:timeout_ms` — spawn wait (default 180s)
     * `:runner` — `(runtime, slug, session, opts -> {:ok, map()} | {:error, term()})` for tests
     * `:observe` — `(session, pane_id -> map())` pane facts after spawn (tests)
@@ -89,7 +92,8 @@ defmodule Casein.Terminals.WorkerLaunch do
     with {:ok, workspace_id} <- fetch_bin(opts, :workspace_id),
          {:ok, session} <- fetch_bin(opts, :session),
          {:ok, runtime} <- fetch_runtime(opts),
-         {:ok, slug} <- fetch_slug(opts) do
+         {:ok, slug} <- fetch_slug(opts),
+         :ok <- precheck_issue(workspace_id, opts) do
       label = blank_to_nil(Keyword.get(opts, :label)) || "worker: #{slug}"
       dry_run? = Keyword.get(opts, :dry_run, false) == true
 
@@ -142,10 +146,11 @@ defmodule Casein.Terminals.WorkerLaunch do
                   "with an inspectable work handle and explicit initial-prompt delivery receipt. " <>
                   "No hidden subagent. Task graphs / path contracts / verifiers remain out of scope."
             }
-            |> reject_nils()
 
           with {:ok, receipt} <-
                  maybe_attach_handle(receipt, workspace_id, session, pane_id, label, opts) do
+            receipt = maybe_bind_issue(receipt, workspace_id, session, pane_id, opts)
+            receipt = reject_nils(receipt)
             receipt = put_label_status(receipt, workspace_id, session, pane_id, label, opts)
             maybe_deliver_initial_prompt(receipt, opts)
           end
@@ -636,6 +641,60 @@ defmodule Casein.Terminals.WorkerLaunch do
 
     # Ensure fresh worktree isolation — spawn script also forces this.
     [{"CASEIN_AGENT_FORCE_FRESH_WORKTREE", "1"} | base]
+  end
+
+  ## Issue guard
+
+  defp precheck_issue(workspace_id, opts) do
+    case issue_opt(opts) do
+      nil ->
+        :ok
+
+      issue ->
+        IssueBinding.check_available(workspace_id, issue,
+          allow_duplicate: Keyword.get(opts, :allow_duplicate, false) == true,
+          check_live: true,
+          live?: Keyword.get(opts, :live?)
+        )
+    end
+  end
+
+  defp maybe_bind_issue(receipt, workspace_id, session, pane_id, opts) do
+    case issue_opt(opts) do
+      nil ->
+        receipt
+
+      issue ->
+        case IssueBinding.bind(workspace_id, session, pane_id, issue,
+               allow_duplicate: Keyword.get(opts, :allow_duplicate, false) == true,
+               window_id: Map.get(receipt, :window_id),
+               check_live: true,
+               live?: Keyword.get(opts, :live?)
+             ) do
+          {:ok, entry} ->
+            Map.put(receipt, :issue, entry.issue)
+
+          {:error, %{error: :issue_already_bound} = err} ->
+            Map.put(receipt, :issue_error, err)
+
+          {:error, reason} ->
+            Map.put(receipt, :issue_error, normalize_error(reason))
+        end
+    end
+  end
+
+  defp issue_opt(opts) do
+    case Keyword.get(opts, :issue) do
+      issue when is_integer(issue) and issue > 0 ->
+        issue
+
+      issue when is_binary(issue) ->
+        trimmed = String.trim(issue)
+        if trimmed == "", do: nil, else: trimmed
+
+      _ ->
+        nil
+    end
   end
 
   ## Validation

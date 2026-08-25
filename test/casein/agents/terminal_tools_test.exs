@@ -2108,6 +2108,102 @@ defmodule Casein.Agents.TerminalToolsTest do
 
       assert Casein.Terminals.IssueBinding.get(session, "%2") == nil
     end
+
+    test "refuses a second live pane and names the holder" do
+      session = agent_pair_session!()
+
+      assert {:ok, _} =
+               TerminalTools.invoke("terminal_bind_issue", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "issue" => "678"
+               })
+
+      assert {:error,
+              %{
+                error: :issue_already_bound,
+                pane_id: "%2",
+                window_id: "@1",
+                issue: 678
+              }} =
+               TerminalTools.invoke("terminal_bind_issue", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "pane" => "%1",
+                 "issue" => "678"
+               })
+    end
+
+    test "allow_duplicate records both holders and issue_holders lists them" do
+      session = agent_pair_session!()
+
+      {:ok, _} =
+        TerminalTools.invoke("terminal_bind_issue", %{
+          "workspace_id" => "alpha",
+          "session" => session,
+          "issue" => "678"
+        })
+
+      assert {:ok, second} =
+               TerminalTools.invoke("terminal_bind_issue", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "pane" => "%1",
+                 "issue" => "678",
+                 "allow_duplicate" => true
+               })
+
+      assert second.status == "bound"
+      assert second.target == "%1"
+
+      assert {:ok, listed} =
+               TerminalTools.invoke("terminal_issue_holders", %{
+                 "workspace_id" => "alpha",
+                 "issue" => "#678"
+               })
+
+      assert listed.issue == 678
+      assert listed.count == 2
+      assert Enum.sort(Enum.map(listed.holders, & &1.pane_id)) == ["%1", "%2"]
+      assert Enum.all?(listed.holders, &(&1.window_id == "@1" and &1.issue == 678))
+    end
+
+    test "a dead pane never blocks re-dispatch" do
+      session = agent_pair_session!()
+
+      {:ok, _} =
+        TerminalTools.invoke("terminal_bind_issue", %{
+          "workspace_id" => "alpha",
+          "session" => session,
+          "issue" => "678"
+        })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          %{
+            id: "%1",
+            window_id: "@1",
+            index: 0,
+            active: true,
+            current_command: "claude",
+            current_path: "/workspace",
+            role: "operator"
+          }
+        ]
+      })
+
+      assert {:ok, rebound} =
+               TerminalTools.invoke("terminal_bind_issue", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "pane" => "%1",
+                 "issue" => "678"
+               })
+
+      assert rebound.status == "bound"
+      assert rebound.target == "%1"
+      assert Casein.Terminals.IssueBinding.get(session, "%2") == nil
+    end
   end
 
   defp agent_pair_session! do
