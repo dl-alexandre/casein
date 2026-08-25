@@ -950,6 +950,7 @@ defmodule Casein.Agents.TerminalTools.Helpers do
         "Requires workspace_id, session, runtime, task_slug — fail closed when any is missing.",
         "One call returns the full receipt (pane_id, worktree_path, handle_id) — no topology scrape required.",
         "dry_run: true plans without opening a window.",
+        "Spawn helper failures name the script and searched paths — a bare exit 127 is a missing host helper, not a broken tool. Ask an in-workspace factory manager, or set CASEIN_SPAWN_WORKER_SCRIPT / CASEIN_SCRIPTS_ROOT.",
         "Never falls back to a hidden subagent; spawn failure is a hard error.",
         "Follow with worker_status / worker_cancel / orchestration_list_workers; durable graph still out of scope."
       ],

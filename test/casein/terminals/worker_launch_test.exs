@@ -628,6 +628,122 @@ defmodule Casein.Terminals.WorkerLaunchTest do
     end
   end
 
+  describe "missing spawn helper is loud to MCP (OB #19287)" do
+    test "dry_run names the helper and searched paths instead of exit 127" do
+      missing =
+        Path.join(
+          System.tmp_dir!(),
+          "no-such-spawn-#{System.unique_integer([:positive])}.sh"
+        )
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "claude",
+                 task_slug: "probe",
+                 dry_run: true,
+                 spawn_script: missing
+               )
+
+      assert err.error == :spawn_script_not_found
+      assert err.script == missing
+      assert err.searched == [missing]
+      refute Map.has_key?(err, :pane_id)
+      refute err.message == "spawn dry-run failed (exit 127)"
+      assert err.message =~ missing
+      assert err.message =~ "Searched:"
+      assert err.message =~ "in-workspace factory manager"
+      assert err.message =~ "CASEIN_SPAWN_WORKER_SCRIPT"
+
+      summary = McpCtl.Error.summary(err)
+      refute summary == "spawn dry-run failed (exit 127)"
+      assert summary =~ missing
+      assert summary =~ "in-workspace factory manager"
+
+      text = hd(McpCtl.Error.tool_result(err).content).text
+      refute text == "spawn dry-run failed (exit 127)"
+      assert text =~ missing
+    end
+
+    test "exit 127 is spawn_command_not_found with helper, paths, and in-workspace hint" do
+      script = "/tmp/missing/spawn-agent-worker.sh"
+
+      searched = [
+        script,
+        "/opt/casein/release/lib/casein-0.1.0/priv/scripts/spawn-agent-worker.sh"
+      ]
+
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_dry_run_failed,
+           exit_status: 127,
+           output: "bash: #{script}: No such file or directory",
+           script: script,
+           searched: searched,
+           message: "spawn dry-run failed (exit 127)"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "claude",
+                 task_slug: "probe",
+                 dry_run: true,
+                 runner: runner
+               )
+
+      assert err.error == :spawn_command_not_found
+      assert err.exit_status == 127
+      assert err.script == script
+      assert err.searched == searched
+      refute err.message == "spawn dry-run failed (exit 127)"
+      assert err.message =~ script
+      assert err.message =~ "Searched:"
+      assert err.message =~ "No such file or directory"
+      assert err.message =~ "in-workspace factory manager"
+
+      summary = McpCtl.Error.summary(err)
+      refute summary == "spawn dry-run failed (exit 127)"
+      assert summary =~ script
+      assert summary =~ "in-workspace"
+
+      text = hd(McpCtl.Error.tool_result(err).content).text
+      refute text == "spawn dry-run failed (exit 127)"
+      assert text =~ script
+    end
+
+    test "a non-127 spawn failure still includes output in the MCP message" do
+      runner = fn _, _, _, _ ->
+        {:error,
+         %{
+           error: :spawn_failed,
+           exit_status: 1,
+           output: "error: no session",
+           message: "spawn-agent-worker.sh exited 1"
+         }}
+      end
+
+      assert {:error, err} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "codex",
+                 task_slug: "x",
+                 runner: runner
+               )
+
+      assert err.error == :spawn_failed
+      assert err.exit_status == 1
+      refute err.message == "spawn-agent-worker.sh exited 1"
+      assert err.message =~ "no session"
+      assert McpCtl.Error.summary(err) =~ "no session"
+    end
+  end
+
   defp restore_env(previous, key) do
     case Map.fetch!(previous, key) do
       nil -> System.delete_env(key)
