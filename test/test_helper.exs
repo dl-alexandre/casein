@@ -80,6 +80,23 @@ Application.put_env(:casein, :drain_stop_system, fn _status ->
   :ok
 end)
 
+# Jido admission is intentionally host-pressure aware in production. Tests run
+# on a shared devbox where unrelated compiles can drive load far above the
+# admission threshold, so integration tests use a stable healthy sample. Tests
+# for pressure behavior replace this seam explicitly.
+Application.put_env(:casein, :jido_budget_sampler, fn ->
+  %{
+    process_count: :erlang.system_info(:process_count),
+    memory_bytes: :erlang.memory(:total),
+    rss_bytes: 0,
+    cpu_ratio: 0.0,
+    status: "healthy",
+    reasons: [],
+    available?: true,
+    healthy?: true
+  }
+end)
+
 unless System.get_env("MIX_TEST_NO_START") in ["1", "true"] do
   {:ok, _} = Application.ensure_all_started(:casein)
 end

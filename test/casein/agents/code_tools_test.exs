@@ -142,6 +142,33 @@ defmodule Casein.Agents.CodeToolsTest do
     assert hd(result.matches).text =~ "needle"
   end
 
+  test "code_search fallback rejects symlinks that leave the worktree", %{
+    repo: repo,
+    base: base
+  } do
+    outside = Path.join(base, "outside.txt")
+    link = Path.join(repo, "lib/outside.txt")
+    previous_path = System.get_env("PATH")
+    File.write!(outside, "outside-secret-needle\n")
+    File.ln_s!(outside, link)
+    System.put_env("PATH", "")
+
+    on_exit(fn -> restore_system_env("PATH", previous_path) end)
+
+    assert {:ok, result} =
+             CodeTools.invoke(
+               "code_search",
+               %{
+                 "workspace_id" => @workspace_id,
+                 "worktree_path" => repo,
+                 "query" => "outside-secret-needle"
+               },
+               %{actor: "ws:#{@workspace_id}"}
+             )
+
+    assert result.matches == []
+  end
+
   test "code_apply_patch applies a validated diff and is idempotent on retry", %{repo: repo} do
     File.write!(Path.join(repo, "note.txt"), "hello\n")
     git!(repo, ["add", "note.txt"])
@@ -349,4 +376,7 @@ defmodule Casein.Agents.CodeToolsTest do
 
   defp restore(key, nil), do: Application.delete_env(:casein, key)
   defp restore(key, value), do: Application.put_env(:casein, key, value)
+
+  defp restore_system_env(key, nil), do: System.delete_env(key)
+  defp restore_system_env(key, value), do: System.put_env(key, value)
 end

@@ -301,6 +301,12 @@ defmodule Casein.Agents.JidoLifecycleTest do
     assert snapshot.state == :running
     refute snapshot.state == :completed
     assert Enum.any?(JidoLifecycle.list(@workspace), &(&1.worker_id == "oc-sess-1"))
+
+    assert [transition] =
+             AgentEvents.list_for_session(@workspace, "oc-sess-1", limit: 10)
+
+    assert transition.event_type == "agent.state_changed"
+    assert transition.payload["message_present"] == true
   end
 
   test "pod transitions appear on the cockpit list with identity" do

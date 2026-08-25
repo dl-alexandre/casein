@@ -74,6 +74,7 @@ compile-time-fixed argv.
 | `Casein.Agents.JidoLifecycle` | `lib/casein/agents/jido_lifecycle.ex` | Headless lifecycle projection (#1016): stable redacted envelope into AgentEvents/activity/audit/inbox; replayable worker snapshot shared with OpenCode. |
 | `Casein.Agents.JidoSkills` | `lib/casein/agents/jido_skills.ex` | Skill registry/loader, runtime selector, parity matrix, and OpenCode fallback (#1017). No pane required. |
 | `Casein.Agents.JidoBudgets` | `lib/casein/agents/jido_budgets.ex` | Workspace/fleet resource budgets, honest queue/reject, host pressure drain, and OpenCode-vs-Jido benchmark (#1018). |
+| `Casein.Agents.JidoProvider` | `lib/casein/agents/jido_provider.ex` | Secret-safe Jido.AI provider boundary: Grok 4.6 through OpenCode Zen with the existing OpenCode credential resolved fresh per request. |
 | `Casein.Desktop.AgentLauncher` | `lib/casein/desktop/agent_launcher.ex` | Native Windows runtime allowlist plus token-free executable/version/auth diagnostics. |
 | `Casein.Desktop.AgentWorktree` | `lib/casein/desktop/agent_worktree.ex` | Native Windows isolated worktree creation with validated product-derived paths and argv-only Git execution. |
 | `Casein.Desktop.NativeAgentLaunch` | `lib/casein/desktop/native_agent_launch.ex` | Provides one prepare/start transaction across isolated worktree creation, provider MCP materialization, topology-validated ConPTY pane input, runtime reporting, and explicit clean-only finish cleanup. |
@@ -454,5 +455,7 @@ available. The list is surfaced through agent UI and `GET
   runtime selector, and OpenCode fallback.
 - [`../jido_budgets.md`](../jido_budgets.md) — workspace/fleet budgets, honest
   backpressure, host pressure drain, and the OpenCode-vs-Jido benchmark.
+- [`../jido_provider.md`](../jido_provider.md) — Jido.AI Zen/Grok 4.6 routing,
+  runtime OpenCode credential reuse, and secret-free provider failures.
 - [`../glossary.md`](../glossary.md) — term constraints (workspace, session,
   capability).

@@ -3,7 +3,7 @@ defmodule Casein.Terminals.AgentState.Server do
 
   use GenServer
 
-  alias Casein.Agents.{Activity, AgentEvents, JidoLifecycle}
+  alias Casein.Agents.{Activity, AgentEvents}
   alias Casein.Audit
   alias Casein.Export.Sanitizer
   alias Casein.Runs.AgentLifecycle
@@ -321,7 +321,6 @@ defmodule Casein.Terminals.AgentState.Server do
             }
           })
 
-        _ = JidoLifecycle.ingest_opencode(attrs)
         :ok
 
       _result ->
