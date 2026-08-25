@@ -78,6 +78,11 @@ config :casein,
   # Control-plane reconciliation is independent of UI/MCP watchers, so stale
   # pane state is pruned even when nobody has the workspace open.
   control_plane_reconcile_ms: 30_000,
+  fleet_snapshot: [
+    interval_ms: 2_000,
+    budget_ms: 4_000,
+    refresh_on_start: true
+  ],
   host_capacity_max_load_ratio: 1.0,
   host_capacity_min_mem_available_kb: 2_097_152,
   host_health: [

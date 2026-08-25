@@ -78,10 +78,16 @@ defmodule Casein.Agents.TerminalTools.Impl.Command do
     case PaneSubmit.confirm_submit(session, target,
            confirm: confirm?,
            enter_already_sent: true,
-           strict: true
+           strict: true,
+           written: written
          ) do
       {:ok, confirmation} ->
-        {:ok, Map.merge(payload, stringify_confirmation(honest_submit(payload, confirmation)))}
+        confirmation = honest_submit(payload, confirmation)
+
+        {:ok,
+         payload
+         |> Map.merge(stringify_confirmation(confirmation))
+         |> PaneWriteReceipt.promote_observed(confirmation.delivery)}
 
       {:error, error} ->
         {:error, Map.merge(payload, stringify_confirmation(honest_submit(payload, error)))}

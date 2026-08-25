@@ -37,7 +37,8 @@ defmodule Casein.Supervision.Terminals do
       # close stays undoable. Starts inert: with no `:done_agent_window_sweep_ms`
       # configured it arms no timer and sweeps nothing.
       Casein.Terminals.DoneAgentWindows,
-      Casein.Mobile.TerminalReaper
+      Casein.Mobile.TerminalReaper,
+      Casein.Terminals.FleetSnapshot
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

@@ -78,6 +78,8 @@ defmodule Casein.Terminals.OrchestrationStatusTest do
       assert payload.workspace_id == "ws-1"
       assert payload.session == "casein_ws-1_main"
       assert payload.generated_at == DateTime.to_iso8601(@now)
+      assert payload.incomplete == false
+      assert is_nil(payload.incomplete_reason)
       assert payload.total == 2
       assert payload.attention_count == 1
       assert payload.counts["needs_you"] == 1

@@ -94,7 +94,7 @@ is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 | `terminal_clear_next_prompt` | Retract the staged message (only when `coalesce_key` matches, if given) | `workspace_id`\*, `coalesce_key`, `session`, `pane` | `clear_next_prompt/1` |
 | `terminal_get_next_prompt` | Read the staged message for a pane | `workspace_id`\*, `session`, `pane` | `get_next_prompt/1` |
 | `terminal_send_keys` | Send raw keys to a pane, no trailing Enter (tmux key names); receipt includes `input_buffer` | `session`\*, `keys`\*, `pane` | `send_keys/1` |
-| `terminal_send_command` | Type command + Enter into a targeted pane; confirms submit (one retry); refuses agents view / menus unless `allow_non_conversation`; receipt includes `input_buffer` | `session`\*, `command`\*, `pane`, `confirm`, `allow_non_conversation` | `send_command/1` |
+| `terminal_send_command` | Type command + Enter into a targeted pane; confirms submit via hook/transcript/screen (no Enter retry); refuses agents view / menus unless `allow_non_conversation`; receipt includes `input_buffer` | `session`\*, `command`\*, `pane`, `confirm`, `allow_non_conversation` | `send_command/1` |
 | `terminal_set_agent_label` | Set a Casein chrome label for an agent pane (`freeze` to pin). Fleet roles: `manager` / `worker` (see `docs/fleet-chrome.md`) | `workspace_id`\*, `label`\*, `session`, `pane` | `set_agent_label/1` |
 | `terminal_report_worktree` | Register an agent-created Git worktree under the workspace; re-call at session end with `exit_status`/`handoff` | `workspace_id`\*, `worktree_path`\*, `branch`, `agent`, `runner_id`, `session_id`, `tmux_session_id`, `ensure_preview_started` (default false), `exit_status`, `handoff` | `report_worktree/1` |
 

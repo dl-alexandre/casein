@@ -7,14 +7,12 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Labels
   alias Casein.Operator.SituationServer
   alias Casein.Terminals.AgentState
-  alias Casein.Terminals.FleetBoard
-  alias Casein.Terminals.FleetChrome
   alias Casein.Terminals.ControlPlane
+  alias Casein.Terminals.FleetChrome
+  alias Casein.Terminals.FleetSnapshot
+  alias Casein.Terminals.HostCapacity
   alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
-  alias Casein.Terminals.OrchestrationListWorkers
-  alias Casein.Terminals.OrchestrationStatus
-  alias Casein.Terminals.OrphanedClaims
   alias Casein.Terminals.PaneLiveness
   alias Casein.Terminals.TmuxTopology
   alias Casein.Terminals.WorkerCancel
@@ -23,7 +21,6 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.WorktreeChangedPaths
   alias Casein.Terminals.WorktreeDiff
   alias Casein.Terminals.WorktreeStatus
-  alias Casein.Terminals.HostCapacity
   alias Casein.Terminals.HostHealth
   alias Casein.Workspaces.Identity, as: WorkspaceIdentity
 
@@ -407,10 +404,9 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   @doc """
   Read-only fleet orchestration status (M1): FleetBoard + GateQueue + orphans.
 
-  Requires workspace_id and session. Builds the same enriched topology path as
-  `topology/1` with **liveness on by default** (external observation is what
-  distinguishes wedged from thinking). Projects window tabs into `FleetBoard`,
-  then shapes the wire payload via `OrchestrationStatus.project/2`.
+  Requires workspace_id and session. Served from `FleetSnapshot` — never walks
+  tmux on the request path. A missing or partial snapshot returns
+  `incomplete: true` plus a reason instead of hanging.
 
   Optional gate identity keys (`gate_pr` / `gate_run_id` / `gate_branch` /
   `gate_pid`) populate `gate_queue.my_position`. No mutations, no scrollback.
@@ -418,24 +414,10 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   @spec orchestration_status(map()) :: {:ok, map()} | {:error, term()}
   def orchestration_status(params) do
     with {:ok, workspace_id} <- workspace_id_arg(params),
-         {:ok, session} <- session_arg(params),
-         {:ok, topology} <- topology(Map.put_new(params, :include_liveness, true)) do
-      tabs = OrchestrationStatus.tabs_from_topology(topology)
+         {:ok, session} <- session_arg(params) do
+      project_opts = maybe_put_gate_identity([], params)
 
-      board =
-        FleetBoard.from_window_tabs(tabs,
-          list_claimed: &OrphanedClaims.list_claimed/0,
-          tmux_session: session
-        )
-
-      project_opts =
-        [
-          workspace_id: workspace_id,
-          session: session
-        ]
-        |> maybe_put_gate_identity(params)
-
-      {:ok, OrchestrationStatus.project(board, project_opts)}
+      {:ok, FleetSnapshot.orchestration_status(workspace_id, session, project_opts)}
     end
   end
 
@@ -558,32 +540,17 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   @doc """
   Read-only compact fleet worker list (M3).
 
-  Requires workspace_id and session. Same enriched topology path as
-  `orchestration_status/1` (liveness on by default), then projects via
-  `OrchestrationListWorkers.project/2`. Optional `fleet_role` /
-  `needs_you_only` filters. No mutations, no scrollback.
+  Requires workspace_id and session. Served from `FleetSnapshot`.
+  `needs_you_only: true` reads the precomputed index (cheapest path).
+  Optional `fleet_role` filter. No mutations, no scrollback.
   """
   @spec orchestration_list_workers(map()) :: {:ok, map()} | {:error, term()}
   def orchestration_list_workers(params) do
     with {:ok, workspace_id} <- workspace_id_arg(params),
-         {:ok, session} <- session_arg(params),
-         {:ok, topology} <- topology(Map.put_new(params, :include_liveness, true)) do
-      tabs = OrchestrationStatus.tabs_from_topology(topology)
+         {:ok, session} <- session_arg(params) do
+      opts = maybe_put_list_filters([], params)
 
-      board =
-        FleetBoard.from_window_tabs(tabs,
-          list_claimed: &OrphanedClaims.list_claimed/0,
-          tmux_session: session
-        )
-
-      opts =
-        [
-          workspace_id: workspace_id,
-          session: session
-        ]
-        |> maybe_put_list_filters(params)
-
-      {:ok, OrchestrationListWorkers.project(board, opts)}
+      {:ok, FleetSnapshot.orchestration_list_workers(workspace_id, session, opts)}
     end
   end
 

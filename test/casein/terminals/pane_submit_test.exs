@@ -78,7 +78,7 @@ defmodule Casein.Terminals.PaneSubmitTest do
       assert_received {:fake_tmux_keys, @session, @pane, "Enter", _opts}
     end
 
-    test "a frozen pane gets exactly one retry Enter, then reports not_confirmed" do
+    test "a frozen pane does not retry Enter and reports not_confirmed" do
       capture = scripted_capture(["> rebase first"])
 
       assert {:ok, result} =
@@ -87,11 +87,10 @@ defmodule Casein.Terminals.PaneSubmitTest do
       assert result.submitted == false
       assert result.delivery == :not_confirmed
       assert result.confirmation == :unconfirmed
-      assert result.enter_presses == 2
+      assert result.enter_presses == 1
 
       assert_received {:fake_tmux_keys, @session, @pane, "Enter", _first}
-      assert_received {:fake_tmux_keys, @session, @pane, "Enter", _second}
-      refute_received {:fake_tmux_keys, @session, @pane, "Enter", _third}
+      refute_received {:fake_tmux_keys, @session, @pane, "Enter", _second}
     end
 
     test "strict callers get an error for the same frozen pane" do
@@ -256,6 +255,85 @@ defmodule Casein.Terminals.PaneSubmitTest do
     end
   end
 
+  describe "confirm_submit/3 transcript signal" do
+    test "a growing transcript confirms even on a frozen screen" do
+      frozen = scripted_capture(["> rebase first"])
+      capture = advance_transcript_on_second_call(frozen)
+
+      assert {:ok, result} =
+               PaneSubmit.confirm_submit(@session, @pane, capture: capture)
+
+      assert result.delivery == :delivered
+      assert result.confirmation == :transcript
+      assert result.enter_presses == 1
+    end
+
+    test "an injected transcript probe confirms without a file" do
+      capture = scripted_capture(["> rebase first"])
+
+      assert {:ok, result} =
+               PaneSubmit.confirm_submit(@session, @pane,
+                 capture: capture,
+                 transcript: fn -> true end
+               )
+
+      assert result.delivery == :delivered
+      assert result.confirmation == :transcript
+    end
+  end
+
+  # Wraps a capture so the second read also grows a reported Claude transcript.
+  defp advance_transcript_on_second_call(capture) do
+    home = tmp_transcript_home!()
+    path = claude_transcript!(home, "session-submit.jsonl", "")
+
+    :ok =
+      AgentState.report("ws-submit", @session, @pane, :idle, nil,
+        source: :hook,
+        transcript_path: path
+      )
+
+    _flush = AgentState.get(@session, @pane)
+    key = {__MODULE__, :transcript_calls, System.unique_integer([:positive])}
+
+    fn ->
+      calls = Process.get(key, 0) + 1
+      Process.put(key, calls)
+
+      if calls == 2 do
+        File.write!(path, ~s({"uuid":"u1","type":"user","message":{"content":"hi"}}\n))
+      end
+
+      capture.()
+    end
+  end
+
+  defp claude_transcript!(home, name, body) do
+    path = Path.join([home, ".claude", "projects", "demo", name])
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, body)
+    path
+  end
+
+  defp tmp_transcript_home! do
+    root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
+    home = Path.join(root, "casein-submit-transcripts-#{System.unique_integer([:positive])}")
+    previous_home = System.get_env("HOME")
+    File.rm_rf!(home)
+    File.mkdir_p!(home)
+    System.put_env("HOME", home)
+
+    on_exit(fn ->
+      File.rm_rf!(home)
+
+      if previous_home,
+        do: System.put_env("HOME", previous_home),
+        else: System.delete_env("HOME")
+    end)
+
+    home
+  end
+
   describe "deliver/4" do
     test "pastes the text and confirms the submit" do
       capture = scripted_capture(["idle", "⏺ thinking"])
@@ -272,12 +350,10 @@ defmodule Casein.Terminals.PaneSubmitTest do
       refute Keyword.get(opts, :submit)
     end
 
-    test "OpenCode-style race: Enter during drain needs a second press, then delivers" do
-      # Freeze through baseline + first-attempt polls, then redraw on attempt 2.
-      # With settle 0 / timeout 80 / poll 10 ≈ 1 baseline + ~8 polls before retry.
+    test "OpenCode-style race: unconfirmed after one Enter is submit_not_confirmed" do
       capture = frozen_then_change("> long brief", "⏺ working", after_reads: 12)
 
-      assert {:ok, result} =
+      assert {:error, result} =
                PaneSubmit.deliver(@session, @pane, "long fleet brief\nline 2\nline 3",
                  capture: capture,
                  settle_ms: 0,
@@ -286,13 +362,14 @@ defmodule Casein.Terminals.PaneSubmitTest do
                  poll_ms: 10
                )
 
-      assert result.submitted == true
-      assert result.delivery == :delivered
-      assert result.enter_presses == 2
+      assert result.error == :submit_not_confirmed
+      assert result.submitted == false
+      assert result.delivery == :not_confirmed
+      assert result.enter_presses == 1
       assert_received {:fake_tmux_paste_text, @session, @pane, _text, opts}
       refute Keyword.get(opts, :submit)
       assert_received {:fake_tmux_keys, @session, @pane, "Enter", _}
-      assert_received {:fake_tmux_keys, @session, @pane, "Enter", _}
+      refute_received {:fake_tmux_keys, @session, @pane, "Enter", _}
     end
 
     test "deliver scales settle from paste_bytes so large briefs drain first" do
@@ -300,7 +377,7 @@ defmodule Casein.Terminals.PaneSubmitTest do
       # settle is non-zero without blowing the test budget (capped).
       capture = scripted_capture(["> still here"])
 
-      assert {:error, %{error: :submit_not_confirmed, enter_presses: 2}} =
+      assert {:error, %{error: :submit_not_confirmed, enter_presses: 1}} =
                PaneSubmit.deliver(@session, @pane, String.duplicate("x", 400),
                  capture: capture,
                  # Explicit base 0; paste_bytes alone should still scale settle
