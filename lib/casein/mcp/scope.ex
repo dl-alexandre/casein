@@ -37,6 +37,16 @@ defmodule Casein.MCP.Scope do
     mcp_self_test
   ))
 
+  # These actions validate the required session argument themselves. Letting
+  # that validation run preserves the structured missing_argument and
+  # unscoped_session errors for malformed calls, while valid Casein sessions
+  # still require a workspace scope below.
+  @terminal_session_validated_tools MapSet.new(~w(
+    terminal_capture
+    terminal_send_keys
+    terminal_send_command
+  ))
+
   @doc "Read-only tools that may opt into the audited cross-workspace lane."
   @spec cross_workspace_read_tool?(String.t()) :: boolean()
   def cross_workspace_read_tool?(name) when is_binary(name),
@@ -205,7 +215,7 @@ defmodule Casein.MCP.Scope do
            resolve_workspace(tool_name, args, surface, workspace_origin),
          :ok <-
            enforce_workspace_scope(default_workspace_id, workspace_id, workspace_origin),
-         :ok <- enforce_required_workspace(tool_name, surface, workspace_id, opts),
+         :ok <- enforce_required_workspace(tool_name, surface, workspace_id, args, opts),
          :ok <- enforce_required_tmux_session(args, opts) do
       {:ok,
        %{
@@ -406,7 +416,7 @@ defmodule Casein.MCP.Scope do
     {:ok, %{}, workspace_id(args), origin}
   end
 
-  defp enforce_required_workspace(tool_name, :preview, workspace_id, opts) do
+  defp enforce_required_workspace(tool_name, :preview, workspace_id, _args, opts) do
     require_workspace? =
       Keyword.get(opts, :require_workspace?, tool_name in @preview_workspace_tools)
 
@@ -417,7 +427,7 @@ defmodule Casein.MCP.Scope do
     end
   end
 
-  defp enforce_required_workspace(tool_name, :terminal, workspace_id, opts) do
+  defp enforce_required_workspace(tool_name, :terminal, workspace_id, args, opts) do
     require_workspace? =
       Keyword.get(opts, :require_workspace?, terminal_requires_workspace?(tool_name))
 
@@ -425,11 +435,12 @@ defmodule Casein.MCP.Scope do
       not require_workspace? -> :ok
       is_binary(workspace_id) -> :ok
       allow_unscoped_box_wide?() -> :ok
+      terminal_session_validation_should_run?(tool_name, args) -> :ok
       true -> {:error, workspace_scope_required()}
     end
   end
 
-  defp enforce_required_workspace(_tool_name, _surface, workspace_id, opts) do
+  defp enforce_required_workspace(_tool_name, _surface, workspace_id, _args, opts) do
     if Keyword.get(opts, :require_workspace?, false) and is_nil(workspace_id) do
       {:error, missing_workspace_id_error()}
     else
@@ -444,6 +455,15 @@ defmodule Casein.MCP.Scope do
 
   defp allow_unscoped_box_wide? do
     Application.get_env(:casein, :allow_global_mcp_tool_calls, false) in [true, "true", "1", 1]
+  end
+
+  defp terminal_session_validation_should_run?(tool_name, args) do
+    MapSet.member?(@terminal_session_validated_tools, tool_name) and
+      case value(args, "session") do
+        nil -> true
+        session when is_binary(session) -> not String.starts_with?(session, "casein_")
+        _ -> true
+      end
   end
 
   defp enforce_workspace_scope(nil, _workspace_id, _origin), do: :ok
