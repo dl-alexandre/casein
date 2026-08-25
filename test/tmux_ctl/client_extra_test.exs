@@ -532,7 +532,7 @@ defmodule TmuxCtl.ClientExtraTest do
     assert_receive {:tmux_runner, argv}
     assert Enum.take(argv, 2) == ~w[list-sessions -F]
     assert [_, _, format] = argv
-    assert String.contains?(format, ~s|@casein_actor|)
+    assert String.contains?(format, ~S(#{@casein_actor}))
   end
 
   test "set_session_actor binds an unowned session" do

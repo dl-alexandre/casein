@@ -1410,8 +1410,8 @@ defmodule TmuxCtl.Client do
     end
   end
 
-  @list_sessions_fmt ~S(#{session_name}|#{session_attached}|#{session_activity}|#{@casein_session_alias}|) <>
-                       @session_actor_option
+  @list_sessions_fmt ~S(#{session_name}|#{session_attached}|#{session_activity}|#{@casein_session_alias}|#{) <>
+                       @session_actor_option <> "}"
 
   @doc """
   List every session with the fields the session janitor needs. Returns `[]`
