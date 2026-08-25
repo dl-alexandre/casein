@@ -310,6 +310,7 @@ defmodule Casein.Terminals.Backends.Tmux do
 
   @impl true
   def set_session_alias(session, name), do: adapter().set_session_alias(session, name)
+  def set_session_actor(session, actor), do: adapter().set_session_actor(session, actor)
 
   @impl true
   def refresh_client(session), do: adapter().refresh_client(session)

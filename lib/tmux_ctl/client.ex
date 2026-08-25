@@ -11,6 +11,7 @@ defmodule TmuxCtl.Client do
   @resize_amount_default 5
   @resize_amount_max 50
   @pane_role_option "@casein_pane_role"
+  @session_actor_option "@casein_actor"
 
   defp session_prefix do
     Application.get_env(:tmux_ctl, :session_prefix, "casein")
@@ -1198,6 +1199,53 @@ defmodule TmuxCtl.Client do
     end
   end
 
+  @doc "Set or clear the superadmin principal bound to a Casein session."
+  @spec set_session_actor(String.t(), String.t() | nil) :: :ok | {:error, term()}
+  def set_session_actor(session, actor) when is_binary(session) do
+    if managed_session?(session) do
+      case actor_string(actor) do
+        "" ->
+          run_ok(["set-option", "-t", session, "-u", @session_actor_option], [])
+
+        actor ->
+          if valid_actor?(actor) do
+            case current_session_actor(session) do
+              {:ok, nil} ->
+                run_ok(["set-option", "-t", session, @session_actor_option, actor], [])
+
+              {:ok, ^actor} ->
+                :ok
+
+              {:ok, _other_actor} ->
+                {:error, :session_owned_by_another_actor}
+
+              {:error, _reason} ->
+                {:error, :session_actor_lookup_failed}
+            end
+          else
+            {:error, :invalid_actor}
+          end
+      end
+    else
+      {:error, :refused_non_casein_session}
+    end
+  end
+
+  defp actor_string(actor) when is_binary(actor), do: String.trim(actor)
+  defp actor_string(_actor), do: ""
+  defp valid_actor?(actor), do: String.match?(actor, ~r/\A[a-z0-9][a-z0-9._-]{0,63}\z/)
+
+  defp current_session_actor(session) do
+    with {:ok, sessions} <- list_sessions_result(),
+         session_record when is_map(session_record) <-
+           Enum.find(sessions, &(&1[:session] == session)) do
+      {:ok, Map.get(session_record, :actor)}
+    else
+      {:error, _reason} -> {:error, :lookup_failed}
+      _ -> {:ok, nil}
+    end
+  end
+
   @mobile_terminal_lease_option "@casein_mobile_terminal_lease"
 
   @doc "Set and read back server-owned identity for a disposable mobile terminal."
@@ -1362,7 +1410,7 @@ defmodule TmuxCtl.Client do
     end
   end
 
-  @list_sessions_fmt ~S(#{session_name}|#{session_attached}|#{session_activity}|#{@casein_session_alias})
+  @list_sessions_fmt ~S(#{session_name}|#{session_attached}|#{session_activity}|#{@casein_session_alias}|#{@session_actor_option})
 
   @doc """
   List every session with the fields the session janitor needs. Returns `[]`
@@ -1396,6 +1444,17 @@ defmodule TmuxCtl.Client do
 
   defp parse_session_line(line) do
     case String.split(line, "|") do
+      [session, attached, activity, session_alias, session_actor] ->
+        [
+          %{
+            session: session,
+            attached: attached != "0",
+            activity: parse_int(activity, 0),
+            session_alias: blank_to_nil(session_alias),
+            actor: blank_to_nil(session_actor)
+          }
+        ]
+
       [session, attached, activity, session_alias] ->
         [
           %{
