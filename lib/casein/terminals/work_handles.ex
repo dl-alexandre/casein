@@ -168,6 +168,7 @@ defmodule Casein.Terminals.WorkHandles do
   end
 
   def enrich_topology(topology, _workspace_id, _session), do: topology
+
   @doc """
   Record status on the handle itself.
 

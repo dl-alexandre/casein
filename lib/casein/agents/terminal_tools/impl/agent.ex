@@ -445,6 +445,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   end
 
   defp mark_inbox_collected(message, _receipt, _outcome), do: message
+
   defp inbox_message(message) do
     status = Map.get(message, :status) || :queued
     unread? = Map.get(message, :unread?)
