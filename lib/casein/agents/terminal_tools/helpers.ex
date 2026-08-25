@@ -1036,6 +1036,86 @@ defmodule Casein.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("jido_admit") do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:terminal_mutation, :terminal_metadata],
+      recovery_hints: [
+        "Requires workspace_id. Omit runtime to choose Jido when the workspace flag is on.",
+        "Only typed CodeTools actions are admitted — never terminal_send_* or a shell.",
+        "runtime: opencode, or a disabled workspace, returns fallback?: true and next_tool worker_launch.",
+        "dry_run: true returns the selection without starting an attempt.",
+        "Follow a live admit with jido_status / jido_cancel. There is no pane_id."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "worktree_path" => "/tmp/casein-agent-worktrees/wt-demo",
+            "actions" => [%{"name" => "code_read", "args" => %{"path" => "README.md"}}]
+          },
+          structured_content: %{
+            "runtime" => "jido",
+            "fallback?" => false,
+            "headless" => true,
+            "attempt_id" => "att-1",
+            "state" => "running",
+            "next_tool" => "jido_status"
+          }
+        }
+      ]
+    }
+  end
+
+  def metadata("jido_status") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_metadata, :terminal_read],
+      recovery_hints: [
+        "Requires workspace_id and attempt_id from jido_admit.",
+        "headless: true and no pane_id — a missing tmux pane is not a failed worker.",
+        "not_found means the pod has no such attempt, not that OpenCode should be scraped."
+      ],
+      examples: [
+        %{
+          arguments: %{"workspace_id" => "ws-1", "attempt_id" => "att-1"},
+          structured_content: %{
+            "runtime" => "jido",
+            "headless" => true,
+            "attempt_id" => "att-1",
+            "state" => "completed"
+          }
+        }
+      ]
+    }
+  end
+
+  def metadata("jido_cancel") do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:terminal_mutation, :terminal_metadata],
+      recovery_hints: [
+        "Requires workspace_id and attempt_id. Cancels one attempt only.",
+        "already_terminal means the attempt finished before cancel landed.",
+        "Does not kill tmux windows — use worker_cancel for OpenCode panes."
+      ],
+      examples: [
+        %{
+          arguments: %{"workspace_id" => "ws-1", "attempt_id" => "att-1"},
+          structured_content: %{
+            "runtime" => "jido",
+            "headless" => true,
+            "attempt_id" => "att-1",
+            "state" => "cancelled"
+          }
+        }
+      ]
+    }
+  end
+
   def metadata("worker_launch") do
     %{
       mutation?: true,

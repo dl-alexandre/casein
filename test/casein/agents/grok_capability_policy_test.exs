@@ -49,6 +49,9 @@ defmodule Casein.Agents.GrokCapabilityPolicyTest do
     # worker_launch / worker_cancel are medium mutations — locked grants must not see them
     refute "worker_launch" in snapshot.allowed_tools["terminal"]
     refute "worker_cancel" in snapshot.allowed_tools["terminal"]
+    refute "jido_admit" in snapshot.allowed_tools["terminal"]
+    refute "jido_cancel" in snapshot.allowed_tools["terminal"]
+    assert "jido_status" in snapshot.allowed_tools["terminal"]
     refute "terminal_send_command" in snapshot.allowed_tools["terminal"]
     refute "terminal_send_agent_command" in snapshot.allowed_tools["terminal"]
     refute "artifact_create" in snapshot.allowed_tools["artifact"]

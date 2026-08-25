@@ -324,7 +324,16 @@ launcher path under the product checkout and not `$CASEIN_SCRIPTS` (that env
 points at the product repo, which does not carry `spawn-agent-worker.sh`). Do
 not `find` the helper — a stale Casein checkout is worse than a clean failure.
 
+When the workspace is on `CASEIN_JIDO_HEADLESS` /
+`CASEIN_JIDO_HEADLESS_WORKSPACES`, managers should call `jido_admit` first
+(typed CodeTools only). A `fallback?: true` receipt, or an explicit
+`runtime: opencode`, is the only reason to take `worker_launch`. Jido attempts
+are headless — use `jido_status` / `jido_cancel`, never tmux.
+
 ```text
+jido_admit { workspace_id, actions, worktree_path?, skill?, dry_run? }
+→ attempt_id, headless: true   |   fallback?: true, next_tool: worker_launch
+
 worker_launch { workspace_id, session, runtime, task_slug, label?, dry_run? }
 → pane_id, window_name, worktree_path, branch, handle_id
 ```

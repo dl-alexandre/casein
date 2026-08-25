@@ -38,6 +38,21 @@ Default is legacy OpenCode.
 `Casein.Agents.JidoPod.admit/1` returns `{:error, :legacy_opencode}` when the
 legacy path is selected so callers can keep launching OpenCode.
 
+## Manager MCP
+
+External managers use Terminal MCP tools backed by
+`Casein.Agents.JidoDelegate`:
+
+| Tool | Role |
+|------|------|
+| `jido_admit` | Select + admit typed CodeTools actions (`code_read` / `code_search` / `code_apply_patch` / `code_exec`). Omit `runtime` to choose Jido when the workspace flag is on. |
+| `jido_status` | Headless status/result (`headless: true`, no `pane_id`) |
+| `jido_cancel` | Cancel one attempt |
+
+`runtime: opencode` or a disabled workspace returns `{fallback?: true,
+next_tool: "worker_launch"}` and starts no pod. Terminal/shell actions are
+rejected at admit. See [`delegate-to-worker`](../.claude/skills/delegate-to-worker/SKILL.md).
+
 ## Lifecycle
 
 `admitted → queued | running → awaiting_human | retrying | completed | failed | cancelled | timed_out | provider_unavailable`

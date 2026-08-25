@@ -128,6 +128,31 @@ defmodule Casein.MCP.ScopeTest do
              )
   end
 
+  test "jido_admit inherits the coordinator workspace but rejects foreign overrides" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call(
+               "jido_admit",
+               %{"actions" => []},
+               surface: :terminal,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert scope.args["workspace_id"] == "ws-scope"
+    assert scope.resolved_from.workspace == :pre_scoped
+
+    assert {:error, error} =
+             Scope.resolve_tool_call(
+               "jido_admit",
+               %{"workspace_id" => "ws-other", "actions" => []},
+               surface: :terminal,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert error.error == :workspace_scope_mismatch
+    assert error.scoped_workspace_id == "ws-scope"
+    assert error.requested_workspace_id == "ws-other"
+  end
+
   test "worker_launch inherits the coordinator workspace but rejects foreign overrides" do
     assert {:ok, scope} =
              Scope.resolve_tool_call(

@@ -71,6 +71,7 @@ compile-time-fixed argv.
 | `Casein.Agents.ReviewCommand` | `lib/casein/agents/review_command.ex` | Allowlisted review-mode command; argv fixed at compile time, gated on detected capabilities. |
 | `Casein.Agents.Run` | `lib/casein/agents/run.ex` | One in-flight review-mode run per workspace (supervised, linger, hard timeout). |
 | `Casein.Agents.JidoPod` | `lib/casein/agents/jido_pod.ex` | Headless workspace coordinator (#1014): admit/queue/cancel bounded workers that call typed Code actions. Feature-flagged vs legacy OpenCode. No tmux pane. |
+| `Casein.Agents.JidoDelegate` | `lib/casein/agents/jido_delegate.ex` | Manager MCP facade: select/admit/status/cancel with typed CodeTools only and `worker_launch` fallback. |
 | `Casein.Agents.JidoActions` | `lib/casein/agents/jido_actions.ex` | Typed worker action catalog (#1015): one validated action per capability, trusted context, distinct deny/human/timeout/cancel/stale/provider results. Behind the same Jido feature flag. |
 | `Casein.Agents.JidoLifecycle` | `lib/casein/agents/jido_lifecycle.ex` | Headless lifecycle projection (#1016): stable redacted envelope into AgentEvents/activity/audit/inbox; replayable worker snapshot shared with OpenCode. |
 | `Casein.Agents.JidoSkills` | `lib/casein/agents/jido_skills.ex` | Skill registry/loader, runtime selector, parity matrix, and OpenCode fallback (#1017). No pane required. |

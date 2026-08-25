@@ -10,8 +10,10 @@ description: >
 
 # Delegate to a worker
 
-Orchestrate a worker agent through Casein terminal MCP. No `agent_pair` marker
-required — always pass an explicit `pane` id from topology or `worker_launch`.
+Orchestrate a worker through Casein terminal MCP. Prefer headless Jido when
+the workspace flag is on. Fall back to a visible OpenCode/`worker_launch`
+pane only when Jido is disabled or `runtime: opencode` is explicit. Jido
+never gets a pane id — do not send tmux keys.
 
 All four runtimes get per-workspace Casein MCP configs materialized at launch, so
 any of them can call `terminal_report_agent_state` back at you. What differs is
@@ -24,9 +26,24 @@ what they signal *without* being asked — see [§6](#6-wait-loop).
 
 ## 1. Pick the runtime
 
-Route on **capability**, not preference. Agent-write unlock is **not** a hard
-gate for write work — it only controls whether a Grok worker may drive live tmux
-panes.
+**Headless Jido first.** Call `jido_admit` with `dry_run: true` (or omit
+`runtime`) so Casein chooses from `CASEIN_JIDO_HEADLESS` /
+`CASEIN_JIDO_HEADLESS_WORKSPACES`. Do not guess the flag.
+
+| `jido_admit` receipt | Path |
+|---|---|
+| `runtime: "jido"`, `fallback?: false` | Admit typed CodeTools actions. Poll `jido_status`. Cancel with `jido_cancel`. No pane, no `terminal_send_*`. |
+| `fallback?: true` / `next_tool: "worker_launch"` | OpenCode TUI path below. Same when you pass `runtime: "opencode"`. |
+| `error: "jido_disabled"` | You pinned `runtime: "jido"` on a workspace that is not flagged. Use `worker_launch`. |
+
+Typed actions only: `code_read`, `code_search`, `code_apply_patch`,
+`code_exec`. Never pass `terminal_send_*`, a shell, or `git_*` / `task_*`
+(those fail closed). Identity on action args is ignored — workspace and
+worktree come from the admit call.
+
+Route remaining TUI work on **capability**, not preference. Agent-write unlock
+is **not** a hard gate for write work — it only controls whether a Grok worker
+may drive live tmux panes.
 
 ### Agent-write unlock (grok MCP grant only)
 
@@ -121,7 +138,35 @@ on every subsequent call.
 Record orchestrator cwd: `terminal_topology` → active pane `current_path`, or
 `terminal_capture` of the orchestrator pane.
 
-## 3. Acquire a worker pane
+## 3. Acquire a worker
+
+### Headless Jido (preferred when the workspace flag is on)
+
+```text
+jido_admit {
+  workspace_id,
+  worktree_path?,
+  skill?,
+  actions: [{name: code_read|code_search|code_apply_patch|code_exec, args?, mutation_token?}],
+  dry_run?
+}
+```
+
+A live Jido receipt has `attempt_id`, `headless: true`, and **no** `pane_id`.
+`dry_run: true` returns the selection only. Then:
+
+```text
+jido_status { workspace_id, attempt_id }
+jido_cancel { workspace_id, attempt_id }
+```
+
+Poll `jido_status` until `state` is `completed|failed|cancelled|timed_out|provider_unavailable`.
+Do not `terminal_capture` a Jido attempt. If the receipt is `fallback?: true`,
+use `worker_launch` below — do not retry Jido with a shell spawn.
+
+### OpenCode / TUI fallback (`worker_launch`)
+
+Use this only when Jido is disabled or you passed `runtime: "opencode"`.
 
 ### Reuse (only when safe)
 
@@ -133,12 +178,12 @@ From `terminal_topology`, find a pane for your chosen runtime that is:
 
 ### Spawn fresh (preferred when reuse is ambiguous)
 
-**Step one is the `worker_launch` MCP tool.** It is the only supported spawn
-path. Do not shell out to `spawn-agent-worker.sh`. Do not resolve
-`$CASEIN_SCRIPTS` or `$CASEIN_CHECKOUT/scripts`. Do **not** `find` / `locate`
-the helper — a filesystem search that hits a stale Casein checkout is worse
-than a clean failure (wrong version, no signal). If `worker_launch` fails,
-stop; do not fall back to a shell spawn.
+**The only supported TUI spawn path is the `worker_launch` MCP tool.** Do not
+shell out to `spawn-agent-worker.sh`. Do not resolve `$CASEIN_SCRIPTS` or
+`$CASEIN_CHECKOUT/scripts`. Do **not** `find` / `locate` the helper — a
+filesystem search that hits a stale Casein checkout is worse than a clean
+failure (wrong version, no signal). If `worker_launch` fails, stop; do not
+fall back to a shell spawn.
 
 ```text
 worker_launch {
@@ -429,5 +474,7 @@ Slice N+1: <one-line slice spec>. Read the committed code + plan, then proceed.
 | `unknown` | No marker; for grok/codex/opencode this is the idle tell |
 | `done` / `blocked` | **Report-only** — hooks (claude, codex) or `terminal_report_agent_state` |
 | `⠹ Compacting…` >1 min | Grok **wedged** — respawn same pane/worktree ([recover](#recover-a-wedged-worker-compaction-hang)) |
+| `jido_admit` `fallback?: true` | Jido off or `runtime: opencode` — use `worker_launch` |
+| `jido_status` `state` terminal | Headless result — do not scrape a pane |
 | `worker_launch` spawn refused / exit 3 | Grok refused: agent write locked — route to codex or ask for a re-grant |
 | `include_answer` | Unreliable on worker panes — use `terminal_capture` + JSON parse |

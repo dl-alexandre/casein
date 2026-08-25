@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 48
+      assert length(names) == 51
 
       for expected <- [
             "terminal_list_sessions",
@@ -57,6 +57,9 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "runtime_signal",
             "worker_launch",
             "worker_cancel",
+            "jido_admit",
+            "jido_status",
+            "jido_cancel",
             "worktree_status",
             "worktree_changed_paths",
             "worktree_diff",
@@ -222,6 +225,33 @@ defmodule Casein.Agents.TerminalToolsActionTest do
       assert tool.metadata.mutation? == true
       assert tool.metadata.danger_level == :medium
       assert :terminal_mutation in tool.metadata.capabilities
+    end
+
+    test "jido_admit is a medium mutation that never advertises tmux" do
+      tool = definition("jido_admit")
+
+      assert tool.parameters.required == ["workspace_id"]
+      assert tool.parameters.properties.runtime.enum == ["jido", "opencode"]
+      refute Map.has_key?(tool.parameters.properties, :session)
+      refute Map.has_key?(tool.parameters.properties, :pane)
+      assert tool.metadata.mutation? == true
+      assert tool.metadata.danger_level == :medium
+    end
+
+    test "jido_status is read-only and requires attempt scope" do
+      tool = definition("jido_status")
+
+      assert tool.parameters.required == ["workspace_id", "attempt_id"]
+      assert tool.metadata.mutation? == false
+      assert tool.metadata.danger_level == :low
+    end
+
+    test "jido_cancel is a medium mutation with required attempt scope" do
+      tool = definition("jido_cancel")
+
+      assert tool.parameters.required == ["workspace_id", "attempt_id"]
+      assert tool.metadata.mutation? == true
+      assert tool.metadata.danger_level == :medium
     end
 
     test "worker_cancel fails closed without required args" do

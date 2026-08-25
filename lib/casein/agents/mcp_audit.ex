@@ -200,7 +200,9 @@ defmodule Casein.Agents.MCPAudit do
         "gate_report",
         "file_open_in_pane",
         "diff_open",
-        "run_open"
+        "run_open",
+        "jido_admit",
+        "jido_cancel"
       ]
 
   defp mutating_preview_tool?(tool),

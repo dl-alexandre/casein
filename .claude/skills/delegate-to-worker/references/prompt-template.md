@@ -1,8 +1,34 @@
 # Delegation prompt template (worker)
 
-Copy and fill this template when sending a task to a worker pane. Works for any
-runtime (grok, codex, claude, opencode). Keep the orchestrator context summary
-under ~4k tokens.
+## Jido / typed-action contract (headless)
+
+When `jido_admit` selected Jido, do **not** paste this prompt into a pane.
+Admit a bounded action list instead:
+
+```text
+jido_admit {
+  workspace_id: "{{WORKSPACE_ID}}",
+  worktree_path: "{{WORKER_WORKTREE}}",
+  skill: "inspect" | "patch" | "approved-verify" | "representative-edit",
+  actions: [
+    {"name": "code_read", "args": {"path": "…"}},
+    {"name": "code_search", "args": {"query": "…"}},
+    {"name": "code_apply_patch", "args": {"patch": "…"}, "mutation_token": "…"},
+    {"name": "code_exec", "args": {"command_id": "mix.test"}}
+  ]
+}
+```
+
+Allowed names: `code_read`, `code_search`, `code_apply_patch`, `code_exec`.
+Forbidden: `terminal_send_*`, `terminal_capture`, any shell, `git_*`, `task_*`.
+Poll `jido_status` for `state` / redacted `result`. Cancel with `jido_cancel`.
+If the admit receipt is `fallback?: true`, use the OpenCode pane template below.
+
+---
+
+Copy and fill this template when sending a task to a **TUI** worker pane
+(`worker_launch` fallback). Works for grok, codex, claude, opencode. Keep the
+orchestrator context summary under ~4k tokens.
 
 Substitute `{{RUNTIME}}` and `{{PRIMARY_CHECKOUT}}` with real values — resolve the
 checkout from `git worktree list --porcelain | head -1`, never from a remembered

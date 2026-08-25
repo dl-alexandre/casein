@@ -46,6 +46,10 @@ approximated.
 
 ## Runtime selector
 
+Manager MCP (`jido_admit` / `jido_status` / `jido_cancel` via
+`Casein.Agents.JidoDelegate`) uses this selector. A disabled workspace or
+`runtime: opencode` returns a `worker_launch` fallback receipt.
+
 `JidoSkills.select/2` chooses `:jido`, `:opencode`, or a later explicit
 fallback:
 
