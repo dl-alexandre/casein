@@ -80,6 +80,13 @@ config :casein,
   control_plane_reconcile_ms: 30_000,
   host_capacity_max_load_ratio: 1.0,
   host_capacity_min_mem_available_kb: 2_097_152,
+  host_health: [
+    status_path: "/var/lib/casein/host-watchdog/status.json",
+    alerts_path: "/var/lib/casein/host-watchdog/alerts.jsonl",
+    host: "milc-devbox",
+    stale_after_seconds: 720,
+    max_alerts: 5
+  ],
   # SessionDirectory reconcile while event mode is healthy (5s: quieter than the
   # old 2s poll, but keeps quiet-agent / needs_you attention flips tighter than
   # the design doc's 10s option — open question §8.1).

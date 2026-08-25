@@ -30,7 +30,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
          session: session,
          pane: pane.id,
          reason: pane.agent_match,
-         safe_to_mutate: pane.agent_match == "agent_pair_marker"
+         safe_to_mutate: pane.agent_match in ["agent_pair_marker", "pane_role"]
        }
        |> put_pending_next_prompt(session, pane.id)
        |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))}

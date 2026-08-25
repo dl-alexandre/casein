@@ -147,6 +147,11 @@ It reports the same live load and memory facts used by the host-side scheduling
 policy. Treat `status: "unknown"` as unavailable capacity, not as permission to
 spawn more workers; use `status: "constrained"` to wait or reduce the wave.
 
+Host watchdog health is a separate read-only surface: `terminal_host_health` or
+the `casein://host/health` resource. It returns the same normalized snapshot
+the Host health menu row displays (`healthy` / `warning` / `pressure` / `stuck`
+/ `stale` / `unknown`). Missing or stale samples are never healthy.
+
 4. Prefer the `*_agent_*` shortcut tools. They refuse to mutate when the
    dedicated agent pane cannot be identified, instead of falling back to the
    operator's focused pane. Lower-level `terminal_send_command` still requires

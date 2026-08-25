@@ -55,8 +55,16 @@ defmodule Casein.Agents.AgentPane do
   defp order_by_caller_window(panes, _prefer_window_of), do: panes
 
   defp match_agent_pane(session, tmux, panes, allow_process_fallback) do
-    marker_agent_pane(session, tmux, panes) ||
+    role_agent_pane(panes) ||
+      marker_agent_pane(session, tmux, panes) ||
       if(allow_process_fallback, do: process_agent_pane(panes), else: nil)
+  end
+
+  defp role_agent_pane(panes) do
+    Enum.find_value(panes, fn pane ->
+      role = Map.get(pane, :role) || Map.get(pane, "role")
+      if role == "agent", do: Map.put(pane, :agent_match, "pane_role")
+    end)
   end
 
   defp caller_was_only_match?(session, tmux, panes, exclude, allow_process_fallback) do
