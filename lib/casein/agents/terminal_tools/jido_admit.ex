@@ -110,7 +110,18 @@ defmodule Casein.Agents.TerminalTools.JidoAdmit do
   def mcp_metadata, do: Helpers.metadata("jido_admit")
 
   @impl Jido.Action
-  def run(params, _context) do
-    JidoDelegate.admit(Helpers.to_impl_args(params))
+  def run(params, context) do
+    attrs = Helpers.to_impl_args(params)
+
+    attrs =
+      case context[:actor] || context[:principal] || context[:actor_id] do
+        principal when is_binary(principal) and principal != "" ->
+          Map.put(attrs, :principal, principal)
+
+        _ ->
+          attrs
+      end
+
+    JidoDelegate.admit(attrs)
   end
 end

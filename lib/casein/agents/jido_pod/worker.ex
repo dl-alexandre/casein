@@ -106,11 +106,15 @@ defmodule Casein.Agents.JidoPod.Worker do
     args = Map.get(action, :args, %{})
     attempt = state.attempt
 
+    principal = attempt.principal || "ws:#{attempt.workspace_id}"
+
     context = %{
       workspace_id: attempt.workspace_id,
       task_id: attempt.task_id,
       attempt_id: attempt.id,
-      worktree_path: attempt.worktree_path
+      worktree_path: attempt.worktree_path,
+      principal: principal,
+      actor: principal
     }
 
     task =

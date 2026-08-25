@@ -4,6 +4,7 @@ defmodule Casein.Agents.CodeToolsTest do
   alias Casein.Agents.Activity
   alias Casein.Agents.CodeTools
   alias Casein.Runtimes
+  alias Casein.Test.RuntimeSeed
   alias Casein.Workspace
   alias Casein.Workspaces.State
   alias Casein.Workspaces.State.MemoryAdapter
@@ -121,6 +122,35 @@ defmodule Casein.Agents.CodeToolsTest do
              )
   end
 
+  test "code_read accepts a registered agent worktree exposed as path", %{base: base} do
+    assigned = Path.join(base, "assigned-wt")
+    File.mkdir_p!(assigned)
+    File.write!(Path.join(assigned, "README.md"), "from assigned\n")
+
+    {:ok, _} =
+      RuntimeSeed.seed_runtime(@workspace_id,
+        status: "provisioned",
+        worktree_path: assigned,
+        metadata: %{"kind" => "agent_worktree"}
+      )
+
+    assert [%{path: ^assigned}] = Runtimes.list_agent_worktrees(@workspace_id)
+    refute Map.has_key?(hd(Runtimes.list_agent_worktrees(@workspace_id)), :worktree_path)
+
+    assert {:ok, result} =
+             CodeTools.invoke(
+               "code_read",
+               %{
+                 "workspace_id" => @workspace_id,
+                 "worktree_path" => assigned,
+                 "path" => "README.md"
+               },
+               %{actor: "ws:#{@workspace_id}"}
+             )
+
+    assert result.content == "from assigned\n"
+  end
+
   test "code_search returns capped matches", %{repo: repo} do
     File.write!(Path.join(repo, "lib/a.ex"), "needle one\n")
     File.write!(Path.join(repo, "lib/b.ex"), "needle two\n")
@@ -197,6 +227,33 @@ defmodule Casein.Agents.CodeToolsTest do
     assert second.applied
     assert second.already_applied
     assert second.idempotent
+  end
+
+  test "code_apply_patch permits a trusted principal and ignores actor_id in args", %{
+    repo: repo
+  } do
+    File.write!(Path.join(repo, "note.txt"), "hello\n")
+    git!(repo, ["add", "note.txt"])
+    git!(repo, ["commit", "-m", "add note"])
+    File.write!(Path.join(repo, "note.txt"), "hello world\n")
+    patch = git_diff!(repo, "note.txt")
+    File.write!(Path.join(repo, "note.txt"), "hello\n")
+
+    args = %{
+      "workspace_id" => @workspace_id,
+      "worktree_path" => repo,
+      "patch" => patch,
+      "actor_id" => "spoofed"
+    }
+
+    assert {:error, %{error: :policy_denied, reason: :forbidden}} =
+             CodeTools.invoke("code_apply_patch", args, %{})
+
+    assert {:ok, result} =
+             CodeTools.invoke("code_apply_patch", args, %{principal: "ws:#{@workspace_id}"})
+
+    assert result.applied
+    assert File.read!(Path.join(repo, "note.txt")) == "hello world\n"
   end
 
   test "code_apply_patch rejects a traversal header", %{repo: repo} do
