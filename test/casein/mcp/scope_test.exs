@@ -306,17 +306,58 @@ defmodule Casein.MCP.ScopeTest do
     assert scope.args["workspace_id"] == "ws-scope"
   end
 
-  test "terminal surface only injects and enforces workspace scope" do
+  test "terminal surface injects exact workspace and tmux session scope" do
     assert {:ok, scope} =
              Scope.resolve_tool_call("terminal_list_sessions", %{},
                surface: :terminal,
-               default_workspace_id: "ws-scope"
+               default_workspace_id: "ws-scope",
+               default_tmux_session: "casein_ws-scope_wt-coordinator"
              )
 
     assert scope.args["workspace_id"] == "ws-scope"
+    assert scope.args["session"] == "casein_ws-scope_wt-coordinator"
     assert scope.workspace == %{}
     assert scope.workspace_id == "ws-scope"
+    assert scope.tmux_session == "casein_ws-scope_wt-coordinator"
     assert scope.resolved_from.workspace == :pre_scoped
+    assert scope.resolved_from.tmux_session == :pre_scoped
+  end
+
+  test "terminal session scope rejects a different or foreign session" do
+    opts = [
+      surface: :terminal,
+      default_workspace_id: "ws-scope",
+      default_tmux_session: "casein_ws-scope_wt-coordinator"
+    ]
+
+    assert {:error, error} =
+             Scope.resolve_tool_call(
+               "terminal_context",
+               %{"session" => "casein_ws-scope_wt-other"},
+               opts
+             )
+
+    assert error.error == :tmux_session_scope_mismatch
+    assert error.scoped_tmux_session == "casein_ws-scope_wt-coordinator"
+    assert error.requested_tmux_session == "casein_ws-scope_wt-other"
+
+    assert {:error, foreign} =
+             Scope.resolve_tool_call("terminal_context", %{},
+               surface: :terminal,
+               default_workspace_id: "ws-scope",
+               default_tmux_session: "casein_ws-other_wt-coordinator"
+             )
+
+    assert foreign.error == :tmux_session_workspace_mismatch
+  end
+
+  test "every exact-session terminal tool accepts session in its schema" do
+    by_name = Map.new(Casein.Agents.TerminalTools.definitions(), &{&1.name, &1})
+
+    for tool_name <- Scope.terminal_default_tmux_session_tool_names() do
+      tool = Map.fetch!(by_name, tool_name)
+      assert Map.has_key?(tool.parameters.properties, :session), tool_name
+    end
   end
 
   test "every caller-pane tool accepts caller_pane in its schema" do

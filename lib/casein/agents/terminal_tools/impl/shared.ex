@@ -4,10 +4,13 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
   alias Casein.Agents.AgentPane
   alias Casein.Terminals
   alias Casein.Terminals.Backend
+  alias Casein.Terminals.InputBuffer
   alias Casein.Terminals.TmuxPolicy
   alias Casein.Terminals.TmuxScope
   alias Casein.Terminals.TmuxTopology
+  alias Casein.Workspaces.Identity
   alias Casein.Workspaces.Scratch
+  alias Casein.Workspaces.State
 
   @session_prefix "casein_"
   @default_capture_lines 120
@@ -91,7 +94,9 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
 
   defp validate_session(session, params) do
     with true <- String.starts_with?(session, @session_prefix) || {:error, :unscoped_session},
-         true <- workspace_matches?(session, params) || {:error, :workspace_mismatch},
+         true <-
+           workspace_matches?(session, params) ||
+             {:error, Identity.mismatch(workspace_id(params), session)},
          true <- session_exists?(session) || {:error, :no_such_session} do
       {:ok, session}
     end
@@ -110,7 +115,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
         # a stronger signal than "whichever session the operator has attached".
         case caller_session(sessions, params) do
           {:ok, session} -> {:ok, session}
-          :none -> {:error, ambiguous_sessions_error(sessions)}
+          :none -> {:error, ambiguous_sessions_error(sessions, params)}
         end
     end
   end
@@ -205,26 +210,140 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
     end
   end
 
-  defp ambiguous_sessions_error(sessions) do
+  defp ambiguous_sessions_error(sessions, params) do
     %{
       error: :ambiguous_workspace_sessions,
       ambiguous: true,
       message: "Multiple workspace sessions match. Pass session explicitly.",
-      candidate_sessions: Enum.map(sessions, &session_candidate/1),
+      candidate_sessions: Enum.map(sessions, &session_candidate(&1, params)),
       safe_to_mutate: false,
       next_tool: "terminal_context"
     }
   end
 
-  def session_candidate(%{session: name} = session) do
+  def session_candidate(session, params \\ %{})
+
+  def session_candidate(%{session: name} = session, params) do
+    panes = safe_session_panes(name)
+    workspace = workspace_identity(params)
+    paths = pane_values(panes, :current_path)
+    pane_roles = pane_values(panes, :role)
+    operator = operator_pane_identity(panes, params)
+    agent = Enum.find(panes, &(pane_value(&1, :role) == "agent"))
+
     %{
       session: name,
       attached: Map.get(session, :attached),
-      activity: Map.get(session, :activity)
+      activity: Map.get(session, :activity),
+      session_alias: Map.get(session, :session_alias) || Map.get(session, "session_alias"),
+      workspace_id: workspace && workspace.id,
+      workspace_name: workspace && workspace.name,
+      workspace_path: workspace && workspace.path,
+      paths: paths,
+      path: if(length(paths) == 1, do: List.first(paths)),
+      pane_roles: pane_roles,
+      operator_pane_id: operator && operator.pane_id,
+      agent_pane_id: agent && pane_value(agent, :id),
+      role: session_role(operator, agent, paths, workspace),
+      role_source: session_role_source(operator, agent, paths, workspace)
     }
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Enum.reject(fn {_key, value} -> value in [nil, []] end)
     |> Map.new()
   end
+
+  def session_candidate(session, _params), do: session
+
+  def workspace_identity(params) do
+    with id when is_binary(id) <- workspace_id(params),
+         {:ok, record} <- State.get(id) do
+      %{
+        id: id,
+        name: Map.get(record, :name),
+        path: normalize_path(Map.get(record, :host_path))
+      }
+    else
+      _ -> nil
+    end
+  end
+
+  # Role metadata is authoritative. A unique pane rooted at the persisted
+  # workspace path is exposed only as an inferred operator candidate, never as
+  # a role-marked pane. Worker windows may share the session while using their
+  # isolated worktree paths, so requiring the whole session to have one pane
+  # loses the operator as soon as the first worker launches.
+  def operator_pane_identity(panes, params) when is_list(panes) do
+    case Enum.find(panes, &(pane_value(&1, :role) == "operator")) do
+      nil -> inferred_operator_pane(panes, workspace_identity(params))
+      pane -> pane_identity(pane, "operator", "pane_role", true)
+    end
+  end
+
+  def operator_pane_identity(_panes, _params), do: nil
+
+  defp inferred_operator_pane(panes, %{path: path}) when is_binary(path) do
+    case Enum.filter(panes, &(normalize_path(pane_value(&1, :current_path)) == path)) do
+      [pane] ->
+        source =
+          if length(panes) == 1,
+            do: "workspace_root_single_pane",
+            else: "workspace_root_unique_pane"
+
+        pane_identity(pane, "operator_candidate", source, false)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp inferred_operator_pane(_panes, _workspace), do: nil
+
+  defp pane_identity(pane, role, source, marked?) do
+    %{
+      pane_id: pane_value(pane, :id),
+      role: role,
+      role_marked: marked?,
+      role_source: source,
+      status: "identified"
+    }
+  end
+
+  defp session_role(%{role: "operator"}, _agent, _paths, _workspace), do: "operator"
+
+  defp session_role(%{role: "operator_candidate"}, _agent, _paths, _workspace),
+    do: "operator_candidate"
+
+  defp session_role(nil, agent, _paths, _workspace) when not is_nil(agent), do: "worker"
+  defp session_role(_operator, _agent, _paths, _workspace), do: "unknown"
+
+  defp session_role_source(%{role_source: source}, _agent, _paths, _workspace), do: source
+  defp session_role_source(nil, agent, _paths, _workspace) when not is_nil(agent), do: "pane_role"
+  defp session_role_source(_operator, _agent, _paths, _workspace), do: "unclassified"
+
+  defp safe_session_panes(session) do
+    tmux().list_session_panes(session)
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
+  end
+
+  defp pane_values(panes, key) do
+    panes
+    |> Enum.map(&pane_value(&1, key))
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.map(fn
+      path when key == :current_path -> normalize_path(path)
+      value -> value
+    end)
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
+  defp pane_value(pane, key) when is_map(pane),
+    do: Map.get(pane, key) || Map.get(pane, Atom.to_string(key))
+
+  defp normalize_path(path) when is_binary(path) and path != "", do: Path.expand(path)
+  defp normalize_path(_), do: nil
 
   def caller_pane(params) do
     case Map.get(params, "caller_pane") || Map.get(params, :caller_pane) do
@@ -308,14 +427,16 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
     end
   end
 
-  def put_capture_metadata(payload, output, requested_lines) do
+  def put_capture_metadata(payload, output, requested_lines, raw \\ nil) do
     line_count = output |> String.split("\n") |> length()
     requested = if is_integer(requested_lines) and requested_lines > 0, do: requested_lines
+    classified = if is_binary(raw), do: raw, else: output
 
     payload
     |> Map.put(:line_count, line_count)
     |> Map.put(:truncated, is_integer(requested) and line_count >= requested)
     |> Map.put(:suggested_next_capture, %{lines: @default_capture_lines, ansi: false})
+    |> Map.put(:input_buffer, InputBuffer.classify(classified))
   end
 
   def capture_next_args(session, target, params) do

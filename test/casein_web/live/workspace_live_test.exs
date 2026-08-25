@@ -1975,6 +1975,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     |> element("#tmux-template-library-ws-1")
     |> render_click()
 
+    render_async(view)
+
     assert has_element?(view, "#template-library-modal")
     assert has_element?(view, "#template-library-empty", "No saved templates")
 
@@ -1987,6 +1989,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
       }
     })
     |> render_submit()
+
+    render_async(view)
 
     assert [%{id: saved_id, name: "daily_layout"} = saved] =
              Templates.list_for_workspace("ws-1")
@@ -2016,6 +2020,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     })
     |> render_submit()
 
+    render_async(view)
+
     assert [%{id: ^saved_id, name: "daily_layout_v2"} = updated] =
              Templates.list_for_workspace("ws-1")
 
@@ -2043,6 +2049,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     })
     |> render_submit()
 
+    render_async(view)
+
     saved_templates = Templates.list_for_workspace("ws-1")
     assert [%{id: clone_id, name: "daily_layout_clone"}, %{id: ^saved_id}] = saved_templates
     assert [%{tags: ["clone"]}, %{tags: ["phoenix", "ci"]}] = saved_templates
@@ -2055,6 +2063,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     |> element("#saved-template-filter-clone")
     |> render_click()
 
+    render_async(view)
+
     assert has_element?(view, "#saved-template-row-#{clone_id}", "daily_layout_clone")
     refute has_element?(view, "#saved-template-row-#{saved_id}")
 
@@ -2062,12 +2072,16 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     |> element("#saved-template-filter-all")
     |> render_click()
 
+    render_async(view)
+
     assert has_element?(view, "#saved-template-row-#{clone_id}", "daily_layout_clone")
     assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout_v2")
 
     view
     |> element("#saved-template-delete-#{clone_id}")
     |> render_click()
+
+    render_async(view)
 
     refute has_element?(view, "#saved-template-row-#{clone_id}")
     assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout_v2")
@@ -2114,11 +2128,15 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     |> element("#tmux-template-library-ws-1")
     |> render_click()
 
+    render_async(view)
+
     assert has_element?(view, "#saved-template-row-#{saved_id}")
 
     view
     |> element("#saved-template-delete-#{saved_id}")
     |> render_click()
+
+    render_async(view)
 
     assert Templates.list_for_workspace("ws-1") == []
     refute has_element?(view, "#saved-template-row-#{saved_id}")

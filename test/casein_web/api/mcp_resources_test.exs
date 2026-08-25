@@ -3,7 +3,7 @@ defmodule CaseinWeb.API.MCPResourcesTest do
   The `resources/*` surface and the MCP Apps declaration built on it.
 
   Casein serves resources for the artifact viewer (MCP App) and the terminal
-  fleet summary (`casein://fleet/summary`).
+  fleet summary (`casein://fleet/summary`) and host health (`casein://host/health`).
   """
 
   use ExUnit.Case, async: false
@@ -150,6 +150,81 @@ defmodule CaseinWeb.API.MCPResourcesTest do
       decoded = Jason.decode!(text)
       assert decoded["sessions"] == []
       assert decoded["session_count"] == 0
+    end
+
+    test "resources/list publishes casein://host/health" do
+      assert {:reply, %{result: result}} =
+               MCPEnvelope.handle(modern("resources/list"), TerminalMCP, [])
+
+      assert Enum.any?(result.resources, fn r ->
+               r.uri == "casein://host/health" and r.mimeType == "application/json"
+             end)
+    end
+
+    test "resources/read returns the same host-health snapshot as the tool" do
+      previous = Application.get_env(:casein, :host_health)
+
+      status_path =
+        Path.join(
+          System.tmp_dir!(),
+          "casein-host-health-#{System.unique_integer([:positive])}.json"
+        )
+
+      sampled_at = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+
+      Application.put_env(:casein, :host_health,
+        status_path: status_path,
+        alerts_path: status_path <> ".alerts",
+        host: "milc-devbox",
+        stale_after_seconds: 720,
+        max_alerts: 5
+      )
+
+      on_exit(fn ->
+        File.rm(status_path)
+
+        if previous,
+          do: Application.put_env(:casein, :host_health, previous),
+          else: Application.delete_env(:casein, :host_health)
+      end)
+
+      File.write!(
+        status_path,
+        Jason.encode!(%{
+          "timestamp" => sampled_at,
+          "load1" => 3.88,
+          "runnable" => 7,
+          "cpu_idle_pct" => 87,
+          "mem_available_kb" => 65_464_848,
+          "swap_used_kb" => 0,
+          "d_state_processes" => 0,
+          "d_state_streak" => 0,
+          "opencode_processes" => 45,
+          "beam_processes" => 1,
+          "warning" => 0,
+          "alert" => "none"
+        })
+      )
+
+      assert {:reply, %{result: result}} =
+               MCPEnvelope.handle(
+                 modern("resources/read", %{"uri" => "casein://host/health"}),
+                 TerminalMCP,
+                 []
+               )
+
+      assert [%{uri: "casein://host/health", mimeType: "application/json", text: text}] =
+               result.contents
+
+      decoded = Jason.decode!(text)
+      assert decoded["uri"] == "casein://host/health"
+      assert decoded["state"] == "healthy"
+      assert decoded["sampled_at"] == sampled_at
+      assert decoded["host"] == "milc-devbox"
+
+      {:ok, tool} = Casein.Agents.TerminalTools.host_health(%{})
+      assert tool.state == decoded["state"]
+      assert tool.sampled_at == decoded["sampled_at"]
     end
 
     test "the ui extension is not declared for a JSON-only resource" do

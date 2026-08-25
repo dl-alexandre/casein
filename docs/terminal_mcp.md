@@ -163,6 +163,11 @@ It reports the same live load and memory facts used by the host-side scheduling
 policy. Treat `status: "unknown"` as unavailable capacity, not as permission to
 spawn more workers; use `status: "constrained"` to wait or reduce the wave.
 
+Host watchdog health is a separate read-only surface: `terminal_host_health` or
+the `casein://host/health` resource. It returns the same normalized snapshot
+the Host health menu row displays (`healthy` / `warning` / `pressure` / `stuck`
+/ `stale` / `unknown`). Missing or stale samples are never healthy.
+
 4. Prefer the `*_agent_*` shortcut tools. They refuse to mutate when the
    dedicated agent pane cannot be identified, instead of falling back to the
    operator's focused pane. Lower-level `terminal_send_command` still requires
@@ -267,15 +272,18 @@ An orchestrating agent can wait on another agent's state instead of polling
 terminal_wait_agent_state(
   workspace_id,
   states,        # e.g. ["blocked", "done"]
-  timeout_ms?,   # default 30000, capped at 55000
+  timeout_ms?,   # default 25000, capped at 25000 (MCP clients abort ~30s)
   pane?,
   session?
 )
 ```
 
 It returns immediately if the pane is already in a target state. A timeout is not
-an error — the result carries `timed_out: true` and `matched: false`; re-issue the
-call to keep long-polling.
+an error — the result carries `timed_out: true`, `matched: false`, `state`, and
+`waited_ms`; re-issue the call to keep long-polling. The 25s ceiling exists
+because standard MCP clients abort the HTTP request around 30s; the server
+returns a structured timeout before that deadline instead of letting the client
+drop the call.
 
 ### Agent skills (cross-repo)
 
@@ -311,20 +319,22 @@ staged before that marker existed are reached by name through
 A skill directory with neither the marker nor a retired name was not staged by
 Casein and is never touched.
 
-Cross-repository worker spawning must use Casein's host helper, not a launcher
-path under the product checkout:
+Cross-repository worker spawning must use the `worker_launch` MCP tool, not a
+launcher path under the product checkout and not `$CASEIN_SCRIPTS` (that env
+points at the product repo, which does not carry `spawn-agent-worker.sh`). Do
+not `find` the helper — a stale Casein checkout is worse than a clean failure.
 
-```bash
-bash /data/workspaces/dalexandre/casein/scripts/spawn-agent-worker.sh \
-  grok <task-slug> <casein-session>
+```text
+worker_launch { workspace_id, session, runtime, task_slug, label?, dry_run? }
+→ pane_id, window_name, worktree_path, branch, handle_id
 ```
 
-The helper resolves the product's primary checkout, sources its materialized
-workspace environment inside the fresh tmux window, pins the requested session,
-and invokes Casein's own `launch-casein-agent.sh`. This preserves workspace MCP
+`worker_launch` resolves the installed Casein helper, sources the workspace
+environment inside the fresh tmux window, pins the requested session, and
+invokes Casein's own `launch-casein-agent.sh`. This preserves workspace MCP
 pairing and stale-socket repair while forcing the worker into an isolated
 product worktree; product repositories do not need to vendor Casein launch
-scripts.
+scripts. See the `delegate-to-worker` skill.
 
 OpenCode MCP is injected as project `.opencode/opencode.json` from the workspace
 staging tree whenever the launch is paired (`CASEIN_WORKSPACE_ID` +
@@ -580,7 +590,12 @@ overridable per call with `allow_shared_worktree: true`. Concurrent git in one
 worktree corrupts index state rather than failing cleanly, so this is the one
 class of command where a `sent` receipt was worse than an error.
 `terminal_capture` returns the full scrollback by default; pass `lines` to
-bound what the agent reads.
+bound what the agent reads. It also returns `input_buffer`
+(`has_content`, `source`) so a Claude suggested-next-prompt is not mistaken
+for unsent user text: `empty`, `placeholder` (suggestion only — empty
+input), `typed`, or `unknown` (do not treat as typed). Write tools attach
+the same field on `receipt`. Default `ansi: false` still strips SGR from
+`output`; classification uses an ANSI-preserving tail internally.
 When `workspace_id` is omitted, `terminal_list_sessions` omits the field from
 the response instead of returning `workspace_id: null`.
 

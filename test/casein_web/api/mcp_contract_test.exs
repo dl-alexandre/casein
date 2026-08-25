@@ -13,7 +13,7 @@ defmodule CaseinWeb.API.MCPContractTest do
   @token "mcp-contract-token"
   @secret "Bearer should-not-echo"
   @workspace_path "/data/workspaces/secret-project"
-  @paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"]
+  @paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp", "/api/code/mcp"]
 
   setup do
     prev_token = Application.get_env(:casein, :api_token)

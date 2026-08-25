@@ -141,6 +141,48 @@ defmodule Casein.Agents.MCPAudit do
     :ok
   end
 
+  @spec record_code(String.t() | nil, String.t(), map(), term(), keyword()) :: :ok
+  def record_code(workspace_id, tool, args, result, opts \\ [])
+      when is_map(args) and is_binary(tool) do
+    summary = code_summary(tool, args)
+    status = if match?({:error, _}, result), do: :error, else: :ok
+    metadata = code_audit_metadata(tool, args, result)
+    identity = record_agent_event(workspace_id, "code_mcp", tool, args, status, opts)
+
+    _ =
+      Activity.record(
+        stamp_correlation(
+          Map.merge(
+            %{
+              workspace_id: workspace_id,
+              source: :code_mcp,
+              tool: tool,
+              summary: summary,
+              metadata: metadata,
+              status: status
+            },
+            identity
+          )
+        )
+      )
+
+    if mutating_code_tool?(tool) and is_binary(workspace_id) do
+      Audit.emit!(
+        %{
+          workspace_id: workspace_id,
+          actor_id: actor_id(args, opts),
+          action: "agent.code_" <> tool,
+          source: "code_mcp",
+          tool: tool,
+          metadata: metadata
+        }
+        |> put_error(result)
+      )
+    end
+
+    :ok
+  end
+
   defp mutating_terminal_tool?(tool),
     do:
       tool in [
@@ -181,6 +223,8 @@ defmodule Casein.Agents.MCPAudit do
 
   defp mutating_artifact_tool?(tool),
     do: tool in ["artifact_create", "artifact_update", "artifact_serve", "artifact_snapshot"]
+
+  defp mutating_code_tool?(tool), do: tool in ["code_apply_patch", "code_exec"]
 
   # Prefer the authenticated actor threaded down from the controller
   # (ws:<workspace_id> / orchestrator:<subject> / global), then an explicit
@@ -379,6 +423,55 @@ defmodule Casein.Agents.MCPAudit do
       _ -> tool_label(tool)
     end
   end
+
+  defp code_summary("code_read", args) do
+    path = arg_value(args, :path)
+    if is_binary(path) and path != "", do: "code_read · #{truncate(path)}", else: "code_read"
+  end
+
+  defp code_summary("code_search", args) do
+    query = arg_value(args, :query)
+
+    if is_binary(query) and query != "",
+      do: "code_search · #{truncate(query)}",
+      else: "code_search"
+  end
+
+  defp code_summary("code_exec", args) do
+    command_id = arg_value(args, :command_id)
+
+    if is_binary(command_id) and command_id != "",
+      do: "code_exec · #{command_id}",
+      else: "code_exec"
+  end
+
+  defp code_summary(tool, args) do
+    path = arg_value(args, :path)
+
+    if is_binary(path) and path != "",
+      do: "#{tool_label(tool)} · #{truncate(path)}",
+      else: tool_label(tool)
+  end
+
+  defp code_audit_metadata(tool, args, result) do
+    %{
+      tool: tool,
+      path: preview_arg_text(arg_value(args, :path)),
+      worktree_path: preview_arg_text(arg_value(args, :worktree_path)),
+      command_id: arg_value(args, :command_id),
+      query: preview_arg_text(arg_value(args, :query)),
+      task_id: arg_value(args, :task_id),
+      attempt_id: arg_value(args, :attempt_id),
+      idempotency_key: preview_arg_text(arg_value(args, :idempotency_key)),
+      result_status: result_value_if_map(result, :status)
+    }
+    |> compact_metadata()
+  end
+
+  defp result_value_if_map({:ok, result}, key) when is_map(result),
+    do: Map.get(result, key) || Map.get(result, Atom.to_string(key))
+
+  defp result_value_if_map(_result, _key), do: nil
 
   defp artifact_summary("artifact_create", args, _result) do
     case arg_value(args, :name) do

@@ -435,6 +435,78 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
            } = json_response(conn, 200)
   end
 
+  test "tmux_session query makes exact session discovery win over attached ambiguity", %{
+    conn: conn
+  } do
+    Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+
+    target = "casein_ws-scoped_wt-dev-ide"
+    other_a = "casein_ws-scoped_wt-a"
+    other_b = "casein_ws-scoped_wt-b"
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      target => [%{id: "@1", index: 0, name: "operator", active: true, panes: 1, activity: 1}],
+      other_a => [%{id: "@2", index: 0, name: "other-a", active: true, panes: 1, activity: 2}],
+      other_b => [%{id: "@3", index: 0, name: "other-b", active: true, panes: 1, activity: 3}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      target => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "bash",
+          current_path: "/data/workspaces/dalexandre/dev_ide",
+          role: "operator"
+        }
+      ],
+      other_a => [%{id: "%2", window_id: "@2", index: 0, active: true}],
+      other_b => [%{id: "%3", window_id: "@3", index: 0, active: true}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_session_meta, %{
+      target => %{attached: true, session_alias: "dev_ide"},
+      other_a => %{attached: true},
+      other_b => %{attached: true}
+    })
+
+    on_exit(fn -> TmuxCtl.Test.FakeState.delete(:fake_tmux_session_meta) end)
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{name: "terminal_list_sessions", arguments: %{}}
+        },
+        "ws-token",
+        "/api/terminals/mcp?workspace_id=ws-scoped&tmux_session=#{target}"
+      )
+
+    assert %{
+             "result" => %{
+               "structuredContent" => %{
+                 "sessions" => [
+                   %{
+                     "session" => ^target,
+                     "session_alias" => "dev_ide",
+                     "operator_pane_id" => "%1",
+                     "paths" => ["/data/workspaces/dalexandre/dev_ide"]
+                   }
+                 ],
+                 "recommended_session" => ^target
+               }
+             }
+           } = json_response(conn, 200)
+
+    refute conn.resp_body =~ "ambiguous"
+  end
+
   test "malformed caller-pane headers are ignored", %{conn: conn} do
     Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
     Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)

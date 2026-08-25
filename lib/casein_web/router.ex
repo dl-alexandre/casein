@@ -354,6 +354,10 @@ defmodule CaseinWeb.Router do
     # Artifact-project MCP server: lets external agents create and iterate on
     # Git worktree-backed artifacts, returning Preview MCP handoff arguments.
     post "/artifacts/mcp", ArtifactMCPController, :rpc
+
+    # Worktree-scoped Code MCP server: structured read/search/patch/exec for
+    # headless workers. Terminal MCP stays unchanged for interactive use.
+    post "/code/mcp", CodeMCPController, :rpc
   end
 
   # Streamable HTTP: server→client SSE channel (GET) and session teardown
@@ -367,6 +371,8 @@ defmodule CaseinWeb.Router do
     delete "/terminals/mcp", TerminalMCPController, :delete
     get "/artifacts/mcp", ArtifactMCPController, :info
     delete "/artifacts/mcp", ArtifactMCPController, :delete
+    get "/code/mcp", CodeMCPController, :info
+    delete "/code/mcp", CodeMCPController, :delete
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
