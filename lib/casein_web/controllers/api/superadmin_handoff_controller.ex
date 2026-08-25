@@ -59,6 +59,42 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
     end
   end
 
+  @spec create(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def create(conn, params) do
+    with :ok <- require_global_operator_token(conn),
+         "v3" <- Map.get(params, "kind", "v3"),
+         workspace_id when is_binary(workspace_id) and workspace_id != "" <-
+           Map.get(params, "workspace_id"),
+         assertion when is_binary(assertion) <- actor_assertion(conn),
+         {:ok, claims} <- SuperadminHandoff.verify_actor(assertion),
+         true <- claims["workspace_id"] == workspace_id,
+         {:ok, workspace} <- Workspaces.get(workspace_id),
+         user <- ForwardAuth.user_from_email(claims["email"]),
+         true <- Workspaces.viewer_can_access_workspace?(workspace, user),
+         principal when is_binary(principal) <- identity_principal(user),
+         {:ok, cwd} <- workspace_cwd(workspace),
+         {:ok, session} <- provision_session(workspace, cwd, principal) do
+      json(conn, %{
+        workspace_id: workspace_id,
+        identity: %{principal: principal, email: claims["email"]},
+        session_scope: "identity",
+        session: session
+      })
+    else
+      {:error, :operator_token_required} ->
+        conn |> put_status(:forbidden) |> json(%{error: "operator_token_required"})
+
+      {:error, :workspace_path_unavailable} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "workspace_path_unavailable"})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+
+      _ ->
+        unauthorized(conn)
+    end
+  end
+
   @spec authz(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def authz(conn, _params) do
     case get_session(conn, @session_key) do
@@ -82,6 +118,107 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
       [assertion | _] -> assertion
       _ -> nil
     end
+  end
+
+  defp require_global_operator_token(%{assigns: %{api_token_scope: :global}}), do: :ok
+  defp require_global_operator_token(_conn), do: {:error, :operator_token_required}
+
+  defp workspace_cwd(workspace) do
+    case Workspaces.safe_host_path(workspace) do
+      {:ok, cwd} when is_binary(cwd) and cwd != "" -> {:ok, cwd}
+      _ -> {:error, :workspace_path_unavailable}
+    end
+  end
+
+  defp provision_session(workspace, cwd, principal) do
+    sid = "v3-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+
+    adapter = Terminals.tmux_adapter()
+
+    with {:ok, workspace_name} <- workspace_name(workspace),
+         tmux_session <- Terminals.tmux_session_name(workspace_name, sid),
+         :ok <- reject_existing_session(adapter, tmux_session),
+         :ok <- adapter.ensure_session(tmux_session, cwd) do
+      session_alias = session_alias(principal, sid)
+
+      case bind_session(adapter, tmux_session, principal, session_alias) do
+        :ok ->
+          {:ok,
+           %{
+             session: tmux_session,
+             session_alias: session_alias,
+             actor: principal,
+             attached: false,
+             activity: System.system_time(:second),
+             status: "idle",
+             role: "v3"
+           }}
+
+        {:error, reason} ->
+          _ = adapter.kill(tmux_session)
+          {:error, reason}
+
+        other ->
+          _ = adapter.kill(tmux_session)
+          {:error, other}
+      end
+    else
+      {:error, reason} ->
+        {:error, reason}
+
+      other ->
+        {:error, other}
+    end
+  end
+
+  defp workspace_name(workspace) do
+    case Map.get(workspace, :name) || Map.get(workspace, "name") || Map.get(workspace, :id) do
+      name when is_binary(name) and name != "" -> {:ok, name}
+      _ -> {:error, :workspace_name_unavailable}
+    end
+  end
+
+  defp reject_existing_session(adapter, tmux_session) do
+    if function_exported?(adapter, :session_exists?, 1) and adapter.session_exists?(tmux_session) do
+      {:error, :session_already_exists}
+    else
+      :ok
+    end
+  end
+
+  defp bind_session(adapter, tmux_session, principal, session_alias) do
+    with :ok <- set_session_actor(adapter, tmux_session, principal),
+         :ok <- set_session_alias(adapter, tmux_session, session_alias) do
+      :ok
+    end
+  end
+
+  defp set_session_actor(adapter, tmux_session, principal) do
+    if function_exported?(adapter, :set_session_actor, 2) do
+      adapter.set_session_actor(tmux_session, principal)
+    else
+      {:error, :session_actor_unsupported}
+    end
+  end
+
+  defp set_session_alias(adapter, tmux_session, session_alias) do
+    if function_exported?(adapter, :set_session_alias, 2) do
+      adapter.set_session_alias(tmux_session, session_alias)
+    else
+      {:error, :session_alias_unsupported}
+    end
+  end
+
+  defp session_alias(principal, sid) do
+    principal =
+      principal
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9._-]/, "-")
+      |> String.trim("-")
+      |> String.slice(0, 24)
+
+    principal = if principal == "", do: "operator", else: principal
+    "v3-#{principal}-#{String.replace_prefix(sid, "v3-", "")}"
   end
 
   defp identity_principal(user), do: Identity.resolve(viewer: user, env: false).principal
