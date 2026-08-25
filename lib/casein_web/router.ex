@@ -266,6 +266,12 @@ defmodule CaseinWeb.Router do
   end
 
   scope "/api", CaseinWeb.API do
+    pipe_through :api
+
+    get "/superadmin/session/current", SuperadminHandoffController, :current
+  end
+
+  scope "/api", CaseinWeb.API do
     pipe_through :device_link_api
 
     post "/device-links/exchange", DeviceLinkController, :exchange

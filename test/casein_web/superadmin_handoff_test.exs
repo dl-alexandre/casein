@@ -45,6 +45,21 @@ defmodule CaseinWeb.SuperadminHandoffTest do
     assert {:error, :invalid_handoff} = SuperadminHandoff.verify(token)
   end
 
+  test "verifies an actor assertion separately from a browser handoff" do
+    token = sign_claims(claims(kind: "onebackend_superadmin_actor"))
+
+    assert {:ok, verified} = SuperadminHandoff.verify_actor(token)
+    assert verified["email"] == "operator@milcgroup.com"
+    assert verified["workspace_id"] == "workspace-123"
+    assert {:error, :invalid_handoff} = SuperadminHandoff.verify(token)
+  end
+
+  test "does not accept a browser handoff as an actor assertion" do
+    token = sign_claims(claims())
+
+    assert {:error, :invalid_handoff} = SuperadminHandoff.verify_actor(token)
+  end
+
   defp claims(overrides \\ []) do
     Map.merge(
       %{

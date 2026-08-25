@@ -232,6 +232,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Shared do
       attached: Map.get(session, :attached),
       activity: Map.get(session, :activity),
       session_alias: Map.get(session, :session_alias) || Map.get(session, "session_alias"),
+      actor: Map.get(session, :actor) || Map.get(session, "actor"),
       workspace_id: workspace && workspace.id,
       workspace_name: workspace && workspace.name,
       workspace_path: workspace && workspace.path,

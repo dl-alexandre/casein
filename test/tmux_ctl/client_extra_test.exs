@@ -498,12 +498,13 @@ defmodule TmuxCtl.ClientExtraTest do
 
   # --- list_sessions/0 --------------------------------------------------------
 
-  # @list_sessions_fmt: session|attached|activity|@casein_session_alias
-  test "list_sessions parses 4-field and 3-field lines" do
+  # @list_sessions_fmt: session|attached|activity|@casein_session_alias|@casein_actor
+  test "list_sessions parses 5-field, 4-field, and 3-field lines" do
     out =
       Enum.join(
         [
           "casein_a_main|1|123|billing",
+          "casein_actor_main|1|99|operator|alex",
           # blank alias → session_alias nil
           "casein_b_main|0|45|   ",
           # 3-field fallback (no alias field)
@@ -517,9 +518,38 @@ defmodule TmuxCtl.ClientExtraTest do
 
     assert [
              %{session: "casein_a_main", attached: true, activity: 123, session_alias: "billing"},
+             %{
+               session: "casein_actor_main",
+               attached: true,
+               activity: 99,
+               session_alias: "operator",
+               actor: "alex"
+             },
              %{session: "casein_b_main", attached: false, activity: 45, session_alias: nil},
              %{session: "casein_c_main", attached: false, activity: 7}
            ] = Client.list_sessions()
+  end
+
+  test "set_session_actor binds an unowned session" do
+    FakeState.put(:script_responses, %{
+      "list-sessions" => {"casein_alpha_main|1|123|operator|", 0},
+      "set-option" => {"", 0}
+    })
+
+    assert :ok = Client.set_session_actor(@session, "alex")
+    assert_receive {:tmux_runner, ["set-option", "-t", @session, "@casein_actor", "alex"]}
+  end
+
+  test "set_session_actor refuses to overwrite another actor" do
+    FakeState.put(:script_responses, %{
+      "list-sessions" => {"casein_alpha_main|1|123|operator|alex", 0},
+      "set-option" => {"", 0}
+    })
+
+    assert {:error, :session_owned_by_another_actor} =
+             Client.set_session_actor(@session, "morgan")
+
+    refute_receive {:tmux_runner, ["set-option" | _]}
   end
 
   test "list_sessions returns [] on failure" do

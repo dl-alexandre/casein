@@ -105,11 +105,25 @@ defmodule Casein.Agents.PaneEnv do
 
     case vars_for_workspace(workspace, Keyword.put_new(opts, :tmux_session, tmux_session)) do
       {:ok, vars} ->
-        tmux_adapter().set_environments(tmux_session, vars)
-        :ok
+        with :ok <- maybe_set_session_actor(tmux_session, Map.get(vars, "CASEIN_ACTOR")),
+             :ok <- tmux_adapter().set_environments(tmux_session, vars) do
+          :ok
+        end
 
       {:error, _} = error ->
         error
+    end
+  end
+
+  defp maybe_set_session_actor(_tmux_session, actor) when actor in [nil, ""], do: :ok
+
+  defp maybe_set_session_actor(tmux_session, actor) when is_binary(actor) do
+    adapter = tmux_adapter()
+
+    if function_exported?(adapter, :set_session_actor, 2) do
+      adapter.set_session_actor(tmux_session, actor)
+    else
+      :ok
     end
   end
 
