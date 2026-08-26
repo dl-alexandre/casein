@@ -278,6 +278,7 @@ defmodule CaseinWeb.Router do
 
     get "/superadmin/session/current", SuperadminHandoffController, :current
     post "/superadmin/session", SuperadminHandoffController, :create
+    patch "/superadmin/session/:session_id/name", SuperadminHandoffController, :rename
   end
 
   scope "/api", CaseinWeb.API do

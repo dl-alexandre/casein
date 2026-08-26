@@ -73,7 +73,8 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
          true <- Workspaces.viewer_can_access_workspace?(workspace, user),
          principal when is_binary(principal) <- identity_principal(user),
          {:ok, cwd} <- workspace_cwd(workspace),
-         {:ok, session} <- provision_session(workspace, cwd, principal) do
+         label <- Map.get(params, "label"),
+         {:ok, session} <- provision_session(workspace, cwd, principal, label) do
       json(conn, %{
         workspace_id: workspace_id,
         identity: %{principal: principal, email: claims["email"]},
@@ -94,6 +95,46 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
         unauthorized(conn)
     end
   end
+
+  @spec rename(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def rename(conn, %{"session_id" => session_id} = params) do
+    conn = fetch_query_params(conn)
+    workspace_id = conn.assigns[:api_workspace_id] || params["workspace_id"]
+
+    with :ok <- require_global_operator_token(conn),
+         workspace_id when is_binary(workspace_id) and workspace_id != "" <- workspace_id,
+         {:ok, label} <- normalize_requested_session_alias(Map.get(params, "label")),
+         assertion when is_binary(assertion) <- actor_assertion(conn),
+         {:ok, claims} <- SuperadminHandoff.verify_actor(assertion),
+         true <- claims["workspace_id"] == workspace_id,
+         {:ok, workspace} <- Workspaces.get(workspace_id),
+         user <- ForwardAuth.user_from_email(claims["email"]),
+         true <- Workspaces.viewer_can_access_workspace?(workspace, user),
+         principal when is_binary(principal) <- identity_principal(user),
+         true <- Terminals.tmux_session_in_workspace?(session_id, workspace),
+         adapter <- Terminals.tmux_adapter(),
+         {:ok, session} <- find_session(adapter, session_id),
+         ^principal <- session_actor(session),
+         :ok <- set_session_alias(adapter, session_id, label) do
+      json(conn, %{
+        workspace_id: workspace_id,
+        identity: %{principal: principal, email: claims["email"]},
+        session_scope: "identity",
+        session: Map.put(session, :session_alias, label)
+      })
+    else
+      {:error, :operator_token_required} ->
+        conn |> put_status(:forbidden) |> json(%{error: "operator_token_required"})
+
+      {:error, :invalid_session_alias} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "invalid_session_alias"})
+
+      _ ->
+        unauthorized(conn)
+    end
+  end
+
+  def rename(conn, _params), do: unauthorized(conn)
 
   @spec authz(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def authz(conn, _params) do
@@ -130,17 +171,16 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
     end
   end
 
-  defp provision_session(workspace, cwd, principal) do
+  defp provision_session(workspace, cwd, principal, requested_label) do
     sid = "v3-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
 
     adapter = Terminals.tmux_adapter()
 
     with {:ok, workspace_name} <- workspace_name(workspace),
          tmux_session <- Terminals.tmux_session_name(workspace_name, sid),
+         {:ok, session_alias} <- requested_session_alias(requested_label, principal, sid),
          :ok <- reject_existing_session(adapter, tmux_session),
          :ok <- adapter.ensure_session(tmux_session, cwd) do
-      session_alias = session_alias(principal, sid)
-
       case bind_session(adapter, tmux_session, principal, session_alias) do
         :ok ->
           {:ok,
@@ -219,6 +259,34 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
     principal = if principal == "", do: "operator", else: principal
     "v3-#{principal}-#{String.replace_prefix(sid, "v3-", "")}"
   end
+
+  defp requested_session_alias(nil, principal, sid), do: {:ok, session_alias(principal, sid)}
+
+  defp requested_session_alias(label, _principal, _sid) when is_binary(label) do
+    normalize_requested_session_alias(label)
+  end
+
+  defp requested_session_alias(_, _, _), do: {:error, :invalid_session_alias}
+
+  defp normalize_requested_session_alias(label) when is_binary(label) do
+    label = String.trim(label)
+
+    cond do
+      label == "" ->
+        {:error, :invalid_session_alias}
+
+      String.length(label) > 80 ->
+        {:error, :invalid_session_alias}
+
+      String.contains?(label, "\n") or String.contains?(label, "\r") ->
+        {:error, :invalid_session_alias}
+
+      true ->
+        {:ok, label}
+    end
+  end
+
+  defp normalize_requested_session_alias(_), do: {:error, :invalid_session_alias}
 
   defp identity_principal(user), do: Identity.resolve(viewer: user, env: false).principal
 
