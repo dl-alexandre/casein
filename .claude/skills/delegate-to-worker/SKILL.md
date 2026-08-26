@@ -164,6 +164,14 @@ Poll `jido_status` until `state` is `completed|failed|cancelled|timed_out|provid
 Do not `terminal_capture` a Jido attempt. If the receipt is `fallback?: true`,
 use `worker_launch` below — do not retry Jido with a shell spawn.
 
+When a task ends in a PR handoff, emit a final `handoff_evidence` action with:
+`repository`, `pull_request`, `head_sha`, and the bounded `review_thread_ids`.
+Set `handoff_target` to `dash`, `review_resolution` to
+`blind_listed_threads`, and `merge_policy` to
+`resolve_listed_threads_at_head_sha`. This authorizes Dash to resolve only
+the listed threads at the recorded head SHA; it does not authorize a broad
+review sweep or merging without the normal repository gates.
+
 ### OpenCode / TUI fallback (`worker_launch`)
 
 Use this only when Jido is disabled or you passed `runtime: "opencode"`.
@@ -368,7 +376,9 @@ Parse the **last** fenced ` ```json ` block from the capture text. Expected shap
   "summary": "...",
   "branch": "agent/<runtime>/...",
   "files_changed": ["..."],
-  "needs_input": null
+  "needs_input": null,
+  "pr": null,
+  "handoff": null
 }
 ```
 

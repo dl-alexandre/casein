@@ -24,6 +24,13 @@ Forbidden: `terminal_send_*`, `terminal_capture`, any shell, `git_*`, `task_*`.
 Poll `jido_status` for `state` / redacted `result`. Cancel with `jido_cancel`.
 If the admit receipt is `fallback?: true`, use the OpenCode pane template below.
 
+For a PR handoff, make the final typed action `handoff_evidence` and include
+`repository`, `pull_request`, `head_sha`, and bounded `review_thread_ids`.
+Set `handoff_target` to `dash`, `review_resolution` to
+`blind_listed_threads`, and `merge_policy` to
+`resolve_listed_threads_at_head_sha`. Dash may resolve only those listed
+threads at the recorded head SHA; normal repository gates still control merge.
+
 ---
 
 Copy and fill this template when sending a task to a **TUI** worker pane
@@ -90,7 +97,9 @@ it:**
   "summary": "one sentence outcome",
   "branch": "agent/{{RUNTIME}}/<slug>-<stamp>",
   "files_changed": ["path/one", "path/two"],
-  "needs_input": null
+  "needs_input": null,
+  "pr": null,
+  "handoff": null
 }
 ```
 

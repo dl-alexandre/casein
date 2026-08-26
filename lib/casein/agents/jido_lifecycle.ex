@@ -86,7 +86,14 @@ defmodule Casein.Agents.JidoLifecycle do
               "paths" => List.wrap(payload[:paths]),
               "verification_ref" => payload[:verification_ref],
               "partial" => payload[:verification_ref] in [nil, ""],
-              "summary" => Envelope.bound_summary(payload[:summary])
+              "summary" => Envelope.bound_summary(payload[:summary]),
+              "repository" => payload[:repository],
+              "pull_request" => payload[:pull_request],
+              "head_sha" => payload[:head_sha],
+              "review_thread_ids" => List.wrap(payload[:review_thread_ids]),
+              "handoff_target" => payload[:handoff_target],
+              "review_resolution" => payload[:review_resolution],
+              "merge_policy" => payload[:merge_policy]
             }
           )
 
