@@ -354,6 +354,14 @@ defmodule CaseinWeb.API.MCPContractTest do
                  result["_meta"]["io.modelcontextprotocol/serverInfo"]
 
         assert is_binary(name)
+
+        surface = result["toolSurface"]
+        assert surface["id"] =~ ~r/\Asha256:[0-9a-f]{64}\z/
+        assert surface["toolCount"] > 0
+        assert surface["scope"] in ["external", "workspace", "capability"]
+        assert is_boolean(surface["callerScoped"])
+        assert is_boolean(surface["workspaceScoped"])
+        assert is_boolean(surface["pinnedUntilReconnect"])
       end
     end
 
@@ -409,6 +417,7 @@ defmodule CaseinWeb.API.MCPContractTest do
 
         assert init["result"]["protocolVersion"] == "2025-03-26"
         refute Map.has_key?(init["result"], "resultType")
+        refute Map.has_key?(init["result"], "toolSurface")
 
         ping =
           conn
