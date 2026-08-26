@@ -292,7 +292,17 @@ defmodule Casein.Agents.JidoActionsTest do
     assert {:ok, %{result: :ok}} =
              JidoActions.invoke(
                "handoff_evidence",
-               %{paths: ["note.txt"], verification_ref: "format"},
+               %{
+                 paths: ["note.txt"],
+                 verification_ref: "format",
+                 repository: "MILCGroup/OneBackend-v3",
+                 pull_request: 19418,
+                 head_sha: "0123456789abcdef0123456789abcdef01234567",
+                 review_thread_ids: ["thread-1"],
+                 handoff_target: "dash",
+                 review_resolution: "blind_listed_threads",
+                 merge_policy: "resolve_listed_threads_at_head_sha"
+               },
                ctx
              )
 

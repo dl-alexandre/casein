@@ -199,11 +199,29 @@ defmodule Casein.Agents.JidoLifecycleTest do
 
     JidoLifecycle.ingest_action(
       "handoff_evidence",
-      %{paths: ["lib/a.ex"], verification_ref: "format"},
+      %{
+        paths: ["lib/a.ex"],
+        verification_ref: "format",
+        repository: "MILCGroup/OneBackend-v3",
+        pull_request: 19418,
+        head_sha: "0123456789abcdef0123456789abcdef01234567",
+        review_thread_ids: ["thread-1"],
+        handoff_target: "dash",
+        review_resolution: "blind_listed_threads",
+        merge_policy: "resolve_listed_threads_at_head_sha"
+      },
       ctx
     )
 
-    assert {:ok, %{evidence: %{freshness: :current}}} = JidoLifecycle.get(@workspace, "att-err")
+    assert {:ok, %{evidence: evidence}} = JidoLifecycle.get(@workspace, "att-err")
+    assert evidence.freshness == :current
+    assert evidence.repository == "MILCGroup/OneBackend-v3"
+    assert evidence.pull_request == 19418
+    assert evidence.head_sha == "0123456789abcdef0123456789abcdef01234567"
+    assert evidence.review_thread_ids == ["thread-1"]
+    assert evidence.handoff_target == "dash"
+    assert evidence.review_resolution == "blind_listed_threads"
+    assert evidence.merge_policy == "resolve_listed_threads_at_head_sha"
 
     JidoLifecycle.ingest_action("report_progress", %{summary: "more work"}, ctx)
     assert {:ok, %{evidence: %{freshness: :stale}}} = JidoLifecycle.get(@workspace, "att-err")

@@ -187,6 +187,16 @@ defmodule Casein.Agents.JidoLifecycle.ReadModel do
     |> Map.put(:evidence, %{
       paths: Enum.take(paths, 32),
       verification_ref: payload["verification_ref"] || payload[:verification_ref],
+      repository: payload["repository"] || payload[:repository],
+      pull_request: payload["pull_request"] || payload[:pull_request],
+      head_sha: payload["head_sha"] || payload[:head_sha],
+      review_thread_ids:
+        List.wrap(payload["review_thread_ids"] || payload[:review_thread_ids])
+        |> Enum.filter(&is_binary/1)
+        |> Enum.take(64),
+      handoff_target: payload["handoff_target"] || payload[:handoff_target],
+      review_resolution: payload["review_resolution"] || payload[:review_resolution],
+      merge_policy: payload["merge_policy"] || payload[:merge_policy],
       freshness: freshness(payload, snapshot),
       at: occurred_at(event)
     })
