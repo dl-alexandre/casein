@@ -1,6 +1,6 @@
 defmodule Casein.Agents.JidoPod.Worker do
   @moduledoc """
-  Short-lived attempt worker. Runs typed Code actions only; never tmux or a shell.
+  Short-lived attempt worker. Runs bounded typed Jido actions only; never tmux or a shell.
   """
 
   use GenServer, restart: :temporary

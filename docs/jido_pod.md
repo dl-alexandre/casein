@@ -9,12 +9,14 @@ workspace-keyed OTP coordinator and short-lived child workers.
 
 - **Casein** owns workspace scope, worktrees, admission, cancellation, and
   lifecycle identity.
-- **Workers** call typed Casein Code actions (`code_read`, `code_search`,
-  `code_apply_patch`, `code_exec`) from [#1013](https://github.com/dl-alexandre/casein/issues/1013).
-  They do not open a shell, walk the filesystem, or require a tmux pane.
+- **Workers** call bounded typed Jido actions: Casein Code actions
+  (`code_read`, `code_search`, `code_apply_patch`, `code_exec`) plus
+  human-input and handoff reporting from the typed catalog. They do not open a
+  shell, walk the filesystem, or require a tmux pane.
 - **Typed catalog:** `Casein.Agents.JidoActions` (#1015) is the worker-facing
-  action surface. This pod still calls `JidoPod.CodeActions` for the four
-  Code tools; the catalog adds distinct results, human-input, and handoff.
+  action surface. `JidoPod.CodeActions` forwards code actions to CodeTools and
+  routes supported human-input/progress/result/evidence actions through the
+  catalog. Git/task-control remain unsupported.
 - **Projection:** `Casein.Agents.JidoLifecycle` (#1016) consumes pod
   transitions without changing this admit/cancel/resume contract.
 - **Skills / fallback:** `Casein.Agents.JidoSkills` (#1017) selects Jido vs
@@ -45,7 +47,7 @@ External managers use Terminal MCP tools backed by
 
 | Tool | Role |
 |------|------|
-| `jido_admit` | Select + admit typed CodeTools actions (`code_read` / `code_search` / `code_apply_patch` / `code_exec`). Omit `runtime` to choose Jido when the workspace flag is on. |
+| `jido_admit` | Select + admit supported typed Jido actions (code, human-input, progress, result, and evidence). Omit `runtime` to choose Jido when the workspace flag is on. |
 | `jido_status` | Headless status/result (`headless: true`, no `pane_id`) |
 | `jido_cancel` | Cancel one attempt |
 

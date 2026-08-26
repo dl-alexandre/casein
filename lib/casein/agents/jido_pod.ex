@@ -3,8 +3,9 @@ defmodule Casein.Agents.JidoPod do
   Headless workspace Jido pod: one coordinator per workspace, bounded workers.
 
   This is the #1014 first slice. It does not launch OpenCode or a tmux pane.
-  Workers call typed Casein Code actions (`code_read` / `code_search` /
-  `code_apply_patch` / `code_exec`) and never the filesystem or a shell.
+  Workers call bounded typed Jido actions: Casein Code actions for edits and
+  verification, plus human-input and handoff reporting. They never use the
+  filesystem or a shell.
 
   Feature flag: `config :casein, :jido_headless, true` or
   `CASEIN_JIDO_HEADLESS=1`. Per-workspace override via

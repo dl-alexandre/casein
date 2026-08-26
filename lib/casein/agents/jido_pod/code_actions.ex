@@ -1,14 +1,17 @@
 defmodule Casein.Agents.JidoPod.CodeActions do
   @moduledoc """
-  Thin worker boundary onto typed Casein Code actions.
+  Thin worker boundary onto typed Jido actions.
 
   Workers must not open a shell, walk the filesystem, or drive tmux. They call
-  this module, which forwards to `Casein.Agents.CodeTools` (#1013) when that
-  contract is loaded. Follow-up tools (`git_status`, `git_diff`, `task_wait`,
-  `task_cancel`) are rejected here on purpose.
+  this module, which forwards code actions to `Casein.Agents.CodeTools` and
+  lifecycle/reporting actions to `Casein.Agents.JidoActions`. Git/task
+  follow-up tools (`git_status`, `git_diff`, `task_wait`, `task_cancel`)
+  are rejected here on purpose.
   """
 
-  @allowed ~w(code_read code_search code_apply_patch code_exec)
+  @code_actions ~w(code_read code_search code_apply_patch code_exec)
+  @handoff_actions ~w(request_clarification request_human_input report_progress report_result handoff_evidence)
+  @allowed @code_actions ++ @handoff_actions
 
   @spec allowed?(String.t()) :: boolean()
   def allowed?(name) when is_binary(name), do: name in @allowed
@@ -21,10 +24,15 @@ defmodule Casein.Agents.JidoPod.CodeActions do
   def invoke(name, args, context \\ %{})
 
   def invoke(name, args, context) when is_binary(name) and is_map(args) and is_map(context) do
-    if allowed?(name) do
-      runner().(name, stamp(args, context), context)
-    else
-      {:error, %{error: :unknown_tool, message: "unsupported code action #{name}"}}
+    cond do
+      name in @code_actions ->
+        runner().(name, stamp(args, context), context)
+
+      name in @handoff_actions ->
+        jido_actions_invoke(name, stamp(args, context), context)
+
+      true ->
+        {:error, %{error: :unknown_tool, message: "unsupported Jido action #{name}"}}
     end
   end
 
@@ -51,6 +59,16 @@ defmodule Casein.Agents.JidoPod.CodeActions do
 
   defp default_invoke(name, args, context) do
     code_tools_invoke(name, args, context)
+  end
+
+  defp jido_actions_invoke(name, args, context) do
+    module = Module.concat(Casein.Agents, JidoActions)
+
+    if Code.ensure_loaded?(module) and function_exported?(module, :invoke, 3) do
+      module.invoke(name, args, context)
+    else
+      {:error, :jido_actions_unavailable}
+    end
   end
 
   defp code_tools_invoke(name, args, context) do

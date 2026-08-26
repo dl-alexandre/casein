@@ -130,7 +130,17 @@ defmodule Casein.Agents.JidoDelegateTest do
     assert admit.parameters.properties.runtime.enum == ["jido", "opencode"]
 
     assert admit.parameters.properties.actions.items.properties.name.enum ==
-             ["code_read", "code_search", "code_apply_patch", "code_exec"]
+             [
+               "code_read",
+               "code_search",
+               "code_apply_patch",
+               "code_exec",
+               "request_clarification",
+               "request_human_input",
+               "report_progress",
+               "report_result",
+               "handoff_evidence"
+             ]
 
     assert admit.metadata.mutation?
     refute Enum.find(TerminalTools.definitions(), &(&1.name == "jido_status")).metadata.mutation?

@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.JidoAdmit do
   use Jido.Action,
     name: "jido_admit",
     description:
-      "Admit a bounded headless Jido attempt with typed CodeTools actions (code_read / code_search / code_apply_patch / code_exec). Chooses Jido automatically when CASEIN_JIDO_HEADLESS or the per-workspace flag is on. Explicit runtime: opencode, or a disabled workspace, returns a worker_launch fallback receipt and starts no pane. Never exposes shell or tmux. Requires workspace_id.",
+      "Admit a bounded headless Jido attempt with supported typed actions (code_read / code_search / code_apply_patch / code_exec / request_clarification / request_human_input / report_progress / report_result / handoff_evidence). Chooses Jido automatically when CASEIN_JIDO_HEADLESS or the per-workspace flag is on. Explicit runtime: opencode, or a disabled workspace, returns a worker_launch fallback receipt and starts no pane. Never exposes shell or tmux. Requires workspace_id.",
     category: "terminal",
     tags: ["terminal", "orchestration", "jido"],
     vsn: "1.0.0",
@@ -54,13 +54,14 @@ defmodule Casein.Agents.TerminalTools.JidoAdmit do
           },
           worktree_path: %{
             type: "string",
-            description: "Assigned worktree for CodeTools. Required for non-empty action lists."
+            description:
+              "Assigned worktree for Jido code actions. Required for non-empty action lists."
           },
           actions: %{
             type: "array",
             maxItems: 16,
             description:
-              "Typed CodeTools steps only. Identity fields on args are ignored; workspace/worktree come from trusted scope.",
+              "Supported typed Jido steps only. Identity fields on args are ignored; workspace/worktree come from trusted scope.",
             items: %{
               type: "object",
               required: ["name"],
@@ -68,7 +69,7 @@ defmodule Casein.Agents.TerminalTools.JidoAdmit do
                 name: %{
                   type: "string",
                   enum: CodeActions.allowed(),
-                  description: "Typed CodeTools action name."
+                  description: "Supported typed Jido action name."
                 },
                 args: %{
                   type: "object",

@@ -32,14 +32,16 @@ what they signal *without* being asked — see [§6](#6-wait-loop).
 
 | `jido_admit` receipt | Path |
 |---|---|
-| `runtime: "jido"`, `fallback?: false` | Admit typed CodeTools actions. Poll `jido_status`. Cancel with `jido_cancel`. No pane, no `terminal_send_*`. |
+| `runtime: "jido"`, `fallback?: false` | Admit supported typed Jido actions. Poll `jido_status`. Cancel with `jido_cancel`. No pane, no `terminal_send_*`. |
 | `fallback?: true` / `next_tool: "worker_launch"` | OpenCode TUI path below. Same when you pass `runtime: "opencode"`. |
 | `error: "jido_disabled"` | You pinned `runtime: "jido"` on a workspace that is not flagged. Use `worker_launch`. |
 
 Typed actions only: `code_read`, `code_search`, `code_apply_patch`,
-`code_exec`. Never pass `terminal_send_*`, a shell, or `git_*` / `task_*`
-(those fail closed). Identity on action args is ignored — workspace and
-worktree come from the admit call.
+`code_exec`, `request_clarification`, `request_human_input`,
+`report_progress`, `report_result`, and `handoff_evidence`. Never pass
+`terminal_send_*`, a shell, or `git_*` / `task_*` (those fail closed).
+Identity on action args is ignored — workspace and worktree come from the admit
+call.
 
 Route remaining TUI work on **capability**, not preference. Agent-write unlock
 is **not** a hard gate for write work — it only controls whether a Grok worker
@@ -147,7 +149,7 @@ jido_admit {
   workspace_id,
   worktree_path?,
   skill?,
-  actions: [{name: code_read|code_search|code_apply_patch|code_exec, args?, mutation_token?}],
+  actions: [{name: code_read|code_search|code_apply_patch|code_exec|request_clarification|request_human_input|report_progress|report_result|handoff_evidence, args?, mutation_token?}],
   dry_run?
 }
 ```

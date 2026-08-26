@@ -9,7 +9,7 @@ Admit a bounded action list instead:
 jido_admit {
   workspace_id: "{{WORKSPACE_ID}}",
   worktree_path: "{{WORKER_WORKTREE}}",
-  skill: "inspect" | "patch" | "approved-verify" | "representative-edit",
+  skill: "inspect" | "patch" | "approved-verify" | "representative-edit" | "human-input" | "progress",
   actions: [
     {"name": "code_read", "args": {"path": "…"}},
     {"name": "code_search", "args": {"query": "…"}},
@@ -19,7 +19,7 @@ jido_admit {
 }
 ```
 
-Allowed names: `code_read`, `code_search`, `code_apply_patch`, `code_exec`.
+Allowed names: `code_read`, `code_search`, `code_apply_patch`, `code_exec`, `request_clarification`, `request_human_input`, `report_progress`, `report_result`, `handoff_evidence`.
 Forbidden: `terminal_send_*`, `terminal_capture`, any shell, `git_*`, `task_*`.
 Poll `jido_status` for `state` / redacted `result`. Cancel with `jido_cancel`.
 If the admit receipt is `fallback?: true`, use the OpenCode pane template below.

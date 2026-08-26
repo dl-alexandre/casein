@@ -248,7 +248,7 @@ defmodule Casein.Agents.JidoPodTest do
     release(gate, "a3")
   end
 
-  test "workers call typed code actions and reject follow-up tools", %{track: track} do
+  test "workers call typed Jido actions and reject unsupported follow-up tools", %{track: track} do
     ws = track.("ws-tools-#{id()}")
     parent = self()
 
@@ -284,6 +284,41 @@ defmodule Casein.Agents.JidoPodTest do
     assert_receive {:tool, "code_search", _named_args, named_ctx}
     assert named_ctx.actor == "dalexandre"
     assert named_ctx.principal == "dalexandre"
+
+    {:ok, handoff} =
+      JidoPod.admit(%{
+        workspace_id: ws,
+        task_id: "task-handoff",
+        worktree_path: "/tmp/assigned",
+        principal: "dalexandre",
+        actions: [
+          %{name: "report_progress", args: %{summary: "patched"}},
+          %{name: "report_result", args: %{status: "completed", summary: "verified"}},
+          %{
+            name: "handoff_evidence",
+            args: %{
+              paths: ["lib/example.ex"],
+              summary: "ready for Dash",
+              verification_ref: "test",
+              repository: "dl-alexandre/casein",
+              pull_request: 1069,
+              head_sha: String.duplicate("a", 40),
+              review_thread_ids: [],
+              handoff_target: "dash",
+              review_resolution: "blind_listed_threads",
+              merge_policy: "resolve_listed_threads_at_head_sha"
+            }
+          }
+        ]
+      })
+
+    assert {:ok, %{state: :completed, completed_count: 3}} =
+             JidoPod.await(ws, handoff.attempt_id)
+
+    tools = Activity.recent(ws, 20) |> Enum.map(& &1.tool)
+    assert "report_progress" in tools
+    assert "report_result" in tools
+    assert "handoff_evidence" in tools
 
     {:ok, denied} =
       JidoPod.admit(%{workspace_id: ws, actions: [%{name: "git_status", args: %{}}]})

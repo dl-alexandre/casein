@@ -2,8 +2,9 @@ defmodule Casein.Agents.JidoDelegate do
   @moduledoc """
   Manager-facing Jido admit/status/cancel with OpenCode `worker_launch` fallback.
 
-  External managers call this instead of driving tmux. Only typed CodeTools
-  actions are admitted. `runtime: :opencode` or a disabled workspace flag
+  External managers call this instead of driving tmux. Only supported typed Jido
+  actions are admitted. Code mutations use CodeTools; reporting and human-input
+  actions use the typed Jido catalog. `runtime: :opencode` or a disabled workspace flag
   returns a fallback receipt naming `worker_launch`.
   """
 
@@ -226,7 +227,7 @@ defmodule Casein.Agents.JidoDelegate do
          %{
            error: :too_many_actions,
            result: :invalid,
-           message: "at most #{@max_actions} typed CodeTools actions",
+           message: "at most #{@max_actions} typed Jido actions",
            retryable: false
          }}
 
@@ -245,7 +246,7 @@ defmodule Casein.Agents.JidoDelegate do
          %{
            error: :invalid,
            result: :invalid,
-           message: "actions must be a list of typed CodeTools steps",
+           message: "actions must be a list of typed Jido steps",
            retryable: false
          }}
     end
@@ -287,7 +288,7 @@ defmodule Casein.Agents.JidoDelegate do
            result: :not_yet_supported,
            action: name,
            index: index,
-           message: "only typed CodeTools actions are admitted",
+           message: "only supported typed Jido actions are admitted",
            allowed: @allowed_actions,
            retryable: false
          }}
