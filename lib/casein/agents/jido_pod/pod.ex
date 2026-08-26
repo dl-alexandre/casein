@@ -456,7 +456,15 @@ defmodule Casein.Agents.JidoPod.Pod do
 
   defp outcome(attempt, {:shutdown, {:completed, result}}) do
     completed = Map.get(result, :completed, attempt.completed)
-    {:completed, [result: result, completed: completed, next_index: length(completed)]}
+
+    {:completed,
+     [
+       result: result,
+       completed: completed,
+       next_index: length(completed),
+       reason: nil,
+       error: nil
+     ]}
   end
 
   defp outcome(_attempt, {:shutdown, {:failed, {:action_crashed, _} = error}}),

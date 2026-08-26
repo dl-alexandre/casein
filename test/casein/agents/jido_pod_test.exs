@@ -145,6 +145,28 @@ defmodule Casein.Agents.JidoPodTest do
     assert {:ok, %{state: :completed}} = JidoPod.await(ws, follow.attempt_id)
   end
 
+  test "a successful retry clears the transient error", %{track: track} do
+    ws = track.("ws-retry-success-#{id()}")
+    counter = start_supervised!({Agent, fn -> 0 end})
+
+    Application.put_env(:casein, :jido_code_actions, fn _name, _args, _ctx ->
+      Agent.get_and_update(counter, fn
+        0 -> {{:error, :timeout}, 1}
+        count -> {{:ok, %{status: "completed", attempt: count}}, count + 1}
+      end)
+    end)
+
+    {:ok, admitted} =
+      JidoPod.admit(%{
+        workspace_id: ws,
+        max_retries: 1,
+        actions: [%{name: "code_read", args: %{}}]
+      })
+
+    assert {:ok, %{state: :completed, error: nil, reason: nil, retries: 1, next_index: 1}} =
+             JidoPod.await(ws, admitted.attempt_id)
+  end
+
   test "public attempt results redact tool I/O before notification", %{track: track} do
     ws = track.("ws-redacted-#{id()}")
 
