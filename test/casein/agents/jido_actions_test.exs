@@ -296,7 +296,7 @@ defmodule Casein.Agents.JidoActionsTest do
                  paths: ["note.txt"],
                  verification_ref: "format",
                  repository: "MILCGroup/OneBackend-v3",
-                 pull_request: 19418,
+                 pull_request: 19_418,
                  head_sha: "0123456789abcdef0123456789abcdef01234567",
                  review_thread_ids: ["thread-1"],
                  handoff_target: "dash",

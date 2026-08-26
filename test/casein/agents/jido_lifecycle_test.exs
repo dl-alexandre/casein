@@ -203,7 +203,7 @@ defmodule Casein.Agents.JidoLifecycleTest do
         paths: ["lib/a.ex"],
         verification_ref: "format",
         repository: "MILCGroup/OneBackend-v3",
-        pull_request: 19418,
+        pull_request: 19_418,
         head_sha: "0123456789abcdef0123456789abcdef01234567",
         review_thread_ids: ["thread-1"],
         handoff_target: "dash",
@@ -216,7 +216,7 @@ defmodule Casein.Agents.JidoLifecycleTest do
     assert {:ok, %{evidence: evidence}} = JidoLifecycle.get(@workspace, "att-err")
     assert evidence.freshness == :current
     assert evidence.repository == "MILCGroup/OneBackend-v3"
-    assert evidence.pull_request == 19418
+    assert evidence.pull_request == 19_418
     assert evidence.head_sha == "0123456789abcdef0123456789abcdef01234567"
     assert evidence.review_thread_ids == ["thread-1"]
     assert evidence.handoff_target == "dash"
