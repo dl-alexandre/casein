@@ -55,8 +55,9 @@ defmodule CaseinWeb.API.MCPEnvelope do
   # The revision that replaced the handshake with per-request `_meta`.
   @protocol_2026 "2026-07-28"
 
-  # Freshness hints for `CacheableResult` results. Tool surfaces only change on
-  # deploy; `server/discover` output is stable for the life of a token.
+  # Freshness hints for `CacheableResult` results. Generic/workspace tool
+  # surfaces only change on deploy; `server/discover` output is stable for the
+  # life of a token. Capability-scoped inventories can still change live.
   @tools_list_ttl_ms 300_000
   @discover_ttl_ms 3_600_000
 
@@ -277,6 +278,8 @@ defmodule CaseinWeb.API.MCPEnvelope do
   # Servers MUST implement `server/discover`. Purely additive: legacy clients
   # never call it, and before this existed it fell through to -32601.
   defp dispatch("server/discover", id, _params, handler, opts) do
+    tools = listed_tools(handler, opts)
+
     {:reply,
      result(id, %{
        supportedVersions: @supported_protocol_versions,
@@ -285,18 +288,13 @@ defmodule CaseinWeb.API.MCPEnvelope do
        ttlMs: @discover_ttl_ms,
        # Never "public": `instructions/1` embeds the endpoint's pre-scoped
        # workspace_id, so this response is caller-specific.
-       cacheScope: "private"
+       cacheScope: "private",
+       toolSurface: tool_surface(tools, opts)
      })}
   end
 
   defp dispatch("tools/list", id, _params, handler, opts) do
-    tools =
-      handler.list_tools(opts)
-      |> MCPCapabilityScope.filter_tools(opts)
-      # Deterministic order lets clients cache the list and improves prompt-cache
-      # hit rates. Safe for every revision, so it is not gated.
-      |> Enum.sort_by(&tool_sort_key/1)
-
+    tools = listed_tools(handler, opts)
     {:reply, result(id, cacheable(%{tools: tools}, @tools_list_ttl_ms, opts))}
   end
 
@@ -555,6 +553,59 @@ defmodule CaseinWeb.API.MCPEnvelope do
 
       :legacy ->
         result
+    end
+  end
+
+  # Caller-visible inventory: capability-filtered, then sorted. Discover and
+  # tools/list must hash/list the same set so an orchestrator can compare
+  # workspace-scoped vs external surfaces without a second round trip.
+  defp listed_tools(handler, opts) do
+    handler.list_tools(opts)
+    |> MCPCapabilityScope.filter_tools(opts)
+    |> Enum.sort_by(&tool_sort_key/1)
+  end
+
+  # Modern `server/discover` only. Legacy `initialize` stays byte-identical.
+  defp tool_surface(tools, opts) do
+    names = Enum.map(tools, &tool_sort_key/1)
+    workspace_scoped? = workspace_scoped?(opts)
+    capability_scoped? = MCPCapabilityScope.scoped?(opts)
+
+    scope =
+      cond do
+        capability_scoped? -> "capability"
+        workspace_scoped? -> "workspace"
+        true -> "external"
+      end
+
+    %{
+      id: tool_surface_id(names),
+      version: server_version(),
+      toolCount: length(names),
+      scope: scope,
+      callerScoped: scope != "external",
+      workspaceScoped: workspace_scoped?,
+      # Generic and workspace inventories only change on deploy (`listChanged`
+      # is false). A capability grant can still shrink/grow live (write-unlock)
+      # without reconnect, so it is not pinned.
+      pinnedUntilReconnect: not capability_scoped?
+    }
+  end
+
+  defp tool_surface_id(names) do
+    digest =
+      names
+      |> Enum.join("\n")
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+
+    "sha256:" <> digest
+  end
+
+  defp workspace_scoped?(opts) do
+    case Keyword.get(opts, :default_workspace_id) do
+      id when is_binary(id) and id != "" -> true
+      _ -> false
     end
   end
 
