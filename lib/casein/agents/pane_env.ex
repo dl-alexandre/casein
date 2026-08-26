@@ -105,9 +105,8 @@ defmodule Casein.Agents.PaneEnv do
 
     case vars_for_workspace(workspace, Keyword.put_new(opts, :tmux_session, tmux_session)) do
       {:ok, vars} ->
-        with :ok <- maybe_set_session_actor(tmux_session, Map.get(vars, "CASEIN_ACTOR")),
-             :ok <- tmux_adapter().set_environments(tmux_session, vars) do
-          :ok
+        with :ok <- maybe_set_session_actor(tmux_session, Map.get(vars, "CASEIN_ACTOR")) do
+          tmux_adapter().set_environments(tmux_session, vars)
         end
 
       {:error, _} = error ->

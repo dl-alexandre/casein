@@ -187,9 +187,8 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
   end
 
   defp bind_session(adapter, tmux_session, principal, session_alias) do
-    with :ok <- set_session_actor(adapter, tmux_session, principal),
-         :ok <- set_session_alias(adapter, tmux_session, session_alias) do
-      :ok
+    with :ok <- set_session_actor(adapter, tmux_session, principal) do
+      set_session_alias(adapter, tmux_session, session_alias)
     end
   end
 
