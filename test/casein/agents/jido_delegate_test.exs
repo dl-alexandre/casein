@@ -154,6 +154,44 @@ defmodule Casein.Agents.JidoDelegateTest do
     assert JidoPod.list(ws) == []
   end
 
+  test "jido_admit threads trusted MCP principal and strips actor fields from action args" do
+    ws = "ws-delegate-principal-#{id()}"
+    Application.put_env(:casein, :jido_headless_workspaces, %{ws => true})
+    parent = self()
+
+    Application.put_env(:casein, :jido_code_actions, fn name, args, ctx ->
+      send(parent, {:tool, name, args, ctx})
+      {:ok, %{name: name}}
+    end)
+
+    assert {:ok, admitted} =
+             TerminalTools.invoke(
+               "jido_admit",
+               %{
+                 "workspace_id" => ws,
+                 "worktree_path" => "/tmp/assigned",
+                 "principal" => "spoofed-param",
+                 "actor_id" => "spoofed-param",
+                 "actions" => [
+                   %{
+                     "name" => "code_apply_patch",
+                     "args" => %{"patch" => "--- a\n+++ b\n", "actor_id" => "spoofed"}
+                   }
+                 ]
+               },
+               %{actor: "dalexandre"}
+             )
+
+    assert admitted.runtime == :jido
+    assert {:ok, %{state: :completed}} = JidoPod.await(ws, admitted.attempt_id)
+    assert_receive {:tool, "code_apply_patch", args, ctx}
+    refute Map.has_key?(args, :actor_id)
+    refute Map.has_key?(args, "actor_id")
+    refute Map.has_key?(args, :principal)
+    assert ctx.actor == "dalexandre"
+    assert ctx.principal == "dalexandre"
+  end
+
   defp admit_blocked(ws) do
     gate = start_supervised!({Agent, fn -> %{} end}, id: {:jido_delegate_gate, id()})
     parent = self()

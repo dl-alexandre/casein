@@ -243,6 +243,7 @@ defmodule Casein.Agents.JidoPod.Pod do
       workspace_id: workspace_id,
       task_id: Map.get(attrs, :task_id) || Ecto.UUID.generate(),
       worktree_path: Map.get(attrs, :worktree_path),
+      principal: Map.get(attrs, :principal),
       actions: normalize_actions(Map.get(attrs, :actions, [])),
       deadline_ms: Map.get(attrs, :deadline_ms, config(:default_attempt_deadline_ms, 60_000)),
       action_timeout_ms:

@@ -247,6 +247,21 @@ defmodule Casein.Agents.JidoPodTest do
     assert args[:query] == "Pod" or args["query"] == "Pod"
     assert ctx.workspace_id == ws
     assert ctx.worktree_path == "/tmp/assigned"
+    assert ctx.actor == nil
+    assert ctx.principal == nil
+
+    {:ok, named} =
+      JidoPod.admit(%{
+        workspace_id: ws,
+        worktree_path: "/tmp/assigned",
+        principal: "dalexandre",
+        actions: [%{name: "code_search", args: %{query: "Named", actor_id: "spoofed"}}]
+      })
+
+    assert {:ok, %{state: :completed}} = JidoPod.await(ws, named.attempt_id)
+    assert_receive {:tool, "code_search", _named_args, named_ctx}
+    assert named_ctx.actor == "dalexandre"
+    assert named_ctx.principal == "dalexandre"
 
     {:ok, denied} =
       JidoPod.admit(%{workspace_id: ws, actions: [%{name: "git_status", args: %{}}]})

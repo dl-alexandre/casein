@@ -227,7 +227,7 @@ defmodule CaseinWeb.API.TerminalMCP do
                default_caller_pane: Keyword.get(opts, :default_caller_pane)
              ) do
           {:ok, scope} ->
-            case TerminalTools.invoke(name, scope.args) do
+            case TerminalTools.invoke(name, scope.args, %{actor: Keyword.get(opts, :actor)}) do
               {:ok, payload} = ok ->
                 _ = MCPAudit.record_terminal(name, scope.args, ok, audit_opts)
                 {:ok, payload}
