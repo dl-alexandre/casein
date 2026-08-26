@@ -115,6 +115,7 @@ bash -n scripts/deploy-poller.sh
 bash -n scripts/build-release.sh
 bash -n scripts/lib/canary-drain.sh
 bash -n scripts/lib/caddy-upstream.sh
+bash -n scripts/lib/service-path.sh
 # Companion signing helpers (#416) — syntax only here; fixture content below.
 bash -n scripts/verify-companion-signing-contract.sh
 bash -n scripts/verify-companion-external-prereqs.sh
@@ -141,6 +142,9 @@ bash scripts/test-agent-shims.sh
 
 log "running hermetic shell unit tests (canary drain/stop decisions)"
 bash scripts/test-canary-drain.sh
+
+log "running hermetic shell unit tests (canary verifier PATH)"
+bash scripts/test-service-path.sh
 
 log "running hermetic shell unit tests (canonical Caddy upstream repair)"
 bash scripts/test-caddy-upstream.sh

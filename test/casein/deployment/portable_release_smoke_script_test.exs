@@ -56,6 +56,10 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ ~s(RUN_ROOT="${CASEIN_RUN_ROOT:-/run/casein}")
     assert text =~ ~s(CURRENT_SYMLINK="${CASEIN_CURRENT_SOCK:-${RUN_ROOT}/current.sock}")
     assert text =~ ~s(source "${DEPLOY_SCRIPT_SELF_DIR}/lib/caddy-upstream.sh")
+    assert text =~ ~s(source "${DEPLOY_SCRIPT_SELF_DIR}/lib/service-path.sh")
+    assert text =~ ~s|SERVICE_PATH="$(casein_service_path "${USER_NAME}")"|
+    assert text =~ ~s|--property="Environment=PATH=${SERVICE_PATH}"|
+    refute text =~ "/home/devbox/.local/bin"
     assert caddy_helper =~ "casein_caddy_admin_curl -fsS -X PATCH"
     assert text =~ "casein_canonical_route_attests_caddy_unavailable"
     assert text =~ ~s|token="$(casein_read_casein_api_token "${ENV_FILE}")"|

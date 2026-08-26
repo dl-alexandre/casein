@@ -64,6 +64,8 @@ fi
 source "${DEPLOY_SCRIPT_SELF_DIR}/lib/canary-drain.sh"
 # shellcheck source=scripts/lib/caddy-upstream.sh
 source "${DEPLOY_SCRIPT_SELF_DIR}/lib/caddy-upstream.sh"
+# shellcheck source=scripts/lib/service-path.sh
+source "${DEPLOY_SCRIPT_SELF_DIR}/lib/service-path.sh"
 
 cleanup_stale_instance_records() {
   for inst_file in "${INST_DIR}"/*.json; do
@@ -448,6 +450,15 @@ fi
 # them; that needs a slice-level policy, deliberately not set here.
 CPU_PRIORITY_PROPERTY="CPUWeight=${CASEIN_CPU_WEIGHT:-1000}"
 
+# systemd's default service PATH cannot resolve allowlisted verifier tools
+# (`mix` / `elixir` / `erl` via mise shims). code_exec → Commands.spawn uses
+# System.find_executable("mix"), so a thin PATH fails every Jido verifier in
+# the live canary. Prepend a portable tool dir (default: <deploy-user>/.local/bin),
+# overridable via CASEIN_SERVICE_PATH / CASEIN_TOOL_BIN_DIR — never hardcode
+# a host home.
+SERVICE_PATH="$(casein_service_path "${USER_NAME}")"
+log "canary PATH prepends verifier tools (${SERVICE_PATH})"
+
 sudo systemd-run \
   --unit="casein-${NEW_UUID}" \
   --description="Casein canary ${REVISION} (${NEW_UUID})" \
@@ -459,6 +470,7 @@ sudo systemd-run \
   --property="KillMode=process" \
   --property="${CPU_PRIORITY_PROPERTY}" \
   --property="Environment=RELEASE_NODE=${NEW_RELEASE_NODE}" \
+  --property="Environment=PATH=${SERVICE_PATH}" \
   --property="ExecStartPre=/usr/bin/docker compose -f /opt/casein/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/clean_casein_socket" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/migrate" \

@@ -136,6 +136,7 @@ jobs:
           bash -n scripts/build-release.sh
           bash -n scripts/lib/canary-drain.sh
           bash -n scripts/lib/caddy-upstream.sh
+          bash -n scripts/lib/service-path.sh
           # deps.get only — needed so format plugins (phoenix_live_view) resolve.
           # Does not compile the app or casein_mob NIFs.
           mise exec -- mix deps.get
