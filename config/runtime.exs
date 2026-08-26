@@ -1062,6 +1062,10 @@ if config_env() == :prod and not release_cli? do
     config :casein, :superadmin_handoff_secret, handoff_secret
   end
 
+  if runtime_id = System.get_env("CASEIN_RUNTIME_ID") do
+    config :casein, :runtime_id, runtime_id
+  end
+
   if embed_origins = System.get_env("CASEIN_EMBED_ORIGINS") do
     config :casein, :embed_origins, String.split(embed_origins, ",", trim: true)
   end
