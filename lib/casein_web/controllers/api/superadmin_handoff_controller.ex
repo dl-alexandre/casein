@@ -15,9 +15,11 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
   @spec exchange(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def exchange(conn, %{"token" => token}) do
     with {:ok, claims} <- SuperadminHandoff.verify(token),
-         {:ok, workspace} <- Workspaces.get(claims["workspace_id"]),
+         true <- runtime_matches?(conn, claims),
+         {:ok, workspace} <- Workspaces.get(claims["workspace_id"], claims["email"]),
          user <- ForwardAuth.user_from_email(claims["email"]),
          true <- Workspaces.viewer_can_access_workspace?(workspace, user),
+         true <- workspace_owned_by?(workspace, claims["email"]),
          :ok <- bind_session(claims, workspace, user) do
       conn
       |> put_session(@session_key, user)
@@ -37,27 +39,170 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
     with workspace_id when is_binary(workspace_id) and workspace_id != "" <- workspace_id,
          assertion when is_binary(assertion) <- actor_assertion(conn),
          {:ok, claims} <- SuperadminHandoff.verify_actor(assertion),
+         true <- runtime_matches?(conn, claims, require_header: true),
          true <- claims["workspace_id"] == workspace_id,
-         {:ok, workspace} <- Workspaces.get(workspace_id),
+         {:ok, workspace} <- Workspaces.get(workspace_id, claims["email"]),
+         true <- v3_workspace?(workspace),
          user <- ForwardAuth.user_from_email(claims["email"]),
          true <- Workspaces.viewer_can_access_workspace?(workspace, user),
+         true <- workspace_owned_by?(workspace, claims["email"]),
          principal when is_binary(principal) <- identity_principal(user),
          {:ok, payload} <- TerminalTools.list_sessions(%{"workspace_id" => workspace_id}) do
       sessions = Map.get(payload, :sessions) || Map.get(payload, "sessions") || []
-      bound = Enum.filter(sessions, &(session_actor(&1) == principal))
-      bootstrap = if bound == [], do: Enum.filter(sessions, &bootstrap_session?/1), else: []
+      visible = Enum.filter(sessions, &session_visible_to_principal?(&1, principal))
+      bootstrap = if visible == [], do: Enum.filter(sessions, &bootstrap_session?/1), else: []
 
       json(conn, %{
         workspace_id: workspace_id,
         identity: %{principal: principal, email: claims["email"]},
         session_scope: "identity",
-        sessions: bound,
+        sessions: visible,
         bootstrap_sessions: bootstrap
       })
     else
       _ -> unauthorized(conn)
     end
   end
+
+  @spec inventory(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def inventory(conn, _params) do
+    with :ok <- require_global_operator_token(conn),
+         assertion when is_binary(assertion) <- actor_assertion(conn),
+         {:ok, claims} <- SuperadminHandoff.verify_actor(assertion),
+         true <- runtime_matches?(conn, claims, require_header: true),
+         principal when is_binary(principal) <-
+           identity_principal(ForwardAuth.user_from_email(claims["email"])),
+         {:ok, workspaces} <- identity_v3_inventory(claims["email"], principal) do
+      sessions =
+        Enum.flat_map(workspaces, fn workspace ->
+          workspace.sessions ++ workspace.bootstrap_sessions
+        end)
+
+      json(conn, %{
+        identity: %{principal: principal, email: claims["email"]},
+        session_scope: "identity",
+        workspaces: workspaces,
+        sessions: sessions
+      })
+    else
+      {:error, :operator_token_required} ->
+        conn |> put_status(:forbidden) |> json(%{error: "operator_token_required"})
+
+      {:error, {:inventory_unavailable, reason}} ->
+        conn |> put_status(:service_unavailable) |> json(%{error: inspect(reason)})
+
+      _ ->
+        unauthorized(conn)
+    end
+  end
+
+  defp identity_v3_inventory(email, principal) do
+    with {:ok, workspaces} <- Workspaces.list([], email),
+         v3_workspaces <-
+           Enum.filter(workspaces, fn workspace ->
+             v3_workspace?(workspace) and workspace_owned_by?(workspace, email)
+           end),
+         {:ok, inventory} <- inventory_workspaces(v3_workspaces, principal) do
+      {:ok, inventory}
+    else
+      {:error, reason} -> {:error, {:inventory_unavailable, reason}}
+      other -> {:error, {:inventory_unavailable, other}}
+    end
+  end
+
+  defp inventory_workspaces(workspaces, principal) do
+    Enum.reduce_while(workspaces, {:ok, []}, fn workspace, {:ok, acc} ->
+      case inventory_workspace(workspace, principal) do
+        {:ok, entry} -> {:cont, {:ok, acc ++ [entry]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp inventory_workspace(workspace, principal) do
+    workspace_id = Map.get(workspace, :id) || Map.get(workspace, "id")
+
+    with workspace_id when is_binary(workspace_id) and workspace_id != "" <- workspace_id,
+         {:ok, payload} <- TerminalTools.list_sessions(%{"workspace_id" => workspace_id}) do
+      listed = payload_list(payload, "sessions")
+
+      candidates =
+        payload_list(payload, "candidate_sessions") ++ payload_list(payload, "bootstrap_sessions")
+
+      visible = Enum.filter(listed, &session_visible_to_principal?(&1, principal))
+
+      bootstrap =
+        if visible == [], do: Enum.filter(candidates ++ listed, &bootstrap_session?/1), else: []
+
+      {:ok,
+       %{
+         workspace_id: workspace_id,
+         workspace_name: Map.get(workspace, :name) || workspace_id,
+         workspace_type: "v3",
+         workspace_status: workspace_status(workspace),
+         sessions: Enum.map(visible, &enrich_inventory_session(&1, workspace)),
+         bootstrap_sessions: Enum.map(bootstrap, &enrich_inventory_session(&1, workspace))
+       }}
+    else
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :invalid_workspace}
+    end
+  end
+
+  defp enrich_inventory_session(session, workspace) when is_map(session) do
+    session
+    |> Map.put_new(:workspace_id, Map.get(workspace, :id))
+    |> Map.put_new(:workspace_name, Map.get(workspace, :name))
+    |> Map.put_new(:workspace_type, "v3")
+  end
+
+  defp enrich_inventory_session(session, _), do: session
+
+  defp payload_list(payload, "sessions") when is_map(payload),
+    do: list_values(Map.get(payload, :sessions) || Map.get(payload, "sessions"))
+
+  defp payload_list(payload, "candidate_sessions") when is_map(payload),
+    do:
+      list_values(Map.get(payload, :candidate_sessions) || Map.get(payload, "candidate_sessions"))
+
+  defp payload_list(payload, "bootstrap_sessions") when is_map(payload),
+    do:
+      list_values(Map.get(payload, :bootstrap_sessions) || Map.get(payload, "bootstrap_sessions"))
+
+  defp payload_list(_, _), do: []
+
+  defp list_values(values) when is_list(values), do: Enum.filter(values, &is_map/1)
+  defp list_values(_), do: []
+
+  defp workspace_owned_by?(workspace, email) when is_map(workspace) and is_binary(email) do
+    owner = Map.get(workspace, :user) || Map.get(workspace, "user")
+    principal = email |> String.downcase() |> String.split("@", parts: 2) |> List.first()
+
+    is_binary(owner) and String.downcase(owner) in [String.downcase(email), principal]
+  end
+
+  defp workspace_owned_by?(_, _), do: false
+
+  defp workspace_status(%{status: status}) when is_atom(status), do: Atom.to_string(status)
+  defp workspace_status(%{"status" => status}) when is_binary(status), do: status
+  defp workspace_status(_), do: "unknown"
+
+  defp v3_workspace?(workspace) when is_map(workspace) do
+    metadata = Map.get(workspace, :metadata) || Map.get(workspace, "metadata") || %{}
+
+    type =
+      Map.get(workspace, :type) || Map.get(workspace, "type") || metadata_value(metadata, :type)
+
+    type in [:v3, "v3"]
+  end
+
+  defp v3_workspace?(_), do: false
+
+  defp metadata_value(metadata, key) when is_map(metadata) do
+    Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
+  end
+
+  defp metadata_value(_, _), do: nil
 
   @spec create(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def create(conn, params) do
@@ -67,10 +212,13 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
            Map.get(params, "workspace_id"),
          assertion when is_binary(assertion) <- actor_assertion(conn),
          {:ok, claims} <- SuperadminHandoff.verify_actor(assertion),
+         true <- runtime_matches?(conn, claims, require_header: true),
          true <- claims["workspace_id"] == workspace_id,
-         {:ok, workspace} <- Workspaces.get(workspace_id),
+         {:ok, workspace} <- Workspaces.get(workspace_id, claims["email"]),
+         true <- v3_workspace?(workspace),
          user <- ForwardAuth.user_from_email(claims["email"]),
          true <- Workspaces.viewer_can_access_workspace?(workspace, user),
+         true <- workspace_owned_by?(workspace, claims["email"]),
          principal when is_binary(principal) <- identity_principal(user),
          {:ok, cwd} <- workspace_cwd(workspace),
          label <- Map.get(params, "label"),
@@ -106,15 +254,18 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
          {:ok, label} <- normalize_requested_session_alias(Map.get(params, "label")),
          assertion when is_binary(assertion) <- actor_assertion(conn),
          {:ok, claims} <- SuperadminHandoff.verify_actor(assertion),
+         true <- runtime_matches?(conn, claims, require_header: true),
          true <- claims["workspace_id"] == workspace_id,
-         {:ok, workspace} <- Workspaces.get(workspace_id),
+         {:ok, workspace} <- Workspaces.get(workspace_id, claims["email"]),
+         true <- v3_workspace?(workspace),
          user <- ForwardAuth.user_from_email(claims["email"]),
          true <- Workspaces.viewer_can_access_workspace?(workspace, user),
+         true <- workspace_owned_by?(workspace, claims["email"]),
          principal when is_binary(principal) <- identity_principal(user),
          true <- Terminals.tmux_session_in_workspace?(session_id, workspace),
          adapter <- Terminals.tmux_adapter(),
          {:ok, session} <- find_session(adapter, session_id),
-         ^principal <- session_actor(session),
+         true <- session_visible_to_principal?(session, principal),
          :ok <- set_session_alias(adapter, session_id, label) do
       json(conn, %{
         workspace_id: workspace_id,
@@ -159,6 +310,25 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
       [assertion | _] -> assertion
       _ -> nil
     end
+  end
+
+  defp runtime_matches?(conn, claims, opts \\ []) do
+    case configured_runtime_id() do
+      runtime_id when is_binary(runtime_id) and runtime_id != "" ->
+        claim_matches? = claims["runtime_id"] == runtime_id
+
+        header_matches? =
+          List.first(get_req_header(conn, "x-onebackend-runtime-id")) == runtime_id
+
+        claim_matches? and (not Keyword.get(opts, :require_header, false) or header_matches?)
+
+      _ ->
+        true
+    end
+  end
+
+  defp configured_runtime_id do
+    Application.get_env(:casein, :runtime_id) || System.get_env("CASEIN_RUNTIME_ID")
   end
 
   defp require_global_operator_token(%{assigns: %{api_token_scope: :global}}), do: :ok
@@ -295,6 +465,25 @@ defmodule CaseinWeb.API.SuperadminHandoffController do
   end
 
   defp session_actor(_), do: nil
+
+  defp session_visible_to_principal?(session, principal) when is_binary(principal) do
+    case session_actor(session) do
+      actor when actor in [nil, ""] -> true
+      actor when is_binary(actor) -> normalize_actor(actor) == normalize_actor(principal)
+      _ -> false
+    end
+  end
+
+  defp session_visible_to_principal?(_, _), do: false
+
+  defp normalize_actor(actor) do
+    actor = String.downcase(String.trim(actor))
+
+    case String.split(actor, "@", parts: 2) do
+      [principal, _domain] -> principal
+      _ -> actor
+    end
+  end
 
   defp bootstrap_session?(session) when is_map(session) do
     session_actor(session) in [nil, ""] and

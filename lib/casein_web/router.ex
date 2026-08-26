@@ -64,20 +64,21 @@ defmodule CaseinWeb.Router do
   end
 
   pipeline :browser do
-    plug :accepts, ["html"]
-    plug :fetch_session
-    plug :fetch_live_flash
-    plug :put_root_layout, html: {CaseinWeb.Layouts, :root}
-    plug :protect_from_forgery
+    plug(:accepts, ["html"])
+    plug(:fetch_session)
+    plug(:fetch_live_flash)
+    plug(:put_root_layout, html: {CaseinWeb.Layouts, :root})
+    plug(:protect_from_forgery)
 
-    plug :put_secure_browser_headers,
-         %{
-           "content-security-policy" =>
-             @content_security_policy_base <> "; " <> @default_frame_src
-         }
+    plug(
+      :put_secure_browser_headers,
+      %{
+        "content-security-policy" => @content_security_policy_base <> "; " <> @default_frame_src
+      }
+    )
 
-    plug :put_content_security_policy
-    plug CaseinWeb.Plugs.ForwardAuth
+    plug(:put_content_security_policy)
+    plug(CaseinWeb.Plugs.ForwardAuth)
   end
 
   # Preview reverse proxy. Deliberately omits the cockpit's secure-browser
@@ -89,17 +90,17 @@ defmodule CaseinWeb.Router do
   # 127.0.0.1 upstream keep it from becoming a general-purpose proxy.
   # sobelow_skip ["Config.CSRF"]
   pipeline :preview_proxy do
-    plug :fetch_session
-    plug CaseinWeb.Plugs.ForwardAuth
+    plug(:fetch_session)
+    plug(CaseinWeb.Plugs.ForwardAuth)
   end
 
   # Browser-authenticated workspace file bytes for rendered Markdown. This is
   # GET-only and intentionally omits the cockpit CSP because responses are raw
   # file bytes, not app HTML.
   pipeline :workspace_file do
-    plug :fetch_session
-    plug :protect_from_forgery
-    plug CaseinWeb.Plugs.ForwardAuth
+    plug(:fetch_session)
+    plug(:protect_from_forgery)
+    plug(CaseinWeb.Plugs.ForwardAuth)
   end
 
   # Client-streamed preview recordings. Raw octet-stream chunk bodies pass
@@ -108,36 +109,36 @@ defmodule CaseinWeb.Router do
   # x-csrf-token header); ForwardAuth + the controller authorize workspace
   # ownership per request.
   pipeline :api do
-    plug :accepts, ["json"]
-    plug CaseinWeb.Plugs.ApiAuth
+    plug(:accepts, ["json"])
+    plug(CaseinWeb.Plugs.ApiAuth)
   end
 
   pipeline :device_link_api do
-    plug :accepts, ["json"]
+    plug(:accepts, ["json"])
     # Resolve real client IP from XFF only when the direct peer is loopback
     # (oauth2-proxy/Caddy → Bandit). Must run before IP-keyed rate limiting.
-    plug CaseinWeb.Plugs.TrustedProxyRemoteIp
-    plug CaseinWeb.Plugs.DeviceLinkRateLimit
+    plug(CaseinWeb.Plugs.TrustedProxyRemoteIp)
+    plug(CaseinWeb.Plugs.DeviceLinkRateLimit)
   end
 
   pipeline :mcp_api do
-    plug :accepts, ["json"]
-    plug CaseinWeb.Plugs.ApiAuth
-    plug CaseinWeb.Plugs.NormalizeLegacyTmuxSession
-    plug CaseinWeb.Plugs.AgentCapabilityAuthz
-    plug CaseinWeb.Plugs.McpRateLimit
+    plug(:accepts, ["json"])
+    plug(CaseinWeb.Plugs.ApiAuth)
+    plug(CaseinWeb.Plugs.NormalizeLegacyTmuxSession)
+    plug(CaseinWeb.Plugs.AgentCapabilityAuthz)
+    plug(CaseinWeb.Plugs.McpRateLimit)
   end
 
   pipeline :mcp_ticket_exchange do
-    plug :accepts, ["json"]
-    plug CaseinWeb.Plugs.ApiAuth
-    plug CaseinWeb.Plugs.McpTicketRateLimit
+    plug(:accepts, ["json"])
+    plug(CaseinWeb.Plugs.ApiAuth)
+    plug(CaseinWeb.Plugs.McpTicketRateLimit)
   end
 
   # OAuth discovery metadata. No ApiAuth: an unauthenticated client must be able
   # to read it to find out how to authenticate.
   pipeline :mcp_metadata do
-    plug :accepts, ["json"]
+    plug(:accepts, ["json"])
   end
 
   # OneBackend's already-authenticated superadmin shell establishes a signed
@@ -148,26 +149,26 @@ defmodule CaseinWeb.Router do
   # bearer-authenticated :api pipeline below.
   # sobelow_skip ["Config.CSRF"]
   pipeline :superadmin_session do
-    plug :fetch_session
+    plug(:fetch_session)
   end
 
   # GitHub push webhook — authenticated via X-Hub-Signature-256, not ApiAuth.
   pipeline :deploy_webhook do
-    plug :accepts, ["json"]
-    plug CaseinWeb.Plugs.DeployWebhookAuth
+    plug(:accepts, ["json"])
+    plug(CaseinWeb.Plugs.DeployWebhookAuth)
   end
 
   # Streamable HTTP transport (GET SSE channel + DELETE session teardown). No
   # strict :accepts — SSE clients send `Accept: text/event-stream` only.
   pipeline :mcp_stream do
-    plug CaseinWeb.Plugs.ApiAuth
-    plug CaseinWeb.Plugs.NormalizeLegacyTmuxSession
-    plug CaseinWeb.Plugs.AgentCapabilityAuthz
-    plug CaseinWeb.Plugs.McpRateLimit
+    plug(CaseinWeb.Plugs.ApiAuth)
+    plug(CaseinWeb.Plugs.NormalizeLegacyTmuxSession)
+    plug(CaseinWeb.Plugs.AgentCapabilityAuthz)
+    plug(CaseinWeb.Plugs.McpRateLimit)
   end
 
   scope "/", CaseinWeb do
-    pipe_through :browser
+    pipe_through(:browser)
 
     live_session :default,
       on_mount: [
@@ -177,24 +178,24 @@ defmodule CaseinWeb.Router do
       # Root lands in the cockpit on the workspaceless scratch PTY ($HOME).
       # Dir browse is the SESSIONS Browse tier (Stage 4b). No separate
       # full-page dashboard or workspace-admin drawer.
-      live "/", WorkspaceLive.Show, :root
-      live "/workspaces/:id", WorkspaceLive.Show, :show
+      live("/", WorkspaceLive.Show, :root)
+      live("/workspaces/:id", WorkspaceLive.Show, :show)
     end
 
     # Legacy picker URL — redirects to scratch cockpit at "/".
-    get "/workspaces", LegacyWorkspaceController, :index
+    get("/workspaces", LegacyWorkspaceController, :index)
 
     # Notifications page absorbed by the in-viewer notifications drawer
     # (?drawer=notifications on the cockpit).
-    get "/notifications", LegacyWorkspaceController, :notifications
+    get("/notifications", LegacyWorkspaceController, :notifications)
 
     # Previous-sessions page absorbed by the cockpit History panel (?tab=history).
-    get "/workspaces/:id/previous-sessions", LegacyWorkspaceController, :previous_sessions
+    get("/workspaces/:id/previous-sessions", LegacyWorkspaceController, :previous_sessions)
 
-    get "/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show
+    get("/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show)
 
     # Mobile companion pairing — QR + credentials for CaseinMob.SessionClient.
-    get "/pair/:workspace_id", PairingController, :show
+    get("/pair/:workspace_id", PairingController, :show)
   end
 
   # Loopback readiness probe for the desktop host. Deliberately
@@ -202,31 +203,31 @@ defmodule CaseinWeb.Router do
   # polls before any session exists; outside the desktop profile the
   # controller answers 404.
   pipeline :desktop_health do
-    plug :accepts, ["json"]
+    plug(:accepts, ["json"])
   end
 
   scope "/desktop", CaseinWeb do
-    pipe_through :desktop_health
+    pipe_through(:desktop_health)
 
-    get "/health", DesktopHealthController, :show
+    get("/health", DesktopHealthController, :show)
   end
 
   scope "/", CaseinWeb do
     # Deliberately unauthenticated, Accept-header agnostic, and independent of
     # devbox deploy checks. Platforms need a status code, not infra details.
-    get "/healthz", HealthController, :show
+    get("/healthz", HealthController, :show)
 
     # Public by design so a Slack recipient can fetch the installer. This is an
     # exact route backed by one operator-configured file, not a generic file
     # server or upload surface.
-    get "/downloads/windows/Casein-Setup.exe", DesktopDownloadController, :windows
-    get "/downloads/windows/Casein-Setup.exe.sha256", DesktopDownloadController, :windows_sha256
+    get("/downloads/windows/Casein-Setup.exe", DesktopDownloadController, :windows)
+    get("/downloads/windows/Casein-Setup.exe.sha256", DesktopDownloadController, :windows_sha256)
   end
 
   scope "/preview-proxy", CaseinWeb do
-    pipe_through :preview_proxy
+    pipe_through(:preview_proxy)
 
-    match :*, "/:workspace_id/:port/*path", PreviewProxyController, :proxy
+    match(:*, "/:workspace_id/:port/*path", PreviewProxyController, :proxy)
   end
 
   # Forward-auth sub-request for own-origin previews. The edge router calls this
@@ -234,9 +235,9 @@ defmodule CaseinWeb.Router do
   # the preview pipeline so the viewer is established exactly as the path proxy
   # establishes it. Status-only: 204 allows, 403 denies.
   scope "/api", CaseinWeb do
-    pipe_through :preview_proxy
+    pipe_through(:preview_proxy)
 
-    get "/previews/authz", PreviewAuthzController, :authz
+    get("/previews/authz", PreviewAuthzController, :authz)
   end
 
   # Durable, login-gated public URL for an artifact project's static files,
@@ -245,175 +246,190 @@ defmodule CaseinWeb.Router do
   # controller sets its own tight CSP for workspace-authored content) and gates
   # on workspace ownership. This is the PR-shareable artifact link.
   scope "/artifact-projects", CaseinWeb do
-    pipe_through :workspace_file
+    pipe_through(:workspace_file)
 
-    get "/:workspace_id/:artifact_project_id/*path", ArtifactProjectController, :show
+    get("/:workspace_id/:artifact_project_id/*path", ArtifactProjectController, :show)
   end
 
   scope "/api", CaseinWeb do
-    pipe_through :workspace_file
+    pipe_through(:workspace_file)
 
-    get "/workspaces/:id/files/*path", WorkspaceFileController, :show
+    get("/workspaces/:id/files/*path", WorkspaceFileController, :show)
   end
 
   # Browser Web Push registration for the installed PWA (session + ForwardAuth +
   # CSRF via :workspace_file). Inert unless VAPID keys are configured.
   scope "/api", CaseinWeb.API do
-    pipe_through :workspace_file
+    pipe_through(:workspace_file)
 
-    get "/push/vapid-key", PushController, :vapid_key
-    post "/push/subscribe", PushController, :subscribe
-    post "/push/unsubscribe", PushController, :unsubscribe
+    get("/push/vapid-key", PushController, :vapid_key)
+    post("/push/subscribe", PushController, :subscribe)
+    post("/push/unsubscribe", PushController, :unsubscribe)
   end
 
   scope "/api", CaseinWeb.API do
-    pipe_through :superadmin_session
+    pipe_through(:superadmin_session)
 
-    get "/superadmin/handoff", SuperadminHandoffController, :exchange
-    get "/superadmin/authz", SuperadminHandoffController, :authz
+    get("/superadmin/handoff", SuperadminHandoffController, :exchange)
+    get("/superadmin/authz", SuperadminHandoffController, :authz)
   end
 
   scope "/api", CaseinWeb.API do
-    pipe_through :api
+    pipe_through(:api)
 
-    get "/superadmin/session/current", SuperadminHandoffController, :current
-    post "/superadmin/session", SuperadminHandoffController, :create
-    patch "/superadmin/session/:session_id/name", SuperadminHandoffController, :rename
+    get("/superadmin/session/current", SuperadminHandoffController, :current)
+    get("/superadmin/session/inventory", SuperadminHandoffController, :inventory)
+    post("/superadmin/session", SuperadminHandoffController, :create)
+    patch("/superadmin/session/:session_id/name", SuperadminHandoffController, :rename)
   end
 
   scope "/api", CaseinWeb.API do
-    pipe_through :device_link_api
+    pipe_through(:device_link_api)
 
-    post "/device-links/exchange", DeviceLinkController, :exchange
-    post "/device-links/rotate", DeviceLinkController, :rotate
-    post "/device-links/revoke", DeviceLinkController, :revoke
+    post("/device-links/exchange", DeviceLinkController, :exchange)
+    post("/device-links/rotate", DeviceLinkController, :rotate)
+    post("/device-links/revoke", DeviceLinkController, :revoke)
   end
 
   scope "/api", CaseinWeb.API do
-    pipe_through :api
+    pipe_through(:api)
 
-    get "/workspaces", WorkspaceController, :index
-    get "/workspaces/:id/status", WorkspaceController, :status
-    post "/workspaces/:id/api-token/rotate", WorkspaceController, :rotate_token
-    get "/workspaces/:id/topology", WorkspaceController, :topology
-    get "/workspaces/:id/runs", WorkspaceController, :runs
-    get "/workspaces/:id/runs/:run_id", WorkspaceController, :run
-    get "/workspaces/:id/proposals", WorkspaceController, :proposals
-    get "/workspaces/:id/audit", WorkspaceController, :audit
-    get "/workspaces/:id/previous_sessions", WorkspaceController, :previous_sessions
-    post "/workspaces/:id/codex/hooks", CodexHookController, :create
+    get("/workspaces", WorkspaceController, :index)
+    get("/workspaces/:id/status", WorkspaceController, :status)
+    post("/workspaces/:id/api-token/rotate", WorkspaceController, :rotate_token)
+    get("/workspaces/:id/topology", WorkspaceController, :topology)
+    get("/workspaces/:id/runs", WorkspaceController, :runs)
+    get("/workspaces/:id/runs/:run_id", WorkspaceController, :run)
+    get("/workspaces/:id/proposals", WorkspaceController, :proposals)
+    get("/workspaces/:id/audit", WorkspaceController, :audit)
+    get("/workspaces/:id/previous_sessions", WorkspaceController, :previous_sessions)
+    post("/workspaces/:id/codex/hooks", CodexHookController, :create)
 
-    post "/workspaces/:id/grok-agent-capabilities",
-         AgentCapabilityController,
-         :create_grok
+    post(
+      "/workspaces/:id/grok-agent-capabilities",
+      AgentCapabilityController,
+      :create_grok
+    )
 
-    get "/agent-capabilities/current", AgentCapabilityController, :current
-    delete "/agent-capabilities/current", AgentCapabilityController, :revoke_current
+    get("/agent-capabilities/current", AgentCapabilityController, :current)
+    delete("/agent-capabilities/current", AgentCapabilityController, :revoke_current)
 
-    post "/workspaces/:workspace_id/artifacts/:artifact_id/restore",
-         ArtifactProjectController,
-         :restore
+    post(
+      "/workspaces/:workspace_id/artifacts/:artifact_id/restore",
+      ArtifactProjectController,
+      :restore
+    )
 
-    get "/workspaces/:id/templates", WorkspaceTemplateController, :templates
-    get "/workspaces/:id/templates/export", WorkspaceTemplateController, :export_template
-    post "/workspaces/:id/templates/export", WorkspaceTemplateController, :save_template
+    get("/workspaces/:id/templates", WorkspaceTemplateController, :templates)
+    get("/workspaces/:id/templates/export", WorkspaceTemplateController, :export_template)
+    post("/workspaces/:id/templates/export", WorkspaceTemplateController, :save_template)
 
-    patch "/workspaces/:id/templates/:template_id",
-          WorkspaceTemplateController,
-          :update_template
+    patch(
+      "/workspaces/:id/templates/:template_id",
+      WorkspaceTemplateController,
+      :update_template
+    )
 
-    post "/workspaces/:id/templates/:template_id/duplicate",
-         WorkspaceTemplateController,
-         :duplicate_template
+    post(
+      "/workspaces/:id/templates/:template_id/duplicate",
+      WorkspaceTemplateController,
+      :duplicate_template
+    )
 
-    post "/workspaces/:id/templates/:template_id/apply",
-         WorkspaceTemplateController,
-         :apply_template
+    post(
+      "/workspaces/:id/templates/:template_id/apply",
+      WorkspaceTemplateController,
+      :apply_template
+    )
 
-    delete "/workspaces/:id/templates/:template_id",
-           WorkspaceTemplateController,
-           :delete_template
+    delete(
+      "/workspaces/:id/templates/:template_id",
+      WorkspaceTemplateController,
+      :delete_template
+    )
 
-    post "/workspaces/:id/windows", WorkspaceWindowController, :create_window
-    post "/workspaces/:id/windows/:window_id/select", WorkspaceWindowController, :select_window
-    patch "/workspaces/:id/windows/:window_id", WorkspaceWindowController, :rename_window
-    delete "/workspaces/:id/windows/:window_id", WorkspaceWindowController, :kill_window
+    post("/workspaces/:id/windows", WorkspaceWindowController, :create_window)
+    post("/workspaces/:id/windows/:window_id/select", WorkspaceWindowController, :select_window)
+    patch("/workspaces/:id/windows/:window_id", WorkspaceWindowController, :rename_window)
+    delete("/workspaces/:id/windows/:window_id", WorkspaceWindowController, :kill_window)
 
-    post "/workspaces/:id/windows/:window_id/restore",
-         WorkspaceWindowController,
-         :restore_window
+    post(
+      "/workspaces/:id/windows/:window_id/restore",
+      WorkspaceWindowController,
+      :restore_window
+    )
 
-    post "/workspaces/:id/panes", WorkspacePaneController, :create_pane
-    post "/workspaces/:id/panes/:pane_id/select", WorkspacePaneController, :select_pane
-    post "/workspaces/:id/panes/:pane_id/split", WorkspacePaneController, :split_pane
-    post "/workspaces/:id/panes/:pane_id/resize", WorkspacePaneController, :resize_pane
-    delete "/workspaces/:id/panes/:pane_id", WorkspacePaneController, :kill_pane
+    post("/workspaces/:id/panes", WorkspacePaneController, :create_pane)
+    post("/workspaces/:id/panes/:pane_id/select", WorkspacePaneController, :select_pane)
+    post("/workspaces/:id/panes/:pane_id/split", WorkspacePaneController, :split_pane)
+    post("/workspaces/:id/panes/:pane_id/resize", WorkspacePaneController, :resize_pane)
+    delete("/workspaces/:id/panes/:pane_id", WorkspacePaneController, :kill_pane)
 
-    post "/preview/panes", PreviewPaneController, :create
-    delete "/preview/panes/:id", PreviewPaneController, :delete
+    post("/preview/panes", PreviewPaneController, :create)
+    delete("/preview/panes/:id", PreviewPaneController, :delete)
 
-    get "/deploy_status", DeployStatusController, :show
-    get "/smoke/terminal", TerminalSmokeController, :show
-    post "/drain", DrainController, :drain
+    get("/deploy_status", DeployStatusController, :show)
+    get("/smoke/terminal", TerminalSmokeController, :show)
+    post("/drain", DrainController, :drain)
   end
 
   scope "/api", CaseinWeb.API do
-    pipe_through :deploy_webhook
+    pipe_through(:deploy_webhook)
 
-    post "/deploy_webhook", DeployWebhookController, :github
+    post("/deploy_webhook", DeployWebhookController, :github)
   end
 
   scope "/api", CaseinWeb.API do
-    pipe_through :mcp_ticket_exchange
+    pipe_through(:mcp_ticket_exchange)
 
-    post "/mcp-tickets/exchange", McpTicketController, :exchange
+    post("/mcp-tickets/exchange", McpTicketController, :exchange)
   end
 
   # RFC 9728 Protected Resource Metadata for the MCP endpoints. Unauthenticated
   # by design — a client fetches it precisely because it has no token yet — and
   # 404s unless :mcp_authorization_servers is configured.
   scope "/.well-known", CaseinWeb.API do
-    pipe_through :mcp_metadata
+    pipe_through(:mcp_metadata)
 
-    get "/oauth-protected-resource/*resource", MCPProtectedResourceController, :show
+    get("/oauth-protected-resource/*resource", MCPProtectedResourceController, :show)
   end
 
   scope "/api", CaseinWeb.API do
-    pipe_through :mcp_api
+    pipe_through(:mcp_api)
 
-    post "/workspaces/:id/open", WorkspaceOpenController, :open
+    post("/workspaces/:id/open", WorkspaceOpenController, :open)
 
     # Preview-control MCP server: lets external agents (Grok/Claude/Codex/
     # opencode) discover and call Casein.Agents.PreviewTools over MCP. Kept on
     # its own route rather than Tidewave's, which has no external-tool hook.
-    post "/preview/mcp", PreviewMCPController, :rpc
+    post("/preview/mcp", PreviewMCPController, :rpc)
 
     # Terminal-control MCP server: lets external agents discover Casein tmux
     # sessions and read panes / send keys, mirroring PreviewMCP's transport.
-    post "/terminals/mcp", TerminalMCPController, :rpc
+    post("/terminals/mcp", TerminalMCPController, :rpc)
 
     # Artifact-project MCP server: lets external agents create and iterate on
     # Git worktree-backed artifacts, returning Preview MCP handoff arguments.
-    post "/artifacts/mcp", ArtifactMCPController, :rpc
+    post("/artifacts/mcp", ArtifactMCPController, :rpc)
 
     # Worktree-scoped Code MCP server: structured read/search/patch/exec for
     # headless workers. Terminal MCP stays unchanged for interactive use.
-    post "/code/mcp", CodeMCPController, :rpc
+    post("/code/mcp", CodeMCPController, :rpc)
   end
 
   # Streamable HTTP: server→client SSE channel (GET) and session teardown
   # (DELETE), keyed by the Mcp-Session-Id issued on initialize.
   scope "/api", CaseinWeb.API do
-    pipe_through :mcp_stream
+    pipe_through(:mcp_stream)
 
-    get "/preview/mcp", PreviewMCPController, :info
-    delete "/preview/mcp", PreviewMCPController, :delete
-    get "/terminals/mcp", TerminalMCPController, :info
-    delete "/terminals/mcp", TerminalMCPController, :delete
-    get "/artifacts/mcp", ArtifactMCPController, :info
-    delete "/artifacts/mcp", ArtifactMCPController, :delete
-    get "/code/mcp", CodeMCPController, :info
-    delete "/code/mcp", CodeMCPController, :delete
+    get("/preview/mcp", PreviewMCPController, :info)
+    delete("/preview/mcp", PreviewMCPController, :delete)
+    get("/terminals/mcp", TerminalMCPController, :info)
+    delete("/terminals/mcp", TerminalMCPController, :delete)
+    get("/artifacts/mcp", ArtifactMCPController, :info)
+    delete("/artifacts/mcp", ArtifactMCPController, :delete)
+    get("/code/mcp", CodeMCPController, :info)
+    delete("/code/mcp", CodeMCPController, :delete)
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
@@ -426,22 +442,22 @@ defmodule CaseinWeb.Router do
     import Phoenix.LiveDashboard.Router
 
     scope "/dev" do
-      pipe_through :browser
+      pipe_through(:browser)
 
-      live_dashboard "/dashboard", metrics: CaseinWeb.Telemetry
-      forward "/mailbox", Plug.Swoosh.MailboxPreview
+      live_dashboard("/dashboard", metrics: CaseinWeb.Telemetry)
+      forward("/mailbox", Plug.Swoosh.MailboxPreview)
     end
   end
 
   scope "/", CaseinWeb do
-    pipe_through :browser
+    pipe_through(:browser)
 
     live_session :path_workspaces,
       on_mount: [
         {CaseinWeb.AssignCurrentUserHook, :default},
         {CaseinWeb.DeploymentUpdateHook, :default}
       ] do
-      live "/*lan_path", WorkspaceLive.Show, :lan_path
+      live("/*lan_path", WorkspaceLive.Show, :lan_path)
     end
   end
 end
