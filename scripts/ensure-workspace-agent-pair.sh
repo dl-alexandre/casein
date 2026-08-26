@@ -204,6 +204,8 @@ skill_source_dir() {
   fi
 
   local want candidate
+  local -a candidates
+  mapfile -t candidates < <(skill_source_candidates)
   want="$(deployed_revision)"
   if [[ -n "$want" ]]; then
     while IFS= read -r candidate; do
