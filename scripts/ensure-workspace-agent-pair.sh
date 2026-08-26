@@ -208,20 +208,20 @@ skill_source_dir() {
   mapfile -t candidates < <(skill_source_candidates)
   want="$(deployed_revision)"
   if [[ -n "$want" ]]; then
-    while IFS= read -r candidate; do
+    for candidate in "${candidates[@]}"; do
       has_skills "$candidate" || continue
       [[ "$(skill_src_revision "$candidate")" == "$want" ]] || continue
       printf '%s\n' "$candidate"
       return 0
-    done < <(skill_source_candidates)
+    done
   fi
 
-  while IFS= read -r candidate; do
+  for candidate in "${candidates[@]}"; do
     if has_skills "$candidate"; then
       printf '%s\n' "$candidate"
       return 0
     fi
-  done < <(skill_source_candidates)
+  done
 
   # Fall back to ROOT even if incomplete — agent_skills_install skips missing.
   printf '%s\n' "${ROOT}/.claude/skills"
