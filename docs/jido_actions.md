@@ -76,3 +76,10 @@ Same switch as the pod:
 
 OpenCode callers keep using Code MCP when the flag is off.
 `Compatibility.path/1` reports `:legacy_opencode` or `:jido_actions`.
+
+## Dash PR handoff
+
+`handoff_evidence` records `repository`, optional `pull_request`, `head_sha`,
+and bounded `review_thread_ids`. After that receipt, Dash/Verda owns live
+GitHub PR mutations. Workers do not create, approve, resolve, auto-merge, or
+merge the PR.
