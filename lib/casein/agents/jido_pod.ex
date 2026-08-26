@@ -20,6 +20,7 @@ defmodule Casein.Agents.JidoPod do
           optional(:task_id) => String.t(),
           optional(:attempt_id) => String.t(),
           optional(:worktree_path) => String.t(),
+          optional(:principal) => String.t(),
           optional(:actions) => [Attempt.action()],
           optional(:runtime) => :jido | :opencode,
           optional(:deadline_ms) => pos_integer(),

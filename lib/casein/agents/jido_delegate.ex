@@ -95,6 +95,7 @@ defmodule Casein.Agents.JidoDelegate do
       |> maybe_put(:task_id, get(attrs, :task_id))
       |> maybe_put(:attempt_id, get(attrs, :attempt_id))
       |> maybe_put(:worktree_path, get(attrs, :worktree_path))
+      |> maybe_put(:principal, get(attrs, :principal))
       |> maybe_put(:deadline_ms, get(attrs, :deadline_ms))
       |> maybe_put(:action_timeout_ms, get(attrs, :action_timeout_ms))
       |> maybe_put(:max_retries, get(attrs, :max_retries))
@@ -322,7 +323,13 @@ defmodule Casein.Agents.JidoDelegate do
       :task_id,
       "task_id",
       :worktree_path,
-      "worktree_path"
+      "worktree_path",
+      :actor,
+      "actor",
+      :actor_id,
+      "actor_id",
+      :principal,
+      "principal"
     ])
   end
 

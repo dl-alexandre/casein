@@ -110,7 +110,9 @@ defmodule Casein.Agents.JidoPod.Worker do
       workspace_id: attempt.workspace_id,
       task_id: attempt.task_id,
       attempt_id: attempt.id,
-      worktree_path: attempt.worktree_path
+      worktree_path: attempt.worktree_path,
+      principal: attempt.principal,
+      actor: attempt.principal
     }
 
     task =

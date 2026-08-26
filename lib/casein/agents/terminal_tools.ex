@@ -159,12 +159,12 @@ defmodule Casein.Agents.TerminalTools do
   defp hidden_action?(_action), do: false
 
   @doc "Dispatch a named agent terminal tool."
-  @spec invoke(String.t(), map()) :: {:ok, map()} | {:error, term()}
-  def invoke(tool_name, params) when is_map(params) do
+  @spec invoke(String.t(), map(), map()) :: {:ok, map()} | {:error, term()}
+  def invoke(tool_name, params, context \\ %{}) when is_map(params) do
     with :ok <- TerminalCommandPolicy.authorize(tool_name, params) do
       case Map.fetch(@by_name, tool_name) do
         {:ok, action} ->
-          ToolAction.invoke(action, params)
+          ToolAction.invoke(action, params, context)
 
         :error ->
           AnnotationTools.invoke(tool_name, params)
