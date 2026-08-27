@@ -79,8 +79,6 @@ defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
              head_branch: "agent/gate0-receipt",
              head_sha: @head_sha,
              release_sha: @release_sha,
-             pr_number: nil,
-             pr_url: nil,
              outcome: "waiting",
              merged_sha: nil,
              merge_actor_ref: nil,
@@ -123,6 +121,19 @@ defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
 
     assert action_key == "review-thread:v1:#{receipt.handoff_id}:#{@head_sha}:thread-opaque-1"
     refute action_key == receipt.idempotency.handoff_key
+  end
+
+  test "omits absent PR fields from the Casein waiting wire receipt", %{scope: scope} do
+    {:ok, receipt} = Receipt.build(scope, git_result(), attrs(scope))
+    public = Receipt.public(receipt)
+
+    refute Map.has_key?(public.git, :pr_number)
+    refute Map.has_key?(public.git, :pr_url)
+
+    decoded = public |> Jason.encode!() |> Jason.decode!()
+    refute Map.has_key?(decoded["git"], "pr_number")
+    refute Map.has_key?(decoded["git"], "pr_url")
+    assert Receipt.validate(public) == :ok
   end
 
   test "rejects old producer aliases and unknown fields", %{scope: scope} do
@@ -325,15 +336,17 @@ defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
     merged =
       waiting
       |> Map.put(:source, "dash_verda")
-      |> Map.put(:git, %{
-        waiting.git
-        | outcome: "merged",
+      |> Map.put(
+        :git,
+        Map.merge(waiting.git, %{
+          outcome: "merged",
           pr_number: 1065,
           pr_url: "https://github.com/dl-alexandre/casein/pull/1065",
           merged_sha: @merged_sha,
           merge_actor_ref: "github_app/dash-bot",
           post_merge_evidence_ref: "pipeline-1065"
-      })
+        })
+      )
 
     assert Receipt.validate(merged) == :ok
     assert Receipt.valid_public?(merged)

@@ -408,8 +408,6 @@ defmodule Casein.Agents.JidoWorkcell.Receipt do
          head_branch: scope.assigned_branch,
          head_sha: head_sha,
          release_sha: scope.release_sha,
-         pr_number: nil,
-         pr_url: nil,
          outcome: outcome,
          merged_sha: nil,
          merge_actor_ref: nil,
