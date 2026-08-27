@@ -44,7 +44,7 @@ defmodule Casein.Agents.JidoWorkcell.Git do
           :erlang.term_to_binary({Scope.public(scope), paths, message, receipt_attrs(attrs)})
         )
 
-      Ledger.run(handoff_id, fingerprint, expected_head_sha, fn ->
+      Ledger.run(handoff_id, fingerprint, expected_head_sha, value(attrs, :workcell_id), fn ->
         do_handoff(scope, attrs, paths, message)
       end)
     end

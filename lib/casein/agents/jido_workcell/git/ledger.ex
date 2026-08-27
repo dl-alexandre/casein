@@ -1,9 +1,9 @@
 defmodule Casein.Agents.JidoWorkcell.Git.Ledger do
-  @moduledoc "In-memory idempotency ledger for one Workcell Git handoff id."
+  @moduledoc "Restart-safe idempotency ledger for one Workcell Git handoff id."
 
   use GenServer
 
-  alias Casein.Agents.JidoWorkcell.Receipt
+  alias Casein.Agents.JidoWorkcell.{Receipt, ResourceStore}
 
   @timeout :infinity
 
@@ -24,21 +24,50 @@ defmodule Casein.Agents.JidoWorkcell.Git.Ledger do
   def run(handoff_id, fingerprint, expected_head_sha, fun)
       when is_binary(handoff_id) and is_function(fun, 0) and
              (is_binary(expected_head_sha) or is_nil(expected_head_sha)) do
+    run(handoff_id, fingerprint, expected_head_sha, nil, fun)
+  end
+
+  @doc "Run or replay a handoff while binding its durable result to one Workcell."
+  @spec run(
+          String.t(),
+          term(),
+          String.t() | nil,
+          String.t() | nil,
+          (-> {:ok, map()} | {:error, term()})
+        ) :: {:ok, map()} | {:error, term()}
+  def run(handoff_id, fingerprint, expected_head_sha, workcell_id, fun)
+      when is_binary(handoff_id) and is_function(fun, 0) and
+             (is_binary(expected_head_sha) or is_nil(expected_head_sha)) and
+             (is_binary(workcell_id) or is_nil(workcell_id)) do
     ensure_started()
-    GenServer.call(__MODULE__, {:run, handoff_id, fingerprint, expected_head_sha, fun}, @timeout)
+
+    GenServer.call(
+      __MODULE__,
+      {:run, handoff_id, fingerprint, expected_head_sha, workcell_id, fun},
+      @timeout
+    )
   end
 
   @impl true
-  def init(state), do: {:ok, state}
+  def init(_state), do: {:ok, hydrate()}
 
   @impl true
-  def handle_call({:run, handoff_id, fingerprint, expected_head_sha, fun}, _from, state) do
+  def handle_call(
+        {:run, handoff_id, fingerprint, expected_head_sha, workcell_id, fun},
+        _from,
+        state
+      ) do
     case Map.get(state, handoff_id) do
       %{fingerprint: ^fingerprint, head_sha: stored_head_sha, receipt: receipt} ->
-        if is_nil(expected_head_sha) or expected_head_sha == stored_head_sha do
-          {:reply, {:ok, receipt}, state}
-        else
-          {:reply, {:error, :reused_handoff_new_sha}, state}
+        cond do
+          not is_map(receipt) ->
+            {:reply, {:error, :idempotency_replay_unavailable}, state}
+
+          is_nil(expected_head_sha) or expected_head_sha == stored_head_sha ->
+            {:reply, {:ok, receipt}, state}
+
+          true ->
+            {:reply, {:error, :reused_handoff_new_sha}, state}
         end
 
       %{fingerprint: _other, head_sha: stored_head_sha} ->
@@ -55,12 +84,15 @@ defmodule Casein.Agents.JidoWorkcell.Git.Ledger do
             case canonical_idempotency(handoff_id, receipt) do
               :ok ->
                 entry = %{
+                  handoff_id: handoff_id,
                   fingerprint: fingerprint,
                   head_sha: Receipt.head_sha(receipt),
                   handoff_key: idempotency_key(receipt),
-                  receipt: receipt
+                  receipt: receipt,
+                  workcell_id: workcell_id
                 }
 
+                _ = persist_entry(entry)
                 {:reply, result, Map.put(state, handoff_id, entry)}
 
               {:error, reason} ->
@@ -72,6 +104,35 @@ defmodule Casein.Agents.JidoWorkcell.Git.Ledger do
         end
     end
   end
+
+  defp hydrate do
+    ResourceStore.list()
+    |> Enum.reduce(%{}, fn resource, state ->
+      resource
+      |> Map.get(:idempotency, %{})
+      |> Enum.reduce(state, fn {handoff_id, entry}, state ->
+        if is_map(entry) and is_binary(handoff_id) and is_map(Map.get(entry, :receipt)) do
+          Map.put(state, handoff_id, Map.put(entry, :workcell_id, resource[:workcell_id]))
+        else
+          state
+        end
+      end)
+    end)
+  rescue
+    _ -> %{}
+  catch
+    :exit, _ -> %{}
+  end
+
+  defp persist_entry(%{workcell_id: workcell_id} = entry) when is_binary(workcell_id) do
+    ResourceStore.record_idempotency(workcell_id, entry)
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp persist_entry(_entry), do: :ok
 
   defp idempotency_key(receipt) when is_map(receipt),
     do: Map.get(receipt, :idempotency, Map.get(receipt, "idempotency")) |> handoff_key()

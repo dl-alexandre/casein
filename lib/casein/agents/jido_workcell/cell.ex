@@ -69,6 +69,7 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
     idle_timeout_ms = duration(opts, :idle_timeout_ms, @default_idle_timeout_ms)
     lease_ttl_ms = duration(opts, :lease_ttl_ms, @default_lease_ttl_ms)
     now = DateTime.utc_now()
+    prior = ResourceStore.get(workcell_id) || %{}
 
     state = %{
       workspace_id: workspace_id,
@@ -77,14 +78,16 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
       runtime: runtime,
       draining?: false,
       state: :provisioning,
+      desired_state: :ready,
       workers: %{},
       leases: %{},
       idle_timer: nil,
       idle_timeout_ms: idle_timeout_ms,
       lease_ttl_ms: lease_ttl_ms,
-      created_at: now,
+      created_at: Map.get(prior, :created_at, now),
       last_used_at: now,
-      rollback_reason: nil
+      rollback_reason: nil,
+      recovery: Map.get(prior, :recovery, %{})
     }
 
     persist(state)
@@ -94,13 +97,13 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
     case JidoPod.ensure_pod(workspace_id, workcell_id: workcell_id) do
       {:ok, pod} ->
         :ok = JidoPod.subscribe(workspace_id)
-        ready = %{state | pod: pod, state: :ready}
+        ready = %{state | pod: pod, state: :ready, desired_state: :ready}
         persist(ready)
         _ = Events.cell(workspace_id, workcell_id, :ready)
         {:ok, schedule_idle(ready)}
 
       {:error, reason} ->
-        persist(%{state | state: :failed, rollback_reason: reason})
+        persist(%{state | state: :failed, desired_state: :ready, rollback_reason: reason})
         _ = Events.cell(workspace_id, workcell_id, :failed)
         {:stop, reason}
     end
@@ -180,7 +183,15 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
   def handle_call(:drain, _from, state) do
     _ = Events.cell(state.workspace_id, state.workcell_id, :draining)
     result = JidoPod.drain(state.workspace_id)
-    state = %{state | draining?: true, state: :draining, last_used_at: DateTime.utc_now()}
+
+    state = %{
+      state
+      | draining?: true,
+        state: :draining,
+        desired_state: :stopped,
+        last_used_at: DateTime.utc_now()
+    }
+
     state = state |> persist() |> schedule_idle()
     {:reply, result, state}
   end
@@ -203,6 +214,7 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
       |> Map.merge(%{
         draining?: true,
         state: :stopped,
+        desired_state: :stopped,
         rollback_reason: reason,
         leases: %{},
         last_used_at: DateTime.utc_now()
@@ -226,6 +238,7 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
         |> Map.merge(%{
           draining?: true,
           state: :stopped,
+          desired_state: :stopped,
           leases: %{},
           last_used_at: DateTime.utc_now()
         })
@@ -280,7 +293,7 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
   def terminate(_reason, state) do
     cancel_idle(state)
     _ = JidoPod.stop_pod(state.workspace_id)
-    stopped = %{state | state: :stopped, draining?: true, leases: %{}}
+    stopped = %{state | state: :stopped, desired_state: :stopped, draining?: true, leases: %{}}
     persist(stopped)
     _ = Events.cell(state.workspace_id, state.workcell_id, :stopped)
     :ok
@@ -408,7 +421,8 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
     end
   end
 
-  defp activity_state(%{draining?: true} = state), do: %{state | state: :draining}
+  defp activity_state(%{draining?: true} = state),
+    do: %{state | state: :draining, desired_state: :stopped}
 
   defp activity_state(state) do
     active? =
@@ -416,7 +430,11 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
       |> JidoPod.list()
       |> Enum.any?(fn attempt -> not terminal_result?(attempt) end)
 
-    %{state | state: if(active?, do: :active, else: :ready)}
+    if active? do
+      %{state | state: :active, desired_state: :active}
+    else
+      %{state | state: :ready, desired_state: :ready}
+    end
   end
 
   defp resource_snapshot(state) do
@@ -429,6 +447,8 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
       workcell_id: state.workcell_id,
       workspace_id: state.workspace_id,
       state: state.state,
+      actual_state: state.state,
+      desired_state: state.desired_state,
       ready?: state.state in [:ready, :active],
       readiness: readiness(state.state),
       healthy?: healthy?(state),
@@ -450,7 +470,16 @@ defmodule Casein.Agents.JidoWorkcell.Cell do
       lease_ttl_ms: state.lease_ttl_ms,
       created_at: state.created_at,
       last_used_at: state.last_used_at,
-      rollback_reason: state.rollback_reason
+      rollback_reason: state.rollback_reason,
+      recovery: state.recovery,
+      last_health: %{
+        ready?: state.state in [:ready, :active],
+        healthy?: healthy?(state),
+        readiness: readiness(state.state),
+        active_worker_count: length(active_attempts),
+        lease_count: map_size(state.leases),
+        observed_at: DateTime.utc_now()
+      }
     }
   end
 
