@@ -21,6 +21,7 @@ defmodule CaseinWeb.API.TerminalMCP do
   @behaviour CaseinWeb.API.MCPEnvelope
 
   alias Casein.Agents.{MCPAudit, MCPError, MCPTasks, TerminalTools}
+  alias Casein.Agents.JidoWorkcell.Limits
   alias Casein.MCP.Scope
   alias Casein.Terminals.FleetSnapshot
   alias Casein.Terminals.FleetSummary
@@ -219,44 +220,14 @@ defmodule CaseinWeb.API.TerminalMCP do
     audit_opts = [actor: Keyword.get(opts, :actor)]
 
     result =
-      Casein.Signals.Context.with_new(fn ->
-        case Scope.resolve_tool_call(name, args,
-               surface: :terminal,
-               default_workspace_id: default_workspace_id,
-               default_tmux_session: Keyword.get(opts, :default_tmux_session),
-               default_caller_pane: Keyword.get(opts, :default_caller_pane)
-             ) do
-          {:ok, scope} ->
-            case TerminalTools.invoke(name, scope.args, %{actor: Keyword.get(opts, :actor)}) do
-              {:ok, payload} = ok ->
-                _ = MCPAudit.record_terminal(name, scope.args, ok, audit_opts)
-                {:ok, payload}
-
-              {:error, reason} = err ->
-                _ = MCPAudit.record_terminal(name, scope.args, err, audit_opts)
-                {:error, reason}
-
-              :error ->
-                err = {:error, :invalid_tool_arguments}
-                _ = MCPAudit.record_terminal(name, scope.args, err, audit_opts)
-                err
-            end
-
-          {:error, reason} = err ->
-            # Scope resolution failed, so `args` (and any workspace_id inside
-            # them) is untrusted — attribute the failure to the endpoint's
-            # authenticated workspace, never to a caller-claimed one.
-            _ =
-              MCPAudit.record_terminal(
-                name,
-                args,
-                err,
-                Keyword.put(audit_opts, :workspace_id, default_workspace_id)
-              )
-
-            {:error, reason}
+      if jido_tool?(name) do
+        case Limits.validate_input(params) do
+          :ok -> invoke_scoped_tool(name, args, opts, default_workspace_id, audit_opts)
+          {:error, reason} -> {:error, reason}
         end
-      end)
+      else
+        invoke_scoped_tool(name, args, opts, default_workspace_id, audit_opts)
+      end
 
     case result do
       {:ok, payload} ->
@@ -274,4 +245,61 @@ defmodule CaseinWeb.API.TerminalMCP do
         })
     end
   end
+
+  defp invoke_scoped_tool(name, args, opts, default_workspace_id, audit_opts) do
+    Casein.Signals.Context.with_new(fn ->
+      case Scope.resolve_tool_call(name, args,
+             surface: :terminal,
+             default_workspace_id: default_workspace_id,
+             default_tmux_session: Keyword.get(opts, :default_tmux_session),
+             default_caller_pane: Keyword.get(opts, :default_caller_pane)
+           ) do
+        {:ok, scope} ->
+          context = %{
+            actor: Keyword.get(opts, :actor),
+            workspace_id: workspace_from(scope.args, default_workspace_id),
+            mcp_session_id: Keyword.get(opts, :mcp_session_id),
+            mcp_server: Keyword.get(opts, :mcp_server, :terminal),
+            mcp_auth_scope: Keyword.get(opts, :mcp_auth_scope)
+          }
+
+          case TerminalTools.invoke(name, scope.args, context) do
+            {:ok, payload} = ok ->
+              _ = MCPAudit.record_terminal(name, scope.args, ok, audit_opts)
+              {:ok, payload}
+
+            {:error, reason} = err ->
+              _ = MCPAudit.record_terminal(name, scope.args, err, audit_opts)
+              {:error, reason}
+
+            :error ->
+              err = {:error, :invalid_tool_arguments}
+              _ = MCPAudit.record_terminal(name, scope.args, err, audit_opts)
+              err
+          end
+
+        {:error, reason} = err ->
+          # Scope resolution failed, so `args` (and any workspace_id inside
+          # them) is untrusted — attribute the failure to the endpoint's
+          # authenticated workspace, never to a caller-claimed one.
+          _ =
+            MCPAudit.record_terminal(
+              name,
+              args,
+              err,
+              Keyword.put(audit_opts, :workspace_id, default_workspace_id)
+            )
+
+          {:error, reason}
+      end
+    end)
+  end
+
+  defp workspace_from(args, fallback) when is_map(args) do
+    Map.get(args, "workspace_id") || Map.get(args, :workspace_id) || fallback
+  end
+
+  defp workspace_from(_args, fallback), do: fallback
+
+  defp jido_tool?(name), do: name in ["jido_admit", "jido_status", "jido_cancel"]
 end

@@ -61,7 +61,7 @@ defmodule Casein.Agents.JidoLifecycleTest do
     assert envelope.payload["summary"] == "ran format"
     assert envelope.workspace_id == @workspace
     assert envelope.attempt_id == "att-1"
-    assert envelope.correlation_id == "att-1"
+    assert envelope.correlation_id == nil
     assert is_integer(envelope.sequence)
     assert %DateTime{} = envelope.timestamp
   end

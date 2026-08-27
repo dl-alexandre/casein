@@ -79,7 +79,7 @@ defmodule Casein.Agents.JidoLifecycle do
             }
           )
 
-        name == "handoff_evidence" ->
+        name in ["handoff_evidence", "git_handoff"] ->
           persist_named("jido.evidence", name, payload, ctx, sequence,
             audit: true,
             extra: %{
@@ -88,8 +88,15 @@ defmodule Casein.Agents.JidoLifecycle do
               "partial" => payload[:verification_ref] in [nil, ""],
               "summary" => Envelope.bound_summary(payload[:summary]),
               "repository" => payload[:repository],
+              "base_branch" => payload[:base_branch],
+              "head_branch" => payload[:head_branch],
               "pull_request" => payload[:pull_request],
               "head_sha" => payload[:head_sha],
+              "handoff_id" => payload[:handoff_id],
+              "expected_head_sha" => payload[:expected_head_sha],
+              "tests" => List.wrap(payload[:tests]),
+              "artifacts" => List.wrap(payload[:artifacts]),
+              "blocker" => payload[:blocker],
               "review_thread_ids" => List.wrap(payload[:review_thread_ids]),
               "handoff_target" => payload[:handoff_target],
               "review_resolution" => payload[:review_resolution],
@@ -132,7 +139,7 @@ defmodule Casein.Agents.JidoLifecycle do
           task_id: attrs[:task_id],
           attempt_id: worker_id,
           worker_id: worker_id,
-          correlation_id: attrs[:agent_session_id] || worker_id,
+          correlation_id: attrs[:correlation_id] || attrs["correlation_id"],
           sequence: prior.sequence + 1,
           event_type: "agent.state_changed",
           runtime: :opencode,
@@ -217,10 +224,14 @@ defmodule Casein.Agents.JidoLifecycle do
     envelope =
       Envelope.build(%{
         workspace_id: attempt.workspace_id,
+        session_id: attempt[:session_id],
+        workcell_id: attempt[:workcell_id],
         task_id: attempt[:task_id],
         attempt_id: attempt.attempt_id,
-        worker_id: attempt.attempt_id,
-        correlation_id: attempt[:task_id] || attempt.attempt_id,
+        worker_id: attempt[:worker_id],
+        lease_id: attempt[:lease_id],
+        handoff_id: get_in(attempt, [:completion_receipt, :handoff_id]),
+        correlation_id: attempt[:correlation_id],
         sequence: sequence,
         timestamp: attempt[:updated_at] || attempt[:last_progress_at],
         event_type: "jido.lifecycle",
@@ -249,10 +260,13 @@ defmodule Casein.Agents.JidoLifecycle do
     envelope =
       Envelope.build(%{
         workspace_id: attempt.workspace_id,
+        session_id: attempt[:session_id],
+        workcell_id: attempt[:workcell_id],
         task_id: attempt[:task_id],
         attempt_id: attempt.attempt_id,
-        worker_id: attempt.attempt_id,
-        correlation_id: attempt[:task_id] || attempt.attempt_id,
+        worker_id: attempt[:worker_id],
+        lease_id: attempt[:lease_id],
+        correlation_id: attempt[:correlation_id],
         sequence: sequence,
         timestamp: attempt[:last_progress_at],
         event_type: "jido.checkpoint",
@@ -353,9 +367,13 @@ defmodule Casein.Agents.JidoLifecycle do
   defp action_envelope(type, name, payload, ctx, sequence, extra) do
     Envelope.build(%{
       workspace_id: ctx[:workspace_id] || payload[:workspace_id],
+      session_id: ctx[:session_id] || payload[:session_id],
+      workcell_id: ctx[:workcell_id] || payload[:workcell_id],
       task_id: ctx[:task_id] || payload[:task_id],
       attempt_id: ctx[:attempt_id] || payload[:attempt_id],
-      worker_id: ctx[:attempt_id] || payload[:attempt_id],
+      worker_id: ctx[:worker_id] || payload[:worker_id],
+      lease_id: ctx[:lease_id] || payload[:lease_id],
+      handoff_id: ctx[:handoff_id] || payload[:handoff_id],
       action: name,
       correlation_id: ctx[:correlation_id] || payload[:correlation_id],
       sequence: sequence,

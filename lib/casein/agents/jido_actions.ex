@@ -17,6 +17,7 @@ defmodule Casein.Agents.JidoActions do
     Compatibility,
     Context,
     GitDiff,
+    GitHandoff,
     GitStatus,
     HandoffEvidence,
     ReportProgress,
@@ -28,6 +29,8 @@ defmodule Casein.Agents.JidoActions do
     TaskCancel,
     TaskWait
   }
+
+  alias Casein.Agents.JidoWorkcell.Limits
 
   @type action_spec :: %{
           name: String.t(),
@@ -77,7 +80,7 @@ defmodule Casein.Agents.JidoActions do
       capability: :git,
       idempotent: true,
       mutates: false,
-      supported: false
+      supported: true
     },
     %{
       name: "git_diff",
@@ -85,7 +88,15 @@ defmodule Casein.Agents.JidoActions do
       capability: :git,
       idempotent: true,
       mutates: false,
-      supported: false
+      supported: true
+    },
+    %{
+      name: "git_handoff",
+      module: GitHandoff,
+      capability: :handoff,
+      idempotent: true,
+      mutates: true,
+      supported: true
     },
     %{
       name: "task_wait",
@@ -177,6 +188,17 @@ defmodule Casein.Agents.JidoActions do
 
   def invoke(name, args, context) when is_binary(name) and is_map(args) and is_map(context) do
     cond do
+      Limits.validate_input(args) != :ok ->
+        Result.normalize(
+          name,
+          {:error,
+           %{
+             error: :input_too_large,
+             message: "Jido action input exceeds CASEIN_INPUT_MAX_BYTES (8192)"
+           }},
+          context
+        )
+
       name in @forbidden ->
         Result.normalize(
           name,
@@ -189,7 +211,7 @@ defmodule Casein.Agents.JidoActions do
         )
 
       match?(%{module: _}, Map.get(@by_name, name)) ->
-        dispatch(Map.fetch!(@by_name, name), args, context)
+        dispatch(name, Map.fetch!(@by_name, name), args, context)
 
       true ->
         Result.normalize(
@@ -208,15 +230,52 @@ defmodule Casein.Agents.JidoActions do
     to: Compatibility,
     as: :invoke
 
-  defp dispatch(spec, args, raw_context) do
-    with {:ok, ctx} <- Context.resolve(raw_context, args),
+  defp dispatch(name, spec, args, raw_context) do
+    with :ok <- validate_action_input(name, args),
+         {:ok, ctx} <- Context.resolve(raw_context, args),
          :ok <- Context.authorize_runtime(ctx),
          :ok <- Context.ensure_fresh(ctx) do
       ctx = Map.put(ctx, :capability, spec.capability)
       result = Runner.invoke_action(spec.module, args, ctx)
       Result.normalize(spec.name, result, ctx)
     else
-      {:error, reason} -> Result.normalize(spec.name, {:error, reason}, raw_context)
+      {:error, reason} -> Result.normalize(name, {:error, reason}, raw_context)
     end
   end
+
+  defp validate_action_input("git_handoff", args) when is_map(args) do
+    allowed_atoms = [
+      :receipt_id,
+      :handoff_id,
+      :message,
+      :paths,
+      :tests,
+      :artifacts,
+      :blocker,
+      :evidence_ref,
+      :decision_id
+    ]
+
+    allowed_strings = Enum.map(allowed_atoms, &Atom.to_string/1)
+
+    unknown? =
+      Enum.any?(Map.keys(args), fn
+        key when is_atom(key) -> key not in allowed_atoms
+        key when is_binary(key) -> key not in allowed_strings
+        _key -> true
+      end)
+
+    cond do
+      Map.has_key?(args, :commit_sha) or Map.has_key?(args, "commit_sha") ->
+        {:error, :commit_sha_not_allowed}
+
+      unknown? ->
+        {:error, :unknown_field}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_action_input(_name, _args), do: :ok
 end

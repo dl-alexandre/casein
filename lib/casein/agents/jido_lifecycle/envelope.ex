@@ -2,13 +2,14 @@ defmodule Casein.Agents.JidoLifecycle.Envelope do
   @moduledoc """
   Stable, redacted event envelope for headless Jido (and OpenCode) projection.
 
-  Identity fields are workspace, task, attempt, worker, action, correlation,
-  sequence, and timestamp. Payloads are scrubbed and capped before persist.
+  Identity fields are workspace, session, workcell, task, attempt, worker,
+  lease, action, correlation, sequence, and timestamp. Payloads are scrubbed
+  and capped before persist.
   """
 
   alias Casein.Export.Sanitizer
 
-  @max_payload_bytes 8 * 1024
+  @max_payload_bytes Casein.Agents.JidoWorkcell.Limits.max_payload_bytes()
   @max_summary 200
   @max_string 500
 
@@ -20,9 +21,13 @@ defmodule Casein.Agents.JidoLifecycle.Envelope do
 
   @type t :: %{
           workspace_id: String.t(),
+          session_id: String.t() | nil,
+          workcell_id: String.t() | nil,
           task_id: String.t() | nil,
           attempt_id: String.t() | nil,
           worker_id: String.t() | nil,
+          lease_id: String.t() | nil,
+          handoff_id: String.t() | nil,
           action: String.t() | nil,
           correlation_id: String.t() | nil,
           sequence: non_neg_integer(),
@@ -37,15 +42,22 @@ defmodule Casein.Agents.JidoLifecycle.Envelope do
   def build(attrs) when is_map(attrs) do
     now = DateTime.utc_now()
     workspace_id = required_string(attrs, :workspace_id)
+    task_id = optional_string(attrs, :task_id)
+    session_id = optional_string(attrs, :session_id)
+    workcell_id = optional_string(attrs, :workcell_id)
     attempt_id = optional_string(attrs, :attempt_id)
-    worker_id = optional_string(attrs, :worker_id) || attempt_id
-    correlation_id = optional_string(attrs, :correlation_id) || attempt_id
+    worker_id = optional_string(attrs, :worker_id)
+    correlation_id = correlation_id(attrs, task_id)
 
     %{
       workspace_id: workspace_id,
-      task_id: optional_string(attrs, :task_id),
+      session_id: session_id,
+      workcell_id: workcell_id,
+      task_id: task_id,
       attempt_id: attempt_id,
       worker_id: worker_id,
+      lease_id: optional_string(attrs, :lease_id),
+      handoff_id: optional_string(attrs, :handoff_id),
       action: optional_string(attrs, :action),
       correlation_id: correlation_id,
       sequence: sequence(attrs),
@@ -103,6 +115,22 @@ defmodule Casein.Agents.JidoLifecycle.Envelope do
 
       _ ->
         nil
+    end
+  end
+
+  defp correlation_id(attrs, task_id) do
+    case {optional_string(attrs, :correlation_id), task_id} do
+      {nil, _task_id} ->
+        nil
+
+      {correlation_id, nil} ->
+        correlation_id
+
+      {correlation_id, correlation_id} ->
+        correlation_id
+
+      {_other, _task_id} ->
+        raise ArgumentError, "correlation_id must equal task_id when task_id exists"
     end
   end
 

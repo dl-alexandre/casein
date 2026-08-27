@@ -1,0 +1,108 @@
+defmodule Casein.Agents.JidoWorkcell.Git.Ledger do
+  @moduledoc "In-memory idempotency ledger for one Workcell Git handoff id."
+
+  use GenServer
+
+  alias Casein.Agents.JidoWorkcell.Receipt
+
+  @timeout :infinity
+
+  def start_link(_opts \\ []) do
+    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  end
+
+  @spec run(String.t(), term(), (-> {:ok, map()} | {:error, term()})) ::
+          {:ok, map()} | {:error, term()}
+  def run(handoff_id, fingerprint, fun)
+      when is_binary(handoff_id) and is_function(fun, 0) do
+    run(handoff_id, fingerprint, nil, fun)
+  end
+
+  @doc "Run or replay a handoff, rejecting a reused id with a different head SHA."
+  @spec run(String.t(), term(), String.t() | nil, (-> {:ok, map()} | {:error, term()})) ::
+          {:ok, map()} | {:error, term()}
+  def run(handoff_id, fingerprint, expected_head_sha, fun)
+      when is_binary(handoff_id) and is_function(fun, 0) and
+             (is_binary(expected_head_sha) or is_nil(expected_head_sha)) do
+    ensure_started()
+    GenServer.call(__MODULE__, {:run, handoff_id, fingerprint, expected_head_sha, fun}, @timeout)
+  end
+
+  @impl true
+  def init(state), do: {:ok, state}
+
+  @impl true
+  def handle_call({:run, handoff_id, fingerprint, expected_head_sha, fun}, _from, state) do
+    case Map.get(state, handoff_id) do
+      %{fingerprint: ^fingerprint, head_sha: stored_head_sha, receipt: receipt} ->
+        if is_nil(expected_head_sha) or expected_head_sha == stored_head_sha do
+          {:reply, {:ok, receipt}, state}
+        else
+          {:reply, {:error, :reused_handoff_new_sha}, state}
+        end
+
+      %{fingerprint: _other, head_sha: stored_head_sha} ->
+        error =
+          if is_binary(expected_head_sha) and expected_head_sha != stored_head_sha,
+            do: :reused_handoff_new_sha,
+            else: :idempotency_mismatch
+
+        {:reply, {:error, error}, state}
+
+      nil ->
+        case fun.() do
+          {:ok, receipt} = result ->
+            case canonical_idempotency(handoff_id, receipt) do
+              :ok ->
+                entry = %{
+                  fingerprint: fingerprint,
+                  head_sha: head_sha(receipt),
+                  idempotency_key: idempotency_key(receipt),
+                  receipt: receipt
+                }
+
+                {:reply, result, Map.put(state, handoff_id, entry)}
+
+              {:error, reason} ->
+                {:reply, {:error, reason}, state}
+            end
+
+          other ->
+            {:reply, other, state}
+        end
+    end
+  end
+
+  defp head_sha(receipt) when is_map(receipt),
+    do: Map.get(receipt, :head_sha, Map.get(receipt, "head_sha"))
+
+  defp head_sha(_receipt), do: nil
+
+  defp idempotency_key(receipt) when is_map(receipt),
+    do: Map.get(receipt, :idempotency_key, Map.get(receipt, "idempotency_key"))
+
+  defp idempotency_key(_receipt), do: nil
+
+  defp canonical_idempotency(handoff_id, receipt) do
+    sha = head_sha(receipt)
+    key = idempotency_key(receipt)
+
+    if Receipt.valid_sha?(sha) and key == Receipt.idempotency_key(handoff_id, sha),
+      do: :ok,
+      else: {:error, :idempotency_mismatch}
+  end
+
+  defp ensure_started do
+    case Process.whereis(__MODULE__) do
+      nil ->
+        case start_link([]) do
+          {:ok, _pid} -> :ok
+          {:error, {:already_started, _pid}} -> :ok
+          {:error, reason} -> exit({:handoff_ledger_unavailable, reason})
+        end
+
+      _pid ->
+        :ok
+    end
+  end
+end

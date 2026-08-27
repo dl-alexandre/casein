@@ -1,5 +1,5 @@
 defmodule Casein.Agents.JidoActions.GitDiff do
-  @moduledoc "Typed `git_diff` — not yet on the Code MCP contract."
+  @moduledoc "Typed, scope-limited Git diff for a Jido Workcell."
 
   use Jido.Action,
     name: "git_diff",
@@ -7,10 +7,10 @@ defmodule Casein.Agents.JidoActions.GitDiff do
     category: "git",
     tags: ["git"],
     vsn: "1.0.0",
-    schema: []
+    schema: [paths: [type: {:list, :string}, required: true]]
 
   alias Casein.Agents.JidoActions.Runner
 
   @impl Jido.Action
-  def run(_params, ctx), do: Runner.unsupported("git_diff", ctx)
+  def run(params, ctx), do: Runner.git_diff(params, ctx)
 end

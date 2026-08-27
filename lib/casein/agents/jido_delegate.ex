@@ -8,10 +8,11 @@ defmodule Casein.Agents.JidoDelegate do
   returns a fallback receipt naming `worker_launch`.
   """
 
-  alias Casein.Agents.{JidoActions, JidoPod, JidoSkills}
+  alias Casein.Agents.{JidoActions, JidoSkills, JidoWorkcell}
   alias Casein.Agents.JidoPod.CodeActions
+  alias Casein.Agents.JidoWorkcell.Limits
 
-  @max_actions 16
+  @max_actions Limits.max_actions()
   @allowed_actions CodeActions.allowed()
 
   @type fallback :: %{
@@ -47,7 +48,8 @@ defmodule Casein.Agents.JidoDelegate do
 
   @spec admit(map()) :: {:ok, map()} | {:error, map()}
   def admit(attrs) when is_map(attrs) do
-    with {:ok, workspace_id} <- required_id(attrs, :workspace_id),
+    with :ok <- validate_input(attrs),
+         {:ok, workspace_id} <- required_id(attrs, :workspace_id),
          {:ok, actions} <- normalize_actions(attrs),
          {:ok, selection} <- select(workspace_id, attrs) do
       cond do
@@ -66,11 +68,27 @@ defmodule Casein.Agents.JidoDelegate do
   def admit(_),
     do: {:error, %{error: :invalid, result: :invalid, message: "admit attrs required"}}
 
+  defp validate_input(attrs) do
+    case Limits.validate_input(attrs) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        {:error,
+         %{
+           error: reason,
+           result: :invalid,
+           message: "Jido input exceeds CASEIN_INPUT_MAX_BYTES (8192)",
+           retryable: false
+         }}
+    end
+  end
+
   @spec status(map()) :: {:ok, map()} | {:error, map()}
   def status(attrs) when is_map(attrs) do
     with {:ok, workspace_id} <- required_id(attrs, :workspace_id),
          {:ok, attempt_id} <- required_id(attrs, :attempt_id) do
-      wrap_pod(JidoPod.status(workspace_id, attempt_id), workspace_id)
+      wrap_pod(JidoWorkcell.status(workspace_id, attempt_id), workspace_id)
     end
   end
 
@@ -82,7 +100,7 @@ defmodule Casein.Agents.JidoDelegate do
   def cancel(attrs) when is_map(attrs) do
     with {:ok, workspace_id} <- required_id(attrs, :workspace_id),
          {:ok, attempt_id} <- required_id(attrs, :attempt_id) do
-      wrap_pod(JidoPod.cancel(workspace_id, attempt_id), workspace_id)
+      wrap_pod(JidoWorkcell.cancel(workspace_id, attempt_id), workspace_id)
     end
   end
 
@@ -95,13 +113,29 @@ defmodule Casein.Agents.JidoDelegate do
       %{workspace_id: workspace_id, runtime: :jido, actions: actions}
       |> maybe_put(:task_id, get(attrs, :task_id))
       |> maybe_put(:attempt_id, get(attrs, :attempt_id))
+      |> maybe_put(:session_id, get(attrs, :session_id))
+      |> maybe_put(:workcell_id, get(attrs, :workcell_id))
+      |> maybe_put(:lease_id, get(attrs, :lease_id))
       |> maybe_put(:worktree_path, get(attrs, :worktree_path))
+      |> maybe_put(:base_branch, get(attrs, :base_branch))
+      |> maybe_put(:assigned_branch, get(attrs, :assigned_branch))
+      |> maybe_put(:repository, get(attrs, :repository))
+      |> maybe_put(:allowed_paths, get(attrs, :allowed_paths))
+      |> maybe_put(:push_allowed?, get(attrs, :push_allowed?))
       |> maybe_put(:principal, get(attrs, :principal))
+      |> maybe_put(:owner_ref, get(attrs, :owner_ref))
+      |> maybe_put(:release_sha, get(attrs, :release_sha))
+      |> maybe_put(:receipt_id, get(attrs, :receipt_id))
+      |> maybe_put(:evidence_ref, get(attrs, :evidence_ref))
+      |> maybe_put(:decision_id, get(attrs, :decision_id))
+      |> maybe_put(:correlation_id, get(attrs, :correlation_id))
+      |> maybe_put(:origin, get(attrs, :origin))
+      |> maybe_put(:lane, get(attrs, :lane))
       |> maybe_put(:deadline_ms, get(attrs, :deadline_ms))
       |> maybe_put(:action_timeout_ms, get(attrs, :action_timeout_ms))
       |> maybe_put(:max_retries, get(attrs, :max_retries))
 
-    case JidoPod.admit(admit_attrs) do
+    case JidoWorkcell.admit(workspace_id, admit_attrs) do
       {:ok, attempt} ->
         {:ok,
          attempt
@@ -330,7 +364,53 @@ defmodule Casein.Agents.JidoDelegate do
       :actor_id,
       "actor_id",
       :principal,
-      "principal"
+      "principal",
+      :session_id,
+      "session_id",
+      :workcell_id,
+      "workcell_id",
+      :workcell_assigned?,
+      "workcell_assigned?",
+      :source,
+      "source",
+      :correlation_id,
+      "correlation_id",
+      :receipt_id,
+      "receipt_id",
+      :evidence_ref,
+      "evidence_ref",
+      :decision_id,
+      "decision_id",
+      :runtime_id,
+      "runtime_id",
+      :worker_id,
+      "worker_id",
+      :lease_id,
+      "lease_id",
+      :origin,
+      "origin",
+      :lane,
+      "lane",
+      :base_branch,
+      "base_branch",
+      :head_branch,
+      "head_branch",
+      :assigned_branch,
+      "assigned_branch",
+      :repository,
+      "repository",
+      :allowed_paths,
+      "allowed_paths",
+      :git_scope,
+      "git_scope",
+      :push_allowed?,
+      "push_allowed?",
+      :release_sha,
+      "release_sha",
+      :head_sha,
+      "head_sha",
+      :merged_sha,
+      "merged_sha"
     ])
   end
 

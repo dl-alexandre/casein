@@ -13,7 +13,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
     test "exposes terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 51
+      assert length(names) == 52
 
       for expected <- [
             "terminal_list_sessions",
@@ -57,6 +57,7 @@ defmodule Casein.Agents.TerminalToolsActionTest do
             "runtime_signal",
             "worker_launch",
             "worker_cancel",
+            "casein_session_close",
             "jido_admit",
             "jido_status",
             "jido_cancel",

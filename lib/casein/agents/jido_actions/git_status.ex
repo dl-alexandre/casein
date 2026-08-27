@@ -1,5 +1,5 @@
 defmodule Casein.Agents.JidoActions.GitStatus do
-  @moduledoc "Typed `git_status` — not yet on the Code MCP contract."
+  @moduledoc "Typed, scope-limited Git status for a Jido Workcell."
 
   use Jido.Action,
     name: "git_status",
@@ -12,5 +12,5 @@ defmodule Casein.Agents.JidoActions.GitStatus do
   alias Casein.Agents.JidoActions.Runner
 
   @impl Jido.Action
-  def run(_params, ctx), do: Runner.unsupported("git_status", ctx)
+  def run(_params, ctx), do: Runner.git_status(ctx)
 end

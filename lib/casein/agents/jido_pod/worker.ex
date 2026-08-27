@@ -107,10 +107,29 @@ defmodule Casein.Agents.JidoPod.Worker do
     attempt = state.attempt
 
     context = %{
+      session_id: attempt.session_id,
+      workcell_id: attempt.workcell_id,
+      workcell_assigned?: attempt.workcell_assigned?,
+      source: attempt.source,
+      worker_id: attempt.worker_id,
+      runtime_id: attempt.runtime_id,
+      owner_ref: attempt.owner_ref,
+      lease_id: attempt.lease_id,
       workspace_id: attempt.workspace_id,
       task_id: attempt.task_id,
+      correlation_id: attempt.correlation_id,
+      receipt_id: attempt.receipt_id,
+      evidence_ref: attempt.evidence_ref,
+      decision_id: attempt.decision_id,
+      origin: attempt.origin,
+      lane: attempt.lane,
       attempt_id: attempt.id,
       worktree_path: attempt.worktree_path,
+      git_scope: attempt.git_scope,
+      base_branch: attempt.base_branch,
+      head_branch: attempt.head_branch,
+      repository: attempt.repository,
+      release_sha: attempt.release_sha,
       principal: attempt.principal,
       actor: attempt.principal
     }

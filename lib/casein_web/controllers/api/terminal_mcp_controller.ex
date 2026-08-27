@@ -31,7 +31,10 @@ defmodule CaseinWeb.API.TerminalMCPController do
             default_workspace_id: workspace_id,
             default_tmux_session: tmux_session,
             default_caller_pane: caller_pane,
-            actor: CaseinWeb.Plugs.ApiAuth.actor(conn)
+            actor: CaseinWeb.Plugs.ApiAuth.actor(conn),
+            mcp_session_id: MCPTransport.session_id(conn),
+            mcp_server: :terminal,
+            mcp_auth_scope: conn.assigns[:api_token_scope]
           ] ++ AgentCapabilityAuthz.handler_opts(conn)
 
         case TerminalMCP.handle(conn.body_params, opts) do

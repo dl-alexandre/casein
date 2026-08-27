@@ -3,6 +3,7 @@ defmodule Casein.Agents.JidoActions.Runner do
 
   alias Casein.Agents.{AgentEvents, CodeTools, ToolAction}
   alias Casein.Agents.JidoActions.{Context, Result}
+  alias Casein.Agents.JidoWorkcell.Git
 
   @spec forward_code(String.t(), map(), map()) :: {:ok, map()} | {:error, term()}
   def forward_code(name, params, ctx) when is_binary(name) and is_map(params) and is_map(ctx) do
@@ -26,6 +27,28 @@ defmodule Casein.Agents.JidoActions.Runner do
 
       other ->
         other
+    end
+  end
+
+  @spec git_status(map()) :: {:ok, map()} | {:error, term()}
+  def git_status(ctx) when is_map(ctx) do
+    with {:ok, scope} <- git_scope(ctx) do
+      Git.status(scope)
+    end
+  end
+
+  @spec git_diff(map(), map()) :: {:ok, map()} | {:error, term()}
+  def git_diff(params, ctx) when is_map(params) and is_map(ctx) do
+    with {:ok, scope} <- git_scope(ctx),
+         {:ok, paths} <- fetch_paths(params) do
+      Git.diff(scope, paths)
+    end
+  end
+
+  @spec git_handoff(map(), map()) :: {:ok, map()} | {:error, term()}
+  def git_handoff(params, ctx) when is_map(params) and is_map(ctx) do
+    with {:ok, scope} <- git_scope(ctx) do
+      Git.handoff(scope, Map.merge(params, trusted_handoff_context(ctx)))
     end
   end
 
@@ -126,4 +149,38 @@ defmodule Casein.Agents.JidoActions.Runner do
   end
 
   defdelegate normalize(name, result, ctx), to: Result
+
+  defp git_scope(%{git_scope: %Casein.Agents.JidoWorkcell.Git.Scope{} = scope}), do: {:ok, scope}
+  defp git_scope(_ctx), do: {:error, :git_scope_required}
+
+  defp fetch_paths(params) do
+    case Map.get(params, :paths) || Map.get(params, "paths") do
+      paths when is_list(paths) -> {:ok, paths}
+      _ -> {:error, :paths_required}
+    end
+  end
+
+  defp trusted_handoff_context(ctx) do
+    ctx
+    |> Map.take([
+      :session_id,
+      :workcell_id,
+      :workcell_assigned?,
+      :source,
+      :task_id,
+      :lease_id,
+      :correlation_id,
+      :receipt_id,
+      :evidence_ref,
+      :decision_id,
+      :lane,
+      :origin,
+      :release_sha,
+      :owner_ref,
+      :runtime_id,
+      :worker_id
+    ])
+    |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+    |> Map.new()
+  end
 end

@@ -81,6 +81,7 @@ defmodule CaseinWeb.API.MCPEnvelope do
   @resources_ttl_ms 300_000
 
   alias Casein.Agents.MCPTasks
+  alias Casein.Agents.JidoWorkcell.Limits
   alias CaseinWeb.API.MCPCapabilityScope
 
   # Protocol versions this tool surface is wire-compatible with. When a client
@@ -136,6 +137,27 @@ defmodule CaseinWeb.API.MCPEnvelope do
   def handle(message, handler, opts \\ [])
 
   def handle(%{"jsonrpc" => "2.0"} = message, handler, opts) do
+    case Limits.validate_input(message) do
+      :ok ->
+        handle_valid(message, handler, opts)
+
+      {:error, :input_too_large} ->
+        {:error,
+         error(
+           Map.get(message, "id"),
+           -32_600,
+           "Request exceeds CASEIN_INPUT_MAX_BYTES",
+           %{code: "input_too_large", maxBytes: Limits.input_max_bytes()}
+         )}
+
+      {:error, _reason} ->
+        {:error, parse_error()}
+    end
+  end
+
+  def handle(_, _handler, _opts), do: {:error, parse_error()}
+
+  defp handle_valid(message, handler, opts) do
     case resolve_revision(message) do
       {:ok, revision} ->
         opts = Keyword.put(opts, :protocol_revision, revision)
@@ -158,8 +180,6 @@ defmodule CaseinWeb.API.MCPEnvelope do
          )}
     end
   end
-
-  def handle(_, _handler, _opts), do: {:error, parse_error()}
 
   @doc """
   The protocol revision resolved for the in-flight request.

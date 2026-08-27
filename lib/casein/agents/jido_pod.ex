@@ -200,8 +200,8 @@ defmodule Casein.Agents.JidoPod do
     }
   end
 
-  @spec ensure_pod(String.t()) :: {:ok, pid()} | {:error, term()}
-  def ensure_pod(workspace_id) when is_binary(workspace_id) do
+  @spec ensure_pod(String.t(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def ensure_pod(workspace_id, opts \\ []) when is_binary(workspace_id) and is_list(opts) do
     case Pod.whereis(workspace_id) do
       pid when is_pid(pid) ->
         {:ok, pid}
@@ -209,7 +209,7 @@ defmodule Casein.Agents.JidoPod do
       nil ->
         case DynamicSupervisor.start_child(
                Casein.Agents.JidoPod.PodSupervisor,
-               {Pod, workspace_id: workspace_id}
+               {Pod, Keyword.put(opts, :workspace_id, workspace_id)}
              ) do
           {:ok, pid} -> {:ok, pid}
           {:error, {:already_started, pid}} -> {:ok, pid}

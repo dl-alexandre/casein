@@ -142,6 +142,18 @@ defmodule CaseinWeb.API.TerminalMCPTest do
     assert {:error, %{error: %{code: -32_600}}} = TerminalMCP.handle(%{"not" => "jsonrpc"})
   end
 
+  test "rejects an 8193-byte JSON-RPC request before routing" do
+    message = %{
+      "jsonrpc" => "2.0",
+      "id" => 8193,
+      "method" => "ping",
+      "params" => %{"padding" => String.duplicate("x", 8_193)}
+    }
+
+    assert {:error, %{error: %{code: -32_600, data: %{code: "input_too_large", maxBytes: 8_192}}}} =
+             TerminalMCP.handle(message)
+  end
+
   test "only the read-only wait is nominated to run as a task" do
     eligible = TerminalMCP.task_tools()
 

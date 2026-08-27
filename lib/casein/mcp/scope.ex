@@ -32,6 +32,7 @@ defmodule Casein.MCP.Scope do
   ))
 
   @unscoped_ok_terminal_tools MapSet.new(~w(
+    casein_session_close
     terminal_host_capacity
     runtime_signal
     mcp_self_test

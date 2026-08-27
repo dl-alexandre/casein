@@ -34,6 +34,7 @@ defmodule Casein.Agents.TerminalTools do
     Capture,
     CaptureAgent,
     ClearNextPrompt,
+    CaseinSessionClose,
     Context,
     GateReport,
     HostCapacity,
@@ -97,6 +98,7 @@ defmodule Casein.Agents.TerminalTools do
     PasteAgentText,
     SetNextPrompt,
     ClearNextPrompt,
+    CaseinSessionClose,
     GetNextPrompt,
     RequestClarification,
     RequestHumanInput,
@@ -196,6 +198,8 @@ defmodule Casein.Agents.TerminalTools do
   defdelegate set_next_prompt(params), to: Agent
   @doc false
   defdelegate clear_next_prompt(params), to: Agent
+  @doc false
+  defdelegate casein_session_close(params), to: CaseinSessionClose, as: :run
   @doc false
   defdelegate get_next_prompt(params), to: Agent
   @doc false

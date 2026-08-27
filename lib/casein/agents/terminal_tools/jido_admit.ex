@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.JidoAdmit do
   use Jido.Action,
     name: "jido_admit",
     description:
-      "Admit a bounded headless Jido attempt with supported typed actions (code_read / code_search / code_apply_patch / code_exec / request_clarification / request_human_input / report_progress / report_result / handoff_evidence). Chooses Jido automatically when CASEIN_JIDO_HEADLESS or the per-workspace flag is on. Explicit runtime: opencode, or a disabled workspace, returns a worker_launch fallback receipt and starts no pane. Never exposes shell or tmux. Requires workspace_id.",
+      "Admit a bounded headless Jido Workcell worker with supported typed actions (code_read / code_search / code_apply_patch / code_exec / git_status / git_diff / git_handoff / request_clarification / request_human_input / report_progress / report_result / handoff_evidence). Chooses Jido automatically when CASEIN_JIDO_HEADLESS or the per-workspace flag is on. Explicit runtime: opencode, or a disabled workspace, returns a worker_launch fallback receipt and starts no pane. Never exposes shell or tmux. Requires workspace_id.",
     category: "terminal",
     tags: ["terminal", "orchestration", "jido"],
     vsn: "1.0.0",
@@ -13,8 +13,19 @@ defmodule Casein.Agents.TerminalTools.JidoAdmit do
       runtime: [type: :string],
       skill: [type: :string],
       task_id: [type: :string],
+      session_id: [type: :string],
+      lease_id: [type: :string],
+      origin: [type: :string],
+      lane: [type: :string],
+      release_sha: [type: :string],
       attempt_id: [type: :string],
+      receipt_id: [type: :string],
       worktree_path: [type: :string],
+      repository: [type: :string],
+      base_branch: [type: :string],
+      assigned_branch: [type: :string],
+      allowed_paths: [type: {:list, :string}],
+      push_allowed?: [type: :boolean],
       actions: [type: {:list, {:map, :any, :any}}],
       deadline_ms: [type: :integer],
       action_timeout_ms: [type: :integer],
@@ -26,6 +37,7 @@ defmodule Casein.Agents.TerminalTools.JidoAdmit do
 
   alias Casein.Agents.JidoDelegate
   alias Casein.Agents.JidoPod.CodeActions
+  alias Casein.Agents.JidoWorkcell.Limits
   alias Casein.Agents.TerminalTools.Helpers
   alias McpCtl.Tool
 
@@ -46,20 +58,70 @@ defmodule Casein.Agents.TerminalTools.JidoAdmit do
           },
           task_id: %{
             type: "string",
-            description: "Optional durable task id. Casein mints one when omitted."
+            description: "Optional Mira/Oban task id. Omitted IDs remain absent."
+          },
+          session_id: %{
+            type: "string",
+            description:
+              "Optional Casein terminal session id; legal only on the Casein terminal lane."
+          },
+          lease_id: %{
+            type: "string",
+            description: "Optional Mira/Oban lease id; omitted unless the scheduler assigned it."
+          },
+          origin: %{
+            type: "string",
+            enum: ["mira", "oban"],
+            description: "Optional scheduler origin required when task_id or lease_id is present."
+          },
+          lane: %{
+            type: "string",
+            enum: ["casein_terminal", "terminal"],
+            description: "Optional lane marker for the conditional Casein terminal session id."
+          },
+          release_sha: %{
+            type: "string",
+            description: "Exact 40-character lowercase release SHA required for a Git handoff."
           },
           attempt_id: %{
             type: "string",
-            description: "Optional attempt id. Casein mints one when omitted."
+            description: "Optional attempt id. Casein may mint its internal attempt identity."
+          },
+          receipt_id: %{
+            type: "string",
+            description:
+              "Required by a git_handoff action; supplied by the manager, never minted by the worker."
           },
           worktree_path: %{
             type: "string",
             description:
               "Assigned worktree for Jido code actions. Required for non-empty action lists."
           },
+          repository: %{
+            type: "string",
+            description: "Trusted repository identifier included in the completion receipt."
+          },
+          base_branch: %{
+            type: "string",
+            description: "Trusted base branch recorded in the worker receipt."
+          },
+          assigned_branch: %{
+            type: "string",
+            description: "Non-default branch assigned to this worker; Git is bound to it exactly."
+          },
+          allowed_paths: %{
+            type: "array",
+            description: "Explicit relative file allowlist for the audited Git handoff.",
+            items: %{type: "string"}
+          },
+          push_allowed?: %{
+            type: "boolean",
+            description:
+              "Trusted manager grant required before the worker may push its assigned branch."
+          },
           actions: %{
             type: "array",
-            maxItems: 16,
+            maxItems: Limits.max_actions(),
             description:
               "Supported typed Jido steps only. Identity fields on args are ignored; workspace/worktree come from trusted scope.",
             items: %{

@@ -11,6 +11,8 @@ defmodule Casein.Agents.JidoPod.Pod do
   alias Casein.Agents.Activity
   alias Casein.Agents.JidoBudgets
   alias Casein.Agents.JidoLifecycle
+  alias Casein.Agents.JidoWorkcell.{Limits, OwnerRef}
+  alias Casein.Agents.JidoWorkcell.Events
   alias Casein.Agents.JidoPod.{Attempt, Fleet, Metrics, Worker}
   alias Phoenix.PubSub
 
@@ -63,6 +65,9 @@ defmodule Casein.Agents.JidoPod.Pod do
     {:ok,
      %{
        workspace_id: workspace_id,
+       # Direct JidoPod callers do not get a synthetic Workcell identity. The
+       # Workcell Cell supplies one only when the scheduler assigned it.
+       workcell_id: Keyword.get(opts, :workcell_id),
        attempts: %{},
        queue: :queue.new(),
        draining?: false
@@ -75,48 +80,57 @@ defmodule Casein.Agents.JidoPod.Pod do
     {:reply, {:error, :draining}, state}
   end
 
-  def handle_call({:admit, attrs}, _from, state) do
-    started_at = System.monotonic_time(:millisecond)
-    attempt = build_attempt(state.workspace_id, attrs)
-    state = put_attempt(state, attempt)
-    Metrics.inc(:admitted)
-    publish(attempt)
+  def handle_call({:admit, attrs}, _from, state) when is_map(attrs) do
+    with :ok <- Limits.validate_input(attrs),
+         :ok <- validate_action_limit(attrs),
+         :ok <- validate_owner_ref(attrs) do
+      started_at = System.monotonic_time(:millisecond)
+      attempt = build_attempt(state, attrs)
+      state = put_attempt(state, attempt)
+      Metrics.inc(:admitted)
+      publish(attempt)
 
-    case JidoBudgets.precheck_from(state.workspace_id, pod_usage(state)) do
-      {:reject, reason} ->
-        state = maybe_pressure_drain(state, reason)
-        reject_admit(state, attempt, reason, started_at)
+      case JidoBudgets.precheck_from(state.workspace_id, pod_usage(state)) do
+        {:reject, reason} ->
+          state = maybe_pressure_drain(state, reason)
+          reject_admit(state, attempt, reason, started_at)
 
-      {:queue, reason} ->
-        JidoBudgets.record_admission(System.monotonic_time(:millisecond) - started_at)
-        queue_or_reject(state, attempt, reason)
+        {:queue, reason} ->
+          JidoBudgets.record_admission(System.monotonic_time(:millisecond) - started_at)
+          queue_or_reject(state, attempt, reason)
 
-      :ok ->
-        JidoBudgets.record_admission(System.monotonic_time(:millisecond) - started_at)
+        :ok ->
+          JidoBudgets.record_admission(System.monotonic_time(:millisecond) - started_at)
 
-        cond do
-          can_start?(state) ->
-            case start_attempt(state, attempt.id) do
-              {:ok, state, started} ->
-                JidoBudgets.record(state.workspace_id, :admit, :ok, %{
-                  running: running_count(state)
-                })
+          cond do
+            can_start?(state) ->
+              case start_attempt(state, attempt.id) do
+                {:ok, state, started} ->
+                  JidoBudgets.record(state.workspace_id, :admit, :ok, %{
+                    running: running_count(state)
+                  })
 
-                {:reply, {:ok, Attempt.public(started)}, state}
+                  {:reply, {:ok, Attempt.public(started)}, state}
 
-              {:error, state, reason} ->
-                queue_or_reject(state, attempt, reason)
-            end
+                {:error, state, reason} ->
+                  queue_or_reject(state, attempt, reason)
+              end
 
-          queue_len(state) < max_queued() ->
-            {state, queued} = enqueue(state, attempt.id)
-            {:reply, {:ok, Attempt.public(queued)}, state}
+            queue_len(state) < max_queued() ->
+              {state, queued} = enqueue(state, attempt.id)
+              {:reply, {:ok, Attempt.public(queued)}, state}
 
-          true ->
-            reject_admit(state, attempt, :queue_full, started_at)
-        end
+            true ->
+              reject_admit(state, attempt, :queue_full, started_at)
+          end
+      end
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
+
+  def handle_call({:admit, _attrs}, _from, state),
+    do: {:reply, {:error, :invalid_argument}, state}
 
   def handle_call({:cancel, attempt_id}, _from, state) do
     case Map.get(state.attempts, attempt_id) do
@@ -237,12 +251,30 @@ defmodule Casein.Agents.JidoPod.Pod do
     :ok
   end
 
-  defp build_attempt(workspace_id, attrs) do
+  defp build_attempt(state, attrs) do
     Attempt.new(%{
       id: Map.get(attrs, :attempt_id) || Ecto.UUID.generate(),
-      workspace_id: workspace_id,
-      task_id: Map.get(attrs, :task_id) || Ecto.UUID.generate(),
+      session_id: Map.get(attrs, :session_id),
+      workcell_id: Map.get(attrs, :workcell_id) || state.workcell_id,
+      workcell_assigned?:
+        Map.get(attrs, :workcell_assigned?, false) == true or is_binary(state.workcell_id),
+      source: Map.get(attrs, :source),
+      workspace_id: state.workspace_id,
+      task_id: Map.get(attrs, :task_id),
+      lease_id: Map.get(attrs, :lease_id),
+      correlation_id: Map.get(attrs, :correlation_id),
+      receipt_id: Map.get(attrs, :receipt_id),
+      evidence_ref: Map.get(attrs, :evidence_ref),
+      decision_id: Map.get(attrs, :decision_id),
+      origin: Map.get(attrs, :origin),
+      lane: Map.get(attrs, :lane),
       worktree_path: Map.get(attrs, :worktree_path),
+      git_scope: Map.get(attrs, :git_scope),
+      base_branch: Map.get(attrs, :base_branch),
+      head_branch: Map.get(attrs, :head_branch),
+      repository: Map.get(attrs, :repository),
+      owner_ref: Map.get(attrs, :owner_ref),
+      release_sha: Map.get(attrs, :release_sha),
       principal: Map.get(attrs, :principal),
       actions: normalize_actions(Map.get(attrs, :actions, [])),
       deadline_ms: Map.get(attrs, :deadline_ms, config(:default_attempt_deadline_ms, 60_000)),
@@ -267,6 +299,23 @@ defmodule Casein.Agents.JidoPod.Pod do
       name when is_binary(name) ->
         %{name: name, args: %{}}
     end)
+  end
+
+  defp validate_action_limit(attrs) when is_map(attrs) do
+    actions = Map.get(attrs, :actions, Map.get(attrs, "actions", []))
+
+    cond do
+      not is_list(actions) -> {:error, :invalid_argument}
+      length(actions) > Limits.max_actions() -> {:error, :too_many_actions}
+      true -> :ok
+    end
+  end
+
+  defp validate_owner_ref(attrs) do
+    case Map.get(attrs, :owner_ref, Map.get(attrs, "owner_ref")) do
+      nil -> :ok
+      value -> if OwnerRef.valid?(value), do: :ok, else: {:error, :invalid_owner_ref}
+    end
   end
 
   defp queue_or_reject(state, attempt, reason) do
@@ -375,7 +424,9 @@ defmodule Casein.Agents.JidoPod.Pod do
   end
 
   defp spawn_worker(state, attempt, acquired_now?) do
-    opts = [attempt: %{attempt | worker_pid: nil, worker_ref: nil}, pod: self()]
+    lease_id = attempt.lease_id
+    worker_attempt = %{attempt | worker_pid: nil, worker_ref: nil, lease_id: lease_id}
+    opts = [attempt: worker_attempt, pod: self()]
 
     case DynamicSupervisor.start_child(Casein.Agents.JidoPod.WorkerSupervisor, {Worker, opts}) do
       {:ok, pid} ->
@@ -387,6 +438,7 @@ defmodule Casein.Agents.JidoPod.Pod do
             worker_pid: pid,
             worker_ref: ref,
             lease?: true,
+            lease_id: lease_id,
             reason: nil
           )
 
@@ -670,6 +722,7 @@ defmodule Casein.Agents.JidoPod.Pod do
     )
 
     _ = JidoLifecycle.ingest_attempt(public_attempt)
+    _ = Events.attempt(public_attempt)
     :ok
   end
 
@@ -689,6 +742,7 @@ defmodule Casein.Agents.JidoPod.Pod do
   defp pod_snapshot(state) do
     %{
       workspace_id: state.workspace_id,
+      workcell_id: state.workcell_id,
       running: running_count(state),
       queued: queue_len(state),
       draining?: state.draining?,

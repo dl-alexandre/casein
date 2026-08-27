@@ -40,7 +40,7 @@ defmodule Casein.Agents.MCPSessions do
 
   @type session_id :: String.t()
   @type metadata :: %{
-          required(:server) => :preview | :terminal | :artifact,
+          required(:server) => :preview | :terminal | :artifact | :code,
           optional(:workspace_id) => String.t() | nil,
           optional(:auth_scope) => term(),
           optional(:created_at) => integer()
@@ -84,6 +84,25 @@ defmodule Casein.Agents.MCPSessions do
   def delete(session_id) when is_binary(session_id) do
     GenServer.call(__MODULE__, {:delete, session_id})
   end
+
+  @doc "Close a session only when its transport scope matches the caller."
+  @spec close_authorized(session_id(), map()) ::
+          :ok | {:error, :unknown_session | :session_scope_mismatch}
+  def close_authorized(session_id, expected) when is_binary(session_id) and is_map(expected) do
+    case fetch(session_id) do
+      {:ok, metadata} ->
+        if scope_matches?(metadata, expected) do
+          delete(session_id)
+        else
+          {:error, :session_scope_mismatch}
+        end
+
+      :error ->
+        {:error, :unknown_session}
+    end
+  end
+
+  def close_authorized(_session_id, _expected), do: {:error, :unknown_session}
 
   @doc """
   Attach the calling (or given) process as the session's SSE consumer.
@@ -219,6 +238,12 @@ defmodule Casein.Agents.MCPSessions do
 
   defp live_stream?(pid) when is_pid(pid), do: Process.alive?(pid)
   defp live_stream?(_), do: false
+
+  defp scope_matches?(metadata, expected) do
+    Enum.all?([:server, :workspace_id, :auth_scope], fn key ->
+      Map.get(metadata, key) == Map.get(expected, key)
+    end)
+  end
 
   defp schedule_sweep do
     Process.send_after(self(), :sweep, sweep_interval_ms())

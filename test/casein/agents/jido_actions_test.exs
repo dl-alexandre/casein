@@ -156,7 +156,7 @@ defmodule Casein.Agents.JidoActionsTest do
     assert verify.command_id == "format"
     assert verify.result in [:ok, :timeout]
 
-    assert {:error, %{result: :not_yet_supported, error: :not_yet_supported}} =
+    assert {:error, %{result: :invalid, error: :invalid}} =
              JidoActions.invoke("git_diff", %{}, ctx)
   end
 
@@ -276,6 +276,14 @@ defmodule Casein.Agents.JidoActionsTest do
 
     assert {:error, %{result: :denied, error: :not_allowed}} =
              JidoActions.invoke("terminal_capture", %{lines: 20}, ctx)
+  end
+
+  test "git handoff rejects legacy aliases and unknown fields before dispatch", %{ctx: ctx} do
+    assert {:error, %{result: :denied, error: :commit_sha_not_allowed}} =
+             JidoActions.invoke("git_handoff", %{commit_sha: "0123456789abcdef"}, ctx)
+
+    assert {:error, %{result: :denied, error: :unknown_field}} =
+             JidoActions.invoke("git_handoff", %{unexpected: true}, ctx)
   end
 
   test "compatibility adapter uses the same catalog when the flag is on", %{ctx: ctx} do

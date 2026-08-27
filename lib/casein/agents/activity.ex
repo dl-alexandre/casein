@@ -29,6 +29,7 @@ defmodule Casein.Agents.Activity do
             | :worktree
             | :agent_event
             | :jido_pod
+            | :jido_workcell
             | :jido_actions
             | :jido_lifecycle
             | :jido_skills

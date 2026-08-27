@@ -5,13 +5,14 @@ defmodule Casein.Agents.JidoPod.CodeActions do
   Workers must not open a shell, walk the filesystem, or drive tmux. They call
   this module, which forwards code actions to `Casein.Agents.CodeTools` and
   lifecycle/reporting actions to `Casein.Agents.JidoActions`. Git/task
-  follow-up tools (`git_status`, `git_diff`, `task_wait`, `task_cancel`)
-  are rejected here on purpose.
+  follow-up tools are accepted only through the audited Workcell Git scope;
+  task control remains outside this worker boundary.
   """
 
   @code_actions ~w(code_read code_search code_apply_patch code_exec)
+  @git_actions ~w(git_status git_diff git_handoff)
   @handoff_actions ~w(request_clarification request_human_input report_progress report_result handoff_evidence)
-  @allowed @code_actions ++ @handoff_actions
+  @allowed @code_actions ++ @git_actions ++ @handoff_actions
 
   @spec allowed?(String.t()) :: boolean()
   def allowed?(name) when is_binary(name), do: name in @allowed
@@ -28,7 +29,7 @@ defmodule Casein.Agents.JidoPod.CodeActions do
       name in @code_actions ->
         runner().(name, stamp(args, context), context)
 
-      name in @handoff_actions ->
+      name in @handoff_actions or name in @git_actions ->
         jido_actions_invoke(name, stamp(args, context), context)
 
       true ->

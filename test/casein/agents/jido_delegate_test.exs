@@ -110,7 +110,7 @@ defmodule Casein.Agents.JidoDelegateTest do
                actions: [%{name: "terminal_send_command", args: %{command: "rm -rf /"}}]
              })
 
-    assert {:error, %{error: :not_yet_supported, action: "git_status"}} =
+    assert {:error, %{error: :failed, result: :denied}} =
              JidoDelegate.admit(%{
                workspace_id: ws,
                actions: [%{name: "git_status"}]
@@ -135,6 +135,9 @@ defmodule Casein.Agents.JidoDelegateTest do
                "code_search",
                "code_apply_patch",
                "code_exec",
+               "git_status",
+               "git_diff",
+               "git_handoff",
                "request_clarification",
                "request_human_input",
                "report_progress",
