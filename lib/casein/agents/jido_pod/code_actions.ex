@@ -30,7 +30,10 @@ defmodule Casein.Agents.JidoPod.CodeActions do
         runner().(name, stamp(args, context), context)
 
       name in @handoff_actions or name in @git_actions ->
-        jido_actions_invoke(name, stamp(args, context), context)
+        # Handoff and Git actions have strict schemas. Their workspace,
+        # attempt, and worktree identity belongs in the trusted context and
+        # must not be copied into model-authored action arguments.
+        jido_actions_invoke(name, args, context)
 
       true ->
         {:error, %{error: :unknown_tool, message: "unsupported Jido action #{name}"}}

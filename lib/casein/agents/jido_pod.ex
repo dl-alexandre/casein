@@ -15,6 +15,7 @@ defmodule Casein.Agents.JidoPod do
   """
 
   alias Casein.Agents.JidoPod.{Attempt, Fleet, Metrics, Pod}
+  alias Casein.Agents.JidoRuntime
 
   @type admit_attrs :: %{
           required(:workspace_id) => String.t(),
@@ -123,6 +124,14 @@ defmodule Casein.Agents.JidoPod do
   def drain(workspace_id) when is_binary(workspace_id) do
     with {:ok, pid} <- fetch_pod(workspace_id) do
       Pod.drain(pid)
+    end
+  end
+
+  @spec subscribe(String.t()) :: :ok | {:error, :not_found}
+  def subscribe(workspace_id) when is_binary(workspace_id) do
+    case fetch_pod(workspace_id) do
+      {:ok, _pid} -> Pod.subscribe(workspace_id)
+      {:error, :not_found} -> {:error, :not_found}
     end
   end
 
@@ -263,7 +272,10 @@ defmodule Casein.Agents.JidoPod do
   end
 
   defp jido_if_enabled(workspace_id) do
-    if globally_enabled?() or workspace_enabled?(workspace_id), do: :jido, else: :opencode
+    if JidoRuntime.casein_enabled?() and JidoRuntime.profile().runtime == "jido" and
+         (globally_enabled?() or workspace_enabled?(workspace_id)),
+       do: :jido,
+       else: :opencode
   end
 
   defp globally_enabled? do

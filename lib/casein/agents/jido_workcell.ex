@@ -9,8 +9,11 @@ defmodule Casein.Agents.JidoWorkcell do
   """
 
   alias Casein.Agents.JidoPod
-  alias Casein.Agents.JidoWorkcell.{Cell, Events}
+  alias Casein.Agents.JidoRuntime
+  alias Casein.Agents.JidoWorkcell.{Cell, Events, ResourceStore}
   alias Casein.Agents.JidoWorkcell.Limits
+
+  @cell_option_keys [:idle_timeout_ms, :lease_ttl_ms, :runtime, :provider, :model]
 
   @type state ::
           :requested
@@ -46,37 +49,32 @@ defmodule Casein.Agents.JidoWorkcell do
       not is_map(opts) ->
         {:error, :invalid_argument}
 
+      not JidoRuntime.casein_enabled?() ->
+        {:error, :casein_disabled}
+
       not Limits.workspace_allowed?(workspace_id) ->
         {:error, :workspace_not_allowed}
 
       true ->
-        # One Workcell identity is derived from one workspace. Callers may not
-        # manufacture a second cell for the same workspace by supplying a key.
-        workcell_id = workcell_id(workspace_id)
-
-        case Cell.whereis(workcell_id) do
-          pid when is_pid(pid) ->
-            {:ok, pid}
-
-          nil ->
-            case DynamicSupervisor.start_child(
-                   Casein.Agents.JidoWorkcell.CellSupervisor,
-                   {Cell, workspace_id: workspace_id, workcell_id: workcell_id}
-                 ) do
-              {:ok, pid} -> {:ok, pid}
-              {:error, {:already_started, pid}} -> {:ok, pid}
-              other -> other
-            end
+        case configured_runtime(opts) do
+          {:ok, "jido"} -> ensure_cell(workspace_id, opts)
+          {:ok, "opencode"} -> {:error, :legacy_opencode}
+          {:error, reason} -> {:error, reason}
         end
     end
   end
 
   @spec admit(String.t(), map()) :: {:ok, map()} | {:error, term()}
   def admit(workspace_id, attrs) when is_binary(workspace_id) and is_map(attrs) do
-    if not Limits.workspace_allowed?(workspace_id) do
-      {:error, :workspace_not_allowed}
-    else
-      do_admit(workspace_id, attrs)
+    cond do
+      not JidoRuntime.casein_enabled?() ->
+        {:ok, fallback_receipt(workspace_id, :casein_disabled, attrs)}
+
+      not Limits.workspace_allowed?(workspace_id) ->
+        {:error, :workspace_not_allowed}
+
+      true ->
+        do_admit(workspace_id, attrs)
     end
   end
 
@@ -131,6 +129,44 @@ defmodule Casein.Agents.JidoWorkcell do
     end
   end
 
+  @doc "Provision the default Jido Workcell resource on demand and return readiness."
+  @spec provision(String.t(), keyword() | map()) :: {:ok, map()} | {:error, term()}
+  def provision(workspace_id, opts \\ []) when is_binary(workspace_id) do
+    with {:ok, pid} <- ensure(workspace_id, opts),
+         {:ok, health} <- Cell.provision(pid) do
+      {:ok, health}
+    end
+  end
+
+  @doc "Return the current resource health, including readiness and lease counts."
+  @spec health(String.t()) :: {:ok, map()} | {:error, :not_found | :casein_disabled}
+  def health(workspace_id) when is_binary(workspace_id) do
+    case fetch(workspace_id) do
+      {:ok, pid} -> safe_cell_health(pid, workspace_id)
+      {:error, :not_found} -> stored_health(workspace_id)
+    end
+  end
+
+  @spec ready?(String.t()) :: boolean()
+  def ready?(workspace_id) when is_binary(workspace_id) do
+    case health(workspace_id) do
+      {:ok, %{ready?: true}} -> true
+      _ -> false
+    end
+  end
+
+  @doc "Stop accepting work and cancel the resource and its active workers."
+  @spec rollback(String.t(), term()) :: {:ok, map()} | {:error, term()}
+  def rollback(workspace_id, reason \\ :rollback) when is_binary(workspace_id) do
+    with {:ok, pid} <- fetch(workspace_id) do
+      Cell.rollback(pid, reason)
+    end
+  end
+
+  @doc "Return the supervisor-owned Workcell resource read model."
+  @spec resources() :: [map()]
+  def resources, do: ResourceStore.list()
+
   @spec snapshot(String.t()) :: map()
   def snapshot(workspace_id) when is_binary(workspace_id) do
     case fetch(workspace_id) do
@@ -138,7 +174,16 @@ defmodule Casein.Agents.JidoWorkcell do
         Cell.snapshot(pid)
 
       {:error, :not_found} ->
-        %{workcell_id: workcell_id(workspace_id), state: :stopped, workers: 0}
+        case ResourceStore.get(workcell_id(workspace_id)) do
+          resource when is_map(resource) ->
+            Map.merge(
+              %{workcell_id: workcell_id(workspace_id), state: :stopped, workers: 0},
+              resource
+            )
+
+          _ ->
+            %{workcell_id: workcell_id(workspace_id), state: :stopped, workers: 0}
+        end
     end
   end
 
@@ -173,6 +218,38 @@ defmodule Casein.Agents.JidoWorkcell do
     end
   end
 
+  defp ensure_cell(workspace_id, opts) do
+    # One Workcell identity is derived from one workspace. Callers may not
+    # manufacture a second cell for the same workspace by supplying a key.
+    workcell_id = workcell_id(workspace_id)
+
+    case Cell.whereis(workcell_id) do
+      pid when is_pid(pid) ->
+        {:ok, pid}
+
+      nil ->
+        case DynamicSupervisor.start_child(
+               Casein.Agents.JidoWorkcell.CellSupervisor,
+               {Cell,
+                Keyword.merge(
+                  [workspace_id: workspace_id, workcell_id: workcell_id],
+                  cell_opts(opts)
+                )}
+             ) do
+          {:ok, pid} -> {:ok, pid}
+          {:error, {:already_started, pid}} -> {:ok, pid}
+          other -> other
+        end
+    end
+  end
+
+  defp configured_runtime(opts) do
+    case Map.get(opts, :runtime, Map.get(opts, "runtime")) do
+      nil -> {:ok, JidoRuntime.profile(opts).runtime}
+      value -> JidoRuntime.normalize_runtime(value)
+    end
+  end
+
   defp fallback_receipt(workspace_id, reason, attrs) do
     runtime = get(attrs, :fallback_runtime) || get(attrs, :runtime_fallback) || :opencode
 
@@ -194,11 +271,43 @@ defmodule Casein.Agents.JidoWorkcell do
   end
 
   defp fallback_reason(attrs) do
-    case get(attrs, :runtime) do
-      :opencode -> :explicit_opencode
-      "opencode" -> :explicit_opencode
-      _ -> :jido_disabled
+    cond do
+      not JidoRuntime.casein_enabled?() ->
+        :casein_disabled
+
+      true ->
+        case get(attrs, :runtime) do
+          :opencode -> :explicit_opencode
+          "opencode" -> :explicit_opencode
+          _ -> :jido_disabled
+        end
     end
+  end
+
+  defp stored_health(workspace_id) do
+    if not JidoRuntime.casein_enabled?() do
+      {:error, :casein_disabled}
+    else
+      case ResourceStore.get(workcell_id(workspace_id)) do
+        resource when is_map(resource) -> {:ok, resource}
+        _ -> {:error, :not_found}
+      end
+    end
+  end
+
+  defp safe_cell_health(pid, workspace_id) do
+    Cell.health(pid)
+  catch
+    :exit, _reason -> stored_health(workspace_id)
+  end
+
+  defp cell_opts(opts) do
+    Enum.reduce(@cell_option_keys, [], fn key, acc ->
+      case Map.get(opts, key, Map.get(opts, Atom.to_string(key))) do
+        nil -> acc
+        value -> [{key, value} | acc]
+      end
+    end)
   end
 
   defp normalize_fallback_runtime(:claude), do: :claude

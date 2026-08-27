@@ -1,5 +1,5 @@
 defmodule Casein.Agents.JidoWorkcell.Supervisor do
-  @moduledoc "Supervises Casein Workcell cells and the handoff idempotency ledger."
+  @moduledoc "Supervises Workcell cells, their resource catalog, and the handoff ledger."
 
   use Supervisor
 
@@ -13,6 +13,7 @@ defmodule Casein.Agents.JidoWorkcell.Supervisor do
       {Registry, keys: :unique, name: Casein.Agents.JidoWorkcell.Registry},
       {DynamicSupervisor,
        name: Casein.Agents.JidoWorkcell.CellSupervisor, strategy: :one_for_one},
+      Casein.Agents.JidoWorkcell.ResourceStore,
       Casein.Agents.JidoWorkcell.Git.Ledger
     ]
 

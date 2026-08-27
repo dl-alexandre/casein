@@ -139,7 +139,10 @@ defmodule Casein.Agents.JidoActions.Result do
 
     payload =
       if canonical_receipt?(payload),
-        do: Map.merge(identity, payload),
+        # Receipt.build/3 has already validated and bound every wire identity.
+        # Do not re-stamp internal attempt/lease metadata onto the frozen
+        # producer receipt; Workcell leases are not Mira lane IDs.
+        do: payload,
         else: Map.merge(identity, Map.drop(payload, Map.keys(identity)))
 
     payload

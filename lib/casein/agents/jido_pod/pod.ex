@@ -12,6 +12,7 @@ defmodule Casein.Agents.JidoPod.Pod do
   alias Casein.Agents.JidoBudgets
   alias Casein.Agents.JidoLifecycle
   alias Casein.Agents.JidoWorkcell.{Limits, OwnerRef}
+  alias Casein.Agents.JidoWorkcell.Git.Scope
   alias Casein.Agents.JidoWorkcell.Events
   alias Casein.Agents.JidoPod.{Attempt, Fleet, Metrics, Worker}
   alias Phoenix.PubSub
@@ -81,7 +82,7 @@ defmodule Casein.Agents.JidoPod.Pod do
   end
 
   def handle_call({:admit, attrs}, _from, state) when is_map(attrs) do
-    with :ok <- Limits.validate_input(attrs),
+    with :ok <- Limits.validate_input(input_for_limits(attrs)),
          :ok <- validate_action_limit(attrs),
          :ok <- validate_owner_ref(attrs) do
       started_at = System.monotonic_time(:millisecond)
@@ -317,6 +318,22 @@ defmodule Casein.Agents.JidoPod.Pod do
     case Map.get(attrs, :owner_ref, Map.get(attrs, "owner_ref")) do
       nil -> :ok
       value -> if OwnerRef.valid?(value), do: :ok, else: {:error, :invalid_owner_ref}
+    end
+  end
+
+  # A Workcell-bound Git scope is trusted coordinator state, not model-authored
+  # input. Include its redacted public shape in the shared byte bound so the
+  # bound still applies without asking Jason to encode an internal struct.
+  defp input_for_limits(attrs) do
+    case Map.get(attrs, :git_scope, Map.get(attrs, "git_scope")) do
+      %Scope{} = scope ->
+        attrs
+        |> Map.delete(:git_scope)
+        |> Map.delete("git_scope")
+        |> Map.put(:git_scope, Scope.public(scope))
+
+      _ ->
+        attrs
     end
   end
 

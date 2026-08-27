@@ -41,12 +41,18 @@ config :casein,
   # Phase-1 mobile compose-first surface for role-tagged agent panes. Shell
   # panes retain the existing grid/key-bar interaction path.
   mobile_agent_composer: false,
+  casein_enabled: true,
+  jido_runtime: "jido",
   jido_headless: false,
   jido_headless_workspaces: %{},
   jido_default_model: "opencode/grok-4.6",
   jido_default_provider: "opencode",
   jido_provider_adapter: Casein.Agents.JidoProvider.OpenCodeZen,
   jido_auth_resolver: Casein.Agents.JidoProvider.OpenCodeAuth,
+  jido_workcell: [
+    idle_timeout_ms: 300_000,
+    lease_ttl_ms: 60_000
+  ],
   jido_pod: [
     max_running_per_workspace: 2,
     max_queued_per_workspace: 4,

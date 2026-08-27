@@ -161,27 +161,37 @@ defmodule Casein.Agents.JidoActions.Runner do
   end
 
   defp trusted_handoff_context(ctx) do
-    ctx
-    |> Map.take([
-      :session_id,
-      :workcell_id,
-      :workcell_assigned?,
-      :source,
-      :task_id,
-      :lease_id,
-      :correlation_id,
-      :receipt_id,
-      :request_id,
-      :authorization,
-      :evidence_ref,
-      :decision_id,
-      :lane,
-      :origin,
-      :release_sha,
-      :owner_ref,
-      :runtime_id,
-      :worker_id
-    ])
+    identity =
+      Map.take(ctx, [
+        :session_id,
+        :workcell_id,
+        :workcell_assigned?,
+        :source,
+        :receipt_id,
+        :request_id,
+        :authorization,
+        :evidence_ref,
+        :decision_id,
+        :lane,
+        :origin,
+        :release_sha,
+        :owner_ref,
+        :runtime_id,
+        :worker_id
+      ])
+
+    # A Workcell lease is an internal admission guard. Only a real Mira/Oban
+    # task lease may cross the receipt boundary; otherwise Gate 0 correctly
+    # rejects the producer as a foreign-lane receipt.
+    lane_ids =
+      if Map.get(ctx, :origin) in [:mira, :oban, "mira", "oban"] do
+        Map.take(ctx, [:task_id, :lease_id, :correlation_id])
+      else
+        %{}
+      end
+
+    identity
+    |> Map.merge(lane_ids)
     |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
     |> Map.new()
   end

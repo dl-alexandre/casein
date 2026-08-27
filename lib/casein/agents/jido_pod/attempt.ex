@@ -228,6 +228,7 @@ defmodule Casein.Agents.JidoPod.Attempt do
       decision_id: Map.get(attrs, :decision_id),
       origin: Map.get(attrs, :origin),
       lane: Map.get(attrs, :lane),
+      lease_id: Map.get(attrs, :lease_id),
       worktree_path: Map.get(attrs, :worktree_path),
       git_scope: git_scope,
       base_branch: Map.get(attrs, :base_branch),

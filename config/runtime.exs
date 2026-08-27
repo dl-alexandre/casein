@@ -120,6 +120,13 @@ config :casein,
        truthy_env?.("CASEIN_MOBILE_AGENT_COMPOSER")
 
 config :casein, :jido_headless, truthy_env?.("CASEIN_JIDO_HEADLESS")
+config :casein, :casein_enabled, not falsey_env?.("CASEIN_ENABLED")
+
+if runtime = System.get_env("CASEIN_JIDO_RUNTIME") do
+  if String.trim(runtime) != "" do
+    config :casein, :jido_runtime, String.trim(runtime)
+  end
+end
 
 if model = System.get_env("CASEIN_JIDO_DEFAULT_MODEL") do
   if String.trim(model) != "" do
@@ -180,6 +187,33 @@ if jido_pod_overrides != [] do
          Keyword.merge(
            Application.get_env(:casein, :jido_pod, []),
            Enum.reverse(jido_pod_overrides)
+         )
+end
+
+jido_workcell_overrides =
+  Enum.reduce(
+    [idle_timeout_ms: "CASEIN_JIDO_IDLE_TIMEOUT_MS", lease_ttl_ms: "CASEIN_JIDO_LEASE_TTL_MS"],
+    [],
+    fn {key, env}, acc ->
+      case System.get_env(env) do
+        nil ->
+          acc
+
+        raw ->
+          case Integer.parse(String.trim(raw)) do
+            {value, ""} when value > 0 -> [{key, value} | acc]
+            _ -> acc
+          end
+      end
+    end
+  )
+
+if jido_workcell_overrides != [] do
+  config :casein,
+         :jido_workcell,
+         Keyword.merge(
+           Application.get_env(:casein, :jido_workcell, []),
+           Enum.reverse(jido_workcell_overrides)
          )
 end
 

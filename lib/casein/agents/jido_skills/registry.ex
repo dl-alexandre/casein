@@ -2,13 +2,12 @@ defmodule Casein.Agents.JidoSkills.Registry do
   @moduledoc false
 
   alias Casein.Agents.JidoActions
+  alias Casein.Agents.JidoRuntime
   alias Casein.Agents.JidoSkills.Loader
 
   @type skill :: Loader.skill()
 
   @default_coding ~w(inspect patch approved-verify human-input progress representative-edit)
-  @default_model "opencode/grok-4.6"
-  @default_provider "opencode"
   @name_re ~r/^[A-Za-z0-9][A-Za-z0-9_.-]*$/
 
   @spec default_roots() :: [String.t()]
@@ -31,12 +30,12 @@ defmodule Casein.Agents.JidoSkills.Registry do
 
   @spec default_model() :: String.t()
   def default_model do
-    Application.get_env(:casein, :jido_default_model, @default_model)
+    JidoRuntime.profile().model
   end
 
   @spec default_provider() :: String.t()
   def default_provider do
-    Application.get_env(:casein, :jido_default_provider, @default_provider)
+    JidoRuntime.profile().provider
   end
 
   @spec catalog_digest() :: String.t()

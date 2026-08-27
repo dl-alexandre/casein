@@ -6,6 +6,8 @@ defmodule Casein.Desktop.AgentLauncher do
   process, so provider launch commands never contain bearer tokens or config paths.
   """
 
+  alias Casein.Agents.JidoRuntime
+
   @runtimes %{
     "agent" => %{executable: "agent", command: "agent", auth: :provider_managed},
     "claude" => %{executable: "claude", command: "claude", auth: :claude},
@@ -22,6 +24,14 @@ defmodule Casein.Desktop.AgentLauncher do
 
   @spec supported?(term()) :: boolean()
   def supported?(id), do: is_binary(id) and Map.has_key?(@runtimes, id)
+
+  @doc "Return the normalized headless/provider profile without launching a process."
+  @spec runtime_profile(term()) :: {:ok, map()} | {:error, term()}
+  def runtime_profile(id) do
+    with {:ok, profile} <- JidoRuntime.launcher_profile(id) do
+      {:ok, Map.put(profile, :launchable?, is_binary(profile.launcher))}
+    end
+  end
 
   @spec command(String.t()) :: {:ok, String.t()} | {:error, :unsupported_agent}
   def command(id) when is_binary(id) do

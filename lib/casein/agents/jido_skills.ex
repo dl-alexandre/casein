@@ -25,6 +25,9 @@ defmodule Casein.Agents.JidoSkills do
   @spec default_model() :: String.t()
   defdelegate default_model(), to: Registry
 
+  @spec default_provider() :: String.t()
+  defdelegate default_provider(), to: Registry
+
   @spec catalog_digest() :: String.t()
   defdelegate catalog_digest(), to: Registry
 
