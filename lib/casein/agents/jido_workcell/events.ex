@@ -8,6 +8,7 @@ defmodule Casein.Agents.JidoWorkcell.Events do
   """
 
   alias Casein.Agents.Activity
+  alias Casein.Agents.JidoWorkcell.Receipt
   alias Phoenix.PubSub
 
   @topic_prefix "jido_workcell:"
@@ -164,33 +165,7 @@ defmodule Casein.Agents.JidoWorkcell.Events do
     :exit, _ -> :ok
   end
 
-  defp receipt(receipt) when is_map(receipt),
-    do:
-      Map.take(receipt, [
-        :schema_version,
-        :contract,
-        :kind,
-        :source,
-        :receipt_id,
-        :repository,
-        :base_branch,
-        :head_branch,
-        :head_sha,
-        :changed_files,
-        :tests,
-        :workspace_id,
-        :owner_ref,
-        :runtime_id,
-        :worker_id,
-        :handoff_id,
-        :release_sha,
-        :git,
-        :occurred_at,
-        :redaction,
-        :idempotency_key,
-        :artifacts,
-        :blocker
-      ])
+  defp receipt(receipt) when is_map(receipt), do: Receipt.public(receipt)
 
   defp receipt(_), do: nil
 

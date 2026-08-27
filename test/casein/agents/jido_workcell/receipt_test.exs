@@ -1,7 +1,7 @@
 defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
   use ExUnit.Case, async: true
 
-  alias Casein.Agents.JidoWorkcell.{OwnerRef, Receipt}
+  alias Casein.Agents.JidoWorkcell.{Limits, OwnerRef, Receipt}
   alias Casein.Agents.JidoWorkcell.Git.Scope
 
   @head_sha String.duplicate("a", 40)
@@ -38,34 +38,94 @@ defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
     %{scope: scope}
   end
 
-  test "builds and validates a canonical Casein waiting receipt", %{scope: scope} do
+  test "builds the frozen Gate 0 Casein waiting shape", %{scope: scope} do
     {:ok, receipt} = Receipt.build(scope, git_result(), attrs(scope))
+
+    assert Map.keys(receipt) |> Enum.sort() ==
+             [
+               :authorization,
+               :contract,
+               :evidence_ref,
+               :files,
+               :git,
+               :handoff_id,
+               :idempotency,
+               :owner_ref,
+               :receipt_id,
+               :request_id,
+               :runtime_id,
+               :schema_version,
+               :session_id,
+               :source,
+               :tests,
+               :workcell_id,
+               :worker_id,
+               :workspace_id
+             ]
 
     assert receipt.schema_version == 1
     assert receipt.contract == %{name: "casein-dash-handoff", version: "1.0"}
     assert receipt.source == "casein_worker"
+    assert receipt.request_id == "request-gate0"
+    assert receipt.session_id == "session-gate0"
+    assert receipt.workcell_id == "workcell-gate0"
     assert receipt.owner_ref == scope.owner_ref
-    assert receipt.head_sha == @head_sha
-    assert receipt.release_sha == @release_sha
-    assert receipt.git == %{outcome: "waiting", pushed: true, merged_sha: nil}
-    refute Map.has_key?(receipt, :merged_sha)
+    assert receipt.authorization == %{decision: "allow", decision_id: "decision-gate0"}
+    assert receipt.files == [%{path: "README.md"}]
+
+    assert receipt.git == %{
+             repository: "dl-alexandre/casein",
+             base_branch: "master",
+             head_branch: "agent/gate0-receipt",
+             head_sha: @head_sha,
+             release_sha: @release_sha,
+             pr_number: nil,
+             pr_url: nil,
+             outcome: "waiting",
+             merged_sha: nil,
+             merge_actor_ref: nil,
+             post_merge_evidence_ref: nil
+           }
+
+    assert receipt.idempotency == %{
+             handoff_key: Receipt.idempotency_key(receipt.handoff_id, @head_sha)
+           }
+
+    refute Map.has_key?(receipt, :kind)
+    refute Map.has_key?(receipt, :redaction)
+    refute Map.has_key?(receipt, :occurred_at)
+    refute Map.has_key?(receipt, :changed_files)
+    refute Map.has_key?(receipt, :idempotency_key)
+    refute Map.has_key?(receipt.git, :pushed)
     refute Map.has_key?(receipt, :task_id)
     refute Map.has_key?(receipt, :lease_id)
     refute Map.has_key?(receipt, :correlation_id)
-    assert receipt.idempotency_key == Receipt.idempotency_key(receipt.handoff_id, @head_sha)
+
+    assert Receipt.validate(
+             Map.update!(receipt, :idempotency, fn _ ->
+               %{
+                 handoff_key:
+                   Receipt.review_thread_action_key(
+                     receipt.handoff_id,
+                     @head_sha,
+                     "thread-opaque-1"
+                   )
+               }
+             end)
+           ) == {:error, :idempotency_namespace_mismatch}
+
     assert Receipt.validate(receipt) == :ok
     assert Receipt.valid_public?(receipt)
-
     assert receipt |> Jason.encode!() |> Jason.decode!() |> Receipt.validate() == :ok
 
-    assert Receipt.review_thread_action_key(receipt.handoff_id, @head_sha, "thread-opaque-1") ==
-             "review-thread:v1:#{receipt.handoff_id}:#{@head_sha}:thread-opaque-1"
+    action_key =
+      Receipt.review_thread_action_key(receipt.handoff_id, @head_sha, "thread-opaque-1")
 
-    refute Receipt.review_thread_action_key(receipt.handoff_id, @head_sha, "thread-opaque-1") ==
-             receipt.idempotency_key
+    assert action_key == "review-thread:v1:#{receipt.handoff_id}:#{@head_sha}:thread-opaque-1"
+    refute action_key == receipt.idempotency.handoff_key
   end
 
-  test "rejects legacy aliases and unknown fields instead of normalizing them", %{scope: scope} do
+  test "rejects old producer aliases and unknown fields", %{scope: scope} do
     assert {:error, :commit_sha_not_allowed} =
              Receipt.build(scope, Map.put(git_result(), :commit_sha, @head_sha), attrs(scope))
 
@@ -85,8 +145,16 @@ defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
     assert {:error, :unknown_field} =
              Receipt.build(scope, git_result(), Map.put(attrs(scope), :merged_sha, @merged_sha))
 
-    malformed = Map.put(build_waiting!(scope), :merged_sha, @merged_sha)
-    assert Receipt.validate(malformed) == {:error, :unknown_field}
+    receipt = build_waiting!(scope)
+
+    assert Receipt.validate(Map.put(receipt, :merged_sha, @merged_sha)) ==
+             {:error, :forbidden_alias}
+
+    assert Receipt.validate(Map.put(receipt, :idempotency_key, "legacy")) ==
+             {:error, :forbidden_alias}
+
+    assert Receipt.validate(Map.update!(receipt, :git, &Map.put(&1, :pushed, true))) ==
+             {:error, :forbidden_alias}
   end
 
   test "requires exact lowercase SHAs and a structured owner reference", %{scope: scope} do
@@ -156,45 +224,22 @@ defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
              )
   end
 
-  test "conditional fields are emitted only for their owning lane", %{scope: scope} do
-    assert {:error, :illegal_conditional_id} =
-             Receipt.build(scope, git_result(), Map.put(attrs(scope), :session_id, "session-1"))
+  test "session and workcell IDs are required and Mira IDs remain conditional", %{scope: scope} do
+    assert {:error, :session_id_required} =
+             Receipt.build(scope, git_result(), Map.delete(attrs(scope), :session_id))
+
+    assert {:error, :workcell_not_assigned} =
+             Receipt.build(scope, git_result(), Map.put(attrs(scope), :workcell_assigned?, false))
 
     {:ok, terminal} =
       Receipt.build(
         scope,
         git_result(),
-        attrs(scope)
-        |> Map.merge(%{source: "v3_casein", lane: "casein_terminal", session_id: "session-1"})
+        attrs(scope) |> Map.merge(%{source: "v3_casein", lane: "casein_terminal"})
       )
 
-    assert terminal.session_id == "session-1"
-
-    assert {:error, :workcell_not_assigned} =
-             Receipt.build(scope, git_result(), Map.put(attrs(scope), :workcell_id, "workcell-1"))
-
-    {:ok, with_workcell} =
-      Receipt.build(
-        scope,
-        git_result(),
-        attrs(scope) |> Map.merge(%{workcell_id: "workcell-1", scheduler_assigned?: true})
-      )
-
-    assert with_workcell.workcell_id == "workcell-1"
-
-    assert {:error, :illegal_origin_id} =
-             Receipt.build(scope, git_result(), Map.put(attrs(scope), :task_id, "task_mira_001"))
-
-    assert {:error, :invalid_task_id} =
-             Receipt.build(
-               scope,
-               git_result(),
-               Map.merge(attrs(scope), %{
-                 origin: "mira",
-                 task_id: "task_mira_001",
-                 lease_id: "lease-1"
-               })
-             )
+    assert terminal.source == "v3_casein"
+    refute Map.has_key?(terminal, :task_id)
 
     task_id = Ecto.UUID.generate()
 
@@ -205,35 +250,56 @@ defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
         Map.merge(attrs(scope), %{
           origin: "mira",
           task_id: task_id,
-          lease_id: "lease-1",
+          lease_id: "lease-gate0",
           correlation_id: task_id
         })
       )
 
     assert mira.task_id == task_id
-    assert mira.lease_id == "lease-1"
+    assert mira.lease_id == "lease-gate0"
     assert mira.correlation_id == task_id
-    assert mira.source == "casein_worker"
-    assert mira.git.outcome == "waiting"
     assert Receipt.validate(mira) == :ok
 
     assert {:error, :illegal_origin_id} =
+             Receipt.build(scope, git_result(), Map.put(attrs(scope), :task_id, task_id))
+
+    assert {:error, :correlation_task_mismatch} =
              Receipt.build(
                scope,
                git_result(),
                Map.merge(attrs(scope), %{
-                 source: "v3_casein",
                  origin: "mira",
                  task_id: task_id,
-                 lease_id: "lease-1",
-                 correlation_id: task_id
+                 lease_id: "lease-gate0",
+                 correlation_id: Ecto.UUID.generate()
                })
              )
   end
 
-  test "redaction and nested test aliases remain fail-closed", %{scope: scope} do
-    assert {:error, :credential_material} =
-             Receipt.build(scope, git_result(), Map.put(attrs(scope), :blocker, "token=secret"))
+  test "authorization, files, and nested tests are fail-closed", %{scope: scope} do
+    assert {:error, :authorization_decision_id_required} =
+             Receipt.build(
+               scope,
+               git_result(),
+               Map.put(attrs(scope), :authorization, %{decision: "allow"})
+             )
+
+    assert {:error, :invalid_authorization_decision} =
+             Receipt.build(
+               scope,
+               git_result(),
+               Map.put(attrs(scope), :authorization, %{
+                 decision: "approve",
+                 decision_id: "decision-gate0"
+               })
+             )
+
+    assert {:error, :test_name_alias_not_allowed} =
+             Receipt.build(
+               scope,
+               git_result(),
+               Map.put(attrs(scope), :tests, [%{command: "mix test", name: "legacy"}])
+             )
 
     assert {:error, :commit_sha_not_allowed} =
              Receipt.build(
@@ -242,12 +308,15 @@ defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
                Map.put(attrs(scope), :tests, [%{command: "mix test", commit_sha: @head_sha}])
              )
 
-    assert {:error, :invalid_artifact} =
+    assert {:error, :absolute_path} =
              Receipt.build(
                scope,
-               git_result(),
-               Map.put(attrs(scope), :artifacts, [%{path: "/etc/passwd", kind: "log"}])
+               Map.put(git_result(), :changed_files, ["/etc/passwd"]),
+               attrs(scope)
              )
+
+    assert {:error, :unknown_field} =
+             Receipt.build(scope, git_result(), Map.put(attrs(scope), :blocker, "not on Gate 0"))
   end
 
   test "validates a Dash merged document without allowing Casein to produce it", %{scope: scope} do
@@ -257,37 +326,48 @@ defmodule Casein.Agents.JidoWorkcell.ReceiptTest do
       waiting
       |> Map.put(:source, "dash_verda")
       |> Map.put(:git, %{
-        outcome: "merged",
-        pushed: true,
-        pr_number: 1065,
-        pr_url: "https://github.com/dl-alexandre/casein/pull/1065",
-        merged_sha: @merged_sha,
-        merge_actor_ref: "github_app/dash-bot",
-        post_merge_evidence_ref: "pipeline-1065"
+        waiting.git
+        | outcome: "merged",
+          pr_number: 1065,
+          pr_url: "https://github.com/dl-alexandre/casein/pull/1065",
+          merged_sha: @merged_sha,
+          merge_actor_ref: "github_app/dash-bot",
+          post_merge_evidence_ref: "pipeline-1065"
       })
 
     assert Receipt.validate(merged) == :ok
     assert Receipt.valid_public?(merged)
 
+    assert Receipt.validate(
+             Map.update!(merged, :git, &Map.put(&1, :head_sha, @merged_sha)),
+             %{repository: "dl-alexandre/casein", pr_number: 1065, head_sha: @head_sha}
+           ) == {:error, :invalid_dash_identity}
+
     assert Receipt.validate(Map.put(merged, :schema_version, "gate0.v1")) ==
              {:error, :schema_version_unsupported}
 
-    assert Receipt.validate(
-             Map.put(merged, :git, %{outcome: "merged", pushed: true, merged_sha: nil})
-           ) ==
+    assert Receipt.validate(Map.put(merged, :git, %{merged.git | merged_sha: nil})) ==
              {:error, :merged_sha_required}
+  end
+
+  test "keeps the protocol boundary at the frozen 8192-byte limit" do
+    assert Limits.input_max_bytes() == 8_192
+    assert {:error, :input_too_large} = Limits.validate_input(String.duplicate("x", 8_193))
   end
 
   defp git_result, do: %{head_sha: @head_sha, changed_files: ["README.md"], pushed?: true}
 
-  defp attrs(scope) do
-    suffix = Integer.to_string(System.unique_integer([:positive]))
-
+  defp attrs(_scope) do
     %{
       source: "casein_worker",
-      owner_ref: scope.owner_ref,
-      handoff_id: "handoff-gate0-" <> suffix,
-      receipt_id: "receipt-gate0-" <> suffix,
+      request_id: "request-gate0",
+      session_id: "session-gate0",
+      workcell_id: "workcell-gate0",
+      workcell_assigned?: true,
+      authorization: %{decision: "allow", decision_id: "decision-gate0"},
+      evidence_ref: "evidence-gate0",
+      handoff_id: "handoff-gate0",
+      receipt_id: "receipt-gate0",
       tests: [%{command: "mix test", status: "passed"}]
     }
   end

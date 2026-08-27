@@ -27,6 +27,8 @@ defmodule Casein.Agents.JidoActions.Context do
           optional(:lease_id) => String.t(),
           optional(:handoff_id) => String.t(),
           optional(:receipt_id) => String.t(),
+          optional(:request_id) => String.t(),
+          optional(:authorization) => map(),
           optional(:evidence_ref) => String.t(),
           optional(:decision_id) => String.t(),
           optional(:origin) => atom() | String.t(),
@@ -56,6 +58,8 @@ defmodule Casein.Agents.JidoActions.Context do
     :lease_id,
     :correlation_id,
     :receipt_id,
+    :request_id,
+    :authorization,
     :evidence_ref,
     :decision_id,
     :worktree_path,
@@ -185,6 +189,8 @@ defmodule Casein.Agents.JidoActions.Context do
     lease_id = optional(raw, :lease_id)
     handoff_id = optional(raw, :handoff_id)
     receipt_id = optional(raw, :receipt_id)
+    request_id = optional(raw, :request_id)
+    authorization = optional(raw, :authorization)
     evidence_ref = optional(raw, :evidence_ref)
     decision_id = optional(raw, :decision_id)
     worktree_path = optional(raw, :worktree_path)
@@ -209,6 +215,8 @@ defmodule Casein.Agents.JidoActions.Context do
       lease_id: lease_id,
       handoff_id: handoff_id,
       receipt_id: receipt_id,
+      request_id: request_id,
+      authorization: authorization,
       evidence_ref: evidence_ref,
       decision_id: decision_id,
       origin: origin,
@@ -260,6 +268,9 @@ defmodule Casein.Agents.JidoActions.Context do
           {:ok, owner_ref} -> owner_ref
           {:error, _reason} -> nil
         end
+
+      value when key == :authorization and is_map(value) ->
+        value
 
       value when is_binary(value) and value != "" ->
         value

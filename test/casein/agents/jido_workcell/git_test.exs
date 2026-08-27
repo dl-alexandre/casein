@@ -49,7 +49,9 @@ defmodule Casein.Agents.JidoWorkcell.GitTest do
 
     assert {:ok, receipt} = Git.handoff(scope, attrs)
     assert Receipt.validate(receipt) == :ok
-    assert receipt.git == %{outcome: "waiting", pushed: true, merged_sha: nil}
+    assert receipt.git.outcome == "waiting"
+    refute Map.has_key?(receipt.git, :pushed)
+    assert receipt.idempotency.handoff_key == Receipt.idempotency_key(receipt)
 
     assert_receive {:git_adapter, :stage, ["README.md"]}
     assert_receive {:git_adapter, :commit, ["README.md"]}
@@ -90,6 +92,11 @@ defmodule Casein.Agents.JidoWorkcell.GitTest do
   defp attrs(handoff_id) do
     %{
       source: "casein_worker",
+      request_id: "request-" <> handoff_id,
+      session_id: "session-git-test",
+      workcell_id: "workcell-git-test",
+      workcell_assigned?: true,
+      authorization: %{decision: "allow", decision_id: "decision-git-test"},
       handoff_id: handoff_id,
       receipt_id: "receipt-" <> handoff_id,
       tests: [%{command: "mix test", status: "passed"}],

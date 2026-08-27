@@ -149,11 +149,13 @@ defmodule Casein.Agents.JidoActions.Result do
   end
 
   defp canonical_receipt?(payload) when is_map(payload) do
-    Map.has_key?(payload, :schema_version) and Map.has_key?(payload, :receipt_id) and
-      Map.has_key?(payload, :idempotency_key)
+    has_key?(payload, :schema_version) and has_key?(payload, :receipt_id) and
+      has_key?(payload, :request_id) and has_key?(payload, :idempotency)
   end
 
   defp canonical_receipt?(_payload), do: false
+
+  defp has_key?(map, key), do: Map.has_key?(map, key) or Map.has_key?(map, Atom.to_string(key))
 
   defp tagged(%{result: :ok} = payload), do: {:ok, payload}
   defp tagged(payload), do: {:error, payload}

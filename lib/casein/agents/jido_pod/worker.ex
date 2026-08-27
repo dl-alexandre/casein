@@ -119,6 +119,8 @@ defmodule Casein.Agents.JidoPod.Worker do
       task_id: attempt.task_id,
       correlation_id: attempt.correlation_id,
       receipt_id: attempt.receipt_id,
+      request_id: attempt.request_id,
+      authorization: attempt.authorization,
       evidence_ref: attempt.evidence_ref,
       decision_id: attempt.decision_id,
       origin: attempt.origin,

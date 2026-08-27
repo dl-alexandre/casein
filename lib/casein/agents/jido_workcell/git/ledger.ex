@@ -56,8 +56,8 @@ defmodule Casein.Agents.JidoWorkcell.Git.Ledger do
               :ok ->
                 entry = %{
                   fingerprint: fingerprint,
-                  head_sha: head_sha(receipt),
-                  idempotency_key: idempotency_key(receipt),
+                  head_sha: Receipt.head_sha(receipt),
+                  handoff_key: idempotency_key(receipt),
                   receipt: receipt
                 }
 
@@ -73,18 +73,18 @@ defmodule Casein.Agents.JidoWorkcell.Git.Ledger do
     end
   end
 
-  defp head_sha(receipt) when is_map(receipt),
-    do: Map.get(receipt, :head_sha, Map.get(receipt, "head_sha"))
-
-  defp head_sha(_receipt), do: nil
-
   defp idempotency_key(receipt) when is_map(receipt),
-    do: Map.get(receipt, :idempotency_key, Map.get(receipt, "idempotency_key"))
+    do: Map.get(receipt, :idempotency, Map.get(receipt, "idempotency")) |> handoff_key()
 
   defp idempotency_key(_receipt), do: nil
 
+  defp handoff_key(%{} = idempotency),
+    do: Map.get(idempotency, :handoff_key, Map.get(idempotency, "handoff_key"))
+
+  defp handoff_key(_idempotency), do: nil
+
   defp canonical_idempotency(handoff_id, receipt) do
-    sha = head_sha(receipt)
+    sha = Receipt.head_sha(receipt)
     key = idempotency_key(receipt)
 
     if Receipt.valid_sha?(sha) and key == Receipt.idempotency_key(handoff_id, sha),

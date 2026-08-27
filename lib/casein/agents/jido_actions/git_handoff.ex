@@ -14,8 +14,6 @@ defmodule Casein.Agents.JidoActions.GitHandoff do
       message: [type: :string, required: true],
       paths: [type: {:list, :string}, required: true],
       tests: [type: {:list, :map}],
-      artifacts: [type: {:list, :any}],
-      blocker: [type: :string],
       evidence_ref: [type: :string],
       decision_id: [type: :string]
     ]

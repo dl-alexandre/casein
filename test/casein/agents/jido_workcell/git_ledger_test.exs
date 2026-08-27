@@ -12,8 +12,8 @@ defmodule Casein.Agents.JidoWorkcell.GitLedgerTest do
     {:ok, counter} = Agent.start_link(fn -> 0 end)
 
     receipt = %{
-      head_sha: @head_sha,
-      idempotency_key: Receipt.idempotency_key(handoff_id, @head_sha)
+      git: %{head_sha: @head_sha},
+      idempotency: %{handoff_key: Receipt.idempotency_key(handoff_id, @head_sha)}
     }
 
     assert {:ok, ^receipt} =
@@ -42,8 +42,8 @@ defmodule Casein.Agents.JidoWorkcell.GitLedgerTest do
     fingerprint = {:fingerprint, System.unique_integer([:positive])}
 
     receipt = %{
-      head_sha: @head_sha,
-      idempotency_key: Receipt.idempotency_key(handoff_id, @head_sha)
+      git: %{head_sha: @head_sha},
+      idempotency: %{handoff_key: Receipt.idempotency_key(handoff_id, @head_sha)}
     }
 
     assert {:error, :blocked} =
@@ -55,11 +55,11 @@ defmodule Casein.Agents.JidoWorkcell.GitLedgerTest do
   test "a malformed receipt is never stored as a replay" do
     handoff_id = "handoff-ledger-invalid-#{System.unique_integer([:positive])}"
     fingerprint = {:fingerprint, System.unique_integer([:positive])}
-    invalid = %{head_sha: @head_sha, idempotency_key: "wrong"}
+    invalid = %{git: %{head_sha: @head_sha}, idempotency: %{handoff_key: "wrong"}}
 
     valid = %{
-      head_sha: @head_sha,
-      idempotency_key: Receipt.idempotency_key(handoff_id, @head_sha)
+      git: %{head_sha: @head_sha},
+      idempotency: %{handoff_key: Receipt.idempotency_key(handoff_id, @head_sha)}
     }
 
     assert {:error, :idempotency_mismatch} =

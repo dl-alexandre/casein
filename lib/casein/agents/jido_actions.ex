@@ -250,8 +250,6 @@ defmodule Casein.Agents.JidoActions do
       :message,
       :paths,
       :tests,
-      :artifacts,
-      :blocker,
       :evidence_ref,
       :decision_id
     ]

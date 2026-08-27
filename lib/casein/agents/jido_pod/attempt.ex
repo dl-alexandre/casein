@@ -27,6 +27,19 @@ defmodule Casein.Agents.JidoPod.Attempt do
   @max_public_completed 100
   @max_public_paths 100
   @max_public_changes 100
+  @public_git_keys [
+    :repository,
+    :base_branch,
+    :head_branch,
+    :head_sha,
+    :release_sha,
+    :pr_number,
+    :pr_url,
+    :outcome,
+    :merged_sha,
+    :merge_actor_ref,
+    :post_merge_evidence_ref
+  ]
 
   alias Casein.Agents.JidoWorkcell.Git.Scope
   alias Casein.Agents.JidoWorkcell.{OwnerRef, Receipt}
@@ -62,6 +75,8 @@ defmodule Casein.Agents.JidoPod.Attempt do
           task_id: String.t() | nil,
           correlation_id: String.t() | nil,
           receipt_id: String.t() | nil,
+          request_id: String.t() | nil,
+          authorization: map() | nil,
           evidence_ref: String.t() | nil,
           decision_id: String.t() | nil,
           origin: atom() | String.t() | nil,
@@ -124,6 +139,8 @@ defmodule Casein.Agents.JidoPod.Attempt do
     :git_scope,
     :correlation_id,
     :receipt_id,
+    :request_id,
+    :authorization,
     :evidence_ref,
     :decision_id,
     :origin,
@@ -205,6 +222,8 @@ defmodule Casein.Agents.JidoPod.Attempt do
       task_id: Map.get(attrs, :task_id),
       correlation_id: Map.get(attrs, :correlation_id),
       receipt_id: Map.get(attrs, :receipt_id),
+      request_id: Map.get(attrs, :request_id),
+      authorization: Map.get(attrs, :authorization),
       evidence_ref: Map.get(attrs, :evidence_ref),
       decision_id: Map.get(attrs, :decision_id),
       origin: Map.get(attrs, :origin),
@@ -276,6 +295,7 @@ defmodule Casein.Agents.JidoPod.Attempt do
       task_id: attempt.task_id,
       correlation_id: attempt.correlation_id,
       receipt_id: attempt.receipt_id,
+      request_id: attempt.request_id,
       evidence_ref: attempt.evidence_ref,
       decision_id: attempt.decision_id,
       origin: attempt.origin,
@@ -346,6 +366,7 @@ defmodule Casein.Agents.JidoPod.Attempt do
       :kind,
       :source,
       :receipt_id,
+      :request_id,
       :handoff_id,
       :head_sha,
       :git,
@@ -360,6 +381,8 @@ defmodule Casein.Agents.JidoPod.Attempt do
       :worker_id,
       :release_sha,
       :idempotency_key,
+      :idempotency,
+      :files,
       :evidence_ref,
       :decision_id,
       :session_id,
@@ -453,19 +476,20 @@ defmodule Casein.Agents.JidoPod.Attempt do
     if values == [], do: acc, else: Map.put(acc, :tests, values)
   end
 
-  defp put_public_field(acc, :git, %{outcome: outcome} = git) when is_binary(outcome) do
+  defp put_public_field(acc, :git, %{outcome: _outcome} = git) do
     git =
-      %{
-        outcome: public_scalar(outcome),
-        pushed: Map.get(git, :pushed) == true,
-        merged_sha: Map.get(git, :merged_sha),
-        pr_number: Map.get(git, :pr_number),
-        pr_url: public_scalar(Map.get(git, :pr_url)),
-        merge_actor_ref: public_owner_ref(Map.get(git, :merge_actor_ref)),
-        post_merge_evidence_ref: public_scalar(Map.get(git, :post_merge_evidence_ref))
-      }
+      Enum.reduce(@public_git_keys, %{}, fn key, public_git ->
+        case git_value(git, key) do
+          nil -> public_git
+          value -> Map.put(public_git, key, public_scalar(value))
+        end
+      end)
 
-    Map.put(acc, :git, Enum.reject(git, fn {_key, value} -> is_nil(value) end) |> Map.new())
+    if map_size(git) == 0, do: acc, else: Map.put(acc, :git, git)
+  end
+
+  defp put_public_field(acc, :git, %{"outcome" => _outcome} = git) do
+    put_public_field(acc, :git, atomize_git(git))
   end
 
   defp put_public_field(acc, :owner_ref, value) when is_map(value) do
@@ -571,6 +595,17 @@ defmodule Casein.Agents.JidoPod.Attempt do
     end
   end
 
+  defp git_value(git, key), do: Map.get(git, key, Map.get(git, Atom.to_string(key)))
+
+  defp atomize_git(git) do
+    Enum.reduce(@public_git_keys, %{}, fn key, acc ->
+      case git_value(git, key) do
+        nil -> acc
+        value -> Map.put(acc, key, value)
+      end
+    end)
+  end
+
   defp public_scope(%Scope{} = scope), do: Scope.public(scope)
   defp public_scope(_scope), do: nil
 
@@ -588,13 +623,28 @@ defmodule Casein.Agents.JidoPod.Attempt do
        when is_binary(id) and is_binary(sha),
        do: result
 
-  defp receipt_from(%{completed: completed}) when is_list(completed) do
+  defp receipt_from(%{} = result) do
+    if frozen_receipt?(result), do: result, else: completed_receipt(result)
+  end
+
+  defp receipt_from(_result), do: nil
+
+  defp completed_receipt(%{completed: completed}) when is_list(completed) do
     completed
     |> Enum.reverse()
     |> Enum.find_value(&receipt_from(Map.get(&1, :result) || %{}))
   end
 
-  defp receipt_from(_result), do: nil
+  defp completed_receipt(_result), do: nil
+
+  defp frozen_receipt?(result) do
+    handoff_id = Map.get(result, :handoff_id) || Map.get(result, "handoff_id")
+    idempotency = Map.get(result, :idempotency) || Map.get(result, "idempotency")
+    git = Map.get(result, :git) || Map.get(result, "git")
+    head_sha = if is_map(git), do: Map.get(git, :head_sha) || Map.get(git, "head_sha")
+
+    is_binary(handoff_id) and is_map(idempotency) and is_map(git) and is_binary(head_sha)
+  end
 
   defp owner_ref(nil, workspace_id), do: OwnerRef.for_workspace(workspace_id)
 

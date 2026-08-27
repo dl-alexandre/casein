@@ -264,6 +264,8 @@ defmodule Casein.Agents.JidoPod.Pod do
       lease_id: Map.get(attrs, :lease_id),
       correlation_id: Map.get(attrs, :correlation_id),
       receipt_id: Map.get(attrs, :receipt_id),
+      request_id: Map.get(attrs, :request_id),
+      authorization: Map.get(attrs, :authorization),
       evidence_ref: Map.get(attrs, :evidence_ref),
       decision_id: Map.get(attrs, :decision_id),
       origin: Map.get(attrs, :origin),

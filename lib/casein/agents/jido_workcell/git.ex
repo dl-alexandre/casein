@@ -134,13 +134,13 @@ defmodule Casein.Agents.JidoWorkcell.Git do
     Enum.reduce(
       [
         :receipt_id,
+        :request_id,
         :handoff_id,
         :tests,
-        :artifacts,
-        :blocker,
         :head_sha,
         :evidence_ref,
         :decision_id,
+        :authorization,
         :session_id,
         :workcell_id,
         :workcell_assigned?,

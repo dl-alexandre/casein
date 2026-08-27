@@ -171,6 +171,8 @@ defmodule Casein.Agents.JidoActions.Runner do
       :lease_id,
       :correlation_id,
       :receipt_id,
+      :request_id,
+      :authorization,
       :evidence_ref,
       :decision_id,
       :lane,
