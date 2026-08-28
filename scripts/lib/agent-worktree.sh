@@ -15,11 +15,11 @@ agent_worktree_is_bare() {
 # Resolve the primary repo path for CASEIN_CHECKOUT.
 # Works for normal work trees and bare product roots (Mira-class): on bare,
 # `rev-parse --show-toplevel` fails with "must be run in a work tree", but
-# `git worktree add` still works from the bare path. Prefer porcelain's first
-# worktree entry (the bare root itself), then absolute-git-dir.
+# `git worktree add` still works from the bare path. Preserve the caller's path
+# spelling so persisted checkout identity does not change through a symlink.
 agent_worktree_primary_repo() {
   local checkout="${CASEIN_CHECKOUT:-}"
-  local toplevel listing line bare_path=""
+  local toplevel
 
   if [[ -z "$checkout" ]]; then
     return 1
@@ -34,26 +34,8 @@ agent_worktree_primary_repo() {
     return 1
   fi
 
-  if listing="$(git -C "$checkout" worktree list --porcelain 2>/dev/null)"; then
-    while IFS= read -r line; do
-      if [[ "$line" == "worktree "* ]]; then
-        bare_path="${line#worktree }"
-        break
-      fi
-    done <<<"$listing"
-  fi
-
-  if [[ -n "$bare_path" && -e "$bare_path" ]]; then
-    printf '%s\n' "$bare_path"
-    return 0
-  fi
-
-  if bare_path="$(git -C "$checkout" rev-parse --absolute-git-dir 2>/dev/null)"; then
-    printf '%s\n' "$bare_path"
-    return 0
-  fi
-
-  return 1
+  printf '%s\n' "$checkout"
+  return 0
 }
 
 agent_worktree_is_linked() {
@@ -83,8 +65,8 @@ agent_worktree_inside_primary() {
 agent_worktree_branch_name() {
   local runtime="${1:-agent}"
   local task="${2:-adhoc}"
-  local stamp
-  stamp="$(date +%Y%m%d%H%M%S)"
+  local stamp="${3:-}"
+  [[ -n "$stamp" ]] || stamp="$(date +%Y%m%d%H%M%S)"
   printf 'agent/%s/%s-%s\n' "$runtime" "$task" "$stamp"
 }
 
@@ -117,7 +99,7 @@ agent_worktree_create() {
   local runtime="$1"
   local task="${2:-adhoc}"
   local base_ref
-  local primary wt_root branch path
+  local primary wt_root branch path stamp
 
   primary="$(agent_worktree_primary_repo)" || {
     if [[ -n "${CASEIN_CHECKOUT:-}" ]] && agent_worktree_is_bare "${CASEIN_CHECKOUT}"; then
@@ -139,7 +121,11 @@ EOF
   wt_root="$(agent_worktree_root)"
   mkdir -p "$wt_root"
 
-  branch="$(agent_worktree_branch_name "$runtime" "$task")"
+  # Derive the branch and path from one timestamp. The fallback below is also
+  # derived from that path, so one launch cannot persist a different timestamp
+  # from the worktree it actually created.
+  stamp="$(date +%Y%m%d%H%M%S)"
+  branch="$(agent_worktree_branch_name "$runtime" "$task" "$stamp")"
   # Flatten only the branch's slashes; the leading wt_root must stay a real
   # absolute path or git treats the dash-leading result as an option.
   path="${wt_root}/${branch//\//-}"
@@ -147,7 +133,7 @@ EOF
   # Keep git's stdout ("HEAD is now at ...") out of this function's stdout —
   # callers capture it as the worktree path.
   if ! env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" worktree add -b "$branch" "$path" "$base_ref" >/dev/null 2>&1; then
-    path="${wt_root}/detached-${runtime}-$(date +%s)"
+    path="${path}-detached"
     env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" worktree add --detach "$path" "$base_ref" >/dev/null
     branch="detached"
   fi
@@ -240,6 +226,19 @@ agent_worktree_ensure() {
     return 0
   fi
 
+  # A launcher may run more than one setup phase in the same shell. Once this
+  # process has created its worker tree, keep every later phase on that exact
+  # path, including when force-fresh is set. The marker is intentionally a
+  # shell-local variable; child launch shells must start with a fresh tree.
+  if [[ "${CASEIN_AGENT_WORKTREE_CREATED:-0}" == "1" &&
+    -n "${CASEIN_AGENT_WORKTREE_PATH:-}" &&
+    -d "${CASEIN_AGENT_WORKTREE_PATH}" ]]; then
+    export CASEIN_CHECKOUT="${CASEIN_AGENT_WORKTREE_PATH}"
+    export CASEIN_WORKTREE=1
+    export CASEIN_GIT_DIR="${CASEIN_AGENT_WORKTREE_PATH}/.git"
+    return 0
+  fi
+
   # Adoption paths: a human launching *inside* an existing worktree reuses it.
   # A SPAWNED worker (CASEIN_AGENT_FORCE_FRESH_WORKTREE=1, set by
   # spawn-agent-worker.sh) must NEVER adopt — adopting silently shares the
@@ -258,7 +257,10 @@ agent_worktree_ensure() {
 
     if agent_worktree_is_linked "${PWD}"; then
       local linked_root
-      linked_root="$(git -C "${PWD}" rev-parse --show-toplevel)"
+      # Keep the caller's spelling of the path. On macOS, git canonicalizes
+      # /var through its /private symlink, which would change the persisted
+      # path identity even though it is the same worktree.
+      linked_root="${PWD}"
       export CASEIN_CHECKOUT="$linked_root"
       export CASEIN_WORKTREE=1
       agent_worktree_report_mcp "${CASEIN_CHECKOUT}" "$runtime"
@@ -279,6 +281,7 @@ agent_worktree_ensure() {
   export CASEIN_AGENT_WORKTREE_PATH="$path"
   export CASEIN_WORKTREE=1
   export CASEIN_GIT_DIR="${path}/.git"
+  CASEIN_AGENT_WORKTREE_CREATED=1
 
   agent_worktree_report_mcp "$path" "$runtime"
   agent_worktree_spawn_reaper "$path" "$primary" "$$"

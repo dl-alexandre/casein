@@ -215,7 +215,7 @@ spawn_worker_resolve_env_file() {
   if [[ -n "$session" ]] && workspace_name="$(agent_env_parse_workspace_name "$session")"; then
     session_env="$(agent_env_staging_env_file "$workspace_name")"
     if [[ -r "$session_env" ]]; then
-      realpath -m "$session_env"
+      agent_env_realpath "$session_env"
       return 0
     fi
 
@@ -240,7 +240,7 @@ spawn_worker_resolve_env_file() {
     "${CASEIN_AGENT_ENV_FILE:-}" \
     "${CASEIN_AGENT_MCP_HOME:-}/env.sh"; do
     [[ -n "$candidate" && -r "$candidate" ]] || continue
-    realpath -m "$candidate"
+    agent_env_realpath "$candidate"
     return 0
   done
 
@@ -525,6 +525,52 @@ spawn_worker_resolve_primary_checkout() {
   printf '%s\n' "$candidate"
 }
 
+# CASEIN_CHECKOUT is persisted in the workspace env file, but a completed
+# worker's reaper may remove that worker worktree before the next spawn reads
+# it. Repair to the workspace's stable checkout when it is available, and keep
+# the repair durable for the next process. If neither path is usable, include
+# both the stale value and the exact env.sh source in the failure.
+spawn_worker_validate_checkout() {
+  local env_file="$1"
+  local checkout="${CASEIN_CHECKOUT:-}"
+  local workspace_name="${CASEIN_WORKSPACE_NAME:-}"
+  local fallback=""
+
+  if [[ -n "$checkout" && -d "$checkout" ]]; then
+    return 0
+  fi
+
+  # Older pairing files did not persist CASEIN_CHECKOUT. Preserve the launch
+  # script's established root fallback for that case; a non-empty stale value
+  # must still be repaired or rejected explicitly below.
+  if [[ -z "$checkout" && -d "$ROOT" ]]; then
+    export CASEIN_CHECKOUT="$ROOT"
+    return 0
+  fi
+
+  if [[ -n "$workspace_name" ]]; then
+    fallback="$(agent_env_default_checkout "$workspace_name")"
+  fi
+
+  if [[ -n "$fallback" && -d "$fallback" ]]; then
+    export CASEIN_CHECKOUT="$fallback"
+    if agent_env_persist_checkout "$env_file" "$fallback"; then
+      echo "warn: repaired stale CASEIN_CHECKOUT=${checkout:-<unset>} from ${env_file} to ${fallback}" >&2
+    else
+      echo "warn: using repaired CASEIN_CHECKOUT=${fallback}; could not persist repair to ${env_file}" >&2
+    fi
+    return 0
+  fi
+
+  echo "error: CASEIN_CHECKOUT=${checkout:-<unset>} (from ${env_file}): no such directory" >&2
+  if [[ -n "$fallback" ]]; then
+    echo "error: could not repair CASEIN_CHECKOUT; expected workspace checkout at ${fallback}" >&2
+  else
+    echo "error: could not repair CASEIN_CHECKOUT; workspace name is unavailable" >&2
+  fi
+  return 1
+}
+
 if [[ $# -lt 2 || $# -gt 3 ]]; then
   usage >&2
   exit 1
@@ -574,11 +620,8 @@ ENV_FILE="$(spawn_worker_resolve_env_file "$SESSION")" || {
 spawn_worker_align_process_to_env_file "$ENV_FILE" "$SESSION"
 agent_env_resolve
 
-CHECKOUT="${CASEIN_CHECKOUT:-$ROOT}"
-if [[ ! -d "$CHECKOUT" ]]; then
-  echo "error: checkout not found at ${CHECKOUT}" >&2
-  exit 1
-fi
+spawn_worker_validate_checkout "$ENV_FILE" || exit 1
+CHECKOUT="${CASEIN_CHECKOUT}"
 
 # CASEIN_CHECKOUT may point at the orchestrator's own linked worktree; the
 # worker must branch off the primary repo, not launch inside it.
@@ -620,7 +663,7 @@ WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
 # branch a fresh one — so a worker can never operate in a shared checkout.
 # The launcher is Casein infrastructure and deliberately comes from ROOT, not
 # the product checkout (which generally has no launch-casein-agent.sh).
-LAUNCH_CMD="source $(printf '%q' "$ENV_FILE") && export CASEIN_TMUX_SESSION=$(printf '%q' "$SESSION") && unset CASEIN_TMUX_SOCKET_RESOLVED CASEIN_AGENT_WORKTREE_PATH CASEIN_WORKTREE CASEIN_GIT_DIR CASEIN_SCRIPTS && cd $(printf '%q' "$CHECKOUT") && export CASEIN_CHECKOUT=$(printf '%q' "$CHECKOUT") CASEIN_AGENT_FORCE_FRESH_WORKTREE=1 && CASEIN_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "$LAUNCHER") $(printf '%q' "$RUNTIME")"
+LAUNCH_CMD="source $(printf '%q' "$ENV_FILE") && export CASEIN_TMUX_SESSION=$(printf '%q' "$SESSION") && unset CASEIN_TMUX_SOCKET_RESOLVED CASEIN_AGENT_WORKTREE_PATH CASEIN_AGENT_WORKTREE_CREATED CASEIN_WORKTREE CASEIN_GIT_DIR CASEIN_SCRIPTS && cd $(printf '%q' "$CHECKOUT") && export CASEIN_CHECKOUT=$(printf '%q' "$CHECKOUT") CASEIN_AGENT_FORCE_FRESH_WORKTREE=1 && CASEIN_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "$LAUNCHER") $(printf '%q' "$RUNTIME")"
 
 if [[ "${CASEIN_SPAWN_DRY_RUN:-0}" == "1" ]]; then
   printf 'session=%s\ncheckout=%s\nenv_file=%s\nlauncher=%s\nwindow=%s\nheadroom=%s\nlaunch=%s\n' \
@@ -629,10 +672,16 @@ if [[ "${CASEIN_SPAWN_DRY_RUN:-0}" == "1" ]]; then
   exit 0
 fi
 
-PANE_ID="$(
-  casein_tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -P -F '#{pane_id}' "$LAUNCH_CMD" 2>/dev/null ||
-    casein_tmux new-window -t "$SESSION" -P -F '#{pane_id}' "$LAUNCH_CMD"
-)"
+PANE_ID=""
+if ! PANE_ID="$(casein_tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -P -F '#{pane_id}' "$LAUNCH_CMD" 2>/dev/null)"; then
+  if [[ "$PANE_ID" =~ ^%[0-9]+$ ]]; then
+    spawn_worker_dispose_window "$PANE_ID" "$WINDOW_NAME"
+    echo "error: tmux new-window failed after creating pane ${PANE_ID}" >&2
+  else
+    echo "error: tmux new-window failed" >&2
+  fi
+  exit 1
+fi
 
 if [[ -z "$PANE_ID" ]]; then
   echo "error: tmux new-window did not return a pane id" >&2

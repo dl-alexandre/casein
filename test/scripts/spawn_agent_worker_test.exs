@@ -215,6 +215,69 @@ defmodule Scripts.SpawnAgentWorkerTest do
     assert out =~ "target_workspace=test"
   end
 
+  test "diagnoses a stale CASEIN_CHECKOUT with its env file source" do
+    ctx = preflight_fixture!("stale-diagnostic", ~s({"agent_write":{"write_enabled":true}}))
+    stale = Path.join(ctx.tmp, "gone-worktree")
+    empty_root = Path.join(ctx.tmp, "empty-workspaces")
+
+    {out, status} =
+      spawn_dry_run_with_checkout(ctx, "codex", stale, [
+        {"CASEIN_AGENT_WORKSPACE_ROOT", empty_root}
+      ])
+
+    assert status == 1
+    assert out =~ "CASEIN_CHECKOUT=#{stale} (from #{ctx.env_file}): no such directory"
+    assert out =~ "could not repair CASEIN_CHECKOUT"
+    refute out =~ "window=worker-"
+    refute tmux_calls(ctx) =~ "new-window"
+  end
+
+  test "repairs a stale checkout in env.sh and reuses it after restart" do
+    ctx = preflight_fixture!("stale-repair", ~s({"agent_write":{"write_enabled":true}}))
+    stale = Path.join(ctx.tmp, "gone-worktree")
+    workspace_root = Path.join(ctx.tmp, "workspaces")
+    fallback = Path.join(workspace_root, "test")
+    File.mkdir_p!(fallback)
+
+    {_, 0} = System.cmd("git", ["init", "-q", "-b", "master", fallback], env: git_env())
+
+    {_, 0} =
+      System.cmd("git", ["-C", fallback, "commit", "-q", "--allow-empty", "-m", "root"],
+        env: git_env()
+      )
+
+    {fallback_checkout, 0} =
+      System.cmd("git", ["-C", fallback, "rev-parse", "--show-toplevel"], env: git_env())
+
+    fallback_checkout = String.trim(fallback_checkout)
+
+    {out, 0} =
+      spawn_dry_run_with_checkout(ctx, "codex", stale, [
+        {"CASEIN_AGENT_WORKSPACE_ROOT", workspace_root}
+      ])
+
+    assert out =~ "checkout=#{fallback_checkout}"
+    assert out =~ "repaired stale CASEIN_CHECKOUT=#{stale}"
+
+    {persisted_checkout, 0} =
+      System.cmd("bash", [
+        "-c",
+        "source \"$1\"; printf '%s' \"$CASEIN_CHECKOUT\"",
+        "_",
+        ctx.env_file
+      ])
+
+    assert persisted_checkout == fallback
+
+    {out, 0} =
+      spawn_dry_run_from_env_file(ctx, "codex", [
+        {"CASEIN_AGENT_WORKSPACE_ROOT", workspace_root}
+      ])
+
+    assert out =~ "checkout=#{fallback_checkout}"
+    refute out =~ "could not repair CASEIN_CHECKOUT"
+  end
+
   # Fleet bug: A-orchestrator CASEIN_AGENT_* must not pin pairing when the
   # explicit session argument names workspace B. Target session wins.
   test "dry run into workspace B session uses B pairing despite caller A env" do
@@ -356,6 +419,25 @@ defmodule Scripts.SpawnAgentWorkerTest do
     # The pane's own output is what tells you *why*.
     assert out =~ "No such file or directory"
     refute out =~ ~r/^%99$/m
+  end
+
+  test "does not retry a tmux window after a partial new-window failure" do
+    ctx = preflight_fixture!("partial-window", ~s({"agent_write":{"write_enabled":true}}))
+    marker = Path.join(ctx.tmp, "new-window-failed")
+
+    {out, code} =
+      spawn_worker(ctx, "codex", [
+        {"FAKE_NEW_WINDOW_FAILURE", "1"},
+        {"FAKE_NEW_WINDOW_MARKER", marker}
+      ])
+
+    assert code == 1
+    assert out =~ "tmux new-window failed after creating pane %98"
+
+    calls = tmux_calls(ctx)
+    assert length(Regex.scan(~r/^new-window /m, calls)) == 1
+    assert calls =~ "kill-window %98"
+    refute calls =~ "kill-window %99"
   end
 
   test "reports failure when the worker window closed with its command" do
@@ -512,7 +594,17 @@ defmodule Scripts.SpawnAgentWorkerTest do
           gone) : ;;
         esac
         ;;
-      new-window) printf '%%99\\n' ;;
+      new-window)
+        [[ -n "${FAKE_TMUX_LOG:-}" ]] && printf 'new-window %s\\n' "${*: -1}" >>"$FAKE_TMUX_LOG"
+        if [[ "${FAKE_NEW_WINDOW_FAILURE:-0}" == "1" &&
+          -n "${FAKE_NEW_WINDOW_MARKER:-}" &&
+          ! -e "${FAKE_NEW_WINDOW_MARKER}" ]]; then
+          : >"$FAKE_NEW_WINDOW_MARKER"
+          printf '%%98\\n'
+          exit 1
+        fi
+        printf '%%99\\n'
+        ;;
       display-message) printf '424242\\n' ;;
       kill-window | rename-window | set-option | set-window-option)
         [[ -n "${FAKE_TMUX_LOG:-}" ]] && printf '%s %s\\n' "$1" "${*: -1}" >>"$FAKE_TMUX_LOG"
@@ -564,6 +656,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
     %{
       product: product,
+      tmp: tmp,
       fakebin: fakebin,
       home: home,
       env_file: env_file,
@@ -585,16 +678,33 @@ defmodule Scripts.SpawnAgentWorkerTest do
   end
 
   defp spawn_dry_run(ctx, runtime, extra_env) do
+    spawn_dry_run_with_checkout(ctx, runtime, ctx.product, extra_env)
+  end
+
+  defp spawn_dry_run_with_checkout(ctx, runtime, checkout, extra_env) do
     System.cmd("bash", [@script, runtime, "iso", "casein_test_u-x"],
       env:
         [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
-          {"CASEIN_CHECKOUT", ctx.product},
+          {"CASEIN_CHECKOUT", checkout},
           {"HOME", ctx.home},
           {"CASEIN_API_TOKEN", "test-token"},
           {"CASEIN_WORKSPACE_ID", "test-ws"},
           {"CASEIN_WORKSPACE_NAME", "test"},
           {"CASEIN_API_BASE_URL", "http://127.0.0.1:4000"},
+          {"CASEIN_AGENT_ENV_FILE", ctx.env_file},
+          {"PATH", ctx.fakebin <> ":" <> System.get_env("PATH")}
+        ] ++ headroom_env(ctx) ++ extra_env,
+      stderr_to_stdout: true
+    )
+  end
+
+  defp spawn_dry_run_from_env_file(ctx, runtime, extra_env) do
+    System.cmd("bash", [@script, runtime, "iso", "casein_test_u-x"],
+      env:
+        [
+          {"CASEIN_SPAWN_DRY_RUN", "1"},
+          {"HOME", ctx.home},
           {"CASEIN_AGENT_ENV_FILE", ctx.env_file},
           {"PATH", ctx.fakebin <> ":" <> System.get_env("PATH")}
         ] ++ headroom_env(ctx) ++ extra_env,

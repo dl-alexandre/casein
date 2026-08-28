@@ -30,6 +30,58 @@ defmodule Scripts.AgentWorktreeTest do
     refute String.trim(branch) == "HEAD"
   end
 
+  test "consecutive launches keep the exact worktree path persisted" do
+    %{repo: repo, root: worktree_root} = git_fixture!()
+    env_file = Path.join(worktree_root, "env.sh")
+
+    {out, 0} =
+      bash_agent_worktree(
+        """
+        agent_worktree_report_mcp() { :; }
+        agent_worktree_spawn_reaper() { :; }
+
+        persist_checkout() {
+          local path="$1"
+          printf 'export CASEIN_CHECKOUT=%q\\n' "$path" >"#{env_file}"
+          test -d "$path"
+          persisted="$(bash -c 'source "$1"; printf "%s" "$CASEIN_CHECKOUT"' _ "#{env_file}")"
+          test "$persisted" = "$path"
+          printf 'launch=%s persisted=%s\\n' "$path" "$persisted"
+        }
+
+        export CASEIN_AGENT_FORCE_FRESH_WORKTREE=1
+        agent_worktree_ensure codex same-launch
+        first="$CASEIN_CHECKOUT"
+        agent_worktree_ensure codex same-launch
+        test "$CASEIN_CHECKOUT" = "$first"
+        persist_checkout "$first"
+
+        unset CASEIN_AGENT_WORKTREE_CREATED CASEIN_AGENT_WORKTREE_PATH CASEIN_GIT_DIR CASEIN_WORKTREE
+        export CASEIN_CHECKOUT="#{repo}"
+        for suffix in two-1 two-2 five-1 five-2 five-3 five-4 five-5; do
+          agent_worktree_ensure codex "$suffix"
+          persist_checkout "$CASEIN_CHECKOUT"
+          unset CASEIN_AGENT_WORKTREE_CREATED CASEIN_AGENT_WORKTREE_PATH CASEIN_GIT_DIR CASEIN_WORKTREE
+          export CASEIN_CHECKOUT="#{repo}"
+        done
+        """,
+        env: [
+          {"CASEIN_CHECKOUT", repo},
+          {"CASEIN_AGENT_WORKTREE_ROOT", worktree_root},
+          {"CASEIN_AGENT_WORKTREE_BASE", "HEAD"}
+        ]
+      )
+
+    launches = Regex.scan(~r/^launch=/m, out)
+    assert length(launches) == 8
+
+    paths =
+      Regex.scan(~r/^launch=(.+) persisted=/m, out, capture: :all_but_first)
+      |> Enum.map(&hd/1)
+
+    assert length(Enum.uniq(paths)) == 8
+  end
+
   test "agent_worktree_create defaults to origin HEAD when the remote uses main" do
     %{repo: repo, root: worktree_root} = git_fixture!()
 

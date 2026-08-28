@@ -617,7 +617,9 @@ defmodule Scripts.LaunchCaseinAgentTest do
   end
 
   defp realpath!(path) do
-    {out, 0} = System.cmd("realpath", ["-m", path])
+    {out, 0} =
+      System.cmd("python3", ["-c", "import os, sys; print(os.path.abspath(sys.argv[1]))", path])
+
     String.trim(out)
   end
 

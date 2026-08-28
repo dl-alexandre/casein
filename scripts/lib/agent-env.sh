@@ -12,9 +12,21 @@
 #   5. tmux session name → ~/.casein/agent-mcp/<workspace>/env.sh
 #   6. Host /etc/casein/casein.env + workspace API lookup from tmux session name
 
+agent_env_realpath() {
+  local path="$1"
+
+  if realpath -m "$path" 2>/dev/null; then
+    return 0
+  fi
+
+  python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$path"
+}
+
 agent_env_load_file() {
   local file="$1"
-  export CASEIN_AGENT_BOOTSTRAP_FILE="$(realpath -m "$file")"
+  local bootstrap_file
+  bootstrap_file="$(agent_env_realpath "$file")"
+  export CASEIN_AGENT_BOOTSTRAP_FILE="$bootstrap_file"
   # shellcheck source=/dev/null
   source "$file"
 }
@@ -189,10 +201,17 @@ PY
 # path inherited from the tmux session. Session env is shared and can lag (or
 # be changed by another pane) while a pane's cwd remains the local authority.
 agent_env_bind_current_checkout() {
-  local checkout
+  local checkout prefix
   checkout="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || return 0
   [[ -n "$checkout" && -d "$checkout" ]] || return 0
-  export CASEIN_CHECKOUT="$(realpath -m "$checkout")"
+
+  # At the repository root, preserve the path spelling used to launch the
+  # process. Git canonicalizes /var through /private on macOS; nested launches
+  # still use Git's top-level path because PWD is not the checkout root.
+  prefix="$(git -C "$PWD" rev-parse --show-prefix 2>/dev/null)" || return 0
+  [[ -z "$prefix" ]] && checkout="$PWD"
+  checkout="$(agent_env_realpath "$checkout")"
+  export CASEIN_CHECKOUT="$checkout"
 }
 
 agent_env_parse_workspace_name() {
@@ -298,20 +317,69 @@ agent_env_load_host_casein_env() {
 
 agent_env_default_checkout() {
   local workspace_name="$1"
+  local workspaces_root="${CASEIN_AGENT_WORKSPACE_ROOT:-/data/workspaces}"
 
   case "$workspace_name" in
     dalexandre-casein | casein)
-      printf '%s\n' "/data/workspaces/dalexandre/casein"
+      printf '%s\n' "${workspaces_root}/dalexandre/casein"
       ;;
     *)
-      if [[ -d "/data/workspaces/${workspace_name}" ]]; then
-        printf '%s\n' "/data/workspaces/${workspace_name}"
-      elif [[ -d "/data/workspaces/dalexandre/${workspace_name}" ]]; then
-        printf '%s\n' "/data/workspaces/dalexandre/${workspace_name}"
+      if [[ -d "${workspaces_root}/${workspace_name}" ]]; then
+        printf '%s\n' "${workspaces_root}/${workspace_name}"
+      elif [[ -d "${workspaces_root}/dalexandre/${workspace_name}" ]]; then
+        printf '%s\n' "${workspaces_root}/dalexandre/${workspace_name}"
       else
-        printf '%s\n' "/data/workspaces/${workspace_name}"
+        printf '%s\n' "${workspaces_root}/${workspace_name}"
       fi
   esac
+}
+
+# Replace only the persisted checkout export, writing the complete env file via
+# a same-directory temporary before the atomic rename. A stale worker path is
+# recoverable in memory even when this file is not writable; callers decide
+# whether to continue after a failed persistence attempt.
+agent_env_persist_checkout() {
+  local env_file="$1"
+  local checkout="$2"
+  local tmp
+
+  [[ -n "$checkout" && -f "$env_file" && -w "$env_file" ]] || return 1
+  tmp="$(mktemp "${env_file}.repair.XXXXXX")" || return 1
+
+  if ! CASEIN_ENV_SOURCE="$env_file" \
+    CASEIN_ENV_TARGET="$tmp" \
+    CASEIN_ENV_CHECKOUT="$checkout" \
+    python3 - <<'PY'
+import os
+import shlex
+
+source = os.environ["CASEIN_ENV_SOURCE"]
+target = os.environ["CASEIN_ENV_TARGET"]
+checkout = os.environ["CASEIN_ENV_CHECKOUT"]
+
+with open(source, encoding="utf-8") as handle:
+    lines = handle.readlines()
+
+replacement = f"export CASEIN_CHECKOUT={shlex.quote(checkout)}\n"
+for index, line in enumerate(lines):
+    if line.lstrip().startswith("export CASEIN_CHECKOUT="):
+        lines[index] = replacement
+        break
+else:
+    lines.append(replacement)
+
+with open(target, "w", encoding="utf-8") as handle:
+    handle.writelines(lines)
+PY
+  then
+    rm -f "$tmp"
+    return 1
+  fi
+
+  if ! chmod 600 "$tmp" || ! mv -f "$tmp" "$env_file"; then
+    rm -f "$tmp"
+    return 1
+  fi
 }
 
 agent_env_resolve_workspace_id_from_api() {
