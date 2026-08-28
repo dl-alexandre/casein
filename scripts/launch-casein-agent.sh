@@ -119,8 +119,6 @@ elif [[ "$RUNTIME" == "grok" ]]; then
   fi
 fi
 
-agent_worktree_ensure "$RUNTIME" "${CASEIN_AGENT_TASK:-adhoc}"
-
 # Token-bearing launcher scratch files live under a path every managed Grok
 # sandbox denies wholesale. Same-UID mode bits alone do not isolate concurrent
 # agent processes from secrets staged in the system temp directory.
@@ -227,9 +225,21 @@ if [[ "$RUNTIME" == "grok" ]]; then
   unset CASEIN_GROK_BUNDLE_DIR CASEIN_GROK_BUNDLE_DIGEST
   unset CASEIN_GROK_LEADER_ROOT CASEIN_GROK_LEADER_SOCKET
 fi
+# Repair the shared session env before this launch records its ephemeral
+# worktree. Repairing afterwards can replace the worker path with the primary
+# checkout (or race a second launcher), leaving the next spawn with a misleading
+# CASEIN_CHECKOUT.
+run_repair_tmux_env
+agent_worktree_ensure "$RUNTIME" "${CASEIN_AGENT_TASK:-adhoc}"
+
+EXPECTED_WORKTREE_PATH="${CASEIN_AGENT_WORKTREE_PATH:-}"
 run_materialize_export
 agent_env_export_runtime_paths
-run_repair_tmux_env
+
+if [[ -n "$EXPECTED_WORKTREE_PATH" ]]; then
+  agent_worktree_validate_env_checkout "$EXPECTED_WORKTREE_PATH" "${CASEIN_AGENT_ENV_FILE:-}"
+fi
+
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
 # Never redirect agent homes to MCP staging. Preserve only explicit Casein

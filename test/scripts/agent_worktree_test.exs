@@ -122,6 +122,65 @@ defmodule Scripts.AgentWorktreeTest do
     assert result == linked
   end
 
+  test "two and five restart-like launches persist the exact existing worktree path" do
+    %{repo: repo, root: worktree_root} = git_fixture!()
+    env_file = Path.join(Path.dirname(worktree_root), "env.sh")
+
+    for count <- [2, 5] do
+      File.rm(env_file)
+
+      paths =
+        for _ <- 1..count do
+          {output, 0} =
+            System.cmd(
+              "bash",
+              [
+                "-c",
+                """
+                set -euo pipefail
+                source "#{@script}"
+
+                agent_worktree_report_mcp() {
+                  printf 'export CASEIN_CHECKOUT=%q\\n' "$1" >"#{env_file}"
+                }
+
+                agent_worktree_spawn_reaper() { :; }
+                export CASEIN_CHECKOUT="#{repo}"
+                export CASEIN_AGENT_FORCE_FRESH_WORKTREE=1
+                agent_worktree_ensure codex repeat
+
+                expected="$CASEIN_CHECKOUT"
+                [[ -d "$expected" ]]
+                recorded="$(
+                  source "#{env_file}"
+                  printf '%s' "$CASEIN_CHECKOUT"
+                )"
+                [[ "$recorded" == "$expected" ]]
+                printf '%s\\n' "$expected"
+                """
+              ],
+              env: [
+                {"CASEIN_AGENT_WORKTREE_ROOT", worktree_root},
+                {"CASEIN_AGENT_WORKTREE_BASE", "HEAD"},
+                {"CASEIN_AGENT_WORKTREE_PATH", ""},
+                {"CASEIN_AGENT_ENV_FILE", env_file}
+              ]
+            )
+
+          String.trim(output)
+        end
+
+      assert length(Enum.uniq(paths)) == count
+      assert Enum.all?(paths, &File.dir?/1)
+      assert File.read!(env_file) =~ "export CASEIN_CHECKOUT="
+
+      {recorded, 0} =
+        System.cmd("bash", ["-c", "source \"#{env_file}\"; printf '%s' \"$CASEIN_CHECKOUT\""])
+
+      assert String.trim(recorded) == List.last(paths)
+    end
+  end
+
   test "agent_worktree_report_mcp sends a tools/call envelope" do
     %{repo: repo} = git_fixture!()
     curl_bin = fake_curl_bin!()

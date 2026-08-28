@@ -271,6 +271,110 @@ defmodule Scripts.SpawnAgentWorkerTest do
     refute out =~ "source #{env_a}"
   end
 
+  test "dry run recovers a stale CASEIN_CHECKOUT from the target env's primary scripts tree" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "spawn-worker-stale-recover-#{System.unique_integer([:positive])}"
+      )
+
+    product = Path.join(tmp, "product")
+    fakebin = Path.join(tmp, "bin")
+    home = Path.join(tmp, "home")
+    stale = Path.join(tmp, "gone-worktree")
+    File.mkdir_p!(product)
+    File.mkdir_p!(fakebin)
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    {_, 0} = System.cmd("git", ["init", "-q", "-b", "master", product], env: git_env())
+
+    {_, 0} =
+      System.cmd("git", ["-C", product, "commit", "-q", "--allow-empty", "-m", "root"],
+        env: git_env()
+      )
+
+    env_file =
+      stage_session_env!(
+        home,
+        "test",
+        "test-ws",
+        "export CASEIN_CHECKOUT=#{inspect(stale)}\nexport CASEIN_SCRIPTS=#{inspect(Path.join(product, "scripts"))}\n"
+      )
+
+    File.write!(Path.join(fakebin, "tmux"), "#!/usr/bin/env bash\nexit 0\n")
+    File.chmod!(Path.join(fakebin, "tmux"), 0o755)
+
+    {out, 0} =
+      System.cmd("bash", [@script, "codex", "recover", "casein_test_u-x"],
+        env:
+          [
+            {"CASEIN_SPAWN_DRY_RUN", "1"},
+            {"CASEIN_CHECKOUT", stale},
+            {"HOME", home},
+            {"CASEIN_API_TOKEN", "test-token"},
+            {"CASEIN_WORKSPACE_ID", "test-ws"},
+            {"CASEIN_WORKSPACE_NAME", "test"},
+            {"CASEIN_AGENT_ENV_FILE", env_file},
+            {"PATH", fakebin <> ":" <> System.get_env("PATH")}
+          ] ++ healthy_headroom_env(tmp),
+        stderr_to_stdout: true
+      )
+
+    assert out =~ "recovered stale CASEIN_CHECKOUT=#{stale}"
+    assert out =~ "checkout=#{product}"
+    assert out =~ "source=#{env_file}"
+  end
+
+  test "stale CASEIN_CHECKOUT fails with its env.sh source and opens nothing" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "spawn-worker-stale-diagnostic-#{System.unique_integer([:positive])}"
+      )
+
+    fakebin = Path.join(tmp, "bin")
+    home = Path.join(tmp, "home")
+    stale = Path.join(tmp, "gone-worktree")
+    tmux_log = Path.join(tmp, "tmux.log")
+    File.mkdir_p!(fakebin)
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    env_file =
+      stage_session_env!(
+        home,
+        "test",
+        "test-ws",
+        "export CASEIN_CHECKOUT=#{inspect(stale)}\n"
+      )
+
+    File.write!(
+      Path.join(fakebin, "tmux"),
+      "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >>\"#{tmux_log}\"\nexit 0\n"
+    )
+
+    File.chmod!(Path.join(fakebin, "tmux"), 0o755)
+
+    {out, 1} =
+      System.cmd("bash", [@script, "codex", "diagnostic", "casein_test_u-x"],
+        env:
+          [
+            {"CASEIN_CHECKOUT", stale},
+            {"HOME", home},
+            {"CASEIN_API_TOKEN", "test-token"},
+            {"CASEIN_WORKSPACE_ID", "test-ws"},
+            {"CASEIN_WORKSPACE_NAME", "test"},
+            {"CASEIN_AGENT_ENV_FILE", env_file},
+            {"PATH", fakebin <> ":" <> System.get_env("PATH")}
+          ] ++ healthy_headroom_env(tmp),
+        stderr_to_stdout: true
+      )
+
+    assert out =~ "CASEIN_CHECKOUT=#{stale}"
+    assert out =~ "env.sh source=#{env_file}"
+    assert out =~ "could not recover an existing primary checkout"
+    refute File.exists?(tmux_log)
+  end
+
   # Isolation no longer selects the bwrap base — that is always "strict" — so a
   # worker spawned into a locked workspace still writes its worktree, runs mix,
   # and commits. Only pane control is withheld. Refusing the spawn (as this did
@@ -356,6 +460,24 @@ defmodule Scripts.SpawnAgentWorkerTest do
     # The pane's own output is what tells you *why*.
     assert out =~ "No such file or directory"
     refute out =~ ~r/^%99$/m
+  end
+
+  test "does not retry a side-effecting new-window failure and cleans its pane" do
+    ctx = preflight_fixture!("new-window-failure", ~s({"agent_write":{"write_enabled":true}}))
+    marker = Path.join(Path.dirname(ctx.tmux_log), "new-window-failed")
+
+    {out, code} =
+      spawn_worker(ctx, "codex", [
+        {"FAKE_NEW_WINDOW_FAIL_ONCE", "1"},
+        {"FAKE_NEW_WINDOW_MARKER", marker}
+      ])
+
+    assert code == 1
+    assert out =~ "launch was not retried"
+    calls = tmux_calls(ctx)
+    assert length(Regex.scan(~r/new-window/, calls)) == 1
+    assert calls =~ "kill-window %98"
+    refute calls =~ "new-window %99"
   end
 
   test "reports failure when the worker window closed with its command" do
@@ -512,7 +634,16 @@ defmodule Scripts.SpawnAgentWorkerTest do
           gone) : ;;
         esac
         ;;
-      new-window) printf '%%99\\n' ;;
+      new-window)
+        if [[ "${FAKE_NEW_WINDOW_FAIL_ONCE:-0}" == "1" && ! -e "${FAKE_NEW_WINDOW_MARKER:?}" ]]; then
+          : >"${FAKE_NEW_WINDOW_MARKER}"
+          [[ -n "${FAKE_TMUX_LOG:-}" ]] && printf 'new-window %%98\\n' >>"${FAKE_TMUX_LOG}"
+          printf '%%98\\n'
+          exit 1
+        fi
+        [[ -n "${FAKE_TMUX_LOG:-}" ]] && printf 'new-window %%99\\n' >>"${FAKE_TMUX_LOG}"
+        printf '%%99\\n'
+        ;;
       display-message) printf '424242\\n' ;;
       kill-window | rename-window | set-option | set-window-option)
         [[ -n "${FAKE_TMUX_LOG:-}" ]] && printf '%s %s\\n' "$1" "${*: -1}" >>"$FAKE_TMUX_LOG"
@@ -634,7 +765,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
   # Session-first env resolve looks up ~/.casein/agent-mcp/<workspace>/env.sh
   # from the casein_<workspace>_* session name. Stage that path under a fake HOME.
-  defp stage_session_env!(home, workspace_name, workspace_id) do
+  defp stage_session_env!(home, workspace_name, workspace_id, extra \\ "") do
     dir = Path.join([home, ".casein", "agent-mcp", workspace_name])
     File.mkdir_p!(dir)
     env_file = Path.join(dir, "env.sh")
@@ -645,6 +776,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
       export CASEIN_API_TOKEN='test-token'
       export CASEIN_WORKSPACE_ID='#{workspace_id}'
       export CASEIN_WORKSPACE_NAME='#{workspace_name}'
+      #{extra}
       """
     )
 

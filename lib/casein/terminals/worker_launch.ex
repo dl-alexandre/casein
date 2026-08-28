@@ -620,6 +620,7 @@ defmodule Casein.Terminals.WorkerLaunch do
   defp scripts_cd(opts) do
     cond do
       is_binary(Keyword.get(opts, :cd)) -> Keyword.fetch!(opts, :cd)
+      is_binary(Keyword.get(opts, :checkout)) -> Keyword.fetch!(opts, :checkout)
       is_binary(System.get_env("CASEIN_CHECKOUT")) -> System.get_env("CASEIN_CHECKOUT")
       true -> File.cwd!()
     end

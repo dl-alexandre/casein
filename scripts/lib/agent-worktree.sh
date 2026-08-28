@@ -44,7 +44,10 @@ agent_worktree_primary_repo() {
   fi
 
   if [[ -n "$bare_path" && -e "$bare_path" ]]; then
-    printf '%s\n' "$bare_path"
+    # Preserve the caller's spelling for a bare primary. Git may canonicalize
+    # /var to /private/var on macOS, but the checkout value is also persisted in
+    # env.sh and must remain stable across a launch/restart pair.
+    printf '%s\n' "$checkout"
     return 0
   fi
 
@@ -88,6 +91,48 @@ agent_worktree_branch_name() {
   printf 'agent/%s/%s-%s\n' "$runtime" "$task" "$stamp"
 }
 
+agent_worktree_validate_path() {
+  local path="${1:-}"
+
+  if [[ -z "$path" || ! -d "$path" ]]; then
+    echo "error: agent worktree does not exist at ${path:-<unset>}" >&2
+    return 1
+  fi
+
+  if ! git -C "$path" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "error: agent worktree is not a git checkout at ${path}" >&2
+    return 1
+  fi
+}
+
+agent_worktree_validate_env_checkout() {
+  local expected="$1"
+  local env_file="${2:-${CASEIN_AGENT_ENV_FILE:-}}"
+  local recorded
+
+  if [[ -z "$env_file" || ! -r "$env_file" ]]; then
+    echo "error: CASEIN_CHECKOUT=${expected} could not be verified; env.sh source is ${env_file:-<unset>}" >&2
+    return 1
+  fi
+
+  recorded="$({
+    # shellcheck disable=SC1090
+    source "$env_file" >/dev/null 2>&1
+    printf '%s' "${CASEIN_CHECKOUT:-}"
+  })" || {
+    echo "error: CASEIN_CHECKOUT=${expected} could not be read from env.sh source ${env_file}" >&2
+    return 1
+  }
+
+  if [[ "$recorded" != "$expected" ]]; then
+    echo "error: persisted CASEIN_CHECKOUT does not match the created worktree" >&2
+    echo "error:   expected=${expected}" >&2
+    echo "error:   recorded=${recorded:-<unset>}" >&2
+    echo "error:   env.sh source=${env_file}" >&2
+    return 1
+  fi
+}
+
 agent_worktree_default_base_ref() {
   local primary="$1"
   local configured="${CASEIN_AGENT_WORKTREE_BASE:-}"
@@ -117,7 +162,7 @@ agent_worktree_create() {
   local runtime="$1"
   local task="${2:-adhoc}"
   local base_ref
-  local primary wt_root branch path
+  local primary wt_root branch_base branch path attempt=0
 
   primary="$(agent_worktree_primary_repo)" || {
     if [[ -n "${CASEIN_CHECKOUT:-}" ]] && agent_worktree_is_bare "${CASEIN_CHECKOUT}"; then
@@ -139,20 +184,41 @@ EOF
   wt_root="$(agent_worktree_root)"
   mkdir -p "$wt_root"
 
-  branch="$(agent_worktree_branch_name "$runtime" "$task")"
-  # Flatten only the branch's slashes; the leading wt_root must stay a real
-  # absolute path or git treats the dash-leading result as an option.
-  path="${wt_root}/${branch//\//-}"
+  # Compute the timestamped identity once. If several launches arrive in the
+  # same second, add a deterministic collision suffix without recomputing the
+  # path from a second clock read. The path is always derived from the exact
+  # branch passed to git, so the launcher's checkout and persisted CASEIN_CHECKOUT
+  # cannot drift apart.
+  branch_base="$(agent_worktree_branch_name "$runtime" "$task")"
 
-  # Keep git's stdout ("HEAD is now at ...") out of this function's stdout —
-  # callers capture it as the worktree path.
-  if ! env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" worktree add -b "$branch" "$path" "$base_ref" >/dev/null 2>&1; then
-    path="${wt_root}/detached-${runtime}-$(date +%s)"
-    env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" worktree add --detach "$path" "$base_ref" >/dev/null
-    branch="detached"
-  fi
+  while ((attempt < 100)); do
+    if ((attempt == 0)); then
+      branch="$branch_base"
+    else
+      branch="${branch_base}-${attempt}"
+    fi
 
-  printf '%s\n' "$path"
+    # Flatten only the branch's slashes; the leading wt_root must stay a real
+    # absolute path or git treats the dash-leading result as an option.
+    path="${wt_root}/${branch//\//-}"
+
+    if [[ -e "$path" ]] || git -C "$primary" show-ref --verify --quiet "refs/heads/${branch}"; then
+      attempt=$((attempt + 1))
+      continue
+    fi
+
+    # Keep git's stdout ("HEAD is now at ...") out of this function's stdout —
+    # callers capture it as the worktree path.
+    if env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" worktree add -b "$branch" "$path" "$base_ref" >/dev/null 2>&1; then
+      printf '%s\n' "$path"
+      return 0
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  echo "error: could not create a unique agent worktree under ${wt_root} from ${primary}" >&2
+  return 1
 }
 
 agent_worktree_report_mcp() {
@@ -250,6 +316,7 @@ agent_worktree_ensure() {
   # when PWD is a linked worktree.
   if [[ "${CASEIN_AGENT_FORCE_FRESH_WORKTREE:-0}" != "1" ]]; then
     if [[ -n "${CASEIN_AGENT_WORKTREE_PATH:-}" && -d "${CASEIN_AGENT_WORKTREE_PATH}" ]]; then
+      agent_worktree_validate_path "${CASEIN_AGENT_WORKTREE_PATH}" || return 1
       export CASEIN_CHECKOUT="${CASEIN_AGENT_WORKTREE_PATH}"
       export CASEIN_WORKTREE=1
       agent_worktree_report_mcp "${CASEIN_AGENT_WORKTREE_PATH}" "$runtime"
@@ -258,7 +325,11 @@ agent_worktree_ensure() {
 
     if agent_worktree_is_linked "${PWD}"; then
       local linked_root
-      linked_root="$(git -C "${PWD}" rev-parse --show-toplevel)"
+      # Preserve the logical spelling supplied by the caller. On macOS Git
+      # resolves /var to /private/var, but CASEIN_CHECKOUT is persisted and
+      # must remain byte-for-byte stable across launch and restart.
+      linked_root="${PWD}"
+      agent_worktree_validate_path "$linked_root" || return 1
       export CASEIN_CHECKOUT="$linked_root"
       export CASEIN_WORKTREE=1
       agent_worktree_report_mcp "${CASEIN_CHECKOUT}" "$runtime"
@@ -274,6 +345,7 @@ agent_worktree_ensure() {
   local primary path
   primary="$(agent_worktree_primary_repo)" || return 1
   path="$(agent_worktree_create "$runtime" "$task")" || return 1
+  agent_worktree_validate_path "$path" || return 1
 
   export CASEIN_CHECKOUT="$path"
   export CASEIN_AGENT_WORKTREE_PATH="$path"

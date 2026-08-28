@@ -115,6 +115,54 @@ defmodule Casein.Terminals.WorkerLaunchTest do
       assert plan.plan.plan_text =~ "session=#{@session}"
       assert plan.plan.plan_text =~ "checkout=#{checkout}"
     end
+
+    test "default runner uses an explicit checkout for the command working directory" do
+      tmp =
+        Path.join(
+          System.tmp_dir!(),
+          "worker-launch-checkout-#{System.unique_integer([:positive])}"
+        )
+
+      scripts = Path.join(tmp, "scripts")
+      checkout = Path.join(tmp, "checkout")
+      stale = Path.join(tmp, "missing-checkout")
+      File.mkdir_p!(scripts)
+      File.mkdir_p!(checkout)
+
+      script = Path.join(scripts, "spawn-agent-worker.sh")
+
+      File.write!(script, """
+      #!/usr/bin/env bash
+      printf 'cwd=%s\\ncheckout=%s\\n' "$PWD" "$CASEIN_CHECKOUT"
+      """)
+
+      previous = System.get_env("CASEIN_CHECKOUT")
+
+      on_exit(fn ->
+        case previous do
+          nil -> System.delete_env("CASEIN_CHECKOUT")
+          value -> System.put_env("CASEIN_CHECKOUT", value)
+        end
+
+        File.rm_rf(tmp)
+      end)
+
+      System.put_env("CASEIN_CHECKOUT", stale)
+
+      assert {:ok, plan} =
+               WorkerLaunch.launch(
+                 workspace_id: @ws,
+                 session: @session,
+                 runtime: "codex",
+                 task_slug: "explicit-checkout",
+                 checkout: checkout,
+                 scripts_root: scripts,
+                 dry_run: true
+               )
+
+      assert plan.plan.plan_text =~ "cwd=#{realpath!(checkout)}"
+      assert plan.plan.plan_text =~ "checkout=#{checkout}"
+    end
   end
 
   describe "launch/1 issue guard" do
@@ -828,5 +876,12 @@ defmodule Casein.Terminals.WorkerLaunchTest do
       nil -> System.delete_env(key)
       value -> System.put_env(key, value)
     end
+  end
+
+  defp realpath!(path) do
+    {out, 0} =
+      System.cmd("python3", ["-c", "import os, sys; print(os.path.realpath(sys.argv[1]))", path])
+
+    String.trim(out)
   end
 end
