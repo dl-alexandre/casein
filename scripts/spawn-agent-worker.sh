@@ -215,7 +215,7 @@ spawn_worker_resolve_env_file() {
   if [[ -n "$session" ]] && workspace_name="$(agent_env_parse_workspace_name "$session")"; then
     session_env="$(agent_env_staging_env_file "$workspace_name")"
     if [[ -r "$session_env" ]]; then
-      realpath -m "$session_env"
+      printf '%s\n' "$session_env"
       return 0
     fi
 
@@ -240,7 +240,7 @@ spawn_worker_resolve_env_file() {
     "${CASEIN_AGENT_ENV_FILE:-}" \
     "${CASEIN_AGENT_MCP_HOME:-}/env.sh"; do
     [[ -n "$candidate" && -r "$candidate" ]] || continue
-    realpath -m "$candidate"
+    printf '%s\n' "$candidate"
     return 0
   done
 
@@ -296,6 +296,70 @@ spawn_worker_align_process_to_env_file() {
     CASEIN_AGENT_MCP_HOME CASEIN_TERMINAL_MCP_URL CASEIN_PREVIEW_MCP_URL \
     CASEIN_ARTIFACT_MCP_URL CASEIN_API_BASE_URL CASEIN_URL 2>/dev/null || true
   agent_env_load_file "$env_file"
+}
+
+spawn_worker_checkout_is_valid() {
+  local candidate="${1:-}"
+
+  [[ -n "$candidate" && -d "$candidate" ]] || return 1
+  git -C "$candidate" rev-parse --git-dir >/dev/null 2>&1
+}
+
+spawn_worker_env_file_value() {
+  local env_file="$1"
+  local key="$2"
+
+  (
+    # shellcheck disable=SC1090
+    source "$env_file" >/dev/null 2>&1 || exit 1
+    printf '%s\n' "${!key:-}"
+  )
+}
+
+spawn_worker_recover_checkout() {
+  local stale="$1"
+  local env_file="$2"
+  local workspace_name="${3:-}"
+  local file_scripts file_primary candidate
+  local -a candidates=()
+
+  file_primary="$(spawn_worker_env_file_value "$env_file" CASEIN_AGENT_PRIMARY_CHECKOUT 2>/dev/null || true)"
+  if [[ -n "$file_primary" ]]; then
+    candidates+=("$file_primary")
+  fi
+
+  if [[ -n "$workspace_name" ]]; then
+    candidates+=("$(agent_env_default_checkout "$workspace_name")")
+  fi
+
+  file_scripts="$(spawn_worker_env_file_value "$env_file" CASEIN_SCRIPTS 2>/dev/null || true)"
+  if [[ "$file_scripts" == */scripts ]]; then
+    candidates+=("${file_scripts%/scripts}")
+  fi
+
+  if [[ "${CASEIN_SCRIPTS:-}" == */scripts ]]; then
+    candidates+=("${CASEIN_SCRIPTS%/scripts}")
+  fi
+
+  # ROOT is a safe fallback only for the Casein workspace. A product launch
+  # must never silently fall back to the Casein repository when its own primary
+  # checkout is unavailable.
+  case "$workspace_name" in
+    dalexandre-casein | casein) candidates+=("$ROOT") ;;
+  esac
+
+  for candidate in "${candidates[@]}"; do
+    [[ -n "$candidate" ]] || continue
+    if spawn_worker_checkout_is_valid "$candidate"; then
+      echo "warn: recovered stale CASEIN_CHECKOUT=${stale} using ${candidate} (env.sh source=${env_file})" >&2
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  echo "error: CASEIN_CHECKOUT=${stale} from env.sh source=${env_file} does not exist" >&2
+  echo "error: could not recover an existing primary checkout for workspace=${workspace_name:-<unknown>}" >&2
+  return 1
 }
 
 # Nonzero when the pane has vanished (the window closed with its command) or is
@@ -506,7 +570,7 @@ spawn_worker_dispose_window() {
 # correct.
 spawn_worker_resolve_primary_checkout() {
   local candidate="$1"
-  local listing line primary=""
+  local listing line primary="" candidate_real primary_real
 
   if listing="$(git -C "$candidate" worktree list --porcelain 2>/dev/null)"; then
     while IFS= read -r line; do
@@ -518,6 +582,16 @@ spawn_worker_resolve_primary_checkout() {
   fi
 
   if [[ -n "$primary" && -d "$primary" ]]; then
+    candidate_real="$(cd "$candidate" 2>/dev/null && pwd -P)"
+    primary_real="$(cd "$primary" 2>/dev/null && pwd -P)"
+    if [[ "$candidate_real" == "$primary_real" ]]; then
+      # Keep the env.sh spelling when it already names the primary checkout.
+      # Git canonicalizes /var to /private/var on macOS, but the persisted
+      # CASEIN_CHECKOUT value is an exact launch identity.
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+
     printf '%s\n' "$primary"
     return 0
   fi
@@ -574,15 +648,25 @@ ENV_FILE="$(spawn_worker_resolve_env_file "$SESSION")" || {
 spawn_worker_align_process_to_env_file "$ENV_FILE" "$SESSION"
 agent_env_resolve
 
-CHECKOUT="${CASEIN_CHECKOUT:-$ROOT}"
-if [[ ! -d "$CHECKOUT" ]]; then
-  echo "error: checkout not found at ${CHECKOUT}" >&2
-  exit 1
+REQUESTED_CHECKOUT="${CASEIN_CHECKOUT:-$ROOT}"
+if ! spawn_worker_checkout_is_valid "$REQUESTED_CHECKOUT"; then
+  WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-}"
+  if [[ -z "$WORKSPACE_NAME" ]]; then
+    WORKSPACE_NAME="$(agent_env_parse_workspace_name "$SESSION" 2>/dev/null || true)"
+  fi
+  CHECKOUT="$(spawn_worker_recover_checkout "$REQUESTED_CHECKOUT" "$ENV_FILE" "$WORKSPACE_NAME")" || exit 1
+else
+  CHECKOUT="$REQUESTED_CHECKOUT"
 fi
 
 # CASEIN_CHECKOUT may point at the orchestrator's own linked worktree; the
 # worker must branch off the primary repo, not launch inside it.
 CHECKOUT="$(spawn_worker_resolve_primary_checkout "$CHECKOUT")"
+if ! spawn_worker_checkout_is_valid "$CHECKOUT"; then
+  echo "error: resolved primary checkout is not a usable git checkout: ${CHECKOUT}" >&2
+  echo "error: CASEIN_CHECKOUT source=${ENV_FILE}" >&2
+  exit 1
+fi
 
 LAUNCHER="${ROOT}/scripts/launch-casein-agent.sh"
 if [[ ! -f "$LAUNCHER" ]]; then
@@ -620,7 +704,7 @@ WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
 # branch a fresh one — so a worker can never operate in a shared checkout.
 # The launcher is Casein infrastructure and deliberately comes from ROOT, not
 # the product checkout (which generally has no launch-casein-agent.sh).
-LAUNCH_CMD="source $(printf '%q' "$ENV_FILE") && export CASEIN_TMUX_SESSION=$(printf '%q' "$SESSION") && unset CASEIN_TMUX_SOCKET_RESOLVED CASEIN_AGENT_WORKTREE_PATH CASEIN_WORKTREE CASEIN_GIT_DIR CASEIN_SCRIPTS && cd $(printf '%q' "$CHECKOUT") && export CASEIN_CHECKOUT=$(printf '%q' "$CHECKOUT") CASEIN_AGENT_FORCE_FRESH_WORKTREE=1 && CASEIN_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "$LAUNCHER") $(printf '%q' "$RUNTIME")"
+LAUNCH_CMD="source $(printf '%q' "$ENV_FILE") && export CASEIN_TMUX_SESSION=$(printf '%q' "$SESSION") && unset CASEIN_TMUX_SOCKET_RESOLVED CASEIN_AGENT_WORKTREE_PATH CASEIN_WORKTREE CASEIN_GIT_DIR CASEIN_SCRIPTS && cd $(printf '%q' "$CHECKOUT") && export CASEIN_CHECKOUT=$(printf '%q' "$CHECKOUT") CASEIN_AGENT_PRIMARY_CHECKOUT=$(printf '%q' "$CHECKOUT") CASEIN_AGENT_FORCE_FRESH_WORKTREE=1 && CASEIN_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "$LAUNCHER") $(printf '%q' "$RUNTIME")"
 
 if [[ "${CASEIN_SPAWN_DRY_RUN:-0}" == "1" ]]; then
   printf 'session=%s\ncheckout=%s\nenv_file=%s\nlauncher=%s\nwindow=%s\nheadroom=%s\nlaunch=%s\n' \
@@ -629,10 +713,18 @@ if [[ "${CASEIN_SPAWN_DRY_RUN:-0}" == "1" ]]; then
   exit 0
 fi
 
-PANE_ID="$(
-  casein_tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -P -F '#{pane_id}' "$LAUNCH_CMD" 2>/dev/null ||
-    casein_tmux new-window -t "$SESSION" -P -F '#{pane_id}' "$LAUNCH_CMD"
-)"
+PANE_ID=""
+NEW_WINDOW_STATUS=0
+PANE_ID="$(casein_tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -P -F '#{pane_id}' "$LAUNCH_CMD" 2>/dev/null)" ||
+  NEW_WINDOW_STATUS=$?
+
+if ((NEW_WINDOW_STATUS != 0)); then
+  echo "error: tmux new-window failed (exit ${NEW_WINDOW_STATUS}); launch was not retried" >&2
+  if [[ -n "$PANE_ID" ]]; then
+    spawn_worker_dispose_window "$PANE_ID" "$WINDOW_NAME"
+  fi
+  exit "$NEW_WINDOW_STATUS"
+fi
 
 if [[ -z "$PANE_ID" ]]; then
   echo "error: tmux new-window did not return a pane id" >&2

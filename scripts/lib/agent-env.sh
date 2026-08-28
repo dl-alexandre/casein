@@ -12,9 +12,26 @@
 #   5. tmux session name → ~/.casein/agent-mcp/<workspace>/env.sh
 #   6. Host /etc/casein/casein.env + workspace API lookup from tmux session name
 
+casein_realpath() {
+  local path="$1"
+
+  if realpath -m "$path" 2>/dev/null; then
+    return 0
+  fi
+
+  python3 - "$path" <<'PY'
+import os
+import sys
+
+print(os.path.realpath(sys.argv[1]))
+PY
+}
+
 agent_env_load_file() {
   local file="$1"
-  export CASEIN_AGENT_BOOTSTRAP_FILE="$(realpath -m "$file")"
+  local bootstrap_file
+  bootstrap_file="$(casein_realpath "$file")"
+  export CASEIN_AGENT_BOOTSTRAP_FILE="$bootstrap_file"
   # shellcheck source=/dev/null
   source "$file"
 }
@@ -189,10 +206,11 @@ PY
 # path inherited from the tmux session. Session env is shared and can lag (or
 # be changed by another pane) while a pane's cwd remains the local authority.
 agent_env_bind_current_checkout() {
-  local checkout
+  local checkout resolved
   checkout="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || return 0
   [[ -n "$checkout" && -d "$checkout" ]] || return 0
-  export CASEIN_CHECKOUT="$(realpath -m "$checkout")"
+  resolved="$(casein_realpath "$checkout")"
+  export CASEIN_CHECKOUT="$resolved"
 }
 
 agent_env_parse_workspace_name() {
@@ -208,7 +226,7 @@ agent_env_unset_workspace_vars() {
   unset CASEIN_API_TOKEN CASEIN_WORKSPACE_ID CASEIN_WORKSPACE_NAME \
     CASEIN_TMUX_SESSION CASEIN_API_BASE_URL CASEIN_TERMINAL_MCP_URL \
     CASEIN_PREVIEW_MCP_URL CASEIN_ARTIFACT_MCP_URL CASEIN_TIDEWAVE_MCP_URL \
-    CASEIN_PREVIEW_ENV_ID CASEIN_CHECKOUT CASEIN_AGENT_MCP_HOME CASEIN_SCRIPTS \
+    CASEIN_PREVIEW_ENV_ID CASEIN_CHECKOUT CASEIN_AGENT_PRIMARY_CHECKOUT CASEIN_AGENT_MCP_HOME CASEIN_SCRIPTS \
     CASEIN_AGENT_ENV_FILE CASEIN_URL CASEIN_CODEX_HOOK_URL 2>/dev/null || true
 }
 
@@ -227,7 +245,7 @@ agent_env_load_tmux_session_env() {
     key="${line%%=*}"
     value="${line#*=}"
     case "$key" in
-      CASEIN_API_TOKEN|CASEIN_WORKSPACE_ID|CASEIN_WORKSPACE_NAME|CASEIN_TMUX_SESSION|CASEIN_API_BASE_URL|CASEIN_TERMINAL_MCP_URL|CASEIN_PREVIEW_MCP_URL|CASEIN_ARTIFACT_MCP_URL|CASEIN_TIDEWAVE_MCP_URL|CASEIN_PREVIEW_ENV_ID|CASEIN_CHECKOUT|CASEIN_AGENT_MCP_HOME|CASEIN_SCRIPTS|CASEIN_AGENT_ENV_FILE|CASEIN_TERMINAL_SCHEME|CASEIN_TERMINAL_PRESET|COLORFGBG|CLAUDE_CONFIG_DIR|CODEX_HOME|PATH)
+      CASEIN_API_TOKEN|CASEIN_WORKSPACE_ID|CASEIN_WORKSPACE_NAME|CASEIN_TMUX_SESSION|CASEIN_API_BASE_URL|CASEIN_TERMINAL_MCP_URL|CASEIN_PREVIEW_MCP_URL|CASEIN_ARTIFACT_MCP_URL|CASEIN_TIDEWAVE_MCP_URL|CASEIN_PREVIEW_ENV_ID|CASEIN_CHECKOUT|CASEIN_AGENT_PRIMARY_CHECKOUT|CASEIN_AGENT_MCP_HOME|CASEIN_SCRIPTS|CASEIN_AGENT_ENV_FILE|CASEIN_TERMINAL_SCHEME|CASEIN_TERMINAL_PRESET|COLORFGBG|CLAUDE_CONFIG_DIR|CODEX_HOME|PATH)
         if [[ "$force" == "1" || -z "${!key:-}" ]]; then
           export "${key}=${value}"
         fi

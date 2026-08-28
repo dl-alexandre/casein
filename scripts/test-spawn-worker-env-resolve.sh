@@ -8,6 +8,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="${ROOT}/scripts/spawn-agent-worker.sh"
+# Keep the assertions portable across GNU and BSD realpath implementations.
+# shellcheck source=lib/agent-env.sh
+source "${ROOT}/scripts/lib/agent-env.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass=0
@@ -69,7 +72,7 @@ export CASEIN_AGENT_MCP_HOME
 export CASEIN_WORKSPACE_NAME="$WS_A"
 
 got="$(run_resolve "$SESSION_B")"
-[[ "$got" == "$(realpath -m "$ENV_B")" ]] ||
+[[ "$got" == "$ENV_B" ]] ||
   fail "explicit B session should pick B env, got '${got}' (caller A=${ENV_A})"
 ok "A-orchestrator + B-session → B env"
 
@@ -80,20 +83,20 @@ export CASEIN_AGENT_MCP_HOME
 export CASEIN_WORKSPACE_NAME="$WS_A"
 
 got="$(run_resolve "$SESSION_B")"
-[[ "$got" == "$(realpath -m "$ENV_B")" ]] ||
+[[ "$got" == "$ENV_B" ]] ||
   fail "MCP_HOME-only caller still must not win over B session, got '${got}'"
 ok "caller MCP_HOME ignored when session names B"
 
 # ── 3. No session arg → inherited caller env is the fallback ─────────────────
 export CASEIN_AGENT_ENV_FILE="$ENV_A"
 got="$(run_resolve "")"
-[[ "$got" == "$(realpath -m "$ENV_A")" ]] ||
+[[ "$got" == "$ENV_A" ]] ||
   fail "empty session should fall back to caller env, got '${got}'"
 ok "no session → caller CASEIN_AGENT_ENV_FILE"
 
 # ── 4. Session A with caller A → A (same workspace) ──────────────────────────
 got="$(run_resolve "$SESSION_A")"
-[[ "$got" == "$(realpath -m "$ENV_A")" ]] ||
+[[ "$got" == "$ENV_A" ]] ||
   fail "same-workspace session should resolve A, got '${got}'"
 ok "A session + A caller → A env"
 
