@@ -1,0 +1,971 @@
+{
+  "schema_version": 1,
+  "contract": {
+    "name": "casein-dash-handoff",
+    "version": "1.0"
+  },
+  "status": {
+    "gate_0": "producer_validated",
+    "contract": "contract-green",
+    "integration": "integration-red",
+    "production": "forbidden"
+  },
+  "provenance": {
+    "reported_branch": "v3mcp",
+    "reported_commit": "4f9367c323ce9c68a5e16fc8e9f30e7c99e88411",
+    "reported_artifact": "downstream-gate-integration-review.md",
+    "reported_focused_test_count": 128,
+    "verification": "unverified_from_this_environment",
+    "counts_as_gate0_validator_execution": false,
+    "reported_side_effects": "no source code, real PR, or GitHub state changed"
+  },
+  "producer_validation": {
+    "status": "passed",
+    "branch": "agent/codex/jido-handoff-actions-20260826",
+    "commit": "5456d90b8020c08732c9f6a4572d502d837cdf05",
+    "receipt_profile": "casein_waiting",
+    "official_runner": "scripts/casein/validate_gate0_fixtures.py",
+    "result": "GATE0 FIXTURES: PASS — 5 valid fixtures; 63 vectors; GATE0 PRODUCER: PASS — profile=casein_waiting",
+    "side_effects": "no push, live GitHub mutation, or real handoff mutation",
+    "remaining_gate": "authenticated_casein_pr_handoff_dash_ingress"
+  },
+  "constants": {
+    "CASEIN_INPUT_MAX_BYTES": 8192,
+    "gate0_scalar_id_pattern": "^[a-z][a-z0-9_-]{2,63}$",
+    "sha_pattern": "^[0-9a-f]{40}$",
+    "task_id_pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    "source_enum": ["v3_casein", "casein_worker", "dash_verda"],
+    "authorization_decisions": ["allow", "deny", "hold", "revoke"],
+    "git_outcomes": ["waiting", "blocked", "merged", "head_sha_changed", "failed"]
+  },
+  "typed_fields": {
+    "scalar_id_fields": [
+      "receipt_id",
+      "request_id",
+      "workspace_id",
+      "runtime_id",
+      "worker_id",
+      "session_id",
+      "workcell_id",
+      "lease_id",
+      "handoff_id",
+      "action_id",
+      "owner_ref.id"
+    ],
+    "uuid_fields": ["task_id", "correlation_id"],
+    "sha_fields": ["git.head_sha", "git.release_sha", "git.merged_sha"],
+    "opaque_fields": [
+      "correlation_id",
+      "decision_id",
+      "evidence_ref",
+      "post_merge_evidence_ref",
+      "thread_id"
+    ],
+    "distinct_types": [
+      "repository",
+      "branch",
+      "url",
+      "email",
+      "path",
+      "command",
+      "sha",
+      "github_thread_id"
+    ]
+  },
+  "profiles": {
+    "casein_waiting": {
+      "allowed_sources": ["v3_casein", "casein_worker"],
+      "allowed_outcomes": ["waiting"],
+      "required_fields": [
+        "schema_version",
+        "contract",
+        "receipt_id",
+        "request_id",
+        "source",
+        "handoff_id",
+        "workspace_id",
+        "owner_ref",
+        "runtime_id",
+        "worker_id",
+        "session_id",
+        "workcell_id",
+        "authorization",
+        "idempotency",
+        "git",
+        "tests"
+      ],
+      "forbidden_fields": ["task_id", "lease_id", "correlation_id"]
+    },
+    "mira_waiting": {
+      "allowed_sources": ["casein_worker"],
+      "allowed_outcomes": ["waiting"],
+      "required_fields": [
+        "schema_version",
+        "contract",
+        "receipt_id",
+        "request_id",
+        "source",
+        "handoff_id",
+        "workspace_id",
+        "owner_ref",
+        "runtime_id",
+        "worker_id",
+        "session_id",
+        "workcell_id",
+        "task_id",
+        "lease_id",
+        "correlation_id",
+        "authorization",
+        "idempotency",
+        "git",
+        "tests"
+      ],
+      "forbidden_fields": []
+    },
+    "dash_merged": {
+      "allowed_sources": ["dash_verda"],
+      "allowed_outcomes": ["merged"],
+      "required_fields": [
+        "schema_version",
+        "contract",
+        "receipt_id",
+        "request_id",
+        "source",
+        "handoff_id",
+        "workspace_id",
+        "owner_ref",
+        "runtime_id",
+        "worker_id",
+        "authorization",
+        "idempotency",
+        "git",
+        "tests"
+      ],
+      "forbidden_fields": ["task_id", "lease_id", "correlation_id"]
+    },
+    "mira_dash_merged": {
+      "allowed_sources": ["dash_verda"],
+      "allowed_outcomes": ["merged"],
+      "required_fields": [
+        "schema_version",
+        "contract",
+        "receipt_id",
+        "request_id",
+        "source",
+        "handoff_id",
+        "workspace_id",
+        "owner_ref",
+        "runtime_id",
+        "worker_id",
+        "session_id",
+        "workcell_id",
+        "task_id",
+        "lease_id",
+        "correlation_id",
+        "authorization",
+        "idempotency",
+        "git",
+        "tests"
+      ],
+      "forbidden_fields": []
+    }
+  },
+  "valid_documents": {
+    "casein_handoff_waiting": {
+      "profile": "casein_waiting",
+      "body": {
+        "schema_version": 1,
+        "contract": {
+          "name": "casein-dash-handoff",
+          "version": "1.0"
+        },
+        "receipt_id": "receipt-casein-20260826-0001",
+        "request_id": "request-casein-20260826-0001",
+        "source": "v3_casein",
+        "handoff_id": "handoff-casein-20260826-0001",
+        "workspace_id": "workspace-casein-20260826-0001",
+        "owner_ref": {
+          "provider": "v3",
+          "id": "owner-v3-0001",
+          "role": "casein_worker"
+        },
+        "runtime_id": "runtime-v3-0001",
+        "worker_id": "worker-casein-0001",
+        "session_id": "session-casein-0001",
+        "workcell_id": "workcell-casein-0001",
+        "authorization": {
+          "decision": "allow",
+          "decision_id": "opaque-decision-casein-0001"
+        },
+        "evidence_ref": "opaque-evidence-casein-0001",
+        "idempotency": {
+          "handoff_key": "handoff:v1:handoff-casein-20260826-0001:0123456789abcdef0123456789abcdef01234567"
+        },
+        "git": {
+          "repository": "MILCGroup/OneBackend-v3",
+          "base_branch": "develop",
+          "head_branch": "casein/feature-123",
+          "head_sha": "0123456789abcdef0123456789abcdef01234567",
+          "release_sha": "89abcdef0123456789abcdef0123456789abcdef",
+          "pr_number": 417,
+          "pr_url": "https://github.com/MILCGroup/OneBackend-v3/pull/417",
+          "outcome": "waiting",
+          "merged_sha": null,
+          "merge_actor_ref": null,
+          "post_merge_evidence_ref": null
+        },
+        "tests": [
+          {
+            "command": "mix test",
+            "status": "passed"
+          }
+        ]
+      }
+    },
+    "mira_originated_handoff_waiting": {
+      "profile": "mira_waiting",
+      "body": {
+        "schema_version": 1,
+        "contract": {
+          "name": "casein-dash-handoff",
+          "version": "1.0"
+        },
+        "receipt_id": "receipt-mira-20260826-0001",
+        "request_id": "request-mira-20260826-0001",
+        "source": "casein_worker",
+        "handoff_id": "handoff-mira-20260826-0001",
+        "workspace_id": "workspace-mira-20260826-0001",
+        "owner_ref": {
+          "provider": "v3",
+          "id": "owner-v3-0001",
+          "role": "mira_worker"
+        },
+        "runtime_id": "runtime-v3-0001",
+        "worker_id": "worker-casein-0001",
+        "session_id": "session-mira-0001",
+        "workcell_id": "workcell-mira-0001",
+        "task_id": "6f1c2a80-6b2c-4a9d-8f01-1d2e3c4b5a67",
+        "lease_id": "lease-mira-20260826-0001",
+        "correlation_id": "6f1c2a80-6b2c-4a9d-8f01-1d2e3c4b5a67",
+        "authorization": {
+          "decision": "allow",
+          "decision_id": "opaque-decision-mira-0001"
+        },
+        "idempotency": {
+          "handoff_key": "handoff:v1:handoff-mira-20260826-0001:0123456789abcdef0123456789abcdef01234567"
+        },
+        "git": {
+          "repository": "MILCGroup/OneBackend-v3",
+          "base_branch": "develop",
+          "head_branch": "mira/feature-123",
+          "head_sha": "0123456789abcdef0123456789abcdef01234567",
+          "release_sha": "89abcdef0123456789abcdef0123456789abcdef",
+          "pr_number": 418,
+          "pr_url": "https://github.com/MILCGroup/OneBackend-v3/pull/418",
+          "outcome": "waiting",
+          "merged_sha": null,
+          "merge_actor_ref": null,
+          "post_merge_evidence_ref": null
+        },
+        "tests": [
+          {
+            "command": "mix test test/one/mira",
+            "status": "passed"
+          }
+        ]
+      }
+    },
+    "dash_merged_receipt": {
+      "profile": "dash_merged",
+      "body": {
+        "schema_version": 1,
+        "contract": {
+          "name": "casein-dash-handoff",
+          "version": "1.0"
+        },
+        "receipt_id": "receipt-dash-20260826-0001",
+        "request_id": "request-dash-20260826-0001",
+        "source": "dash_verda",
+        "handoff_id": "handoff-dash-20260826-0001",
+        "workspace_id": "workspace-dash-20260826-0001",
+        "owner_ref": {
+          "provider": "v3",
+          "id": "owner-v3-0001",
+          "role": "dash_adapter"
+        },
+        "runtime_id": "runtime-v3-0001",
+        "worker_id": "worker-dash-verda-0001",
+        "session_id": "session-dash-0001",
+        "workcell_id": "workcell-dash-0001",
+        "authorization": {
+          "decision": "allow",
+          "decision_id": "opaque-decision-dash-0001"
+        },
+        "evidence_ref": "opaque-evidence-dash-0001",
+        "idempotency": {
+          "handoff_key": "handoff:v1:handoff-dash-20260826-0001:0123456789abcdef0123456789abcdef01234567"
+        },
+        "git": {
+          "repository": "MILCGroup/OneBackend-v3",
+          "base_branch": "develop",
+          "head_branch": "casein/feature-123",
+          "head_sha": "0123456789abcdef0123456789abcdef01234567",
+          "release_sha": "89abcdef0123456789abcdef0123456789abcdef",
+          "pr_number": 419,
+          "pr_url": "https://github.com/MILCGroup/OneBackend-v3/pull/419",
+          "outcome": "merged",
+          "merged_sha": "fedcba9876543210fedcba9876543210fedcba98",
+          "merge_actor_ref": "github_app/milc-verdad",
+          "post_merge_evidence_ref": "dash-meta:post-merge:pr-419:20260826"
+        },
+        "tests": [
+          {
+            "command": "mix test",
+            "status": "passed"
+          }
+        ]
+      }
+    },
+    "mira_originated_dash_merged_receipt": {
+      "profile": "mira_dash_merged",
+      "body": {
+        "schema_version": 1,
+        "contract": {
+          "name": "casein-dash-handoff",
+          "version": "1.0"
+        },
+        "receipt_id": "receipt-mira-dash-20260826-0001",
+        "request_id": "request-mira-dash-20260826-0001",
+        "source": "dash_verda",
+        "handoff_id": "handoff-mira-dash-20260826-0001",
+        "workspace_id": "workspace-mira-dash-20260826-0001",
+        "owner_ref": {
+          "provider": "v3",
+          "id": "owner-v3-0001",
+          "role": "mira_worker"
+        },
+        "runtime_id": "runtime-v3-0001",
+        "worker_id": "worker-dash-verda-0001",
+        "session_id": "session-mira-dash-0001",
+        "workcell_id": "workcell-mira-dash-0001",
+        "task_id": "6f1c2a80-6b2c-4a9d-8f01-1d2e3c4b5a67",
+        "lease_id": "lease-mira-dash-20260826-0001",
+        "correlation_id": "6f1c2a80-6b2c-4a9d-8f01-1d2e3c4b5a67",
+        "authorization": {
+          "decision": "allow",
+          "decision_id": "opaque-decision-mira-dash-0001"
+        },
+        "idempotency": {
+          "handoff_key": "handoff:v1:handoff-mira-dash-20260826-0001:0123456789abcdef0123456789abcdef01234567"
+        },
+        "git": {
+          "repository": "MILCGroup/OneBackend-v3",
+          "base_branch": "develop",
+          "head_branch": "mira/feature-123",
+          "head_sha": "0123456789abcdef0123456789abcdef01234567",
+          "release_sha": "89abcdef0123456789abcdef0123456789abcdef",
+          "pr_number": 420,
+          "pr_url": "https://github.com/MILCGroup/OneBackend-v3/pull/420",
+          "outcome": "merged",
+          "merged_sha": "fedcba9876543210fedcba9876543210fedcba98",
+          "merge_actor_ref": "github_app/milc-verdad",
+          "post_merge_evidence_ref": "dash-meta:post-merge:pr-420:20260826"
+        },
+        "tests": [
+          {
+            "command": "mix test test/one/mira",
+            "status": "passed"
+          }
+        ]
+      }
+    }
+  },
+  "valid_actions": {
+    "review_thread_action": {
+      "body": {
+        "schema_version": 1,
+        "contract": {
+          "name": "casein-dash-handoff",
+          "version": "1.0"
+        },
+        "action_id": "action-thread-20260826-0001",
+        "request_id": "request-action-20260826-0001",
+        "source": "dash_verda",
+        "handoff_id": "handoff-dash-20260826-0001",
+        "git": {
+          "repository": "MILCGroup/OneBackend-v3",
+          "pr_number": 419,
+          "head_sha": "0123456789abcdef0123456789abcdef01234567"
+        },
+        "thread_id": "PRRT_kwDOA1B2C3D4E5F6",
+        "operation": "resolve",
+        "target_only": true,
+        "content_inspected": false,
+        "actor_ref": "github_app/milc-verdad",
+        "idempotency_key": "review-thread:v1:handoff-dash-20260826-0001:0123456789abcdef0123456789abcdef01234567:PRRT_kwDOA1B2C3D4E5F6"
+      }
+    }
+  },
+  "boundary_error_mapping": {
+    "unauthorized": "unauthorized",
+    "forbidden": "forbidden",
+    "not_found": "not_found",
+    "unavailable": "unavailable",
+    "timeout": "timeout",
+    "missing_id": "missing_id",
+    "invalid_id": "invalid_id",
+    "invalid_owner_ref": "invalid_owner_ref",
+    "foreign_lane_id": "foreign_lane_id",
+    "invalid_source": "invalid_source",
+    "invalid_source_outcome": "invalid_source_outcome",
+    "invalid_sha": "invalid_sha",
+    "merged_sha_not_allowed": "merged_sha_not_allowed",
+    "merged_sha_required": "merged_sha_required",
+    "merge_actor_required": "merge_actor_required",
+    "invalid_actor_ref": "invalid_actor_ref",
+    "post_merge_evidence_required": "post_merge_evidence_required",
+    "post_merge_evidence_not_allowed": "post_merge_evidence_not_allowed",
+    "invalid_authorization_decision": "invalid_authorization_decision",
+    "invalid_thread_id": "invalid_thread_id",
+    "content_based_approval_forbidden": "content_based_approval_forbidden",
+    "invalid_dash_identity": "invalid_dash_identity",
+    "correlation_mismatch": "correlation_mismatch",
+    "idempotency_mismatch": "idempotency_mismatch",
+    "idempotency_namespace_mismatch": "idempotency_namespace_mismatch",
+    "reused_handoff_new_sha": "reused_handoff_new_sha",
+    "unknown_field": "unknown_field",
+    "forbidden_alias": "forbidden_alias",
+    "absolute_path_forbidden": "absolute_path_forbidden",
+    "schema_version_unsupported": "schema_version_unsupported",
+    "missing_contract_version": "missing_contract_version",
+    "invalid_task_id": "invalid_task_id",
+    "invalid_git_outcome": "invalid_git_outcome",
+    "input_too_large": "input_too_large",
+    "rate_limited": "rate_limited"
+  },
+  "auth_availability_error_codes": {
+    "auth": ["unauthorized", "forbidden"],
+    "availability": ["not_found", "unavailable", "timeout", "rate_limited"]
+  },
+  "redacted_error_envelope": {
+    "schema_version": 1,
+    "contract_version": "1.0",
+    "ok": false,
+    "error": {
+      "code": "<stable_code>",
+      "message": "<stable_redacted_message>",
+      "request_id": "<opaque_request_id>",
+      "receipt_id": null,
+      "details": {}
+    },
+    "forbidden_fields": ["authorization", "credentials", "raw_body", "stacktrace"]
+  },
+  "fail_vectors": [
+    {
+      "name": "missing_id.receipt_id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["receipt_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.request_id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["request_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.owner_ref.id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["owner_ref", "id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.workspace_id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["workspace_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.runtime_id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["runtime_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.worker_id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["worker_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.session_id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["session_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.workcell_id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["workcell_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.handoff_id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["handoff_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.task_id",
+      "mode": "document",
+      "base": "mira_originated_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["task_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.lease_id",
+      "mode": "document",
+      "base": "mira_originated_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["lease_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.correlation_id",
+      "mode": "document",
+      "base": "mira_originated_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["correlation_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "missing_id.action_id",
+      "mode": "document",
+      "base": "review_thread_action",
+      "mutation": {"op": "remove", "path": ["action_id"]},
+      "expect": {"error_code": "missing_id"}
+    },
+    {
+      "name": "invalid_owner_ref",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["owner_ref", "role"], "value": ""},
+      "expect": {"error_code": "invalid_owner_ref"}
+    },
+    {
+      "name": "email_serialized_on_receipt",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["owner_ref", "id"], "value": "owner@example.com"},
+      "expect": {"error_code": "invalid_owner_ref"}
+    },
+    {
+      "name": "site_id_as_workspace",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["workspace_id"], "value": "site-20260826-0001"},
+      "expect": {"error_code": "foreign_lane_id"}
+    },
+    {
+      "name": "foreign_lane_id.task_id_on_casein",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["task_id"], "value": "6f1c2a80-6b2c-4a9d-8f01-1d2e3c4b5a67"},
+      "expect": {"error_code": "foreign_lane_id"}
+    },
+    {
+      "name": "invalid_id.workspace_id",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["workspace_id"], "value": "Workspace-20260826-0001"},
+      "expect": {"error_code": "invalid_id"}
+    },
+    {
+      "name": "invalid_task_id",
+      "mode": "document",
+      "base": "mira_originated_handoff_waiting",
+      "mutation": {"op": "set", "path": ["task_id"], "value": "turn-123"},
+      "expect": {"error_code": "invalid_task_id"}
+    },
+    {
+      "name": "invalid_lease_id",
+      "mode": "document",
+      "base": "mira_originated_handoff_waiting",
+      "mutation": {"op": "set", "path": ["lease_id"], "value": "Lease 1"},
+      "expect": {"error_code": "invalid_id"}
+    },
+    {
+      "name": "source_composite_alias",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["source"], "value": "v3_casein/casein_worker"},
+      "expect": {"error_code": "invalid_source"}
+    },
+    {
+      "name": "casein_merged_outcome",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["git", "outcome"], "value": "merged"},
+      "expect": {"error_code": "invalid_source_outcome"}
+    },
+    {
+      "name": "dash_waiting_outcome",
+      "mode": "document",
+      "base": "dash_merged_receipt",
+      "mutation": {"op": "set", "path": ["git", "outcome"], "value": "waiting"},
+      "expect": {"error_code": "invalid_source_outcome"}
+    },
+    {
+      "name": "invalid_git_outcome",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["git", "outcome"], "value": "done"},
+      "expect": {"error_code": "invalid_git_outcome"}
+    },
+    {
+      "name": "schema_version_unsupported",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["schema_version"], "value": 2},
+      "expect": {"error_code": "schema_version_unsupported"}
+    },
+    {
+      "name": "contract_version_missing",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "remove", "path": ["contract", "version"]},
+      "expect": {"error_code": "missing_contract_version"}
+    },
+    {
+      "name": "unknown_field",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["debug"], "value": true},
+      "expect": {"error_code": "unknown_field"}
+    },
+    {
+      "name": "forbidden_alias",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["git", "status"], "value": "waiting"},
+      "expect": {"error_code": "forbidden_alias"}
+    },
+    {
+      "name": "git_fields_outside_canonical_object",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["pr_number"], "value": 417},
+      "expect": {"error_code": "forbidden_alias"}
+    },
+    {
+      "name": "merged_sha_top_level_alias",
+      "mode": "document",
+      "base": "dash_merged_receipt",
+      "mutation": {"op": "set", "path": ["merged_sha"], "value": "fedcba9876543210fedcba9876543210fedcba98"},
+      "expect": {"error_code": "forbidden_alias"}
+    },
+    {
+      "name": "tests_name_alias",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["tests"], "value": [{"name": "mix test", "status": "passed"}]},
+      "expect": {"error_code": "forbidden_alias"}
+    },
+    {
+      "name": "absolute_path_in_files",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["files"], "value": [{"path": "/Users/developer/work/one/lib/one/casein.ex"}]},
+      "expect": {"error_code": "absolute_path_forbidden"}
+    },
+    {
+      "name": "invalid_sha.head_sha",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["git", "head_sha"], "value": "0123456789abcdef0123456789abcdef0123456"},
+      "expect": {"error_code": "invalid_sha"}
+    },
+    {
+      "name": "uppercase_sha",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["git", "head_sha"], "value": "0123456789ABCDEF0123456789ABCDEF01234567"},
+      "expect": {"error_code": "invalid_sha"}
+    },
+    {
+      "name": "release_sha_invalid",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["git", "release_sha"], "value": "release-latest"},
+      "expect": {"error_code": "invalid_sha"}
+    },
+    {
+      "name": "merged_sha_not_allowed",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["git", "merged_sha"], "value": "fedcba9876543210fedcba9876543210fedcba98"},
+      "expect": {"error_code": "merged_sha_not_allowed"}
+    },
+    {
+      "name": "merged_sha_required",
+      "mode": "document",
+      "base": "dash_merged_receipt",
+      "mutation": {"op": "remove", "path": ["git", "merged_sha"]},
+      "expect": {"error_code": "merged_sha_required"}
+    },
+    {
+      "name": "merge_actor_missing",
+      "mode": "document",
+      "base": "dash_merged_receipt",
+      "mutation": {"op": "remove", "path": ["git", "merge_actor_ref"]},
+      "expect": {"error_code": "merge_actor_required"}
+    },
+    {
+      "name": "merge_actor_ref_invalid",
+      "mode": "document",
+      "base": "dash_merged_receipt",
+      "mutation": {"op": "set", "path": ["git", "merge_actor_ref"], "value": "milc-verdad"},
+      "expect": {"error_code": "invalid_actor_ref"}
+    },
+    {
+      "name": "post_merge_evidence_missing",
+      "mode": "document",
+      "base": "dash_merged_receipt",
+      "mutation": {"op": "remove", "path": ["git", "post_merge_evidence_ref"]},
+      "expect": {"error_code": "post_merge_evidence_required"}
+    },
+    {
+      "name": "nonmerged_post_merge_metadata",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["git", "post_merge_evidence_ref"], "value": "opaque-dash-meta"},
+      "expect": {"error_code": "post_merge_evidence_not_allowed"}
+    },
+    {
+      "name": "invalid_authorization_decision",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "mutation": {"op": "set", "path": ["authorization", "decision"], "value": "approve"},
+      "expect": {"error_code": "invalid_authorization_decision"}
+    },
+    {
+      "name": "correlation_mismatch",
+      "mode": "document",
+      "base": "mira_originated_handoff_waiting",
+      "mutation": {"op": "set", "path": ["correlation_id"], "value": "7f1c2a80-6b2c-4a9d-8f01-1d2e3c4b5a67"},
+      "expect": {"error_code": "correlation_mismatch"}
+    },
+    {
+      "name": "invalid_thread_id",
+      "mode": "document",
+      "base": "review_thread_action",
+      "mutation": {"op": "set", "path": ["thread_id"], "value": ""},
+      "expect": {"error_code": "invalid_thread_id"}
+    },
+    {
+      "name": "content_based_approval",
+      "mode": "document",
+      "base": "review_thread_action",
+      "mutation": {"op": "set", "path": ["content_inspected"], "value": true},
+      "expect": {"error_code": "content_based_approval_forbidden"}
+    },
+    {
+      "name": "dash_identity_mismatch",
+      "mode": "document",
+      "base": "dash_merged_receipt",
+      "mutation": {"op": "set", "path": ["git", "head_sha"], "value": "fedcba9876543210fedcba9876543210fedcba98"},
+      "static_identity": {
+        "repository": "MILCGroup/OneBackend-v3",
+        "pr_number": 419,
+        "head_sha": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "expect": {"error_code": "invalid_dash_identity"}
+    },
+    {
+      "name": "handoff_key_mismatch",
+      "mode": "replay",
+      "base": "casein_handoff_waiting",
+      "replay": {
+        "existing": {
+          "handoff_key": "handoff:v1:handoff-casein-20260826-0001:0123456789abcdef0123456789abcdef01234567",
+          "fingerprint": "fingerprint-a"
+        },
+        "incoming": {
+          "handoff_key": "handoff:v1:handoff-casein-20260826-0001:fedcba9876543210fedcba9876543210fedcba98",
+          "fingerprint": "fingerprint-a"
+        }
+      },
+      "expect": {"error_code": "idempotency_mismatch"}
+    },
+    {
+      "name": "idempotency_fingerprint_mismatch",
+      "mode": "replay",
+      "base": "casein_handoff_waiting",
+      "replay": {
+        "existing": {
+          "handoff_key": "handoff:v1:handoff-casein-20260826-0001:0123456789abcdef0123456789abcdef01234567",
+          "fingerprint": "fingerprint-a"
+        },
+        "incoming": {
+          "handoff_key": "handoff:v1:handoff-casein-20260826-0001:0123456789abcdef0123456789abcdef01234567",
+          "fingerprint": "fingerprint-b"
+        }
+      },
+      "expect": {"error_code": "idempotency_mismatch"}
+    },
+    {
+      "name": "reused_handoff_new_sha",
+      "mode": "replay",
+      "base": "casein_handoff_waiting",
+      "replay": {
+        "existing": {
+          "handoff_id": "handoff-casein-20260826-0001",
+          "head_sha": "0123456789abcdef0123456789abcdef01234567"
+        },
+        "incoming": {
+          "handoff_id": "handoff-casein-20260826-0001",
+          "head_sha": "fedcba9876543210fedcba9876543210fedcba98"
+        }
+      },
+      "expect": {"error_code": "reused_handoff_new_sha"}
+    },
+    {
+      "name": "handoff_key_uses_thread_namespace",
+      "mode": "replay",
+      "base": "casein_handoff_waiting",
+      "replay": {
+        "handoff_key": "review-thread:v1:handoff-casein-20260826-0001:0123456789abcdef0123456789abcdef01234567:PRRT_kwDOA1B2C3D4E5F6"
+      },
+      "expect": {"error_code": "idempotency_namespace_mismatch"}
+    },
+    {
+      "name": "thread_action_key_uses_handoff_namespace",
+      "mode": "replay",
+      "base": "review_thread_action",
+      "replay": {
+        "action_key": "handoff:v1:handoff-dash-20260826-0001:0123456789abcdef0123456789abcdef01234567"
+      },
+      "expect": {"error_code": "idempotency_namespace_mismatch"}
+    },
+    {
+      "name": "input_over_limit",
+      "mode": "protocol",
+      "base": "casein_handoff_waiting",
+      "protocol": {"body_bytes": 8193},
+      "expect": {"error_code": "input_too_large"}
+    },
+    {
+      "name": "rate_limited",
+      "mode": "live_github",
+      "base": "dash_merged_receipt",
+      "live": {"rate_limited": true},
+      "expect": {"error_code": "rate_limited"}
+    },
+    {
+      "name": "unauthorized",
+      "mode": "live_github",
+      "base": "dash_merged_receipt",
+      "live": {"provider_error": "unauthorized"},
+      "expect": {"error_code": "unauthorized"}
+    },
+    {
+      "name": "forbidden",
+      "mode": "live_github",
+      "base": "dash_merged_receipt",
+      "live": {"provider_error": "forbidden"},
+      "expect": {"error_code": "forbidden"}
+    },
+    {
+      "name": "not_found",
+      "mode": "live_github",
+      "base": "dash_merged_receipt",
+      "live": {"provider_error": "not_found"},
+      "expect": {"error_code": "not_found"}
+    },
+    {
+      "name": "unavailable",
+      "mode": "live_github",
+      "base": "dash_merged_receipt",
+      "live": {"provider_error": "unavailable"},
+      "expect": {"error_code": "unavailable"}
+    },
+    {
+      "name": "timeout",
+      "mode": "live_github",
+      "base": "dash_merged_receipt",
+      "live": {"provider_error": "timeout"},
+      "expect": {"error_code": "timeout"}
+    },
+    {
+      "name": "head_sha_changed",
+      "mode": "live_github",
+      "base": "casein_handoff_waiting",
+      "live": {"head_sha": "fedcba9876543210fedcba9876543210fedcba98"},
+      "expect": {"git_outcome": "head_sha_changed", "error_envelope": null}
+    },
+    {
+      "name": "checks_pending",
+      "mode": "live_github",
+      "base": "casein_handoff_waiting",
+      "live": {"checks": "pending"},
+      "expect": {"git_outcome": "waiting", "error_envelope": null}
+    },
+    {
+      "name": "checks_failed",
+      "mode": "live_github",
+      "base": "casein_handoff_waiting",
+      "live": {"checks": "failed"},
+      "expect": {"git_outcome": "blocked", "error_envelope": null}
+    },
+    {
+      "name": "casein_task_absent_is_allowed",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "expect": {"valid": true}
+    },
+    {
+      "name": "session_workcell_ids_allowed_by_profile",
+      "mode": "document",
+      "base": "casein_handoff_waiting",
+      "expect": {"valid": true}
+    }
+  ],
+  "retry_semantics": {
+    "document_validation_error": "do_not_retry_unchanged_input",
+    "input_too_large": "do_not_retry_unchanged_input",
+    "rate_limited": "retry_after_provider_backoff",
+    "blocked": "retry_after_external_state_change_with_same_fingerprint",
+    "waiting": "poll_same_idempotent_handoff",
+    "head_sha_changed": "reread_and_issue_new_handoff_version",
+    "merged_replay": "verify_only; no duplicate mutation"
+  },
+  "compatibility_matrix": [
+    {
+      "edge": "V3 -> authenticated Dash ingress -> Dash adapter -> Dash/Verda",
+      "contract": "frozen",
+      "integration": "red_until_authenticated_ingress_exists"
+    },
+    {
+      "edge": "Scheduler -> Dash MCP",
+      "contract": "forbidden",
+      "integration": "not_permitted"
+    },
+    {
+      "component": "Gate 0 fixture validator",
+      "contract": "this_pack_is_the_test_input",
+      "integration": "must_execute_before_canary"
+    },
+    {
+      "component": "disposable canary",
+      "contract": "blocked",
+      "integration": "requires_validator_and_authenticated_ingress"
+    }
+  ]
+}
