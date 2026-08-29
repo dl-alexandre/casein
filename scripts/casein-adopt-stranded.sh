@@ -41,7 +41,9 @@ UNIT_DIR="/etc/systemd/system"
 UNIT="casein-orphan-anchor.service"
 # The orphan anchor lives in casein-agents.slice (memory-bounded; see
 # scripts/casein-agents.slice), so its cgroup is under that slice.
-CG_ROOT="/sys/fs/cgroup/casein-agents.slice/${UNIT}"
+# systemd nests slices by name (casein-agents.slice is a child of casein.slice);
+# the exact path is derived from the realised ControlGroup after start.
+CG_ROOT=""
 SLICE="/sys/fs/cgroup/system.slice"
 
 APPLY=0
@@ -135,7 +137,7 @@ sudo systemctl enable "$UNIT" >/dev/null
 current_cg="$(systemctl show -p ControlGroup --value "$UNIT" 2>/dev/null || true)"
 if [[ "$(systemctl is-active "$UNIT" 2>/dev/null)" != "active" ]]; then
   sudo systemctl start "$UNIT"
-elif [[ "$current_cg" != "/casein-agents.slice/${UNIT}" ]]; then
+elif [[ "$current_cg" != */"casein-agents.slice/${UNIT}" ]]; then
   # Re-home an anchor that predates casein-agents.slice. Safe for the same
   # reason as in ensure-casein-tmux-anchor.sh: KillMode=process signals only
   # the anchor's own sleep, and the new cgroup is at a different path. Anything
@@ -152,10 +154,11 @@ else
 fi
 
 for _ in $(seq 1 20); do
-  [[ -f "${CG_ROOT}/cgroup.procs" ]] && break
+  CG_ROOT="/sys/fs/cgroup$(systemctl show -p ControlGroup --value "$UNIT" 2>/dev/null || true)"
+  [[ "$CG_ROOT" == */"casein-agents.slice/${UNIT}" && -f "${CG_ROOT}/cgroup.procs" ]] && break
   sleep 0.25
 done
-[[ -f "${CG_ROOT}/cgroup.procs" ]] || { echo "error: anchor cgroup missing" >&2; exit 1; }
+[[ "$CG_ROOT" == */"casein-agents.slice/${UNIT}" && -f "${CG_ROOT}/cgroup.procs" ]] || { echo "error: anchor cgroup under casein-agents.slice missing (got ${CG_ROOT})" >&2; exit 1; }
 
 # ── migrate ─────────────────────────────────────────────────────────────────
 moved=0

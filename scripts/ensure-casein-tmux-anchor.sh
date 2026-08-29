@@ -41,7 +41,9 @@ MEM_HIGH="${CASEIN_AGENTS_MEMORY_HIGH:-60%}"
 MEM_MAX="${CASEIN_AGENTS_MEMORY_MAX:-75%}"
 LABEL="${CASEIN_TMUX_LABEL:-casein}"
 TMUX_BIN="${CASEIN_TMUX_BIN:-$(command -v tmux || echo /usr/bin/tmux)}"
-CG_ROOT="/sys/fs/cgroup/${SLICE}/${UNIT}"
+# systemd nests slices by name (casein-agents.slice is a child of casein.slice),
+# so the cgroup path is derived from the realised ControlGroup after start.
+CG_ROOT=""
 
 APPLY=0
 SERVER_ONLY=0
@@ -165,7 +167,7 @@ sudo systemctl enable "$UNIT" >/dev/null
 current_cg="$(systemctl show -p ControlGroup --value "$UNIT" 2>/dev/null || true)"
 if [[ "$(systemctl is-active "$UNIT" 2>/dev/null)" != "active" ]]; then
   sudo systemctl start "$UNIT"
-elif [[ "$current_cg" != "/${SLICE}/${UNIT}" ]]; then
+elif [[ "$current_cg" != */"${SLICE}/${UNIT}" ]]; then
   # Re-home an anchor that predates the slice. A unit's cgroup path includes
   # its slice, so this is the one legitimate stop+start: the new cgroup is at
   # a *different* path, so there is no half-state to trip over. KillMode=
@@ -182,12 +184,13 @@ else
 fi
 
 for _ in $(seq 1 20); do
-  [[ -f "${CG_ROOT}/cgroup.procs" ]] && break
+  CG_ROOT="/sys/fs/cgroup$(systemctl show -p ControlGroup --value "$UNIT" 2>/dev/null || true)"
+  [[ "$CG_ROOT" == */"${SLICE}/${UNIT}" && -f "${CG_ROOT}/cgroup.procs" ]] && break
   sleep 0.25
 done
 
-if [[ ! -f "${CG_ROOT}/cgroup.procs" ]]; then
-  echo "error: anchor cgroup ${CG_ROOT} did not appear; not migrating" >&2
+if [[ "$CG_ROOT" != */"${SLICE}/${UNIT}" || ! -f "${CG_ROOT}/cgroup.procs" ]]; then
+  echo "error: anchor cgroup under ${SLICE} did not appear (got ${CG_ROOT}); not migrating" >&2
   exit 1
 fi
 log "anchor cgroup ready: ${CG_ROOT}"
@@ -217,7 +220,7 @@ else
   exit 1
 fi
 
-slice_cg="/sys/fs/cgroup/${SLICE}"
+slice_cg="/sys/fs/cgroup$(systemctl show -p ControlGroup --value "$SLICE" 2>/dev/null || true)"
 log "${SLICE}: memory.high=$(cat "${slice_cg}/memory.high" 2>/dev/null || echo ?) memory.max=$(cat "${slice_cg}/memory.max" 2>/dev/null || echo ?) memory.current=$(cat "${slice_cg}/memory.current" 2>/dev/null || echo ?)"
 log "panes created from now on inherit the anchor cgroup"
 log "revert with: bash scripts/ensure-casein-tmux-anchor.sh --disable"

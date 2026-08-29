@@ -26,6 +26,10 @@
 # Percentages are of physical RAM. Leave headroom for everything outside the
 # slice; 60/75 was sized for a box whose non-agent baseline is ~25-30 GB.
 
+# Note: systemd nests slices by name, so this is realised as
+# /sys/fs/cgroup/casein.slice/casein-agents.slice/ — derive paths from
+# `systemctl show -p ControlGroup`, never hard-code them.
+
 [Unit]
 Description=Casein agent and terminal workloads (memory-bounded)
 
