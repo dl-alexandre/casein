@@ -1364,7 +1364,9 @@ defmodule TmuxCtl.Client do
   # separates "auto-named, never touched" windows from ones the operator named.
   # It must be spelled with the hyphen (the window-option lookup); the
   # underscored form is not a tmux format variable and expands to "".
-  @list_windows_fmt ~S(#{session_name}|#{window_id}|#{window_active}|#{window_panes}|#{automatic-rename}|#{window_activity}|#{pane_current_command})
+  # `pane_current_path` (last) feeds the janitor's idle-agent rule: it is the
+  # worktree whose cleanliness decides whether an idle agent may be reaped.
+  @list_windows_fmt ~S(#{session_name}|#{window_id}|#{window_active}|#{window_panes}|#{automatic-rename}|#{window_activity}|#{pane_current_command}|#{pane_current_path})
 
   @doc """
   List every window on the tmux server as maps with the fields the window
@@ -1384,8 +1386,10 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_window_line(line) do
-    case String.split(line, "|") do
-      [session, window_id, active, panes, auto_rename, activity, current_command] ->
+    # A path may itself contain `|`; everything after the seventh separator is
+    # the path. Seven fields (no path) is accepted for older fixtures/servers.
+    case String.split(line, "|", parts: 8) do
+      [session, window_id, active, panes, auto_rename, activity, current_command | rest] ->
         [
           %{
             session: session,
@@ -1394,7 +1398,8 @@ defmodule TmuxCtl.Client do
             panes: parse_int(panes, 1),
             automatic_rename: auto_rename == "1",
             activity: parse_int(activity, 0),
-            current_command: current_command
+            current_command: current_command,
+            current_path: blank_to_nil(List.first(rest))
           }
         ]
 

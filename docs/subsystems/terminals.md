@@ -75,7 +75,7 @@ recovery input (`docs/subsystems/tmux_crash_recovery.md`).
 | `Casein.Terminals.TmuxTopology` | `tmux_topology.ex` | Facade over `TmuxCtl.Topology`/`.Watcher`; preserves the `{TmuxTopology, msg}` PubSub tuple; emits `tmux.session_terminated` audit on terminate. |
 | `Casein.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the per-env tmux server label (`-L`): `casein` (prod), `casein_dev` (dev), `casein_test` (test). Each is an isolated server so Casein never shares a socket with another env or with plain SSH tmux. |
 | `Casein.Terminals.TmuxJanitor` | `tmux_janitor.ex` | Subscriber-driven idle GC at the **session** level; kills `casein_*` sessions after `:tmux_idle_seconds` with no subscribers. |
-| `Casein.Terminals.TmuxWindowJanitor` | `tmux_window_janitor.ex` | Periodic sweep reaping blank auto-named idle **windows** and whole orphaned sessions (survives restarts; the safety net `TmuxJanitor` cannot reach). |
+| `Casein.Terminals.TmuxWindowJanitor` | `tmux_window_janitor.ex` | Periodic sweep reaping blank auto-named idle **windows**, whole orphaned sessions, and — opt-in via `:tmux_agent_idle_seconds` — idle **agent** panes in unattached sessions whose worktree is clean (survives restarts; the safety net `TmuxJanitor` cannot reach). |
 
 ### Templates
 
@@ -197,6 +197,22 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
   `Session` buffer) and strips terminal handshakes so stale startup probes never
   reach a fresh viewer. Replay is delivered synchronously inside the attach
   `handle_call` to avoid replay/live interleaving.
+- **Idle agents are reaped only when it is safe, and only if asked.**
+  `TmuxWindowJanitor`'s agent rule is off unless `CASEIN_TMUX_AGENT_IDLE_SECONDS`
+  is set. When on, an `opencode`/`claude`/`codex`/`grok` pane is killed only if
+  its session has **no attached client**, it has been idle past the threshold,
+  and `git status --porcelain` in its `pane_current_path` is empty (not a repo,
+  or unreadable, counts as dirty). A live viewer or unsaved work always wins.
+  Motivation: devbox 2026-08-27 — 66 resident agents from long-closed tabs
+  exhausted 123 GB with no swap; the box had to be hard-reset.
+- **Agent memory is bounded at the cgroup, not by discipline.** The tmux server
+  (and so every pane) lives in `casein-tmux-anchor.service` inside
+  `casein-agents.slice` (`scripts/casein-agents.slice`, installed by
+  `ensure-casein-tmux-anchor.sh`; `MemoryHigh`/`MemoryMax` default 60%/75% of
+  RAM). The anchors carry `OOMScoreAdjust=500` + `OOMPolicy=continue`, the
+  canary `OOMScoreAdjust=-500` + `OOMPolicy=continue`: when the kernel must
+  pick a victim it picks an agent, and losing one never stops the tmux server
+  or the app.
 - **Never wrap tmux argv in `CleanExec`.** Any fd close/redirect before
   `exec tmux ...` breaks the foreground `new-session` attach (surfaces as
   "Terminal exited 0"); tmux self-daemonizes and is exempt.

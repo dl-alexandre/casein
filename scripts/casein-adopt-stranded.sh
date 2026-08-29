@@ -39,7 +39,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
 UNIT="casein-orphan-anchor.service"
-CG_ROOT="/sys/fs/cgroup/system.slice/${UNIT}"
+# The orphan anchor lives in casein-agents.slice (memory-bounded; see
+# scripts/casein-agents.slice), so its cgroup is under that slice.
+# systemd nests slices by name (casein-agents.slice is a child of casein.slice);
+# the exact path is derived from the realised ControlGroup after start.
+CG_ROOT=""
 SLICE="/sys/fs/cgroup/system.slice"
 
 APPLY=0
@@ -127,17 +131,34 @@ sudo systemctl enable "$UNIT" >/dev/null
 
 # `start`, never `restart` — a restart would tear down a cgroup that may
 # already hold adopted processes, and systemd cannot remove a non-empty one.
+# Compare the *realised* cgroup, not the configured Slice=: after a
+# daemon-reload  already reports the new unit-file value while
+# the running instance still sits in its old cgroup.
+current_cg="$(systemctl show -p ControlGroup --value "$UNIT" 2>/dev/null || true)"
 if [[ "$(systemctl is-active "$UNIT" 2>/dev/null)" != "active" ]]; then
   sudo systemctl start "$UNIT"
+elif [[ "$current_cg" != */"casein-agents.slice/${UNIT}" ]]; then
+  # Re-home an anchor that predates casein-agents.slice. Safe for the same
+  # reason as in ensure-casein-tmux-anchor.sh: KillMode=process signals only
+  # the anchor's own sleep, and the new cgroup is at a different path. Anything
+  # adopted earlier stays alive in the old cgroup; the loop below re-adopts it
+  # only if it is still stranded in a *dead* deploy cgroup, so re-run
+  # ensure-casein-tmux-anchor.sh --apply afterwards to sweep the rest.
+  log "${UNIT} is realised at ${current_cg:-?}; re-homing into casein-agents.slice (adopted processes are not signalled)"
+  # restart, not stop+start: the devbox sudo policy denies `systemctl stop`
+  # (and kill/disable/mask) but allows restart, and here they are equivalent
+  # — only the sleep is signalled, and the unit comes back in the new slice.
+  sudo systemctl restart "$UNIT"
 else
-  log "${UNIT} already active — leaving it alone"
+  log "${UNIT} already active in casein-agents.slice — leaving it alone"
 fi
 
 for _ in $(seq 1 20); do
-  [[ -f "${CG_ROOT}/cgroup.procs" ]] && break
+  CG_ROOT="/sys/fs/cgroup$(systemctl show -p ControlGroup --value "$UNIT" 2>/dev/null || true)"
+  [[ "$CG_ROOT" == */"casein-agents.slice/${UNIT}" && -f "${CG_ROOT}/cgroup.procs" ]] && break
   sleep 0.25
 done
-[[ -f "${CG_ROOT}/cgroup.procs" ]] || { echo "error: anchor cgroup missing" >&2; exit 1; }
+[[ "$CG_ROOT" == */"casein-agents.slice/${UNIT}" && -f "${CG_ROOT}/cgroup.procs" ]] || { echo "error: anchor cgroup under casein-agents.slice missing (got ${CG_ROOT})" >&2; exit 1; }
 
 # ── migrate ─────────────────────────────────────────────────────────────────
 moved=0
