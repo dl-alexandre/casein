@@ -143,8 +143,10 @@ elif [[ "$current_cg" != "/casein-agents.slice/${UNIT}" ]]; then
   # only if it is still stranded in a *dead* deploy cgroup, so re-run
   # ensure-casein-tmux-anchor.sh --apply afterwards to sweep the rest.
   log "${UNIT} is realised at ${current_cg:-?}; re-homing into casein-agents.slice (adopted processes are not signalled)"
-  sudo systemctl stop "$UNIT"
-  sudo systemctl start "$UNIT"
+  # restart, not stop+start: the devbox sudo policy denies `systemctl stop`
+  # (and kill/disable/mask) but allows restart, and here they are equivalent
+  # — only the sleep is signalled, and the unit comes back in the new slice.
+  sudo systemctl restart "$UNIT"
 else
   log "${UNIT} already active in casein-agents.slice — leaving it alone"
 fi
