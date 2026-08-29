@@ -129,10 +129,21 @@ sudo systemctl enable "$UNIT" >/dev/null
 
 # `start`, never `restart` — a restart would tear down a cgroup that may
 # already hold adopted processes, and systemd cannot remove a non-empty one.
+current_slice="$(systemctl show -p Slice --value "$UNIT" 2>/dev/null || true)"
 if [[ "$(systemctl is-active "$UNIT" 2>/dev/null)" != "active" ]]; then
   sudo systemctl start "$UNIT"
+elif [[ "$current_slice" != "casein-agents.slice" ]]; then
+  # Re-home an anchor that predates casein-agents.slice. Safe for the same
+  # reason as in ensure-casein-tmux-anchor.sh: KillMode=process signals only
+  # the anchor's own sleep, and the new cgroup is at a different path. Anything
+  # adopted earlier stays alive in the old cgroup; the loop below re-adopts it
+  # only if it is still stranded in a *dead* deploy cgroup, so re-run
+  # ensure-casein-tmux-anchor.sh --apply afterwards to sweep the rest.
+  log "${UNIT} is homed in ${current_slice:-?}; re-homing into casein-agents.slice (adopted processes are not signalled)"
+  sudo systemctl stop "$UNIT"
+  sudo systemctl start "$UNIT"
 else
-  log "${UNIT} already active — leaving it alone"
+  log "${UNIT} already active in casein-agents.slice — leaving it alone"
 fi
 
 for _ in $(seq 1 20); do
