@@ -159,17 +159,20 @@ sudo systemctl enable "$UNIT" >/dev/null
 # cannot remove a non-empty cgroup, so the result is a confused half-state
 # rather than a clean re-adopt. Starting an already-active unit is a no-op,
 # which makes re-running this script safe.
-current_slice="$(systemctl show -p Slice --value "$UNIT" 2>/dev/null || true)"
+# Compare the *realised* cgroup, not the configured Slice=: after a
+# daemon-reload  already reports the new unit-file value while
+# the running instance still sits in its old cgroup.
+current_cg="$(systemctl show -p ControlGroup --value "$UNIT" 2>/dev/null || true)"
 if [[ "$(systemctl is-active "$UNIT" 2>/dev/null)" != "active" ]]; then
   sudo systemctl start "$UNIT"
-elif [[ "$current_slice" != "$SLICE" ]]; then
+elif [[ "$current_cg" != "/${SLICE}/${UNIT}" ]]; then
   # Re-home an anchor that predates the slice. A unit's cgroup path includes
   # its slice, so this is the one legitimate stop+start: the new cgroup is at
   # a *different* path, so there is no half-state to trip over. KillMode=
   # process means the stop signals only the anchor's own sleep; the adopted
   # server and every pane keep running in the old cgroup until the migration
   # loop below moves them.
-  log "${UNIT} is homed in ${current_slice:-?}; re-homing into ${SLICE} (adopted processes are not signalled)"
+  log "${UNIT} is realised at ${current_cg:-?}; re-homing into ${SLICE} (adopted processes are not signalled)"
   sudo systemctl stop "$UNIT"
   sudo systemctl start "$UNIT"
 else
