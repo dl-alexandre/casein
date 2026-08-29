@@ -39,7 +39,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
 UNIT="casein-orphan-anchor.service"
-CG_ROOT="/sys/fs/cgroup/system.slice/${UNIT}"
+# The orphan anchor lives in casein-agents.slice (memory-bounded; see
+# scripts/casein-agents.slice), so its cgroup is under that slice.
+CG_ROOT="/sys/fs/cgroup/casein-agents.slice/${UNIT}"
 SLICE="/sys/fs/cgroup/system.slice"
 
 APPLY=0

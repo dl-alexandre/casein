@@ -450,6 +450,14 @@ fi
 # them; that needs a slice-level policy, deliberately not set here.
 CPU_PRIORITY_PROPERTY="CPUWeight=${CASEIN_CPU_WEIGHT:-1000}"
 
+# Memory-pressure posture (devbox 2026-08-27 post-mortem: agents exhausted RAM,
+# the box thrashed for 45 min and was hard-reset). Agent workloads live in
+# casein-agents.slice with OOMScoreAdjust=+500 (see casein-tmux-anchor.service);
+# the app is the last thing the kernel should pick, hence -500. OOMPolicy=
+# continue: systemd's default (stop) would take the whole canary down if the
+# kernel ever OOM-killed a stray child in this cgroup.
+OOM_SCORE_PROPERTY="OOMScoreAdjust=${CASEIN_OOM_SCORE_ADJUST:--500}"
+
 # systemd's default service PATH cannot resolve allowlisted verifier tools
 # (`mix` / `elixir` / `erl` via mise shims). code_exec → Commands.spawn uses
 # System.find_executable("mix"), so a thin PATH fails every Jido verifier in
@@ -469,6 +477,8 @@ sudo systemd-run \
   --property="WorkingDirectory=${APP_ROOT}" \
   --property="KillMode=process" \
   --property="${CPU_PRIORITY_PROPERTY}" \
+  --property="${OOM_SCORE_PROPERTY}" \
+  --property="OOMPolicy=continue" \
   --property="Environment=RELEASE_NODE=${NEW_RELEASE_NODE}" \
   --property="Environment=PATH=${SERVICE_PATH}" \
   --property="ExecStartPre=/usr/bin/docker compose -f /opt/casein/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \

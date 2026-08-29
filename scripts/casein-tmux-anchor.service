@@ -25,6 +25,12 @@
 # spawns from then on inherits it, so agent work stops accumulating in
 # throwaway canary cgroups.
 #
+# It is also the memory boundary. The unit sits in casein-agents.slice
+# (scripts/casein-agents.slice), so the slice's MemoryHigh/MemoryMax bound
+# the whole agent fleet, and OOMScoreAdjust=500 makes an agent the kernel's
+# preferred victim over the Casein app (-500) and system daemons. Without
+# this the devbox was thrashed into a hard reset on 2026-08-27.
+#
 # The anchor's own main process is a `sleep`, whose only job is to keep the
 # cgroup alive. KillMode=process is deliberate and load-bearing: stopping or
 # restarting this unit kills only that sleep, never the adopted tmux server.
@@ -38,6 +44,12 @@ Type=exec
 User=devbox
 Group=devbox
 Environment=HOME=/home/devbox
+Slice=casein-agents.slice
+OOMScoreAdjust=500
+# One OOM-killed pane must never stop this unit (systemd's default policy,
+# stop, would). KillMode=process below already means a stop only signals
+# the sleep, but continue keeps the unit itself active and its cgroup put.
+OOMPolicy=continue
 
 ExecStart=/bin/sleep infinity
 

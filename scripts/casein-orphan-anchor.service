@@ -28,6 +28,11 @@ After=network.target
 Type=exec
 User=devbox
 Group=devbox
+# Same memory boundary as casein-tmux-anchor.service: stranded agent work is
+# still agent work. See scripts/casein-agents.slice.
+Slice=casein-agents.slice
+OOMScoreAdjust=500
+OOMPolicy=continue
 ExecStart=/bin/sleep infinity
 
 KillMode=process

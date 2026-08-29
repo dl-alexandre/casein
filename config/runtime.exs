@@ -864,6 +864,16 @@ if config_env() == :prod and not release_cli? do
          :tmux_session_idle_seconds,
          positive_integer_env.("CASEIN_TMUX_SESSION_IDLE_SECONDS")
 
+  # Same sweep can also reap idle *agent* windows: an opencode/claude/codex/grok
+  # sitting at its prompt in a session with no attached client, idle this long,
+  # whose worktree is clean (nothing modified or untracked). Off unless set —
+  # neither rule above can reach these, which is how the devbox accumulated 66
+  # resident agents and ran out of memory on 2026-08-27. 7200 (2 h) is a sane
+  # production value. See Casein.Terminals.TmuxWindowJanitor.
+  config :casein,
+         :tmux_agent_idle_seconds,
+         positive_integer_env.("CASEIN_TMUX_AGENT_IDLE_SECONDS")
+
   # Agent-worktree runtime reaper: expires stale `terminal_report_worktree`
   # records and tears down clean, idle worktrees so the pane picker does not
   # accumulate one tab per agent launch. Enabled by default in prod; set

@@ -1,0 +1,35 @@
+# Memory-bounded home for the Casein tmux server and everything it spawns:
+# user shells, agent TUIs (opencode / claude / codex / grok), and the builds
+# and test runs they start.
+#
+# Installed by scripts/ensure-casein-tmux-anchor.sh, which substitutes the two
+# limits from CASEIN_AGENTS_MEMORY_HIGH / CASEIN_AGENTS_MEMORY_MAX (defaults
+# 60% / 75% of physical RAM) and re-homes casein-tmux-anchor.service (and
+# casein-orphan-anchor.service) into this slice.
+#
+# WHY THIS EXISTS
+#
+# On 2026-08-27 the devbox (123 GB RAM, no swap) was driven into memory
+# exhaustion by ~66 resident agent processes accumulated over the day. Nothing
+# bounded them, and they shared a cgroup with the Casein app itself, so the
+# kernel had no cheap victim: it thrashed for ~45 minutes, took 27 minutes just
+# to print the OOM task table, the journal died, and the box had to be
+# hard-reset from outside.
+#
+# With this slice the kernel throttles the agent fleet at MemoryHigh and, if it
+# keeps growing, OOM-kills *inside the slice* at MemoryMax — long before the
+# host is starved. Casein, postgres, dockerd and the page cache live outside it
+# and keep running. Pair with OOMScoreAdjust on the anchors (+500) and the
+# canary (-500, deploy-devbox-release.sh) so that when the kernel does have to
+# pick, it picks an agent.
+#
+# Percentages are of physical RAM. Leave headroom for everything outside the
+# slice; 60/75 was sized for a box whose non-agent baseline is ~25-30 GB.
+
+[Unit]
+Description=Casein agent and terminal workloads (memory-bounded)
+
+[Slice]
+MemoryAccounting=yes
+MemoryHigh=__MEMORY_HIGH__
+MemoryMax=__MEMORY_MAX__

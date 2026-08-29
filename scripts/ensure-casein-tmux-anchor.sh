@@ -13,6 +13,14 @@
 # a live server: 5 sessions intact across the move, and panes created
 # afterwards were born in the anchor cgroup.
 #
+# MEMORY BOUNDARY. The anchor lives in casein-agents.slice, whose MemoryHigh /
+# MemoryMax (CASEIN_AGENTS_MEMORY_HIGH / CASEIN_AGENTS_MEMORY_MAX, default
+# 60% / 75% of RAM) cap the whole agent fleet so it can never starve the host
+# again (devbox, 2026-08-27). An anchor already running in system.slice is
+# re-homed with a stop+start — safe, because KillMode=process only signals the
+# anchor's own sleep — and its process tree is then migrated into the new
+# cgroup exactly like a first install.
+#
 # DRY RUN BY DEFAULT — prints the plan and moves nothing. Pass --apply.
 #
 # Usage:
@@ -20,6 +28,7 @@
 #   bash scripts/ensure-casein-tmux-anchor.sh --apply         # install + migrate
 #   bash scripts/ensure-casein-tmux-anchor.sh --apply --server-only
 #   CASEIN_TMUX_LABEL=casein_dev bash scripts/... --apply     # a different socket
+#   CASEIN_AGENTS_MEMORY_HIGH=50% CASEIN_AGENTS_MEMORY_MAX=65% bash scripts/... --apply
 #   bash scripts/ensure-casein-tmux-anchor.sh --disable
 #
 set -euo pipefail
@@ -27,9 +36,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
 UNIT="casein-tmux-anchor.service"
+SLICE="casein-agents.slice"
+MEM_HIGH="${CASEIN_AGENTS_MEMORY_HIGH:-60%}"
+MEM_MAX="${CASEIN_AGENTS_MEMORY_MAX:-75%}"
 LABEL="${CASEIN_TMUX_LABEL:-casein}"
 TMUX_BIN="${CASEIN_TMUX_BIN:-$(command -v tmux || echo /usr/bin/tmux)}"
-CG_ROOT="/sys/fs/cgroup/system.slice/${UNIT}"
+CG_ROOT="/sys/fs/cgroup/${SLICE}/${UNIT}"
 
 APPLY=0
 SERVER_ONLY=0
@@ -55,6 +67,12 @@ if [[ "$DISABLE" -eq 1 ]]; then
   log "stopping and disabling ${UNIT} (adopted tmux server is NOT killed)"
   sudo systemctl disable --now "$UNIT" >/dev/null 2>&1 || true
   sudo rm -f "${UNIT_DIR}/${UNIT}"
+  # The slice is shared with casein-orphan-anchor.service; only drop it when
+  # that unit is not homed there (or does not exist).
+  if [[ "$(systemctl show -p Slice --value casein-orphan-anchor.service 2>/dev/null || true)" != "$SLICE" ]]; then
+    sudo rm -f "${UNIT_DIR}/${SLICE}"
+    log "removed ${SLICE} (no other unit was homed in it)"
+  fi
   sudo systemctl daemon-reload
   log "removed ${UNIT}"
   exit 0
@@ -122,7 +140,18 @@ src="${ROOT}/scripts/${UNIT}"
 log "installing ${UNIT} (tmux=${TMUX_BIN})"
 sed "s#__TMUX_BIN__#${TMUX_BIN}#g" "$src" | sudo tee "${UNIT_DIR}/${UNIT}" >/dev/null
 
+slice_src="${ROOT}/scripts/${SLICE}"
+[ -f "$slice_src" ] || { echo "error: missing ${slice_src}" >&2; exit 1; }
+log "installing ${SLICE} (MemoryHigh=${MEM_HIGH} MemoryMax=${MEM_MAX})"
+sed -e "s#__MEMORY_HIGH__#${MEM_HIGH}#g" -e "s#__MEMORY_MAX__#${MEM_MAX}#g" "$slice_src" \
+  | sudo tee "${UNIT_DIR}/${SLICE}" >/dev/null
+
 sudo systemctl daemon-reload
+
+# daemon-reload alone does not re-apply cgroup attributes to a slice that is
+# already realised; set-property does, immediately and persistently (it
+# writes a drop-in that agrees with the unit file we just installed).
+sudo systemctl set-property "$SLICE" "MemoryHigh=${MEM_HIGH}" "MemoryMax=${MEM_MAX}" >/dev/null 2>&1 || true
 sudo systemctl enable "$UNIT" >/dev/null
 
 # `start`, never `restart`. Once this unit is holding adopted tmux servers, a
@@ -130,10 +159,21 @@ sudo systemctl enable "$UNIT" >/dev/null
 # cannot remove a non-empty cgroup, so the result is a confused half-state
 # rather than a clean re-adopt. Starting an already-active unit is a no-op,
 # which makes re-running this script safe.
+current_slice="$(systemctl show -p Slice --value "$UNIT" 2>/dev/null || true)"
 if [[ "$(systemctl is-active "$UNIT" 2>/dev/null)" != "active" ]]; then
   sudo systemctl start "$UNIT"
+elif [[ "$current_slice" != "$SLICE" ]]; then
+  # Re-home an anchor that predates the slice. A unit's cgroup path includes
+  # its slice, so this is the one legitimate stop+start: the new cgroup is at
+  # a *different* path, so there is no half-state to trip over. KillMode=
+  # process means the stop signals only the anchor's own sleep; the adopted
+  # server and every pane keep running in the old cgroup until the migration
+  # loop below moves them.
+  log "${UNIT} is homed in ${current_slice:-?}; re-homing into ${SLICE} (adopted processes are not signalled)"
+  sudo systemctl stop "$UNIT"
+  sudo systemctl start "$UNIT"
 else
-  log "${UNIT} already active — leaving it alone (adopted processes stay put)"
+  log "${UNIT} already active in ${SLICE} — leaving it alone (adopted processes stay put)"
 fi
 
 for _ in $(seq 1 20); do
@@ -172,5 +212,7 @@ else
   exit 1
 fi
 
+slice_cg="/sys/fs/cgroup/${SLICE}"
+log "${SLICE}: memory.high=$(cat "${slice_cg}/memory.high" 2>/dev/null || echo ?) memory.max=$(cat "${slice_cg}/memory.max" 2>/dev/null || echo ?) memory.current=$(cat "${slice_cg}/memory.current" 2>/dev/null || echo ?)"
 log "panes created from now on inherit the anchor cgroup"
 log "revert with: bash scripts/ensure-casein-tmux-anchor.sh --disable"
