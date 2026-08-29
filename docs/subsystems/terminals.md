@@ -205,6 +205,17 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
   or unreadable, counts as dirty). A live viewer or unsaved work always wins.
   Motivation: devbox 2026-08-27 — 66 resident agents from long-closed tabs
   exhausted 123 GB with no swap; the box had to be hard-reset.
+- **Agent *count* is bounded at launch, and memory pressure is announced.**
+  `scripts/lib/agent-budget.sh` (sourced by `launch-casein-agent.sh` and
+  `spawn-agent-worker.sh`) refuses a launch — exit 75, `refused:budget` — once
+  `CASEIN_AGENT_MAX_TOTAL` (default 32) agent processes are resident host-wide
+  or `CASEIN_AGENT_MAX_PER_USER` (default 0 = off) for the caller;
+  `CASEIN_AGENT_BUDGET_FORCE=1` overrides loudly. `HostCapacity.snapshot/1`
+  reports the same count so coordinators see it. `Casein.Signals.MemoryPressureWatch`
+  reads `/proc/meminfo` every minute and, on a level change (85% warning /
+  93% alarm of used-minus-cache), emits `memory.pressure_*` audit events on
+  the `_ops` workspace — operator drawer, and OS push at alarm — with the
+  agent slice's share of its cap in the payload so the alert says who to blame.
 - **Agent memory is bounded at the cgroup, not by discipline.** The tmux server
   (and so every pane) lives in `casein-tmux-anchor.service` inside
   `casein-agents.slice` (`scripts/casein-agents.slice`, installed by

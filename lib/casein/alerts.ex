@@ -96,6 +96,26 @@ defmodule Casein.Alerts do
       channels: ["in_app", "push"],
       ttl_seconds: 3_600,
       dedupe_window_seconds: 900
+    },
+    # Host memory, from Casein.Signals.MemoryPressureWatch. Alarm goes to OS
+    # push: on 2026-08-27 the devbox thrashed for 45 minutes and nobody knew
+    # until it was hard-reset — the whole point is that a human hears about
+    # it while there is still time to close agent tabs.
+    "memory.pressure_warning" => %{
+      type: "memory_pressure_warning",
+      severity: "warning",
+      title: "Host memory is high",
+      channels: ["in_app"],
+      ttl_seconds: 3_600,
+      dedupe_window_seconds: 900
+    },
+    "memory.pressure_alarm" => %{
+      type: "memory_pressure_alarm",
+      severity: "error",
+      title: "Host memory is critical",
+      channels: ["in_app", "push"],
+      ttl_seconds: 3_600,
+      dedupe_window_seconds: 600
     }
   }
 

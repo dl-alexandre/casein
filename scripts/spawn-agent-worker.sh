@@ -20,6 +20,9 @@ source "${ROOT}/scripts/lib/real-agent-bin.sh"
 # Load/memory gate before opening a worker window (#863).
 # shellcheck source=lib/spawn-host-headroom.sh
 source "${ROOT}/scripts/lib/spawn-host-headroom.sh"
+# Resident-agent budget — the count-based sibling of the headroom gate.
+# shellcheck source=lib/agent-budget.sh
+source "${ROOT}/scripts/lib/agent-budget.sh"
 
 usage() {
   cat <<'EOF'
@@ -682,6 +685,7 @@ fi
 # Headroom before any window open (and before dry-run print) so a full box never
 # looks "successful" under CASEIN_SPAWN_DRY_RUN. Decline is loud; FORCE overrides.
 spawn_host_headroom_check || exit $?
+agent_budget_check "$RUNTIME" || exit $?
 
 if [[ "$RUNTIME" == "grok" && "${CASEIN_SPAWN_SKIP_WRITE_PREFLIGHT:-0}" != "1" ]]; then
   spawn_worker_preflight_grok_write
