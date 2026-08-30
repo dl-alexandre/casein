@@ -50,9 +50,11 @@ defmodule CaseinWeb.Plugs.ApiAuth do
         is_nil(expected) or reserved_agent_capability?(expected)
       end)
 
-    case Enum.find(configured, fn {_scope, expected} -> secure_match?(token, expected) end) do
-      {scope, _expected} ->
-        authorize_scope(conn, scope)
+    case matching_scope(conn, token, configured) do
+      {scope, entitled_workspace_ids} ->
+        conn
+        |> maybe_assign_entitlement(entitled_workspace_ids)
+        |> authorize_scope(scope)
 
       nil ->
         # Rotated workspace bearer: explicit stale_grant before any DB lookup so
@@ -68,6 +70,42 @@ defmodule CaseinWeb.Plugs.ApiAuth do
         end
     end
   end
+
+  # A bearer registered for a *list* of workspaces is normalized to one
+  # `{:workspace, id}` entry per id. Choosing the first match meant such a
+  # token could only ever reach its first workspace over MCP — a URL pinned to
+  # any other entitled id was refused as `workspace_forbidden`
+  # (OneBackend-v3#20161). Prefer the entry the request names; fall back to
+  # the first. Every entry is still compared in constant time.
+  defp matching_scope(conn, token, configured) do
+    matches =
+      Enum.filter(configured, fn {_scope, expected} -> secure_match?(token, expected) end)
+
+    case matches do
+      [] ->
+        nil
+
+      [{scope, _expected} | _] = matches ->
+        requested =
+          conn |> fetch_query_params() |> Map.fetch!(:query_params) |> Map.get("workspace_id")
+
+        chosen =
+          Enum.find_value(matches, fn
+            {{:workspace, ^requested} = scope, _} when is_binary(requested) -> scope
+            _ -> nil
+          end) || scope
+
+        {chosen, entitled_workspace_ids(matches)}
+    end
+  end
+
+  defp entitled_workspace_ids(matches) do
+    for {{:workspace, id}, _expected} <- matches, is_binary(id), uniq: true, do: id
+  end
+
+  # Only meaningful for workspace bearers; a global token has no list.
+  defp maybe_assign_entitlement(conn, [_ | _] = ids), do: assign(conn, :api_workspace_ids, ids)
+  defp maybe_assign_entitlement(conn, _ids), do: conn
 
   defp authorize_db_token(_conn, nil), do: nil
 
