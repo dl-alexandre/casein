@@ -653,3 +653,36 @@ the response instead of returning `workspace_id: null`.
 
 Mutating terminal MCP calls are audited and appear in the workspace **Live MCP
 activity** feed (Agents tab).
+
+## Agent state provenance and freshness
+
+`agent_state` on `terminal_topology`, `worker_status`, `orchestration_status`,
+and `orchestration_list_workers` is only *asserted* while a report is fresh
+(`Casein.Terminals.AgentState`: a `working` report is believed for 2 min against
+a ready title, a `blocked` report for 2 min without corroboration, anything for
+30 min at most). Past that the key is omitted — but the absence is explained
+rather than silent, so a fail-closed reap gate can tell "went quiet" from "never
+spoke" (OneBackend-v3#20022):
+
+| field | meaning |
+|---|---|
+| `agent_state_resolution` | `report` (live report asserted) · `derived` (`stalled` / `awaiting_input`, inferred) · `expired_report` (a report exists but is too old to assert) · `unreported` (this pane never reported) |
+| `agent_state_last_reported` | the last reported state, kept even when expired |
+| `agent_state_reported_at` / `agent_state_age_s` | when it was reported / how old it is now |
+| `agent_state_note` (`worker_status`) | prose for the two absent cases |
+
+Reading rule: only `unreported` and a live `working` mean "cannot tell whether
+it is still working". An `expired_report` whose last word was `done`, `blocked`,
+or `idle` hours ago, over a worktree whose `liveness.quiet_for_seconds` is as
+large, is a worker that said it stopped and then stopped.
+
+The store rehydrates the newest durable `agent.state_changed` row per pane
+(last 24 h) when the app starts, so a canary deploy no longer erases a quiet
+worker's history; rehydrated entries carry `agent_state_report_source: durable`.
+
+`orchestration_list_workers` defaults to the cached fleet snapshot
+(`liveness_source: "snapshot"`, `snapshot_generated_at`), which only carries
+cached liveness — a `blocked` report older than 2 min can age out there while
+`worker_status`, which walks liveness on the spot, still corroborates it. Pass
+`include_liveness: true` to build the list from the same fresh, liveness-observed
+topology `worker_status` uses (`liveness_source: "observed"`); the two then agree.

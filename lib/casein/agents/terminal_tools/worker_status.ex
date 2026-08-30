@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.WorkerStatus do
   use Jido.Action,
     name: "worker_status",
     description:
-      "Read-only single-worker deep status (M2): one pane's agent_state, issue binding, blocked_on (report vs derived), external liveness (unknown never quiet/idle), worktree_path, fleet_role/readiness. Inverse of orchestration_status aggregate. Liveness observation is on by default. No scrollback, no shell, no mutations. worker_launch and durable task graphs remain out of scope. Requires workspace_id, session, and pane.",
+      "Read-only single-worker deep status (M2): one pane's agent_state, issue binding, blocked_on (report vs derived), external liveness (unknown never quiet/idle), worktree_path, fleet_role/readiness, and agent_state_resolution (report | derived | expired_report | unreported) with agent_state_last_reported / agent_state_reported_at / agent_state_age_s and an agent_state_note explaining an absent agent_state. Inverse of orchestration_status aggregate. Liveness observation is on by default. No scrollback, no shell, no mutations. worker_launch and durable task graphs remain out of scope. Requires workspace_id, session, and pane.",
     category: "terminal",
     tags: ["terminal", "orchestration"],
     vsn: "1.0.0",

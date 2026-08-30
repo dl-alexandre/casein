@@ -10,6 +10,8 @@ defmodule Casein.Agents.AgentEvents.Adapter do
               [AgentEvent.t()]
   @callback list_for_session(String.t(), String.t(), keyword()) :: [AgentEvent.t()]
   @callback list_by_event_types(String.t(), [String.t()]) :: [AgentEvent.t()]
+  @callback list_recent_by_event_type(String.t(), DateTime.t(), pos_integer()) ::
+              [AgentEvent.t()]
   @callback list_open_clarifications(String.t(), String.t(), String.t(), keyword()) ::
               [AgentEvent.t()]
   @callback list_by_correlation(String.t(), keyword()) :: [AgentEvent.t()]

@@ -224,6 +224,24 @@ defmodule Casein.Agents.AgentEvents do
     impl().list_for_session(workspace_id, agent_session_id, normalize_query_opts(opts))
   end
 
+  @doc """
+  Newest durable `agent.state_changed` row per `{tmux_session_id, pane_id}`
+  across every workspace, newest first. Feeds `Casein.Terminals.AgentState`
+  rehydration after a restart.
+
+  Options: `:since` (DateTime, required), `:limit` (rows scanned before the
+  per-pane reduction; default 5_000).
+  """
+  @spec latest_state_transitions(keyword()) :: [AgentEvent.t()]
+  def latest_state_transitions(opts) when is_list(opts) do
+    since = Keyword.fetch!(opts, :since)
+    limit = Keyword.get(opts, :limit, 5_000)
+
+    "agent.state_changed"
+    |> impl().list_recent_by_event_type(since, limit)
+    |> Enum.uniq_by(&{&1.tmux_session_id, &1.pane_id})
+  end
+
   @doc "List every durable event of the requested types in newest-first order."
   @spec list_by_event_types(String.t(), [String.t()]) :: [AgentEvent.t()]
   def list_by_event_types(workspace_id, event_types)

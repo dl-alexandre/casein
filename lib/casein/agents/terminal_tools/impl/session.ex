@@ -9,8 +9,11 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
   alias Casein.Terminals.AgentState
   alias Casein.Terminals.ControlPlane
   alias Casein.Terminals.FleetChrome
+  alias Casein.Terminals.FleetBoard
   alias Casein.Terminals.FleetSnapshot
   alias Casein.Terminals.HostCapacity
+  alias Casein.Terminals.OrchestrationListWorkers
+  alias Casein.Terminals.OrchestrationStatus
   alias Casein.Terminals.IssueBinding
   alias Casein.Terminals.NextPrompt
   alias Casein.Terminals.PaneLiveness
@@ -550,7 +553,30 @@ defmodule Casein.Agents.TerminalTools.Impl.Session do
          {:ok, session} <- session_arg(params) do
       opts = maybe_put_list_filters([], params)
 
-      {:ok, FleetSnapshot.orchestration_list_workers(workspace_id, session, opts)}
+      if truthy?(Map.get(params, :include_liveness) || Map.get(params, "include_liveness")) do
+        observed_list_workers(workspace_id, session, params, opts)
+      else
+        {:ok, FleetSnapshot.orchestration_list_workers(workspace_id, session, opts)}
+      end
+    end
+  end
+
+  # `include_liveness: true` used to be accepted and ignored: the list came
+  # from the cached snapshot (cached liveness only), while worker_status walked
+  # liveness on the spot — so the two disagreed about the same pane seconds
+  # apart (OneBackend-v3#20022). Build from the same fresh topology instead.
+  defp observed_list_workers(workspace_id, session, params, opts) do
+    with {:ok, topology} <- topology(Map.put(params, :include_liveness, true)) do
+      board =
+        topology
+        |> OrchestrationStatus.tabs_from_topology()
+        |> FleetBoard.from_window_tabs(FleetSnapshot.board_opts(session))
+
+      {:ok,
+       OrchestrationListWorkers.project(
+         board,
+         opts ++ [workspace_id: workspace_id, session: session, liveness_source: :observed]
+       )}
     end
   end
 

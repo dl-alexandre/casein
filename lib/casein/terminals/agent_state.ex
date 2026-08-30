@@ -75,6 +75,31 @@ defmodule Casein.Terminals.AgentState do
   Entries are keyed by `{tmux_session, pane_id}`, held in an in-memory GenServer,
   and broadcast to workspace LiveViews. They never mutate tmux titles.
 
+  ## Provenance travels with the state — and survives its absence
+
+  A report older than `@max_report_ttl_seconds` is no longer *asserted* as
+  `agent_state`, and a `:blocked` report past `@stale_assert_seconds` with no
+  corroboration ages out to unknown. Both used to leave the pane looking exactly
+  like one that had never reported at all, which is how a finished worker became
+  "permanently unreapable" to a fail-closed gate (OneBackend-v3#20022): the one
+  field the gate needed vanished precisely because the worker went quiet.
+
+  `enrich_topology/2` therefore always attaches `agent_state_resolution`:
+
+    * `:report` — a live report is being asserted
+    * `:derived` — `:stalled` / `:awaiting_input`, inferred from evidence
+    * `:expired_report` — a report exists but is too old to assert; look at
+      `agent_state_last_reported` / `agent_state_reported_at` /
+      `agent_state_age_s` and combine with liveness
+    * `:unreported` — this pane has never reported (or nothing is retained)
+
+  Only `:unreported` and a live `:working` are "cannot tell whether it is still
+  working". An `:expired_report` whose last word was `done` / `blocked` / `idle`
+  hours ago, over a worktree that has been quiet as long, is a worker that said
+  it stopped and then stopped. The store also rehydrates the last durable
+  transition per pane at boot (`Casein.Terminals.AgentState.Server`), so a
+  canary deploy no longer erases that history.
+
   `resolve/3` is the pure precedence function that reconciles an explicit report
   against the live title heuristic; it is where staleness rules live and is unit
   tested directly.
@@ -125,10 +150,11 @@ defmodule Casein.Terminals.AgentState do
   @type transcript :: :working | :awaiting_input | :unknown | nil
   @type screen_status :: :permission_prompt | :working | :unknown | nil
   @type provenance :: :report | :derived | :screen | :unknown
+  @type resolution :: :report | :derived | :expired_report | :unreported
   @type entry :: %{
           state: state(),
           message: String.t() | nil,
-          source: :mcp | :hook | :dispatch,
+          source: :mcp | :hook | :dispatch | :durable,
           tool: String.t() | nil,
           workspace_id: String.t() | nil,
           transcript_path: String.t() | nil,
@@ -510,6 +536,7 @@ defmodule Casein.Terminals.AgentState do
         window
         |> put_report_age(age_s)
         |> put_state(resolved)
+        |> put_report_meta(entry, resolved)
         |> put_blocked_ready_conflict(resolved, heuristic)
         |> put_agent_session_id(entry, resolved)
         |> put_transcript_path(entry, resolved)
@@ -534,6 +561,7 @@ defmodule Casein.Terminals.AgentState do
     pane
     |> put_report_age(age_s)
     |> put_state(resolved)
+    |> put_report_meta(entry, resolved)
     |> put_blocked_ready_conflict(resolved, heuristic)
     |> put_agent_session_id(entry, resolved)
     |> put_transcript_path(entry, resolved)
@@ -568,6 +596,36 @@ defmodule Casein.Terminals.AgentState do
     do: Map.put(map, :agent_state_conflict, :blocked_while_ready)
 
   defp put_blocked_ready_conflict(map, _resolved, _heuristic), do: map
+
+  @doc """
+  Why `agent_state` says what it says (or is absent) — see the module doc.
+  Pure over the stored entry and the resolved `{state, message}`.
+  """
+  @spec resolution_for(entry() | nil, {state(), String.t() | nil}) :: resolution()
+  def resolution_for(_entry, {state, _message}) when state in [:stalled, :awaiting_input],
+    do: :derived
+
+  def resolution_for(nil, _resolved), do: :unreported
+  def resolution_for(%{}, {:unknown, _message}), do: :expired_report
+  def resolution_for(%{}, _resolved), do: :report
+
+  # Provenance and the last report are attached whether or not the state is
+  # asserted: "last said blocked 6h ago" is evidence a caller can weigh, and
+  # "never reported" is a different condition from "expired" (#20022).
+  defp put_report_meta(map, entry, resolved) do
+    map
+    |> Map.put(:agent_state_resolution, resolution_for(entry, resolved))
+    |> put_last_report(entry)
+  end
+
+  defp put_last_report(map, %{state: state, reported_at: %DateTime{} = at} = entry) do
+    map
+    |> Map.put(:agent_state_last_reported, state)
+    |> Map.put(:agent_state_reported_at, DateTime.to_iso8601(at))
+    |> Map.put(:agent_state_report_source, Map.get(entry, :source))
+  end
+
+  defp put_last_report(map, _entry), do: map
 
   # Omit `:unknown` so payloads and stable hashes stay compact when nothing is
   # known about a pane/window.

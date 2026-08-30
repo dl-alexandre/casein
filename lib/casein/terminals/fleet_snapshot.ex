@@ -341,7 +341,10 @@ defmodule Casein.Terminals.FleetSnapshot do
           board ->
             OrchestrationListWorkers.project(
               board,
-              project_opts(workspace_id, session, snapshot, opts)
+              workspace_id
+              |> project_opts(session, snapshot, opts)
+              |> Keyword.put(:liveness_source, :snapshot)
+              |> Keyword.put(:snapshot_generated_at, snapshot.generated_at)
             )
         end
     end
@@ -470,7 +473,13 @@ defmodule Casein.Terminals.FleetSnapshot do
     _ -> {:error, :build_failed}
   end
 
-  defp board_opts(session, opts) do
+  @doc """
+  `FleetBoard.from_window_tabs/2` options the snapshot uses for a session —
+  shared with the liveness-observed `orchestration_list_workers` path so both
+  boards are built the same way.
+  """
+  @spec board_opts(String.t(), keyword()) :: keyword()
+  def board_opts(session, opts \\ []) do
     []
     |> then(fn acc ->
       case Keyword.get(opts, :list_claimed) do

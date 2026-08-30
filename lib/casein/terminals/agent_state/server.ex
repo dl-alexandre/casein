@@ -12,6 +12,12 @@ defmodule Casein.Terminals.AgentState.Server do
   @topic_prefix "agent_state:"
   @max_entries 500
   @registered_name :"Elixir.Casein.Terminals.AgentState"
+  # How far back the durable timeline is replayed at boot. Anything older is
+  # beyond every assert/TTL window and only ever served as "last reported".
+  @rehydrate_window_seconds 24 * 3600
+  @rehydrate_limit 5_000
+  @rehydrate_retry_ms 5_000
+  @rehydrate_attempts 6
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, %{}, Keyword.put_new(opts, :name, @registered_name))
@@ -57,12 +63,44 @@ defmodule Casein.Terminals.AgentState.Server do
 
   def clear, do: GenServer.call(@registered_name, :clear)
 
+  @doc """
+  Replay the newest durable `agent.state_changed` row per pane into the live
+  map (entries already present win). Runs automatically after start; exposed
+  so tests and operators can drive it. Returns the number of panes seeded.
+  """
+  def rehydrate(server \\ @registered_name), do: GenServer.call(server, :rehydrate)
+
   # State: `entries` holds live per-pane reports; `evicted` keeps a bounded
   # `{key => %{state: ..., reported_at: ...}}` tombstone for entries dropped by
   # trim/prune, so a re-report of an unchanged state after eviction does not
   # masquerade as a fresh transition and write a spurious durable audit row.
+  # The map is process memory: every canary deploy started from nothing, and a
+  # pane that had gone quiet before the swap never re-reported, so its history
+  # was simply gone (#20022). Seed from the durable timeline once the process
+  # is up, off the init path so a slow or not-yet-started Repo cannot block
+  # the supervisor.
   @impl true
-  def init(_state), do: {:ok, %{entries: %{}, evicted: %{}}}
+  def init(_state) do
+    {:ok, %{entries: %{}, evicted: %{}, rehydrated_at: nil},
+     {:continue, {:rehydrate, @rehydrate_attempts}}}
+  end
+
+  @impl true
+  def handle_continue({:rehydrate, attempts_left}, state) do
+    case rehydrate_entries(state) do
+      {:ok, state} ->
+        {:noreply, state}
+
+      {:error, _reason} when attempts_left > 1 ->
+        Process.send_after(self(), {:rehydrate, attempts_left - 1}, @rehydrate_retry_ms)
+        {:noreply, state}
+
+      {:error, reason} ->
+        require Logger
+        Logger.warning("agent state rehydration gave up: #{inspect(reason)}")
+        {:noreply, state}
+    end
+  end
 
   @impl true
   # Not a plain KV store: this GenServer dedupes semantic-state reports (so hook
@@ -104,7 +142,24 @@ defmodule Casein.Terminals.AgentState.Server do
     {:reply, reply, state}
   end
 
-  def handle_call(:clear, _from, _state), do: {:reply, :ok, %{entries: %{}, evicted: %{}}}
+  def handle_call(:clear, _from, _state),
+    do: {:reply, :ok, %{entries: %{}, evicted: %{}, rehydrated_at: nil}}
+
+  def handle_call(:rehydrate, _from, state) do
+    before = map_size(state.entries)
+
+    case rehydrate_entries(state) do
+      {:ok, state} -> {:reply, {:ok, map_size(state.entries) - before}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
+  def handle_info({:rehydrate, attempts_left}, state) do
+    handle_continue({:rehydrate, attempts_left}, state)
+  end
+
+  def handle_info(_message, state), do: {:noreply, state}
 
   @impl true
   def handle_cast(
@@ -269,6 +324,68 @@ defmodule Casein.Terminals.AgentState.Server do
   end
 
   defp maybe_observe_lifecycle(_prior_state, _entry, _tmux_session, _pane_id), do: :ok
+
+  # Newest durable transition per {session, pane} within the window becomes a
+  # `:durable` entry: state and time only (messages are not persisted), no
+  # broadcast, no audit — it is a memory, not a new event. Live entries win.
+  defp rehydrate_entries(state) do
+    since = DateTime.add(DateTime.utc_now(), -@rehydrate_window_seconds, :second)
+
+    rows =
+      Casein.Agents.AgentEvents.latest_state_transitions(
+        since: since,
+        limit: @rehydrate_limit
+      )
+
+    entries =
+      Enum.reduce(rows, state.entries, fn row, acc ->
+        case durable_entry(row) do
+          {key, entry} -> Map.put_new(acc, key, entry)
+          nil -> acc
+        end
+      end)
+
+    {:ok, trim_size(%{state | entries: entries, rehydrated_at: DateTime.utc_now()})}
+  rescue
+    error -> {:error, error}
+  catch
+    :exit, reason -> {:error, {:exit, reason}}
+  end
+
+  defp durable_entry(%{tmux_session_id: session, pane_id: pane} = row)
+       when is_binary(session) and session != "" and is_binary(pane) and pane != "" do
+    with state when not is_nil(state) <- durable_state(row),
+         %DateTime{} = at <- Map.get(row, :occurred_at) do
+      {{session, pane},
+       %{
+         state: state,
+         message: nil,
+         source: :durable,
+         tool: nil,
+         workspace_id: Map.get(row, :workspace_id),
+         transcript_path: nil,
+         agent_session_id: Map.get(row, :agent_session_id),
+         reported_at: at
+       }}
+    else
+      _ -> nil
+    end
+  end
+
+  defp durable_entry(_row), do: nil
+
+  defp durable_state(row) do
+    payload = Map.get(row, :payload) || %{}
+
+    case Map.get(payload, "state") || Map.get(row, :status) do
+      "working" -> :working
+      "blocked" -> :blocked
+      "done" -> :done
+      "idle" -> :idle
+      "errored" -> :errored
+      _ -> nil
+    end
+  end
 
   defp prior_state(%{state: state}, _tombstone), do: state
   defp prior_state(nil, %{state: state}), do: state
