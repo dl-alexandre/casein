@@ -64,6 +64,9 @@ defmodule Casein.Signals.MemoryPressureWatch do
   it treats reclaimable page cache as free — the number that actually predicts
   an OOM. Returns `{:error, _}` on any host without a readable meminfo.
   """
+  # Path is /proc/meminfo or a test fixture passed by the caller — never web
+  # input; same posture as Casein.Terminals.HostHealth.
+  # sobelow_skip ["Traversal.FileModule"]
   @spec sample_memory(keyword()) :: {:ok, map()} | {:error, term()}
   def sample_memory(opts \\ []) do
     path = Keyword.get(opts, :meminfo_path, @meminfo_path)
@@ -376,6 +379,9 @@ defmodule Casein.Signals.MemoryPressureWatch do
   end
 
   # cgroup v2 memory files hold either an integer of bytes or the word "max".
+  # Path is under the resolved casein-agents.slice cgroup dir (config or a
+  # fixed sysfs location) — never web input.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_cgroup_bytes(path) do
     case File.read(path) do
       {:ok, contents} ->
