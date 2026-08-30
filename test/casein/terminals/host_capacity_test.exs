@@ -9,6 +9,7 @@ defmodule Casein.Terminals.HostCapacityTest do
         load_reader: fn -> "4.66" end,
         nproc_reader: fn -> "32" end,
         mem_reader: fn -> "78456112" end,
+        agents_reader: fn -> 3 end,
         max_load_ratio: 4.0
       )
 
@@ -28,6 +29,7 @@ defmodule Casein.Terminals.HostCapacityTest do
         load_reader: fn -> 40.0 end,
         nproc_reader: fn -> 32 end,
         mem_reader: fn -> 1_000 end,
+        agents_reader: fn -> 0 end,
         max_load_ratio: 1.0,
         min_mem_available_kb: 2_000
       )
@@ -54,5 +56,68 @@ defmodule Casein.Terminals.HostCapacityTest do
     refute snapshot.healthy?
     assert "load probe unavailable" in snapshot.reasons
     assert "memory probe unavailable" in snapshot.reasons
+  end
+
+  describe "agent budget" do
+    test "a full budget is constrained with its own reason" do
+      snapshot =
+        HostCapacity.snapshot(
+          load_reader: fn -> 1.0 end,
+          nproc_reader: fn -> 32 end,
+          mem_reader: fn -> 80_000_000 end,
+          agents_reader: fn -> 32 end,
+          max_agents: 32
+        )
+
+      assert snapshot.status == "constrained"
+      assert snapshot.agent_processes == 32
+      assert snapshot.max_agents == 32
+      assert snapshot.agents_ok? == false
+      assert snapshot.reasons == ["resident agent count is at the configured budget"]
+    end
+
+    test "a budget of zero disables the check" do
+      snapshot =
+        HostCapacity.snapshot(
+          load_reader: fn -> 1.0 end,
+          nproc_reader: fn -> 32 end,
+          mem_reader: fn -> 80_000_000 end,
+          agents_reader: fn -> 500 end,
+          max_agents: 0
+        )
+
+      assert snapshot.healthy?
+      assert snapshot.agents_ok?
+    end
+
+    test "an unavailable agent probe is unknown, never spare capacity" do
+      snapshot =
+        HostCapacity.snapshot(
+          load_reader: fn -> 1.0 end,
+          nproc_reader: fn -> 32 end,
+          mem_reader: fn -> 80_000_000 end,
+          agents_reader: fn -> nil end
+        )
+
+      assert snapshot.status == "unknown"
+      refute snapshot.available?
+      assert "agent process probe unavailable" in snapshot.reasons
+    end
+
+    test "count_agents matches every agent binary form and nothing else" do
+      listing = """
+      devbox /usr/local/bin/opencode
+      devbox /home/devbox/.local/bin/claude.exe --resume
+      devbox claude_exe
+      devbox /usr/bin/node /home/devbox/.local/lib/node_modules/@openai/codex/bin/codex.js
+      devbox /opt/grok/grok --sandbox x
+      devbox /usr/bin/node /srv/app/server.js
+      devbox bash
+      devbox /usr/bin/vim claude.md
+      """
+
+      assert HostCapacity.count_agents(listing) == 5
+      assert HostCapacity.count_agents("") == 0
+    end
   end
 end

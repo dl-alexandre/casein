@@ -33,7 +33,8 @@ defmodule Casein.Supervision.PlatformServices do
       # Slice 3: host tmux control-listener flap → audit / ops:health (mirrors
       # DegradationWatch patterns; thresholds via :tmux_events_flap_watch).
       Casein.Signals.TmuxEventsFlapWatch,
-      Casein.Signals.DiskPressureWatch
+      Casein.Signals.DiskPressureWatch,
+      Casein.Signals.MemoryPressureWatch
     ]
   end
 

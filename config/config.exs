@@ -115,6 +115,21 @@ config :casein,
     sampler: {Casein.Signals.DiskPressureWatch, :sample_disk_usage},
     clock: {System, :monotonic_time, [:millisecond]}
   ],
+  # Host memory (used = 100 - MemAvailable/MemTotal, so page cache counts as
+  # free). 85/93 leaves the OOM killer a real margin on a 123 GB box; the agent
+  # slice (casein-agents.slice) throttles at 60% so pressure normally shows up
+  # there first and the alert says so.
+  memory_pressure_watch: [
+    warning_percent: 85,
+    alarm_percent: 93,
+    healthy_interval_ms: 60_000,
+    warning_interval_ms: 20_000,
+    alarm_interval_ms: 10_000,
+    sample_cap: 120,
+    sample_retention_ms: 7_200_000,
+    sampler: {Casein.Signals.MemoryPressureWatch, :sample_memory},
+    clock: {System, :monotonic_time, [:millisecond]}
+  ],
   tmux_ctl: [
     runner: Casein.Terminals.TmuxRunner,
     session_prefix: "casein",

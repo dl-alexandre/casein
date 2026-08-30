@@ -20,6 +20,9 @@ source "${ROOT}/scripts/lib/agent-identity.sh"
 source "${ROOT}/scripts/lib/sidechat.sh"
 # shellcheck source=lib/agent-skills.sh
 source "${ROOT}/scripts/lib/agent-skills.sh"
+# Resident-agent budget (post-mortem 2026-08-27: 66 agents, no cap, host OOM).
+# shellcheck source=lib/agent-budget.sh
+source "${ROOT}/scripts/lib/agent-budget.sh"
 
 usage() {
   cat <<'EOF'
@@ -1590,6 +1593,10 @@ claude_default_args() {
 
   printf '%s\0' --dangerously-skip-permissions
 }
+
+# Last gate before the exec: refuse when the host already carries its budget
+# of agent processes. Loud, with a token callers can branch on; FORCE overrides.
+agent_budget_check "$RUNTIME" || exit $?
 
 case "$RUNTIME" in
   grok)
