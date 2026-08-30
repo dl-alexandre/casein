@@ -641,7 +641,8 @@ defmodule Scripts.AgentWorktreeTest do
           "agent-auth-profile.sh",
           "agent-identity.sh",
           "sidechat.sh",
-          "agent-skills.sh"
+          "agent-skills.sh",
+          "agent-budget.sh"
         ] do
       File.ln_s!(Path.join(@root, "scripts/lib/#{file}"), Path.join(lib, file))
     end
