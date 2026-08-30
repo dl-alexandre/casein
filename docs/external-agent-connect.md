@@ -61,7 +61,12 @@ shape: workspace-named servers (`casein-terminal-<workspace>`) and
 `?workspace_id=` on every URL, plus a workspace-scoped bearer. Omitting
 `workspace_id` still injects the token's workspace. `recommended_session` is
 chosen only from that set. `allow_cross_workspace` is the only opt-in
-read-only peek at another workspace.
+read-only peek at another workspace — **writes never cross workspaces.** A
+client that drives several workspaces (a multi-factory dispatcher) declares one
+pinned server per workspace; the bearers can be one per workspace or a single
+bearer an operator entitled to a list (see "Writes never cross workspaces" in
+`docs/terminal_mcp.md`). Either way a URL pinned outside the entitlement is
+`403 workspace_forbidden`.
 
 > **Token caveat.** A durable/workspaceless config needs the **global** token
 > **and** `CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS=1`. That's fine over **Door 1

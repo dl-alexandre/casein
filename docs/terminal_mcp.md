@@ -72,6 +72,28 @@ workspace; `recommended_session` is chosen only from that filtered set.
 `workspace_id` on an unscoped URL returns `workspace_scope_required` rather
 than listing the host.
 
+**Writes never cross workspaces — operate several with several servers.** There
+is no mutating counterpart to `allow_cross_workspace` and none is planned: a
+bearer that could paste into any factory is the box-wide credential #19291
+removed. A client that legitimately drives N workspaces declares N pre-scoped
+servers (`casein-terminal-<workspace>` → `…/mcp?workspace_id=<uuid>`), the same
+shape the Connect drawer emits. Two ways to hold the credentials:
+
+| | per-workspace bearers (default) | one bearer entitled to a list |
+|---|---|---|
+| minted by | the Connect drawer / `WorkspaceTokens.ensure_for/1` per workspace | an operator: `CASEIN_WORKSPACE_API_TOKENS='{"<token>": ["<uuid-a>", "<uuid-b>"]}'` or the same shape in `~/.casein/workspace-api-tokens.json` |
+| blast radius | one workspace per secret | the listed set, no more |
+| adding a workspace | mint one, add a server, restart the client | add the id to the list, add a server, restart the client |
+
+Either way the entitlement is on the **token**, not the URL: pinning a server
+to a workspace the bearer is not entitled to returns `403 workspace_forbidden`
+before any tool runs (`CaseinWeb.Plugs.ApiAuth`), so editing the query string
+buys nothing. A list-entitled bearer on an unpinned URL defaults to the first
+listed workspace. What a session is scoped to is announced in the `initialize`
+instructions ("This endpoint is pre-scoped to workspace_id …") and echoed by
+`terminal_list_sessions.session_scope`; the full entitlement of a list bearer is
+on the conn as `api_workspace_ids` for surfaces that want to show it.
+
 **Token rotation.** `POST /api/workspaces/:id/api-token/rotate` mints a new
 workspace bearer, retires the previous value (`401 stale_grant` if still
 presented), rewrites materialized MCP configs, and `tmux set-environment`s

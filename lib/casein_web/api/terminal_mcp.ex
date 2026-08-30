@@ -73,7 +73,12 @@ defmodule CaseinWeb.API.TerminalMCP do
         "Before assigning a worker wave, call terminal_host_capacity; an unknown " <>
         "capacity probe is not spare capacity. Host watchdog health (same snapshot " <>
         "as the Host health menu row) is terminal_host_health or casein://host/health; " <>
-        "unknown/stale is never healthy.",
+        "unknown/stale is never healthy. Writes never cross workspaces: every mutating " <>
+        "tool is confined to this endpoint's workspace, and allow_cross_workspace is a " <>
+        "read-only lane. To act on several workspaces from one client, declare one " <>
+        "pre-scoped server per workspace (?workspace_id=<uuid> on the URL with a bearer " <>
+        "entitled to it); a bearer may be entitled to a list of workspaces, but each " <>
+        "server URL still pins exactly one.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )
   end
