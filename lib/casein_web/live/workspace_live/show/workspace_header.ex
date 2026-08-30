@@ -406,13 +406,26 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
             · {@health.reason}
           </span>
         </div>
-        <div class="flex flex-wrap gap-x-2 gap-y-0.5 font-mono">
+        <%!-- A stale sample's numbers describe the past, not the host. Say how
+             long the watchdog has been silent instead of serving them as current
+             (OneBackend-v3#20165). --%>
+        <div :if={@health.fresh?} class="flex flex-wrap gap-x-2 gap-y-0.5 font-mono">
           <span>load {host_health_number(@health.load1)}</span>
           <span>idle {host_health_pct(@health.cpu_idle_pct)}</span>
           <span>mem {host_health_mem(@health.mem_available_kb)}</span>
           <span>swap {host_health_mem(@health.swap_used_kb)}</span>
           <span>oc {host_health_count(@health.opencode_processes)}</span>
           <span>beam {host_health_count(@health.beam_processes)}</span>
+        </div>
+        <div :if={!@health.fresh?} class="text-status-warning-fg">
+          watchdog silent for {host_health_age(@health.age_seconds)} — last sample
+          <span class="font-mono">{@health.sampled_at || "never"}</span>
+          <span :if={@health.recorded_state}>· last recorded: {@health.recorded_state}</span>
+          · live numbers withheld
+        </div>
+        <div :if={!@health.alerts_available?} class="text-status-warning-fg">
+          alert log unavailable
+          <span :if={@health.alerts_unavailable_reason}>· {@health.alerts_unavailable_reason}</span>
         </div>
         <div>
           alert {host_health_alert(@health.alert)}
@@ -437,12 +450,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
   defp host_health_dot_class("warning"), do: "bg-status-warning"
   defp host_health_dot_class("pressure"), do: "bg-status-danger"
   defp host_health_dot_class("stuck"), do: "bg-status-danger"
+  defp host_health_dot_class("stale"), do: "bg-status-warning"
   defp host_health_dot_class(_), do: "bg-base-content/35"
 
   defp host_health_label_class("healthy"), do: "text-status-ok-fg"
   defp host_health_label_class("warning"), do: "text-status-warning-fg"
   defp host_health_label_class("pressure"), do: "text-status-danger-fg"
   defp host_health_label_class("stuck"), do: "text-status-danger-fg"
+  defp host_health_label_class("stale"), do: "text-status-warning-fg"
   defp host_health_label_class(_), do: "text-base-content/60"
 
   defp host_health_age(seconds) when is_integer(seconds) and seconds < 60, do: "#{seconds}s"
