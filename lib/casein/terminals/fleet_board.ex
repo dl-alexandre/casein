@@ -384,6 +384,21 @@ defmodule Casein.Terminals.FleetBoard do
         ),
       agent_state: agent_state,
       agent_state_message: message,
+      # Provenance rides along untouched so every projection can say *why*
+      # agent_state is what it is, or why it is absent (#20022).
+      agent_state_resolution:
+        normalize_resolution(
+          Map.get(tab, :agent_state_resolution) || Map.get(tab, "agent_state_resolution")
+        ),
+      agent_state_last_reported:
+        normalize_state(
+          Map.get(tab, :agent_state_last_reported) || Map.get(tab, "agent_state_last_reported")
+        ),
+      agent_state_reported_at:
+        blank_to_nil(
+          Map.get(tab, :agent_state_reported_at) || Map.get(tab, "agent_state_reported_at")
+        ),
+      agent_state_age_s: non_neg_or_nil(Map.get(tab, :agent_state_age_s)),
       chip_text:
         blank_to_nil(Map.get(tab, :agent_state_chip) || Map.get(tab, "agent_state_chip")),
       chip_class:
@@ -541,6 +556,25 @@ defmodule Casein.Terminals.FleetBoard do
   end
 
   defp blocked_on_from(_state, _message, _reason, _liveness), do: nil
+
+  defp normalize_resolution(value)
+       when value in [:report, :derived, :expired_report, :unreported],
+       do: value
+
+  defp normalize_resolution(value) when is_binary(value) do
+    case value do
+      "report" -> :report
+      "derived" -> :derived
+      "expired_report" -> :expired_report
+      "unreported" -> :unreported
+      _ -> nil
+    end
+  end
+
+  defp normalize_resolution(_value), do: nil
+
+  defp non_neg_or_nil(n) when is_integer(n) and n >= 0, do: n
+  defp non_neg_or_nil(_), do: nil
 
   defp fleet_row?(%{agent_state: state})
        when state in [:working, :blocked, :done, :idle, :errored, :stalled, :awaiting_input],

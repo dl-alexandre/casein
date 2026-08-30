@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.OrchestrationListWorkers do
   use Jido.Action,
     name: "orchestration_list_workers",
     description:
-      "Read-only compact fleet worker list (M3): rows of pane_id, window, issue, agent_state, blocked_on kind, fleet_role, needs_you? from FleetBoard projection (reuses OrchestrationStatus.tabs_from_topology — no second classifier). Optional fleet_role filter and needs_you_only. Liveness unknown never idle. No scrollback, no shell, no mutations. worker_launch and durable task graphs remain out of scope. Requires workspace_id and session.",
+      "Read-only compact fleet worker list (M3): rows of pane_id, window, issue, agent_state, blocked_on kind, fleet_role, needs_you? from FleetBoard projection (reuses OrchestrationStatus.tabs_from_topology — no second classifier). Optional fleet_role filter and needs_you_only. Liveness unknown never idle. Default reads the cached fleet snapshot (liveness_source=snapshot); include_liveness=true walks liveness now, the same evidence worker_status uses. Every row carries agent_state_resolution (report | derived | expired_report | unreported) plus agent_state_last_reported / agent_state_reported_at / agent_state_age_s, so an absent agent_state is explained rather than silent. No scrollback, no shell, no mutations. worker_launch and durable task graphs remain out of scope. Requires workspace_id and session.",
     category: "terminal",
     tags: ["terminal", "orchestration"],
     vsn: "1.0.0",

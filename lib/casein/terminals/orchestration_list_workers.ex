@@ -60,6 +60,8 @@ defmodule Casein.Terminals.OrchestrationListWorkers do
     needs_you_only? = Keyword.get(opts, :needs_you_only) == true
     incomplete? = Keyword.get(opts, :incomplete) == true
     incomplete_reason = Keyword.get(opts, :incomplete_reason)
+    liveness_source = normalize_liveness_source(Keyword.get(opts, :liveness_source))
+    snapshot_generated_at = Keyword.get(opts, :snapshot_generated_at)
 
     all_rows = Enum.map(Map.get(board, :rows) || [], &compact_row/1)
 
@@ -75,6 +77,8 @@ defmodule Casein.Terminals.OrchestrationListWorkers do
       incomplete: incomplete?,
       incomplete_reason: incomplete_reason,
       needs_you_observe_state: if(incomplete?, do: "unknown", else: "ok"),
+      liveness_source: liveness_source,
+      snapshot_generated_at: snapshot_generated_at,
       total: Map.get(board, :total, length(all_rows)),
       filtered_total: length(workers),
       workers: workers,
@@ -83,9 +87,29 @@ defmodule Casein.Terminals.OrchestrationListWorkers do
         "M3 compact worker list. Reuses FleetBoard/OrchestrationStatus.tabs_from_topology. " <>
           "needs_you_observe_state=unknown means the snapshot could not be computed, " <>
           "not that nobody needs you. liveness unknown ≠ idle. " <>
+          liveness_source_note(liveness_source) <>
+          "agent_state_resolution explains an absent agent_state: unreported (never " <>
+          "reported) vs expired_report (last word in agent_state_last_reported at " <>
+          "agent_state_reported_at). " <>
           "worker_launch, durable graphs, and verifiers remain out of scope."
     }
+    |> reject_nils()
   end
+
+  defp normalize_liveness_source(:observed), do: "observed"
+  defp normalize_liveness_source("observed"), do: "observed"
+  defp normalize_liveness_source(_), do: "snapshot"
+
+  # The cached snapshot carries only *cached* liveness, so a >2min-old blocked
+  # report can age out here while worker_status (which observes liveness on
+  # the spot) still corroborates it. Say which evidence this list was built on.
+  defp liveness_source_note("observed"),
+    do: "liveness_source=observed: liveness was walked now (same evidence as worker_status). "
+
+  defp liveness_source_note(_),
+    do:
+      "liveness_source=snapshot: built from the cached fleet snapshot; pass " <>
+        "include_liveness=true to observe liveness now (same evidence as worker_status). "
 
   ## Internals
 
@@ -98,6 +122,10 @@ defmodule Casein.Terminals.OrchestrationListWorkers do
       window_id: Map.get(row, :window_id),
       issue: Map.get(row, :issue),
       agent_state: atom_or_nil(Map.get(row, :agent_state)),
+      agent_state_resolution: atom_or_nil(Map.get(row, :agent_state_resolution)),
+      agent_state_last_reported: atom_or_nil(Map.get(row, :agent_state_last_reported)),
+      agent_state_reported_at: Map.get(row, :agent_state_reported_at),
+      agent_state_age_s: Map.get(row, :agent_state_age_s),
       status: Map.get(row, :status) || FleetBoard.operational_status(row),
       blocked_on: blocked,
       work_handle: Map.get(row, :work_handle),

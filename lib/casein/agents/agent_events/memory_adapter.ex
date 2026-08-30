@@ -43,6 +43,11 @@ defmodule Casein.Agents.AgentEvents.MemoryAdapter do
   end
 
   @impl true
+  def list_recent_by_event_type(event_type, since, limit) do
+    GenServer.call(__MODULE__, {:list_recent_by_event_type, event_type, since, limit})
+  end
+
+  @impl true
   def list_open_clarifications(workspace_id, request_type, resolved_type, opts) do
     GenServer.call(
       __MODULE__,
@@ -113,6 +118,20 @@ defmodule Casein.Agents.AgentEvents.MemoryAdapter do
         limit,
         :desc
       )
+
+    {:reply, events, state}
+  end
+
+  def handle_call({:list_recent_by_event_type, event_type, since, limit}, _from, state) do
+    events =
+      state.events
+      |> Map.values()
+      |> Enum.filter(fn event ->
+        event.event_type == event_type and
+          DateTime.compare(event.occurred_at, since) != :lt
+      end)
+      |> Enum.sort_by(&{&1.occurred_at, &1.inserted_at, &1.id}, :desc)
+      |> Enum.take(limit)
 
     {:reply, events, state}
   end

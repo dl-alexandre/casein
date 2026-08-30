@@ -61,6 +61,16 @@ defmodule Casein.Agents.AgentEvents.EctoAdapter do
     |> Repo.all()
   end
 
+  @impl true
+  def list_recent_by_event_type(event_type, %DateTime{} = since, limit)
+      when is_binary(event_type) and is_integer(limit) and limit > 0 do
+    AgentEvent
+    |> where([event], event.event_type == ^event_type and event.occurred_at >= ^since)
+    |> newest_first()
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
   # Windows desktop is CASEIN_REPO_ADAPTER=sqlite. Postgres `payload->>'…'` and
   # DISTINCT ON are unavailable there; project in Elixir after a typed fetch so
   # mobile open-clarification hydration (H28 filter-before-distinct) works on

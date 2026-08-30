@@ -86,6 +86,17 @@ defmodule Casein.Terminals.WorkerStatus do
     board = FleetBoard.from_window_tabs([tab], gate_queue: unknown_gate(), claimed: [])
     row = List.first(board.rows) || %{}
 
+    resolution =
+      Map.get(row, :agent_state_resolution) || pane_field(pane, :agent_state_resolution)
+
+    last_reported =
+      Map.get(row, :agent_state_last_reported) || pane_field(pane, :agent_state_last_reported)
+
+    reported_at =
+      Map.get(row, :agent_state_reported_at) || pane_field(pane, :agent_state_reported_at)
+
+    age_s = Map.get(row, :agent_state_age_s) || pane_field(pane, :agent_state_age_s)
+
     # Prefer FleetBoard row projection (blocked_on / liveness / bucket) when the
     # pane qualifies as a fleet row; otherwise emit pane fields directly so a
     # non-agent pane still returns identity + worktree without inventing state.
@@ -118,6 +129,11 @@ defmodule Casein.Terminals.WorkerStatus do
       agent_state_message:
         Map.get(row, :agent_state_message) || pane_field(pane, :agent_state_message) ||
           work_handle_status(pane, :message),
+      agent_state_resolution: atom_or_nil(resolution),
+      agent_state_last_reported: atom_or_nil(last_reported),
+      agent_state_reported_at: reported_at,
+      agent_state_age_s: age_s,
+      agent_state_note: agent_state_note(resolution, last_reported, age_s),
       issue: Map.get(row, :issue) || pane_field(pane, :issue),
       issue_title: Map.get(row, :issue_title) || pane_field(pane, :issue_title),
       task_summary: Map.get(row, :task_summary) || pane_field(pane, :task_summary),
@@ -131,8 +147,11 @@ defmodule Casein.Terminals.WorkerStatus do
       work_handle: Map.get(row, :work_handle) || pane_field(pane, :work_handle),
       note:
         "M2 single-worker status. Reuses FleetBoard blocked_on/liveness kind discipline. " <>
-          "liveness unknown ≠ quiet. Recorded worker_launch identity is included; " <>
-          "task graphs and verifiers remain out of scope."
+          "liveness unknown ≠ quiet. agent_state_resolution says why agent_state is " <>
+          "present or absent (report | derived | expired_report | unreported); an " <>
+          "expired_report still carries agent_state_last_reported / agent_state_reported_at. " <>
+          "Recorded worker_launch identity is included; task graphs and verifiers remain " <>
+          "out of scope."
     }
 
     reject_nils(base)
@@ -166,6 +185,10 @@ defmodule Casein.Terminals.WorkerStatus do
       agent_state: pane_field(pane, :agent_state) || work_handle_status(pane, :state),
       agent_state_message:
         pane_field(pane, :agent_state_message) || work_handle_status(pane, :message),
+      agent_state_resolution: pane_field(pane, :agent_state_resolution),
+      agent_state_last_reported: pane_field(pane, :agent_state_last_reported),
+      agent_state_reported_at: pane_field(pane, :agent_state_reported_at),
+      agent_state_age_s: pane_field(pane, :agent_state_age_s),
       agent_pane_id: pane_field(pane, :id),
       label: pane_field(pane, :label),
       issue: pane_field(pane, :issue),
@@ -206,6 +229,30 @@ defmodule Casein.Terminals.WorkerStatus do
   defp pane_field(pane, key) when is_map(pane) do
     Map.get(pane, key) || Map.get(pane, Atom.to_string(key))
   end
+
+  # Spell out what an absent `agent_state` means so a fail-closed reader does
+  # not have to guess between "never reported" and "reported, then went quiet".
+  defp agent_state_note(resolution, last_reported, age_s)
+       when resolution in [:expired_report, "expired_report"] do
+    "agent_state is not asserted: the last report (#{atom_or_nil(last_reported) || "unknown"}) " <>
+      "is #{age_label(age_s)} old, past the assert window. Weigh agent_state_last_reported " <>
+      "against liveness.quiet_for_seconds; a non-working last word over a worktree quiet " <>
+      "as long is a worker that said it stopped, then stopped."
+  end
+
+  defp agent_state_note(resolution, _last_reported, _age_s)
+       when resolution in [:unreported, "unreported"] do
+    "agent_state is absent because this pane has never reported one (no hook or " <>
+      "terminal_report_agent_state call reached Casein). Only liveness and the screen " <>
+      "can speak for it."
+  end
+
+  defp agent_state_note(_resolution, _last_reported, _age_s), do: nil
+
+  defp age_label(seconds) when is_integer(seconds) and seconds < 60, do: "#{seconds}s"
+  defp age_label(seconds) when is_integer(seconds) and seconds < 3600, do: "#{div(seconds, 60)}m"
+  defp age_label(seconds) when is_integer(seconds), do: "#{div(seconds, 3600)}h"
+  defp age_label(_seconds), do: "an unknown time"
 
   defp work_handle_status(pane, key) do
     with handle when is_map(handle) <- pane_field(pane, :work_handle),

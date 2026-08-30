@@ -107,6 +107,10 @@ defmodule Casein.Terminals.OrchestrationStatus do
         agent_state: pane_field(agent, :agent_state) || work_handle_status(agent, :state),
         agent_state_message:
           pane_field(agent, :agent_state_message) || work_handle_status(agent, :message),
+        agent_state_resolution: pane_field(agent, :agent_state_resolution),
+        agent_state_last_reported: pane_field(agent, :agent_state_last_reported),
+        agent_state_reported_at: pane_field(agent, :agent_state_reported_at),
+        agent_state_age_s: pane_field(agent, :agent_state_age_s),
         agent_pane_id: pane_field(agent, :id),
         label: pane_field(agent, :label),
         issue: pane_field(agent, :issue) || Map.get(window, :issue) || Map.get(window, "issue"),
