@@ -12,10 +12,14 @@ defmodule Casein.Terminals.AgentState.Server do
   @topic_prefix "agent_state:"
   @max_entries 500
   @registered_name :"Elixir.Casein.Terminals.AgentState"
-  # How far back the durable timeline is replayed at boot. Anything older is
-  # beyond every assert/TTL window and only ever served as "last reported".
-  @rehydrate_window_seconds 24 * 3600
-  @rehydrate_limit 5_000
+  # How far back the durable timeline is replayed at boot. Rehydration only
+  # ever feeds "last reported" provenance (everything here is far beyond the
+  # assert/TTL windows), and the panes that need it most are the old ones: a
+  # worker whose PR merged a day or two ago and has stood quiet since is the
+  # exact reap-gate case (#20022 - %25 fell 1h outside a 24h window). A week
+  # of transitions is ~5k rows; the scan stays bounded by the limit either way.
+  @rehydrate_window_seconds 7 * 24 * 3600
+  @rehydrate_limit 20_000
   @rehydrate_retry_ms 5_000
   @rehydrate_attempts 6
 
