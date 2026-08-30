@@ -34,7 +34,8 @@ defmodule Casein.Supervision.PlatformServices do
       # DegradationWatch patterns; thresholds via :tmux_events_flap_watch).
       Casein.Signals.TmuxEventsFlapWatch,
       Casein.Signals.DiskPressureWatch,
-      Casein.Signals.MemoryPressureWatch
+      Casein.Signals.MemoryPressureWatch,
+      Casein.Signals.HostWatchdogWatch
     ]
   end
 

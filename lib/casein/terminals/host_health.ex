@@ -59,7 +59,8 @@ defmodule Casein.Terminals.HostHealth do
           alert: String.t() | nil,
           latest_alert_at: String.t() | nil,
           alerts: [map()],
-          alerts_available?: boolean()
+          alerts_available?: boolean(),
+          alerts_unavailable_reason: String.t() | nil
         }
 
   @doc "Canonical MCP resource URI."
@@ -97,9 +98,11 @@ defmodule Casein.Terminals.HostHealth do
     max_alerts = resolve_max_alerts(opts)
 
     {sample, sample_error} = read_sample(opts)
-    {alerts, alerts_available?} = read_alerts(opts, max_alerts)
+    {alerts, alerts_available?, alerts_reason} = read_alerts(opts, max_alerts)
 
-    build_snapshot(sample, sample_error, alerts, alerts_available?, host, now, stale_after)
+    sample
+    |> build_snapshot(sample_error, alerts, alerts_available?, host, now, stale_after)
+    |> Map.put(:alerts_unavailable_reason, if(alerts_available?, do: nil, else: alerts_reason))
   end
 
   defp build_snapshot(nil, sample_error, alerts, alerts_available?, host, now, _stale_after) do
@@ -282,23 +285,32 @@ defmodule Casein.Terminals.HostHealth do
 
   defp decode_status_raw(_), do: {nil, :malformed}
 
+  # `{alerts, available?, unavailable_reason}`. The reason matters: on
+  # 2026-08-30 `alerts_available?` was false for three days because the
+  # watchdog wrote alerts.jsonl root-only, and nothing said so (#20165).
   # Path is operator config / env / hardcoded watchdog file, not web input.
   # sobelow_skip ["Traversal.FileModule"]
   defp read_alerts(opts, max_alerts) do
     cond do
       Keyword.has_key?(opts, :alerts) ->
-        {sanitize_alerts(Keyword.get(opts, :alerts), max_alerts), true}
+        {sanitize_alerts(Keyword.get(opts, :alerts), max_alerts), true, nil}
 
       Keyword.has_key?(opts, :alerts_raw) ->
-        parse_alerts_raw(Keyword.get(opts, :alerts_raw), max_alerts)
+        with_unavailable_reason(parse_alerts_raw(Keyword.get(opts, :alerts_raw), max_alerts))
 
       true ->
         case File.read(resolve_alerts_path(opts)) do
-          {:ok, contents} -> parse_alerts_raw(contents, max_alerts)
-          {:error, _} -> {[], false}
+          {:ok, contents} ->
+            with_unavailable_reason(parse_alerts_raw(contents, max_alerts))
+
+          {:error, reason} ->
+            {[], false, "alert log unreadable (#{reason})"}
         end
     end
   end
+
+  defp with_unavailable_reason({alerts, true}), do: {alerts, true, nil}
+  defp with_unavailable_reason({alerts, false}), do: {alerts, false, "alert log malformed"}
 
   defp parse_alerts_raw(contents, max_alerts) when is_binary(contents) do
     alerts =

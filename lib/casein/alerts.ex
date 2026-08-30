@@ -109,6 +109,14 @@ defmodule Casein.Alerts do
       ttl_seconds: 3_600,
       dedupe_window_seconds: 900
     },
+    "host.watchdog_stale" => %{
+      type: "host_watchdog_stale",
+      severity: "warning",
+      title: "Host watchdog has stopped sampling",
+      channels: ["in_app", "push"],
+      ttl_seconds: 86_400,
+      dedupe_window_seconds: 21_600
+    },
     "memory.pressure_alarm" => %{
       type: "memory_pressure_alarm",
       severity: "error",

@@ -130,6 +130,14 @@ config :casein,
     sampler: {Casein.Signals.MemoryPressureWatch, :sample_memory},
     clock: {System, :monotonic_time, [:millisecond]}
   ],
+  # A watchdog that stops writing status.json must announce itself
+  # (OneBackend-v3#20165). Two consecutive stale samples five minutes apart
+  # before raising; HostHealth already calls a >12min-old sample stale.
+  host_watchdog_watch: [
+    interval_ms: 300_000,
+    confirm_samples: 2,
+    sampler: {Casein.Terminals.HostHealth, :snapshot, []}
+  ],
   tmux_ctl: [
     runner: Casein.Terminals.TmuxRunner,
     session_prefix: "casein",
