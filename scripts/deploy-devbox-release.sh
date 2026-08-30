@@ -537,6 +537,30 @@ if [ ! -x "${preview_script_dir}" ]; then
   exit 1
 fi
 
+# Every scripts/lib helper the shipped launchers source must be in the release
+# (#20159: spawn-agent-worker.sh could not source agent-budget.sh — worker
+# launches failed fleet-wide). mix.exs derives the staged set the same way;
+# this catches a release built any other way before it takes traffic.
+release_scripts_dir="$(
+  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type d -path '*/priv/scripts' -print -quit 2>/dev/null
+)"
+if [ -z "${release_scripts_dir}" ]; then
+  echo "error: priv/scripts missing from release" >&2
+  exit 1
+fi
+missing_libs="$(
+  cat "${release_scripts_dir}"/*.sh "${release_scripts_dir}"/lib/* 2>/dev/null |
+    grep -oE 'scripts/lib/[A-Za-z0-9][A-Za-z0-9_.-]*' | sort -u |
+    while IFS= read -r ref; do
+      [ -f "${release_scripts_dir}/lib/${ref#scripts/lib/}" ] || printf '%s\n' "${ref}"
+    done
+)"
+if [ -n "${missing_libs}" ]; then
+  echo "error: release priv/scripts references helpers it does not ship:" >&2
+  printf '  %s\n' ${missing_libs} >&2
+  exit 1
+fi
+
 casein_curl_script_dir="$(
   sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/casein-curl.sh' -print -quit 2>/dev/null
 )"

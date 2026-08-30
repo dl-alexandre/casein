@@ -426,33 +426,11 @@ defmodule Casein.MixProject do
 
     File.mkdir_p!(destination)
 
-    top_level = [
-      "launch-casein-agent.sh",
-      "spawn-agent-worker.sh",
-      "materialize-agent-mcp.sh",
-      "casein-curl.sh",
-      "casein-agent-state.sh",
-      "casein-codex-notify.sh"
-    ]
-
-    lib_files = [
-      "agent-auth-profile.sh",
-      "agent-env.sh",
-      "agent-identity.sh",
-      "agent-skills.sh",
-      "agent-worktree.sh",
-      "grok-capability-bundle.py",
-      "grok-leader-runtime.py",
-      "grok-managed-home.py",
-      "grok-sandbox-profile.py",
-      "merge-agent-mcp.py",
-      "real-agent-bin.sh",
-      "repair-tmux-env.sh",
-      "sidechat.sh",
-      "spawn-host-headroom.sh",
-      "tmux-label.sh",
-      "workspace-scoped-token.sh"
-    ]
+    # Derived, not hand-listed: every scripts/lib helper the shipped launchers
+    # source, transitively (#20159 — a launcher that sources a helper the
+    # allowlist forgot fails fleet-wide only after the release lands).
+    top_level = Casein.Release.AgentRuntimeScripts.top_level()
+    lib_files = Casein.Release.AgentRuntimeScripts.lib_closure(__DIR__)
 
     Enum.each(top_level, fn name ->
       source = Path.join([__DIR__, "scripts", name])
