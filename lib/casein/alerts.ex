@@ -117,6 +117,14 @@ defmodule Casein.Alerts do
       ttl_seconds: 86_400,
       dedupe_window_seconds: 21_600
     },
+    "fleet.sessions_lost" => %{
+      type: "fleet_sessions_lost",
+      severity: "error",
+      title: "tmux sessions disappeared",
+      channels: ["in_app", "push"],
+      ttl_seconds: 86_400,
+      dedupe_window_seconds: 300
+    },
     "memory.pressure_alarm" => %{
       type: "memory_pressure_alarm",
       severity: "error",

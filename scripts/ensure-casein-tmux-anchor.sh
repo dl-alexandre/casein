@@ -44,6 +44,9 @@ TMUX_BIN="${CASEIN_TMUX_BIN:-$(command -v tmux || echo /usr/bin/tmux)}"
 # systemd nests slices by name (casein-agents.slice is a child of casein.slice),
 # so the cgroup path is derived from the realised ControlGroup after start.
 CG_ROOT=""
+# Sentinel that keeps the legacy casein-tmux.service inert (see
+# supersede_legacy_unit). Deleting it re-arms that unit on the next boot.
+SENTINEL="/etc/casein/tmux-anchor-owns-server"
 
 APPLY=0
 SERVER_ONLY=0
@@ -193,6 +196,50 @@ if [[ "$CG_ROOT" != */"${SLICE}/${UNIT}" || ! -f "${CG_ROOT}/cgroup.procs" ]]; t
   echo "error: anchor cgroup under ${SLICE} did not appear (got ${CG_ROOT}); not migrating" >&2
   exit 1
 fi
+supersede_legacy_unit() {
+  # casein-tmux.service is Type=forking with ExecStart=tmux ... new-session, so
+  # systemd tracks the tmux SERVER as its main process, under the default
+  # KillMode=control-group. Stopping that unit SIGTERMs the server and every
+  # pane with it. On 2026-08-29 an unattended libpam upgrade ran
+  # `systemctl daemon-reexec` and restarted PAM-linked services; systemd
+  # stopped this unit and destroyed every session across four workspaces
+  # (OneBackend-v3#20076). The 2026-08-27 loss was the same, via openssl.
+  #
+  # The anchor supersedes it entirely: KillMode=process, Delegate=yes, and an
+  # ExecStartPost that guarantees a keepalive session exists. Left enabled,
+  # though, the legacy unit re-arms the failure on the next boot by taking
+  # ownership of the server again.
+  #
+  # Neutralised by condition rather than `systemctl disable`/`mask`, which the
+  # devbox sudo policy forbids. Reverse by deleting the sentinel file.
+  local dropin_dir="${UNIT_DIR}/casein-tmux.service.d"
+  local dropin="${dropin_dir}/superseded-by-anchor.conf"
+
+  systemctl list-unit-files casein-tmux.service >/dev/null 2>&1 || return 0
+
+  log "superseding legacy casein-tmux.service (Type=forking + KillMode=control-group)"
+  sudo mkdir -p "${dropin_dir}" /etc/casein
+  printf '%s\n' \
+    '# While this file exists, casein-tmux.service no-ops and' \
+    '# casein-tmux-anchor.service owns the -L casein tmux server.' \
+    '# See scripts/ensure-casein-tmux-anchor.sh (OneBackend-v3#20076).' \
+    | sudo tee "${SENTINEL}" >/dev/null
+  printf '%s\n' \
+    '# Superseded by casein-tmux-anchor.service — see' \
+    '# scripts/ensure-casein-tmux-anchor.sh (OneBackend-v3#20076).' \
+    '[Unit]' \
+    "ConditionPathExists=!${SENTINEL}" \
+    | sudo tee "${dropin}" >/dev/null
+  sudo systemctl daemon-reload
+
+  # The running server is never signalled: this only stops the unit from
+  # claiming a *future* server. A live legacy unit keeps its server until the
+  # migration below re-homes it into the anchor cgroup.
+  log "casein-tmux.service will no-op while ${SENTINEL} exists"
+}
+
+supersede_legacy_unit
+
 log "anchor cgroup ready: ${CG_ROOT}"
 
 # ── migrate ─────────────────────────────────────────────────────────────────
