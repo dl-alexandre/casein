@@ -23,6 +23,10 @@ defmodule Casein.Supervision.StateStores do
       # per pane; AgentState stays Ledger-free (see docs/design/agent-work-as-a-run.md).
       Casein.Runs.AgentLifecycle,
       Casein.Terminals.ClipboardHistory,
+      # Suppresses "session vanished" alarms for teardowns Casein performed
+      # itself; a leaf so the killer and the reconciler need not reference
+      # each other (OneBackend-v3#20076).
+      Casein.Terminals.ExpectedRemovals,
       Casein.Audit.MemoryAdapter,
       Casein.Agents.AgentEvents.MemoryAdapter,
       Casein.Codex.Store.MemoryAdapter,

@@ -81,7 +81,7 @@ defmodule Casein.Terminals.ControlPlaneSessionLossTest do
     put_sessions([@session])
     assert {:ok, _} = reconcile(pid)
 
-    :ok = ControlPlane.expect_removal(@session, pid)
+    :ok = Casein.Terminals.ExpectedRemovals.expect(@session)
     put_sessions([])
     assert {:ok, result} = reconcile(pid)
 
@@ -96,7 +96,7 @@ defmodule Casein.Terminals.ControlPlaneSessionLossTest do
 
     put_sessions([@session])
     assert {:ok, _} = reconcile(pid)
-    :ok = ControlPlane.expect_removal(@session, pid)
+    :ok = Casein.Terminals.ExpectedRemovals.expect(@session)
     put_sessions([])
     assert {:ok, _} = reconcile(pid)
     assert audits() == []

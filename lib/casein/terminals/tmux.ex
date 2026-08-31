@@ -73,8 +73,10 @@ defmodule Casein.Terminals.Tmux do
   """
   def kill(session) when is_binary(session) do
     # Tell the reconciler this disappearance is ours, so it is not announced as
-    # an unexplained session loss (OneBackend-v3#20076).
-    _ = Casein.Terminals.ControlPlane.expect_removal(session)
+    # an unexplained session loss (OneBackend-v3#20076). Recorded in a leaf
+    # module rather than calling ControlPlane directly: ControlPlane reaches
+    # this module through the tmux adapter, so a direct call closes a cycle.
+    _ = Casein.Terminals.ExpectedRemovals.expect(session)
     result = TmuxCtl.Client.kill(session)
     _ = Casein.Terminals.ScrollbackArchive.delete(session)
     result
