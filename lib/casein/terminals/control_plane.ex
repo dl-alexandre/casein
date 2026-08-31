@@ -11,12 +11,30 @@ defmodule Casein.Terminals.ControlPlane do
   observes a session termination. Cleanup is deliberately conservative: a
   failed probe never becomes an empty pane list, so a transient tmux error does
   not erase live work metadata.
+
+  ## Announcing session loss
+
+  `sessions_lost` used to be a one-tick snapshot: `lost` was computed, exposed
+  on `status/0`, and then `seen_sessions` was overwritten, so the next pass
+  seconds later reported `0` again — forever, and across a Casein restart it
+  reported `0` from the start. On 2026-08-29 an unattended `libpam` upgrade
+  stopped `casein-tmux.service` (`Type=forking` + `KillMode=control-group`,
+  i.e. the tmux server *was* the unit's main process) and destroyed every
+  session across four workspaces; the fleet API answered `sessions: []` for
+  eight hours, indistinguishable from an idle fleet, and `sessions_lost` read
+  `0` (OneBackend-v3#20076).
+
+  A session vanishing without Casein having killed it is now a durable audit
+  event and an alert. Teardowns Casein performs itself — `Terminals.Tmux.kill/1`
+  records them via `expect_removal/1` — are counted separately and never alert,
+  so the signal stays trustworthy rather than habitually red.
   """
 
   use GenServer
 
   require Logger
 
+  alias Casein.Audit
   alias Casein.Labels
   alias Casein.Runs.AgentLifecycle
   alias Casein.Terminals.AgentState
@@ -26,6 +44,12 @@ defmodule Casein.Terminals.ControlPlane do
 
   @default_interval_ms 30_000
   @managed_prefix "casein_"
+  # A deliberate kill and the tick that observes it are normally seconds apart;
+  # this is slack for a slow reconcile, not a window anyone should rely on.
+  @expected_removal_ttl_ms 300_000
+  @loss_action "fleet.sessions_lost"
+  @ops_workspace "_ops"
+  @ops_topic "ops:health"
 
   @type result :: %{
           observed_at: String.t(),
@@ -33,6 +57,8 @@ defmodule Casein.Terminals.ControlPlane do
           reconciled: non_neg_integer(),
           panes_observed: non_neg_integer(),
           sessions_lost: non_neg_integer(),
+          sessions_lost_unexplained: non_neg_integer(),
+          sessions_lost_expected: non_neg_integer(),
           errors: [map()]
         }
 
@@ -62,6 +88,26 @@ defmodule Casein.Terminals.ControlPlane do
     :exit, _ -> %{state: "unavailable", note: "control-plane reconciler is not running"}
   end
 
+  @doc """
+  Record that Casein is about to remove `session` on purpose, so the next
+  reconciliation counts its disappearance as expected and does not alert.
+
+  Safe to call when the reconciler is not running (tests, boot): it is a cast
+  to a named process and is dropped if that process is absent.
+  """
+  @spec expect_removal(String.t(), GenServer.server()) :: :ok
+  def expect_removal(session, server \\ __MODULE__)
+
+  def expect_removal(session, server) when is_binary(session) do
+    if is_pid(GenServer.whereis(server)) do
+      GenServer.cast(server, {:expect_removal, session, now_ms()})
+    end
+
+    :ok
+  end
+
+  def expect_removal(_session, _server), do: :ok
+
   @doc "Prune all pane-keyed stores against a known live pane set."
   @spec reconcile_session(String.t(), [String.t()]) :: :ok
   def reconcile_session(session, pane_ids)
@@ -82,6 +128,7 @@ defmodule Casein.Terminals.ControlPlane do
       interval_ms: normalize_interval(Keyword.get(opts, :interval_ms, configured_interval())),
       last_result: nil,
       seen_sessions: MapSet.new(),
+      expected_removals: %{},
       run_count: 0
     }
 
@@ -112,6 +159,11 @@ defmodule Casein.Terminals.ControlPlane do
   end
 
   @impl true
+  def handle_cast({:expect_removal, session, at_ms}, state) do
+    {:noreply, put_in(state.expected_removals[session], at_ms)}
+  end
+
+  @impl true
   def handle_info(:reconcile, state) do
     {:noreply, schedule_reconcile(run(state, []))}
   end
@@ -129,16 +181,31 @@ defmodule Casein.Terminals.ControlPlane do
 
         Enum.each(lost, &reconcile_session(&1, []))
 
+        expected_removals = prune_expected(state.expected_removals)
+        lost_list = MapSet.to_list(lost)
+        {expected, unexplained} = Enum.split_with(lost_list, &Map.has_key?(expected_removals, &1))
+
+        # A session Casein did not kill has disappeared. Say so once, durably.
+        if unexplained != [], do: announce_loss(unexplained, length(sessions))
+
         result = %{
           observed_at: DateTime.utc_now() |> DateTime.to_iso8601(),
           sessions: length(sessions),
           reconciled: reconciled,
           panes_observed: panes_observed,
           sessions_lost: MapSet.size(lost),
+          sessions_lost_unexplained: length(unexplained),
+          sessions_lost_expected: length(expected),
           errors: errors
         }
 
-        %{state | last_result: result, seen_sessions: current, run_count: state.run_count + 1}
+        %{
+          state
+          | last_result: result,
+            seen_sessions: current,
+            expected_removals: Map.drop(expected_removals, expected),
+            run_count: state.run_count + 1
+        }
 
       {:error, reason} ->
         result = %{
@@ -147,6 +214,8 @@ defmodule Casein.Terminals.ControlPlane do
           reconciled: 0,
           panes_observed: 0,
           sessions_lost: 0,
+          sessions_lost_unexplained: 0,
+          sessions_lost_expected: 0,
           errors: [%{session: nil, reason: inspect(reason)}]
         }
 
@@ -183,6 +252,62 @@ defmodule Casein.Terminals.ControlPlane do
     error -> {:error, error}
   catch
     :exit, reason -> {:error, reason}
+  end
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
+
+  defp prune_expected(expected) do
+    cutoff = now_ms() - @expected_removal_ttl_ms
+    Map.reject(expected, fn {_session, at} -> at < cutoff end)
+  end
+
+  # Durable first, then broadcast: the audit row is the record that survives
+  # the restart which used to erase the evidence.
+  defp announce_loss(sessions, remaining) do
+    Logger.warning(
+      "sessions disappeared without a Casein teardown: #{Enum.join(sessions, ", ")} " <>
+        "(#{length(sessions)} lost, #{remaining} still live)"
+    )
+
+    :telemetry.execute(
+      [:casein, :terminals, :sessions_lost],
+      %{count: length(sessions)},
+      %{sessions: sessions}
+    )
+
+    _ =
+      Audit.emit!(%{
+        workspace_id: @ops_workspace,
+        actor_id: "control_plane",
+        action: @loss_action,
+        source: "ops",
+        target_type: "tmux_server",
+        target_ref: "sessions",
+        metadata: %{
+          "sessions" => sessions,
+          "count" => length(sessions),
+          "sessions_remaining" => remaining
+        }
+      })
+
+    Phoenix.PubSub.broadcast(
+      Casein.PubSub,
+      @ops_topic,
+      {:ops_health, :sessions_lost, :raised,
+       %{
+         id: :sessions_lost,
+         severity: :alarm,
+         subject: "tmux sessions",
+         detected_at: DateTime.utc_now(),
+         evidence: %{sessions: sessions, count: length(sessions), sessions_remaining: remaining},
+         suggestion:
+           "#{length(sessions)} session(s) vanished with no Casein teardown. Work in those " <>
+             "panes is gone from tmux; worktrees on disk survive and can be recovered. " <>
+             "Check whether a unit owning the tmux server was stopped " <>
+             "(journalctl -u casein-tmux.service -u casein-tmux-anchor.service) — an " <>
+             "unattended package upgrade did exactly that on 2026-08-29."
+       }}
+    )
   end
 
   defp reconcile_live_sessions(adapter, sessions) do
