@@ -14,6 +14,17 @@ defmodule Casein.Terminals.HostCapacity do
   # Mirrors scripts/lib/agent-budget.sh (CASEIN_AGENT_MAX_TOTAL); 0 disables.
   @default_max_agents 32
 
+  # Processes in uninterruptible sleep. Headcount, load and memory all read
+  # healthy right up to the 2026-08-28 failure while D-state climbed
+  # 5 -> 9 -> 55 -> 224 (OneBackend-v3#20698), so a capacity probe that omits
+  # it cannot see the one signal that predicted the crash. 0 disables.
+  @default_max_d_state 32
+
+  # Filesystem headroom on the workspace root. A worker wave's main cost is
+  # disk, and the probe reported nothing about it (OneBackend-v3#19569).
+  @default_min_disk_available_kb 10_485_760
+  @default_disk_path "/data"
+
   # What counts as an agent — keep in sync with agent-budget.sh: argv[0]
   # basename in this set, or node/bun running a codex(.js) entry point. One
   # session can be two such processes (the npm codex wrapper execs a vendored
@@ -37,6 +48,13 @@ defmodule Casein.Terminals.HostCapacity do
           agent_processes: non_neg_integer() | nil,
           max_agents: non_neg_integer(),
           agents_ok?: boolean() | nil,
+          d_state_processes: non_neg_integer() | nil,
+          max_d_state: non_neg_integer(),
+          d_state_ok?: boolean() | nil,
+          disk_path: String.t(),
+          disk_available_kb: non_neg_integer() | nil,
+          min_disk_available_kb: non_neg_integer(),
+          disk_ok?: boolean() | nil,
           reasons: [String.t()]
         }
 
@@ -62,6 +80,37 @@ defmodule Casein.Terminals.HostCapacity do
       if is_integer(agent_processes),
         do: max_agents == 0 or agent_processes < max_agents
 
+    d_state_processes = read_d_state(opts)
+
+    max_d_state =
+      read_limit(Keyword.get(opts, :max_d_state), "CASEIN_MAX_D_STATE", @default_max_d_state)
+
+    d_state_ok? =
+      if is_integer(d_state_processes),
+        do: max_d_state == 0 or d_state_processes < max_d_state
+
+    disk_path =
+      Keyword.get(opts, :disk_path) || System.get_env("CASEIN_DISK_PATH") || @default_disk_path
+
+    min_disk_available_kb =
+      read_limit(
+        Keyword.get(opts, :min_disk_available_kb),
+        "CASEIN_MIN_DISK_AVAILABLE_KB",
+        @default_min_disk_available_kb
+      )
+
+    # A path that does not exist is "not applicable" (dev boxes, CI), not
+    # "unknown" — only a path we should be able to read and cannot is unknown.
+    disk_applicable? = disk_applicable?(opts, disk_path)
+    disk_available_kb = if disk_applicable?, do: read_disk_available_kb(opts, disk_path)
+
+    disk_ok? =
+      cond do
+        not disk_applicable? -> nil
+        is_integer(disk_available_kb) -> disk_available_kb >= min_disk_available_kb
+        true -> nil
+      end
+
     reasons =
       []
       |> maybe_reason(is_nil(load1) or is_nil(nproc), "load probe unavailable")
@@ -70,10 +119,24 @@ defmodule Casein.Terminals.HostCapacity do
       |> maybe_reason(memory_ok? == false, "available memory is below configured minimum")
       |> maybe_reason(is_nil(agent_processes), "agent process probe unavailable")
       |> maybe_reason(agents_ok? == false, "resident agent count is at the configured budget")
+      |> maybe_reason(is_nil(d_state_processes), "uninterruptible-sleep probe unavailable")
+      |> maybe_reason(
+        d_state_ok? == false,
+        "processes in uninterruptible sleep exceed the configured limit"
+      )
+      |> maybe_reason(
+        disk_applicable? and is_nil(disk_available_kb),
+        "filesystem probe unavailable for #{disk_path}"
+      )
+      |> maybe_reason(
+        disk_ok? == false,
+        "available disk on #{disk_path} is below configured minimum"
+      )
 
     available? =
       not is_nil(load1) and not is_nil(nproc) and not is_nil(mem_available_kb) and
-        not is_nil(agent_processes)
+        not is_nil(agent_processes) and not is_nil(d_state_processes) and
+        (not disk_applicable? or not is_nil(disk_available_kb))
 
     healthy? = available? and reasons == []
 
@@ -93,6 +156,13 @@ defmodule Casein.Terminals.HostCapacity do
       agent_processes: agent_processes,
       max_agents: max_agents,
       agents_ok?: agents_ok?,
+      d_state_processes: d_state_processes,
+      max_d_state: max_d_state,
+      d_state_ok?: d_state_ok?,
+      disk_path: disk_path,
+      disk_available_kb: disk_available_kb,
+      min_disk_available_kb: min_disk_available_kb,
+      disk_ok?: disk_ok?,
       reasons: reasons
     }
   end
@@ -136,6 +206,92 @@ defmodule Casein.Terminals.HostCapacity do
   end
 
   defp codex_script?(path), do: Path.basename(path) in ["codex", "codex.js"]
+
+  @doc """
+  Count processes in uninterruptible sleep in a `ps -eo stat=` listing.
+
+  A `D` anywhere but the first character is a different flag (`R+`, `Ss`), so
+  only the leading code counts.
+  """
+  @spec count_d_state(String.t()) :: non_neg_integer()
+  def count_d_state(listing) when is_binary(listing) do
+    listing
+    |> String.split("\n", trim: true)
+    |> Enum.count(&String.starts_with?(String.trim(&1), "D"))
+  end
+
+  @doc """
+  Available kilobytes from a `df -Pk <path>` listing, or `nil` when the output
+  is not parseable. POSIX format keeps the columns stable.
+  """
+  @spec parse_df_available_kb(String.t()) :: non_neg_integer() | nil
+  def parse_df_available_kb(output) when is_binary(output) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.drop(1)
+    |> Enum.find_value(fn line ->
+      case String.split(line, ~r/\s+/, trim: true) do
+        [_fs, _blocks, _used, avail | _] -> parse_integer(avail)
+        _ -> nil
+      end
+    end)
+  end
+
+  defp read_d_state(opts) do
+    case Keyword.get(opts, :d_state_reader) do
+      reader when is_function(reader, 0) -> normalize_d_state(reader.())
+      _ -> read_d_state_ps()
+    end
+  end
+
+  defp read_d_state_ps do
+    case System.cmd("ps", ["-eo", "stat="], stderr_to_stdout: true) do
+      {out, 0} -> count_d_state(out)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp normalize_d_state(value) when is_integer(value) and value >= 0, do: value
+  defp normalize_d_state(value) when is_binary(value), do: count_d_state(value)
+  defp normalize_d_state(_), do: nil
+
+  defp disk_applicable?(opts, path) do
+    case Keyword.get(opts, :disk_reader) do
+      reader when is_function(reader, 1) -> true
+      _ -> File.dir?(path)
+    end
+  end
+
+  defp read_disk_available_kb(opts, path) do
+    case Keyword.get(opts, :disk_reader) do
+      reader when is_function(reader, 1) -> normalize_disk(reader.(path))
+      _ -> read_disk_available_kb_df(path)
+    end
+  end
+
+  defp read_disk_available_kb_df(path) do
+    case System.cmd("df", ["-Pk", path], stderr_to_stdout: true) do
+      {out, 0} -> parse_df_available_kb(out)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp normalize_disk(value) when is_integer(value) and value >= 0, do: value
+  defp normalize_disk(value) when is_binary(value), do: parse_df_available_kb(value)
+  defp normalize_disk(_), do: nil
+
+  # Shared shape for "explicit opt, else env var, else compiled default".
+  defp read_limit(explicit, env_var, default) do
+    cond do
+      is_integer(n = parse_integer(explicit)) and n >= 0 -> n
+      is_integer(n = parse_integer(System.get_env(env_var))) and n >= 0 -> n
+      true -> default
+    end
+  end
 
   defp read_agent_processes(opts) do
     case Keyword.get(opts, :agents_reader) do
