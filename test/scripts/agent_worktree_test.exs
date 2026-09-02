@@ -195,6 +195,7 @@ defmodule Scripts.AgentWorktreeTest do
           {"CASEIN_CHECKOUT", repo},
           {"ROOT", @root},
           {"PATH", "#{Path.dirname(curl_bin)}:#{system_path()}"},
+          {"CASEIN_AGENT_MAX_TOTAL", "0"},
           {"FAKE_CURL_BODY", body_path},
           {"CASEIN_API_TOKEN", "scoped-token"},
           {"CASEIN_WORKSPACE_ID", "workspace-123"},
@@ -231,6 +232,7 @@ defmodule Scripts.AgentWorktreeTest do
         env: [
           {"HOME", home},
           {"PATH", system_path()},
+          {"CASEIN_AGENT_MAX_TOTAL", "0"},
           {"CASEIN_API_TOKEN", "scoped-token"},
           {"CASEIN_WORKSPACE_ID", "workspace-123"},
           {"CASEIN_WORKSPACE_NAME", "workspace-123"},
@@ -269,6 +271,7 @@ defmodule Scripts.AgentWorktreeTest do
         env: [
           {"HOME", home},
           {"PATH", system_path()},
+          {"CASEIN_AGENT_MAX_TOTAL", "0"},
           {"CASEIN_API_TOKEN", "scoped-token"},
           {"CASEIN_WORKSPACE_ID", "workspace-123"},
           {"CASEIN_WORKSPACE_NAME", "workspace-123"},
@@ -313,7 +316,8 @@ defmodule Scripts.AgentWorktreeTest do
         env: [
           {"HOME", home},
           {"CASEIN_NPM_PREFIX", npm_prefix},
-          {"PATH", "#{Path.dirname(stale_codex)}:#{system_path()}"}
+          {"PATH", "#{Path.dirname(stale_codex)}:#{system_path()}"},
+          {"CASEIN_AGENT_MAX_TOTAL", "0"}
         ]
       )
 
@@ -365,7 +369,8 @@ defmodule Scripts.AgentWorktreeTest do
           {"CASEIN_NPM_PREFIX", npm_prefix},
           {"FAKE_NPM_SET", npm_set},
           {"CASEIN_MANAGE_NPM_PREFIX", "1"},
-          {"PATH", "#{fake_bin}:#{system_codex_dir}:#{system_path()}"}
+          {"PATH", "#{fake_bin}:#{system_codex_dir}:#{system_path()}"},
+          {"CASEIN_AGENT_MAX_TOTAL", "0"}
         ],
         stderr_to_stdout: true
       )
@@ -432,7 +437,8 @@ defmodule Scripts.AgentWorktreeTest do
           {"CASEIN_NPM_PREFIX", npm_prefix},
           {"FAKE_NPM_SET", npm_set},
           {"CASEIN_MANAGE_NPM_PREFIX", "1"},
-          {"PATH", "#{fake_bin}:/usr/bin:/bin"}
+          {"PATH", "#{fake_bin}:/usr/bin:/bin"},
+          {"CASEIN_AGENT_MAX_TOTAL", "0"}
         ],
         stderr_to_stdout: true
       )
@@ -477,6 +483,7 @@ defmodule Scripts.AgentWorktreeTest do
         env: [
           {"HOME", Path.join(tmp, "home")},
           {"PATH", system_path()},
+          {"CASEIN_AGENT_MAX_TOTAL", "0"},
           {"CASEIN_API_TOKEN", "scoped-token"},
           {"CASEIN_WORKSPACE_ID", "workspace-123"},
           {"CASEIN_WORKSPACE_NAME", "workspace-123"},
@@ -716,6 +723,11 @@ defmodule Scripts.AgentWorktreeTest do
     )
   end
 
+  # These tests drive the real launcher, which consults the agent budget via
+  # the host's own `ps`. Without this the suite passes or fails according to
+  # how many agents happen to be running on the box executing it — the deploy
+  # gate went red at exactly 32 resident agents. 0 disables the limit; the
+  # budget itself is covered hermetically in Scripts.AgentBudgetTest.
   defp system_path do
     System.get_env("PATH") || "/usr/bin:/bin"
   end

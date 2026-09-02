@@ -120,6 +120,11 @@ defmodule Scripts.SpawnHostHeadroomTest do
       System.cmd("bash", [@spawn, "claude", "headroom", "casein_test_u-x"],
         env: [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
+          # The budget gate reads the host's real `ps`, so without pinning it these
+          # tests pass or fail by how many agents happen to be resident on the box
+          # running them. They are about dry-run pairing and headroom, not budget;
+          # 0 disables the limit. Budget coverage lives in Scripts.AgentBudgetTest.
+          {"CASEIN_AGENT_MAX_TOTAL", "0"},
           {"CASEIN_CHECKOUT", product},
           {"HOME", home},
           {"CASEIN_API_TOKEN", "t"},
@@ -175,6 +180,7 @@ defmodule Scripts.SpawnHostHeadroomTest do
       System.cmd("bash", [@spawn, "claude", "headroom", "casein_test_u-x"],
         env: [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
+          {"CASEIN_AGENT_MAX_TOTAL", "0"},
           {"CASEIN_SPAWN_FORCE", "1"},
           {"CASEIN_CHECKOUT", product},
           {"HOME", home},
