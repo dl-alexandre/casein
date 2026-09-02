@@ -521,6 +521,28 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
   # An explicit address wins; otherwise an agent reading "my mail" means the
   # pane it is running in plus any work handle attached there, so a respawn
   # that reattaches the handle still sees queued role mail.
+  # OB#20478: the mailbox is pull-only by design — pane writes are precisely the
+  # unreliable path `Casein.Agents.Inbox` exists to replace, so pushing is not
+  # the fix. What was missing is that nothing told an agent it had mail, so a
+  # mid-flight steer ("stop, do not touch that file") could be missed while the
+  # sender held a success receipt. Reporting the count on a call every agent
+  # already makes keeps delivery pull-based and removes the need to guess when
+  # to look.
+  #
+  # Never fatal: a mailbox read must not fail a state report. `nil` means "not
+  # determined", which is distinct from `0` — the same honesty the inbox itself
+  # keeps between `queued` and `collected`.
+  defp pending_mail_count(workspace_id, pane_id) do
+    {_primary, addresses} = role_inbox_addresses(workspace_id, pane_id)
+
+    case Inbox.summary(workspace_id, addresses) do
+      %{pending: pending} when is_integer(pending) -> pending
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
   defp inbox_addresses(params, session, workspace_id) do
     cond do
       is_binary(string_param(params, "address")) ->
@@ -997,6 +1019,7 @@ defmodule Casein.Agents.TerminalTools.Impl.Agent do
            grok_leader_socket: grok_leader_socket,
            grok_bundle_dir: grok_bundle_dir,
            grok_bundle_digest: grok_bundle_digest,
+           pending_mail: pending_mail_count(workspace_id, pane.id),
            status: "reported"
          }}
       end

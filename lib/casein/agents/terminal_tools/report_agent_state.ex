@@ -4,7 +4,7 @@ defmodule Casein.Agents.TerminalTools.ReportAgentState do
   use Jido.Action,
     name: "terminal_report_agent_state",
     description:
-      "Report the agent's semantic state so Casein and orchestrating agents can react without polling. States: working, blocked (needs input/permission), done (turn complete), idle. Defaults to the dedicated agent pane. Pass an optional short message describing what is blocked or done.",
+      "Report the agent's semantic state so Casein and orchestrating agents can react without polling. States: working, blocked (needs input/permission), done (turn complete), idle. Defaults to the dedicated agent pane. Pass an optional short message describing what is blocked or done. Returns pending_mail: the number of messages waiting in your mailbox (nil = could not be determined, which is not the same as 0). If it is non-zero, call terminal_inbox — a sender may be steering you mid-flight, and mail is never pushed into your pane.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

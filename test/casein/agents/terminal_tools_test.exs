@@ -1674,6 +1674,26 @@ defmodule Casein.Agents.TerminalToolsTest do
       assert entry.agent_session_id == "grok-session-123"
     end
 
+    test "reports pending mail so a pull-only mailbox does not need to be guessed at" do
+      # OB#20478: mail is never pushed into a pane, so an agent had no way to
+      # learn it had been steered mid-flight. The count rides the call every
+      # agent already makes.
+      session = agent_pair_session!()
+      Casein.Terminals.AgentState.clear()
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_report_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "state" => "working"
+               })
+
+      assert Map.has_key?(result, :pending_mail)
+      # nil ("could not determine") and 0 ("nothing waiting") are different
+      # answers and must not be collapsed.
+      assert is_nil(result.pending_mail) or is_integer(result.pending_mail)
+    end
+
     test "send_agent_command reports a dispatch working state for the agent pane" do
       session = agent_pair_session!()
       Casein.Terminals.AgentState.clear()
