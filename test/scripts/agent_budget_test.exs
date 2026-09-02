@@ -55,19 +55,39 @@ defmodule Scripts.AgentBudgetTest do
 
   test "counts every agent binary form, including codex under node" do
     ps = """
-    devbox /usr/local/bin/opencode
-    devbox /home/devbox/.local/bin/claude.exe --resume
-    devbox claude_exe
-    devbox /usr/bin/node /home/devbox/.local/lib/node_modules/@openai/codex/bin/codex.js
-    devbox /opt/grok/grok --sandbox x
-    devbox /usr/bin/node /srv/app/server.js
-    devbox bash
-    devbox /usr/bin/vim claude.md
+    devbox 101 1 /usr/local/bin/opencode
+    devbox 102 1 /home/devbox/.local/bin/claude.exe --resume
+    devbox 103 1 claude_exe
+    devbox 104 1 /usr/bin/node /home/devbox/.local/lib/node_modules/@openai/codex/bin/codex.js
+    devbox 105 1 /opt/grok/grok --sandbox x
+    devbox 106 1 /usr/bin/node /srv/app/server.js
+    devbox 107 1 bash
+    devbox 108 1 /usr/bin/vim claude.md
     """
 
     {out, status} = run_check(ps, "devbox", [{"CASEIN_AGENT_MAX_PER_USER", "5"}])
     assert status == 75, out
     assert out =~ "devbox already runs 5 agents (limit 5)"
+  end
+
+  test "a codex wrapper and the native binary it execs are one agent" do
+    # The npm `codex` entry point is node; it execs the vendored native binary
+    # as its child. Counting both spent two slots per Codex pane and refused
+    # launches on a box that was under budget.
+    ps = """
+    devbox 200 1 /usr/bin/node /home/devbox/.local/bin/codex --model x
+    devbox 201 200 /home/devbox/.local/lib/node_modules/@openai/codex/vendor/bin/codex --model x
+    devbox 202 1 /usr/local/bin/opencode
+    """
+
+    {out, status} = run_check(ps, "devbox", [{"CASEIN_AGENT_MAX_PER_USER", "3"}])
+    assert status == 0, out
+    refute out =~ "refused:budget"
+
+    # ...and two really are two.
+    {out, status} = run_check(ps, "devbox", [{"CASEIN_AGENT_MAX_PER_USER", "2"}])
+    assert status == 75, out
+    assert out =~ "devbox already runs 2 agents (limit 2)"
   end
 
   test "a limit of 0 disables that limit" do
@@ -120,11 +140,13 @@ defmodule Scripts.AgentBudgetTest do
   end
 
   defp ps_fixture(counts) do
-    Enum.map_join(counts, "", fn {user, n} ->
-      Enum.map_join(1..n, "", fn i ->
-        bin = Enum.at(~w(opencode claude codex grok), rem(i, 4))
-        "#{user} /usr/local/bin/#{bin} --task #{i}\n"
-      end)
+    counts
+    |> Enum.flat_map(fn {user, n} -> for i <- 1..n, do: {user, i} end)
+    |> Enum.with_index(100)
+    |> Enum.map_join("", fn {{user, i}, pid} ->
+      bin = Enum.at(~w(opencode claude codex grok), rem(i, 4))
+      # ppid 1 — every fixture row is its own session, never a wrapper's child.
+      "#{user} #{pid} 1 /usr/local/bin/#{bin} --task #{i}\n"
     end)
   end
 

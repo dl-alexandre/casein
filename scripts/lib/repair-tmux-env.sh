@@ -44,15 +44,28 @@ source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 log() { printf '>>> %s\n' "$*" >&2; }
 emit_outcome() { printf '%s\n' "$1"; }
 
-# Listing workspaces may need the global/admin token; it is never pushed into
-# a session — agent panes only receive workspace-scoped tokens, because the
-# MCP endpoints reject tools/call made with the global token.
-TOKEN="${CASEIN_API_TOKEN:-}"
-if [[ -z "$TOKEN" ]]; then
-  TOKEN="$(sudo awk -F= '/^CASEIN_API_TOKEN=/{print $2}' "$ENV_FILE" 2>/dev/null | tail -n 1 || true)"
+# Listing workspaces needs the global/admin token; it is never pushed into a
+# session — agent panes only receive workspace-scoped tokens, because the MCP
+# endpoints reject tools/call made with the global token.
+#
+# So the ambient CASEIN_API_TOKEN is the *wrong* credential whenever this runs
+# where it matters most: inside a repaired agent pane, where it holds that
+# pane's workspace-scoped token. `GET /api/workspaces` carries no workspace id
+# in its path, so ApiAuth's scoped branch denies it 403 and the whole repair
+# aborted with failed:workspace_listing. Prefer the env-file global token and
+# keep the ambient one only as a fallback for operators who exported a global
+# token and cannot read the env file.
+LISTING_TOKENS=()
+env_file_token="$(sudo awk -F= '/^CASEIN_API_TOKEN=/{print $2}' "$ENV_FILE" 2>/dev/null | tail -n 1 || true)"
+if [[ -n "$env_file_token" ]]; then
+  LISTING_TOKENS+=("$env_file_token")
 fi
+if [[ -n "${CASEIN_API_TOKEN:-}" && "${CASEIN_API_TOKEN}" != "$env_file_token" ]]; then
+  LISTING_TOKENS+=("${CASEIN_API_TOKEN}")
+fi
+unset env_file_token
 
-if [[ -z "$TOKEN" ]]; then
+if [[ ${#LISTING_TOKENS[@]} -eq 0 ]]; then
   echo "error: CASEIN_API_TOKEN missing (export it or set ${ENV_FILE})" >&2
   emit_outcome "failed:missing_token"
   exit 1
@@ -68,11 +81,21 @@ load_workspace_ids() {
     return 0
   fi
 
-  local body parsed
+  local body parsed token
+  body=""
 
-  if ! body="$(curl -fsS -H "authorization: Bearer ${TOKEN}" "${LOCAL_URL}/api/workspaces")"; then
+  # Try each candidate credential; a scoped token 403s here by design, so a
+  # single failure is not yet a verdict on the catalog.
+  for token in "${LISTING_TOKENS[@]}"; do
+    if body="$(curl -fsS -H "authorization: Bearer ${token}" "${LOCAL_URL}/api/workspaces")"; then
+      break
+    fi
+    body=""
+  done
+
+  if [[ -z "$body" ]]; then
     echo "error: failed to list workspaces from ${LOCAL_URL}/api/workspaces" \
-      "(token may lack admin listing; empty catalog is not assumed)" >&2
+      "(no available token has admin listing; empty catalog is not assumed)" >&2
     emit_outcome "failed:workspace_listing"
     return 1
   fi

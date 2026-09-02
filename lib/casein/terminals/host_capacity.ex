@@ -15,7 +15,10 @@ defmodule Casein.Terminals.HostCapacity do
   @default_max_agents 32
 
   # What counts as an agent — keep in sync with agent-budget.sh: argv[0]
-  # basename in this set, or node/bun running a codex(.js) entry point.
+  # basename in this set, or node/bun running a codex(.js) entry point. One
+  # session can be two such processes (the npm codex wrapper execs a vendored
+  # native codex), so a match whose parent also matched is that session's own
+  # child and is not counted twice.
   @agent_bins ~w(opencode claude claude.exe claude_exe grok codex)
 
   @type snapshot :: %{
@@ -95,29 +98,40 @@ defmodule Casein.Terminals.HostCapacity do
   end
 
   @doc """
-  Count resident agent processes in a `ps -eo user=,args=` listing. Exposed so
-  the launch scripts and this module cannot drift on what "an agent" is.
+  Count resident agent sessions in a `ps -eo user=,pid=,ppid=,args=` listing.
+  Exposed so the launch scripts and this module cannot drift on what "an agent"
+  is. A matched process whose parent also matched is a wrapper's own child and
+  counts once with its parent, not twice.
   """
   @spec count_agents(String.t()) :: non_neg_integer()
   def count_agents(listing) when is_binary(listing) do
-    listing
-    |> String.split("\n", trim: true)
-    |> Enum.count(&agent_line?/1)
+    matches =
+      listing
+      |> String.split("\n", trim: true)
+      |> Enum.flat_map(&agent_match/1)
+
+    pids = MapSet.new(matches, fn {pid, _ppid} -> pid end)
+
+    Enum.count(matches, fn {_pid, ppid} -> not MapSet.member?(pids, ppid) end)
   end
 
-  defp agent_line?(line) do
+  # `[{pid, ppid}]` for an agent line, `[]` for anything else.
+  defp agent_match(line) do
     case String.split(line, ~r/\s+/, trim: true) do
-      [_user, cmd | rest] ->
+      [_user, pid, ppid, cmd | rest] ->
         base = Path.basename(cmd)
 
-        cond do
-          base in @agent_bins -> true
-          base in ["node", "bun"] -> rest != [] and codex_script?(hd(rest))
-          true -> false
-        end
+        agent? =
+          cond do
+            base in @agent_bins -> true
+            base in ["node", "bun"] -> rest != [] and codex_script?(hd(rest))
+            true -> false
+          end
+
+        if agent?, do: [{pid, ppid}], else: []
 
       _ ->
-        false
+        []
     end
   end
 
@@ -134,7 +148,7 @@ defmodule Casein.Terminals.HostCapacity do
   # it is argv-only (no shell) and a failure is reported as unknown, never as
   # zero agents.
   defp read_agent_processes_ps do
-    case System.cmd("ps", ["-eo", "user=,args="], stderr_to_stdout: true) do
+    case System.cmd("ps", ["-eo", "user=,pid=,ppid=,args="], stderr_to_stdout: true) do
       {out, 0} -> count_agents(out)
       _ -> nil
     end
