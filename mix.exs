@@ -207,7 +207,7 @@ defmodule Casein.MixProject do
         # "cmd mix" spawn: hex.* tasks can be unresolvable inside an already-running
         # Mix VM on the gate runner (archive not loaded); a fresh mix invocation
         # always has them, and cmd propagates the exit code (enforcing).
-        "cmd mix hex.audit",
+        "cmd ./scripts/hex-audit.sh",
         "sobelow --skip --exit",
         "credo --min-priority high",
         "format",
@@ -231,7 +231,7 @@ defmodule Casein.MixProject do
         # "cmd mix" spawn: hex.* tasks can be unresolvable inside an already-running
         # Mix VM on the gate runner (archive not loaded); a fresh mix invocation
         # always has them, and cmd propagates the exit code (enforcing).
-        "cmd mix hex.audit",
+        "cmd ./scripts/hex-audit.sh",
         "cmd ./scripts/lib/gate-run-or-skip.sh SOBELOW mix sobelow --skip --exit",
         "cmd ./scripts/lib/gate-run-or-skip.sh CREDO mix credo --min-priority high",
         # Config-seam guard (sibling of check-scc-guard.sh). SCC stays
