@@ -120,6 +120,94 @@ defmodule Casein.Terminals.HostCapacityTest do
       assert HostCapacity.count_agents("") == 0
     end
 
+    test "count_d_state counts only a leading D" do
+      # R+, Ss, DN, D< — only a leading D is uninterruptible sleep.
+      listing = """
+      Ss
+      R+
+      D
+      DN
+      D<
+      S<sl
+      Rs
+      """
+
+      assert HostCapacity.count_d_state(listing) == 3
+      assert HostCapacity.count_d_state("") == 0
+    end
+
+    test "parse_df_available_kb reads the POSIX available column" do
+      output = """
+      Filesystem     1024-blocks      Used Available Capacity Mounted on
+      /dev/nvme0n1p1   515928144 120398112 369301488      25% /data
+      """
+
+      assert HostCapacity.parse_df_available_kb(output) == 369_301_488
+      assert HostCapacity.parse_df_available_kb("") == nil
+      assert HostCapacity.parse_df_available_kb("garbage\n") == nil
+    end
+
+    test "a D-state spike is unhealthy even when load and memory look fine" do
+      # The 2026-08-28 shape: headcount, load and memory all healthy while
+      # uninterruptible sleep climbed. The probe must not report healthy.
+      snapshot = snapshot_with(d_state_reader: fn -> 224 end, max_d_state: 32)
+
+      refute snapshot.healthy?
+      assert snapshot.d_state_ok? == false
+      assert snapshot.d_state_processes == 224
+
+      assert "processes in uninterruptible sleep exceed the configured limit" in snapshot.reasons
+    end
+
+    test "a D-state probe that cannot be read is unknown, never spare capacity" do
+      snapshot = snapshot_with(d_state_reader: fn -> :boom end)
+
+      refute snapshot.available?
+      assert snapshot.d_state_processes == nil
+      assert "uninterruptible-sleep probe unavailable" in snapshot.reasons
+    end
+
+    test "0 disables the D-state limit" do
+      snapshot = snapshot_with(d_state_reader: fn -> 500 end, max_d_state: 0)
+
+      assert snapshot.d_state_ok?
+      refute "processes in uninterruptible sleep exceed the configured limit" in snapshot.reasons
+    end
+
+    test "disk below the floor is reported and makes the host unhealthy" do
+      snapshot =
+        snapshot_with(
+          disk_reader: fn _path -> 1_000 end,
+          min_disk_available_kb: 10_485_760,
+          disk_path: "/data"
+        )
+
+      refute snapshot.healthy?
+      assert snapshot.disk_ok? == false
+      assert snapshot.disk_available_kb == 1_000
+      assert "available disk on /data is below configured minimum" in snapshot.reasons
+    end
+
+    test "ample disk is healthy and reports the path it measured" do
+      snapshot =
+        snapshot_with(disk_reader: fn _path -> 369_301_488 end, disk_path: "/data")
+
+      assert snapshot.disk_ok?
+      assert snapshot.disk_path == "/data"
+      assert snapshot.healthy?
+    end
+
+    test "an absent disk path is not applicable, not unknown" do
+      # Dev boxes and CI have no /data; that must not read as a failed probe.
+      # No injected reader — this must exercise the real File.dir? check.
+      snapshot = snapshot_with(disk_reader: nil, disk_path: "/definitely/not/here")
+
+      assert snapshot.disk_available_kb == nil
+      assert snapshot.disk_ok? == nil
+      assert snapshot.available?
+      refute Enum.any?(snapshot.reasons, &String.contains?(&1, "filesystem probe unavailable"))
+    end
+
     test "count_agents counts a codex wrapper and its native child once" do
       listing = """
       devbox 200 1 /usr/bin/node /home/devbox/.local/bin/codex --model x
@@ -129,5 +217,21 @@ defmodule Casein.Terminals.HostCapacityTest do
 
       assert HostCapacity.count_agents(listing) == 2
     end
+  end
+
+  # Healthy readings for every probe except the ones under test, so a single
+  # assertion cannot pass because some unrelated probe happened to be red.
+  defp snapshot_with(opts) do
+    defaults = [
+      load_reader: fn -> 1.0 end,
+      nproc_reader: fn -> 32 end,
+      mem_reader: fn -> 90_000_000 end,
+      agents_reader: fn -> 1 end,
+      d_state_reader: fn -> 2 end,
+      disk_reader: fn _path -> 369_301_488 end,
+      disk_path: "/data"
+    ]
+
+    HostCapacity.snapshot(Keyword.merge(defaults, opts))
   end
 end
