@@ -39,6 +39,11 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env:
           [
             {"CASEIN_SPAWN_DRY_RUN", "1"},
+            # The budget gate reads the host's real `ps`, so without pinning it these
+            # tests pass or fail by how many agents happen to be resident on the box
+            # running them. They are about dry-run pairing and headroom, not budget;
+            # 0 disables the limit. Budget coverage lives in Scripts.AgentBudgetTest.
+            {"CASEIN_AGENT_MAX_TOTAL", "0"},
             {"CASEIN_CHECKOUT", linked},
             {"HOME", home},
             {"PATH", fakebin <> ":" <> System.get_env("PATH")},
@@ -146,6 +151,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env:
           [
             {"CASEIN_SPAWN_DRY_RUN", "1"},
+            {"CASEIN_AGENT_MAX_TOTAL", "0"},
             {"CASEIN_CHECKOUT", product},
             {"HOME", home},
             {"CASEIN_API_TOKEN", "test-token"},
@@ -198,6 +204,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env:
           [
             {"CASEIN_SPAWN_DRY_RUN", "1"},
+            {"CASEIN_AGENT_MAX_TOTAL", "0"},
             {"CASEIN_CHECKOUT", product},
             {"HOME", home},
             {"CASEIN_API_TOKEN", "test-token"},
@@ -253,6 +260,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env:
           [
             {"CASEIN_SPAWN_DRY_RUN", "1"},
+            {"CASEIN_AGENT_MAX_TOTAL", "0"},
             {"CASEIN_CHECKOUT", product},
             {"HOME", home},
             {"CASEIN_API_TOKEN", "caller-a-token"},
@@ -309,6 +317,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env:
           [
             {"CASEIN_SPAWN_DRY_RUN", "1"},
+            {"CASEIN_AGENT_MAX_TOTAL", "0"},
             {"CASEIN_CHECKOUT", stale},
             {"HOME", home},
             {"CASEIN_API_TOKEN", "test-token"},
@@ -720,6 +729,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
       env:
         [
           {"CASEIN_SPAWN_DRY_RUN", "1"},
+          {"CASEIN_AGENT_MAX_TOTAL", "0"},
           {"CASEIN_CHECKOUT", ctx.product},
           {"HOME", ctx.home},
           {"CASEIN_API_TOKEN", "test-token"},
