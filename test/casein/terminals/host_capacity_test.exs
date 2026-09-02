@@ -106,18 +106,28 @@ defmodule Casein.Terminals.HostCapacityTest do
 
     test "count_agents matches every agent binary form and nothing else" do
       listing = """
-      devbox /usr/local/bin/opencode
-      devbox /home/devbox/.local/bin/claude.exe --resume
-      devbox claude_exe
-      devbox /usr/bin/node /home/devbox/.local/lib/node_modules/@openai/codex/bin/codex.js
-      devbox /opt/grok/grok --sandbox x
-      devbox /usr/bin/node /srv/app/server.js
-      devbox bash
-      devbox /usr/bin/vim claude.md
+      devbox 101 1 /usr/local/bin/opencode
+      devbox 102 1 /home/devbox/.local/bin/claude.exe --resume
+      devbox 103 1 claude_exe
+      devbox 104 1 /usr/bin/node /home/devbox/.local/lib/node_modules/@openai/codex/bin/codex.js
+      devbox 105 1 /opt/grok/grok --sandbox x
+      devbox 106 1 /usr/bin/node /srv/app/server.js
+      devbox 107 1 bash
+      devbox 108 1 /usr/bin/vim claude.md
       """
 
       assert HostCapacity.count_agents(listing) == 5
       assert HostCapacity.count_agents("") == 0
+    end
+
+    test "count_agents counts a codex wrapper and its native child once" do
+      listing = """
+      devbox 200 1 /usr/bin/node /home/devbox/.local/bin/codex --model x
+      devbox 201 200 /home/devbox/.local/lib/node_modules/@openai/codex/vendor/bin/codex --model x
+      devbox 202 1 /usr/local/bin/opencode
+      """
+
+      assert HostCapacity.count_agents(listing) == 2
     end
   end
 end

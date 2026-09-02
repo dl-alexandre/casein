@@ -36,11 +36,17 @@
 # argv[0] basename in {opencode, claude, claude.exe, claude_exe, grok, codex},
 # or a node/bun process whose script is codex(.js) — Codex ships as a JS entry
 # point, so its comm is "node".
+#
+# One agent session can be more than one such process: the npm `codex` entry
+# point is a node wrapper that execs the vendored native `codex` binary, so a
+# single Codex pane matched twice and each session spent two slots of a budget
+# meant to count sessions. A matched process whose parent is also a matched
+# process is that same session's child, and is not counted again.
 
 # shellcheck disable=SC2034  # exported for callers/tests that inspect the last probe
 AGENT_BUDGET_LAST=""
 
-# Prints "user args" lines for every process. Overridable for tests.
+# Prints "user pid ppid args" lines for every process. Overridable for tests.
 agent_budget_ps() {
   local path="${CASEIN_AGENT_BUDGET_PS_PATH:-}"
   if [[ -n "${path}" ]]; then
@@ -51,19 +57,37 @@ agent_budget_ps() {
     cat "${path}"
     return 0
   fi
-  ps -eo user=,args= 2>/dev/null
+  ps -eo user=,pid=,ppid=,args= 2>/dev/null
 }
 
-# Reads "user args" lines on stdin; prints "user" for each agent process.
+# Reads "user pid ppid args" lines on stdin; prints "user" once per agent
+# *session* — a matched process whose parent also matched is that session's own
+# child (the node codex wrapper and the vendored native codex it execs), and is
+# not a second agent.
 agent_budget_filter_agents() {
   awk '
     function base(p,  n, a) { n = split(p, a, "/"); return a[n] }
+    function is_agent(cmd, script) {
+      if (cmd ~ /^(opencode|claude|claude\.exe|claude_exe|grok|codex)$/) { return 1 }
+      if ((cmd == "node" || cmd == "bun") && script ~ /^codex(\.js)?$/) { return 1 }
+      return 0
+    }
     {
       user = $1
-      cmd = base($2)
-      script = (NF >= 3) ? base($3) : ""
-      if (cmd ~ /^(opencode|claude|claude\.exe|claude_exe|grok|codex)$/) { print user; next }
-      if ((cmd == "node" || cmd == "bun") && script ~ /^codex(\.js)?$/) { print user; next }
+      pid = $2
+      ppid = $3
+      cmd = base($4)
+      script = (NF >= 5) ? base($5) : ""
+      if (!is_agent(cmd, script)) { next }
+      n++
+      u[n] = user
+      parent[n] = ppid
+      matched[pid] = 1
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        if (!(parent[i] in matched)) { print u[i] }
+      }
     }'
 }
 
