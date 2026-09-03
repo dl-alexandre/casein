@@ -111,17 +111,40 @@ defmodule Casein.Terminals.PaneState do
 
   def window_task_summary(_window), do: nil
 
-  @doc "Finds the role-tagged agent pane, falling back to the active pane."
+  @doc """
+  Finds the role-tagged agent pane, falling back to the active pane.
+
+  Preview panes are skipped in the fallbacks. A preview auto-created into an
+  agent window is frequently the active pane, and picking it made the window
+  report the preview's URL as its title and task summary — the fleet's only
+  answer to "what is this agent doing?" A window that holds *nothing but*
+  preview panes still resolves to one, so this narrows what wins a tie rather
+  than removing an answer.
+  """
   @spec agent_or_active_pane(map()) :: map() | nil
   def agent_or_active_pane(window) when is_map(window) do
     panes = window_panes(window)
+    real = Enum.reject(panes, &preview_pane?/1)
 
     Enum.find(panes, &agent_role?/1) ||
+      Enum.find(real, &truthy?(map_get(&1, :active))) ||
+      List.first(real) ||
       Enum.find(panes, &truthy?(map_get(&1, :active))) ||
       List.first(panes)
   end
 
   def agent_or_active_pane(_window), do: nil
+
+  @doc "True when a pane is a preview surface rather than a working pane."
+  @spec preview_pane?(map()) :: boolean()
+  def preview_pane?(pane) when is_map(pane) do
+    case map_get(pane, :pane_title) do
+      title when is_binary(title) -> preview_title?(String.trim(title))
+      _ -> false
+    end
+  end
+
+  def preview_pane?(_pane), do: false
 
   @doc "True when a pane is marked as the Casein agent pane."
   @spec agent_role?(map()) :: boolean()
@@ -157,6 +180,8 @@ defmodule Casein.Terminals.PaneState do
 
   # Bare runtime banners (e.g. idle "OpenCode" / "Claude Code") look like a
   # task_summary but carry no work — fleet chrome treats them as no-task.
+  @preview_title_pattern ~r{^preview\s+https?://\S*$}i
+
   @bare_runtime_titles MapSet.new([
                          "opencode",
                          "open code",
@@ -177,8 +202,20 @@ defmodule Casein.Terminals.PaneState do
       summary == local_hostname() -> nil
       machine_identifier?(summary) -> nil
       bare_runtime_title?(summary) -> nil
+      preview_title?(summary) -> nil
       true -> summary
     end
+  end
+
+  # A preview pane names itself after the URL it is showing. That is chrome
+  # naming itself, in the same class as the hostname and the bare runtime
+  # titles above — and left alone it becomes the answer to "what is this agent
+  # doing?", displacing the actual work order in the fleet projection.
+  #
+  # The URL is required, not optional: "Preview the new dashboard layout" is a
+  # perfectly good task summary and must survive.
+  defp preview_title?(summary) do
+    Regex.match?(@preview_title_pattern, summary)
   end
 
   defp bare_runtime_title?(summary) do
