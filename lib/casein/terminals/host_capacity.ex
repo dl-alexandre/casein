@@ -174,18 +174,65 @@ defmodule Casein.Terminals.HostCapacity do
   counts once with its parent, not twice.
   """
   @spec count_agents(String.t()) :: non_neg_integer()
-  def count_agents(listing) when is_binary(listing) do
+  def count_agents(listing) when is_binary(listing), do: length(agent_sessions(listing))
+
+  @doc """
+  The agent sessions `count_agents/1` counts, as `%{pid, ppid, command}` maps.
+
+  Same dedupe rule: a matched process whose parent also matched is a wrapper's
+  own child and is dropped, so one session appears once. Exposed so a caller
+  that needs to say something *about* each resident agent — which pane holds
+  it, or that none does — cannot drift from what the budget counts.
+  """
+  @spec agent_sessions(String.t()) :: [%{pid: String.t(), ppid: String.t(), command: String.t()}]
+  def agent_sessions(listing) when is_binary(listing) do
     matches =
       listing
       |> String.split("\n", trim: true)
       |> Enum.flat_map(&agent_match/1)
 
-    pids = MapSet.new(matches, fn {pid, _ppid} -> pid end)
+    pids = MapSet.new(matches, fn {pid, _ppid, _cmd} -> pid end)
 
-    Enum.count(matches, fn {_pid, ppid} -> not MapSet.member?(pids, ppid) end)
+    for {pid, ppid, command} <- matches,
+        not MapSet.member?(pids, ppid),
+        do: %{pid: pid, ppid: ppid, command: command}
   end
 
-  # `[{pid, ppid}]` for an agent line, `[]` for anything else.
+  @doc """
+  The raw `ps` listing agent counting reads from, or `nil` if the probe failed.
+
+  `ps` is the one probe here that is a subprocess rather than a file read; it
+  is argv-only (no shell) and a failure is reported as unknown, never as zero
+  agents. Public so a caller that needs to say something about the *same*
+  processes reads them the same way rather than shelling out again.
+  """
+  @spec process_listing() :: String.t() | nil
+  def process_listing do
+    case System.cmd("ps", ["-eo", "user=,pid=,ppid=,args="], stderr_to_stdout: true) do
+      {out, 0} -> out
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  @doc """
+  `%{pid => ppid}` for every process in a `ps -eo user=,pid=,ppid=,args=`
+  listing, so a caller can walk a process back to its ancestors.
+  """
+  @spec process_parents(String.t()) :: %{optional(String.t()) => String.t()}
+  def process_parents(listing) when is_binary(listing) do
+    listing
+    |> String.split("\n", trim: true)
+    |> Enum.reduce(%{}, fn line, acc ->
+      case String.split(line, ~r/\s+/, trim: true) do
+        [_user, pid, ppid | _] -> Map.put(acc, pid, ppid)
+        _ -> acc
+      end
+    end)
+  end
+
+  # `[{pid, ppid, command}]` for an agent line, `[]` for anything else.
   defp agent_match(line) do
     case String.split(line, ~r/\s+/, trim: true) do
       [_user, pid, ppid, cmd | rest] ->
@@ -198,7 +245,7 @@ defmodule Casein.Terminals.HostCapacity do
             true -> false
           end
 
-        if agent?, do: [{pid, ppid}], else: []
+        if agent?, do: [{pid, ppid, base}], else: []
 
       _ ->
         []
@@ -300,16 +347,11 @@ defmodule Casein.Terminals.HostCapacity do
     end
   end
 
-  # `ps` is the one probe here that is a subprocess rather than a file read;
-  # it is argv-only (no shell) and a failure is reported as unknown, never as
-  # zero agents.
   defp read_agent_processes_ps do
-    case System.cmd("ps", ["-eo", "user=,pid=,ppid=,args="], stderr_to_stdout: true) do
-      {out, 0} -> count_agents(out)
-      _ -> nil
+    case process_listing() do
+      listing when is_binary(listing) -> count_agents(listing)
+      nil -> nil
     end
-  rescue
-    _ -> nil
   end
 
   defp normalize_count(value) when is_integer(value) and value >= 0, do: value
