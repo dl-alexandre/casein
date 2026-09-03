@@ -22,6 +22,7 @@ defmodule Mix.Tasks.Casein.Agents.Residency do
   """
 
   use Mix.Task
+  use Boundary, classify_to: CaseinMix
 
   alias Casein.Terminals.AgentResidency
 
