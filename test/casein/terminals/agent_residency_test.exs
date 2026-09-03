@@ -81,11 +81,26 @@ defmodule Casein.Terminals.AgentResidencyTest do
       assert report.in_pane + report.no_pane == report.total
     end
 
-    test "a self-parenting pid terminates the walk instead of looping" do
-      # A cycle would hang the report; the walk must stop and report :no_pane.
-      report = AgentResidency.classify("milc 800 800 /usr/bin/claude\n", @panes)
+    test "a self-parenting ancestor terminates the walk instead of looping" do
+      # The cycle has to be in an *ancestor*: an agent that is its own parent
+      # never reaches the walk, because HostCapacity's wrapper dedupe drops any
+      # match whose parent also matched — itself included.
+      listing = "milc 800 800 /bin/sh\nmilc 802 800 /usr/bin/claude\n"
+      report = AgentResidency.classify(listing, @panes)
 
-      assert %{residency: :no_pane} = resident(report, "800")
+      assert %{residency: :no_pane} = resident(report, "802")
+    end
+
+    test "a mutual parent cycle terminates the walk instead of looping" do
+      listing = """
+      milc 800 801 /bin/sh
+      milc 801 800 /bin/sh
+      milc 802 800 /usr/bin/claude
+      """
+
+      report = AgentResidency.classify(listing, @panes)
+
+      assert %{residency: :no_pane} = resident(report, "802")
     end
 
     test "a parent chain deeper than the guard stops rather than recursing forever" do
