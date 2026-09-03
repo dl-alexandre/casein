@@ -145,6 +145,59 @@ defmodule Casein.Terminals.AgentResidencyTest do
     end
   end
 
+  # `casein_<workspace>_<sid>`: the sid is the last underscore-free segment, so
+  # the workspace is everything before it.
+  @attributed %{
+    "200" => %{session: "casein_alpha_s1", pane_id: "%1"},
+    "900" => %{session: "casein_beta_s2", pane_id: "%2"}
+  }
+
+  describe "workspace attribution" do
+    test "an agent is attributed to the workspace of the session holding it" do
+      report = AgentResidency.classify(@listing, @attributed)
+
+      assert %{workspace: "alpha"} = resident(report, "300")
+      assert %{workspace: "alpha"} = resident(report, "401")
+    end
+
+    test "an agent no pane holds is attributed to no workspace" do
+      report = AgentResidency.classify(@listing, @attributed)
+
+      assert %{workspace: nil, residency: :no_pane} = resident(report, "500")
+    end
+
+    test "by_workspace counts every slot, attributed or not" do
+      report = AgentResidency.classify(@listing, @attributed)
+
+      # 300 and 401 under alpha; 500 and 600 hold budget nothing can reserve.
+      assert report.by_workspace == %{"alpha" => 2, nil => 2}
+      assert Enum.sum(Map.values(report.by_workspace)) == report.total
+    end
+
+    test "a session outside the casein namespace attributes to no workspace" do
+      # A foreign tmux session still holds a real slot, so it must be counted —
+      # just not credited to a workspace that could reserve against it.
+      panes = %{"200" => %{session: "someones-own-session", pane_id: "%1"}}
+      report = AgentResidency.classify(@listing, panes)
+
+      assert %{residency: :in_pane, workspace: nil} = resident(report, "300")
+      assert report.by_workspace[nil] == report.total
+    end
+
+    test "each workspace is counted separately" do
+      listing = """
+      milc 200 100 -bash
+      milc 300 200 /usr/local/bin/claude
+      milc 900 100 -bash
+      milc 901 900 /usr/bin/codex
+      """
+
+      report = AgentResidency.classify(listing, @attributed)
+
+      assert report.by_workspace == %{"alpha" => 1, "beta" => 1}
+    end
+  end
+
   describe "HostCapacity.agent_sessions/1" do
     test "carries the command and stays in step with count_agents/1" do
       sessions = HostCapacity.agent_sessions(@listing)
