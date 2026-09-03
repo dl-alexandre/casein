@@ -24,6 +24,12 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
   of resident agents from tabs closed days ago — each holding a few GB — until
   the box runs out of memory (devbox, 2026-08-27).
 
+  Two populations sit outside all three rules by construction: an agent with no
+  tmux pane among its ancestors, which nothing here can reach at any timeout,
+  and an agent in a session with an attached client, which a live viewer always
+  wins. `Casein.Terminals.AgentResidency` and `mix casein.agents.residency`
+  enumerate the first, so its size is measured rather than counted by hand.
+
   ## Kill policy — a window is reaped only when ALL hold
 
     * its session name starts with `casein_` (never touch foreign sessions);
