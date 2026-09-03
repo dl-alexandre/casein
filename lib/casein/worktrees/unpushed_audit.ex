@@ -150,8 +150,11 @@ defmodule Casein.Worktrees.UnpushedAudit do
     System.cmd("git", ["-C", path | args], stderr_to_stdout: true)
   rescue
     error ->
+      # `target` rather than `path`: the Logger metadata allowlist in
+      # config/config.exs is the set of keys that survive to the log line, and
+      # a key outside it is dropped.
       Logger.warning("worktree_audit_git_failed",
-        path: path,
+        target: path,
         reason: Exception.message(error)
       )
 
