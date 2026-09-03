@@ -260,6 +260,94 @@ check_provider_home() {
   fi
 }
 
+# An agent launched under a Casein owner auth profile has CLAUDE_CONFIG_DIR
+# pointed at that profile, and Claude reads BOTH its settings and its plugin
+# cache from there — not from ~/.claude. A plugin installed at user scope is
+# then invisible to the agent even though it is on disk and `enabledPlugins`
+# names it, and the only symptom is "Unknown skill" at call time, per pane,
+# with nothing said at launch. Report the discrepancy while it is still cheap.
+#
+# Advisory only (warn, never fail): a pack the host has and the pane does not
+# is a configuration mismatch, not a broken pane.
+check_claude_plugins() {
+  local config_home="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
+  local -a enabled=()
+  local entry reachable=0 unreachable=0
+
+  mapfile -t enabled < <(claude_enabled_plugins)
+
+  if ((${#enabled[@]} == 0)); then
+    pass "no Claude plugins enabled (none to be missing)"
+    return
+  fi
+
+  for entry in "${enabled[@]}"; do
+    if claude_plugin_present "$config_home" "$entry"; then
+      reachable=$((reachable + 1))
+      continue
+    fi
+
+    unreachable=$((unreachable + 1))
+
+    if [[ "$config_home" != "${HOME}/.claude" ]] && claude_plugin_present "${HOME}/.claude" "$entry"; then
+      warn "plugin ${entry} is enabled and installed under ${HOME}/.claude, but this pane reads plugins from ${config_home} — every one of its skills answers \"Unknown skill\" here"
+    else
+      warn "plugin ${entry} is enabled but is not installed under ${config_home} — its skills answer \"Unknown skill\" here"
+    fi
+  done
+
+  if ((unreachable == 0)); then
+    pass "all ${reachable} enabled Claude plugin(s) reachable from ${config_home}"
+  fi
+}
+
+# Plugin names marked enabled in any settings file this pane reads. Union
+# rather than merge: the question is only whether a name is expected to work
+# somewhere, and a name enabled anywhere is one an agent will try to call.
+claude_enabled_plugins() {
+  local -a files=("${HOME}/.claude/settings.json" ".claude/settings.json")
+  local file
+
+  if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+    files+=("${CLAUDE_CONFIG_DIR}/settings.json")
+  fi
+
+  for file in "${files[@]}"; do
+    [[ -f "$file" ]] || continue
+
+    python3 - "$file" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(0)
+
+if not isinstance(data, dict):
+    sys.exit(0)
+
+for name, on in (data.get("enabledPlugins") or {}).items():
+    if on:
+        print(name)
+PY
+  done | sort -u
+}
+
+# `<config home>/plugins/cache/<owner>/<pack>` for an enabledPlugins entry
+# written `pack@owner`. An entry in any other shape is not something we can
+# locate, so it is reported as unreachable rather than guessed at.
+claude_plugin_present() {
+  local home="$1"
+  local entry="$2"
+  local pack="${entry%@*}"
+  local owner="${entry##*@}"
+
+  [[ "$pack" != "$entry" && -n "$pack" && -n "$owner" ]] || return 1
+  [[ -d "${home}/plugins/cache/${owner}/${pack}" ]]
+}
+
 # Dual-stack probe for Casein MCP endpoints (docs/design/mcp-2026-07-28-adoption.md):
 #   1) legacy initialize with empty params — keeps the 2025 path measurable
 #   2) server/discover declaring 2026-07-28 — proves the modern path is live
@@ -869,6 +957,7 @@ main() {
       check_tidewave_mcp
       check_grok_runtime
       check_auth_files
+      check_claude_plugins
       check_codex_capabilities
       ;;
     *)
