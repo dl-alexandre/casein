@@ -22,6 +22,13 @@ defmodule Casein.Terminals.AgentResidency do
   the pane's shell, and the agent is its descendant. The ancestor walk is the
   whole point.
 
+  The same walk answers a second question: **whose** slot each agent is. Every
+  agent runs as the shared OS user, so `ps` attributes nothing and
+  `CASEIN_AGENT_MAX_PER_USER` is inert by construction; the holding pane's tmux
+  session is the only workspace identity available. `by_workspace` groups the
+  budget that way, with `nil` for the agents no pane holds — the slots no
+  per-workspace reservation could ever cover.
+
   It reads and reports; it kills nothing and changes no policy. What *should*
   happen to a `:no_pane` agent is a question for whoever owns the reaper — this
   only makes the answer measurable instead of hand-counted.
@@ -29,6 +36,7 @@ defmodule Casein.Terminals.AgentResidency do
 
   alias Casein.Terminals.HostCapacity
   alias Casein.Terminals.TmuxRunner
+  alias Casein.Workspaces.Identity
 
   @typedoc "One agent process and the pane holding it, if any."
   @type resident :: %{
@@ -37,7 +45,8 @@ defmodule Casein.Terminals.AgentResidency do
           command: String.t(),
           residency: :in_pane | :no_pane,
           orphan?: boolean(),
-          pane: %{session: String.t(), pane_id: String.t()} | nil
+          pane: %{session: String.t(), pane_id: String.t()} | nil,
+          workspace: String.t() | nil
         }
 
   @typedoc "Every agent, classified, with the counts worth alerting on."
@@ -46,7 +55,8 @@ defmodule Casein.Terminals.AgentResidency do
           total: non_neg_integer(),
           in_pane: non_neg_integer(),
           no_pane: non_neg_integer(),
-          orphans: non_neg_integer()
+          orphans: non_neg_integer(),
+          by_workspace: %{optional(String.t() | nil) => non_neg_integer()}
         }
 
   # A parent chain longer than this is a cycle or a fork bomb; either way,
@@ -91,7 +101,8 @@ defmodule Casein.Terminals.AgentResidency do
       total: length(residents),
       in_pane: Enum.count(residents, &(&1.residency == :in_pane)),
       no_pane: Enum.count(residents, &(&1.residency == :no_pane)),
-      orphans: Enum.count(residents, & &1.orphan?)
+      orphans: Enum.count(residents, & &1.orphan?),
+      by_workspace: Enum.frequencies_by(residents, & &1.workspace)
     }
   end
 
@@ -102,7 +113,16 @@ defmodule Casein.Terminals.AgentResidency do
     |> Map.put(:residency, if(pane, do: :in_pane, else: :no_pane))
     |> Map.put(:orphan?, agent.ppid == "1")
     |> Map.put(:pane, pane)
+    |> Map.put(:workspace, workspace_of(pane))
   end
+
+  # Every agent runs as the same OS user, so `ps` cannot say who a slot belongs
+  # to — the tmux session it hangs off is the only attribution available, and an
+  # agent with no pane has none at all. `nil` is that answer, kept as a key
+  # rather than dropped: the unattributable slots are the ones no per-workspace
+  # reservation can ever cover, so their count is part of the picture.
+  defp workspace_of(nil), do: nil
+  defp workspace_of(%{session: session}), do: Identity.session_workspace(session)
 
   # Walk pid -> parent -> ... looking for a pane process. The agent's own pid
   # is checked first: a bare `claude` run as the pane command is its own pane.
