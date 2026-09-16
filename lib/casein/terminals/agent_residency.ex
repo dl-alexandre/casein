@@ -22,6 +22,10 @@ defmodule Casein.Terminals.AgentResidency do
   the pane's shell, and the agent is its descendant. The ancestor walk is the
   whole point.
 
+  A live report is two snapshots, not an atomic view. It reads panes before
+  processes so unavoidable sampling skew errs away from manufacturing a
+  `:no_pane` classification when a pane disappears between the two probes.
+
   It reads and reports; it kills nothing and changes no policy. What *should*
   happen to a `:no_pane` agent is a question for whoever owns the reaper — this
   only makes the answer measurable instead of hand-counted.
@@ -61,8 +65,8 @@ defmodule Casein.Terminals.AgentResidency do
   """
   @spec report(keyword()) :: {:ok, report()} | {:error, term()}
   def report(opts \\ []) do
-    with {:ok, listing} <- fetch(opts, :listing, &process_listing/0),
-         {:ok, panes} <- fetch(opts, :panes, fn -> pane_processes(opts) end) do
+    with {:ok, panes} <- fetch(opts, :panes, fn -> pane_processes(opts) end),
+         {:ok, listing} <- fetch(opts, :listing, &process_listing/0) do
       {:ok, classify(listing, panes)}
     end
   end
@@ -143,9 +147,19 @@ defmodule Casein.Terminals.AgentResidency do
 
     case runner.(["list-panes", "-a", "-F", fmt]) do
       {out, 0} -> {:ok, parse_panes(out)}
-      # No server running means no panes, which is a real answer: then every
-      # agent is `:no_pane`, and that is exactly what we want reported.
-      {_out, _code} -> {:ok, %{}}
+      {out, _code} when is_binary(out) -> pane_failure(out)
+    end
+  end
+
+  # tmux uses both messages for a server whose socket does not exist, depending
+  # on version. Other failures are unknown state, never an empty inventory.
+  defp pane_failure(out) do
+    if String.contains?(out, "no server running") or
+         (String.contains?(out, "error connecting to ") and
+            String.contains?(out, "(No such file or directory)")) do
+      {:ok, %{}}
+    else
+      {:error, :tmux_unavailable}
     end
   end
 

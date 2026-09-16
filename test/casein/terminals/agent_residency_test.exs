@@ -137,10 +137,24 @@ defmodule Casein.Terminals.AgentResidencyTest do
       assert report.in_pane == 2
     end
 
-    test "a tmux server that will not answer means no panes, not a crash" do
-      runner = fn _argv -> {"no server running", 1} end
+    test "an absent tmux server means no panes" do
+      absent_server_messages = [
+        "no server running on /tmp/tmux-1001/casein",
+        "error connecting to /tmp/tmux-1001/casein (No such file or directory)"
+      ]
 
-      assert {:ok, %{in_pane: 0, no_pane: 4}} =
+      for message <- absent_server_messages do
+        runner = fn _argv -> {message, 1} end
+
+        assert {:ok, %{in_pane: 0, no_pane: 4}} =
+                 AgentResidency.report(listing: @listing, runner: runner)
+      end
+    end
+
+    test "a tmux probe failure is not reported as an empty pane inventory" do
+      runner = fn _argv -> {"error connecting to /run/tmux.sock (Permission denied)", 1} end
+
+      assert {:error, :tmux_unavailable} =
                AgentResidency.report(listing: @listing, runner: runner)
     end
   end
