@@ -24,7 +24,9 @@ defmodule Casein.Test.AmbientEnv do
                 # Compile/config adapter pin (desktop packages compile sqlite).
                 "CASEIN_REPO_ADAPTER",
                 # Optional shared tmp root for large fixtures on constrained hosts.
-                "CASEIN_TEST_TMPDIR"
+                "CASEIN_TEST_TMPDIR",
+                # Shutdown fallback that keeps test scrollback out of production state.
+                "CASEIN_TMUX_SCROLLBACK_DIR"
               ])
 
   @keep_prefixes [

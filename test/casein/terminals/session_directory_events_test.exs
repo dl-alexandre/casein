@@ -260,7 +260,9 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     counter = :counters.new(1, [:atomics])
     install_counting_adapter(counter)
 
-    min_interval = 400
+    # Keep the real timer far beyond any scheduler delay. This test drives the
+    # deferred edge explicitly after asserting that it was armed.
+    min_interval = 60_000
 
     assert :ok =
              SessionDirectory.subscribe(
@@ -275,32 +277,56 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     pid = directory_pid!(ws)
     init_calls = wait_counter_stable(pid, counter)
 
-    # The min-interval window opens at the initial load; wait it out so event
-    # A is genuinely unthrottled.
-    wait_until(fn ->
-      %{last_recompute_ms: last} = :sys.get_state(pid)
-      System.monotonic_time(:millisecond) - last >= min_interval
+    # Put the initial load outside the min-interval window so event A is
+    # genuinely unthrottled without sleeping for the production interval.
+    :sys.replace_state(pid, fn state ->
+      %{state | last_recompute_ms: System.monotonic_time(:millisecond) - min_interval - 1}
     end)
 
     # Event A recomputes immediately (nothing recent).
     put_fake_session("casein_#{ws}_u-bob")
     FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
     flush_state(pid)
-    wait_until(fn -> :counters.get(counter, 1) == init_calls + 1 end)
+
+    wait_until(fn ->
+      state = :sys.get_state(pid)
+      :counters.get(counter, 1) == init_calls + 1 and not state.computing?
+    end)
+
     after_a = :counters.get(counter, 1)
     assert after_a == init_calls + 1
 
     # Event B lands inside min_interval AFTER A's recompute completed, so the
     # single-flight guard cannot mask it: an unthrottled implementation would
     # recompute immediately here.
+    :sys.replace_state(pid, fn state ->
+      %{state | last_recompute_ms: System.monotonic_time(:millisecond)}
+    end)
+
     put_fake_session("casein_#{ws}_u-carol")
     FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
-    flush_state(pid)
-    # Hold the "no immediate recompute" tooth across a short window so an
-    # async unthrottled recompute cannot race past a single counter sample.
-    assert_counter_holds(counter, after_a, 100)
 
-    # ...and it must be deferred to the window edge, never dropped.
+    # FakeEventSource.emit/2 is a cast, so wait for either expected timer
+    # arming or the forbidden immediate adapter call before asserting.
+    deferred =
+      wait_until(fn ->
+        state = :sys.get_state(pid)
+
+        if is_reference(state.pending_recompute_ref) or
+             :counters.get(counter, 1) != after_a,
+           do: state
+      end)
+
+    assert :counters.get(counter, 1) == after_a
+    assert is_reference(deferred.pending_recompute_ref)
+
+    # Fire the scheduled edge deterministically: the real timer is deliberately
+    # long so coverage/scheduler overhead cannot turn this into an immediate
+    # recompute before the assertions above.
+    _ = Process.cancel_timer(deferred.pending_recompute_ref)
+    send(pid, :coalesced_recompute)
+
+    # The deferred event must recompute at the window edge, never be dropped.
     wait_until(fn -> :counters.get(counter, 1) == after_a + 1 end)
 
     assert Enum.map(SessionDirectory.tabs(ws, workspace_name: ws), & &1.sid) |> Enum.sort() ==
@@ -534,33 +560,6 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
       true ->
         do_wait_counter_stable(pid, counter, next, deadline)
-    end
-  end
-
-  # Assert the counter stays at `expected` for the full `hold_ms` window.
-  # Used for "must NOT recompute immediately" teeth so async recomputes cannot
-  # race a single post-flush sample.
-  defp assert_counter_holds(counter, expected, hold_ms) do
-    deadline = System.monotonic_time(:millisecond) + hold_ms
-    do_assert_counter_holds(counter, expected, deadline)
-  end
-
-  defp do_assert_counter_holds(counter, expected, deadline) do
-    actual = :counters.get(counter, 1)
-
-    if actual != expected do
-      flunk("expected counter to hold at #{expected} (got #{actual})")
-    end
-
-    if System.monotonic_time(:millisecond) >= deadline do
-      :ok
-    else
-      receive do
-      after
-        10 -> :ok
-      end
-
-      do_assert_counter_holds(counter, expected, deadline)
     end
   end
 end

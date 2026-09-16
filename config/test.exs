@@ -14,7 +14,13 @@ import Config
 # from config/). test_helper.exs re-runs the same scrub via AmbientEnv so the
 # keep-list has a single code owner + hermetic tests.
 # ---------------------------------------------------------------------------
-keep_exact = MapSet.new(["CASEIN_REPO_ADAPTER", "CASEIN_TEST_TMPDIR"])
+keep_exact =
+  MapSet.new([
+    "CASEIN_REPO_ADAPTER",
+    "CASEIN_TEST_TMPDIR",
+    "CASEIN_TMUX_SCROLLBACK_DIR"
+  ])
+
 keep_prefixes = ["CASEIN_GATE_", "CASEIN_TEST_"]
 
 for {key, _value} <- System.get_env() do
