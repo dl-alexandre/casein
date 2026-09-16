@@ -52,9 +52,10 @@ defmodule Casein.Test.AmbientEnvTest do
     end
   end
 
-  test "scrub! keeps harness CASEIN_TEST_* / CASEIN_GATE_* / CASEIN_REPO_ADAPTER" do
+  test "scrub! keeps suite harness variables" do
     System.put_env("CASEIN_REPO_ADAPTER", "postgres")
     System.put_env("CASEIN_TEST_TMPDIR", "/tmp/casein-test-tmp")
+    System.put_env("CASEIN_TMUX_SCROLLBACK_DIR", "/tmp/casein-test-scrollback")
     System.put_env("CASEIN_TEST_FIXTURE_MARK", "keep-me")
     System.put_env("CASEIN_GATE_SKIP_PORTABLE", "1")
     System.put_env("CASEIN_ON_DEVBOX", "true")
@@ -66,11 +67,13 @@ defmodule Casein.Test.AmbientEnvTest do
 
     assert System.get_env("CASEIN_REPO_ADAPTER") == "postgres"
     assert System.get_env("CASEIN_TEST_TMPDIR") == "/tmp/casein-test-tmp"
+    assert System.get_env("CASEIN_TMUX_SCROLLBACK_DIR") == "/tmp/casein-test-scrollback"
     assert System.get_env("CASEIN_TEST_FIXTURE_MARK") == "keep-me"
     assert System.get_env("CASEIN_GATE_SKIP_PORTABLE") == "1"
 
     refute "CASEIN_REPO_ADAPTER" in deleted
     refute "CASEIN_TEST_TMPDIR" in deleted
+    refute "CASEIN_TMUX_SCROLLBACK_DIR" in deleted
     refute "CASEIN_TEST_FIXTURE_MARK" in deleted
     refute "CASEIN_GATE_SKIP_PORTABLE" in deleted
   end
@@ -78,6 +81,7 @@ defmodule Casein.Test.AmbientEnvTest do
   test "keep?/1 documents the harness allowlist" do
     assert AmbientEnv.keep?("CASEIN_REPO_ADAPTER")
     assert AmbientEnv.keep?("CASEIN_TEST_TMPDIR")
+    assert AmbientEnv.keep?("CASEIN_TMUX_SCROLLBACK_DIR")
     assert AmbientEnv.keep?("CASEIN_TEST_REPO")
     assert AmbientEnv.keep?("CASEIN_GATE_SKIP_FORMAT")
     refute AmbientEnv.keep?("CASEIN_ON_DEVBOX")
@@ -100,6 +104,7 @@ defmodule Casein.Test.AmbientEnvTest do
     ~w(
       CASEIN_REPO_ADAPTER
       CASEIN_TEST_TMPDIR
+      CASEIN_TMUX_SCROLLBACK_DIR
       CASEIN_TEST_FIXTURE_MARK
       CASEIN_GATE_SKIP_PORTABLE
     )
