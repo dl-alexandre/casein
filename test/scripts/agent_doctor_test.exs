@@ -337,6 +337,84 @@ defmodule Scripts.AgentDoctorTest do
     refute output =~ "never-print-this-token"
   end
 
+  describe "check_claude_plugins" do
+    test "warns when the pane's config home cannot see a plugin ~/.claude has", %{
+      home: home,
+      cwd: cwd
+    } do
+      # The shape an owner auth profile produces: CLAUDE_CONFIG_DIR points at
+      # the profile, so Claude reads plugins from there and never sees the pack
+      # installed at user scope. This is the case that answers "Unknown skill"
+      # per pane with nothing said at launch.
+      install_plugin(home, "oliver-kriska", "elixir-phoenix")
+      write_enabled_plugins(home, %{"elixir-phoenix@oliver-kriska" => true})
+      profile = Path.join(home, ".casein/agent-auth/profiles/someone/claude")
+      File.mkdir_p!(profile)
+
+      {output, 0} =
+        run_function(home, cwd, "check_claude_plugins", [{"CLAUDE_CONFIG_DIR", profile}])
+
+      assert output =~ "plugin elixir-phoenix@oliver-kriska is enabled and installed under"
+      assert output =~ "reads plugins from #{profile}"
+      assert output =~ "Unknown skill"
+      refute output =~ "FAIL "
+    end
+
+    test "passes when the plugin is reachable from the config home in use", %{
+      home: home,
+      cwd: cwd
+    } do
+      install_plugin(home, "oliver-kriska", "elixir-phoenix")
+
+      write_enabled_plugins(home, %{
+        "elixir-phoenix@oliver-kriska" => true,
+        "switched-off@someone" => false
+      })
+
+      {output, 0} = run_function(home, cwd, "check_claude_plugins", [{"CLAUDE_CONFIG_DIR", ""}])
+
+      # The disabled entry is not counted: it is not expected to work.
+      assert output =~ "all 1 enabled Claude plugin(s) reachable"
+      refute output =~ "WARN "
+    end
+
+    test "warns when an enabled plugin is installed nowhere at all", %{home: home, cwd: cwd} do
+      write_enabled_plugins(home, %{"missing-pack@someone" => true})
+
+      {output, 0} = run_function(home, cwd, "check_claude_plugins", [{"CLAUDE_CONFIG_DIR", ""}])
+
+      assert output =~ "plugin missing-pack@someone is enabled but is not installed under"
+      refute output =~ "FAIL "
+    end
+
+    test "is quiet when nothing is enabled, and survives unreadable settings", %{
+      home: home,
+      cwd: cwd
+    } do
+      File.mkdir_p!(Path.join(home, ".claude"))
+      File.write!(Path.join(home, ".claude/settings.json"), "not json{")
+
+      {output, 0} = run_function(home, cwd, "check_claude_plugins", [{"CLAUDE_CONFIG_DIR", ""}])
+
+      assert output =~ "no Claude plugins enabled"
+      refute output =~ "WARN "
+      refute output =~ "FAIL "
+    end
+  end
+
+  defp install_plugin(home, owner, pack) do
+    File.mkdir_p!(Path.join([home, ".claude/plugins/cache", owner, pack, "3.0.1"]))
+  end
+
+  defp write_enabled_plugins(home, enabled) do
+    File.mkdir_p!(Path.join(home, ".claude"))
+
+    File.write!(
+      Path.join(home, ".claude/settings.json"),
+      Jason.encode!(%{"enabledPlugins" => enabled})
+    )
+  end
+
   defp build_bundle!(home) do
     fixture_dir = Path.join(home, "bundle-fixtures")
     bundle_root = Path.join(home, ".casein/grok-bundles")
