@@ -119,6 +119,39 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
                    1_000
   end
 
+  test "a stale synchronized-output timeout cannot flush a later update" do
+    worker = start_worker()
+
+    first = flush_output(worker, "\e[?2026hfirst")
+    assert first.sync_active?
+    assert {first_timer_ref, first_token} = first.sync_timer
+    _ = Process.cancel_timer(first_timer_ref)
+
+    closed = flush_output(worker, "\e[?2026l")
+    refute closed.sync_active?
+    assert closed.sync_timer == nil
+    assert_receive {:pane_frame, "pane-gen-1", _}, 1_000
+
+    second = flush_output(worker, "\e[?2026hsecond")
+    assert second.sync_active?
+    assert {second_timer_ref, second_token} = second.sync_timer
+    _ = Process.cancel_timer(second_timer_ref)
+
+    send(worker, {:sync_flush_timeout, first_token})
+    after_stale = :sys.get_state(worker)
+
+    assert after_stale.sync_active?
+    assert after_stale.sync_timer == {second_timer_ref, second_token}
+    refute_received {:pane_frame, "pane-gen-1", _}
+
+    send(worker, {:sync_flush_timeout, second_token})
+    after_current = :sys.get_state(worker)
+
+    refute after_current.sync_active?
+    assert after_current.sync_timer == nil
+    assert_receive {:pane_frame, "pane-gen-1", _}, 1_000
+  end
+
   test "session_owner resize from a passive viewer does not reach the owner" do
     {:ok, worker} =
       PaneWorker.start_link(
@@ -335,5 +368,11 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
     ref = Process.monitor(worker)
     assert :ok = GenServer.stop(worker, :normal)
     assert_receive {:DOWN, ^ref, :process, ^worker, :normal}
+  end
+
+  defp flush_output(worker, data) do
+    send(worker, {:terminal_payload, :data, %{data: data}})
+    send(worker, :flush_output)
+    :sys.get_state(worker)
   end
 end

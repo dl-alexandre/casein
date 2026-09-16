@@ -196,9 +196,11 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
          # frames from different viewers can be compared by it.
          content_gen: nil,
          # DEC 2026 synchronized-output gating: `sync_active?` is true while a
-         # BSU is open; `sync_timer?` debounces the safety-flush timer.
+         # BSU is open; `sync_timer` identifies the safety-flush timer so a
+         # timeout left in the mailbox by an earlier update cannot flush a
+         # later update.
          sync_active?: false,
-         sync_timer?: false,
+         sync_timer: nil,
          # Whether this viewer's tab is visible+focused. Only an active viewer
          # may resize the shared session_owner PTY; passive viewers scale display
          # locally to the authoritative grid (see ghostty_terminal.js).
@@ -344,8 +346,8 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
 
   # Safety net: an app opened a synchronized update but hasn't closed it within
   # @sync_max_defer_ms. Force the held frame out so the pane never freezes.
-  def handle_info(:sync_flush_timeout, state) do
-    state = %{state | sync_timer?: false}
+  def handle_info({:sync_flush_timeout, token}, %{sync_timer: {_timer_ref, token}} = state) do
+    state = %{state | sync_timer: nil}
 
     if state.sync_active? do
       {:noreply, push_frame(%{state | sync_active?: false})}
@@ -353,6 +355,11 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
       {:noreply, state}
     end
   end
+
+  # A cancelled timer can already have delivered its message. Its token no
+  # longer matches `sync_timer`, so it belongs to an earlier synchronized
+  # update and must not flush the current one.
+  def handle_info({:sync_flush_timeout, _stale_token}, state), do: {:noreply, state}
 
   def handle_info(_msg, state), do: {:noreply, state}
 
@@ -501,18 +508,29 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
 
       state.sync_active? ->
         # The update just closed: emit the now-complete frame.
-        push_frame(%{state | sync_active?: false, sync_timer?: false})
+        state
+        |> Map.put(:sync_active?, false)
+        |> cancel_sync_timeout()
+        |> push_frame()
 
       true ->
         push_frame(state)
     end
   end
 
-  defp schedule_sync_timeout(%{sync_timer?: true} = state), do: state
+  defp schedule_sync_timeout(%{sync_timer: {_timer_ref, _token}} = state), do: state
 
   defp schedule_sync_timeout(state) do
-    Process.send_after(self(), :sync_flush_timeout, @sync_max_defer_ms)
-    %{state | sync_timer?: true}
+    token = make_ref()
+    timer_ref = Process.send_after(self(), {:sync_flush_timeout, token}, @sync_max_defer_ms)
+    %{state | sync_timer: {timer_ref, token}}
+  end
+
+  defp cancel_sync_timeout(%{sync_timer: nil} = state), do: state
+
+  defp cancel_sync_timeout(%{sync_timer: {timer_ref, _token}} = state) do
+    _ = Process.cancel_timer(timer_ref)
+    %{state | sync_timer: nil}
   end
 
   defp write_term(term, data) do
