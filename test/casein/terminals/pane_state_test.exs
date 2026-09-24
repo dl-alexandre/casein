@@ -89,4 +89,77 @@ defmodule Casein.Terminals.PaneStateTest do
              windows: [%{pane_state: :ready, task_summary: "Ship title state"}]
            } = PaneState.enrich_topology(topology)
   end
+
+  defp window_with(panes) do
+    %{id: "@1", index: 0, name: "factory_manager", active: true, pane_list: panes}
+  end
+
+  describe "preview panes do not become the window's identity (#20029)" do
+    test "a preview URL title is not a task summary" do
+      # It is the preview surface naming itself, in the same class as the
+      # hostname and bare runtime titles this module already rejects.
+      refute PaneState.task_summary("preview http://localhost:21012/")
+      refute PaneState.task_summary("preview http://localhost:21012/login")
+      refute PaneState.task_summary("preview https://example.com")
+    end
+
+    test "a task summary that merely starts with the word preview survives" do
+      # The URL is what makes it chrome. Requiring it is the whole guard
+      # against swallowing real work orders.
+      assert PaneState.task_summary("Preview the new dashboard layout") ==
+               "Preview the new dashboard layout"
+
+      assert PaneState.task_summary("preview mode for time pickers") ==
+               "preview mode for time pickers"
+    end
+
+    test "an active preview pane does not displace the working pane" do
+      # The reported shape: the auto-created preview is active, the agent is
+      # not, and neither carries a role tag.
+      window =
+        window_with([
+          %{id: "%17", active: false, pane_title: "Time pickers — default 12:00 AM"},
+          %{id: "%63", active: true, pane_title: "preview http://localhost:21012/"}
+        ])
+
+      assert %{id: "%17"} = PaneState.agent_or_active_pane(window)
+      assert PaneState.window_task_summary(window) == "Time pickers — default 12:00 AM"
+    end
+
+    test "a preview pane listed first does not win the first-pane fallback" do
+      window =
+        window_with([
+          %{id: "%64", active: false, pane_title: "preview http://localhost:21027/"},
+          %{id: "%54", active: false, pane_title: "Add six token families"}
+        ])
+
+      assert %{id: "%54"} = PaneState.agent_or_active_pane(window)
+      assert PaneState.window_task_summary(window) == "Add six token families"
+    end
+
+    test "the role tag still wins, even over a non-preview active pane" do
+      window =
+        window_with([
+          %{id: "%1", active: true, pane_title: "some shell"},
+          %{id: "%2", active: false, role: "agent", pane_title: "Real work order"}
+        ])
+
+      assert %{id: "%2"} = PaneState.agent_or_active_pane(window)
+    end
+
+    test "a window of nothing but preview panes still resolves to one" do
+      # This narrows what wins a tie; it must not turn an answer into nil.
+      window = window_with([%{id: "%9", active: true, pane_title: "preview http://localhost:1/"}])
+
+      assert %{id: "%9"} = PaneState.agent_or_active_pane(window)
+    end
+
+    test "preview_pane?/1 reads the title and tolerates a missing one" do
+      assert PaneState.preview_pane?(%{pane_title: "preview http://localhost:21012/"})
+      assert PaneState.preview_pane?(%{pane_title: "  preview http://localhost:21012/  "})
+      refute PaneState.preview_pane?(%{pane_title: "Preview the new dashboard"})
+      refute PaneState.preview_pane?(%{id: "%1"})
+      refute PaneState.preview_pane?(nil)
+    end
+  end
 end
