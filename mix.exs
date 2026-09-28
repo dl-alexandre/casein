@@ -72,7 +72,7 @@ defmodule Casein.MixProject do
       {:phoenix_ecto, "~> 4.7"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.22"},
-      {:ecto_sqlite3, "~> 0.24.1"},
+      {:ecto_sqlite3, "~> 0.25.0"},
       {:phoenix_html, "~> 4.3"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       # Files panel workspace tree auto-refresh (also a transitive dep of live_reload/credo).
@@ -99,7 +99,7 @@ defmodule Casein.MixProject do
        depth: 1},
       {:swoosh, "~> 1.25"},
       {:req, "~> 0.5"},
-      {:mdex, "~> 0.13.2"},
+      {:mdex, "~> 0.14.0"},
       {:mint_web_socket, "~> 1.0"},
       {:telemetry_metrics, "~> 1.1"},
       {:telemetry_poller, "~> 1.3"},
